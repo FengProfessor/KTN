@@ -1,0 +1,47 @@
+{
+  "name": "Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí",
+  "short_name": "Khổng Tử Nhí",
+  "description": "Sổ liên lạc điện tử, Luyện Mini-Game YCT theo buổi học & Nhắc lịch học tự động — Học Viện Khổng Tử Nhí",
+  "start_url": "/custom-page/so-lien-lac-v1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F8FAFC",
+  "theme_color": "#CB3D30",
+  "lang": "vi",
+  "categories": ["education", "kids"],
+  "icons": [
+    {
+      "src": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nhận xét & Nộp bài tập",
+      "short_name": "Bài tập",
+      "url": "/custom-page/so-lien-lac-v1?tab=homework",
+      "description": "Xem nhận xét của cô giáo và nộp bài tập về nhà"
+    },
+    {
+      "name": "Luyện Mini-Game YCT",
+      "short_name": "Mini-Game",
+      "url": "/custom-page/so-lien-lac-v1?tab=game",
+      "description": "Chơi 4 Mini-Game tiếng Trung theo đúng buổi học"
+    },
+    {
+      "name": "Tin nhắn cô giáo",
+      "short_name": "Tin nhắn",
+      "url": "/custom-page/so-lien-lac-v1?tab=chat",
+      "description": "Trao đổi trực tiếp với giáo viên phụ trách lớp"
+    }
+  ]
+}

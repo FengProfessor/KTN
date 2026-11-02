@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Không Gian Giáo Viên — Học Viện Khổng Tử Nhí</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#B91C1C">
+  <link rel="icon" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png">
+  <link rel="stylesheet" href="so-lien-lac-ux.css">
+  <link rel="stylesheet" href="so-lien-lac-lms.css">
+  <style>
+    :root { --ktn-red: #B91C1C; --ktn-bg: #F8FAFC; }
+    body { margin: 0; font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--ktn-bg); color: #0F172A; }
+    .teacher-header {
+      position: sticky; top: 0; z-index: 1000;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding: 12px 24px; background: #FFFFFF; border-bottom: 2px solid #FEE2E2;
+    }
+    .teacher-nav { display: flex; gap: 8px; background: #F1F5F9; padding: 4px; border-radius: 999px; }
+    .teacher-nav button {
+      border: none; background: transparent; padding: 8px 18px; border-radius: 999px;
+      font-weight: 800; font-size: 13.5px; color: #475569; cursor: pointer;
+    }
+    .teacher-nav button.active { background: var(--ktn-red); color: #FFFFFF; }
+    .teacher-container { max-width: 1120px; margin: 24px auto; padding: 0 16px; }
+    .teacher-pane { display: none; }
+    .teacher-pane.active { display: block; }
+    .card { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 20px; margin-bottom: 18px; }
+    .hw-item {
+      display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px;
+      padding: 16px; border: 1px solid #E2E8F0; border-radius: 12px; margin-bottom: 12px; background: #F8FAFC;
+    }
+    @media (max-width: 768px) { .hw-item { grid-template-columns: 1fr; } }
+    .btn-red { background: var(--ktn-red); color: #FFF; border: none; padding: 9px 16px; border-radius: 8px; font-weight: 800; cursor: pointer; }
+    .btn-outline { background: #FFF; color: #0F172A; border: 1.5px solid #CBD5E1; padding: 7px 12px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+  </style>
+  <script src="ktn-webapp-client.js"></script>
+</head>
+<body>
+  <header class="teacher-header">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <img src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png" alt="Logo" style="width:36px;height:36px;border-radius:50%;">
+      <div>
+        <strong style="color:#B91C1C;font-size:15px;">SỔ LIÊN LẠC GIÁO VIÊN</strong>
+        <div id="teacher-welcome-label" style="font-size:12px;color:#64748B;">Đang xác thực giáo viên...</div>
+      </div>
+    </div>
+
+    <nav class="teacher-nav" aria-label="Menu Giáo viên">
+      <button type="button" id="t-btn-grade" class="active" onclick="switchTeacherTab('grade')">📝 Chấm Bài Tập</button>
+      <button type="button" id="t-btn-assign" onclick="switchTeacherTab('assign')">📚 Giao Bài &amp; Điểm Danh</button>
+      <button type="button" id="t-btn-groups" onclick="switchTeacherTab('groups')">💬 Nhóm Lớp Phụ Trách</button>
+    </nav>
+
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn-outline" style="border-color:#FECACA;color:#B91C1C;background:#FFF1F2;" onclick="enableTeacherPwa()">🔔 Bật thông báo</button>
+      <button type="button" class="btn-outline" onclick="KtnWebApp.logout()">Đăng xuất</button>
+    </div>
+  </header>
+
+  <main class="teacher-container">
+    <!-- TAB 1: CHẤM BÀI (CẬP NHẬT TRỰC TIẾP TRÊN SUPABASE, KHÔNG BAO GIỜ TRÙNG BẢN GHI) -->
+    <section id="t-pane-grade" class="teacher-pane active">
+      <div class="card">
+        <h2 style="margin-top:0;">📝 Danh Sách Bài Nộp Của Học Sinh Lớp Phụ Trách</h2>
+        <div id="teacher-grade-list">Đang tải danh sách bài nộp từ Supabase...</div>
+      </div>
+    </section>
+
+    <!-- TAB 2: GIAO BÀI & ĐIỂM DANH -->
+    <section id="t-pane-assign" class="teacher-pane">
+      <div class="card">
+        <h2 style="margin-top:0;">📚 Giao Bài Tập &amp; Điểm Danh Theo Buổi Học</h2>
+        <p style="font-size:13.5px;color:#475569;">Chọn lớp phụ trách và buổi học để cập nhật bài tập về nhà cũng như điểm danh học sinh.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:640px;">
+          <label style="font-size:13px;font-weight:700;">Lớp phụ trách:
+            <select id="assign-class-code" style="width:100%;padding:9px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
+              <option value="YCT2-04">YCT2-04 — Ca tối Thứ 3 &amp; Thứ 6</option>
+              <option value="YCT3-02">YCT3-02 — Ca tối Thứ 4 &amp; Chủ Nhật</option>
+            </select>
+          </label>
+          <label style="font-size:13px;font-weight:700;">Buổi học số:
+            <input type="number" id="assign-lesson-num" value="1" min="1" max="35" style="width:100%;padding:9px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: NHÓM LỚP (TRAO ĐỔI VỚI HỌC SINH / PHỤ HUYNH) -->
+    <section id="t-pane-groups" class="teacher-pane">
+      <div class="card">
+        <h2 style="margin-top:0;">💬 Trao Đổi Với Học Viên / Phụ Huynh Trong Lớp</h2>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:13px;font-weight:700;">Phòng trao đổi lớp:
+            <select id="teacher-room-select" onchange="loadTeacherChat()" style="padding:8px 12px;border-radius:8px;border:1px solid #CBD5E1;margin-left:8px;">
+              <option value="class:YCT2-04">Lớp YCT2-04</option>
+              <option value="class:YCT3-02">Lớp YCT3-02</option>
+            </select>
+          </label>
+        </div>
+        <div id="teacher-chat-box" style="height:340px;overflow-y:auto;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px;margin-bottom:10px;"></div>
+        <form onsubmit="sendTeacherChat(event)" style="display:flex;gap:8px;">
+          <input type="text" id="teacher-chat-input" placeholder="Nhập thông báo hoặc phản hồi cho học sinh/phụ huynh..." style="flex:1;padding:10px;border:1px solid #CBD5E1;border-radius:8px;" required>
+          <button type="submit" class="btn-red">Gửi tin nhắn</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let currentTeacherSession = null;
+
+    function switchTeacherTab(tab) {
+      ['grade', 'assign', 'groups'].forEach(t => {
+        document.getElementById('t-btn-' + t).classList.toggle('active', t === tab);
+        document.getElementById('t-pane-' + t).classList.toggle('active', t === tab);
+      });
+      if (tab === 'grade') loadTeacherHomeworks();
+      if (tab === 'groups') loadTeacherChat();
+    }
+
+    async function loadTeacherHomeworks() {
+      const box = document.getElementById('teacher-grade-list');
+      const res = await KtnWebApp.apiRequest('/api/ktn/homeworks');
+      const list = (res.ok && Array.isArray(res.data?.homeworks)) ? res.data.homeworks : [];
+      if (!list.length) {
+        box.innerHTML = '<div style="padding:16px;color:#64748B;">Hiện chưa có bài nộp mới nào cần chấm.</div>';
+        return;
+      }
+      box.innerHTML = list.map(hw => `
+        <div class="hw-item">
+          <div>
+            <div style="font-weight:800;font-size:15px;">${hw.student_name} (${hw.student_email})</div>
+            <div style="font-size:13px;color:#475569;margin:4px 0 8px;">${hw.lesson_title || ('Bài ' + hw.lesson_num)} · Trạng thái: <strong>${hw.status === 'graded' ? 'Đã chấm' : 'Chờ chấm'}</strong></div>
+            <a href="${hw.file_url}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;">🔗 Mở xem File Video/Ảnh bài làm trên kho izTeach S3 →</a>
+          </div>
+          <form onsubmit="submitGradeInPlace(event, '${hw.id}')" style="display:flex;flex-direction:column;gap:8px;">
+            <input type="number" step="0.5" min="0" max="10" id="score-${hw.id}" value="${hw.score ?? 9.5}" placeholder="Điểm số (0 - 10)" style="padding:8px;border:1px solid #CBD5E1;border-radius:8px;" required>
+            <textarea id="fb-${hw.id}" rows="2" placeholder="Nhập lời phê của cô giáo..." style="padding:8px;border:1px solid #CBD5E1;border-radius:8px;" required>${hw.teacher_feedback || ''}</textarea>
+            <button type="submit" class="btn-red">💾 Lưu Điểm &amp; Nhận Xét (Cập nhật Supabase)</button>
+          </form>
+        </div>
+      `).join('');
+    }
+
+    async function submitGradeInPlace(e, hwId) {
+      e.preventDefault();
+      const score = document.getElementById('score-' + hwId).value;
+      const teacherFeedback = document.getElementById('fb-' + hwId).value;
+      const res = await KtnWebApp.apiRequest('/api/ktn/homeworks/grade', {
+        method: 'PATCH',
+        body: { id: hwId, score: Number(score), teacherFeedback }
+      });
+      if (res.ok) {
+        alert('✅ Đã lưu điểm và lời phê lên Supabase (cập nhật đúng 1 bản ghi, không sinh trùng lặp)!');
+        loadTeacherHomeworks();
+      } else {
+        alert(res.data?.message || 'Lỗi khi lưu điểm.');
+      }
+    }
+
+    async function loadTeacherChat() {
+      const roomId = document.getElementById('teacher-room-select').value;
+      const res = await KtnWebApp.apiRequest('/api/ktn/messages?roomId=' + encodeURIComponent(roomId));
+      const msgs = (res.ok && Array.isArray(res.data?.messages)) ? res.data.messages : [];
+      const box = document.getElementById('teacher-chat-box');
+      box.innerHTML = msgs.map(m => `
+        <div style="margin-bottom:8px;padding:8px 12px;border-radius:10px;background:${m.sender_role === 'teacher' ? '#FEF2F2' : '#FFFFFF'};border:1px solid #E2E8F0;">
+          <strong style="font-size:12px;color:#B91C1C;">${m.sender_name}:</strong>
+          <div style="font-size:13.5px;margin-top:2px;">${m.content}</div>
+        </div>
+      `).join('') || '<div style="color:#94A3B8;font-size:13px;">Chưa có tin nhắn trong lớp này.</div>';
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function sendTeacherChat(e) {
+      e.preventDefault();
+      const roomId = document.getElementById('teacher-room-select').value;
+      const input = document.getElementById('teacher-chat-input');
+      const res = await KtnWebApp.apiRequest('/api/ktn/messages', {
+        method: 'POST',
+        body: { roomId, classCode: roomId.replace('class:', ''), content: input.value.trim() }
+      });
+      if (!res.ok) {
+        alert(res.data?.message || 'Không gửi được tin nhắn.');
+        return;
+      }
+      input.value = '';
+      loadTeacherChat();
+    }
+
+    async function enableTeacherPwa() {
+      const res = await KtnWebApp.registerPwaNotifications({ onSubmitted: true, onAssignedOrChat: true });
+      alert(res.ok ? '🔔 Đã bật chuông thông báo nộp bài & tin nhắn mới cho Giáo viên!' : (res.reason || 'Chưa bật được thông báo.'));
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      currentTeacherSession = await KtnWebApp.enforceRolePage('teacher');
+      if (!currentTeacherSession) return;
+      document.getElementById('teacher-welcome-label').textContent =
+        `Giáo viên: ${currentTeacherSession.name || currentTeacherSession.email} (${currentTeacherSession.email})`;
+      loadTeacherHomeworks();
+    });
+  </script>
+</body>
+</html>

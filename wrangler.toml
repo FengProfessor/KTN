@@ -1,0 +1,12 @@
+name = "ktn-sw-proxy"
+main = "cloudflare-worker-sw-proxy.js"
+compatibility_date = "2024-11-01"
+
+# Hẹn giờ tự động mỗi ngày 1 lần (10:00 sáng giờ VN / 03:00 UTC)
+# Gõ cửa Supabase để gói Free không bao giờ bị ngủ đông sau 7 ngày!
+[triggers]
+crons = ["0 3 * * *"]
+
+[vars]
+IZTEACH_VENDOR_ID = "3529cd2b-7af6-4fda-887c-392a79393d6a"
+DEFAULT_COURSE_ID = "6adadba969897b0002482ca5"

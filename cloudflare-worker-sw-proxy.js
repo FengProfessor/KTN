@@ -643,7 +643,7 @@ async function provisionStudentOnIzTeach(env, order) {
   const email = normalizeEmail(order.student_email || order.studentEmail || order.email);
   const name = String(order.student_name || order.studentName || order.name || email.split('@')[0]).trim();
   const phone = String(order.phone || '').replace(/\D/g, '') || ('09' + Math.floor(10000000 + Math.random() * 90000000));
-  const targetCourseIds = resolveOrderCourseIds(order);
+  const targetCourseIds = order.skipCourses ? [] : resolveOrderCourseIds(order);
   const defaultPassB64 = btoa('123456');
 
   let cognitoUserId = order.cognito_user_id || order.cognitoUserId || null;
@@ -1295,13 +1295,14 @@ export default {
       let cognitoUserId = body.cognitoUserId || null;
       let izteachStudentId = body.izteachStudentId || null;
 
-      // Nếu cấp thêm khóa học (grant hoặc set có khóa học), tự động kích hoạt trên izTeach!
-      if ((action === 'grant' || action === 'set') && resolvedIds.length > 0) {
+      // Nếu cấp thêm khóa học hoặc xếp vào lớp trực tiếp, tự động tạo/kích hoạt tài khoản trên izTeach!
+      if ((action === 'grant' || action === 'set') && (resolvedIds.length > 0 || body.classCode)) {
         const prov = await provisionStudentOnIzTeach(env, {
           student_email: email,
           student_name: body.name || email.split('@')[0],
           phone: body.phone || '',
           courseIds: resolvedIds,
+          skipCourses: resolvedIds.length === 0,
           cognito_user_id: cognitoUserId
         });
         if (prov.ok) {

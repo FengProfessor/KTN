@@ -209,6 +209,12 @@ CREATE TABLE IF NOT EXISTS public.ktn_homeworks (
 CREATE INDEX IF NOT EXISTS idx_ktn_homeworks_student ON public.ktn_homeworks (student_email, course_id, lesson_num);
 CREATE INDEX IF NOT EXISTS idx_ktn_homeworks_class_status ON public.ktn_homeworks (class_code, status, submitted_at DESC);
 
+-- Migration an toàn cho database cũ đã tồn tại bảng ktn_homeworks từ phiên bản trước
+ALTER TABLE public.ktn_homeworks ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
+UPDATE public.ktn_homeworks SET status = 'revision_requested' WHERE status = 'needs_revision';
+ALTER TABLE public.ktn_homeworks DROP CONSTRAINT IF EXISTS ktn_homeworks_status_check;
+ALTER TABLE public.ktn_homeworks ADD CONSTRAINT ktn_homeworks_status_check CHECK (status IN ('pending', 'graded', 'revision_requested'));
+
 -- 7B. BẢNG BUỔI HỌC & BÀI TẬP THEO LỚP CÔ GIÁO (BUỔI 1, BUỔI 2...)
 CREATE TABLE IF NOT EXISTS public.ktn_class_sessions (
   id TEXT PRIMARY KEY,

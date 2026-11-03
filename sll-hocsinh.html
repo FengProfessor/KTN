@@ -2291,7 +2291,7 @@
       try {
         const apiBase = (window.KtnWebApp && typeof window.KtnWebApp.getApiBase === 'function')
           ? window.KtnWebApp.getApiBase()
-          : 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+          : (window.KTN_WORKER_API_BASE || '');
         const res = await fetch(apiBase + '/api/ktn/courses');
         if (res.ok) {
           const data = await res.json();

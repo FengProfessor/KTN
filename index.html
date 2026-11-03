@@ -2722,7 +2722,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
     try {
       // [SEC-01 & DATA-01 FIXED] Gửi đơn hàng qua Trạm gác cổng Cloudflare Worker vào bảng ktn_orders của Supabase
       // Tuyệt đối không nhúng mật khẩu Admin izTeach trên trình duyệt và không ghi vào ô SEO Description!
-      var workerBase = window.KTN_WORKER_API_BASE || 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+      var workerBase = window.KTN_WORKER_API_BASE || '';
       var res = await fetch(workerBase + '/api/ktn/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

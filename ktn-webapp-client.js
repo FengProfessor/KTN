@@ -101,9 +101,11 @@
     return 'student';
   }
 
+  const DEFAULT_WORKER_API_BASE = 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+
   const KtnWebApp = {
     getApiBase() {
-      return window.KTN_WORKER_API_BASE || '';
+      return window.KTN_WORKER_API_BASE || DEFAULT_WORKER_API_BASE;
     },
 
     getRolePageUrl,
@@ -228,8 +230,11 @@
         'Content-Type': 'application/json',
         ...(options.headers || {})
       };
-      if (session?.token) {
-        headers['Authorization'] = `Bearer ${session.token}`;
+      if (session?.token || session?.accessToken) {
+        headers['Authorization'] = `Bearer ${session.token || session.accessToken}`;
+      }
+      if (session?.email) {
+        headers['X-KTN-User-Email'] = session.email;
       }
       const res = await fetch(this.getApiBase() + path, {
         ...options,

@@ -2289,7 +2289,10 @@
     // Tự động đồng bộ danh mục khóa học mới (khóa thứ 10, 11...) từ Cloudflare Worker / Supabase
     (async function syncDynamicCatalogFromWorker() {
       try {
-        const res = await fetch('/api/ktn/courses');
+        const apiBase = (window.KtnWebApp && typeof window.KtnWebApp.getApiBase === 'function')
+          ? window.KtnWebApp.getApiBase()
+          : 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+        const res = await fetch(apiBase + '/api/ktn/courses');
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data?.courses)) {
@@ -2448,7 +2451,10 @@
         const cid = targetCourseId || activeCourseId || IzTeachConfig.courseId;
         // Ưu tiên gọi qua cổng Cloudflare Worker (/api/ktn/courses/units) để hỗ trợ mọi khóa học mới thứ 10, 11...
         try {
-          const wRes = await fetch(`/api/ktn/courses/units?courseId=${encodeURIComponent(cid)}`);
+          const apiBase = (window.KtnWebApp && typeof window.KtnWebApp.getApiBase === 'function')
+            ? window.KtnWebApp.getApiBase()
+            : 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+          const wRes = await fetch(`${apiBase}/api/ktn/courses/units?courseId=${encodeURIComponent(cid)}`);
           if (wRes.ok) {
             const wData = await wRes.json();
             if (Array.isArray(wData?.units) && wData.units.length > 0) {

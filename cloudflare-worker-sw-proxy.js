@@ -1380,18 +1380,34 @@ export default {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để tải bài tập lên.' }, 401);
       const body = await request.json().catch(() => ({}));
-      const fileName = String(body.fileName || `btvn_${Date.now()}.mp4`);
-      const fileType = String(body.fileType || 'video/mp4');
+      const rawName = String(body.fileName || `btvn_${Date.now()}.wav`);
+      const cleanName = rawName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[đĐ]/g, 'd')
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileType = String(body.fileType || 'audio/wav');
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+      const s3Key = `resource/homeworks/${vendorId}/${Date.now()}-${cleanName}`;
       const adminToken = await getIzTeachAdminToken(env);
-      if (!adminToken) return jsonResponse({ ok: false, message: 'Chưa cấu hình token kho lưu trữ.' }, 503);
+      if (!adminToken) return jsonResponse({ ok: false, message: 'Chưa cấu hình token kho lưu trữ S3.' }, 503);
 
       const s3Res = await fetch(
-        `${IZTEACH_ENDPOINTS.s3SignedUrl}?vendorId=${encodeURIComponent(vendorId)}&fileName=${encodeURIComponent(fileName)}&fileType=${encodeURIComponent(fileType)}&folder=homeworks`,
+        `${IZTEACH_ENDPOINTS.s3SignedUrl}?key=${encodeURIComponent(s3Key)}&contentType=${encodeURIComponent(fileType)}`,
         { headers: { Authorization: adminToken } }
       );
       const s3Data = await s3Res.json().catch(() => null);
-      return jsonResponse({ ok: s3Res.ok, data: s3Data }, s3Res.status);
+      const signedUrl = typeof s3Data === 'string' ? s3Data : (s3Data?.url || s3Data?.signedUrl || s3Data?.data || null);
+      if (!s3Res.ok || !signedUrl) {
+        return jsonResponse({ ok: false, message: 'Không thể khởi tạo đường dẫn tải tệp lên S3.' }, s3Res.status || 502);
+      }
+      return jsonResponse({
+        ok: true,
+        signedUrl,
+        s3Key,
+        fileUrl: `https://d21acfi38wn3iy.cloudfront.net/${s3Key}`,
+        data: s3Data
+      });
     }
 
     if (path === '/api/ktn/homeworks' && request.method === 'GET') {
@@ -1406,6 +1422,9 @@ export default {
         query = `ktn_homeworks?class_code=eq.${encodeURIComponent(url.searchParams.get('classCode'))}&order=submitted_at.desc`;
       }
       const sbRes = await supabaseRequest(env, query);
+      if (!sbRes.ok) {
+        return jsonResponse({ ok: false, message: 'Chưa tải được danh sách bài tập từ cơ sở dữ liệu.' }, sbRes.status || 503);
+      }
       return jsonResponse({ ok: true, homeworks: sbRes.data || [] });
     }
 
@@ -1413,15 +1432,28 @@ export default {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để nộp bài.' }, 401);
       const body = await request.json().catch(() => ({}));
-      const fileUrl = String(body.fileUrl || '').trim();
-      // Chặn triệt để lỗi nộp bài rỗng hoặc tự nhét video mẫu!
-      if (!fileUrl || /hw_btvn_bai_1\.mp4|BTVN BAI 1\.mp4/i.test(fileUrl)) {
-        return jsonResponse({ ok: false, message: 'Vui lòng chọn file Video hoặc Ảnh bài làm thật trước khi bấm Nộp bài!' }, 400);
+      const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+      const firstAtt = rawAttachments.find(a => a && (a.fileUrl || a.cdnUrl || a.playUrl)) || null;
+      const fileUrl = String(body.fileUrl || firstAtt?.fileUrl || firstAtt?.cdnUrl || firstAtt?.playUrl || '').trim();
+      const fileType = String(body.fileType || firstAtt?.fileType || firstAtt?.mediaType || 'audio').trim();
+
+      // Chặn triệt để lỗi nộp bài thiếu fileUrl thật hoặc tự nhét video mẫu!
+      if (!fileUrl || !/^https?:\/\//i.test(fileUrl) || /hw_btvn_bai_1\.mp4|BTVN BAI 1\.mp4/i.test(fileUrl)) {
+        return jsonResponse({ ok: false, message: 'Vui lòng thu âm hoặc chọn tệp bài làm thật (đã tải lên máy chủ) trước khi nộp bài!' }, 400);
       }
 
       const lessonNum = Number(body.lessonNum) || 1;
       const courseId = String(body.courseId || DEFAULT_COURSE_ID);
       const hwId = body.id || `HW-${session.email}-${courseId}-L${lessonNum}`;
+      const normalizedAttachments = rawAttachments.length > 0
+        ? rawAttachments.map(a => ({
+            title: a.title || a.fileName || 'Bài nộp',
+            fileUrl: a.fileUrl || a.cdnUrl || a.playUrl || fileUrl,
+            cdnUrl: a.cdnUrl || a.fileUrl || a.playUrl || fileUrl,
+            mediaType: a.mediaType || a.fileType || fileType,
+            size: Number(a.size || a.fileSize || 0)
+          }))
+        : [{ title: 'Bài nộp của học sinh', fileUrl, cdnUrl: fileUrl, mediaType: fileType, size: 0 }];
 
       const hwRecord = {
         id: hwId,
@@ -1433,10 +1465,11 @@ export default {
         lesson_num: lessonNum,
         lesson_title: String(body.lessonTitle || `Bài ${lessonNum}`),
         file_url: fileUrl,
-        file_type: String(body.fileType || 'video'),
+        file_type: fileType,
+        attachments: normalizedAttachments,
         workbook_answers: body.workbookAnswers || {},
         student_note: String(body.studentNote || ''),
-        status: 'pending', // Mới nộp là pending (Chờ cô chấm), chưa tính là hoàn thành bài học
+        status: 'pending', // Mới nộp là pending (Chờ cô chấm)
         submitted_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -1447,9 +1480,16 @@ export default {
         body: hwRecord
       });
 
+      if (!sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+        return jsonResponse({
+          ok: false,
+          message: 'Máy chủ chưa lưu được bản ghi bài nộp vào cơ sở dữ liệu. Em hãy bấm Gửi lại nhé.'
+        }, sbRes.status || 500);
+      }
+
       return jsonResponse({
         ok: true,
-        homework: (Array.isArray(sbRes.data) && sbRes.data[0]) || hwRecord
+        homework: sbRes.data[0]
       });
     }
 
@@ -1462,7 +1502,10 @@ export default {
       const hwId = String(body.id || '').trim();
       if (!hwId) return jsonResponse({ ok: false, message: 'Thiếu mã bài tập id.' }, 400);
 
-      const nextStatus = body.status === 'needs_revision' ? 'needs_revision' : 'graded';
+      // Thống nhất trạng thái với supabase_schema.sql: CHECK (status IN ('pending', 'graded', 'revision_requested'))
+      const nextStatus = (body.status === 'revision_requested' || body.status === 'needs_revision')
+        ? 'revision_requested'
+        : 'graded';
       const patchPayload = {
         status: nextStatus,
         score: body.score !== undefined && body.score !== null && body.score !== '' ? Number(body.score) : null,
@@ -1473,15 +1516,30 @@ export default {
         updated_at: new Date().toISOString()
       };
 
-      // Cập nhật điểm & lời phê trực tiếp trên 1 bản ghi duy nhất (Không bao giờ nhân bản trùng lặp!)
+      // Cập nhật trực tiếp trên bản ghi trong Supabase và bắt buộc xác nhận có bản ghi được cập nhật!
       const sbRes = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}`, {
         method: 'PATCH',
+        prefer: 'return=representation',
         body: patchPayload
       });
 
+      if (!sbRes.ok) {
+        return jsonResponse({
+          ok: false,
+          message: 'Không thể cập nhật trạng thái chấm bài trong cơ sở dữ liệu.'
+        }, sbRes.status || 500);
+      }
+
+      if (!Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+        return jsonResponse({
+          ok: false,
+          message: 'Không tìm thấy bài nộp tương ứng trong cơ sở dữ liệu để cập nhật.'
+        }, 404);
+      }
+
       return jsonResponse({
         ok: true,
-        homework: (Array.isArray(sbRes.data) && sbRes.data[0]) || { id: hwId, ...patchPayload }
+        homework: sbRes.data[0]
       });
     }
 
@@ -1493,55 +1551,100 @@ export default {
         'YCT2-04': [
           {
             classCode: 'YCT2-04',
+            session_num: 1,
             sessionNum: 1,
-            title: 'Buổi 1: Chào hỏi & Tự giới thiệu bản thân (你好，我叫…)',
+            session_title: 'Buổi 1: Hỏi thăm sức khỏe & Số đếm 1–20',
+            title: 'Buổi 1: Hỏi thăm sức khỏe & Số đếm 1–20',
             exercises: [
-              { id: 'YCT2-04-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc to 5 mẫu câu tự giới thiệu tên và tuổi', type: 'audio' },
-              { id: 'YCT2-04-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở viết chữ Hán bài 1 (你, 好, 我, 叫)', type: 'photo' }
+              { id: 'YCT2-04-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 5 câu hội thoại hỏi thăm sức khỏe (Trang 12)', prompt: 'Con bấm Thu âm đọc rõ từng câu hội thoại trong sách giáo khoa trang 12 rồi bấm Nộp bài cho cô nhé.', type: 'audio' },
+              { id: 'YCT2-04-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở viết chữ Hán bài 1 (你, 好, 我, 叫)', prompt: 'Con viết mỗi chữ 1 dòng vào vở ô mễ, sau đó chụp ảnh đính kèm gửi cô chấm nét chữ nhé.', type: 'photo' }
             ]
           },
           {
             classCode: 'YCT2-04',
+            session_num: 2,
             sessionNum: 2,
+            session_title: 'Buổi 2: Gia đình của em & Các thành viên (我的家人)',
             title: 'Buổi 2: Gia đình của em & Các thành viên (我的家人)',
             exercises: [
-              { id: 'YCT2-04-B2-E1', num: 1, title: 'Bài 1: Thu âm giới thiệu các thành viên trong gia đình bằng tiếng Trung', type: 'audio' },
-              { id: 'YCT2-04-B2-E2', num: 2, title: 'Bài 2: Chụp ảnh bài tập nối từ và viết chữ Hán trang 15', type: 'photo' }
+              { id: 'YCT2-04-B2-E1', num: 1, title: 'Bài 1: Thu âm giới thiệu các thành viên trong gia đình bằng tiếng Trung', prompt: 'Con dùng mẫu câu "这是我的..." để giới thiệu bố, mẹ và anh/chị/em trong nhà.', type: 'audio' },
+              { id: 'YCT2-04-B2-E2', num: 2, title: 'Bài 2: Chụp ảnh bài tập nối từ trang 15', prompt: 'Con làm bài tập trang 15 và đính kèm ảnh chụp trang bài làm.', type: 'photo' }
             ]
           },
           {
             classCode: 'YCT2-04',
+            session_num: 3,
             sessionNum: 3,
+            session_title: 'Buổi 3: Thời gian & Lịch sinh hoạt hàng ngày (现在几点？)',
             title: 'Buổi 3: Thời gian & Lịch sinh hoạt hàng ngày (现在几点？)',
             exercises: [
-              { id: 'YCT2-04-B3-E1', num: 1, title: 'Bài 1: Thu âm hỏi đáp giờ giấc và lịch đi học của em', type: 'audio' }
+              { id: 'YCT2-04-B3-E1', num: 1, title: 'Bài 1: Thu âm hỏi đáp giờ giấc và lịch đi học của em', prompt: 'Chú ý phát âm chuẩn thanh 3 và thanh 4 khi đọc bài khóa.', type: 'audio' }
             ]
           }
         ],
         'YCT1-01': [
           {
             classCode: 'YCT1-01',
+            session_num: 1,
             sessionNum: 1,
+            session_title: 'Buổi 1: Làm quen thanh điệu Pinyin & Lời chào đầu tiên',
             title: 'Buổi 1: Làm quen thanh điệu Pinyin & Lời chào đầu tiên',
             exercises: [
-              { id: 'YCT1-01-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 4 thanh điệu và lời chào Nǐ hǎo, Lǎoshī hǎo', type: 'audio' },
-              { id: 'YCT1-01-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở tô nét cơ bản chữ Nhất (一), Nhị (二), Tam (三)', type: 'photo' }
+              { id: 'YCT1-01-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 4 thanh điệu và lời chào Nǐ hǎo, Lǎoshī hǎo', prompt: 'Con bấm Thu âm đọc to: "老师好！我叫..." rồi bấm Nộp bài cho cô nhé.', type: 'audio' },
+              { id: 'YCT1-01-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở tô nét cơ bản chữ Nhất (一), Nhị (二), Tam (三)', prompt: 'Con viết đúng thứ tự nét từ trái sang phải, từ trên xuống dưới và chụp ảnh nộp cho cô.', type: 'photo' }
             ]
           },
           {
             classCode: 'YCT1-01',
+            session_num: 2,
             sessionNum: 2,
+            session_title: 'Buổi 2: Đếm số từ 1 đến 10 & Hỏi tuổi (你几岁？)',
             title: 'Buổi 2: Đếm số từ 1 đến 10 & Hỏi tuổi (你几岁？)',
             exercises: [
-              { id: 'YCT1-01-B2-E1', num: 1, title: 'Bài 1: Thu âm đếm số 1-10 và nói tuổi của em', type: 'audio' }
+              { id: 'YCT1-01-B2-E1', num: 1, title: 'Bài 1: Thu âm đếm số 1-10 và nói tuổi của em', prompt: 'Con đọc to rõ ràng từ 一 đến 十 và câu "我...岁".', type: 'audio' }
             ]
           }
         ]
       };
 
       if (request.method === 'GET') {
-        const classCode = String(url.searchParams.get('classCode') || 'YCT2-04').trim().toUpperCase();
-        const sessions = defaultSessionsByClass[classCode] || defaultSessionsByClass['YCT2-04'];
+        const classCode = String(url.searchParams.get('classCode') || '').trim().toUpperCase();
+        if (!classCode) {
+          return jsonResponse({ ok: false, message: 'Thiếu mã lớp classCode.' }, 400);
+        }
+
+        const sbRes = await supabaseRequest(
+          env,
+          `ktn_class_sessions?class_code=eq.${encodeURIComponent(classCode)}&order=session_num.asc`
+        );
+
+        const dbRows = (sbRes.ok && Array.isArray(sbRes.data)) ? sbRes.data : [];
+        const baseDefaults = Object.prototype.hasOwnProperty.call(defaultSessionsByClass, classCode)
+          ? defaultSessionsByClass[classCode]
+          : [];
+
+        const mergedByNum = new Map();
+        baseDefaults.forEach(item => {
+          mergedByNum.set(Number(item.session_num || item.sessionNum), item);
+        });
+        dbRows.forEach(row => {
+          const sNum = Number(row.session_num) || 1;
+          mergedByNum.set(sNum, {
+            id: row.id,
+            classCode: row.class_code,
+            session_num: sNum,
+            sessionNum: sNum,
+            session_title: row.session_title,
+            title: row.session_title,
+            exercises: Array.isArray(row.exercises) ? row.exercises : [],
+            updatedBy: row.updated_by || null,
+            updatedAt: row.updated_at || null
+          });
+        });
+
+        const sessions = Array.from(mergedByNum.values()).sort(
+          (a, b) => Number(a.session_num || a.sessionNum) - Number(b.session_num || b.sessionNum)
+        );
         return jsonResponse({ ok: true, classCode, sessions });
       }
 
@@ -1551,13 +1654,51 @@ export default {
           return jsonResponse({ ok: false, message: 'Chỉ Giáo viên hoặc Quản lý mới được cập nhật buổi học.' }, 403);
         }
         const body = await request.json().catch(() => ({}));
-        const classCode = String(body.classCode || 'YCT2-04').trim().toUpperCase();
-        const sessionNum = Math.max(1, Number(body.sessionNum) || 1);
-        const title = String(body.title || `Buổi ${sessionNum}`).trim();
+        const classCode = String(body.classCode || '').trim().toUpperCase();
+        if (!classCode) {
+          return jsonResponse({ ok: false, message: 'Vui lòng chọn mã lớp học.' }, 400);
+        }
+        const sessionNum = Math.max(1, Number(body.sessionNum || body.session_num) || 1);
+        const title = String(body.title || body.session_title || `Buổi ${sessionNum}`).trim();
         const exercises = Array.isArray(body.exercises) ? body.exercises : [];
+
+        const rowToSave = {
+          id: `${classCode}-B${sessionNum}`,
+          class_code: classCode,
+          session_num: sessionNum,
+          session_title: title,
+          exercises,
+          updated_by: session.email,
+          updated_at: new Date().toISOString()
+        };
+
+        const sbRes = await supabaseRequest(env, 'ktn_class_sessions?on_conflict=class_code,session_num', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=representation',
+          body: rowToSave
+        });
+
+        if (!sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+          return jsonResponse({
+            ok: false,
+            message: 'Chưa lưu được buổi học vào cơ sở dữ liệu máy chủ.'
+          }, sbRes.status || 500);
+        }
+
+        const saved = sbRes.data[0];
         return jsonResponse({
           ok: true,
-          sessionItem: { classCode, sessionNum, title, exercises, updatedBy: session.email, updatedAt: new Date().toISOString() }
+          sessionItem: {
+            id: saved.id,
+            classCode: saved.class_code,
+            session_num: saved.session_num,
+            sessionNum: saved.session_num,
+            session_title: saved.session_title,
+            title: saved.session_title,
+            exercises: saved.exercises || [],
+            updatedBy: saved.updated_by,
+            updatedAt: saved.updated_at
+          }
         });
       }
     }

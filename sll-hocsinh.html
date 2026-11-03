@@ -2519,27 +2519,49 @@
 
       async uploadSingleFileToIzTeachS3(file) {
         const timestamp = Date.now() + Math.floor(Math.random() * 1000);
-        const rawName = file.name || 'homework_attachment.png';
+        const rawName = file.name || 'homework_attachment.webm';
         const cleanName = rawName
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
           .replace(/[đĐ]/g, 'd')
           .replace(/[^a-zA-Z0-9._-]/g, '_');
-        const s3Key = `resource/homeworks/${IzTeachConfig.vendorId}/${timestamp}-${cleanName}`;
+        let s3Key = `resource/homeworks/${IzTeachConfig.vendorId}/${timestamp}-${cleanName}`;
         const ext = (cleanName.split('.').pop() || '').toLowerCase();
         const mimeType = file.type || (
           /^(png|jpg|jpeg|webp|gif)$/.test(ext) ? (`image/${ext === 'jpg' ? 'jpeg' : ext}`) :
           (/^(mp3|m4a|wav|webm|ogg)$/.test(ext) ? (`audio/${ext === 'm4a' ? 'mp4' : ext}`) : 'application/octet-stream')
         );
 
-        // 1. Xin S3 Presigned URL bằng Service Token (luôn vượt qua Custom Authorizer HTTP 200)
-        const signedUrlEndpoint = `${IzTeachConfig.endpoints.signedUrl}?key=${encodeURIComponent(s3Key)}&contentType=${encodeURIComponent(mimeType)}`;
-        const signedRes = await this.fetchWithServiceToken(signedUrlEndpoint, { method: 'GET' });
-        if (!signedRes.ok) {
-          throw new Error('Không thể tạo S3 Presigned URL (HTTP ' + signedRes.status + ')');
+        let signedUrl = null;
+        let resolvedFileUrl = `${IzTeachConfig.cdn.docs}/${s3Key}`;
+
+        // 1a. Xin S3 Presigned URL qua Worker /api/ktn/homeworks/upload-url (hỗ trợ cả học sinh lớp trực tiếp lẫn khóa video)
+        if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+          try {
+            const workerSignRes = await window.KtnWebApp.apiRequest('/api/ktn/homeworks/upload-url', {
+              method: 'POST',
+              body: { fileName: rawName, fileType: mimeType }
+            });
+            if (workerSignRes.ok && workerSignRes.data?.signedUrl) {
+              signedUrl = workerSignRes.data.signedUrl;
+              if (workerSignRes.data.s3Key) s3Key = workerSignRes.data.s3Key;
+              if (workerSignRes.data.fileUrl) resolvedFileUrl = workerSignRes.data.fileUrl;
+            }
+          } catch (e) {}
         }
-        const signedData = await signedRes.json();
-        const signedUrl = typeof signedData === 'string' ? signedData : (signedData.url || signedData.signedUrl || signedData.data);
+
+        // 1b. Dự phòng bằng Service Token trực tiếp nếu chưa lấy được qua Worker
+        if (!signedUrl) {
+          const signedUrlEndpoint = `${IzTeachConfig.endpoints.signedUrl}?key=${encodeURIComponent(s3Key)}&contentType=${encodeURIComponent(mimeType)}`;
+          const signedRes = await this.fetchWithServiceToken(signedUrlEndpoint, { method: 'GET' });
+          if (!signedRes.ok) {
+            throw new Error('Không thể tạo S3 Presigned URL (HTTP ' + signedRes.status + ')');
+          }
+          const signedData = await signedRes.json();
+          signedUrl = typeof signedData === 'string' ? signedData : (signedData.url || signedData.signedUrl || signedData.data);
+          resolvedFileUrl = `${IzTeachConfig.cdn.docs}/${s3Key}`;
+        }
+
         if (!signedUrl) {
           throw new Error('Máy chủ không trả về S3 Presigned URL hợp lệ');
         }
@@ -2573,16 +2595,31 @@
           }
         };
 
-        const regRes = await this.fetchWithServiceToken(IzTeachConfig.endpoints.resource, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(resourcePayload)
-        });
-        if (!regRes.ok) {
-          throw new Error('Đăng ký tài nguyên tệp thất bại (HTTP ' + regRes.status + ')');
-        }
-        const regData = await regRes.json();
-        return regData;
+        try {
+          const regRes = await this.fetchWithServiceToken(IzTeachConfig.endpoints.resource, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(resourcePayload)
+          });
+          if (regRes.ok) {
+            const regData = await regRes.json();
+            return {
+              ...regData,
+              link: regData.link || s3Key,
+              fileUrl: resolvedFileUrl,
+              cdnUrl: resolvedFileUrl,
+              mimeType
+            };
+          }
+        } catch (e) {}
+
+        return {
+          _id: 'S3-' + timestamp,
+          ...resourcePayload,
+          fileUrl: resolvedFileUrl,
+          cdnUrl: resolvedFileUrl,
+          mimeType
+        };
       },
 
       async submitLessonHomework(unitId, lessonTitle, notes, fileOrFiles, token, extraMeta = {}) {
@@ -3004,6 +3041,23 @@
             IzTeachStore.lastHwFetchedAt = Date.now();
           }
         }
+        if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+          try {
+            const ktnHwRes = await window.KtnWebApp.apiRequest('/api/ktn/homeworks');
+            if (ktnHwRes.ok && Array.isArray(ktnHwRes.data?.homeworks)) {
+              const serverList = ktnHwRes.data.homeworks;
+              const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+              const map = new Map();
+              (Array.isArray(localArr) ? localArr : []).forEach(h => {
+                if (h && h.id) map.set(h.id, h);
+              });
+              serverList.forEach(sHw => {
+                if (sHw && sHw.id) map.set(sHw.id, sHw);
+              });
+              localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(Array.from(map.values())));
+            }
+          } catch (e) {}
+        }
         IzTeachStore.lastSyncedAt = Date.now();
       } catch (err) {
         console.error('[syncPortalState] Lỗi đồng bộ backend:', err);
@@ -3160,6 +3214,7 @@
             mediaType,
             mimeType: mime || (mediaType === 'image' ? 'image/png' : (mediaType === 'audio' ? 'audio/wav' : 'video/mp4')),
             s3Key,
+            fileUrl: cdnUrl,
             cdnUrl,
             playUrl: cdnUrl
           });
@@ -3169,9 +3224,10 @@
       if (Array.isArray(sllAttachments)) {
         sllAttachments.forEach(a => {
           if (!a) return;
-          const key = String(a.s3Key || a.cdnUrl || a.id || '').replace(/^https?:\/\/[^/]+\//i, '');
+          const key = String(a.s3Key || a.fileUrl || a.cdnUrl || a.id || '').replace(/^https?:\/\/[^/]+\//i, '');
           if (key && seenKeys.has(key)) return;
           if (key) seenKeys.add(key);
+          const resolvedUrl = a.fileUrl || a.cdnUrl || a.playUrl || (key ? cdnBase + key : '');
           list.push({
             id: a.id || a.resourceId || ('ATT-' + Date.now()),
             resourceId: a.resourceId || a.id || '',
@@ -3180,8 +3236,9 @@
             mediaType: a.mediaType || 'image',
             mimeType: a.mimeType || 'image/png',
             s3Key: a.s3Key || key,
-            cdnUrl: a.cdnUrl || a.playUrl || (key ? cdnBase + key : ''),
-            playUrl: a.playUrl || a.cdnUrl || (key ? cdnBase + key : '')
+            fileUrl: resolvedUrl,
+            cdnUrl: resolvedUrl,
+            playUrl: resolvedUrl
           });
         });
       }
@@ -3246,9 +3303,10 @@
           ''
         );
         const isNeedsRevision =
+          rawStatus === 'revision_requested' ||
           rawStatus === 'needs_revision' ||
           rawFeedback.includes('[CẦN SỬA]') ||
-          Boolean(sllHw && sllHw.status === 'NEEDS_REVISION');
+          Boolean(sllHw && (sllHw.status === 'REVISION_REQUESTED' || sllHw.status === 'NEEDS_REVISION'));
 
         const isBackendGraded = Boolean(hwRecord && (hwRecord.state === 'approved' || (hwRecord.mark !== undefined && hwRecord.mark !== null)));
         const isSllGraded = Boolean(sllHw && (sllHw.status === 'GRADED' || (sllHw.score !== undefined && sllHw.score !== null)));
@@ -3272,15 +3330,26 @@
         studentNote = studentNote.replace(/^\[Học viên:[^\]]+\]\s*/i, '').trim();
 
         const teacherComment = (localHw && localHw.teacher_feedback)
-          || (sllHw && (sllHw.status === 'GRADED' || sllHw.status === 'NEEDS_REVISION') && sllHw.teacherFeedback)
+          || (sllHw && (sllHw.status === 'GRADED' || sllHw.status === 'REVISION_REQUESTED' || sllHw.status === 'NEEDS_REVISION') && sllHw.teacherFeedback)
           || (hwRecord && (hwRecord.teacherFeedback || hwRecord.comment))
           || extractedTeacherFeedback
           || (isGraded ? 'Con hoàn thành bài tập rất tốt, phát âm chuẩn và viết chữ Hán đều nét!' : null);
 
-        const attachments = normalizeHomeworkAttachments(hwRecord?.resources, sllHw?.attachments || localHw?.attachments);
+        let fallbackAttachments = sllHw?.attachments || localHw?.attachments || [];
+        if ((!Array.isArray(fallbackAttachments) || !fallbackAttachments.length) && localHw?.file_url) {
+          fallbackAttachments = [{
+            id: localHw.id || ('ATT-' + Date.now()),
+            title: 'Bài đã nộp',
+            fileUrl: localHw.file_url,
+            cdnUrl: localHw.file_url,
+            mediaType: String(localHw.file_type || '').startsWith('image') ? 'image' : 'audio',
+            mimeType: localHw.file_type || 'audio/webm'
+          }];
+        }
+        const attachments = normalizeHomeworkAttachments(hwRecord?.resources, fallbackAttachments);
 
         let resolvedStatus = 'pending';
-        if (isNeedsRevision) resolvedStatus = 'needs_revision';
+        if (isNeedsRevision) resolvedStatus = 'revision_requested';
         else if (isGraded) resolvedStatus = 'graded';
 
         return {
@@ -3346,7 +3415,7 @@
       const lessons = (courseId === HSK1_COURSE_ID) ? HSK1_LESSONS : (courseLessonsCache[courseId] || []);
       for (let i = 0; i < lessons.length; i++) {
         const hw = getLessonHomework(lessons[i], courseId);
-        if (hw.status === 'needs_revision' || hw.status === 'unsubmitted') {
+        if (hw.status === 'revision_requested' || hw.status === 'needs_revision' || hw.status === 'unsubmitted') {
           return lessons[i].num || (i + 1);
         }
       }
@@ -3408,7 +3477,7 @@
         lessons.forEach((l, idx) => {
           if (revisionItem) return;
           const hw = getLessonHomework(l, cid);
-          if (hw.status === 'needs_revision') {
+          if (hw.status === 'revision_requested' || hw.status === 'needs_revision') {
             revisionItem = { cid, lesson: l, idx, hw };
           }
         });
@@ -3873,10 +3942,10 @@
         const hw = getLessonHomework(lesson);
         const isDone = (hw.status === 'graded');
         const isPending = (hw.status === 'pending');
-        const isRevision = (hw.status === 'needs_revision');
+        const isRevision = (hw.status === 'revision_requested' || hw.status === 'needs_revision');
         const stateClass = isDone ? 'state-completed' : ((isPending || isRevision) ? 'state-pending' : 'state-unsubmitted');
         const badgeContent = isDone ? '✓' : (isRevision ? '!' : (isPending ? '⏳' : lesson.num));
-        const statusText = isDone ? '✓ Đã hoàn thành' : (isRevision ? '↺ Cần sửa' : (isPending ? '⏳ Đã nộp · Chờ cô chấm' : 'Chưa nộp'));
+        const statusText = isDone ? '✓ Đã hoàn thành' : (isRevision ? '↺ Cần sửa' : (isPending ? 'Đã nộp · Chờ cô chấm' : 'Chưa nộp'));
 
         const isActive = (!isViewingDocLibrary && idx === currentLessonIdx);
         const activeClass = isActive ? 'active' : '';
@@ -4279,23 +4348,24 @@
       if (errBox) errBox.style.display = 'none';
 
       if (previewBox) {
-        if ((hw.status === 'pending' || hw.status === 'graded' || hw.status === 'needs_revision') && Array.isArray(hw.attachments) && hw.attachments.length > 0) {
+        if ((hw.status === 'pending' || hw.status === 'graded' || hw.status === 'revision_requested' || hw.status === 'needs_revision') && Array.isArray(hw.attachments) && hw.attachments.length > 0) {
           previewBox.style.display = 'block';
           const itemsHtml = hw.attachments.map(att => {
-            const sizeKb = att.size ? Math.max(1, Math.round(att.size / 1024)) + ' KB' : 'Đã lưu S3';
+            const sizeKb = att.size ? Math.max(1, Math.round(att.size / 1024)) + ' KB' : 'Đã lưu';
+            const mediaUrl = att.fileUrl || att.cdnUrl || att.playUrl || '';
             let mediaPreviewHtml = '';
-            if (att.mediaType === 'image' && att.cdnUrl) {
-              mediaPreviewHtml = `<a href="${att.cdnUrl}" target="_blank" rel="noopener" style="display:block;margin-top:6px;"><img src="${att.cdnUrl}" alt="${att.title}" style="max-height:140px;max-width:100%;border-radius:6px;border:1px solid #cbd5e1;object-fit:contain;background:#fff;"></a>`;
-            } else if (att.mediaType === 'audio' && att.cdnUrl) {
-              mediaPreviewHtml = `<audio controls preload="metadata" src="${att.cdnUrl}" style="width:100%;height:36px;margin-top:6px;"></audio>`;
-            } else if (att.mediaType === 'video' && att.cdnUrl) {
-              mediaPreviewHtml = `<video controls preload="metadata" src="${att.cdnUrl}" style="max-height:160px;width:100%;border-radius:6px;margin-top:6px;background:#0f172a;"></video>`;
+            if (att.mediaType === 'image' && mediaUrl) {
+              mediaPreviewHtml = `<a href="${mediaUrl}" target="_blank" rel="noopener" style="display:block;margin-top:6px;"><img src="${mediaUrl}" alt="${att.title}" style="max-height:140px;max-width:100%;border-radius:6px;border:1px solid #cbd5e1;object-fit:contain;background:#fff;"></a>`;
+            } else if (att.mediaType === 'audio' && mediaUrl) {
+              mediaPreviewHtml = `<audio controls preload="metadata" src="${mediaUrl}" style="width:100%;height:36px;margin-top:6px;"></audio>`;
+            } else if (att.mediaType === 'video' && mediaUrl) {
+              mediaPreviewHtml = `<video controls preload="metadata" src="${mediaUrl}" style="max-height:160px;width:100%;border-radius:6px;margin-top:6px;background:#0f172a;"></video>`;
             }
             return `
               <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin-top:6px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;">
-                  <span style="font-weight:700;color:#0f172a;">📎 Bài đã nộp: ${att.title} <span style="font-weight:500;color:#64748b;">(${sizeKb})</span></span>
-                  <a href="${att.cdnUrl}" target="_blank" rel="noopener" style="color:#2563eb;font-weight:600;text-decoration:underline;font-size:0.75rem;">Mở tệp ↗</a>
+                  <span style="font-weight:700;color:#0f172a;">Nghe lại bài đã gửi: ${att.title} <span style="font-weight:500;color:#64748b;">(${sizeKb})</span></span>
+                  ${mediaUrl ? `<a href="${mediaUrl}" target="_blank" rel="noopener" style="color:#2563eb;font-weight:600;text-decoration:underline;font-size:0.75rem;">Mở tệp ↗</a>` : ''}
                 </div>
                 ${mediaPreviewHtml}
               </div>
@@ -4303,16 +4373,16 @@
           }).join('');
           previewBox.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;color:#15803d;font-weight:700;">
-              <span>☁️ Bài đã nộp (${hw.attachments.length} tệp đính kèm)</span>
+              <span>Bài đã gửi cho cô (${hw.attachments.length} tệp)</span>
               <span style="font-size:0.72rem;color:#475569;font-weight:600;">${hw.submittedAt || ''}</span>
             </div>
             ${itemsHtml}
           `;
-        } else if (hw.status === 'pending' || hw.status === 'graded' || hw.status === 'needs_revision') {
+        } else if (hw.status === 'pending' || hw.status === 'graded' || hw.status === 'revision_requested' || hw.status === 'needs_revision') {
           previewBox.style.display = 'block';
           previewBox.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;color:#15803d;font-weight:700;">
-              <span>☁️ Bài tập đã nộp cho cô giáo</span>
+              <span>Bài tập đã nộp cho cô giáo</span>
               <span style="font-size:0.72rem;color:#475569;font-weight:600;">${hw.submittedAt || ''}</span>
             </div>
           `;
@@ -4322,7 +4392,7 @@
         }
       }
 
-      if (hw.status === 'needs_revision') {
+      if (hw.status === 'revision_requested' || hw.status === 'needs_revision') {
         badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#FEF3C7;border:1px solid #FDE68A;color:#B45309;">↺ Cần sửa</span>';
         feedbackBox.style.display = 'block';
         feedbackBox.style.background = '#FFFBEB';
@@ -4347,7 +4417,7 @@
         feedbackBox.style.display = 'none';
         if (tfRevisionActions) tfRevisionActions.style.display = 'none';
         noteInput.value = hw.note || '';
-        if (submitBtnText) submitBtnText.textContent = 'Đã nộp · Chờ cô chấm (Bấm nếu muốn gửi bản mới)';
+        if (submitBtnText) submitBtnText.textContent = 'Nộp lại cho cô';
       } else {
         badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#f1f5f9;color:#64748b;">Chưa nộp</span>';
         feedbackBox.style.display = 'none';
@@ -4451,33 +4521,6 @@
     window.__selectedHwFile = null;
     window.__recordedVoiceDraftUrl = null;
 
-    function createSynthesizedWavFile(durationSec, fileName) {
-      const sampleRate = 8000;
-      const numSamples = Math.max(sampleRate, Math.min(sampleRate * 15, (Number(durationSec) || 2) * sampleRate));
-      const buffer = new ArrayBuffer(44 + numSamples * 2);
-      const view = new DataView(buffer);
-      const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
-      writeStr(0, 'RIFF');
-      view.setUint32(4, 36 + numSamples * 2, true);
-      writeStr(8, 'WAVE');
-      writeStr(12, 'fmt ');
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * 2, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      writeStr(36, 'data');
-      view.setUint32(40, numSamples * 2, true);
-      for (let i = 0; i < numSamples; i++) {
-        const t = i / sampleRate;
-        const sample = Math.sin(2 * Math.PI * 440 * t) * Math.exp(-t * 0.5) * 0.25;
-        view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, sample)) * 32767, true);
-      }
-      return new File([buffer], fileName, { type: 'audio/wav' });
-    }
-
     function updateChosenFilesBanner() {
       const notice = document.getElementById('file-chosen-notice');
       const nameText = document.getElementById('file-name-text');
@@ -4526,59 +4569,74 @@
       const btn = document.getElementById('btn-mic-record');
       const icon = document.getElementById('mic-icon');
       const text = document.getElementById('mic-text');
+      const hint = document.getElementById('voice-record-hint');
 
       if (!isRecording) {
-        isRecording = true;
-        btn.classList.add('recording');
-        recordSeconds = 0;
-        text.textContent = 'Dừng thu (00:00)';
-        icon.textContent = '⏹️';
-
-        portalAudioChunks = [];
-        portalMediaRecorder = null;
-        if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : 'audio/mp4';
-            portalMediaRecorder = new MediaRecorder(stream, { mimeType });
-            portalMediaRecorder.ondataavailable = e => {
-              if (e.data && e.data.size > 0) portalAudioChunks.push(e.data);
-            };
-            portalMediaRecorder.onstop = () => {
-              try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
-              if (portalAudioChunks.length > 0) {
-                const ext = mimeType.includes('webm') ? 'webm' : 'm4a';
-                const blob = new Blob(portalAudioChunks, { type: mimeType });
-                window.__recordedVoiceFile = new File([blob], 'Ghi_am_phat_am_bai_' + (currentLessonIdx + 1) + '.' + ext, { type: mimeType });
-                updateChosenFilesBanner();
-              }
-            };
-            portalMediaRecorder.start();
-          } catch (err) {
-            console.warn('[VoiceRecorder] Sử dụng bộ tạo WAV chuẩn khi trình duyệt không có mic vật lý:', err);
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+          if (hint) {
+            hint.style.color = '#B91C1C';
+            hint.textContent = 'Trình duyệt chưa hỗ trợ thu âm trực tiếp. Em hãy bấm chọn tệp âm thanh hoặc ảnh bài làm có sẵn nhé.';
           }
+          return;
         }
 
-        recordTimer = setInterval(() => {
-          recordSeconds++;
-          const mins = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
-          const secs = String(recordSeconds % 60).padStart(2, '0');
-          text.textContent = 'Dừng thu (' + mins + ':' + secs + ')';
-        }, 1000);
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : 'audio/mp4';
+          portalAudioChunks = [];
+          portalMediaRecorder = new MediaRecorder(stream, { mimeType });
+          portalMediaRecorder.ondataavailable = e => {
+            if (e.data && e.data.size > 0) portalAudioChunks.push(e.data);
+          };
+          portalMediaRecorder.onstop = () => {
+            try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+            if (portalAudioChunks.length > 0) {
+              const ext = mimeType.includes('webm') ? 'webm' : 'm4a';
+              const blob = new Blob(portalAudioChunks, { type: mimeType });
+              window.__recordedVoiceFile = new File([blob], 'Ghi_am_phat_am_bai_' + (currentLessonIdx + 1) + '.' + ext, { type: mimeType });
+              if (hint) {
+                hint.style.color = '#15803D';
+                hint.textContent = 'Đã thu xong giọng của em. Em có thể bấm Nghe lại rồi bấm Nộp bài cho cô nhé.';
+              }
+              updateChosenFilesBanner();
+            }
+          };
+          portalMediaRecorder.start();
+
+          isRecording = true;
+          btn.classList.add('recording');
+          recordSeconds = 0;
+          text.textContent = 'Dừng thu (00:00)';
+          if (icon) icon.textContent = '⏹';
+          if (hint) {
+            hint.style.color = '#B91C1C';
+            hint.textContent = 'Đang thu âm... Em đọc rõ từng câu rồi bấm Dừng thu nhé.';
+          }
+
+          recordTimer = setInterval(() => {
+            recordSeconds++;
+            const mins = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
+            const secs = String(recordSeconds % 60).padStart(2, '0');
+            text.textContent = 'Dừng thu (' + mins + ':' + secs + ')';
+          }, 1000);
+        } catch (err) {
+          isRecording = false;
+          btn.classList.remove('recording');
+          text.textContent = 'Thử lại thu âm';
+          if (hint) {
+            hint.style.color = '#B91C1C';
+            hint.textContent = 'Chưa bật được micro. Em hãy cho phép quyền micro trên trình duyệt rồi bấm Thử lại, hoặc chọn tệp có sẵn nhé.';
+          }
+        }
       } else {
         isRecording = false;
         clearInterval(recordTimer);
         btn.classList.remove('recording');
-        icon.textContent = '🎙️';
-        const dur = Math.max(1, recordSeconds);
+        if (icon) icon.textContent = '🎙️';
         text.textContent = 'Thu lại';
 
         if (portalMediaRecorder && portalMediaRecorder.state !== 'inactive') {
           try { portalMediaRecorder.stop(); } catch (e) {}
-        } else {
-          const wavName = 'Ghi_am_phat_am_bai_' + (currentLessonIdx + 1) + '.wav';
-          window.__recordedVoiceFile = createSynthesizedWavFile(dur, wavName);
-          updateChosenFilesBanner();
         }
       }
     }
@@ -4604,10 +4662,12 @@
       const curName = user?.name || 'Học viên Khổng Tử Nhí';
       const courseMeta = PORTAL_COURSE_CATALOG[courseId] || PORTAL_COURSE_CATALOG[HSK1_COURSE_ID];
       const attachments = normalizeHomeworkAttachments(hwData?.resources, []);
+      const primaryFileUrl = (attachments[0] && (attachments[0].fileUrl || attachments[0].cdnUrl)) || '';
+      const primaryFileType = (attachments[0] && (attachments[0].mimeType || attachments[0].mediaType)) || 'audio/webm';
       const targetLessonNum = Number(lesson.num) || 1;
       const totalLessons = LESSONS.length || 15;
 
-      // Lưu vào localStorage 'ktn_local_submitted_homeworks' để sll-teacher.html nhận tức thì
+      // Lưu vào localStorage 'ktn_local_submitted_homeworks' sau khi đã gửi thành công lên máy chủ izTeach
       try {
         const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
         const newLocalRec = {
@@ -4618,9 +4678,11 @@
           course_id: courseId,
           lesson_num: targetLessonNum,
           lesson_title: `${courseMeta.shortTitle} · Bài ${targetLessonNum}: ${lesson.titleZh || ''}`,
+          file_url: primaryFileUrl,
+          file_type: primaryFileType,
           student_note: fullNotes,
           attachments: attachments,
-          status: 'submitted',
+          status: 'pending',
           score: null,
           teacher_feedback: null,
           submitted_at: new Date().toISOString()
@@ -4632,8 +4694,8 @@
         localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(filtered));
       } catch (e) {}
 
-      // Đồng bộ qua Worker API /api/ktn/homeworks
-      if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+      // Đồng bộ qua Worker API /api/ktn/homeworks (nếu có fileUrl thật từ S3)
+      if (primaryFileUrl && window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
         window.KtnWebApp.apiRequest('/api/ktn/homeworks', {
           method: 'POST',
           body: {
@@ -4641,6 +4703,8 @@
             classCode: user?.classCode || currentStudentProfile?.classCode || null,
             lessonNum: targetLessonNum,
             lessonTitle: `${courseMeta.shortTitle} · Bài ${targetLessonNum}: ${lesson.titleZh || ''}`,
+            fileUrl: primaryFileUrl,
+            fileType: primaryFileType,
             studentNote: fullNotes,
             attachments
           }
@@ -5281,32 +5345,36 @@
     }
 
     async function getClassSessionsForClass(classCode) {
-      const code = String(classCode || 'YCT2-04').trim().toUpperCase();
+      const code = String(classCode || '').trim().toUpperCase();
+      if (!code) return [];
       let sessions = null;
-      try {
-        const localRaw = localStorage.getItem('ktn_class_sessions_' + code);
-        if (localRaw) {
-          const parsed = JSON.parse(localRaw);
-          if (Array.isArray(parsed) && parsed.length > 0) sessions = parsed;
-        }
-      } catch (e) {}
 
       if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
         try {
           const res = await window.KtnWebApp.apiRequest('/api/ktn/class-sessions?classCode=' + encodeURIComponent(code));
           if (res.ok && Array.isArray(res.data?.sessions) && res.data.sessions.length > 0) {
-            if (!sessions) {
-              sessions = res.data.sessions;
-              try {
-                localStorage.setItem('ktn_class_sessions_' + code, JSON.stringify(sessions));
-              } catch (e) {}
-            }
+            sessions = res.data.sessions;
+            try {
+              localStorage.setItem('ktn_class_sessions_' + code, JSON.stringify(sessions));
+            } catch (e) {}
           }
         } catch (e) {}
       }
 
       if (!sessions || !sessions.length) {
-        sessions = DEFAULT_CLASS_SESSIONS[code] || DEFAULT_CLASS_SESSIONS['YCT2-04'];
+        try {
+          const localRaw = localStorage.getItem('ktn_class_sessions_' + code);
+          if (localRaw) {
+            const parsed = JSON.parse(localRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) sessions = parsed;
+          }
+        } catch (e) {}
+      }
+
+      if (!sessions || !sessions.length) {
+        sessions = Object.prototype.hasOwnProperty.call(DEFAULT_CLASS_SESSIONS, code)
+          ? DEFAULT_CLASS_SESSIONS[code]
+          : [];
       }
       return sessions;
     }
@@ -5331,6 +5399,68 @@
       return null;
     }
 
+    function updateClassExCardUiState(draftKey) {
+      const st = window.__classExDrafts[draftKey] || {};
+      const hasDraft = Boolean(st.voiceFile || st.attachFile);
+      const micBtn = document.getElementById('btn-class-mic-' + draftKey);
+      const micLbl = document.getElementById('lbl-class-mic-' + draftKey);
+      const playBtn = document.getElementById('btn-class-play-' + draftKey);
+      const audioEl = document.getElementById('audio-class-draft-' + draftKey);
+      const fileLbl = document.getElementById('lbl-class-file-' + draftKey);
+      const submitBtn = document.getElementById('btn-class-submit-' + draftKey);
+
+      if (st.recording) {
+        if (micBtn) {
+          micBtn.style.background = '#B91C1C';
+          micBtn.style.color = '#FFFFFF';
+          micBtn.style.borderColor = '#B91C1C';
+        }
+        return;
+      }
+
+      if (hasDraft) {
+        if (micBtn) {
+          micBtn.style.background = '#F8FAFC';
+          micBtn.style.color = '#0F172A';
+          micBtn.style.borderColor = '#CBD5E1';
+        }
+        if (micLbl && st.voiceFile) micLbl.textContent = 'Thu lại';
+        if (st.voiceFile) {
+          if (playBtn) playBtn.style.display = 'inline-flex';
+          if (audioEl) {
+            if (st.draftObjectUrl) {
+              try { URL.revokeObjectURL(st.draftObjectUrl); } catch (e) {}
+            }
+            st.draftObjectUrl = URL.createObjectURL(st.voiceFile);
+            audioEl.src = st.draftObjectUrl;
+            audioEl.style.display = 'block';
+          }
+        }
+        if (submitBtn) {
+          submitBtn.style.background = '#B91C1C';
+          submitBtn.style.color = '#FFFFFF';
+          submitBtn.style.border = 'none';
+        }
+      } else {
+        if (micBtn) {
+          micBtn.style.background = '#0F172A';
+          micBtn.style.color = '#FFFFFF';
+          micBtn.style.borderColor = '#0F172A';
+        }
+        if (playBtn) playBtn.style.display = 'none';
+        if (audioEl) {
+          audioEl.src = '';
+          audioEl.style.display = 'none';
+        }
+        if (fileLbl) fileLbl.textContent = '';
+        if (submitBtn) {
+          submitBtn.style.background = '#E2E8F0';
+          submitBtn.style.color = '#475569';
+          submitBtn.style.border = '1px solid #CBD5E1';
+        }
+      }
+    }
+
     async function renderStudentClassSessions(classCode, requestedSessionNum) {
       const cardEl = document.getElementById('student-class-sessions-card');
       const barEl = document.getElementById('class-sessions-bar');
@@ -5345,6 +5475,16 @@
       cardEl.style.display = 'block';
 
       const sessions = await getClassSessionsForClass(effectiveClassCode);
+      if (!sessions || !sessions.length) {
+        barEl.innerHTML = '';
+        boxEl.innerHTML = `
+          <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:18px;color:#475569;font-size:13.5px;">
+            Cô giáo đang cập nhật danh sách buổi học và bài tập cho lớp <strong>${effectiveClassCode}</strong>. Em quay lại kiểm tra sau hoặc nhắn cô ở khung trao đổi bên dưới nhé.
+          </div>
+        `;
+        return;
+      }
+
       if (requestedSessionNum != null) {
         activeClassSessionNum = Number(requestedSessionNum) || 1;
       }
@@ -5361,58 +5501,93 @@
       const exHtml = exercises.map((ex, idx) => {
         const exNum = Number(ex.num) || (idx + 1);
         const draftKey = `${effectiveClassCode}_${activeClassSessionNum}_${exNum}`;
+        const st = window.__classExDrafts[draftKey] || {};
+        const hasDraftReady = Boolean(st.voiceFile || st.attachFile);
         const sub = getClassExerciseSubmission(effectiveClassCode, activeClassSessionNum, exNum);
-        const status = sub ? (sub.status || 'submitted') : 'unsubmitted';
+        const rawStatus = sub ? String(sub.status || 'pending').toLowerCase() : 'unsubmitted';
+        const isRevision = rawStatus === 'revision_requested' || rawStatus === 'needs_revision';
 
         let badgeHtml = `<span style="background:#F1F5F9;color:#475569;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Chưa nộp</span>`;
         let submitBtnLabel = 'Nộp bài cho cô';
-        if (status === 'graded') {
-          badgeHtml = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">✓ Đã hoàn thành · ${sub.score ?? 10}/10</span>`;
+        if (rawStatus === 'graded') {
+          badgeHtml = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Đã hoàn thành · ${sub.score ?? 10}/10</span>`;
           submitBtnLabel = 'Nộp lại cho cô';
-        } else if (status === 'needs_revision') {
-          badgeHtml = `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">↺ Cần sửa</span>`;
+        } else if (isRevision) {
+          badgeHtml = `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Cần sửa</span>`;
           submitBtnLabel = 'Nộp lại cho cô';
-        } else if (status === 'submitted' || status === 'pending') {
+        } else if (rawStatus === 'submitted' || rawStatus === 'pending') {
           badgeHtml = `<span style="background:#F0FDF4;border:1px solid #86EFAC;color:#15803D;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Đã nộp · Chờ cô chấm</span>`;
-          submitBtnLabel = 'Đã nộp · Chờ cô chấm';
+          submitBtnLabel = 'Nộp lại cho cô';
         }
 
-        const feedbackHtml = (sub && (sub.teacher_feedback || status === 'graded' || status === 'needs_revision')) ? `
-          <div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:${status === 'needs_revision' ? '#FFFBEB' : '#F0FDF4'};border:1px solid ${status === 'needs_revision' ? '#FDE68A' : '#86EFAC'};font-size:13px;color:#0F172A;">
-            <div style="font-weight:800;margin-bottom:4px;color:${status === 'needs_revision' ? '#B45309' : '#15803D'};">
-              ${status === 'needs_revision' ? '↺ Lời cô nhắc sửa bài:' : `⭐ Lời cô nhận xét (${sub.score ?? 10}/10):`}
+        const feedbackHtml = (sub && (sub.teacher_feedback || rawStatus === 'graded' || isRevision)) ? `
+          <div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:${isRevision ? '#FFFBEB' : '#F0FDF4'};border:1px solid ${isRevision ? '#FDE68A' : '#86EFAC'};font-size:13px;color:#0F172A;">
+            <div style="font-weight:800;margin-bottom:4px;color:${isRevision ? '#B45309' : '#15803D'};">
+              ${isRevision ? 'Lời cô nhắc sửa bài:' : `Lời cô nhận xét (${sub.score ?? 10}/10):`}
             </div>
             <div>${(sub.teacher_feedback || 'Con làm bài rất tốt!').replace(/^\[CẦN SỬA\]\s*/i, '')}</div>
           </div>
         ` : '';
+
+        const submittedAtt = (sub && Array.isArray(sub.attachments) && sub.attachments[0]) || null;
+        const submittedUrl = (sub && sub.file_url) || (submittedAtt && (submittedAtt.fileUrl || submittedAtt.cdnUrl)) || '';
+        const submittedType = (sub && sub.file_type) || (submittedAtt && (submittedAtt.mimeType || submittedAtt.mediaType)) || '';
+        let submittedMediaHtml = '';
+        if (submittedUrl) {
+          const isImg = String(submittedType).startsWith('image') || /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(submittedUrl);
+          if (isImg) {
+            submittedMediaHtml = `
+              <div style="margin-top:10px;padding:10px 12px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">
+                <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Bài đã gửi cho cô:</div>
+                <a href="${submittedUrl}" target="_blank" rel="noopener"><img src="${submittedUrl}" alt="Bài đã gửi" style="max-height:140px;max-width:100%;border-radius:6px;border:1px solid #CBD5E1;display:block;"></a>
+              </div>
+            `;
+          } else {
+            submittedMediaHtml = `
+              <div style="margin-top:10px;padding:10px 12px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">
+                <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:4px;">Nghe lại bài đã gửi:</div>
+                <audio controls preload="metadata" src="${submittedUrl}" style="width:100%;height:36px;"></audio>
+              </div>
+            `;
+          }
+        }
+
+        const micBtnBg = hasDraftReady ? '#F8FAFC' : '#0F172A';
+        const micBtnColor = hasDraftReady ? '#0F172A' : '#FFFFFF';
+        const micBtnBorder = hasDraftReady ? '#CBD5E1' : '#0F172A';
+        const submitBtnBg = hasDraftReady ? '#B91C1C' : '#E2E8F0';
+        const submitBtnColor = hasDraftReady ? '#FFFFFF' : '#475569';
+        const submitBtnBorder = hasDraftReady ? 'none' : '1px solid #CBD5E1';
 
         return `
           <div id="class-ex-card-${exNum}" style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:16px;margin-top:12px;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
               <div>
                 <div style="font-size:15px;font-weight:800;color:#0F172A;">${ex.title || ('Bài ' + exNum)}</div>
-                <div style="font-size:13px;color:#475569;margin-top:4px;">${ex.prompt || 'Em thu âm hoặc chụp ảnh bài làm rồi bấm Nộp bài cho cô nhé.'}</div>
+                <div style="font-size:13px;color:#475569;margin-top:4px;">${ex.prompt || 'Em bấm Thu âm hoặc Chọn tệp rồi bấm Nộp bài cho cô nhé.'}</div>
               </div>
               ${badgeHtml}
             </div>
             ${feedbackHtml}
+            ${submittedMediaHtml}
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
-              <button type="button" id="btn-class-mic-${draftKey}" onclick="toggleClassExRecord('${effectiveClassCode}', ${activeClassSessionNum}, ${exNum})" style="background:#F8FAFC;color:#0F172A;border:1px solid #CBD5E1;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;">
-                🎙️ <span id="lbl-class-mic-${draftKey}">Thu âm</span>
+              <button type="button" id="btn-class-mic-${draftKey}" onclick="toggleClassExRecord('${effectiveClassCode}', ${activeClassSessionNum}, ${exNum})" style="background:${micBtnBg};color:${micBtnColor};border:1px solid ${micBtnBorder};border-radius:8px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;">
+                <span id="lbl-class-mic-${draftKey}">${st.voiceFile ? 'Thu lại' : 'Thu âm'}</span>
               </button>
-              <button type="button" id="btn-class-play-${draftKey}" onclick="playClassExDraft('${draftKey}')" style="display:none;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;">
-                🔊 Nghe lại
+              <button type="button" id="btn-class-play-${draftKey}" onclick="playClassExDraft('${draftKey}')" style="display:${st.voiceFile ? 'inline-flex' : 'none'};background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;">
+                Nghe lại
               </button>
-              <label style="background:#F8FAFC;color:#0F172A;border:1px solid #CBD5E1;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
-                📷 Đính kèm ảnh / tệp
+              <label style="background:#F8FAFC;color:#334155;border:1px solid #CBD5E1;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                Chọn tệp
                 <input type="file" accept="image/*,audio/*,video/*" style="display:none;" onchange="handleClassExFile('${draftKey}', this)">
               </label>
-              <span id="lbl-class-file-${draftKey}" style="font-size:12px;color:#15803D;font-weight:700;"></span>
+              <span id="lbl-class-file-${draftKey}" style="font-size:12px;color:#15803D;font-weight:700;">${st.attachFile ? ('Đã chọn: ' + st.attachFile.name) : (st.voiceFile ? 'Đã thu xong · Sẵn sàng nộp' : '')}</span>
             </div>
-            <audio id="audio-class-draft-${draftKey}" controls style="display:none;width:100%;height:36px;margin-top:8px;"></audio>
+            <div id="err-class-mic-${draftKey}" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;font-size:12.5px;font-weight:700;"></div>
+            <audio id="audio-class-draft-${draftKey}" controls style="display:${st.voiceFile ? 'block' : 'none'};width:100%;height:36px;margin-top:8px;"></audio>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
               <input type="text" id="inp-class-note-${draftKey}" value="${sub?.student_note || ''}" placeholder="Ghi chú gửi cô giáo (nếu có)..." style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;font-size:13px;">
-              <button type="button" id="btn-class-submit-${draftKey}" onclick="submitClassSessionExercise('${effectiveClassCode}', ${activeClassSessionNum}, ${exNum}, '${(ex.title || ('Bài ' + exNum)).replace(/'/g, "\\'")}')" style="background:#B91C1C;color:#FFFFFF;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;">
+              <button type="button" id="btn-class-submit-${draftKey}" onclick="submitClassSessionExercise('${effectiveClassCode}', ${activeClassSessionNum}, ${exNum}, '${(ex.title || ('Bài ' + exNum)).replace(/'/g, "\\'")}')" style="background:${submitBtnBg};color:${submitBtnColor};border:${submitBtnBorder};border-radius:8px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;">
                 ${submitBtnLabel}
               </button>
             </div>
@@ -5432,38 +5607,77 @@
       `;
     }
 
-    function toggleClassExRecord(classCode, sessionNum, exNum) {
+    async function toggleClassExRecord(classCode, sessionNum, exNum) {
       const draftKey = `${classCode}_${sessionNum}_${exNum}`;
       const lbl = document.getElementById('lbl-class-mic-' + draftKey);
-      const playBtn = document.getElementById('btn-class-play-' + draftKey);
-      const audioEl = document.getElementById('audio-class-draft-' + draftKey);
       const fileLbl = document.getElementById('lbl-class-file-' + draftKey);
+      const micErrEl = document.getElementById('err-class-mic-' + draftKey);
+      if (micErrEl) micErrEl.style.display = 'none';
+
       if (!window.__classExDrafts[draftKey]) {
-        window.__classExDrafts[draftKey] = { recording: false, timer: null, secs: 0, voiceFile: null, attachFile: null };
+        window.__classExDrafts[draftKey] = { recording: false, timer: null, secs: 0, voiceFile: null, attachFile: null, recorder: null, chunks: [], stream: null };
       }
       const st = window.__classExDrafts[draftKey];
+
       if (!st.recording) {
-        st.recording = true;
-        st.secs = 0;
-        if (lbl) lbl.textContent = 'Dừng thu (00:00)';
-        st.timer = setInterval(() => {
-          st.secs++;
-          const m = String(Math.floor(st.secs / 60)).padStart(2, '0');
-          const s = String(st.secs % 60).padStart(2, '0');
-          if (lbl) lbl.textContent = `Dừng thu (${m}:${s})`;
-        }, 1000);
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+          if (micErrEl) {
+            micErrEl.textContent = 'Trình duyệt này chưa hỗ trợ thu âm trực tiếp. Em hãy bấm Chọn tệp để tải file ghi âm hoặc ảnh bài làm nhé.';
+            micErrEl.style.display = 'block';
+          }
+          return;
+        }
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : 'audio/mp4';
+          st.stream = stream;
+          st.chunks = [];
+          const recorder = new MediaRecorder(stream, { mimeType });
+          st.recorder = recorder;
+
+          recorder.ondataavailable = e => {
+            if (e.data && e.data.size > 0) st.chunks.push(e.data);
+          };
+
+          recorder.onstop = () => {
+            try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+            const dur = Math.max(1, st.secs);
+            if (st.chunks.length > 0) {
+              const ext = mimeType.includes('webm') ? 'webm' : 'm4a';
+              const blob = new Blob(st.chunks, { type: mimeType });
+              st.voiceFile = new File([blob], `Thu_am_${classCode}_Buoi${sessionNum}_Bai${exNum}.${ext}`, { type: mimeType });
+              if (fileLbl) fileLbl.textContent = `Đã thu xong (${dur}s) · Bấm Nộp bài cho cô`;
+              updateClassExCardUiState(draftKey);
+            }
+          };
+
+          recorder.start();
+          st.recording = true;
+          st.secs = 0;
+          updateClassExCardUiState(draftKey);
+          if (lbl) lbl.textContent = 'Dừng thu (00:00)';
+          st.timer = setInterval(() => {
+            st.secs++;
+            const m = String(Math.floor(st.secs / 60)).padStart(2, '0');
+            const s = String(st.secs % 60).padStart(2, '0');
+            if (lbl) lbl.textContent = `Dừng thu (${m}:${s})`;
+          }, 1000);
+        } catch (err) {
+          st.recording = false;
+          if (lbl) lbl.textContent = 'Thử lại';
+          if (micErrEl) {
+            micErrEl.textContent = 'Chưa bật được micro. Em hãy cấp quyền micro cho trình duyệt rồi bấm Thử lại, hoặc bấm Chọn tệp nhé.';
+            micErrEl.style.display = 'block';
+          }
+        }
       } else {
         st.recording = false;
         clearInterval(st.timer);
-        const dur = Math.max(1, st.secs);
-        st.voiceFile = createSynthesizedWavFile(dur, `Thu_am_${classCode}_Buoi${sessionNum}_Bai${exNum}.wav`);
         if (lbl) lbl.textContent = 'Thu lại';
-        if (playBtn) playBtn.style.display = 'inline-flex';
-        if (audioEl) {
-          audioEl.src = URL.createObjectURL(st.voiceFile);
-          audioEl.style.display = 'block';
+        if (st.recorder && st.recorder.state !== 'inactive') {
+          try { st.recorder.stop(); } catch (e) {}
         }
-        if (fileLbl) fileLbl.textContent = `✓ Đã thu âm (${dur}s)`;
       }
     }
 
@@ -5482,8 +5696,11 @@
         window.__classExDrafts[draftKey] = { recording: false, timer: null, secs: 0, voiceFile: null, attachFile: null };
       }
       window.__classExDrafts[draftKey].attachFile = file;
+      const micErrEl = document.getElementById('err-class-mic-' + draftKey);
+      if (micErrEl) micErrEl.style.display = 'none';
       const fileLbl = document.getElementById('lbl-class-file-' + draftKey);
-      if (fileLbl) fileLbl.textContent = `✓ Đã chọn: ${file.name}`;
+      if (fileLbl) fileLbl.textContent = `Đã chọn: ${file.name} · Bấm Nộp bài cho cô`;
+      updateClassExCardUiState(draftKey);
     }
 
     async function submitClassSessionExercise(classCode, sessionNum, exNum, exTitle) {
@@ -5500,60 +5717,102 @@
       const st = window.__classExDrafts[draftKey] || {};
 
       if (errEl) errEl.style.display = 'none';
+
+      const filesToUpload = [st.voiceFile, st.attachFile].filter(Boolean);
+      if (filesToUpload.length === 0) {
+        if (errEl) {
+          errEl.innerHTML = 'Em hãy bấm <strong>Thu âm</strong> hoặc <strong>Chọn tệp</strong> bài làm trước khi bấm Nộp bài cho cô nhé.';
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+
       if (btn) {
         btn.disabled = true;
-        btn.textContent = 'Đang gửi…';
+        btn.textContent = 'Đang tải tệp & gửi bài…';
       }
 
       const syntheticLessonNum = Number(sessionNum) * 100 + Number(exNum);
       const targetCourseKey = 'CLASS_' + String(classCode || '').toUpperCase();
       const lessonTitle = `[Lớp ${classCode} · Buổi ${sessionNum}] ${exTitle}`;
       const studentNote = note || `Con nộp ${exTitle} (Buổi ${sessionNum} - Lớp ${classCode}).`;
-      const attachments = [];
-      if (st.voiceFile) {
-        attachments.push({ title: st.voiceFile.name, size: st.voiceFile.size, mediaType: 'audio' });
-      }
-      if (st.attachFile) {
-        attachments.push({ title: st.attachFile.name, size: st.attachFile.size, mediaType: 'image' });
-      }
 
       try {
-        const newRec = {
-          id: `HW-${classCode}-B${sessionNum}-E${exNum}-${Date.now()}`,
+        // 1. Tải tệp thật lên S3 để lấy fileUrl thật (CloudFront CDN)
+        const attachments = [];
+        for (const f of filesToUpload) {
+          const uploaded = await IzTeachPortalClient.uploadSingleFileToIzTeachS3(f);
+          const fUrl = uploaded.fileUrl || uploaded.cdnUrl || (uploaded.link ? `${IzTeachConfig.cdn.docs}/${uploaded.link}` : '');
+          if (!fUrl || !/^https?:\/\//i.test(fUrl)) {
+            throw new Error('Không lấy được đường dẫn tệp sau khi tải lên');
+          }
+          const isImg = String(f.type || '').startsWith('image') || /\.(jpg|jpeg|png|webp|gif)$/i.test(f.name || '');
+          attachments.push({
+            id: uploaded._id || ('ATT-' + Date.now()),
+            title: f.name || uploaded.title || 'Bai_lam',
+            size: f.size || uploaded.size || 0,
+            mediaType: isImg ? 'image' : 'audio',
+            mimeType: f.type || uploaded.mimeType || (isImg ? 'image/jpeg' : 'audio/webm'),
+            s3Key: uploaded.link || '',
+            fileUrl: fUrl,
+            cdnUrl: fUrl
+          });
+        }
+
+        const primaryFileUrl = attachments[0].fileUrl;
+        const primaryFileType = attachments[0].mimeType || attachments[0].mediaType;
+
+        // 2. Gửi bài nộp kèm fileUrl thật lên Worker API (/api/ktn/homeworks) và chờ máy chủ xác nhận
+        if (!window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') {
+          throw new Error('Chưa kết nối được dịch vụ máy chủ KTN');
+        }
+
+        const apiRes = await window.KtnWebApp.apiRequest('/api/ktn/homeworks', {
+          method: 'POST',
+          body: {
+            courseId: targetCourseKey,
+            classCode,
+            lessonNum: syntheticLessonNum,
+            lessonTitle,
+            fileUrl: primaryFileUrl,
+            fileType: primaryFileType,
+            studentNote,
+            attachments
+          }
+        });
+
+        if (!apiRes || !apiRes.ok || !apiRes.data?.ok) {
+          throw new Error((apiRes && apiRes.data && apiRes.data.message) || 'Máy chủ chưa xác nhận lưu bài nộp');
+        }
+
+        // 3. Chỉ lưu trạng thái Đã nộp vào bộ nhớ trình duyệt SAU KHI máy chủ xác nhận thành công
+        const serverHw = apiRes.data.homework || {};
+        const confirmedRec = {
+          id: serverHw.id || `HW-${classCode}-B${sessionNum}-E${exNum}-${Date.now()}`,
           student_email: String(user.email || '').toLowerCase(),
           student_name: user.name || 'Học sinh',
           class_code: classCode,
           course_id: targetCourseKey,
           lesson_num: syntheticLessonNum,
           lesson_title: lessonTitle,
+          file_url: serverHw.file_url || primaryFileUrl,
+          file_type: serverHw.file_type || primaryFileType,
           student_note: studentNote,
           attachments,
-          status: 'submitted',
+          status: serverHw.status || 'pending',
           score: null,
           teacher_feedback: null,
-          submitted_at: new Date().toISOString()
+          submitted_at: serverHw.submitted_at || new Date().toISOString()
         };
 
         const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
         const filtered = Array.isArray(localArr)
-          ? localArr.filter(item => !(String(item.student_email || '').toLowerCase() === newRec.student_email && item.class_code === classCode && Number(item.lesson_num) === syntheticLessonNum))
+          ? localArr.filter(item => !(String(item.student_email || '').toLowerCase() === confirmedRec.student_email && item.class_code === classCode && Number(item.lesson_num) === syntheticLessonNum))
           : [];
-        filtered.unshift(newRec);
+        filtered.unshift(confirmedRec);
         localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(filtered));
 
-        if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
-          await window.KtnWebApp.apiRequest('/api/ktn/homeworks', {
-            method: 'POST',
-            body: {
-              courseId: targetCourseKey,
-              classCode,
-              lessonNum: syntheticLessonNum,
-              lessonTitle,
-              studentNote,
-              attachments
-            }
-          });
-        }
+        window.__classExDrafts[draftKey] = { recording: false, timer: null, secs: 0, voiceFile: null, attachFile: null };
 
         await renderStudentClassSessions(classCode, sessionNum);
         await loadStudentContactBook();
@@ -5564,7 +5823,10 @@
           btn.disabled = false;
           btn.textContent = 'Gửi lại';
         }
-        if (errEl) errEl.style.display = 'block';
+        if (errEl) {
+          errEl.innerHTML = 'Chưa gửi được bài lên máy chủ. Bài thu âm/tệp của em vẫn được giữ nguyên — em bấm <strong>Gửi lại</strong> nhé.';
+          errEl.style.display = 'block';
+        }
       }
     }
 
@@ -5597,7 +5859,7 @@
           if (!Array.isArray(lessonsArr)) continue;
           lessonsArr.forEach(lesson => {
             const hw = getLessonHomework(lesson, cid);
-            if (hw && (hw.status === 'graded' || hw.status === 'pending' || hw.status === 'submitted' || hw.status === 'needs_revision')) {
+            if (hw && (hw.status === 'graded' || hw.status === 'pending' || hw.status === 'submitted' || hw.status === 'revision_requested' || hw.status === 'needs_revision')) {
               localEntries.push({
                 id: cid + '_' + lesson.num,
                 course_id: cid,
@@ -5625,14 +5887,14 @@
       } else {
         hwBox.innerHTML = list.map(hw => {
           const isGraded = hw.status === 'graded';
-          const isRevision = hw.status === 'needs_revision' || String(hw.teacher_feedback || '').includes('[CẦN SỬA]');
+          const isRevision = hw.status === 'revision_requested' || hw.status === 'needs_revision' || String(hw.teacher_feedback || '').includes('[CẦN SỬA]');
           const courseLabel = PORTAL_COURSE_CATALOG[hw.course_id]?.shortTitle
             || (hw.class_code ? ('Lớp ' + hw.class_code) : 'Khóa học');
           let badge = `<span style="background:#F0FDF4;border:1px solid #86EFAC;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">Đã nộp · Chờ cô chấm</span>`;
           if (isRevision) {
-            badge = `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">↺ Cần sửa</span>`;
+            badge = `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">Cần sửa</span>`;
           } else if (isGraded) {
-            badge = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">✓ Đã hoàn thành · ${hw.score ?? '--'}/10</span>`;
+            badge = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">Đã hoàn thành · ${hw.score ?? '--'}/10</span>`;
           }
           return `<div style="padding:12px;border:1px solid #E2E8F0;border-radius:10px;background:#F8FAFC;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">

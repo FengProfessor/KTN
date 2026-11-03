@@ -188,11 +188,13 @@ CREATE TABLE IF NOT EXISTS public.ktn_homeworks (
   -- Đường dẫn file Video/Ảnh/Audio đã tải lên kho S3 miễn phí của izTeach
   file_url TEXT NOT NULL,
   file_type TEXT NOT NULL DEFAULT 'video',
+  attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
   izteach_resource_id TEXT,
   workbook_answers JSONB NOT NULL DEFAULT '{}'::jsonb,
   student_note TEXT DEFAULT '',
   -- pending: Mới nộp, chờ cô chấm (CHƯA tính là hoàn thành bài học)
-  -- graded: Cô đã chấm điểm (Đổi bài học sang màu xanh lá Hoàn thành)
+  -- revision_requested: Cô yêu cầu con sửa lại bài (Cần sửa)
+  -- graded: Cô đã chấm đạt / hoàn thành
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'graded', 'revision_requested')),
   score NUMERIC(4, 2),
@@ -206,6 +208,20 @@ CREATE TABLE IF NOT EXISTS public.ktn_homeworks (
 
 CREATE INDEX IF NOT EXISTS idx_ktn_homeworks_student ON public.ktn_homeworks (student_email, course_id, lesson_num);
 CREATE INDEX IF NOT EXISTS idx_ktn_homeworks_class_status ON public.ktn_homeworks (class_code, status, submitted_at DESC);
+
+-- 7B. BẢNG BUỔI HỌC & BÀI TẬP THEO LỚP CÔ GIÁO (BUỔI 1, BUỔI 2...)
+CREATE TABLE IF NOT EXISTS public.ktn_class_sessions (
+  id TEXT PRIMARY KEY,
+  class_code TEXT NOT NULL REFERENCES public.ktn_classes(id) ON DELETE CASCADE,
+  session_num INTEGER NOT NULL DEFAULT 1,
+  session_title TEXT NOT NULL DEFAULT '',
+  exercises JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (class_code, session_num)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ktn_class_sessions_class ON public.ktn_class_sessions (class_code, session_num ASC);
 
 -- 8. BẢNG TIN NHẮN TRAO ĐỔI CÔ GIÁO <-> HỌC VIÊN/PHỤ HUYNH (REALTIME CHAT)
 CREATE TABLE IF NOT EXISTS public.ktn_messages (

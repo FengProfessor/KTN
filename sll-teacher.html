@@ -221,13 +221,64 @@
     }
 
     function renderHomeworkStatusBadge(status, score) {
-      if (status === 'needs_revision') {
+      if (status === 'revision_requested' || status === 'needs_revision') {
         return '<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Cần sửa lại bài</span>';
       }
       if (status === 'graded') {
         return `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Đã hoàn thành${score != null ? ' · ' + score + '/10' : ''}</span>`;
       }
       return '<span style="background:#F1F5F9;color:#475569;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Chờ cô chấm</span>';
+    }
+
+    function renderHomeworkMediaPreview(hw) {
+      const items = [];
+      if (Array.isArray(hw.attachments) && hw.attachments.length) {
+        hw.attachments.forEach(att => {
+          const url = att && (att.fileUrl || att.cdnUrl || att.url || (typeof att.link === 'string' && att.link.startsWith('http') ? att.link : ''));
+          if (url) {
+            items.push({
+              url,
+              title: att.title || 'Tệp bài làm',
+              mediaType: att.mediaType || att.mimeType || ''
+            });
+          }
+        });
+      }
+      if (!items.length && hw.file_url) {
+        items.push({
+          url: hw.file_url,
+          title: 'Tệp bài làm của học sinh',
+          mediaType: hw.file_type || ''
+        });
+      }
+      if (!items.length) {
+        return '<div style="font-size:12.5px;color:#94A3B8;margin-top:4px;">Chưa có tệp đính kèm hợp lệ.</div>';
+      }
+      return items.map(item => {
+        const lowerUrl = String(item.url).toLowerCase();
+        const isAudio = String(item.mediaType).startsWith('audio') || /\.(webm|mp3|wav|m4a|ogg|aac)(\?|$)/.test(lowerUrl);
+        const isImage = String(item.mediaType).startsWith('image') || /\.(jpg|jpeg|png|webp|gif)(\?|$)/.test(lowerUrl);
+        if (isAudio) {
+          return `
+            <div style="margin-top:8px;padding:8px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;">
+              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:4px;">Nghe bài thu âm của học sinh (${item.title}):</div>
+              <audio controls preload="metadata" src="${item.url}" style="width:100%;height:36px;"></audio>
+              <div style="margin-top:4px;"><a href="${item.url}" target="_blank" rel="noopener" style="font-size:12px;color:#B91C1C;text-decoration:underline;">Mở tệp âm thanh ở tab mới ↗</a></div>
+            </div>
+          `;
+        }
+        if (isImage) {
+          return `
+            <div style="margin-top:8px;padding:8px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;">
+              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Ảnh bài làm (${item.title}):</div>
+              <a href="${item.url}" target="_blank" rel="noopener">
+                <img src="${item.url}" alt="${item.title}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #CBD5E1;display:block;" />
+              </a>
+            </div>
+          `;
+        }
+        return `<div style="margin-top:6px;"><a href="${item.url}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;text-decoration:underline;">Mở xem bài làm (${item.title}) ↗</a></div>`;
+      }).join('');
     }
 
     async function loadTeacherHomeworks() {
@@ -261,7 +312,7 @@
               ${hw.class_code ? `<span style="margin-left:6px;background:#F1F5F9;padding:2px 8px;border-radius:6px;font-size:12px;">Lớp ${hw.class_code}</span>` : ''}
             </div>
             ${hw.student_note ? `<div style="font-size:13px;color:#475569;background:#F8FAFC;padding:8px 10px;border-radius:8px;margin-bottom:8px;">Lời nhắn của em: "${hw.student_note}"</div>` : ''}
-            ${hw.file_url ? `<a href="${hw.file_url}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;text-decoration:underline;">Mở xem bài làm của học sinh ↗</a>` : ''}
+            ${renderHomeworkMediaPreview(hw)}
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
             <div style="display:flex;align-items:center;gap:8px;">
@@ -276,7 +327,7 @@
             <textarea id="fb-${safeId}" rows="2" placeholder="Nhập lời nhận xét của cô cho học sinh..." style="padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;font-family:inherit;font-size:13.5px;">${hw.teacher_feedback || ''}</textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button type="button" class="btn-red" style="flex:1;" onclick="submitTeacherDecision('${hw.id}', '${safeId}', 'graded')">✓ Đạt / Hoàn thành</button>
-              <button type="button" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${hw.id}', '${safeId}', 'needs_revision')">↺ Yêu cầu con sửa lại bài</button>
+              <button type="button" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${hw.id}', '${safeId}', 'revision_requested')">↺ Yêu cầu con sửa lại bài</button>
             </div>
           </div>
         </div>
@@ -285,12 +336,15 @@
     }
 
     async function submitTeacherDecision(hwId, safeId, targetStatus) {
+      const normalizedStatus = (targetStatus === 'revision_requested' || targetStatus === 'needs_revision')
+        ? 'revision_requested'
+        : 'graded';
       const scoreEl = document.getElementById('score-' + safeId);
       const fbEl = document.getElementById('fb-' + safeId);
       const score = scoreEl ? Number(scoreEl.value) : 9.5;
       const teacherFeedback = fbEl ? fbEl.value.trim() : '';
       if (!teacherFeedback) {
-        alert(targetStatus === 'needs_revision'
+        alert(normalizedStatus === 'revision_requested'
           ? 'Cô hãy ghi rõ điểm cần sửa để học sinh biết cách làm lại bài nhé.'
           : 'Cô hãy nhập lời nhận xét cho học sinh nhé.');
         if (fbEl) fbEl.focus();
@@ -299,45 +353,39 @@
 
       const payload = {
         id: hwId,
-        status: targetStatus,
-        score: targetStatus === 'needs_revision' ? null : score,
+        status: normalizedStatus,
+        score: normalizedStatus === 'revision_requested' ? null : score,
         teacherFeedback
       };
-
-      // Lưu đồng bộ vào cả localStorage để học sinh mở trên cùng trình duyệt thấy ngay lập tức
-      try {
-        const localHw = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
-        const idx = localHw.findIndex(h => h && h.id === hwId);
-        if (idx >= 0) {
-          localHw[idx].status = targetStatus;
-          localHw[idx].score = payload.score;
-          localHw[idx].teacher_feedback = teacherFeedback;
-          localHw[idx].graded_at = new Date().toISOString();
-        } else {
-          localHw.unshift({
-            id: hwId,
-            status: targetStatus,
-            score: payload.score,
-            teacher_feedback: teacherFeedback,
-            graded_at: new Date().toISOString()
-          });
-        }
-        localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(localHw));
-      } catch (e) {}
 
       const res = await KtnWebApp.apiRequest('/api/ktn/homeworks/grade', {
         method: 'PATCH',
         body: payload
       });
 
-      if (res.ok) {
-        alert(targetStatus === 'needs_revision'
-          ? 'Đã gửi yêu cầu "Cần sửa" kèm lời hướng dẫn cho học sinh!'
-          : 'Đã chấm Hoàn thành và gửi lời nhận xét cho học sinh!');
-        loadTeacherHomeworks();
-      } else {
-        loadTeacherHomeworks();
+      if (!res.ok || !res.data?.ok) {
+        alert((res.data && res.data.message) || 'Chưa lưu được kết quả chấm bài lên máy chủ. Cô vui lòng kiểm tra kết nối và thử lại nhé.');
+        return;
       }
+
+      // Chỉ cập nhật bộ nhớ trình duyệt sau khi máy chủ xác nhận đã lưu thành công
+      try {
+        const updatedHw = res.data.homework || {};
+        const localHw = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+        const idx = localHw.findIndex(h => h && h.id === hwId);
+        if (idx >= 0) {
+          localHw[idx].status = normalizedStatus;
+          localHw[idx].score = payload.score;
+          localHw[idx].teacher_feedback = teacherFeedback;
+          localHw[idx].graded_at = updatedHw.graded_at || new Date().toISOString();
+        }
+        localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(localHw));
+      } catch (e) {}
+
+      alert(normalizedStatus === 'revision_requested'
+        ? 'Đã gửi yêu cầu "Cần sửa" kèm lời hướng dẫn cho học sinh!'
+        : 'Đã chấm Hoàn thành và gửi lời nhận xét cho học sinh!');
+      loadTeacherHomeworks();
     }
 
     function getStoredClassSessions(classCode) {
@@ -348,13 +396,22 @@
           if (Array.isArray(parsed) && parsed.length) return parsed;
         }
       } catch (e) {}
-      return DEFAULT_CLASS_SESSIONS[classCode] || DEFAULT_CLASS_SESSIONS['YCT2-04'];
+      return Object.prototype.hasOwnProperty.call(DEFAULT_CLASS_SESSIONS, classCode)
+        ? DEFAULT_CLASS_SESSIONS[classCode]
+        : [];
     }
 
-    function loadTeacherClassSessionEditor() {
+    async function loadTeacherClassSessionEditor() {
       const classCode = document.getElementById('assign-class-code').value;
       const sessionNum = Number(document.getElementById('assign-lesson-num').value) || 1;
-      const sessions = getStoredClassSessions(classCode);
+      let sessions = getStoredClassSessions(classCode);
+      try {
+        const res = await KtnWebApp.apiRequest('/api/ktn/class-sessions?classCode=' + encodeURIComponent(classCode));
+        if (res.ok && Array.isArray(res.data?.sessions)) {
+          sessions = res.data.sessions;
+          localStorage.setItem('ktn_class_sessions_' + classCode, JSON.stringify(sessions));
+        }
+      } catch (e) {}
       const found = sessions.find(s => Number(s.sessionNum) === sessionNum) || {
         classCode,
         sessionNum,
@@ -410,9 +467,28 @@
         };
       }).filter(ex => ex.title);
 
+      const sessionObj = { classCode, sessionNum, title, exercises, updatedAt: new Date().toISOString() };
+      const statusEl = document.getElementById('assign-save-status');
+      if (statusEl) {
+        statusEl.style.color = '#475569';
+        statusEl.textContent = 'Đang lưu buổi học lên máy chủ...';
+      }
+
+      const res = await KtnWebApp.apiRequest('/api/ktn/class-sessions', {
+        method: 'POST',
+        body: sessionObj
+      });
+
+      if (!res.ok || !res.data?.ok) {
+        if (statusEl) {
+          statusEl.style.color = '#B91C1C';
+          statusEl.textContent = (res.data && res.data.message) || 'Chưa lưu được buổi học lên máy chủ. Cô vui lòng thử lại nhé.';
+        }
+        return;
+      }
+
       const sessions = getStoredClassSessions(classCode).slice();
       const existingIdx = sessions.findIndex(s => Number(s.sessionNum) === sessionNum);
-      const sessionObj = { classCode, sessionNum, title, exercises, updatedAt: new Date().toISOString() };
       if (existingIdx >= 0) sessions[existingIdx] = sessionObj;
       else sessions.push(sessionObj);
       sessions.sort((a, b) => Number(a.sessionNum) - Number(b.sessionNum));
@@ -421,13 +497,8 @@
         localStorage.setItem('ktn_class_sessions_' + classCode, JSON.stringify(sessions));
       } catch (err) {}
 
-      await KtnWebApp.apiRequest('/api/ktn/class-sessions', {
-        method: 'POST',
-        body: sessionObj
-      }).catch(() => {});
-
-      const statusEl = document.getElementById('assign-save-status');
       if (statusEl) {
+        statusEl.style.color = '#15803D';
         statusEl.textContent = `✓ Đã lưu ${title} (${exercises.length} bài tập) cho lớp ${classCode}!`;
         setTimeout(() => { statusEl.textContent = ''; }, 4000);
       }

@@ -760,6 +760,29 @@ export default {
       });
     }
 
+    // Phục vụ trực tiếp 3 trang con độc lập & client core từ CloudFront CDN
+    const STANDALONE_CDN_FILES = {
+      '/sll-hocsinh.html': 'text/html; charset=utf-8',
+      '/sll-teacher.html': 'text/html; charset=utf-8',
+      '/sll-admin.html': 'text/html; charset=utf-8',
+      '/ktn-webapp-client.js': 'application/javascript; charset=utf-8'
+    };
+    if (STANDALONE_CDN_FILES[path]) {
+      const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+      const cdnUrl = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/sofl-remake${path}`;
+      const cdnRes = await fetch(cdnUrl, { cf: { cacheTtl: 60, cacheEverything: true } });
+      if (cdnRes.ok) {
+        return new Response(cdnRes.body, {
+          status: 200,
+          headers: {
+            'Content-Type': STANDALONE_CDN_FILES[path],
+            'Cache-Control': 'no-cache, must-revalidate',
+            ...CORS_HEADERS
+          }
+        });
+      }
+    }
+
     // ------------------------------------------------------------------------
     // A. ĐĂNG NHẬP TỪ POPUP TRANG CHỦ -> CẤP THẺ TỪ & CHIA VỀ 3 TRANG CON
     // ------------------------------------------------------------------------

@@ -2731,7 +2731,29 @@
       return merged;
     }
 
+    function escapeHtml(val) {
+      if (window.__ktnEscapeHtml) return window.__ktnEscapeHtml(val);
+      if (val === null || val === undefined) return '';
+      return String(val)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function safeUrl(url) {
+      if (window.__ktnSafeUrl) return window.__ktnSafeUrl(url);
+      if (!url) return '';
+      const s = String(url).trim();
+      if (/^(https?:\/\/|\/|blob:|data:audio\/|data:image\/)/i.test(s)) {
+        return escapeHtml(s);
+      }
+      return '';
+    }
+
     function getRealCurrentUser() {
+      if (window.__ktnLoggingOut) return null;
       // 1. Persistent auth
       try {
         const rawP = localStorage.getItem('ktn_sll_persistent_auth_v2');
@@ -2950,11 +2972,13 @@
     }
 
     async function syncPortalState() {
+      if (window.__ktnLoggingOut) return;
       const user = getRealCurrentUser();
       if (!user) {
         IzTeachStore.entitlement = { hasAccess: false, reason: 'guest', label: 'Chưa đăng nhập', enrolledCourseIds: [] };
         IzTeachStore.entitlementUserId = null;
         IzTeachStore.homeworkMap = {};
+        IzTeachStore.lastHwFetchedAt = 0;
         renderUserProfile();
         showCoursesDashboard();
         renderSidebarLessons();
@@ -2966,6 +2990,12 @@
       const localIds = getLocalEnrolledCourseIds(user);
       const hasLocalPaid = localIds.length > 0;
       const userId = user.id;
+
+      if (IzTeachStore.entitlementUserId !== userId) {
+        IzTeachStore.homeworkMap = {};
+        IzTeachStore.lastHwFetchedAt = 0;
+        IzTeachStore.serviceToken = null;
+      }
 
       // Cập nhật tức thì (Synchronous Optimistic Update) trước khi chờ mạng
       if (isStaff) {
@@ -3001,6 +3031,7 @@
       IzTeachStore.isSyncing = true;
       try {
         let effectiveToken = await IzTeachPortalClient.getValidBackendToken(user.accessToken);
+        if (window.__ktnLoggingOut) return;
 
         if (isStaff) {
           IzTeachStore.entitlement = { hasAccess: true, reason: 'staff', label: 'Ban Quản Lý & Giáo Viên', enrolledCourseIds: Object.keys(PORTAL_COURSE_CATALOG) };
@@ -3047,10 +3078,10 @@
             IzTeachStore.lastHwFetchedAt = Date.now();
           }
         }
-        if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function' && !window.__ktnLoggingOut) {
           try {
             const ktnHwRes = await window.KtnWebApp.apiRequest('/api/ktn/homeworks');
-            if (ktnHwRes.ok && Array.isArray(ktnHwRes.data?.homeworks)) {
+            if (ktnHwRes.ok && Array.isArray(ktnHwRes.data?.homeworks) && !window.__ktnLoggingOut) {
               const serverList = ktnHwRes.data.homeworks;
               const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
               const map = new Map();
@@ -3069,16 +3100,18 @@
         console.error('[syncPortalState] Lỗi đồng bộ backend:', err);
       } finally {
         IzTeachStore.isSyncing = false;
-        renderUserProfile();
-        const learningEl = document.getElementById('view-course-learning');
-        const isInClassroom = learningEl && learningEl.style.display === 'block' && IzTeachStore.entitlement && IzTeachStore.entitlement.hasAccess;
-        if (!isInClassroom) {
-          showCoursesDashboard();
-        } else {
-          updateDashboardProgress();
-          if (LESSONS[currentLessonIdx]) renderInteractiveWorkbook(LESSONS[currentLessonIdx]);
+        if (!window.__ktnLoggingOut) {
+          renderUserProfile();
+          const learningEl = document.getElementById('view-course-learning');
+          const isInClassroom = learningEl && learningEl.style.display === 'block' && IzTeachStore.entitlement && IzTeachStore.entitlement.hasAccess;
+          if (!isInClassroom) {
+            showCoursesDashboard();
+          } else {
+            updateDashboardProgress();
+            if (LESSONS[currentLessonIdx]) renderInteractiveWorkbook(LESSONS[currentLessonIdx]);
+          }
+          renderSidebarLessons();
         }
-        renderSidebarLessons();
       }
     }
 
@@ -3107,6 +3140,11 @@
           initials = words[0].slice(0, 2).toUpperCase();
         }
 
+        const safeName = escapeHtml(name);
+        const safeEmail = escapeHtml(email);
+        const safeRoleBadge = escapeHtml(roleBadge);
+        const safeInitials = escapeHtml(initials);
+
         container.innerHTML = `
           <button type="button" class="ktn-bell-btn portal-bell-btn" id="ktn-portal-bell-trigger" onclick="(window.KTN_NOTIF||window.app)?.toggleNotificationCenter?.()" title="Trung tâm thông báo Học Viện Khổng Tử Nhí" aria-label="Thông báo học viên">
             <svg class="ktn-bell-icon portal-bell-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3116,10 +3154,10 @@
             <span class="ktn-unread-badge portal-bell-badge hidden" id="ktn-portal-unread-count">0</span>
           </button>
           <div class="user-info">
-            <div class="user-name" title="Đang đăng nhập: ${name}">Đang đăng nhập: ${name}</div>
-            <div class="user-class" title="${email}">${roleBadge} · ${email}</div>
+            <div class="user-name" title="Đang đăng nhập: ${safeName}">Đang đăng nhập: ${safeName}</div>
+            <div class="user-class" title="${safeEmail}">${safeRoleBadge} · ${safeEmail}</div>
           </div>
-          <div class="user-avatar" title="${name} (${email})">${initials}</div>
+          <div class="user-avatar" title="${safeName} (${safeEmail})">${safeInitials}</div>
           <button type="button" class="btn-user-logout" onclick="switchStudentAccountPreservingHash()" title="Đổi sang tài khoản khác trên cùng thiết bị" style="margin-right:4px;">Đổi tài khoản</button>
           <button type="button" class="btn-user-logout" onclick="logoutRealUser()" title="Đăng xuất">Đăng xuất</button>
         `;
@@ -3148,47 +3186,35 @@
       window.location.replace('/?login=1');
     }
 
-    function switchStudentAccountPreservingHash() {
+    async function switchStudentAccountPreservingHash() {
       const targetHash = window.location.hash || '';
+      window.__ktnLoggingOut = true;
+      window.__ktnAllowLogout = true;
+      currentStudentSession = null;
+      currentStudentProfile = null;
+      IzTeachStore.entitlement = null;
+      IzTeachStore.entitlementUserId = null;
+      IzTeachStore.homeworkMap = {};
       if (window.KtnWebApp && typeof window.KtnWebApp.switchAccountPreservingTarget === 'function') {
-        window.KtnWebApp.switchAccountPreservingTarget(targetHash);
+        await window.KtnWebApp.switchAccountPreservingTarget(targetHash);
         return;
       }
-      try {
-        if (targetHash && targetHash !== '#/' && targetHash !== '#') {
-          localStorage.setItem('ktn_pending_target_hash', targetHash);
-        }
-        localStorage.removeItem('ol-credentials-auth-user');
-        localStorage.removeItem('ktn_sll_persistent_auth_v2');
-      } catch (e) {}
       window.location.replace('/?login=1');
     }
 
-    function logoutRealUser() {
-      if (confirm('Em có chắc chắn muốn đăng xuất khỏi tài khoản hiện tại?')) {
-        window.__ktnAllowLogout = true;
-        try {
-          localStorage.removeItem('ol-credentials-auth-user');
-          localStorage.removeItem('ktn_sll_persistent_auth_v2');
-          localStorage.removeItem('ktn_sll_view');
-          localStorage.removeItem('ktn_sll_fresh_login');
-          localStorage.removeItem('ktn_pending_target_hash');
-          sessionStorage.clear();
-          IzTeachStore.entitlement = null;
-          IzTeachStore.homeworkMap = {};
-        } catch (e) {}
-        try {
-          document.cookie = 'ktn_sll_auth_v2=; path=/; max-age=0; SameSite=Lax';
-          document.cookie = 'ktn_sll_auth_v2=; domain=.khongtunhi.com; path=/; max-age=0; SameSite=Lax';
-        } catch (e) {}
-        try {
-          if (window.caches && typeof window.caches.open === 'function') {
-            window.caches.open('ktn-sll-auth-v2').then(c => c.delete('/__ktn_session__')).catch(() => {});
-          }
-        } catch (e) {}
-        
-        window.location.href = '/';
+    async function logoutRealUser() {
+      window.__ktnLoggingOut = true;
+      window.__ktnAllowLogout = true;
+      currentStudentSession = null;
+      currentStudentProfile = null;
+      IzTeachStore.entitlement = null;
+      IzTeachStore.entitlementUserId = null;
+      IzTeachStore.homeworkMap = {};
+      if (window.KtnWebApp && typeof window.KtnWebApp.logout === 'function') {
+        await window.KtnWebApp.logout({ redirectUrl: '/?login=1' });
+        return;
       }
+      window.location.replace('/?login=1');
     }
 
     // ============================================================
@@ -3256,29 +3282,33 @@
         return { status: 'unsubmitted', score: null, submittedAt: null, note: '', teacherComment: null, attachments: [] };
       }
       const targetCourseId = explicitCourseId || lesson.courseId || activeCourseId || HSK1_COURSE_ID;
+      const user = getRealCurrentUser();
+      const curEmail = String(user?.email || '').trim().toLowerCase();
 
       // 1. Tìm bản ghi bài tập từ IzTeachStore.homeworkMap (Backend izTeach — khóa theo unitId duy nhất của từng bài)
       const unitIds = (lesson.parts || []).map(p => p.unitId).filter(Boolean);
       let hwRecord = null;
       for (const uId of unitIds) {
         if (IzTeachStore.homeworkMap[uId]) {
-          hwRecord = IzTeachStore.homeworkMap[uId];
-          break;
+          const cand = IzTeachStore.homeworkMap[uId];
+          const candEmail = String(cand?.email || '').trim().toLowerCase();
+          if (!candEmail || (curEmail && candEmail === curEmail)) {
+            hwRecord = cand;
+            break;
+          }
         }
       }
 
       // 2. Tìm bản ghi đồng bộ từ Sổ Liên Lạc Cloud State & localStorage ('ktn_local_submitted_homeworks')
       let sllHw = null;
-      const user = getRealCurrentUser();
-      const curEmail = String(user?.email || '').trim().toLowerCase();
-      if (window.app && Array.isArray(window.app.state?.homeworks)) {
+      if (curEmail && window.app && Array.isArray(window.app.state?.homeworks)) {
         sllHw = window.app.state.homeworks.find(h => {
           if (!h) return false;
           const hUnit = h.unitId || h.unit || '';
           const hCourse = h.courseId || h.course || '';
           const hLessonNum = Number(h.lessonNum) || 0;
           const hEmail = String(h.studentEmail || '').trim().toLowerCase();
-          if (curEmail && hEmail && hEmail !== curEmail) return false;
+          if (!hEmail || hEmail !== curEmail) return false;
           if (hUnit && unitIds.includes(hUnit)) return true;
           if (hCourse && hCourse === targetCourseId && hLessonNum === Number(lesson.num)) return true;
           return false;
@@ -3286,19 +3316,21 @@
       }
 
       let localHw = null;
-      try {
-        const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
-        if (Array.isArray(localArr)) {
-          localHw = localArr.find(h => {
-            if (!h) return false;
-            const hEmail = String(h.student_email || h.studentEmail || '').trim().toLowerCase();
-            if (curEmail && hEmail && hEmail !== curEmail) return false;
-            const hCourse = h.course_id || h.courseId || '';
-            const hLessonNum = Number(h.lesson_num || h.lessonNum) || 0;
-            return hCourse === targetCourseId && hLessonNum === Number(lesson.num);
-          }) || null;
-        }
-      } catch (e) {}
+      if (curEmail) {
+        try {
+          const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+          if (Array.isArray(localArr)) {
+            localHw = localArr.find(h => {
+              if (!h) return false;
+              const hEmail = String(h.student_email || h.studentEmail || '').trim().toLowerCase();
+              if (!hEmail || hEmail !== curEmail) return false;
+              const hCourse = h.course_id || h.courseId || '';
+              const hLessonNum = Number(h.lesson_num || h.lessonNum) || 0;
+              return hCourse === targetCourseId && hLessonNum === Number(lesson.num);
+            }) || null;
+          }
+        } catch (e) {}
+      }
 
       if (hwRecord || sllHw || localHw) {
         const rawStatus = String(localHw?.status || sllHw?.status || hwRecord?.state || '').toLowerCase();
@@ -3495,25 +3527,27 @@
           <div style="background:#FFFFFF;border:1px solid #FDE68A;border-left:4px solid #D97706;border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;">
             <div>
               <span style="display:inline-block;background:#FEF3C7;color:#B45309;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">CẦN SỬA LẠI BÀI</span>
-              <div style="font-size:15px;font-weight:800;color:#0F172A;">${meta.shortTitle} · Bài ${revisionItem.lesson.num}: ${revisionItem.lesson.titleZh}</div>
-              <div style="font-size:13px;color:#475569;margin-top:4px;">Cô nhắn: "${revisionItem.hw.teacherComment || 'Em kiểm tra và nộp lại bài cho cô nhé.'}"</div>
+              <div style="font-size:15px;font-weight:800;color:#0F172A;">${escapeHtml(meta.shortTitle)} · Bài ${escapeHtml(revisionItem.lesson.num)}: ${escapeHtml(revisionItem.lesson.titleZh)}</div>
+              <div style="font-size:13px;color:#475569;margin-top:4px;">Cô nhắn: "${escapeHtml(revisionItem.hw.teacherComment || 'Em kiểm tra và nộp lại bài cho cô nhé.')}"</div>
             </div>
             <div>
-              <button type="button" onclick="navigateStudentHash('#/khoa/${getCourseSlug(revisionItem.cid)}/bai/${revisionItem.lesson.num}')" style="background:#D97706;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Sửa bài →</button>
+              <button type="button" onclick="navigateStudentHash('#/khoa/${escapeHtml(getCourseSlug(revisionItem.cid))}/bai/${escapeHtml(revisionItem.lesson.num)}')" style="background:#D97706;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Sửa bài →</button>
             </div>
           </div>
         `);
       } else if (liveClassCode) {
         const teacherName = currentStudentProfile?.teacher_name || 'cô giáo';
+        const safeClass = escapeHtml(liveClassCode);
+        const safeTeacher = escapeHtml(teacherName);
         cards.push(`
           <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #B91C1C;border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;">
             <div>
-              <span style="display:inline-block;background:#FFF1F2;color:#B91C1C;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">BÀI CÔ GIAO · LỚP ${liveClassCode}</span>
-              <div style="font-size:15px;font-weight:800;color:#0F172A;">Làm bài tập buổi học cùng ${teacherName}</div>
-              <div style="font-size:13px;color:#475569;margin-top:4px;">Mở đúng buổi học của lớp ${liveClassCode} để thu âm và nộp bài cho cô.</div>
+              <span style="display:inline-block;background:#FFF1F2;color:#B91C1C;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">BÀI CÔ GIAO · LỚP ${safeClass}</span>
+              <div style="font-size:15px;font-weight:800;color:#0F172A;">Làm bài tập buổi học cùng ${safeTeacher}</div>
+              <div style="font-size:13px;color:#475569;margin-top:4px;">Mở đúng buổi học của lớp ${safeClass} để thu âm và nộp bài cho cô.</div>
             </div>
             <div>
-              <button type="button" onclick="navigateStudentHash('#/lop/${liveClassCode.toLowerCase()}/buoi/1')" style="background:#B91C1C;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Làm bài cô giao →</button>
+              <button type="button" onclick="navigateStudentHash('#/lop/${escapeHtml(liveClassCode.toLowerCase())}/buoi/1')" style="background:#B91C1C;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Làm bài cô giao →</button>
             </div>
           </div>
         `);
@@ -3532,11 +3566,11 @@
           <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #2563EB;border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;">
             <div>
               <span style="display:inline-block;background:#EFF6FF;color:#1D4ED8;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">${started ? 'TIẾP TỤC HỌC' : 'BẮT ĐẦU KHÓA HỌC'}</span>
-              <div style="font-size:15px;font-weight:800;color:#0F172A;">${meta.shortTitle} · Bài ${targetLesson.num}: ${targetLesson.titleZh || ''}</div>
-              <div style="font-size:13px;color:#475569;margin-top:4px;">${targetLesson.titleVi || 'Xem video bài giảng, nghe mẫu và làm bài tập.'}</div>
+              <div style="font-size:15px;font-weight:800;color:#0F172A;">${escapeHtml(meta.shortTitle)} · Bài ${escapeHtml(targetLesson.num)}: ${escapeHtml(targetLesson.titleZh || '')}</div>
+              <div style="font-size:13px;color:#475569;margin-top:4px;">${escapeHtml(targetLesson.titleVi || 'Xem video bài giảng, nghe mẫu và làm bài tập.')}</div>
             </div>
             <div>
-              <button type="button" onclick="navigateStudentHash('#/khoa/${getCourseSlug(primaryCid)}/bai/${targetLesson.num}')" style="background:#0F172A;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">${btnLabel} →</button>
+              <button type="button" onclick="navigateStudentHash('#/khoa/${escapeHtml(getCourseSlug(primaryCid))}/bai/${escapeHtml(targetLesson.num)}')" style="background:#0F172A;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">${escapeHtml(btnLabel)} →</button>
             </div>
           </div>
         `);
@@ -3561,12 +3595,12 @@
         cards.push(`
           <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #16A34A;border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;">
             <div>
-              <span style="display:inline-block;background:#DCFCE7;color:#15803D;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">CÔ ĐÃ NHẬN XÉT · ${gradedItem.hw.score || 10}/10</span>
-              <div style="font-size:15px;font-weight:800;color:#0F172A;">${meta.shortTitle} · Bài ${gradedItem.lesson.num}: ${gradedItem.lesson.titleZh}</div>
-              <div style="font-size:13px;color:#475569;margin-top:4px;">"${gradedItem.hw.teacherComment || 'Con hoàn thành bài rất tốt!'}"</div>
+              <span style="display:inline-block;background:#DCFCE7;color:#15803D;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">CÔ ĐÃ NHẬN XÉT · ${escapeHtml(gradedItem.hw.score || 10)}/10</span>
+              <div style="font-size:15px;font-weight:800;color:#0F172A;">${escapeHtml(meta.shortTitle)} · Bài ${escapeHtml(gradedItem.lesson.num)}: ${escapeHtml(gradedItem.lesson.titleZh)}</div>
+              <div style="font-size:13px;color:#475569;margin-top:4px;">"${escapeHtml(gradedItem.hw.teacherComment || 'Con hoàn thành bài rất tốt!')}"</div>
             </div>
             <div>
-              <button type="button" onclick="navigateStudentHash('#/khoa/${getCourseSlug(gradedItem.cid)}/bai/${gradedItem.lesson.num}')" style="background:#F8FAFC;color:#0F172A;border:1px solid #CBD5E1;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Xem lời cô →</button>
+              <button type="button" onclick="navigateStudentHash('#/khoa/${escapeHtml(getCourseSlug(gradedItem.cid))}/bai/${escapeHtml(gradedItem.lesson.num)}')" style="background:#F8FAFC;color:#0F172A;border:1px solid #CBD5E1;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Xem lời cô →</button>
             </div>
           </div>
         `);
@@ -3617,32 +3651,35 @@
         if (liveClassCode) {
           const teacherName = currentStudentProfile?.teacher_name || 'Cô Lâm Mỹ Linh';
           const scheduleText = currentStudentProfile?.schedule || 'Thứ 3 & Thứ 6 (19:30 - 21:00)';
+          const safeClass = escapeHtml(liveClassCode);
+          const safeTeacher = escapeHtml(teacherName);
+          const safeSched = escapeHtml(scheduleText);
           liveClassSlot.style.display = 'contents';
           liveClassSlot.innerHTML = `
             <div class="course-card-single" style="display:grid;margin:0;max-width:none;border:1px solid #E2E8F0;">
               <div class="course-card-thumb-wrap" style="background:#0F172A;display:flex;align-items:center;justify-content:center;color:#FFF;padding:24px;text-align:center;">
                 <div>
                   <div style="font-size:2rem;margin-bottom:6px;">🏫</div>
-                  <div style="font-weight:900;font-size:1.1rem;letter-spacing:0.02em;">LỚP CỦA EM: ${liveClassCode}</div>
-                  <div style="font-size:0.8rem;color:#CBD5E1;margin-top:4px;">${teacherName} · ${scheduleText}</div>
+                  <div style="font-weight:900;font-size:1.1rem;letter-spacing:0.02em;">LỚP CỦA EM: ${safeClass}</div>
+                  <div style="font-size:0.8rem;color:#CBD5E1;margin-top:4px;">${safeTeacher} · ${safeSched}</div>
                 </div>
                 <span class="course-card-badge" style="background:#F8FAFC;color:#0F172A;">LỚP CÔ GIÁO</span>
               </div>
               <div class="course-card-content">
                 <div class="course-card-title">
-                  <span>Lớp ${liveClassCode}</span>
+                  <span>Lớp ${safeClass}</span>
                   <span style="font-size:0.85rem;color:#15803D;font-weight:800;">Đang theo học</span>
                 </div>
                 <div class="course-card-meta">
-                  <span>👩‍🏫 ${teacherName}</span>
+                  <span>👩‍🏫 ${safeTeacher}</span>
                   <span>•</span>
                   <span>📝 Buổi 1, Buổi 2, Buổi 3...</span>
                 </div>
                 <div style="margin:10px 0;padding:10px 12px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:0.82rem;color:#334155;">
                   Xem danh sách các buổi học trên lớp, làm bài cô giao và đọc lời nhận xét của cô.
                 </div>
-                <button type="button" class="btn-enter-course" onclick="navigateStudentHash('#/lop/${liveClassCode.toLowerCase()}')">
-                  <span>Làm bài cô giao (Lớp ${liveClassCode})</span>
+                <button type="button" class="btn-enter-course" onclick="navigateStudentHash('#/lop/${escapeHtml(liveClassCode.toLowerCase())}')">
+                  <span>Làm bài cô giao (Lớp ${safeClass})</span>
                   <span>→</span>
                 </button>
               </div>
@@ -4358,10 +4395,11 @@
           previewBox.style.display = 'block';
           const itemsHtml = hw.attachments.map(att => {
             const sizeKb = att.size ? Math.max(1, Math.round(att.size / 1024)) + ' KB' : 'Đã lưu';
-            const mediaUrl = att.fileUrl || att.cdnUrl || att.playUrl || '';
+            const mediaUrl = safeUrl(att.fileUrl || att.cdnUrl || att.playUrl || '');
+            const safeTitle = escapeHtml(att.title || 'Tệp đính kèm');
             let mediaPreviewHtml = '';
             if (att.mediaType === 'image' && mediaUrl) {
-              mediaPreviewHtml = `<a href="${mediaUrl}" target="_blank" rel="noopener" style="display:block;margin-top:6px;"><img src="${mediaUrl}" alt="${att.title}" style="max-height:140px;max-width:100%;border-radius:6px;border:1px solid #cbd5e1;object-fit:contain;background:#fff;"></a>`;
+              mediaPreviewHtml = `<a href="${mediaUrl}" target="_blank" rel="noopener" style="display:block;margin-top:6px;"><img src="${mediaUrl}" alt="${safeTitle}" style="max-height:140px;max-width:100%;border-radius:6px;border:1px solid #cbd5e1;object-fit:contain;background:#fff;"></a>`;
             } else if (att.mediaType === 'audio' && mediaUrl) {
               mediaPreviewHtml = `<audio controls preload="metadata" src="${mediaUrl}" style="width:100%;height:36px;margin-top:6px;"></audio>`;
             } else if (att.mediaType === 'video' && mediaUrl) {
@@ -4370,7 +4408,7 @@
             return `
               <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin-top:6px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;">
-                  <span style="font-weight:700;color:#0f172a;">Nghe lại bài đã gửi: ${att.title} <span style="font-weight:500;color:#64748b;">(${sizeKb})</span></span>
+                  <span style="font-weight:700;color:#0f172a;">Nghe lại bài đã gửi: ${safeTitle} <span style="font-weight:500;color:#64748b;">(${escapeHtml(sizeKb)})</span></span>
                   ${mediaUrl ? `<a href="${mediaUrl}" target="_blank" rel="noopener" style="color:#2563eb;font-weight:600;text-decoration:underline;font-size:0.75rem;">Mở tệp ↗</a>` : ''}
                 </div>
                 ${mediaPreviewHtml}
@@ -4380,7 +4418,7 @@
           previewBox.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;color:#15803d;font-weight:700;">
               <span>Bài đã gửi cho cô (${hw.attachments.length} tệp)</span>
-              <span style="font-size:0.72rem;color:#475569;font-weight:600;">${hw.submittedAt || ''}</span>
+              <span style="font-size:0.72rem;color:#475569;font-weight:600;">${escapeHtml(hw.submittedAt || '')}</span>
             </div>
             ${itemsHtml}
           `;
@@ -4389,7 +4427,7 @@
           previewBox.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;color:#15803d;font-weight:700;">
               <span>Bài tập đã nộp cho cô giáo</span>
-              <span style="font-size:0.72rem;color:#475569;font-weight:600;">${hw.submittedAt || ''}</span>
+              <span style="font-size:0.72rem;color:#475569;font-weight:600;">${escapeHtml(hw.submittedAt || '')}</span>
             </div>
           `;
         } else {
@@ -4409,7 +4447,7 @@
         noteInput.value = hw.note || '';
         if (submitBtnText) submitBtnText.textContent = 'Nộp lại cho cô';
       } else if (hw.status === 'graded') {
-        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#dcfce7;color:#15803d;">✓ Đã hoàn thành · ' + hw.score + '/10</span>';
+        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#dcfce7;color:#15803d;">✓ Đã hoàn thành · ' + escapeHtml(hw.score) + '/10</span>';
         feedbackBox.style.display = 'block';
         feedbackBox.style.background = '#F0FDF4';
         feedbackBox.style.borderColor = '#86EFAC';
@@ -5220,7 +5258,7 @@
 
       if (desc) {
         if (classCode) {
-          desc.innerHTML = `Lớp <strong>${classCode}</strong> · Giáo viên phụ trách: <strong>${teacherName}</strong> · Lịch học: <strong>${scheduleText}</strong>`;
+          desc.innerHTML = `Lớp <strong>${escapeHtml(classCode)}</strong> · Giáo viên phụ trách: <strong>${escapeHtml(teacherName)}</strong> · Lịch học: <strong>${escapeHtml(scheduleText)}</strong>`;
         } else if (sCase === 'online_only') {
           desc.innerHTML = `Em đang học <strong>${courses.length} khóa học Video tự học</strong>. Khi em nộp bài, cô giáo sẽ chấm và gửi lời nhận xét tại đây.`;
         } else {
@@ -5233,7 +5271,9 @@
           const cid = c.id || c._id || c;
           const title = c.title || c.shortTitle || PORTAL_COURSE_CATALOG[cid]?.shortTitle || cid;
           const nextNum = getLastStudiedLesson(cid);
-          return `<button type="button" onclick="openVideoCourseDirectly('${cid}')" style="background:#FFF1F2;color:#B91C1C;border:1px solid #FECACA;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;" title="Bấm để mở ngay khóa ${title}">🎬 Học tiếp: ${title} (Bài ${nextNum}) →</button>`;
+          const safeCid = escapeHtml(cid);
+          const safeTitle = escapeHtml(title);
+          return `<button type="button" onclick="openVideoCourseDirectly('${safeCid}')" style="background:#FFF1F2;color:#B91C1C;border:1px solid #FECACA;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;" title="Bấm để mở ngay khóa ${safeTitle}">🎬 Học tiếp: ${safeTitle} (Bài ${escapeHtml(nextNum)}) →</button>`;
         }).join('');
       }
 
@@ -5272,8 +5312,16 @@
     };
 
     async function syncLiveStudentProfile() {
+      if (window.__ktnLoggingOut) return;
       const user = getRealCurrentUser();
       const email = String(user?.email || '').trim().toLowerCase();
+      if (!user || !email) {
+        currentStudentProfile = null;
+        currentStudentSession = null;
+        renderStudentCaseBanner(null);
+        showCoursesDashboard();
+        return;
+      }
       const builtin = BUILTIN_STUDENT_PROFILES[email] || null;
       const appStu = (window.app && Array.isArray(window.app.students))
         ? window.app.students.find(s => String(s.email || '').trim().toLowerCase() === email)
@@ -5309,9 +5357,10 @@
       currentStudentProfile = resolvedProfile;
       renderStudentCaseBanner(currentStudentProfile);
 
-      if (window.KtnWebApp) {
+      if (window.KtnWebApp && !window.__ktnLoggingOut) {
         try {
           const res = await KtnWebApp.apiRequest('/api/ktn/students/me');
+          if (window.__ktnLoggingOut) return;
           if (res.ok && res.data?.student) {
             const srv = res.data.student;
             mergedCourses = mergeCoursesList(mergedCourses, srv.online_courses, srv.onlineCourses);
@@ -5330,11 +5379,15 @@
         } catch (e) {}
       }
 
-      if (user && window.KtnWebApp && typeof KtnWebApp.saveSession === 'function') {
+      if (window.__ktnLoggingOut) return;
+      const latestUser = getRealCurrentUser();
+      if (!latestUser || String(latestUser.email || '').trim().toLowerCase() !== email) return;
+
+      if (window.KtnWebApp && typeof KtnWebApp.saveSession === 'function') {
         try {
           currentStudentSession = await KtnWebApp.saveSession({
-            ...user,
-            code: currentStudentProfile.code || user.code,
+            ...latestUser,
+            code: currentStudentProfile.code || latestUser.code,
             classCode: currentStudentProfile.classCode,
             teacherName: currentStudentProfile.teacher_name,
             schedule: currentStudentProfile.schedule,
@@ -5342,12 +5395,14 @@
             hasOnlineCourses: mergedCourses.length > 0,
             onlineCourses: mergedCourses,
             studentCase: currentStudentProfile.studentCase
-          }, user.token || user.accessToken);
+          }, latestUser.token || latestUser.accessToken);
         } catch (e) {}
       }
 
-      renderStudentCaseBanner(currentStudentProfile);
-      showCoursesDashboard();
+      if (!window.__ktnLoggingOut) {
+        renderStudentCaseBanner(currentStudentProfile);
+        showCoursesDashboard();
+      }
     }
 
     async function getClassSessionsForClass(classCode) {
@@ -5388,6 +5443,7 @@
     function getClassExerciseSubmission(classCode, sessionNum, exerciseNum) {
       const user = getRealCurrentUser() || currentStudentProfile;
       const curEmail = String(user?.email || '').trim().toLowerCase();
+      if (!curEmail) return null;
       const syntheticLessonNum = Number(sessionNum) * 100 + Number(exerciseNum);
       const targetCourseKey = 'CLASS_' + String(classCode || '').toUpperCase();
       try {
@@ -5396,7 +5452,7 @@
           const match = localArr.find(h => {
             if (!h) return false;
             const hEmail = String(h.student_email || h.studentEmail || '').trim().toLowerCase();
-            if (curEmail && hEmail && hEmail !== curEmail) return false;
+            if (!hEmail || hEmail !== curEmail) return false;
             return (h.course_id === targetCourseKey || h.class_code === classCode) && Number(h.lesson_num) === syntheticLessonNum;
           });
           if (match) return match;
@@ -5480,12 +5536,13 @@
       }
       cardEl.style.display = 'block';
 
+      const safeClassCode = escapeHtml(effectiveClassCode);
       const sessions = await getClassSessionsForClass(effectiveClassCode);
       if (!sessions || !sessions.length) {
         barEl.innerHTML = '';
         boxEl.innerHTML = `
           <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:18px;color:#475569;font-size:13.5px;">
-            Cô giáo đang cập nhật danh sách buổi học và bài tập cho lớp <strong>${effectiveClassCode}</strong>. Em quay lại kiểm tra sau hoặc nhắn cô ở khung trao đổi bên dưới nhé.
+            Cô giáo đang cập nhật danh sách buổi học và bài tập cho lớp <strong>${safeClassCode}</strong>. Em quay lại kiểm tra sau hoặc nhắn cô ở khung trao đổi bên dưới nhé.
           </div>
         `;
         return;
@@ -5500,13 +5557,15 @@
 
       barEl.innerHTML = sessions.map(s => {
         const isAct = Number(s.session_num) === activeClassSessionNum;
-        return `<button type="button" onclick="navigateStudentHash('#/lop/${effectiveClassCode.toLowerCase()}/buoi/${s.session_num}')" style="padding:8px 14px;border-radius:999px;font-size:13px;font-weight:800;cursor:pointer;border:1px solid ${isAct ? '#B91C1C' : '#CBD5E1'};background:${isAct ? '#B91C1C' : '#FFFFFF'};color:${isAct ? '#FFFFFF' : '#334155'};">Buổi ${s.session_num}</button>`;
+        const sNum = Number(s.session_num) || 1;
+        return `<button type="button" onclick="navigateStudentHash('#/lop/${escapeHtml(effectiveClassCode.toLowerCase())}/buoi/${sNum}')" style="padding:8px 14px;border-radius:999px;font-size:13px;font-weight:800;cursor:pointer;border:1px solid ${isAct ? '#B91C1C' : '#CBD5E1'};background:${isAct ? '#B91C1C' : '#FFFFFF'};color:${isAct ? '#FFFFFF' : '#334155'};">Buổi ${sNum}</button>`;
       }).join('');
 
       const exercises = Array.isArray(currentSession.exercises) ? currentSession.exercises : [];
       const exHtml = exercises.map((ex, idx) => {
         const exNum = Number(ex.num) || (idx + 1);
         const draftKey = `${effectiveClassCode}_${activeClassSessionNum}_${exNum}`;
+        const safeDraftKey = escapeHtml(draftKey);
         const st = window.__classExDrafts[draftKey] || {};
         const hasDraftReady = Boolean(st.voiceFile || st.attachFile);
         const sub = getClassExerciseSubmission(effectiveClassCode, activeClassSessionNum, exNum);
@@ -5516,7 +5575,7 @@
         let badgeHtml = `<span style="background:#F1F5F9;color:#475569;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Chưa nộp</span>`;
         let submitBtnLabel = 'Nộp bài cho cô';
         if (rawStatus === 'graded') {
-          badgeHtml = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Đã hoàn thành · ${sub.score ?? 10}/10</span>`;
+          badgeHtml = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Đã hoàn thành · ${escapeHtml(sub.score ?? 10)}/10</span>`;
           submitBtnLabel = 'Nộp lại cho cô';
         } else if (isRevision) {
           badgeHtml = `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Cần sửa</span>`;
@@ -5529,18 +5588,19 @@
         const feedbackHtml = (sub && (sub.teacher_feedback || rawStatus === 'graded' || isRevision)) ? `
           <div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:${isRevision ? '#FFFBEB' : '#F0FDF4'};border:1px solid ${isRevision ? '#FDE68A' : '#86EFAC'};font-size:13px;color:#0F172A;">
             <div style="font-weight:800;margin-bottom:4px;color:${isRevision ? '#B45309' : '#15803D'};">
-              ${isRevision ? 'Lời cô nhắc sửa bài:' : `Lời cô nhận xét (${sub.score ?? 10}/10):`}
+              ${isRevision ? 'Lời cô nhắc sửa bài:' : `Lời cô nhận xét (${escapeHtml(sub.score ?? 10)}/10):`}
             </div>
-            <div>${(sub.teacher_feedback || 'Con làm bài rất tốt!').replace(/^\[CẦN SỬA\]\s*/i, '')}</div>
+            <div>${escapeHtml((sub.teacher_feedback || 'Con làm bài rất tốt!').replace(/^\[CẦN SỬA\]\s*/i, ''))}</div>
           </div>
         ` : '';
 
         const submittedAtt = (sub && Array.isArray(sub.attachments) && sub.attachments[0]) || null;
-        const submittedUrl = (sub && sub.file_url) || (submittedAtt && (submittedAtt.fileUrl || submittedAtt.cdnUrl)) || '';
+        const rawSubmittedUrl = (sub && sub.file_url) || (submittedAtt && (submittedAtt.fileUrl || submittedAtt.cdnUrl)) || '';
+        const submittedUrl = safeUrl(rawSubmittedUrl);
         const submittedType = (sub && sub.file_type) || (submittedAtt && (submittedAtt.mimeType || submittedAtt.mediaType)) || '';
         let submittedMediaHtml = '';
         if (submittedUrl) {
-          const isImg = String(submittedType).startsWith('image') || /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(submittedUrl);
+          const isImg = String(submittedType).startsWith('image') || /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(rawSubmittedUrl);
           if (isImg) {
             submittedMediaHtml = `
               <div style="margin-top:10px;padding:10px 12px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">
@@ -5564,40 +5624,45 @@
         const submitBtnBg = hasDraftReady ? '#B91C1C' : '#E2E8F0';
         const submitBtnColor = hasDraftReady ? '#FFFFFF' : '#475569';
         const submitBtnBorder = hasDraftReady ? 'none' : '1px solid #CBD5E1';
+        const safeExTitle = escapeHtml(ex.title || ('Bài ' + exNum));
+        const safeExPrompt = escapeHtml(ex.prompt || 'Em bấm Thu âm hoặc Chọn tệp rồi bấm Nộp bài cho cô nhé.');
+        const safeAttachName = st.attachFile ? escapeHtml('Đã chọn: ' + st.attachFile.name) : (st.voiceFile ? 'Đã thu xong · Sẵn sàng nộp' : '');
+        const safeStudentNote = escapeHtml(sub?.student_note || '');
+        const jsTitleArg = escapeHtml((ex.title || ('Bài ' + exNum)).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
 
         return `
           <div id="class-ex-card-${exNum}" style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:16px;margin-top:12px;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
               <div>
-                <div style="font-size:15px;font-weight:800;color:#0F172A;">${ex.title || ('Bài ' + exNum)}</div>
-                <div style="font-size:13px;color:#475569;margin-top:4px;">${ex.prompt || 'Em bấm Thu âm hoặc Chọn tệp rồi bấm Nộp bài cho cô nhé.'}</div>
+                <div style="font-size:15px;font-weight:800;color:#0F172A;">${safeExTitle}</div>
+                <div style="font-size:13px;color:#475569;margin-top:4px;">${safeExPrompt}</div>
               </div>
               ${badgeHtml}
             </div>
             ${feedbackHtml}
             ${submittedMediaHtml}
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
-              <button type="button" id="btn-class-mic-${draftKey}" onclick="toggleClassExRecord('${effectiveClassCode}', ${activeClassSessionNum}, ${exNum})" style="background:${micBtnBg};color:${micBtnColor};border:1px solid ${micBtnBorder};border-radius:8px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;">
-                <span id="lbl-class-mic-${draftKey}">${st.voiceFile ? 'Thu lại' : 'Thu âm'}</span>
+              <button type="button" id="btn-class-mic-${safeDraftKey}" onclick="toggleClassExRecord('${safeClassCode}', ${activeClassSessionNum}, ${exNum})" style="background:${micBtnBg};color:${micBtnColor};border:1px solid ${micBtnBorder};border-radius:8px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;">
+                <span id="lbl-class-mic-${safeDraftKey}">${st.voiceFile ? 'Thu lại' : 'Thu âm'}</span>
               </button>
-              <button type="button" id="btn-class-play-${draftKey}" onclick="playClassExDraft('${draftKey}')" style="display:${st.voiceFile ? 'inline-flex' : 'none'};background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;">
+              <button type="button" id="btn-class-play-${safeDraftKey}" onclick="playClassExDraft('${safeDraftKey}')" style="display:${st.voiceFile ? 'inline-flex' : 'none'};background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;">
                 Nghe lại
               </button>
               <label style="background:#F8FAFC;color:#334155;border:1px solid #CBD5E1;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
                 Chọn tệp
-                <input type="file" accept="image/*,audio/*,video/*" style="display:none;" onchange="handleClassExFile('${draftKey}', this)">
+                <input type="file" accept="image/*,audio/*,video/*" style="display:none;" onchange="handleClassExFile('${safeDraftKey}', this)">
               </label>
-              <span id="lbl-class-file-${draftKey}" style="font-size:12px;color:#15803D;font-weight:700;">${st.attachFile ? ('Đã chọn: ' + st.attachFile.name) : (st.voiceFile ? 'Đã thu xong · Sẵn sàng nộp' : '')}</span>
+              <span id="lbl-class-file-${safeDraftKey}" style="font-size:12px;color:#15803D;font-weight:700;">${safeAttachName}</span>
             </div>
-            <div id="err-class-mic-${draftKey}" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;font-size:12.5px;font-weight:700;"></div>
-            <audio id="audio-class-draft-${draftKey}" controls style="display:${st.voiceFile ? 'block' : 'none'};width:100%;height:36px;margin-top:8px;"></audio>
+            <div id="err-class-mic-${safeDraftKey}" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;font-size:12.5px;font-weight:700;"></div>
+            <audio id="audio-class-draft-${safeDraftKey}" controls style="display:${st.voiceFile ? 'block' : 'none'};width:100%;height:36px;margin-top:8px;"></audio>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-              <input type="text" id="inp-class-note-${draftKey}" value="${sub?.student_note || ''}" placeholder="Ghi chú gửi cô giáo (nếu có)..." style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;font-size:13px;">
-              <button type="button" id="btn-class-submit-${draftKey}" onclick="submitClassSessionExercise('${effectiveClassCode}', ${activeClassSessionNum}, ${exNum}, '${(ex.title || ('Bài ' + exNum)).replace(/'/g, "\\'")}')" style="background:${submitBtnBg};color:${submitBtnColor};border:${submitBtnBorder};border-radius:8px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;">
+              <input type="text" id="inp-class-note-${safeDraftKey}" value="${safeStudentNote}" placeholder="Ghi chú gửi cô giáo (nếu có)..." style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;font-size:13px;">
+              <button type="button" id="btn-class-submit-${safeDraftKey}" onclick="submitClassSessionExercise('${safeClassCode}', ${activeClassSessionNum}, ${exNum}, '${jsTitleArg}')" style="background:${submitBtnBg};color:${submitBtnColor};border:${submitBtnBorder};border-radius:8px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;">
                 ${submitBtnLabel}
               </button>
             </div>
-            <div id="err-class-submit-${draftKey}" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;font-size:12.5px;font-weight:700;">
+            <div id="err-class-submit-${safeDraftKey}" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;font-size:12.5px;font-weight:700;">
               Chưa gửi được bài. Bài làm của em vẫn được giữ nguyên — em bấm <strong>Gửi lại</strong> nhé.
             </div>
           </div>
@@ -5606,8 +5671,8 @@
 
       boxEl.innerHTML = `
         <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px;">
-          <div style="font-size:16px;font-weight:900;color:#0F172A;">${currentSession.session_title || ('Buổi ' + activeClassSessionNum)}</div>
-          <div style="font-size:12.5px;color:#64748B;margin-top:2px;">Lớp ${effectiveClassCode} · Có ${exercises.length} bài tập cô giao trong buổi này</div>
+          <div style="font-size:16px;font-weight:900;color:#0F172A;">${escapeHtml(currentSession.session_title || ('Buổi ' + activeClassSessionNum))}</div>
+          <div style="font-size:12.5px;color:#64748B;margin-top:2px;">Lớp ${safeClassCode} · Có ${exercises.length} bài tập cô giao trong buổi này</div>
           ${exHtml}
         </div>
       `;
@@ -5837,6 +5902,7 @@
     }
 
     async function loadStudentContactBook() {
+      if (window.__ktnLoggingOut) return;
       const classCode = currentStudentProfile?.classCode || getRealCurrentUser()?.classCode || null;
       await renderStudentClassSessions(classCode, activeClassSessionNum);
 
@@ -5856,8 +5922,8 @@
         const user = getRealCurrentUser() || currentStudentProfile;
         const curEmail = String(user?.email || '').trim().toLowerCase();
         const localSaved = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
-        const myLocalSaved = Array.isArray(localSaved)
-          ? localSaved.filter(h => !curEmail || String(h.student_email || '').toLowerCase() === curEmail)
+        const myLocalSaved = (curEmail && Array.isArray(localSaved))
+          ? localSaved.filter(h => String(h.student_email || h.studentEmail || '').trim().toLowerCase() === curEmail)
           : [];
 
         const localEntries = [...myLocalSaved];
@@ -5900,17 +5966,20 @@
           if (isRevision) {
             badge = `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">Cần sửa</span>`;
           } else if (isGraded) {
-            badge = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">Đã hoàn thành · ${hw.score ?? '--'}/10</span>`;
+            badge = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">Đã hoàn thành · ${escapeHtml(hw.score ?? '--')}/10</span>`;
           }
+          const safeCourseLabel = escapeHtml(courseLabel);
+          const safeLessonTitle = escapeHtml(hw.lesson_title || ('Bài ' + hw.lesson_num));
+          const safeFeedback = hw.teacher_feedback ? escapeHtml(String(hw.teacher_feedback).replace(/^\[CẦN SỬA\]\s*/i, '')) : '';
           return `<div style="padding:12px;border:1px solid #E2E8F0;border-radius:10px;background:#F8FAFC;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
               <div>
-                <span style="background:#E2E8F0;color:#334155;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800;margin-right:6px;">${courseLabel}</span>
-                <strong>${hw.lesson_title || ('Bài ' + hw.lesson_num)}</strong>
+                <span style="background:#E2E8F0;color:#334155;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800;margin-right:6px;">${safeCourseLabel}</span>
+                <strong>${safeLessonTitle}</strong>
               </div>
               ${badge}
             </div>
-            ${hw.teacher_feedback ? `<div style="margin-top:6px;color:#0F172A;background:#FFF;padding:8px 10px;border-radius:8px;border-left:3px solid ${isRevision ? '#D97706' : '#16A34A'};"><strong>Lời cô nhận xét:</strong> ${String(hw.teacher_feedback).replace(/^\[CẦN SỬA\]\s*/i, '')}</div>` : ''}
+            ${safeFeedback ? `<div style="margin-top:6px;color:#0F172A;background:#FFF;padding:8px 10px;border-radius:8px;border-left:3px solid ${isRevision ? '#D97706' : '#16A34A'};"><strong>Lời cô nhận xét:</strong> ${safeFeedback}</div>` : ''}
           </div>`;
         }).join('');
       }
@@ -5955,8 +6024,8 @@
       box.innerHTML = msgs.map(m => {
         const isMe = m.sender_email === user.email;
         return `<div class="chat-bubble ${isMe ? 'me' : 'teacher'}">
-          <div style="font-size:11px;opacity:0.8;font-weight:700;margin-bottom:2px;">${m.sender_name}</div>
-          <div>${m.content}</div>
+          <div style="font-size:11px;opacity:0.8;font-weight:700;margin-bottom:2px;">${escapeHtml(m.sender_name || '')}</div>
+          <div>${escapeHtml(m.content || '')}</div>
         </div>`;
       }).join('');
       box.scrollTop = box.scrollHeight;
@@ -6037,6 +6106,8 @@
       const enrolledIds = (access && Array.isArray(access.enrolledCourseIds)) ? access.enrolledCourseIds : [];
       const myClassCode = String(currentStudentProfile?.classCode || user?.classCode || '').trim().toUpperCase();
       const curName = user?.name || user?.email || 'tài khoản hiện tại';
+      const safeCurName = escapeHtml(curName);
+      const safeMyClass = escapeHtml(myClassCode);
 
       hideSiblingPermissionGuard();
 
@@ -6070,7 +6141,7 @@
           updateTopNavActiveTab('home');
           showCoursesDashboard();
           showSiblingPermissionGuard(
-            `Khóa học <strong>${courseMeta.shortTitle}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${curName}</strong>). Nếu anh/chị/em dùng chung máy, em hãy bấm <strong>Đổi tài khoản</strong> để mở đúng tài khoản được cấp bài này nhé.`
+            `Khóa học <strong>${escapeHtml(courseMeta.shortTitle)}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${safeCurName}</strong>). Nếu anh/chị/em dùng chung máy, em hãy bấm <strong>Đổi tài khoản</strong> để mở đúng tài khoản được cấp bài này nhé.`
           );
           return;
         }
@@ -6093,6 +6164,7 @@
       // 3. Route: #/lop hoặc #/lop/<class-code> hoặc #/lop/<class-code>/buoi/<num>
       if (parts[0] === 'lop') {
         const reqClass = parts[1] ? String(parts[1]).trim().toUpperCase() : myClassCode;
+        const safeReqClass = escapeHtml(reqClass);
         const isStaff = user && Array.isArray(user.roles) && (user.roles.includes('admin') || user.roles.includes('root') || user.roles.includes('teacher'));
 
         if (reqClass && myClassCode && reqClass !== myClassCode && !isStaff) {
@@ -6100,7 +6172,7 @@
           updateTopNavActiveTab('home');
           showCoursesDashboard();
           showSiblingPermissionGuard(
-            `Bài tập của <strong>Lớp ${reqClass}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${curName}</strong> · đang thuộc lớp ${myClassCode}). Em hãy bấm <strong>Đổi tài khoản</strong> nếu đây là link của anh/chị/em nhé.`
+            `Bài tập của <strong>Lớp ${safeReqClass}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${safeCurName}</strong> · đang thuộc lớp ${safeMyClass}). Em hãy bấm <strong>Đổi tài khoản</strong> nếu đây là link của anh/chị/em nhé.`
           );
           return;
         }
@@ -6110,7 +6182,7 @@
           updateTopNavActiveTab('home');
           showCoursesDashboard();
           showSiblingPermissionGuard(
-            `Bài tập của <strong>Lớp ${reqClass}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${curName}</strong>). Em hãy bấm <strong>Đổi tài khoản</strong> để đăng nhập đúng tài khoản học lớp ${reqClass} nhé.`
+            `Bài tập của <strong>Lớp ${safeReqClass}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${safeCurName}</strong>). Em hãy bấm <strong>Đổi tài khoản</strong> để đăng nhập đúng tài khoản học lớp ${safeReqClass} nhé.`
           );
           return;
         }
@@ -6210,6 +6282,12 @@
       }
 
       window.addEventListener('storage', async (e) => {
+        if (window.__ktnLoggingOut) return;
+        if (e && e.key === 'ktn_logout_broadcast_ts') {
+          window.__ktnLoggingOut = true;
+          window.location.replace('/?login=1');
+          return;
+        }
         if (!e || e.key === 'ktn_sll_persistent_auth_v2' || e.key === 'ol-credentials-auth-user' || e.key === 'ktn_connect_clean_v10_noclasses' || e.key === 'ktn_local_submitted_homeworks' || (e.key && e.key.startsWith('ktn_class_sessions_'))) {
           renderUserProfile();
           await syncLiveStudentProfile();
@@ -6221,6 +6299,7 @@
       });
 
       window.addEventListener('focus', () => {
+        if (window.__ktnLoggingOut) return;
         syncLiveStudentProfile();
         syncPortalState();
       });
@@ -6229,7 +6308,7 @@
         if (typeof BroadcastChannel !== 'undefined') {
           const bc = new BroadcastChannel('ktn_sll_orders_bus');
           bc.onmessage = (ev) => {
-            if (ev && ev.data && ev.data.type === 'ORDER_APPROVED') {
+            if (ev && ev.data && ev.data.type === 'ORDER_APPROVED' && !window.__ktnLoggingOut) {
               syncLiveStudentProfile();
               syncPortalState();
             }

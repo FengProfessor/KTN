@@ -220,12 +220,23 @@
       fbEl.focus();
     }
 
+    function esc(val) {
+      return window.KtnWebApp?.escapeHtml ? window.KtnWebApp.escapeHtml(val) : String(val ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function safeUrl(url) {
+      if (window.KtnWebApp?.safeUrl) return window.KtnWebApp.safeUrl(url);
+      if (!url) return '';
+      const s = String(url).trim();
+      return /^(https?:\/\/|\/|blob:|data:audio\/|data:image\/)/i.test(s) ? esc(s) : '';
+    }
+
     function renderHomeworkStatusBadge(status, score) {
       if (status === 'revision_requested' || status === 'needs_revision') {
         return '<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Cần sửa lại bài</span>';
       }
       if (status === 'graded') {
-        return `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Đã hoàn thành${score != null ? ' · ' + score + '/10' : ''}</span>`;
+        return `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Đã hoàn thành${score != null ? ' · ' + esc(score) + '/10' : ''}</span>`;
       }
       return '<span style="background:#F1F5F9;color:#475569;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Chờ cô chấm</span>';
     }
@@ -256,28 +267,31 @@
       }
       return items.map(item => {
         const lowerUrl = String(item.url).toLowerCase();
+        const sUrl = safeUrl(item.url);
+        const sTitle = esc(item.title);
+        if (!sUrl) return '';
         const isAudio = String(item.mediaType).startsWith('audio') || /\.(webm|mp3|wav|m4a|ogg|aac)(\?|$)/.test(lowerUrl);
         const isImage = String(item.mediaType).startsWith('image') || /\.(jpg|jpeg|png|webp|gif)(\?|$)/.test(lowerUrl);
         if (isAudio) {
           return `
             <div style="margin-top:8px;padding:8px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;">
-              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:4px;">Nghe bài thu âm của học sinh (${item.title}):</div>
-              <audio controls preload="metadata" src="${item.url}" style="width:100%;height:36px;"></audio>
-              <div style="margin-top:4px;"><a href="${item.url}" target="_blank" rel="noopener" style="font-size:12px;color:#B91C1C;text-decoration:underline;">Mở tệp âm thanh ở tab mới ↗</a></div>
+              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:4px;">Nghe bài thu âm của học sinh (${sTitle}):</div>
+              <audio controls preload="metadata" src="${sUrl}" style="width:100%;height:36px;"></audio>
+              <div style="margin-top:4px;"><a href="${sUrl}" target="_blank" rel="noopener" style="font-size:12px;color:#B91C1C;text-decoration:underline;">Mở tệp âm thanh ở tab mới ↗</a></div>
             </div>
           `;
         }
         if (isImage) {
           return `
             <div style="margin-top:8px;padding:8px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;">
-              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Ảnh bài làm (${item.title}):</div>
-              <a href="${item.url}" target="_blank" rel="noopener">
-                <img src="${item.url}" alt="${item.title}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #CBD5E1;display:block;" />
+              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Ảnh bài làm (${sTitle}):</div>
+              <a href="${sUrl}" target="_blank" rel="noopener">
+                <img src="${sUrl}" alt="${sTitle}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #CBD5E1;display:block;" />
               </a>
             </div>
           `;
         }
-        return `<div style="margin-top:6px;"><a href="${item.url}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;text-decoration:underline;">Mở xem bài làm (${item.title}) ↗</a></div>`;
+        return `<div style="margin-top:6px;"><a href="${sUrl}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;text-decoration:underline;">Mở xem bài làm (${sTitle}) ↗</a></div>`;
       }).join('');
     }
 
@@ -300,34 +314,35 @@
       }
       box.innerHTML = list.map(hw => {
         const safeId = String(hw.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const jsHwId = esc(String(hw.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
         return `
-        <div class="hw-item" data-hw-id="${hw.id}">
+        <div class="hw-item" data-hw-id="${esc(hw.id)}">
           <div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-              <div style="font-weight:800;font-size:15px;">${hw.student_name || hw.student_email} <span style="font-weight:500;color:#64748B;font-size:13px;">(${hw.student_email})</span></div>
+              <div style="font-weight:800;font-size:15px;">${esc(hw.student_name || hw.student_email)} <span style="font-weight:500;color:#64748B;font-size:13px;">(${esc(hw.student_email)})</span></div>
               ${renderHomeworkStatusBadge(hw.status, hw.score)}
             </div>
             <div style="font-size:13.5px;color:#334155;margin:6px 0;">
-              <strong>${hw.lesson_title || ('Bài ' + hw.lesson_num)}</strong>
-              ${hw.class_code ? `<span style="margin-left:6px;background:#F1F5F9;padding:2px 8px;border-radius:6px;font-size:12px;">Lớp ${hw.class_code}</span>` : ''}
+              <strong>${esc(hw.lesson_title || ('Bài ' + hw.lesson_num))}</strong>
+              ${hw.class_code ? `<span style="margin-left:6px;background:#F1F5F9;padding:2px 8px;border-radius:6px;font-size:12px;">Lớp ${esc(hw.class_code)}</span>` : ''}
             </div>
-            ${hw.student_note ? `<div style="font-size:13px;color:#475569;background:#F8FAFC;padding:8px 10px;border-radius:8px;margin-bottom:8px;">Lời nhắn của em: "${hw.student_note}"</div>` : ''}
+            ${hw.student_note ? `<div style="font-size:13px;color:#475569;background:#F8FAFC;padding:8px 10px;border-radius:8px;margin-bottom:8px;">Lời nhắn của em: "${esc(hw.student_note)}"</div>` : ''}
             ${renderHomeworkMediaPreview(hw)}
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
             <div style="display:flex;align-items:center;gap:8px;">
               <label style="font-size:12.5px;font-weight:700;color:#475569;">Điểm số (0-10):</label>
-              <input type="number" step="0.5" min="0" max="10" id="score-${safeId}" value="${hw.score ?? 9.5}" style="width:90px;padding:7px 10px;border:1px solid #CBD5E1;border-radius:8px;">
+              <input type="number" step="0.5" min="0" max="10" id="score-${safeId}" value="${esc(hw.score ?? 9.5)}" style="width:90px;padding:7px 10px;border:1px solid #CBD5E1;border-radius:8px;">
             </div>
             <div class="quick-rubric-row">
               <button type="button" class="quick-rubric-chip" onclick="appendQuickRubric('${safeId}', 'Phát âm thanh mẫu và thanh điệu rõ ràng, tự nhiên.')">+ Phát âm chuẩn</button>
               <button type="button" class="quick-rubric-chip" onclick="appendQuickRubric('${safeId}', 'Chữ Hán viết ngay ngắn, đúng thứ tự nét.')">+ Chữ Hán đẹp</button>
               <button type="button" class="quick-rubric-chip" onclick="appendQuickRubric('${safeId}', 'Em chú ý đọc rõ thanh 3 ở câu 2 rồi thu âm gửi lại cho cô nhé.')">+ Nhắc sửa thanh 3</button>
             </div>
-            <textarea id="fb-${safeId}" rows="2" placeholder="Nhập lời nhận xét của cô cho học sinh..." style="padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;font-family:inherit;font-size:13.5px;">${hw.teacher_feedback || ''}</textarea>
+            <textarea id="fb-${safeId}" rows="2" placeholder="Nhập lời nhận xét của cô cho học sinh..." style="padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;font-family:inherit;font-size:13.5px;">${esc(hw.teacher_feedback || '')}</textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button type="button" class="btn-red" style="flex:1;" onclick="submitTeacherDecision('${hw.id}', '${safeId}', 'graded')">✓ Đạt / Hoàn thành</button>
-              <button type="button" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${hw.id}', '${safeId}', 'revision_requested')">↺ Yêu cầu con sửa lại bài</button>
+              <button type="button" class="btn-red" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'graded')">✓ Đạt / Hoàn thành</button>
+              <button type="button" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'revision_requested')">↺ Yêu cầu con sửa lại bài</button>
             </div>
           </div>
         </div>
@@ -511,8 +526,8 @@
       const box = document.getElementById('teacher-chat-box');
       box.innerHTML = msgs.map(m => `
         <div style="margin-bottom:8px;padding:8px 12px;border-radius:10px;background:${m.sender_role === 'teacher' ? '#FEF2F2' : '#FFFFFF'};border:1px solid #E2E8F0;">
-          <strong style="font-size:12px;color:#B91C1C;">${m.sender_name}:</strong>
-          <div style="font-size:13.5px;margin-top:2px;">${m.content}</div>
+          <strong style="font-size:12px;color:#B91C1C;">${esc(m.sender_name)}:</strong>
+          <div style="font-size:13.5px;margin-top:2px;">${esc(m.content)}</div>
         </div>
       `).join('') || '<div style="color:#94A3B8;font-size:13px;">Chưa có tin nhắn trong lớp này.</div>';
       box.scrollTop = box.scrollHeight;

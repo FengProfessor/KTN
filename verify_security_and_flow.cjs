@@ -378,7 +378,41 @@ async function main() {
     console.log('Cleanup DELETE test row status:', delRes.status);
   }
 
-  console.log('\nALL 5 SECURITY & API FLOW REGRESSION TESTS PASSED!');
+  console.log('\n=== [TEST 6] Unified Logout Flow (Cookie Clearing + IndexedDB tx.oncomplete + EscapeHtml Coverage) ===');
+  const logoutRes = await fetch(`${BASE_URL}/api/ktn/auth/logout`, {
+    method: 'POST'
+  });
+  const logoutCookie = logoutRes.headers.get('set-cookie') || '';
+  const logoutBody = await logoutRes.json();
+  console.log('POST /api/ktn/auth/logout -> status:', logoutRes.status, '| ok:', logoutBody.ok, '| Set-Cookie:', logoutCookie);
+  if (logoutRes.status !== 200 || !logoutBody.ok || !logoutCookie.includes('ktn_webapp_token=;') || !logoutCookie.includes('Max-Age=0')) {
+    throw new Error(`Logout endpoint verification failed: status=${logoutRes.status} cookie=${logoutCookie}`);
+  }
+
+  const clientJsRes = await fetch(`${BASE_URL}/ktn-webapp-client.js`);
+  const clientJsText = await clientJsRes.text();
+  if (
+    !clientJsText.includes('tx.oncomplete') ||
+    !clientJsText.includes('clearSessionFromCacheStorage') ||
+    !clientJsText.includes('window.__ktnLoggingOut = true') ||
+    !clientJsText.includes('escapeHtml')
+  ) {
+    throw new Error('Deployed /ktn-webapp-client.js is missing unified logout / tx.oncomplete / escapeHtml checks');
+  }
+  console.log('Verified /ktn-webapp-client.js has tx.oncomplete, clearSessionFromCacheStorage, __ktnLoggingOut, and escapeHtml.');
+
+  const studentHtmlRes = await fetch(`${BASE_URL}/sll-hocsinh.html`);
+  const studentHtmlText = await studentHtmlRes.text();
+  if (
+    !studentHtmlText.includes('window.KtnWebApp.logout') ||
+    !studentHtmlText.includes('window.KtnWebApp.switchAccountPreservingTarget') ||
+    !studentHtmlText.includes('escapeHtml(')
+  ) {
+    throw new Error('Deployed /sll-hocsinh.html is missing KtnWebApp.logout delegation or escapeHtml');
+  }
+  console.log('Verified /sll-hocsinh.html delegates logout/switchAccount to KtnWebApp and uses escapeHtml.');
+
+  console.log('\nALL 6 SECURITY & API FLOW REGRESSION TESTS PASSED!');
 }
 
 main().catch(err => {

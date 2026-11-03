@@ -284,11 +284,15 @@
       if (tab === 'payment') loadPaymentConfig();
     }
 
+    function esc(val) {
+      return window.KtnWebApp?.escapeHtml ? window.KtnWebApp.escapeHtml(val) : String(val ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
     function renderCourseSelectors() {
       const ordSelect = document.getElementById('new-ord-course');
       if (ordSelect) {
         ordSelect.innerHTML = adminCourseCatalog.map(c =>
-          `<option value="${c.id}" data-title="${c.title}" data-price="${c.price || 890000}">${c.shortTitle || c.title} (${Number(c.price || 890000).toLocaleString('vi-VN')}đ)</option>`
+          `<option value="${esc(c.id)}" data-title="${esc(c.title)}" data-price="${esc(c.price || 890000)}">${esc(c.shortTitle || c.title)} (${Number(c.price || 890000).toLocaleString('vi-VN')}đ)</option>`
         ).join('');
       }
       const checkGrid = document.getElementById('stu-course-checkboxes');
@@ -296,10 +300,10 @@
         const singleCourses = adminCourseCatalog.filter(c => !c.isBundle && c.id !== 'BUNDLE_YCT_ALL');
         checkGrid.innerHTML = singleCourses.map(c => `
           <label class="course-check-item">
-            <input type="checkbox" name="stu-course-chk" value="${c.id}" style="margin-top:3px;">
+            <input type="checkbox" name="stu-course-chk" value="${esc(c.id)}" style="margin-top:3px;">
             <div>
-              <div style="font-weight:800;color:#0F172A;">${c.shortTitle || c.title}</div>
-              <div style="font-size:11.5px;color:#64748B;">Mã: ${c.code || c.id.slice(-6)} · ${c.lessonsCount || 20} bài học</div>
+              <div style="font-weight:800;color:#0F172A;">${esc(c.shortTitle || c.title)}</div>
+              <div style="font-size:11.5px;color:#64748B;">Mã: ${esc(c.code || String(c.id || '').slice(-6))} · ${esc(c.lessonsCount || 20)} bài học</div>
             </div>
           </label>
         `).join('');
@@ -338,12 +342,12 @@
         <div style="padding:14px;border:1px solid #E2E8F0;border-radius:12px;background:#F8FAFC;display:flex;flex-direction:column;justify-content:space-between;gap:8px;">
           <div>
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-              <span class="badge ${c.isBundle ? 'badge-approved' : 'badge-blue'}">${c.badge || 'KHÓA HỌC'}</span>
-              <code style="font-size:11px;color:#64748B;">ID: ${c.id}</code>
+              <span class="badge ${c.isBundle ? 'badge-approved' : 'badge-blue'}">${esc(c.badge || 'KHÓA HỌC')}</span>
+              <code style="font-size:11px;color:#64748B;">ID: ${esc(c.id)}</code>
             </div>
-            <div style="font-weight:800;font-size:14.5px;margin-top:6px;color:#0F172A;">${c.title}</div>
+            <div style="font-weight:800;font-size:14.5px;margin-top:6px;color:#0F172A;">${esc(c.title)}</div>
             <div style="font-size:12.5px;color:#475569;margin-top:4px;">
-              🎬 Số bài giảng: <strong>${c.lessonsCount || 20} bài</strong> · Học phí: <strong>${Number(c.price || 890000).toLocaleString('vi-VN')}đ</strong>
+              🎬 Số bài giảng: <strong>${esc(c.lessonsCount || 20)} bài</strong> · Học phí: <strong>${Number(c.price || 890000).toLocaleString('vi-VN')}đ</strong>
             </div>
           </div>
         </div>
@@ -421,11 +425,13 @@
         const payLabel = ord.payment_status === 'paid'
           ? '💰 Đã xác nhận CK'
           : '📞 Chờ gọi tư vấn / Chờ xác nhận CK';
+        const jsEmail = esc(String(ord.student_email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+        const jsOrderId = esc(String(ord.order_id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
         return `<div class="order-row">
           <div>
-            <div style="font-weight:800;font-size:15px;">${ord.order_id} · ${ord.student_name} (${ord.phone})</div>
+            <div style="font-weight:800;font-size:15px;">${esc(ord.order_id)} · ${esc(ord.student_name)} (${esc(ord.phone)})</div>
             <div style="font-size:13px;color:#475569;margin-top:3px;">
-              Email cấp phát: <strong>${ord.student_email}</strong> · Khóa: <strong>${ord.course_name}</strong> · ${Number(ord.amount || 890000).toLocaleString('vi-VN')}đ
+              Email cấp phát: <strong>${esc(ord.student_email)}</strong> · Khóa: <strong>${esc(ord.course_name)}</strong> · ${Number(ord.amount || 890000).toLocaleString('vi-VN')}đ
             </div>
             <div style="margin-top:6px;display:flex;gap:8px;align-items:center;">
               <span class="badge ${isApproved ? 'badge-approved' : 'badge-pending'}">${payLabel}</span>
@@ -434,8 +440,8 @@
           </div>
           <div>
             ${isApproved
-              ? `<button type="button" class="btn-approve" style="background:#334155;" onclick="copyApprovedAccount('${ord.student_email}')">📋 Copy Tài Khoản Gửi Zalo</button>`
-              : `<button type="button" class="btn-approve" onclick="approveOrderNow('${ord.order_id}')">⚡ Duyệt 1 Chạm &amp; Cộng Dồn Khóa izTeach</button>`
+              ? `<button type="button" class="btn-approve" style="background:#334155;" onclick="copyApprovedAccount('${jsEmail}')">📋 Copy Tài Khoản Gửi Zalo</button>`
+              : `<button type="button" class="btn-approve" onclick="approveOrderNow('${jsOrderId}')">⚡ Duyệt 1 Chạm &amp; Cộng Dồn Khóa izTeach</button>`
             }
           </div>
         </div>`;
@@ -477,29 +483,37 @@
         else if (sCase === 'online_only') caseBadge = '<span class="badge badge-blue">2. Chỉ học Khóa Video (online_only)</span>';
         else if (sCase === 'sll_only') caseBadge = '<span class="badge badge-pending">3. Chỉ học Lớp Cô (sll_only)</span>';
 
+        const jsStuEmail = esc(String(stu.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+        const jsStuName = esc(String(stu.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+        const jsStuClass = esc(String(stu.class_code || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+        const jsCourseCsv = esc(courses.map(c => c.id).join(','));
+
         const courseChips = courses.length > 0
-          ? courses.map(c => `
-              <span class="course-chip">
-                🎬 ${c.title || c.id}
-                <button type="button" title="Thu hồi khóa học này" onclick="revokeSingleCourse('${stu.email}', '${c.id}')">×</button>
-              </span>
-            `).join('')
+          ? courses.map(c => {
+              const jsCid = esc(String(c.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+              return `
+                <span class="course-chip">
+                  🎬 ${esc(c.title || c.id)}
+                  <button type="button" title="Thu hồi khóa học này" onclick="revokeSingleCourse('${jsStuEmail}', '${jsCid}')">×</button>
+                </span>
+              `;
+            }).join('')
           : '<span style="color:#94A3B8;font-size:12.5px;">Chưa có khóa Video</span>';
 
         return `<tr>
           <td>
-            <div style="font-weight:800;color:#0F172A;">${stu.name || stu.email}</div>
-            <div style="font-size:12px;color:#64748B;">${stu.email} · Mã: ${stu.code || '--'}</div>
+            <div style="font-weight:800;color:#0F172A;">${esc(stu.name || stu.email)}</div>
+            <div style="font-size:12px;color:#64748B;">${esc(stu.email)} · Mã: ${esc(stu.code || '--')}</div>
           </td>
           <td>${caseBadge}</td>
           <td>
             ${stu.class_code
-              ? `<strong style="color:#B91C1C;">🏫 ${stu.class_code}</strong>`
+              ? `<strong style="color:#B91C1C;">🏫 ${esc(stu.class_code)}</strong>`
               : '<span style="color:#94A3B8;font-size:12.5px;">Chưa xếp lớp</span>'}
           </td>
           <td>${courseChips}</td>
           <td>
-            <button type="button" class="btn-outline" onclick="prefillStudentEditor('${stu.email}', '${(stu.name || '').replace(/'/g, '')}', '${stu.class_code || ''}', '${courses.map(c => c.id).join(',')}')">
+            <button type="button" class="btn-outline" onclick="prefillStudentEditor('${jsStuEmail}', '${jsStuName}', '${jsStuClass}', '${jsCourseCsv}')">
               ✏️ Sửa / Cấp thêm khóa
             </button>
           </td>

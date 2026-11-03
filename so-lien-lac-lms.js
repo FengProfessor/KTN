@@ -3713,13 +3713,14 @@
 
       // 3. Tự động gia hạn Token izTeach ngầm (Silent Token Auto-Heal) để phiên đăng nhập & luồng thông báo không bao giờ hết hạn
       try {
+        if (window.__ktnLoggingOut) return;
         let freshToken = null;
         if (window.IzTeachPortalClient && typeof window.IzTeachPortalClient.getServiceToken === 'function') {
           freshToken = await window.IzTeachPortalClient.getServiceToken().catch(() => null);
         } else if (window.IZTEACH_STORAGE && typeof window.IZTEACH_STORAGE.ensureToken === 'function') {
           freshToken = await window.IZTEACH_STORAGE.ensureToken().catch(() => null);
         }
-        if (freshToken) {
+        if (freshToken && !window.__ktnLoggingOut) {
           const rawSaved = localStorage.getItem('ktn_sll_persistent_auth_v2');
           if (rawSaved) {
             const parsed = JSON.parse(rawSaved);
@@ -3728,7 +3729,7 @@
               if (!parsed.accessToken || String(parsed.accessToken).startsWith('KTN-')) {
                 parsed.serviceAccessToken = freshToken;
               }
-              if (typeof window.__saveGlobalKtnSession === 'function') {
+              if (typeof window.__saveGlobalKtnSession === 'function' && !window.__ktnLoggingOut) {
                 window.__saveGlobalKtnSession(parsed);
               }
             }

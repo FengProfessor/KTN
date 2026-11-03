@@ -450,11 +450,15 @@ async function verifyIzTeachAccessToken(tok, env) {
       return null;
     }
 
-    // Xác thực chữ ký token trực tiếp qua AWS API Gateway Custom Authorizer của izTeach.
-    // Mọi token giả mạo hoặc bị sửa đổi header/payload/signature đều bị Authorizer trả 401.
+    // Xác thực chữ ký token trực tiếp qua endpoint user-permission của izTeach.
+    // Chỉ chấp nhận khi upstream xác nhận hợp lệ với HTTP 200 OK (từ chối mọi mã 401/403/5xx).
     const permUrl = `${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(userId)}&vendorId=${encodeURIComponent(vendorId)}`;
     const permRes = await fetch(permUrl, { headers: { Authorization: tok } });
-    if (permRes.status !== 200 && permRes.status !== 403) {
+    if (permRes.status !== 200) {
+      return null;
+    }
+    const permData = await permRes.json().catch(() => null);
+    if (!permData || typeof permData !== 'object') {
       return null;
     }
 
@@ -1295,7 +1299,7 @@ export default {
       let cognitoUserId = body.cognitoUserId || null;
       let izteachStudentId = body.izteachStudentId || null;
 
-      // Nếu cấp thêm khóa học hoặc xếp vào lớp trực tiếp, tự động tạo/kích hoạt tài khoản trên izTeach!
+      // Nếu cấp thêm khóa học hoặc xếp vào lớp trực tiếp, bắt buộc tạo/kích hoạt tài khoản trên izTeach thành công trước khi lưu!
       if ((action === 'grant' || action === 'set') && (resolvedIds.length > 0 || body.classCode)) {
         const prov = await provisionStudentOnIzTeach(env, {
           student_email: email,
@@ -1305,10 +1309,15 @@ export default {
           skipCourses: resolvedIds.length === 0,
           cognito_user_id: cognitoUserId
         });
-        if (prov.ok) {
-          cognitoUserId = prov.cognitoUserId;
-          izteachStudentId = prov.izteachStudentId;
+        if (!prov.ok) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            message: `Chưa tạo hoặc kích hoạt được tài khoản đăng nhập trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Hồ sơ chưa được lưu — vui lòng bấm thử lại.`
+          }, 502);
         }
+        cognitoUserId = prov.cognitoUserId;
+        izteachStudentId = prov.izteachStudentId;
       }
 
       const updatedStudent = await mergeAndUpsertStudentCourses(env, {

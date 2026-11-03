@@ -9,6 +9,32 @@
  */
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
+
+function createValidWavBuffer(durationSec = 1, freqHz = 440) {
+  const sampleRate = 8000;
+  const numSamples = Math.floor(sampleRate * durationSec);
+  const dataSize = numSamples * 2;
+  const buf = Buffer.alloc(44 + dataSize);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + dataSize, 4);
+  buf.write('WAVE', 8);
+  buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(sampleRate, 24);
+  buf.writeUInt32LE(sampleRate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < numSamples; i++) {
+    const sample = Math.round(12000 * Math.sin((2 * Math.PI * freqHz * i) / sampleRate));
+    buf.writeInt16LE(sample, 44 + i * 2);
+  }
+  return buf;
+}
 
 const envPath = path.join(__dirname, '.env');
 const env = {};
@@ -37,6 +63,22 @@ async function main() {
   console.log('GET /api/ktn/auth/session with forged token + admin email -> status:', forgedSessionRes.status);
   if (forgedSessionRes.status !== 401) {
     throw new Error(`Expected 401 for forged token on /api/ktn/auth/session, got ${forgedSessionRes.status}`);
+  }
+
+  const forgedCompressed = zlib.deflateSync(Buffer.from(JSON.stringify({
+    email: 'hocvienkhongtunhi123@gmail.com',
+    vendorId: '3529cd2b-7af6-4fda-887c-392a79393d6a',
+    userId: '2c01e488-d866-4341-a0db-644fe6ba1202',
+    roles: ['root', 'admin']
+  }))).toString('base64');
+  const forgedMid = Buffer.from(JSON.stringify({ payloadCompressed: forgedCompressed })).toString('base64url');
+  const forgedIzTeachJwt = `eayJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${forgedMid}.forged_signature_xyz`;
+  const forgedIzRes = await fetch(`${BASE_URL}/api/ktn/auth/session`, {
+    headers: { 'Authorization': `Bearer ${forgedIzTeachJwt}` }
+  });
+  console.log('GET /api/ktn/auth/session with forged 3-part eayJ admin JWT -> status:', forgedIzRes.status);
+  if (forgedIzRes.status !== 401) {
+    throw new Error(`Expected 401 for forged 3-part eayJ JWT, got ${forgedIzRes.status}`);
   }
 
   const forgedOrdersRes = await fetch(`${BASE_URL}/api/ktn/orders`, {
@@ -115,15 +157,27 @@ async function main() {
   }
 
   console.log('\n=== [TEST 4] Homework Ownership & Class Enrollment Guard (Student A Cannot Spoof Student B ID or Class B) ===');
+  const wavBuf1 = createValidWavBuffer(1, 440);
   const upRes = await fetch(`${BASE_URL}/api/ktn/homeworks/upload-url`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${stuLogin.token}`
     },
-    body: JSON.stringify({ fileName: 'nam-bai-1-lan-1.webm', fileType: 'audio/webm' })
+    body: JSON.stringify({ fileName: 'nam-bai-1-lan-1.wav', fileType: 'audio/wav' })
   }).then(r => r.json());
-  if (!upRes.ok || !upRes.fileUrl) throw new Error('S3 upload-url failed: ' + JSON.stringify(upRes));
+  if (!upRes.ok || !upRes.signedUrl || !upRes.fileUrl) throw new Error('S3 upload-url failed: ' + JSON.stringify(upRes));
+
+  // Upload real WAV audio bytes (#1) to AWS S3 via signedUrl
+  const s3Put1 = await fetch(upRes.signedUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'audio/wav' },
+    body: wavBuf1
+  });
+  console.log('S3 PUT recording #1 status:', s3Put1.status, '| bytes:', wavBuf1.length);
+  if (!s3Put1.ok && s3Put1.status !== 204) {
+    throw new Error(`Expected S3 PUT recording #1 to succeed, got ${s3Put1.status}`);
+  }
 
   // 4a. Student A tries to pass an ID belonging to Student B (dachanh@khongtunhi.com)
   const spoofIdRes = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
@@ -138,7 +192,7 @@ async function main() {
       classCode: 'YCT2-04',
       lessonNum: 101,
       lessonTitle: 'Buổi 1 · Bài 1',
-      fileType: 'audio',
+      fileType: 'audio/wav',
       fileUrl: upRes.fileUrl
     })
   });
@@ -159,7 +213,7 @@ async function main() {
       classCode: 'YCT3-02',
       lessonNum: 101,
       lessonTitle: 'Buổi 1 · Bài 1',
-      fileType: 'audio',
+      fileType: 'audio/wav',
       fileUrl: upRes.fileUrl
     })
   });
@@ -168,7 +222,7 @@ async function main() {
     throw new Error(`Expected 403 when Student A submits to unassigned class YCT3-02, got ${spoofClassRes.status}`);
   }
 
-  console.log('\n=== [TEST 5] API Flow & Live Supabase Schema Verification (Submit -> Revision Requested -> Resubmit -> Graded) ===');
+  console.log('\n=== [TEST 5] Real S3 Audio Upload + API Flow + CloudFront Playback Verification ===');
   const testLessonNum = 901;
   const expectedServerHwId = `HW-hoangngan@khongtunhi.com-CLASS_YCT2-04-L${testLessonNum}`;
 
@@ -184,16 +238,26 @@ async function main() {
       classCode: 'YCT2-04',
       lessonNum: testLessonNum,
       lessonTitle: '[Lớp YCT2-04 · Buổi 1] Bài 1',
-      fileType: 'audio',
+      fileType: 'audio/wav',
       fileUrl: upRes.fileUrl,
       studentNote: 'Con nộp bài thu âm lần 1 ạ',
-      attachments: [{ title: 'nam-bai-1-lan-1.webm', fileUrl: upRes.fileUrl, cdnUrl: upRes.fileUrl, mediaType: 'audio/webm', size: 4096 }]
+      attachments: [{ title: 'nam-bai-1-lan-1.wav', fileUrl: upRes.fileUrl, cdnUrl: upRes.fileUrl, mediaType: 'audio/wav', size: wavBuf1.length }]
     })
   }).then(r => r.json());
   if (!sub1.ok || sub1.homework?.id !== expectedServerHwId || sub1.homework?.status !== 'pending') {
     throw new Error('Submit #1 failed or wrong server-derived ID: ' + JSON.stringify(sub1));
   }
-  console.log('Step 5.1: Server derived canonical ID ->', sub1.homework.id, '| status:', sub1.homework.status, '| attachments count:', (sub1.homework.attachments || []).length);
+  console.log('Step 5.1a: Server derived canonical ID ->', sub1.homework.id, '| status:', sub1.homework.status, '| attachments count:', (sub1.homework.attachments || []).length);
+
+  // Teacher A fetches the submitted audio file from CloudFront CDN to verify it exists and is valid WAVE audio
+  const cdnFetch1 = await fetch(sub1.homework.file_url);
+  const cdnBytes1 = Buffer.from(await cdnFetch1.arrayBuffer());
+  const riff1 = cdnBytes1.slice(0, 4).toString('ascii');
+  const wave1 = cdnBytes1.slice(8, 12).toString('ascii');
+  console.log('Step 5.1b: Teacher A fetched audio #1 from CloudFront -> status:', cdnFetch1.status, '| bytes:', cdnBytes1.length, '| header:', `${riff1}/${wave1}`);
+  if (cdnFetch1.status !== 200 || cdnBytes1.length !== wavBuf1.length || riff1 !== 'RIFF' || wave1 !== 'WAVE') {
+    throw new Error(`CloudFront audio #1 verification failed: status=${cdnFetch1.status} len=${cdnBytes1.length}`);
+  }
 
   // 5.2 Teacher B tries to grade Class A's homework -> MUST be rejected with 403
   const tbGradeRes = await fetch(`${BASE_URL}/api/ktn/homeworks/grade`, {
@@ -233,15 +297,28 @@ async function main() {
   }
   console.log('Step 5.3: Teacher A requested revision -> status in Supabase:', reqRev.homework.status);
 
-  // 5.4 Student A resubmits recording #2 -> status resets to 'pending'
+  // 5.4 Student A uploads a NEW real WAV recording (#2, 2 seconds @ 660Hz) to S3 and resubmits -> status resets to 'pending'
+  const wavBuf2 = createValidWavBuffer(2, 660);
   const upRes2 = await fetch(`${BASE_URL}/api/ktn/homeworks/upload-url`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${stuLogin.token}`
     },
-    body: JSON.stringify({ fileName: 'nam-bai-1-lan-2.webm', fileType: 'audio/webm' })
+    body: JSON.stringify({ fileName: 'nam-bai-1-lan-2.wav', fileType: 'audio/wav' })
   }).then(r => r.json());
+  if (!upRes2.ok || !upRes2.signedUrl || !upRes2.fileUrl) throw new Error('S3 upload-url #2 failed: ' + JSON.stringify(upRes2));
+
+  const s3Put2 = await fetch(upRes2.signedUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'audio/wav' },
+    body: wavBuf2
+  });
+  console.log('S3 PUT recording #2 status:', s3Put2.status, '| bytes:', wavBuf2.length);
+  if (!s3Put2.ok && s3Put2.status !== 204) {
+    throw new Error(`Expected S3 PUT recording #2 to succeed, got ${s3Put2.status}`);
+  }
+
   const sub2 = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
     method: 'POST',
     headers: {
@@ -253,16 +330,26 @@ async function main() {
       classCode: 'YCT2-04',
       lessonNum: testLessonNum,
       lessonTitle: '[Lớp YCT2-04 · Buổi 1] Bài 1',
-      fileType: 'audio',
+      fileType: 'audio/wav',
       fileUrl: upRes2.fileUrl,
       studentNote: 'Con đã sửa thanh 3 và nộp lại bài ạ',
-      attachments: [{ title: 'nam-bai-1-lan-2.webm', fileUrl: upRes2.fileUrl, cdnUrl: upRes2.fileUrl, mediaType: 'audio/webm', size: 5120 }]
+      attachments: [{ title: 'nam-bai-1-lan-2.wav', fileUrl: upRes2.fileUrl, cdnUrl: upRes2.fileUrl, mediaType: 'audio/wav', size: wavBuf2.length }]
     })
   }).then(r => r.json());
   if (!sub2.ok || sub2.homework?.status !== 'pending' || sub2.homework?.file_url !== upRes2.fileUrl) {
     throw new Error('Student resubmit #2 failed: ' + JSON.stringify(sub2));
   }
-  console.log('Step 5.4: Student A resubmitted recording #2 -> status reset to:', sub2.homework.status);
+  console.log('Step 5.4a: Student A resubmitted recording #2 -> status reset to:', sub2.homework.status);
+
+  // Teacher A fetches the new resubmitted audio file (#2) from CloudFront CDN
+  const cdnFetch2 = await fetch(sub2.homework.file_url);
+  const cdnBytes2 = Buffer.from(await cdnFetch2.arrayBuffer());
+  const riff2 = cdnBytes2.slice(0, 4).toString('ascii');
+  const wave2 = cdnBytes2.slice(8, 12).toString('ascii');
+  console.log('Step 5.4b: Teacher A fetched audio #2 from CloudFront -> status:', cdnFetch2.status, '| bytes:', cdnBytes2.length, '| header:', `${riff2}/${wave2}`);
+  if (cdnFetch2.status !== 200 || cdnBytes2.length !== wavBuf2.length || riff2 !== 'RIFF' || wave2 !== 'WAVE') {
+    throw new Error(`CloudFront audio #2 verification failed: status=${cdnFetch2.status} len=${cdnBytes2.length}`);
+  }
 
   // 5.5 Teacher A grades final submission as 'graded' (9.5)
   const finalGrade = await fetch(`${BASE_URL}/api/ktn/homeworks/grade`, {

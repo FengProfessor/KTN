@@ -6200,6 +6200,7 @@
           const res = await KtnWebApp.apiRequest('/api/ktn/messages?roomId=' + encodeURIComponent(roomId));
           if (res.ok && Array.isArray(res.data?.messages)) {
             msgs = res.data.messages;
+            try { localStorage.setItem('ktn_sll_chat_' + roomId, JSON.stringify(msgs)); } catch (e) {}
           }
         } catch (e) {}
       }
@@ -6220,16 +6221,26 @@
       }
       if (!msgs.length) {
         box.innerHTML = '<div style="text-align:center;color:#94A3B8;font-size:12.5px;margin-top:40px;">Bắt đầu cuộc trò chuyện với cô giáo phụ trách lớp tại đây.</div>';
-        return;
+      } else {
+        const myEmail = String(user.email || '').trim().toLowerCase();
+        box.innerHTML = msgs.map(m => {
+          const isMe = String(m.sender_email || '').trim().toLowerCase() === myEmail;
+          return `<div class="chat-bubble ${isMe ? 'me' : 'teacher'}">
+            <div style="font-size:11px;opacity:0.8;font-weight:700;margin-bottom:2px;">${escapeHtml(m.sender_name || '')}</div>
+            <div>${escapeHtml(m.content || '')}</div>
+          </div>`;
+        }).join('');
+        box.scrollTop = box.scrollHeight;
       }
-      box.innerHTML = msgs.map(m => {
-        const isMe = m.sender_email === user.email;
-        return `<div class="chat-bubble ${isMe ? 'me' : 'teacher'}">
-          <div style="font-size:11px;opacity:0.8;font-weight:700;margin-bottom:2px;">${escapeHtml(m.sender_name || '')}</div>
-          <div>${escapeHtml(m.content || '')}</div>
-        </div>`;
-      }).join('');
-      box.scrollTop = box.scrollHeight;
+      if (!window.__studentChatPoll) {
+        window.__studentChatPoll = setInterval(() => {
+          if (document.hidden || window.__ktnLoggingOut) return;
+          const pane = document.getElementById('pane-contactbook');
+          if (pane && pane.style.display !== 'none') {
+            loadStudentMessages();
+          }
+        }, 8000);
+      }
     }
 
     async function sendStudentChatMessage(e) {
@@ -6238,6 +6249,13 @@
       const content = input ? input.value.trim() : '';
       const user = getRealCurrentUser() || currentStudentSession || currentStudentProfile;
       if (!content || !user) return;
+      if (window.KTN_DLP && typeof window.KTN_DLP.inspect === 'function') {
+        const check = window.KTN_DLP.inspect(content);
+        if (check && check.blocked) {
+          showToast('⚠️ Tin nhắn bị chặn: Vui lòng không gửi số điện thoại hoặc liên kết cá nhân ngoài luồng.');
+          return;
+        }
+      }
       const classCode = user.classCode || currentStudentProfile?.classCode || null;
       const roomId = classCode ? ('class:' + classCode) : ('student:' + user.email);
       let sentViaApi = false;
@@ -6247,6 +6265,10 @@
             method: 'POST',
             body: { roomId, classCode, content }
           });
+          if (res.status === 422 || res.data?.dlpBlocked) {
+            showToast('⚠️ ' + (res.data?.message || 'Tin nhắn bị chặn vì chứa SĐT hoặc liên kết ngoài luồng.'));
+            return;
+          }
           if (res.ok) sentViaApi = true;
         } catch (err) {}
       }
@@ -6265,6 +6287,9 @@
       }
       input.value = '';
       await loadStudentMessages();
+      if (classCode && window.app && typeof window.app.lmsSyncRoomMessages === 'function') {
+        window.app.lmsSyncRoomMessages(classCode, false);
+      }
     }
 
     async function enableStudentPwaPush() {
@@ -6461,6 +6486,10 @@
 
       // Đồng bộ bất đồng bộ với izTeach Backend API
       await syncPortalState();
+      if (window.KTN_NOTIF) {
+        window.KTN_NOTIF.pullCloudNotifications?.();
+        window.KTN_NOTIF.recalculateUnreadBadge?.();
+      }
 
       if (!hasInitializedDefaultTab) {
         hasInitializedDefaultTab = true;

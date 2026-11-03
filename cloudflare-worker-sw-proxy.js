@@ -829,9 +829,9 @@ async function getIzTeachAdminToken(env, forceRefresh = false) {
 // ============================================================================
 function inspectDlpContent(text) {
   const s = String(text || '');
-  const phoneRegex = /(?:\+?84|0)(?:3|5|7|8|9)\d{8}\b/;
+  const phoneRegex = /(?<!\d)(?:\+?84|0)(?:3|5|7|8|9)(?:[\s.-]*\d){8}(?!\d)/;
   const linkRegex = /\b(?:zalo\.me|fb\.com|facebook\.com|t\.me)\b/i;
-  if (phoneRegex.test(s.replace(/[\s.-]/g, ''))) {
+  if (phoneRegex.test(s)) {
     return { blocked: true, reason: 'Phát hiện số điện thoại cá nhân trong tin nhắn lớp học' };
   }
   if (linkRegex.test(s)) {
@@ -2972,15 +2972,16 @@ export default {
         }
 
         if (classCode) {
-          const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${encodeURIComponent(classCode)},${encodeURIComponent('class:' + classCode)})&sender_role=eq.teacher&order=created_at.desc&limit=1`);
+          const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${encodeURIComponent(classCode)},${encodeURIComponent('class:' + classCode)})&sender_role=in.(teacher,admin)&order=created_at.desc&limit=1`);
           const latestMsg = Array.isArray(msgRes.data) && msgRes.data[0] ? msgRes.data[0] : null;
           if (latestMsg) {
             items.push({
               id: `NOTIF-MSG-${classCode}-${latestMsg.id}`,
               type: 'chat_message',
+              classCode,
               title: 'Tin nhắn mới từ cô giáo.',
               body: `${latestMsg.sender_name || 'Cô giáo'}: ${String(latestMsg.content || '').slice(0, 60)}`,
-              actionUrl: `#/lop/${classCode.toLowerCase()}`,
+              actionUrl: `#/lop/${classCode.toLowerCase()}/buoi/1`,
               createdAt: latestMsg.created_at
             });
           }
@@ -2989,29 +2990,34 @@ export default {
         const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
         if (assignedClasses.length > 0) {
           const classListParam = assignedClasses.map(c => encodeURIComponent(c)).join(',');
+          const roomListParam = assignedClasses.flatMap(c => [encodeURIComponent(c), encodeURIComponent('class:' + c)]).join(',');
           const hwRes = await supabaseRequest(env, `ktn_homeworks?class_code=in.(${classListParam})&status=eq.pending&order=submitted_at.desc&limit=15`);
           const pendingHws = Array.isArray(hwRes.data) ? hwRes.data : [];
           for (const hw of pendingHws) {
             items.push({
               id: `NOTIF-SUB-${hw.id}-${hw.submitted_at || ''}`,
               type: 'homework_submitted',
+              classCode: hw.class_code || '',
+              homeworkId: hw.id,
               title: 'Học sinh vừa nộp bài.',
               body: `${hw.student_name || hw.student_email} · ${hw.lesson_title || ('Bài ' + hw.lesson_num)}`,
-              actionUrl: '/sll-teacher.html',
+              actionUrl: `/custom-page/so-lien-lac-test?view=grade&hwId=${encodeURIComponent(hw.id)}`,
               createdAt: hw.submitted_at
             });
           }
-          const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${classListParam})&sender_role=eq.student&order=created_at.desc&limit=5`);
+          const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${roomListParam})&sender_role=eq.student&order=created_at.desc&limit=5`);
           const seenRooms = new Set();
           for (const m of (Array.isArray(msgRes.data) ? msgRes.data : [])) {
-            if (seenRooms.has(m.room_id)) continue;
-            seenRooms.add(m.room_id);
+            const normRoom = normalizeRoomClassCode(m.class_code || m.room_id);
+            if (!normRoom || seenRooms.has(normRoom)) continue;
+            seenRooms.add(normRoom);
             items.push({
-              id: `NOTIF-TMSG-${m.room_id}-${m.id}`,
+              id: `NOTIF-TMSG-${normRoom}-${m.id}`,
               type: 'chat_message',
+              classCode: normRoom,
               title: 'Tin nhắn mới từ học sinh.',
-              body: `${m.sender_name || m.sender_email} (${m.room_id}): ${String(m.content || '').slice(0, 60)}`,
-              actionUrl: '/sll-teacher.html',
+              body: `${m.sender_name || m.sender_email} (${normRoom}): ${String(m.content || '').slice(0, 60)}`,
+              actionUrl: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(normRoom)}`,
               createdAt: m.created_at
             });
           }
@@ -3024,7 +3030,7 @@ export default {
             type: 'order_pending',
             title: 'Đơn đăng ký mới chờ duyệt.',
             body: `${ord.student_name} · ${ord.course_name}`,
-            actionUrl: '/sll-admin.html',
+            actionUrl: `/custom-page/so-lien-lac-test?view=orders&orderId=${encodeURIComponent(ord.order_id)}`,
             createdAt: ord.created_at
           });
         }

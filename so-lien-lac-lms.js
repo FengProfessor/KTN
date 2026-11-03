@@ -2061,9 +2061,75 @@
       </div>`;
   }
 
+  const _roomSyncTs = {};
+  app.lmsSyncRoomMessages = async function (room, silent = false) {
+    const cleanRoom = String(room || '').trim().toUpperCase();
+    if (!cleanRoom || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return false;
+    const nowTs = Date.now();
+    if (silent && _roomSyncTs[cleanRoom] && (nowTs - _roomSyncTs[cleanRoom] < 2500)) return false;
+    _roomSyncTs[cleanRoom] = nowTs;
+    try {
+      const res = await window.KtnWebApp.apiRequest('/api/ktn/messages?roomId=' + encodeURIComponent('class:' + cleanRoom));
+      if (!res || !res.ok || !Array.isArray(res.data?.messages)) return false;
+      if (!Array.isArray(app.state.messages)) app.state.messages = [];
+      let changed = false;
+      res.data.messages.forEach(m => {
+        if (!m || (!m.content && !m.text)) return;
+        const msgId = String(m.id || '');
+        const msgText = String(m.content || m.text || '').trim();
+        const msgTs = Date.parse(m.created_at || m.timestamp || '') || Date.now();
+        const sRoleRaw = String(m.sender_role || m.senderRole || 'student').toLowerCase();
+        const mappedRole = sRoleRaw === 'student' ? 'parent' : sRoleRaw;
+        const alreadyExists = app.state.messages.some(ex => {
+          if (!ex) return false;
+          if (msgId && String(ex.id || '') === msgId) return true;
+          const exCls = String(ex.classCode || '').toUpperCase();
+          const exTxt = String(ex.text || '').trim();
+          const exTs = Date.parse(ex.timestamp || '') || 0;
+          return exCls === cleanRoom && exTxt === msgText && Math.abs(exTs - msgTs) < 8000;
+        });
+        if (!alreadyExists) {
+          app.state.messages.push({
+            id: msgId || ('SB-' + msgTs + '-' + Math.random().toString(36).slice(2, 6)),
+            classCode: cleanRoom,
+            roomId: 'class:' + cleanRoom,
+            studentCode: '',
+            sender: mappedRole,
+            senderRole: mappedRole,
+            senderEmail: m.sender_email || '',
+            senderName: m.sender_name || m.sender_email || 'Học viên',
+            time: hhmm(msgTs),
+            timestamp: new Date(msgTs).toISOString(),
+            text: msgText,
+            attachment: m.attachment_url ? { type: 'file', url: m.attachment_url, title: 'Tệp đính kèm' } : null,
+            status: 'sent',
+            blocked: false
+          });
+          changed = true;
+        }
+      });
+      if (changed) {
+        const curInput = $('lms-group-input');
+        const draftVal = curInput ? curInput.value : '';
+        const hadFocus = document.activeElement === curInput;
+        if (isWorkspace() && L.page[role()] === 'groups') {
+          applyShell();
+          const nextInput = $('lms-group-input');
+          if (nextInput && draftVal) nextInput.value = draftVal;
+          if (nextInput && hadFocus) nextInput.focus();
+        }
+        window.KTN_NOTIF?.recalculateUnreadBadge?.();
+      }
+      return changed;
+    } catch (e) {
+      return false;
+    }
+  };
+
   app.lmsOpenRoom = function (id) {
     L.room[role()] = id;
     applyShell();
+    app.lmsSyncRoomMessages(id, false);
     setTimeout(() => $('lms-group-input')?.focus(), 0);
   };
 
@@ -2121,6 +2187,16 @@
     if (input) input.value = '';
     app.lmsGroupDlpHint('');
     app.saveState();
+    if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+      window.KtnWebApp.apiRequest('/api/ktn/messages', {
+        method: 'POST',
+        body: { roomId: 'class:' + room, classCode: room, content: text }
+      }).then(res => {
+        if (res && res.ok && res.data?.message?.id) {
+          msg.id = res.data.message.id;
+        }
+      }).catch(() => {});
+    }
     markSeen(r, room);
     applyShell();
     setTimeout(() => $('lms-group-input')?.focus(), 0);
@@ -2128,11 +2204,13 @@
   };
 
   function startGroupPoll() {
+    if (L.room[role()]) app.lmsSyncRoomMessages?.(L.room[role()], true);
     if (L._poll) return;
     L._poll = setInterval(() => {
       if (document.hidden) return;
       if (!isWorkspace() || L.page[role()] !== 'groups') { stopGroupPoll(); return; }
       app.pullSilentCloudState?.(true);
+      if (L.room[role()]) app.lmsSyncRoomMessages?.(L.room[role()], true);
     }, POLL_MS);
   }
   function stopGroupPoll() { if (L._poll) { clearInterval(L._poll); L._poll = null; } }
@@ -2437,14 +2515,15 @@
       const portalUser = typeof window.getRealCurrentUser === 'function' ? window.getRealCurrentUser() : null;
 
       if (isStudentPortalVisible && portalUser) {
+        const stuCls = String(portalUser.classCode || window.currentStudentProfile?.classCode || '').trim().toUpperCase();
         return {
           role: 'student',
-          roleLabel: 'Học viên Khóa Online',
+          roleLabel: stuCls ? `Học viên · Lớp ${stuCls}` : 'Học viên Khóa Online',
           userId: String(portalUser.id || portalUser.userId || '').trim(),
           email: String(portalUser.email || '').trim().toLowerCase(),
           name: portalUser.name || 'Học viên',
-          code: String(portalUser.studentId || portalUser.code || '').trim(),
-          classCodes: [],
+          code: String(portalUser.studentId || portalUser.code || window.currentStudentProfile?.student_code || '').trim(),
+          classCodes: stuCls ? [stuCls] : [],
           isPortal: true
         };
       }
@@ -2673,6 +2752,11 @@
         });
 
         (ctx.classCodes || []).forEach(cls => {
+          const alreadyHasRoomChatNotif = items.some(ex =>
+            ex && (ex.type === 'CLASS_CHAT_MESSAGE' || ex.type === 'CHAT_MESSAGE') &&
+            String(ex.metadata?.classCode || '').toUpperCase() === String(cls).toUpperCase()
+          );
+          if (alreadyHasRoomChatNotif) return;
           const roomMsgs = D.roomMessages(cls).filter(m => (m.senderRole || m.sender) !== 'teacher');
           const lastParentMsg = roomMsgs[roomMsgs.length - 1];
           if (lastParentMsg && lastParentMsg.text) {
@@ -2732,23 +2816,29 @@
 
         const clsCode = ctx.classCodes && ctx.classCodes[0] ? ctx.classCodes[0] : '';
         if (clsCode) {
-          const roomMsgs = D.roomMessages(clsCode).filter(m => (m.senderRole || m.sender) === 'teacher');
-          const lastTeacherMsg = roomMsgs[roomMsgs.length - 1];
-          if (lastTeacherMsg && lastTeacherMsg.text) {
-            pushItem({
-              id: 'notif_stu_msg_' + lastTeacherMsg.id,
-              recipient_role: 'student',
-              recipient_id: ctx.email,
-              type: 'CLASS_CHAT_MESSAGE',
-              category: 'comm',
-              priority: 'MEDIUM',
-              title: 'Tin nhắn mới từ cô giáo.',
-              body: `${lastTeacherMsg.senderName || 'Cô giáo'}: ${String(lastTeacherMsg.text).slice(0, 60)}`,
-              action_url: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(clsCode)}`,
-              timestamp: Date.parse(lastTeacherMsg.timestamp || '') || (now - 600000),
-              cta: 'Xem tin nhắn →',
-              metadata: { classCode: clsCode }
-            });
+          const alreadyHasClsChatNotif = items.some(ex =>
+            ex && (ex.type === 'CLASS_CHAT_MESSAGE' || ex.type === 'CHAT_MESSAGE') &&
+            String(ex.metadata?.classCode || '').toUpperCase() === String(clsCode).toUpperCase()
+          );
+          if (!alreadyHasClsChatNotif) {
+            const roomMsgs = D.roomMessages(clsCode).filter(m => (m.senderRole || m.sender) === 'teacher');
+            const lastTeacherMsg = roomMsgs[roomMsgs.length - 1];
+            if (lastTeacherMsg && lastTeacherMsg.text) {
+              pushItem({
+                id: 'notif_stu_msg_' + lastTeacherMsg.id,
+                recipient_role: 'student',
+                recipient_id: ctx.email,
+                type: 'CLASS_CHAT_MESSAGE',
+                category: 'comm',
+                priority: 'MEDIUM',
+                title: 'Tin nhắn mới từ cô giáo.',
+                body: `${lastTeacherMsg.senderName || 'Cô giáo'}: ${String(lastTeacherMsg.text).slice(0, 60)}`,
+                action_url: ctx.isPortal ? `#/lop/${clsCode.toLowerCase()}/buoi/1` : `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(clsCode)}`,
+                timestamp: Date.parse(lastTeacherMsg.timestamp || '') || (now - 600000),
+                cta: 'Xem tin nhắn →',
+                metadata: { classCode: clsCode }
+              });
+            }
           }
         }
       }
@@ -2973,8 +3063,24 @@
 
       // 1. Ngữ cảnh Cổng Học Viên Trực Tuyến (Student Online Portal)
       if (ctx.isPortal) {
-        const cid = meta.courseId || (actionUrl && new URL(actionUrl, location.origin).searchParams.get('course'));
-        const lIdx = meta.lessonIdx != null ? Number(meta.lessonIdx) : (actionUrl && new URL(actionUrl, location.origin).searchParams.get('lesson') != null ? Number(new URL(actionUrl, location.origin).searchParams.get('lesson')) : null);
+        const rawUrl = String(actionUrl || '');
+        if ((rawUrl.startsWith('#/lop') || rawUrl.startsWith('#/khoa')) && typeof window.navigateStudentHash === 'function') {
+          window.navigateStudentHash(rawUrl);
+          return;
+        }
+        if ((item && (item.type === 'CLASS_CHAT_MESSAGE' || item.type === 'CHAT_MESSAGE')) || (rawUrl.includes('view=groups'))) {
+          const targetCls = String(meta.classCode || (ctx.classCodes && ctx.classCodes[0]) || '').trim().toLowerCase();
+          if (targetCls && typeof window.navigateStudentHash === 'function') {
+            window.navigateStudentHash(`#/lop/${targetCls}/buoi/1`);
+            setTimeout(() => {
+              const chatBox = document.getElementById('student-chat-messages');
+              if (chatBox) chatBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 350);
+            return;
+          }
+        }
+        const cid = meta.courseId || (actionUrl && actionUrl.startsWith('/') && new URL(actionUrl, location.origin).searchParams.get('course'));
+        const lIdx = meta.lessonIdx != null ? Number(meta.lessonIdx) : (actionUrl && actionUrl.startsWith('/') && new URL(actionUrl, location.origin).searchParams.get('lesson') != null ? Number(new URL(actionUrl, location.origin).searchParams.get('lesson')) : null);
         if (cid && typeof window.enterCourseLearning === 'function') {
           window.enterCourseLearning(lIdx != null ? lIdx : 0, cid);
           setTimeout(() => {
@@ -3190,28 +3296,32 @@
         items.slice().reverse().forEach(rawItem => {
           if (!rawItem || !rawItem.id) return;
           if (existingIds.has(rawItem.id) || PROCESSED_MSG_IDS.has(rawItem.id)) return;
+          const rawType = String(rawItem.type || 'academic').toLowerCase();
+          const isChat = rawType === 'chat_message' || rawType === 'class_chat_message';
+          const isOrder = rawType === 'order_pending' || rawType === 'order_created';
           const item = {
             id: rawItem.id,
             recipient_role: ctx.role,
-            recipient_id: ctx.studentEmail || ctx.studentCode || ctx.teacherEmail || ctx.userId || 'ALL',
-            type: String(rawItem.type || 'ACADEMIC').toUpperCase(),
-            category: 'academic',
-            priority: 'HIGH',
+            recipient_id: ctx.email || ctx.code || ctx.userId || 'ALL',
+            type: isChat ? 'CLASS_CHAT_MESSAGE' : String(rawItem.type || 'ACADEMIC').toUpperCase(),
+            category: isChat ? 'comm' : (isOrder ? 'order' : 'academic'),
+            priority: isChat ? 'MEDIUM' : 'HIGH',
             title: rawItem.title || 'Thông báo mới',
             body: rawItem.body || '',
             action_url: rawItem.actionUrl || rawItem.action_url || '/custom-page/so-lien-lac-test',
-            cta: 'Xem ngay →',
+            cta: isChat ? 'Xem tin nhắn →' : 'Xem ngay →',
             timestamp: rawItem.createdAt ? new Date(rawItem.createdAt).getTime() : now,
             read_status: readSet.has(rawItem.id),
             metadata: {
-              studentEmail: ctx.studentEmail,
-              studentCode: ctx.studentCode,
+              studentEmail: ctx.email,
+              studentCode: ctx.code,
+              classCode: rawItem.classCode || (ctx.classCodes && ctx.classCodes[0]) || '',
               homeworkId: rawItem.homeworkId || '',
               courseId: rawItem.courseId || '',
               lessonNum: rawItem.lessonNum || null
             }
           };
-          if (!this.evaluateRecipientMatch(item)) return;
+          if (!this.evaluateRecipientMatch(item, ctx)) return;
           PROCESSED_MSG_IDS.add(item.id);
           existingIds.add(item.id);
           custom.unshift(item);

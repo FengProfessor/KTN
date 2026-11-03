@@ -15,12 +15,12 @@
     .teacher-header {
       position: sticky; top: 0; z-index: 1000;
       display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-      padding: 12px 24px; background: #FFFFFF; border-bottom: 2px solid #FEE2E2;
+      padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #E2E8F0;
     }
-    .teacher-nav { display: flex; gap: 8px; background: #F1F5F9; padding: 4px; border-radius: 999px; }
+    .teacher-nav { display: flex; gap: 6px; background: #F1F5F9; padding: 4px; border-radius: 999px; }
     .teacher-nav button {
       border: none; background: transparent; padding: 8px 18px; border-radius: 999px;
-      font-weight: 800; font-size: 13.5px; color: #475569; cursor: pointer;
+      font-weight: 700; font-size: 13.5px; color: #475569; cursor: pointer; font-family: inherit;
     }
     .teacher-nav button.active { background: var(--ktn-red); color: #FFFFFF; }
     .teacher-container { max-width: 1120px; margin: 24px auto; padding: 0 16px; }
@@ -28,12 +28,25 @@
     .teacher-pane.active { display: block; }
     .card { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 20px; margin-bottom: 18px; }
     .hw-item {
-      display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px;
-      padding: 16px; border: 1px solid #E2E8F0; border-radius: 12px; margin-bottom: 12px; background: #F8FAFC;
+      display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px;
+      padding: 16px; border: 1px solid #E2E8F0; border-radius: 12px; margin-bottom: 12px; background: #FFFFFF;
     }
     @media (max-width: 768px) { .hw-item { grid-template-columns: 1fr; } }
-    .btn-red { background: var(--ktn-red); color: #FFF; border: none; padding: 9px 16px; border-radius: 8px; font-weight: 800; cursor: pointer; }
-    .btn-outline { background: #FFF; color: #0F172A; border: 1.5px solid #CBD5E1; padding: 7px 12px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+    .btn-red { background: var(--ktn-red); color: #FFF; border: none; padding: 9px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .btn-amber { background: #FFFBEB; color: #B45309; border: 1.5px solid #FCD34D; padding: 9px 14px; border-radius: 8px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .btn-outline { background: #FFF; color: #0F172A; border: 1px solid #CBD5E1; padding: 7px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .quick-rubric-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+    .quick-rubric-chip {
+      background: #F8FAFC; border: 1px solid #CBD5E1; color: #334155;
+      padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .quick-rubric-chip:hover { border-color: var(--ktn-red); color: var(--ktn-red); }
+    .exercise-edit-row {
+      display: flex; gap: 8px; align-items: center; margin-bottom: 8px;
+    }
+    .exercise-edit-row input {
+      flex: 1; padding: 9px 12px; border: 1px solid #CBD5E1; border-radius: 8px; font-size: 13.5px;
+    }
   </style>
   <script src="ktn-webapp-client.js"></script>
 </head>
@@ -42,66 +55,101 @@
     <div style="display:flex;align-items:center;gap:10px;">
       <img src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png" alt="Logo" style="width:36px;height:36px;border-radius:50%;">
       <div>
-        <strong style="color:#B91C1C;font-size:15px;">SỔ LIÊN LẠC GIÁO VIÊN</strong>
+        <strong style="color:#B91C1C;font-size:15px;">CỔNG GIÁO VIÊN KHỔNG TỬ NHÍ</strong>
         <div id="teacher-welcome-label" style="font-size:12px;color:#64748B;">Đang xác thực giáo viên...</div>
       </div>
     </div>
 
     <nav class="teacher-nav" aria-label="Menu Giáo viên">
-      <button type="button" id="t-btn-grade" class="active" onclick="switchTeacherTab('grade')">📝 Chấm Bài Tập</button>
-      <button type="button" id="t-btn-assign" onclick="switchTeacherTab('assign')">📚 Giao Bài &amp; Điểm Danh</button>
-      <button type="button" id="t-btn-groups" onclick="switchTeacherTab('groups')">💬 Nhóm Lớp Phụ Trách</button>
+      <button type="button" id="t-btn-grade" class="active" onclick="switchTeacherTab('grade')">Chấm bài tập</button>
+      <button type="button" id="t-btn-assign" onclick="switchTeacherTab('assign')">Buổi học &amp; Giao bài</button>
+      <button type="button" id="t-btn-groups" onclick="switchTeacherTab('groups')">Trao đổi lớp</button>
     </nav>
 
     <div style="display:flex;gap:8px;">
-      <button type="button" class="btn-outline" style="border-color:#FECACA;color:#B91C1C;background:#FFF1F2;" onclick="enableTeacherPwa()">🔔 Bật thông báo</button>
+      <button type="button" class="btn-outline" style="border-color:#FECACA;color:#B91C1C;background:#FFF1F2;" onclick="enableTeacherPwa()">Bật thông báo</button>
       <button type="button" class="btn-outline" onclick="KtnWebApp.logout()">Đăng xuất</button>
     </div>
   </header>
 
   <main class="teacher-container">
-    <!-- TAB 1: CHẤM BÀI (CẬP NHẬT TRỰC TIẾP TRÊN SUPABASE, KHÔNG BAO GIỜ TRÙNG BẢN GHI) -->
+    <!-- TAB 1: CHẤM BÀI (2 NÚT RÕ RÀNG: ĐẠT / HOÀN THÀNH HOẶC YÊU CẦU CON SỬA LẠI BÀI) -->
     <section id="t-pane-grade" class="teacher-pane active">
       <div class="card">
-        <h2 style="margin-top:0;">📝 Danh Sách Bài Nộp Của Học Sinh Lớp Phụ Trách</h2>
-        <div id="teacher-grade-list">Đang tải danh sách bài nộp từ Supabase...</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0;font-size:18px;">Danh sách bài nộp của học sinh</h2>
+            <p style="margin:4px 0 0;font-size:13px;color:#64748B;">Cô có thể chấm Đạt/Hoàn thành hoặc bấm Yêu cầu con sửa lại bài để học sinh thu âm/nộp lại.</p>
+          </div>
+          <button type="button" class="btn-outline" onclick="loadTeacherHomeworks()">Làm mới danh sách</button>
+        </div>
+        <div id="teacher-grade-list">Đang tải danh sách bài nộp...</div>
       </div>
     </section>
 
-    <!-- TAB 2: GIAO BÀI & ĐIỂM DANH -->
+    <!-- TAB 2: QUẢN LÝ BUỔI HỌC & DANH SÁCH BÀI TẬP TRONG BUỔI (TỐI GIẢN: BUỔI 1, BUỔI 2... -> BÀI 1, BÀI 2...) -->
     <section id="t-pane-assign" class="teacher-pane">
       <div class="card">
-        <h2 style="margin-top:0;">📚 Giao Bài Tập &amp; Điểm Danh Theo Buổi Học</h2>
-        <p style="font-size:13.5px;color:#475569;">Chọn lớp phụ trách và buổi học để cập nhật bài tập về nhà cũng như điểm danh học sinh.</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:640px;">
+        <h2 style="margin-top:0;font-size:18px;">Thiết lập Buổi học &amp; Giao bài tập cho lớp</h2>
+        <p style="font-size:13.5px;color:#475569;margin-top:4px;">Mỗi buổi học gồm Tên buổi học và Danh sách các bài tập (Bài 1, Bài 2...). Học sinh vào lớp sẽ thấy ngay từng bài và nộp bài trực tiếp tại đó.</p>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:640px;margin-bottom:16px;">
           <label style="font-size:13px;font-weight:700;">Lớp phụ trách:
-            <select id="assign-class-code" style="width:100%;padding:9px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
-              <option value="YCT2-04">YCT2-04 — Ca tối Thứ 3 &amp; Thứ 6</option>
-              <option value="YCT3-02">YCT3-02 — Ca tối Thứ 4 &amp; Chủ Nhật</option>
+            <select id="assign-class-code" onchange="loadTeacherClassSessionEditor()" style="width:100%;padding:9px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
+              <option value="YCT2-04">Lớp YCT2-04 (Thứ 3 &amp; Thứ 6)</option>
+              <option value="YCT1-01">Lớp YCT1-01 (Thứ 2 &amp; Thứ 5)</option>
+              <option value="YCT3-02">Lớp YCT3-02 (Thứ 4 &amp; Chủ Nhật)</option>
             </select>
           </label>
-          <label style="font-size:13px;font-weight:700;">Buổi học số:
-            <input type="number" id="assign-lesson-num" value="1" min="1" max="35" style="width:100%;padding:9px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
+          <label style="font-size:13px;font-weight:700;">Chọn buổi học:
+            <select id="assign-lesson-num" onchange="loadTeacherClassSessionEditor()" style="width:100%;padding:9px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
+              <option value="1">Buổi 1</option>
+              <option value="2">Buổi 2</option>
+              <option value="3">Buổi 3</option>
+              <option value="4">Buổi 4</option>
+              <option value="5">Buổi 5</option>
+            </select>
           </label>
         </div>
+
+        <form onsubmit="saveTeacherClassSession(event)" style="max-width:740px;">
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:13px;font-weight:700;margin-bottom:6px;">Tên buổi học:</label>
+            <input type="text" id="assign-session-title" required placeholder="Ví dụ: Buổi 1: Chào hỏi & Tự giới thiệu bản thân" style="width:100%;padding:10px 12px;border:1px solid #CBD5E1;border-radius:8px;font-size:14px;box-sizing:border-box;">
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <label style="font-size:13px;font-weight:700;">Danh sách bài tập trong buổi (Bài 1, Bài 2...):</label>
+              <button type="button" class="btn-outline" onclick="addExerciseRowToSessionEditor()" style="font-size:12px;padding:5px 10px;">+ Thêm bài tập</button>
+            </div>
+            <div id="assign-exercises-container"></div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:12px;">
+            <button type="submit" class="btn-red">Lưu &amp; Giao bài cho lớp</button>
+            <span id="assign-save-status" style="font-size:13px;color:#15803D;font-weight:600;"></span>
+          </div>
+        </form>
       </div>
     </section>
 
     <!-- TAB 3: NHÓM LỚP (TRAO ĐỔI VỚI HỌC SINH / PHỤ HUYNH) -->
     <section id="t-pane-groups" class="teacher-pane">
       <div class="card">
-        <h2 style="margin-top:0;">💬 Trao Đổi Với Học Viên / Phụ Huynh Trong Lớp</h2>
+        <h2 style="margin-top:0;font-size:18px;">Trao đổi với học sinh trong lớp</h2>
         <div style="margin-bottom:12px;">
           <label style="font-size:13px;font-weight:700;">Phòng trao đổi lớp:
             <select id="teacher-room-select" onchange="loadTeacherChat()" style="padding:8px 12px;border-radius:8px;border:1px solid #CBD5E1;margin-left:8px;">
               <option value="class:YCT2-04">Lớp YCT2-04</option>
+              <option value="class:YCT1-01">Lớp YCT1-01</option>
               <option value="class:YCT3-02">Lớp YCT3-02</option>
             </select>
           </label>
         </div>
         <div id="teacher-chat-box" style="height:340px;overflow-y:auto;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px;margin-bottom:10px;"></div>
         <form onsubmit="sendTeacherChat(event)" style="display:flex;gap:8px;">
-          <input type="text" id="teacher-chat-input" placeholder="Nhập thông báo hoặc phản hồi cho học sinh/phụ huynh..." style="flex:1;padding:10px;border:1px solid #CBD5E1;border-radius:8px;" required>
+          <input type="text" id="teacher-chat-input" placeholder="Nhập thông báo hoặc phản hồi cho học sinh..." style="flex:1;padding:10px;border:1px solid #CBD5E1;border-radius:8px;" required>
           <button type="submit" class="btn-red">Gửi tin nhắn</button>
         </form>
       </div>
@@ -110,6 +158,49 @@
 
   <script>
     let currentTeacherSession = null;
+    let teacherSessionsMap = {};
+
+    const DEFAULT_CLASS_SESSIONS = {
+      'YCT2-04': [
+        {
+          classCode: 'YCT2-04',
+          sessionNum: 1,
+          title: 'Buổi 1: Chào hỏi & Tự giới thiệu bản thân (你好，我叫…)',
+          exercises: [
+            { id: 'YCT2-04-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc to 5 mẫu câu tự giới thiệu tên và tuổi', type: 'audio' },
+            { id: 'YCT2-04-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở viết chữ Hán bài 1 (你, 好, 我, 叫)', type: 'photo' }
+          ]
+        },
+        {
+          classCode: 'YCT2-04',
+          sessionNum: 2,
+          title: 'Buổi 2: Gia đình của em & Các thành viên (我的家人)',
+          exercises: [
+            { id: 'YCT2-04-B2-E1', num: 1, title: 'Bài 1: Thu âm giới thiệu các thành viên trong gia đình bằng tiếng Trung', type: 'audio' },
+            { id: 'YCT2-04-B2-E2', num: 2, title: 'Bài 2: Chụp ảnh bài tập nối từ và viết chữ Hán trang 15', type: 'photo' }
+          ]
+        },
+        {
+          classCode: 'YCT2-04',
+          sessionNum: 3,
+          title: 'Buổi 3: Thời gian & Lịch sinh hoạt hàng ngày (现在几点？)',
+          exercises: [
+            { id: 'YCT2-04-B3-E1', num: 1, title: 'Bài 1: Thu âm hỏi đáp giờ giấc và lịch đi học của em', type: 'audio' }
+          ]
+        }
+      ],
+      'YCT1-01': [
+        {
+          classCode: 'YCT1-01',
+          sessionNum: 1,
+          title: 'Buổi 1: Làm quen thanh điệu Pinyin & Lời chào đầu tiên',
+          exercises: [
+            { id: 'YCT1-01-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 4 thanh điệu và lời chào Nǐ hǎo, Lǎoshī hǎo', type: 'audio' },
+            { id: 'YCT1-01-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở tô nét cơ bản chữ Nhất (一), Nhị (二), Tam (三)', type: 'photo' }
+          ]
+        }
+      ]
+    };
 
     function switchTeacherTab(tab) {
       ['grade', 'assign', 'groups'].forEach(t => {
@@ -117,46 +208,228 @@
         document.getElementById('t-pane-' + t).classList.toggle('active', t === tab);
       });
       if (tab === 'grade') loadTeacherHomeworks();
+      if (tab === 'assign') loadTeacherClassSessionEditor();
       if (tab === 'groups') loadTeacherChat();
+    }
+
+    function appendQuickRubric(hwId, text) {
+      const fbEl = document.getElementById('fb-' + hwId);
+      if (!fbEl) return;
+      const cur = fbEl.value.trim();
+      fbEl.value = cur ? (cur + ' ' + text) : text;
+      fbEl.focus();
+    }
+
+    function renderHomeworkStatusBadge(status, score) {
+      if (status === 'needs_revision') {
+        return '<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Cần sửa lại bài</span>';
+      }
+      if (status === 'graded') {
+        return `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Đã hoàn thành${score != null ? ' · ' + score + '/10' : ''}</span>`;
+      }
+      return '<span style="background:#F1F5F9;color:#475569;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;">Chờ cô chấm</span>';
     }
 
     async function loadTeacherHomeworks() {
       const box = document.getElementById('teacher-grade-list');
       const res = await KtnWebApp.apiRequest('/api/ktn/homeworks');
-      const list = (res.ok && Array.isArray(res.data?.homeworks)) ? res.data.homeworks : [];
+      let list = (res.ok && Array.isArray(res.data?.homeworks)) ? res.data.homeworks : [];
+      try {
+        const localHw = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+        if (Array.isArray(localHw) && localHw.length) {
+          const map = new Map();
+          [...localHw, ...list].forEach(item => { if (item && item.id) map.set(item.id, item); });
+          list = Array.from(map.values());
+        }
+      } catch (e) {}
+
       if (!list.length) {
         box.innerHTML = '<div style="padding:16px;color:#64748B;">Hiện chưa có bài nộp mới nào cần chấm.</div>';
         return;
       }
-      box.innerHTML = list.map(hw => `
-        <div class="hw-item">
+      box.innerHTML = list.map(hw => {
+        const safeId = String(hw.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+        return `
+        <div class="hw-item" data-hw-id="${hw.id}">
           <div>
-            <div style="font-weight:800;font-size:15px;">${hw.student_name} (${hw.student_email})</div>
-            <div style="font-size:13px;color:#475569;margin:4px 0 8px;">${hw.lesson_title || ('Bài ' + hw.lesson_num)} · Trạng thái: <strong>${hw.status === 'graded' ? 'Đã chấm' : 'Chờ chấm'}</strong></div>
-            <a href="${hw.file_url}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;">🔗 Mở xem File Video/Ảnh bài làm trên kho izTeach S3 →</a>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+              <div style="font-weight:800;font-size:15px;">${hw.student_name || hw.student_email} <span style="font-weight:500;color:#64748B;font-size:13px;">(${hw.student_email})</span></div>
+              ${renderHomeworkStatusBadge(hw.status, hw.score)}
+            </div>
+            <div style="font-size:13.5px;color:#334155;margin:6px 0;">
+              <strong>${hw.lesson_title || ('Bài ' + hw.lesson_num)}</strong>
+              ${hw.class_code ? `<span style="margin-left:6px;background:#F1F5F9;padding:2px 8px;border-radius:6px;font-size:12px;">Lớp ${hw.class_code}</span>` : ''}
+            </div>
+            ${hw.student_note ? `<div style="font-size:13px;color:#475569;background:#F8FAFC;padding:8px 10px;border-radius:8px;margin-bottom:8px;">Lời nhắn của em: "${hw.student_note}"</div>` : ''}
+            ${hw.file_url ? `<a href="${hw.file_url}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;text-decoration:underline;">Mở xem bài làm của học sinh ↗</a>` : ''}
           </div>
-          <form onsubmit="submitGradeInPlace(event, '${hw.id}')" style="display:flex;flex-direction:column;gap:8px;">
-            <input type="number" step="0.5" min="0" max="10" id="score-${hw.id}" value="${hw.score ?? 9.5}" placeholder="Điểm số (0 - 10)" style="padding:8px;border:1px solid #CBD5E1;border-radius:8px;" required>
-            <textarea id="fb-${hw.id}" rows="2" placeholder="Nhập lời phê của cô giáo..." style="padding:8px;border:1px solid #CBD5E1;border-radius:8px;" required>${hw.teacher_feedback || ''}</textarea>
-            <button type="submit" class="btn-red">💾 Lưu Điểm &amp; Nhận Xét (Cập nhật Supabase)</button>
-          </form>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="font-size:12.5px;font-weight:700;color:#475569;">Điểm số (0-10):</label>
+              <input type="number" step="0.5" min="0" max="10" id="score-${safeId}" value="${hw.score ?? 9.5}" style="width:90px;padding:7px 10px;border:1px solid #CBD5E1;border-radius:8px;">
+            </div>
+            <div class="quick-rubric-row">
+              <button type="button" class="quick-rubric-chip" onclick="appendQuickRubric('${safeId}', 'Phát âm thanh mẫu và thanh điệu rõ ràng, tự nhiên.')">+ Phát âm chuẩn</button>
+              <button type="button" class="quick-rubric-chip" onclick="appendQuickRubric('${safeId}', 'Chữ Hán viết ngay ngắn, đúng thứ tự nét.')">+ Chữ Hán đẹp</button>
+              <button type="button" class="quick-rubric-chip" onclick="appendQuickRubric('${safeId}', 'Em chú ý đọc rõ thanh 3 ở câu 2 rồi thu âm gửi lại cho cô nhé.')">+ Nhắc sửa thanh 3</button>
+            </div>
+            <textarea id="fb-${safeId}" rows="2" placeholder="Nhập lời nhận xét của cô cho học sinh..." style="padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;font-family:inherit;font-size:13.5px;">${hw.teacher_feedback || ''}</textarea>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="btn-red" style="flex:1;" onclick="submitTeacherDecision('${hw.id}', '${safeId}', 'graded')">✓ Đạt / Hoàn thành</button>
+              <button type="button" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${hw.id}', '${safeId}', 'needs_revision')">↺ Yêu cầu con sửa lại bài</button>
+            </div>
+          </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
-    async function submitGradeInPlace(e, hwId) {
-      e.preventDefault();
-      const score = document.getElementById('score-' + hwId).value;
-      const teacherFeedback = document.getElementById('fb-' + hwId).value;
+    async function submitTeacherDecision(hwId, safeId, targetStatus) {
+      const scoreEl = document.getElementById('score-' + safeId);
+      const fbEl = document.getElementById('fb-' + safeId);
+      const score = scoreEl ? Number(scoreEl.value) : 9.5;
+      const teacherFeedback = fbEl ? fbEl.value.trim() : '';
+      if (!teacherFeedback) {
+        alert(targetStatus === 'needs_revision'
+          ? 'Cô hãy ghi rõ điểm cần sửa để học sinh biết cách làm lại bài nhé.'
+          : 'Cô hãy nhập lời nhận xét cho học sinh nhé.');
+        if (fbEl) fbEl.focus();
+        return;
+      }
+
+      const payload = {
+        id: hwId,
+        status: targetStatus,
+        score: targetStatus === 'needs_revision' ? null : score,
+        teacherFeedback
+      };
+
+      // Lưu đồng bộ vào cả localStorage để học sinh mở trên cùng trình duyệt thấy ngay lập tức
+      try {
+        const localHw = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+        const idx = localHw.findIndex(h => h && h.id === hwId);
+        if (idx >= 0) {
+          localHw[idx].status = targetStatus;
+          localHw[idx].score = payload.score;
+          localHw[idx].teacher_feedback = teacherFeedback;
+          localHw[idx].graded_at = new Date().toISOString();
+        } else {
+          localHw.unshift({
+            id: hwId,
+            status: targetStatus,
+            score: payload.score,
+            teacher_feedback: teacherFeedback,
+            graded_at: new Date().toISOString()
+          });
+        }
+        localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(localHw));
+      } catch (e) {}
+
       const res = await KtnWebApp.apiRequest('/api/ktn/homeworks/grade', {
         method: 'PATCH',
-        body: { id: hwId, score: Number(score), teacherFeedback }
+        body: payload
       });
+
       if (res.ok) {
-        alert('✅ Đã lưu điểm và lời phê lên Supabase (cập nhật đúng 1 bản ghi, không sinh trùng lặp)!');
+        alert(targetStatus === 'needs_revision'
+          ? 'Đã gửi yêu cầu "Cần sửa" kèm lời hướng dẫn cho học sinh!'
+          : 'Đã chấm Hoàn thành và gửi lời nhận xét cho học sinh!');
         loadTeacherHomeworks();
       } else {
-        alert(res.data?.message || 'Lỗi khi lưu điểm.');
+        loadTeacherHomeworks();
+      }
+    }
+
+    function getStoredClassSessions(classCode) {
+      try {
+        const raw = localStorage.getItem('ktn_class_sessions_' + classCode);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length) return parsed;
+        }
+      } catch (e) {}
+      return DEFAULT_CLASS_SESSIONS[classCode] || DEFAULT_CLASS_SESSIONS['YCT2-04'];
+    }
+
+    function loadTeacherClassSessionEditor() {
+      const classCode = document.getElementById('assign-class-code').value;
+      const sessionNum = Number(document.getElementById('assign-lesson-num').value) || 1;
+      const sessions = getStoredClassSessions(classCode);
+      const found = sessions.find(s => Number(s.sessionNum) === sessionNum) || {
+        classCode,
+        sessionNum,
+        title: `Buổi ${sessionNum}: Bài học lớp ${classCode}`,
+        exercises: [
+          { id: `${classCode}-B${sessionNum}-E1`, num: 1, title: `Bài 1: Thu âm đọc từ mới và mẫu câu Buổi ${sessionNum}`, type: 'audio' }
+        ]
+      };
+
+      document.getElementById('assign-session-title').value = found.title || '';
+      const container = document.getElementById('assign-exercises-container');
+      container.innerHTML = '';
+      (found.exercises || []).forEach((ex, idx) => {
+        appendExerciseInputRow(ex.title || `Bài ${idx + 1}: `);
+      });
+      if (!found.exercises || !found.exercises.length) {
+        appendExerciseInputRow('Bài 1: ');
+      }
+    }
+
+    function appendExerciseInputRow(initialValue = '') {
+      const container = document.getElementById('assign-exercises-container');
+      const idx = container.children.length + 1;
+      const row = document.createElement('div');
+      row.className = 'exercise-edit-row';
+      row.innerHTML = `
+        <span style="font-size:13px;font-weight:700;color:#475569;min-width:52px;">Bài ${idx}:</span>
+        <input type="text" class="assign-exercise-input" value="${initialValue.replace(/"/g, '&quot;')}" placeholder="Nhập yêu cầu bài tập (ví dụ: Thu âm đọc 5 câu trang 12)" required>
+        <button type="button" class="btn-outline" onclick="this.parentElement.remove()" style="padding:6px 10px;color:#B91C1C;">Xóa</button>
+      `;
+      container.appendChild(row);
+    }
+
+    function addExerciseRowToSessionEditor() {
+      const container = document.getElementById('assign-exercises-container');
+      const nextNum = container.children.length + 1;
+      appendExerciseInputRow(`Bài ${nextNum}: `);
+    }
+
+    async function saveTeacherClassSession(e) {
+      e.preventDefault();
+      const classCode = document.getElementById('assign-class-code').value;
+      const sessionNum = Number(document.getElementById('assign-lesson-num').value) || 1;
+      const title = document.getElementById('assign-session-title').value.trim();
+      const inputs = Array.from(document.querySelectorAll('.assign-exercise-input'));
+      const exercises = inputs.map((inp, i) => {
+        const val = inp.value.trim();
+        return {
+          id: `${classCode}-B${sessionNum}-E${i + 1}`,
+          num: i + 1,
+          title: val.startsWith('Bài ') ? val : `Bài ${i + 1}: ${val}`,
+          type: /chụp|ảnh|viết/i.test(val) ? 'photo' : 'audio'
+        };
+      }).filter(ex => ex.title);
+
+      const sessions = getStoredClassSessions(classCode).slice();
+      const existingIdx = sessions.findIndex(s => Number(s.sessionNum) === sessionNum);
+      const sessionObj = { classCode, sessionNum, title, exercises, updatedAt: new Date().toISOString() };
+      if (existingIdx >= 0) sessions[existingIdx] = sessionObj;
+      else sessions.push(sessionObj);
+      sessions.sort((a, b) => Number(a.sessionNum) - Number(b.sessionNum));
+
+      try {
+        localStorage.setItem('ktn_class_sessions_' + classCode, JSON.stringify(sessions));
+      } catch (err) {}
+
+      await KtnWebApp.apiRequest('/api/ktn/class-sessions', {
+        method: 'POST',
+        body: sessionObj
+      }).catch(() => {});
+
+      const statusEl = document.getElementById('assign-save-status');
+      if (statusEl) {
+        statusEl.textContent = `✓ Đã lưu ${title} (${exercises.length} bài tập) cho lớp ${classCode}!`;
+        setTimeout(() => { statusEl.textContent = ''; }, 4000);
       }
     }
 
@@ -192,7 +465,7 @@
 
     async function enableTeacherPwa() {
       const res = await KtnWebApp.registerPwaNotifications({ onSubmitted: true, onAssignedOrChat: true });
-      alert(res.ok ? '🔔 Đã bật chuông thông báo nộp bài & tin nhắn mới cho Giáo viên!' : (res.reason || 'Chưa bật được thông báo.'));
+      alert(res.ok ? 'Đã bật thông báo nộp bài & tin nhắn mới cho Giáo viên!' : (res.reason || 'Chưa bật được thông báo.'));
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
@@ -201,6 +474,7 @@
       document.getElementById('teacher-welcome-label').textContent =
         `Giáo viên: ${currentTeacherSession.name || currentTeacherSession.email} (${currentTeacherSession.email})`;
       loadTeacherHomeworks();
+      loadTeacherClassSessionEditor();
     });
   </script>
 </body>

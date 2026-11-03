@@ -1524,19 +1524,20 @@
     }
     .ktn-tab-btn {
       border: none; background: transparent; padding: 8px 16px; border-radius: 999px;
-      font-size: 0.85rem; font-weight: 800; color: #475569; cursor: pointer; transition: all 0.2s; font-family: inherit;
+      font-size: 0.85rem; font-weight: 700; color: #475569; cursor: pointer; transition: all 0.2s; font-family: inherit;
     }
     .ktn-tab-btn.active {
-      background: var(--primary); color: #FFFFFF; box-shadow: 0 4px 12px rgba(185, 28, 28, 0.25);
+      background: var(--primary); color: #FFFFFF; box-shadow: 0 2px 8px rgba(185, 28, 28, 0.2);
     }
     .ktn-case-badge {
-      padding: 5px 11px; border-radius: 999px; font-size: 0.75rem; font-weight: 800;
-      background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; white-space: nowrap;
+      padding: 5px 11px; border-radius: 999px; font-size: 0.75rem; font-weight: 700;
+      background: #F8FAFC; color: #334155; border: 1px solid #E2E8F0; white-space: nowrap;
     }
     .ktn-pwa-btn {
-      border: 1.5px solid #FECACA; background: #FFF1F2; color: var(--primary);
-      padding: 6px 12px; border-radius: 8px; font-size: 0.78rem; font-weight: 800; cursor: pointer; white-space: nowrap;
+      border: 1px solid #E2E8F0; background: #FFFFFF; color: #334155;
+      padding: 6px 12px; border-radius: 8px; font-size: 0.78rem; font-weight: 700; cursor: pointer; white-space: nowrap;
     }
+    .ktn-pwa-btn:hover { border-color: var(--primary); color: var(--primary); }
     .sll-student-banner {
       margin: 0 0 18px; padding: 14px 18px;
       background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid var(--primary);
@@ -1549,7 +1550,7 @@
     @media (max-width: 860px) { .sll-student-grid { grid-template-columns: 1fr; } }
     .sll-card {
       background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 20px;
-      box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.03);
     }
     .sll-card h2 { margin: 0 0 12px; font-size: 1rem; color: #0F172A; display: flex; align-items: center; gap: 8px; }
     .chat-box { display: flex; flex-direction: column; height: 390px; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; }
@@ -1559,34 +1560,81 @@
     .chat-bubble.teacher { align-self: flex-start; background: #FFFFFF; border: 1px solid #E2E8F0; color: #0F172A; }
     .chat-input-row { display: flex; gap: 8px; padding: 10px; background: #FFFFFF; border-top: 1px solid #E2E8F0; }
     .chat-input-row input { flex: 1; padding: 9px 12px; border: 1px solid #CBD5E1; border-radius: 8px; font-size: 0.86rem; }
-    .chat-input-row button { background: var(--primary); color: #FFF; border: none; padding: 9px 16px; border-radius: 8px; font-weight: 800; cursor: pointer; }
+    .chat-input-row button { background: var(--primary); color: #FFF; border: none; padding: 9px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+
+    /* PRIORITY SECTION ON "TRANG CỦA EM" */
+    .priority-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 28px;
+    }
+    .priority-card {
+      background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px;
+      display: flex; flex-direction: column; justify-content: space-between; gap: 12px;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
+    }
+    .priority-card.urgent { border-left: 4px solid var(--primary); }
+    .priority-card-tag {
+      display: inline-block; font-size: 0.74rem; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+      background: #F1F5F9; color: #334155; width: fit-content;
+    }
+    .priority-card.urgent .priority-card-tag { background: #FEF2F2; color: var(--primary); }
+    .priority-card h3 { margin: 0; font-size: 1.02rem; font-weight: 800; color: #0F172A; line-height: 1.35; }
+    .priority-card p { margin: 0; font-size: 0.84rem; color: #475569; line-height: 1.5; }
+    .btn-priority-primary {
+      background: var(--primary); color: #FFFFFF; border: none; border-radius: 10px;
+      padding: 10px 16px; font-size: 0.86rem; font-weight: 700; cursor: pointer; width: fit-content; font-family: inherit;
+    }
+    .btn-priority-secondary {
+      background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 10px;
+      padding: 10px 16px; font-size: 0.86rem; font-weight: 700; cursor: pointer; width: fit-content; font-family: inherit;
+    }
+    .btn-priority-secondary:hover { border-color: var(--primary); color: var(--primary); }
+
+    /* LESSON SIDEBAR REVISION STATE & NEXT LESSON BAR */
+    .lesson-item-btn.state-revision .lesson-num-badge { background: #FEF3C7; color: #B45309; border-color: #FCD34D; }
+    .lesson-item-btn.state-revision .lesson-sub-status { color: #B45309; font-weight: 700; }
+    .lesson-next-bar {
+      margin-top: 20px; padding-top: 16px; border-top: 1px solid #E2E8F0;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .class-session-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .class-session-tab {
+      background: #FFFFFF; border: 1px solid #CBD5E1; color: #334155;
+      padding: 8px 16px; border-radius: 999px; font-size: 0.84rem; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .class-session-tab.active { background: var(--primary); border-color: var(--primary); color: #FFFFFF; }
+    .class-exercise-item {
+      border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; background: #FFFFFF; margin-bottom: 12px;
+    }
   </style>
 </head>
 <body>
 
-  <!-- UNIFIED TOP HEADER (1 HEADER DUY NHẤT CHO CẢ PHÒNG HỌC VIDEO & SỔ LIÊN LẠC) -->
+  <!-- UNIFIED TOP HEADER (1 HEADER DUY NHẤT CHO CẢ CỔNG HỌC SINH) -->
   <header class="top-header">
     <div class="header-inner" style="flex-wrap:wrap;gap:12px;">
-      <div class="brand-wrap" onclick="switchStudentPane('classroom'); showCoursesDashboard();">
+      <div class="brand-wrap" onclick="navigateStudentHash('#/')">
         <img class="brand-logo" src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png" alt="Khổng Tử Nhí">
         <div class="brand-text">
           <h1>HỌC VIỆN KHỔNG TỬ NHÍ</h1>
-          <p id="header-subtitle">Không gian học tập chuẩn quốc tế</p>
+          <p id="header-subtitle">Cổng học tập học sinh</p>
         </div>
       </div>
 
-      <nav class="ktn-tab-switcher" aria-label="Chuyển ngăn Phòng học và Sổ liên lạc">
-        <button type="button" id="tab-btn-classroom" class="ktn-tab-btn active" onclick="switchStudentPane('classroom')">
-          🎬 Phòng Học &amp; Bài Tập
+      <nav class="ktn-tab-switcher" aria-label="Điều hướng cổng học sinh">
+        <button type="button" id="tab-btn-home" class="ktn-tab-btn active" onclick="navigateStudentHash('#/')">
+          Trang của em
         </button>
-        <button type="button" id="tab-btn-contactbook" class="ktn-tab-btn" onclick="switchStudentPane('contactbook')">
-          📒 Sổ Liên Lạc &amp; Trao Đổi Với Cô
+        <button type="button" id="tab-btn-classroom" class="ktn-tab-btn" onclick="openActiveOrDefaultCourseHash()">
+          Khóa học của em
+        </button>
+        <button type="button" id="tab-btn-contactbook" class="ktn-tab-btn" onclick="openStudentLiveClassHash()">
+          Lớp của em
         </button>
       </nav>
 
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span id="student-case-pill" class="ktn-case-badge">Đang kiểm tra khóa học...</span>
-        <button type="button" class="ktn-pwa-btn" onclick="enableStudentPwaPush()">🔔 Bật thông báo</button>
+        <button type="button" class="ktn-pwa-btn" onclick="enableStudentPwaPush()">Bật thông báo</button>
         <!-- DYNAMIC REAL USER AUTHENTICATION BADGE -->
         <div class="user-badge" id="ktn-user-badge">
           <!-- Rendered dynamically by renderUserProfile() -->
@@ -1600,24 +1648,53 @@
     <div id="pane-classroom">
 
     <!-- ======================================================== -->
-    <!-- VIEW 1: MY COURSES DASHBOARD (Hiển thị duy nhất HSK1 3.0) -->
+    <!-- VIEW 1: TRANG CỦA EM (#/) — VIỆC CẦN LÀM & KỆ KHÓA HỌC   -->
     <!-- ======================================================== -->
     <div id="view-courses-dashboard">
-      <div class="courses-dashboard-head">
-        <h2>Khóa Học Của Tôi</h2>
-        <p>Chọn khóa học để tiếp tục lộ trình rèn luyện tiếng Trung chuẩn quốc tế.</p>
+
+      <!-- MULTI-SIBLING PERMISSION GUARD (HIỂN THỊ KHI MỞ LINK BÀI CHƯA CẤP CHO TÀI KHOẢN ĐANG ĐĂNG NHẬP) -->
+      <div id="sibling-permission-guard" style="display:none;background:#FFFFFF;border:1px solid #FCD34D;border-left:4px solid #D97706;border-radius:14px;padding:20px 24px;margin-bottom:24px;box-shadow:var(--shadow-sm);">
+        <h3 style="margin:0 0 6px;font-size:1.1rem;font-weight:800;color:#0F172A;">Bài này chưa được cấp cho tài khoản hiện tại</h3>
+        <p id="sibling-permission-desc" style="margin:0 0 14px;font-size:0.9rem;color:#475569;line-height:1.55;">
+          Đường dẫn em vừa mở thuộc khóa học hoặc lớp học chưa được cấp cho tài khoản đang đăng nhập.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button type="button" class="btn-priority-primary" onclick="switchStudentAccountPreservingHash()">Đổi tài khoản</button>
+          <button type="button" class="btn-priority-secondary" onclick="clearSiblingPermissionGuard()">Về Trang của em</button>
+        </div>
+      </div>
+
+      <!-- NETWORK ERROR BANNER WHEN COURSES CANNOT BE FETCHED -->
+      <div id="network-error-courses-state" style="display:none;background:#FFFFFF;border:1px solid #FECACA;border-left:4px solid var(--primary);border-radius:14px;padding:20px 24px;margin-bottom:24px;">
+        <h3 style="margin:0 0 6px;font-size:1.05rem;font-weight:800;color:#0F172A;">Chưa tải được khóa học</h3>
+        <p style="margin:0 0 12px;font-size:0.88rem;color:#475569;">Kết nối mạng đang chập chờn nên hệ thống chưa kiểm tra được danh sách khóa học của em.</p>
+        <button type="button" class="btn-priority-primary" onclick="retryLoadStudentCourses()">Thử lại</button>
+      </div>
+
+      <!-- VIỆC CẦN LÀM HÔM NAY (ƯU TIÊN: BÀI CÔ GIAO / CẦN SỬA -> TIẾP TỤC HỌC -> CÔ ĐÃ NHẬN XÉT) -->
+      <section id="today-priority-section" style="display:none;margin-bottom:28px;">
+        <div class="courses-dashboard-head" style="margin-bottom:14px;">
+          <h2>Trang của em</h2>
+          <p id="today-priority-subtitle">Bài đang học dở và bài cô đang chờ em nộp.</p>
+        </div>
+        <div id="today-priority-cards" class="priority-grid"></div>
+      </section>
+
+      <div class="courses-dashboard-head" style="margin-bottom:14px;">
+        <h2 id="shelf-section-heading">Khóa và lớp của em</h2>
+        <p>Chọn khóa học hoặc lớp học để bắt đầu bài học hôm nay.</p>
       </div>
 
       <!-- EMPTY STATE NẾU CHƯA CÓ KHÓA HỌC / CHƯA ĐĂNG NHẬP -->
-      <div id="empty-courses-state" style="display:none;background:#ffffff;border:1px solid var(--border-color);border-radius:var(--radius-lg);padding:3.5rem 2rem;text-align:center;box-shadow:var(--shadow-sm);max-width:620px;margin:2rem auto;">
-        <div id="empty-state-icon" style="font-size:3.5rem;margin-bottom:1rem;">📭</div>
-        <h3 id="empty-state-title" style="font-size:1.35rem;font-weight:800;color:var(--text-main);margin-bottom:0.5rem;">Chưa có khóa học nào</h3>
-        <p id="empty-state-desc" style="font-size:0.925rem;color:var(--text-muted);line-height:1.6;margin-bottom:1.5rem;">Tài khoản của bạn hiện chưa được kích hoạt khóa học nào.</p>
-        <div id="empty-state-btn-wrap"></div>
+      <div id="empty-courses-state" style="display:none;background:#ffffff;border:1px solid var(--border-color);border-radius:var(--radius-lg);padding:2.75rem 2rem;text-align:center;box-shadow:var(--shadow-sm);max-width:620px;margin:1.5rem auto;">
+        <div id="empty-state-icon" style="font-size:2.2rem;margin-bottom:0.75rem;color:#64748B;">•</div>
+        <h3 id="empty-state-title" style="font-size:1.25rem;font-weight:800;color:var(--text-main);margin-bottom:0.5rem;">Tài khoản đang chờ cấp quyền học</h3>
+        <p id="empty-state-desc" style="font-size:0.925rem;color:var(--text-muted);line-height:1.6;margin-bottom:1.5rem;">Tài khoản của em hiện chưa được gắn khóa học hoặc lớp học.</p>
+        <div id="empty-state-btn-wrap" style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;"></div>
       </div>
 
       <!-- COURSES GRID WRAPPER (HIỂN THỊ GỘP CHUNG LỚP TRỰC TIẾP VỚI CÔ & CÁC KHÓA HỌC VIDEO TRÊN CÙNG 1 KỆ) -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(360px, 420px));gap:1.5rem;align-items:start;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 400px));gap:1.5rem;align-items:start;">
         <!-- LIVE CLASS CARD SLOT (HIỂN THỊ KHI HỌC VIÊN CÓ XẾP LỚP TRỰC TIẾP VỚI CÔ GIÁO: both / sll_only) -->
         <div id="live-class-card-slot" style="display:contents;"></div>
 
@@ -1625,17 +1702,17 @@
         <div class="course-card-single" id="hsk1-course-card" style="display:none;margin:0;max-width:none;">
           <div class="course-card-thumb-wrap">
             <img class="course-card-thumb" src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png" alt="HSK1 3.0">
-            <span class="course-card-badge">TIÊU CHUẨN MỚI 3.0</span>
+            <span class="course-card-badge">HSK 1 (3.0)</span>
           </div>
           <div class="course-card-content">
             <div class="course-card-title">
-              <span>HSK1 3.0</span>
+              <span>Khóa HSK1 3.0</span>
               <span style="font-size:0.85rem;color:var(--primary);font-weight:700;">15 Bài học</span>
             </div>
             <div class="course-card-meta">
-              <span>📚 Trọn bộ 5 Sách &amp; Vở viết</span>
+              <span>5 Sách &amp; Vở ô mễ</span>
               <span>•</span>
-              <span>🎧 127 File nghe</span>
+              <span>127 File nghe</span>
             </div>
 
             <!-- PROGRESS BAR -->
@@ -1647,8 +1724,8 @@
               <strong id="dashboard-progress-label">0 / 15 bài</strong>
             </div>
 
-            <button class="btn-enter-course" onclick="enterCourseLearning(0, '6adadba969897b0002482ca5')">
-              <span>Vào học ngay</span>
+            <button class="btn-enter-course" id="btn-enter-hsk1-card" onclick="openCourseContinueOrStart('6adadba969897b0002482ca5')">
+              <span id="lbl-enter-hsk1-card">Bắt đầu Bài 1</span>
               <span>→</span>
             </button>
           </div>
@@ -1660,19 +1737,24 @@
     </div>
 
     <!-- ======================================================== -->
-    <!-- VIEW 2: LEARNING VIEWPORT (Sau khi click vào HSK1 3.0)     -->
+    <!-- VIEW 2: LEARNING VIEWPORT (#/khoa/... & #/khoa/.../bai/X) -->
     <!-- ======================================================== -->
     <div id="view-course-learning">
 
       <!-- TOP NAV BAR IN CLASSROOM -->
-      <div class="learning-top-bar">
-        <button class="btn-back-courses" onclick="showCoursesDashboard()">
-          <span>← Quay lại danh sách khóa học</span>
+      <div class="learning-top-bar" style="flex-wrap:wrap;gap:10px;">
+        <button class="btn-back-courses" onclick="navigateStudentHash('#/')">
+          <span>← Trang của em</span>
         </button>
         <div class="learning-course-title-tag">
           <span>Khóa học:</span>
           <strong>HSK1 3.0</strong>
           <span style="font-size:0.8rem;color:var(--text-muted);font-weight:500;" id="classroom-permission-pill">(Tiêu chuẩn New HSK 1)</span>
+        </div>
+        <div id="course-top-continue-wrap" style="margin-left:auto;">
+          <button type="button" id="btn-course-top-continue" class="btn-priority-primary" style="padding:7px 14px;font-size:0.8rem;" onclick="resumeLastLessonInActiveCourse()">
+            Bắt đầu Bài 1
+          </button>
         </div>
       </div>
 
@@ -1699,16 +1781,17 @@
                   </h2>
                 </div>
 
-                <!-- QUICK JUMP SHORTCUTS TO PDF / LESSON DOCS -->
-                <div class="stage-quick-links" id="stage-quick-links-container">
-                  <button class="btn-quick-pill" onclick="openPdfModal('sgk', LESSONS[currentLessonIdx].sgkPage)" title="Xem bài học trong Sách Giáo Khoa">
-                    📖 SGK trang <span class="tag" id="lbl-sgk-page">17</span>
+                <!-- TÀI LIỆU CỦA BÀI -->
+                <div class="stage-quick-links" id="stage-quick-links-container" aria-label="Tài liệu của bài">
+                  <span style="font-size:0.78rem;font-weight:700;color:#475569;margin-right:4px;">Tài liệu của bài:</span>
+                  <button class="btn-quick-pill" onclick="openPdfModal('sgk', LESSONS[currentLessonIdx].sgkPage)">
+                    Sách giáo khoa · Trang <span class="tag" id="lbl-sgk-page">17</span>
                   </button>
-                  <button class="btn-quick-pill" onclick="openPdfModal('sbt', LESSONS[currentLessonIdx].sbtPage)" title="Xem trang tương ứng trong Sách Bài Tập">
-                    ✏️ SBT trang <span class="tag" id="lbl-sbt-page">11</span>
+                  <button class="btn-quick-pill" onclick="openPdfModal('sbt', LESSONS[currentLessonIdx].sbtPage)">
+                    Sách bài tập · Trang <span class="tag" id="lbl-sbt-page">11</span>
                   </button>
-                  <button class="btn-quick-pill" onclick="openPdfModal('voviet', LESSONS[currentLessonIdx].voVietPage)" title="Xem ô kẻ trong Vở luyện viết">
-                    ✍️ Ô mễ trang <span class="tag" id="lbl-voviet-page">1</span>
+                  <button class="btn-quick-pill" onclick="openPdfModal('voviet', LESSONS[currentLessonIdx].voVietPage)">
+                    Vở ô mễ · Trang <span class="tag" id="lbl-voviet-page">1</span>
                   </button>
                 </div>
               </div>
@@ -1721,7 +1804,7 @@
                 </div>
               </div>
 
-              <!-- VIDEO PLAYER VIEWPORT WITH INTEGRATED PAYWALL GATE -->
+              <!-- VIDEO PLAYER VIEWPORT -->
               <div class="video-viewport">
                 <div class="video-overlay-banner">
                   <span class="live-dot"></span>
@@ -1730,60 +1813,47 @@
                 
                 <!-- HTML5 / HLS Video Player -->
                 <video id="hsk1-video-player" controls playsinline preload="none" poster=""></video>
-
-
-
               </div>
             </div>
 
             <!-- ================================================== -->
-            <!-- SÁCH BÀI TẬP ĐIỆN TỬ TƯƠNG TÁC (BẬT SẴN DƯỚI VIDEO) -->
+            <!-- BÀI TẬP CỦA BÀI (BẬT SẴN DƯỚI VIDEO)              -->
             <!-- ================================================== -->
             <div class="interactive-workbook-card" id="interactive-workbook-section">
               <div class="workbook-header">
                 <div class="workbook-title-wrap">
-                  <h3 id="workbook-head-title">📘 Sách Bài Tập Điện Tử Tương Tác · Bài 1</h3>
-                  <p>Làm bài tập trực tiếp ngay trên trang — không cần chuyển tab hay mở file PDF riêng</p>
+                  <h3 id="workbook-head-title">Bài tập của bài · Bài 1</h3>
+                  <p>Nghe mẫu, làm bài tập trắc nghiệm, thu âm phát âm hoặc chụp ảnh vở viết để nộp cho cô.</p>
                 </div>
                 <div id="workbook-status-badge-wrap">
-                  <span class="workbook-status-badge" style="background:#f1f5f9;color:#64748b;">Chưa nộp bài</span>
+                  <span class="workbook-status-badge" style="background:#f1f5f9;color:#64748b;">Chưa nộp</span>
                 </div>
               </div>
 
-              <!-- ACTIONABLE 3-STEP CHECKLIST GUIDE -->
-              <div class="actionable-guide-box">
-                <div class="guide-box-title">
-                  <span>📌 Hướng dẫn hoàn thành bài học (3 bước đơn giản):</span>
+              <!-- TEACHER FEEDBACK (HIỂN THỊ NGAY ĐẦU KHI CÔ ĐÃ NHẬN XÉT HOẶC YÊU CẦU CẦN SỬA) -->
+              <div class="teacher-feedback-card" id="teacher-feedback-box" style="display:none;margin-bottom:16px;">
+                <div class="tf-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <span class="tf-title" id="lbl-tf-heading">Lời cô nhận xét</span>
+                  <span class="tf-score" id="lbl-tf-score">10 / 10</span>
                 </div>
-                <div class="guide-steps-list">
-                  <div class="guide-step-item">
-                    <span class="step-num-pill">1</span>
-                    <span><strong>Xem video:</strong> Đã xem bài giảng của cô giáo ở khung phía trên.</span>
-                  </div>
-                  <div class="guide-step-item">
-                    <span class="step-num-pill">2</span>
-                    <span><strong>Làm SBT:</strong> Bấm nút loa 🔊 nghe &amp; tích chọn đáp án bên dưới.</span>
-                  </div>
-                  <div class="guide-step-item">
-                    <span class="step-num-pill">3</span>
-                    <span><strong>Nộp bài 1 chạm:</strong> Chụp ảnh vở viết hoặc thu âm rồi bấm nộp.</span>
-                  </div>
+                <div class="tf-body" id="lbl-tf-comment"></div>
+                <div id="tf-revision-actions" style="display:none;margin-top:10px;">
+                  <button type="button" class="btn-priority-primary" style="padding:7px 14px;font-size:0.82rem;" onclick="focusWorkbookRevisionArea()">
+                    Sửa bài
+                  </button>
                 </div>
               </div>
 
               <!-- EMBEDDED AUDIO PLAYER BANNER FOR THIS LESSON'S SBT -->
               <div class="sbt-audio-banner" id="sbt-audio-banner-wrap">
                 <div class="sbt-audio-meta">
-                  <span class="sbt-audio-icon">🎧</span>
                   <div>
-                    <div class="sbt-audio-title" id="sbt-audio-label">Audio Luyện Nghe SBT Bài 1</div>
-                    <div class="sbt-audio-sub">Giọng phát âm chuẩn Bắc Kinh của người bản xứ</div>
+                    <div class="sbt-audio-title" id="sbt-audio-label">File nghe của bài 1</div>
+                    <div class="sbt-audio-sub">Bấm phát để nghe mẫu phát âm</div>
                   </div>
                 </div>
                 <audio id="sbt-native-audio" class="sbt-audio-player" controls preload="none" src=""></audio>
               </div>
-
-
 
               <!-- WORKBOOK INTERACTIVE EXERCISES BODY -->
               <div class="workbook-body" id="workbook-exercises-body">
@@ -1791,8 +1861,8 @@
                 <!-- EXERCISE 1: NGHE & PHÁN ĐOÁN ĐÚNG / SAI -->
                 <div class="exercise-block">
                   <div class="exercise-block-title">
-                    <span>1. 🎧 Luyện Nghe &amp; Phán Đoán Đúng (对) / Sai (错)</span>
-                    <span class="exercise-block-tip">Bấm loa 🔊 nghe rồi tích chọn Đúng hoặc Sai</span>
+                    <span>1. Luyện nghe &amp; Chọn Đúng (对) hoặc Sai (错)</span>
+                    <span class="exercise-block-tip">Bấm Nghe mẫu rồi chọn đáp án</span>
                   </div>
                   <div id="exercise-judge-container">
                     <!-- Dynamic question cards with inline audio buttons -->
@@ -1802,19 +1872,19 @@
                 <!-- EXERCISE 2: NGHE & CHỌN ĐÁP ÁN ĐÚNG -->
                 <div class="exercise-block">
                   <div class="exercise-block-title">
-                    <span>2. 🎧 Luyện Nghe &amp; Chọn Đáp Án Chính Xác</span>
-                    <span class="exercise-block-tip">Bấm loa 🔊 nghe và chọn phương án phù hợp</span>
+                    <span>2. Luyện nghe &amp; Chọn đáp án đúng</span>
+                    <span class="exercise-block-tip">Bấm Nghe mẫu và chọn phương án phù hợp</span>
                   </div>
                   <div id="exercise-choose-container">
                     <!-- Dynamic choose question cards -->
                   </div>
                 </div>
 
-                <!-- EXERCISE 3: VỞ LUYỆN VIẾT CHỮ HÁN Ô MỄ -->
-                <div class="exercise-block">
+                <!-- EXERCISE 3: VỞ LUYỆN VIẾT CHỮ HÁN Ô MỄ & THU ÂM -->
+                <div class="exercise-block" id="workbook-upload-record-block">
                   <div class="exercise-block-title">
-                    <span>3. ✍️ Vở Luyện Viết Chữ Hán Theo Ô Mễ (Tian Zi Ge)</span>
-                    <span class="exercise-block-tip">Mẫu nét chữ Hán chuẩn bài này</span>
+                    <span>3. Vở luyện viết chữ Hán ô mễ &amp; Luyện nói</span>
+                    <span class="exercise-block-tip">Viết chữ Hán theo mẫu và thu âm giọng đọc</span>
                   </div>
                   <div class="hanzi-tiles-grid" id="hanzi-tiles-container">
                     <!-- Dynamic Hanzi calligraphy tiles -->
@@ -1823,46 +1893,53 @@
                   <!-- ATTACH WORKBOOK PHOTO OR VOICE RECORDING -->
                   <div class="upload-action-grid">
                     <div class="action-box">
-                      <span style="font-size:1.6rem;">📸</span>
-                      <strong style="font-size:0.85rem;color:var(--text-main);">Chụp ảnh vở viết chữ Hán</strong>
-                      <small style="color:#64748b;font-size:0.75rem;">Chụp ảnh 1 trang vở con vừa viết</small>
+                      <strong style="font-size:0.88rem;color:var(--text-main);">Chụp ảnh vở viết chữ Hán</strong>
+                      <small style="color:#64748b;font-size:0.78rem;">Chọn ảnh trang vở em vừa viết</small>
                       <input type="file" class="file-input-cover" id="hw-file-input" accept="image/*,.pdf" onchange="handleFileChosen(event)">
                     </div>
 
-                    <div class="action-box">
-                      <button type="button" class="btn-mic-toggle" id="btn-mic-record" onclick="toggleRecordVoice()">
-                        <span id="mic-icon">🎙️</span>
-                        <span id="mic-text">Bấm để thu âm phát âm</span>
-                      </button>
-                      <small style="color:#64748b;font-size:0.75rem;">Thu âm giọng đọc từ mới bài này</small>
+                    <div class="action-box" style="gap:8px;">
+                      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;">
+                        <button type="button" class="btn-mic-toggle" id="btn-mic-record" onclick="toggleRecordVoice()">
+                          <span id="mic-icon">🎙️</span>
+                          <span id="mic-text">Thu âm</span>
+                        </button>
+                        <button type="button" class="btn-quick-pill" id="btn-play-voice-draft" style="display:none;" onclick="playRecordedVoiceDraft()">
+                          Nghe lại
+                        </button>
+                      </div>
+                      <audio id="voice-draft-audio" controls style="display:none;width:100%;max-width:260px;height:34px;margin-top:4px;"></audio>
+                      <small style="color:#64748b;font-size:0.78rem;" id="voice-record-hint">Thu âm giọng đọc từ mới và mẫu câu của bài</small>
                     </div>
                   </div>
 
-                  <!-- SUBMITTED CLOUD RESOURCES PREVIEW -->
+                  <!-- SUBMITTED CLOUD RESOURCES PREVIEW (GIỮ BÀI ĐÃ NỘP ĐỂ ĐỐI CHIẾU) -->
                   <div id="submitted-resources-preview" style="display:none;background:#f8fafc;border:1px solid #cbd5e1;padding:12px;border-radius:8px;margin-bottom:12px;"></div>
 
                   <!-- FILE CHOSEN NOTICE -->
                   <div id="file-chosen-notice" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;padding:8px 12px;border-radius:6px;font-size:0.8rem;color:#166534;margin-bottom:10px;">
-                    📎 Đã đính kèm: <strong id="file-name-text"></strong>
+                    Đã chuẩn bị gửi: <strong id="file-name-text"></strong>
+                  </div>
+
+                  <!-- NETWORK ERROR ON SUBMIT (GIỮ NGUYÊN BÀI LÀM ĐỂ BẤM GỬI LẠI) -->
+                  <div id="workbook-submit-error" style="display:none;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;padding:10px 12px;border-radius:8px;font-size:0.84rem;font-weight:600;margin-bottom:10px;">
+                    Chưa gửi được bài do kết nối mạng. Bài làm của em vẫn được giữ nguyên, em bấm Gửi lại nhé.
                   </div>
 
                   <!-- STUDENT NOTE -->
-                  <textarea id="hw-student-note" class="note-input" placeholder="Ghi chú gửi cô giáo (ví dụ: Con đã làm xong bài tập nghe và viết chữ Hán...)"></textarea>
+                  <textarea id="hw-student-note" class="note-input" placeholder="Ghi chú gửi cô giáo (nếu có)..."></textarea>
 
-                  <!-- 1-CLICK COMPLETE & SUBMIT BUTTON -->
+                  <!-- SUBMIT BUTTON -->
                   <button type="button" class="btn-submit-workbook" id="btn-submit-workbook" onclick="submitCurrentWorkbook()">
-                    <span>🚀 HOÀN THÀNH &amp; NỘP BÀI TẬP (1 CHẠM)</span>
+                    <span id="lbl-submit-workbook">Nộp bài cho cô</span>
                   </button>
-                </div>
 
-                <!-- TEACHER FEEDBACK -->
-                <div class="teacher-feedback-card" id="teacher-feedback-box" style="display:none;">
-                  <div class="tf-header">
-                    <span class="tf-title">👩‍🏫 Nhận Xét &amp; Chấm Điểm Của Cô Giáo</span>
-                    <span class="tf-score" id="lbl-tf-score">⭐ 10 / 10</span>
-                  </div>
-                  <div class="tf-body" id="lbl-tf-comment">
-                    Bé phát âm rất chuẩn thanh 3 và thanh 4! Bài tập nghe tích đúng 100%, nét chữ Hán viết ngay ngắn, đúng quy tắc thuận bút. Cô khen ngợi con nhé!
+                  <!-- BOTTOM LESSON NAVIGATION: HỌC BÀI TIẾP THEO -->
+                  <div class="lesson-next-bar" id="lesson-next-nav-bar">
+                    <span id="lesson-next-hint" style="font-size:0.84rem;color:#475569;">Hoàn thành bài học này xong, em có thể chuyển sang bài tiếp theo.</span>
+                    <button type="button" class="btn-priority-secondary" id="btn-next-lesson" onclick="goToNextLesson()">
+                      Học bài tiếp theo →
+                    </button>
                   </div>
                 </div>
 
@@ -1877,78 +1954,78 @@
           <!-- -------------------------------------------------- -->
           <div id="stage-doc-library">
             <div class="docs-hero">
-              <h2 id="docs-hero-title">📚 Kho Giáo Trình &amp; Sách Điện Tử Chuẩn New HSK 1 (3.0)</h2>
-              <p id="docs-hero-desc">Toàn bộ 5 bộ giáo trình, sách bài tập, vở luyện viết ô mễ và sổ tay từ vựng bản quyền chất lượng cao được sắp xếp khoa học. Bạn có thể mở đọc trực tuyến nhảy chính xác đến từng trang hoặc tải về máy để in ra giấy cho bé luyện tập.</p>
+              <h2 id="docs-hero-title">Tài liệu của khóa New HSK 1 (3.0)</h2>
+              <p id="docs-hero-desc">Trọn bộ sách giáo khoa, sách bài tập, vở luyện viết ô mễ và sổ tay từ vựng của khóa học.</p>
             </div>
 
             <div class="docs-grid" id="docs-grid-container">
               <!-- BOOK 1: SGK -->
               <div class="doc-book-card">
                 <div>
-                  <span class="doc-badge">GIÁO TRÌNH CHÍNH</span>
-                  <h3 class="doc-title">Sách Giáo Khoa New HSK 1 (3.0)</h3>
-                  <p class="doc-meta">📄 148 trang · Chuẩn Quốc tế · Bản màu HD</p>
-                  <p class="doc-desc">Bao gồm toàn bộ 15 bài học lý thuyết, bài khóa hội thoại, giải thích ngữ pháp và từ vựng trọng tâm cô giáo đã giảng trong video.</p>
+                  <span class="doc-badge">SÁCH GIÁO KHOA</span>
+                  <h3 class="doc-title">Sách giáo khoa New HSK 1 (3.0)</h3>
+                  <p class="doc-meta">148 trang · Bản màu</p>
+                  <p class="doc-desc">Bao gồm 15 bài học lý thuyết, hội thoại, ngữ pháp và từ vựng trọng tâm.</p>
                 </div>
                 <div class="doc-card-footer">
-                  <button class="btn-doc-read" onclick="openPdfModal('sgk')">📖 Đọc trực tuyến</button>
-                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SGK.pdf" target="_blank" download>⬇️ Tải PDF</a>
+                  <button class="btn-doc-read" onclick="openPdfModal('sgk')">Mở sách</button>
+                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SGK.pdf" target="_blank" download>Tải PDF</a>
                 </div>
               </div>
 
               <!-- BOOK 2: SBT -->
               <div class="doc-book-card">
                 <div>
-                  <span class="doc-badge">BÀI TẬP VỀ NHÀ</span>
-                  <h3 class="doc-title">Sách Bài Tập New HSK 1 (3.0)</h3>
-                  <p class="doc-meta">📄 150 trang · Kèm 34 file nghe · Bản chuẩn</p>
-                  <p class="doc-desc">Hệ thống bài tập trắc nghiệm nghe hiểu và đọc hiểu tương ứng 15 bài học để rèn luyện phản xạ ngôn ngữ độc lập.</p>
+                  <span class="doc-badge">SÁCH BÀI TẬP</span>
+                  <h3 class="doc-title">Sách bài tập New HSK 1 (3.0)</h3>
+                  <p class="doc-meta">150 trang · Kèm 34 file nghe</p>
+                  <p class="doc-desc">Bài tập nghe hiểu và đọc hiểu tương ứng với 15 bài học trong khóa.</p>
                 </div>
                 <div class="doc-card-footer">
-                  <button class="btn-doc-read" onclick="openPdfModal('sbt')">📖 Đọc trực tuyến</button>
-                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SBT.pdf" target="_blank" download>⬇️ Tải PDF</a>
+                  <button class="btn-doc-read" onclick="openPdfModal('sbt')">Mở sách</button>
+                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SBT.pdf" target="_blank" download>Tải PDF</a>
                 </div>
               </div>
 
               <!-- BOOK 3: VỞ VIẾT -->
               <div class="doc-book-card">
                 <div>
-                  <span class="doc-badge">LUYỆN NÉT CHỮ</span>
-                  <h3 class="doc-title">Vở Luyện Viết Chữ Hán Theo Ô Mễ</h3>
-                  <p class="doc-meta">📄 137 trang · Hướng dẫn thuận bút từng nét · Khổ A4</p>
-                  <p class="doc-desc">Khắc sâu quy tắc viết thuận bút, các nét cơ bản và thứ tự từng chữ Hán cho toàn bộ 500 từ vựng của New HSK 1.</p>
+                  <span class="doc-badge">VỞ Ô MỄ</span>
+                  <h3 class="doc-title">Vở ô mễ luyện viết chữ Hán</h3>
+                  <p class="doc-meta">137 trang · Hướng dẫn thứ tự nét</p>
+                  <p class="doc-desc">Hướng dẫn quy tắc viết thuận bút và thứ tự từng nét chữ Hán.</p>
                 </div>
                 <div class="doc-card-footer">
-                  <button class="btn-doc-read" onclick="openPdfModal('voviet')">📖 Đọc trực tuyến</button>
-                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_Vo_luyen_viet.pdf" target="_blank" download>⬇️ Tải PDF</a>
+                  <button class="btn-doc-read" onclick="openPdfModal('voviet')">Mở vở</button>
+                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_Vo_luyen_viet.pdf" target="_blank" download>Tải PDF</a>
                 </div>
               </div>
 
               <!-- BOOK 4: TỪ VỰNG -->
               <div class="doc-book-card">
                 <div>
-                  <span class="doc-badge">TRA CỨU TỪ MỚI</span>
-                  <h3 class="doc-title">500 Từ Vựng Trọng Tâm New HSK 1 - 5</h3>
-                  <p class="doc-meta">📄 312 trang · Pinyin, Nghĩa Việt &amp; Ví dụ đối thoại</p>
-                  <p class="doc-desc">Bảng tổng hợp từ vựng có phiên âm, từ loại và ví dụ đối thoại thực tế, phù hợp cho học sinh tra cứu hàng ngày.</p>
+                  <span class="doc-badge">TỪ VỰNG</span>
+                  <h3 class="doc-title">500 Từ vựng trọng tâm New HSK</h3>
+                  <p class="doc-meta">312 trang · Pinyin &amp; Nghĩa tiếng Việt</p>
+                  <p class="doc-desc">Bảng tổng hợp từ vựng có phiên âm, từ loại và ví dụ hội thoại.</p>
                 </div>
                 <div class="doc-card-footer">
-                  <button class="btn-doc-read" onclick="openPdfModal('tuvung')">📖 Đọc trực tuyến</button>
-                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/Tu_vung_New_HSK1_HSK5.pdf" target="_blank" download>⬇️ Tải PDF</a>
+                  <button class="btn-doc-read" onclick="openPdfModal('tuvung')">Mở sách</button>
+                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/Tu_vung_New_HSK1_HSK5.pdf" target="_blank" download>Tải PDF</a>
                 </div>
               </div>
 
               <!-- BOOK 5: 214 BỘ THỦ -->
               <div class="doc-book-card">
                 <div>
-                  <span class="doc-badge">GỐC RỄ HÁN TỰ</span>
-                  <h3 class="doc-title">Sổ Tay 214 Bộ Thủ Tiếng Trung</h3>
-                  <p class="doc-meta">📄 68 trang · Minh họa sinh động · Ý nghĩa tượng hình</p>
-                  <p class="doc-desc">Nắm vững gốc rễ cấu tạo chữ Hán thông qua phương pháp hình ảnh tượng hình, giúp nhớ mặt chữ lâu và hiểu sâu ý nghĩa.</p>
+                  <span class="doc-badge">BỘ THỦ</span>
+                  <h3 class="doc-title">Sổ tay 214 Bộ thủ tiếng Trung</h3>
+                  <p class="doc-meta">68 trang · Minh họa dễ nhớ</p>
+                  <p class="doc-desc">Giải thích cấu tạo chữ Hán qua bộ thủ giúp nhớ mặt chữ nhanh.</p>
                 </div>
                 <div class="doc-card-footer">
-                  <button class="btn-doc-read" onclick="openPdfModal('bothu')">📖 Đọc trực tuyến</button>
-                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/Bo_thu_tieng_trung.pdf" target="_blank" download>⬇️ Tải PDF</a>
+                  <button class="btn-doc-read" onclick="openPdfModal('bothu')">Mở sách</button>
+                  <a class="btn-doc-download" href="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/Bo_thu_tieng_trung.pdf" target="_blank" download>Tải PDF</a>
                 </div>
               </div>
             </div>
@@ -1962,8 +2039,8 @@
         <aside class="stage-col-side">
           <div class="sidebar-card">
             <div class="sidebar-head">
-              <h3>Lộ Trình Khóa Học</h3>
-              <span class="sidebar-stats" id="sidebar-completed-stats">0/15 bài đã xong</span>
+              <h3>Danh sách bài học</h3>
+              <span class="sidebar-stats" id="sidebar-completed-stats">0/15 bài đã hoàn thành</span>
             </div>
 
             <div class="sidebar-list">
@@ -1971,8 +2048,8 @@
               <button class="sidebar-doc-item" id="sidebar-item-0" onclick="showDocumentLibraryStage()">
                 <span class="doc-item-num">0</span>
                 <div class="doc-item-info">
-                  <div class="doc-item-title" id="sidebar-item-0-title">📚 Kho Giáo Trình &amp; Tài Liệu PDF</div>
-                  <div class="doc-item-sub" id="sidebar-item-0-sub">SGK · SBT · Vở viết ô mễ · 500 từ vựng</div>
+                  <div class="doc-item-title" id="sidebar-item-0-title">Tài liệu của khóa học</div>
+                  <div class="doc-item-sub" id="sidebar-item-0-sub">Sách giáo khoa · Sách bài tập · Vở ô mễ</div>
                 </div>
               </button>
 
@@ -1990,31 +2067,41 @@
     </div> <!-- /#pane-classroom -->
 
     <!-- ======================================================== -->
-    <!-- NGĂN 2: SỔ LIÊN LẠC LỚP TRỰC TIẾP & TRAO ĐỔI VỚI CÔ GIÁO -->
+    <!-- NGĂN 2: LỚP CỦA EM (#/lop/<ma-lop> & #/lop/.../buoi/X)   -->
     <!-- ======================================================== -->
     <section id="pane-contactbook" style="display:none;">
       <div id="student-live-class-banner" class="sll-student-banner">
         <div>
-          <strong>🏫 Thông tin Lớp Học &amp; Khóa Học Của Con:</strong>
-          <span id="student-live-class-desc" style="color:#475569;margin-left:6px;">Đang đồng bộ dữ liệu lớp học...</span>
+          <strong id="student-live-class-heading">Lớp của em:</strong>
+          <span id="student-live-class-desc" style="color:#475569;margin-left:6px;">Đang tải thông tin lớp học...</span>
         </div>
         <div id="student-enrolled-courses-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       </div>
 
+      <!-- DANH SÁCH BUỔI HỌC & BÀI TẬP TRONG BUỔI CỦA LỚP CÔ GIÁO -->
+      <div class="sll-card" id="student-class-sessions-card" style="margin-bottom:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+          <h2 style="margin:0;">Các buổi học &amp; Bài cô giao</h2>
+          <span id="student-active-session-badge" style="font-size:0.8rem;color:#475569;font-weight:600;">Chọn buổi học để xem và nộp bài</span>
+        </div>
+        <div id="class-sessions-bar" class="class-session-tabs"></div>
+        <div id="class-active-session-box"></div>
+      </div>
+
       <div class="sll-student-grid">
         <div class="sll-card">
-          <h2>📊 Điểm Số, Nhận Xét Của Cô &amp; Lịch Sử Nộp Bài</h2>
+          <h2>Lời cô nhận xét &amp; Bài đã nộp</h2>
           <div id="student-homework-list" style="display:flex;flex-direction:column;gap:10px;font-size:0.88rem;color:#334155;">
-            Đang đồng bộ bảng điểm và lời phê của cô giáo...
+            Đang tải lịch sử bài nộp và nhận xét của cô...
           </div>
         </div>
 
         <div class="sll-card">
-          <h2>💬 Trao Đổi Trực Tiếp Với Cô Giáo Chủ Nhiệm</h2>
+          <h2>Trao đổi với cô giáo</h2>
           <div class="chat-box">
             <div id="student-chat-messages" class="chat-messages"></div>
             <form class="chat-input-row" onsubmit="sendStudentChatMessage(event)">
-              <input type="text" id="student-chat-input" placeholder="Nhập tin nhắn trao đổi với cô giáo..." required>
+              <input type="text" id="student-chat-input" placeholder="Nhập tin nhắn gửi cô giáo..." required>
               <button type="submit">Gửi</button>
             </form>
           </div>
@@ -2947,13 +3034,13 @@
         const isAdmin = roles.includes('admin') || roles.includes('root');
         const isTeacher = roles.includes('teacher');
 
-        let roleBadge = 'Học viên';
+        let roleBadge = 'Học sinh';
         if (isAdmin) roleBadge = 'Quản lý Học Viện';
         else if (isTeacher) roleBadge = 'Giáo viên Tiếng Trung';
-        else if (user.code) roleBadge = 'Học viên · ' + user.code;
+        else if (user.code) roleBadge = 'Mã HS: ' + user.code;
 
-        const words = name.trim().split(/s+/);
-        let initials = 'HV';
+        const words = name.trim().split(/\s+/);
+        let initials = 'HS';
         if (words.length >= 2) {
           initials = (words[0][0] + words[words.length - 1][0]).toUpperCase();
         } else if (words.length === 1 && words[0]) {
@@ -2969,11 +3056,12 @@
             <span class="ktn-unread-badge portal-bell-badge hidden" id="ktn-portal-unread-count">0</span>
           </button>
           <div class="user-info">
-            <div class="user-name" title="${name}">${name}</div>
+            <div class="user-name" title="Đang đăng nhập: ${name}">Đang đăng nhập: ${name}</div>
             <div class="user-class" title="${email}">${roleBadge} · ${email}</div>
           </div>
           <div class="user-avatar" title="${name} (${email})">${initials}</div>
-          <button class="btn-user-logout" onclick="logoutRealUser()" title="Đăng xuất">Đăng xuất</button>
+          <button type="button" class="btn-user-logout" onclick="switchStudentAccountPreservingHash()" title="Đổi sang tài khoản khác trên cùng thiết bị" style="margin-right:4px;">Đổi tài khoản</button>
+          <button type="button" class="btn-user-logout" onclick="logoutRealUser()" title="Đăng xuất">Đăng xuất</button>
         `;
         if (window.KTN_NOTIF && typeof window.KTN_NOTIF.recalculateUnreadBadge === 'function') {
           setTimeout(() => window.KTN_NOTIF.recalculateUnreadBadge(), 0);
@@ -2981,28 +3069,50 @@
       } else {
         container.innerHTML = `
           <div class="user-info">
-            <div class="user-name">Khách học thử</div>
-            <div class="user-class">Chưa đăng nhập</div>
+            <div class="user-name">Chưa đăng nhập</div>
+            <div class="user-class">Cổng Học Sinh KTN</div>
           </div>
-          <button class="btn-login-cta" onclick="loginRealUser()">
-            🔑 Đăng nhập
+          <button type="button" class="btn-login-cta" onclick="loginRealUser()">
+            Đăng nhập
           </button>
         `;
       }
     }
 
     function loginRealUser() {
+      try {
+        if (window.location.hash && window.location.hash !== '#/' && window.location.hash !== '#') {
+          localStorage.setItem('ktn_pending_target_hash', window.location.hash);
+        }
+      } catch (e) {}
+      window.location.replace('/?login=1');
+    }
+
+    function switchStudentAccountPreservingHash() {
+      const targetHash = window.location.hash || '';
+      if (window.KtnWebApp && typeof window.KtnWebApp.switchAccountPreservingTarget === 'function') {
+        window.KtnWebApp.switchAccountPreservingTarget(targetHash);
+        return;
+      }
+      try {
+        if (targetHash && targetHash !== '#/' && targetHash !== '#') {
+          localStorage.setItem('ktn_pending_target_hash', targetHash);
+        }
+        localStorage.removeItem('ol-credentials-auth-user');
+        localStorage.removeItem('ktn_sll_persistent_auth_v2');
+      } catch (e) {}
       window.location.replace('/?login=1');
     }
 
     function logoutRealUser() {
-      if (confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản hiện tại?')) {
+      if (confirm('Em có chắc chắn muốn đăng xuất khỏi tài khoản hiện tại?')) {
         window.__ktnAllowLogout = true;
         try {
           localStorage.removeItem('ol-credentials-auth-user');
           localStorage.removeItem('ktn_sll_persistent_auth_v2');
           localStorage.removeItem('ktn_sll_view');
           localStorage.removeItem('ktn_sll_fresh_login');
+          localStorage.removeItem('ktn_pending_target_hash');
           sessionStorage.clear();
           IzTeachStore.entitlement = null;
           IzTeachStore.homeworkMap = {};
@@ -3022,7 +3132,7 @@
     }
 
     // ============================================================
-    // HOMEWORK & PROGRESS MAPPING (ĐỒNG BỘ 100% TỪ BACKEND IZTEACH & CLOUD STATE)
+    // HOMEWORK & PROGRESS MAPPING (5 TRẠNG THÁI CHUẨN: CHƯA NỘP, ĐANG GỬI, CHỜ CÔ CHẤM, CẦN SỬA, ĐÃ HOÀN THÀNH)
     // ============================================================
     function normalizeHomeworkAttachments(rawResources, sllAttachments) {
       const list = [];
@@ -3094,7 +3204,7 @@
         }
       }
 
-      // 2. Tìm bản ghi đồng bộ từ Sổ Liên Lạc Cloud State (khóa chặt theo cả targetCourseId + lessonNum để không chồng chéo giữa các khóa!)
+      // 2. Tìm bản ghi đồng bộ từ Sổ Liên Lạc Cloud State & localStorage ('ktn_local_submitted_homeworks')
       let sllHw = null;
       const user = getRealCurrentUser();
       const curEmail = String(user?.email || '').trim().toLowerCase();
@@ -3112,15 +3222,46 @@
         }) || null;
       }
 
-      if (hwRecord || sllHw) {
+      let localHw = null;
+      try {
+        const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+        if (Array.isArray(localArr)) {
+          localHw = localArr.find(h => {
+            if (!h) return false;
+            const hEmail = String(h.student_email || h.studentEmail || '').trim().toLowerCase();
+            if (curEmail && hEmail && hEmail !== curEmail) return false;
+            const hCourse = h.course_id || h.courseId || '';
+            const hLessonNum = Number(h.lesson_num || h.lessonNum) || 0;
+            return hCourse === targetCourseId && hLessonNum === Number(lesson.num);
+          }) || null;
+        }
+      } catch (e) {}
+
+      if (hwRecord || sllHw || localHw) {
+        const rawStatus = String(localHw?.status || sllHw?.status || hwRecord?.state || '').toLowerCase();
+        const rawFeedback = String(
+          localHw?.teacher_feedback ||
+          (sllHw && sllHw.teacherFeedback) ||
+          (hwRecord && (hwRecord.teacherFeedback || hwRecord.comment)) ||
+          ''
+        );
+        const isNeedsRevision =
+          rawStatus === 'needs_revision' ||
+          rawFeedback.includes('[CẦN SỬA]') ||
+          Boolean(sllHw && sllHw.status === 'NEEDS_REVISION');
+
         const isBackendGraded = Boolean(hwRecord && (hwRecord.state === 'approved' || (hwRecord.mark !== undefined && hwRecord.mark !== null)));
         const isSllGraded = Boolean(sllHw && (sllHw.status === 'GRADED' || (sllHw.score !== undefined && sllHw.score !== null)));
-        const isGraded = isBackendGraded || isSllGraded;
-        const scoreVal = isSllGraded && sllHw.score != null
-          ? sllHw.score
-          : ((hwRecord && hwRecord.mark != null) ? hwRecord.mark : (isGraded ? 9.5 : null));
+        const isLocalGraded = Boolean(localHw && localHw.status === 'graded');
+        const isGraded = !isNeedsRevision && (isBackendGraded || isSllGraded || isLocalGraded);
 
-        const rawNotes = (hwRecord && hwRecord.notes) || (sllHw && sllHw.parentNote) || '';
+        const scoreVal = (localHw && localHw.score != null)
+          ? localHw.score
+          : (isSllGraded && sllHw.score != null
+            ? sllHw.score
+            : ((hwRecord && hwRecord.mark != null) ? hwRecord.mark : (isGraded ? 9.5 : null)));
+
+        const rawNotes = (localHw && localHw.student_note) || (hwRecord && hwRecord.notes) || (sllHw && sllHw.parentNote) || '';
         let studentNote = rawNotes;
         let extractedTeacherFeedback = null;
         if (rawNotes.includes('[Nhận xét Giáo viên]:')) {
@@ -3130,24 +3271,29 @@
         }
         studentNote = studentNote.replace(/^\[Học viên:[^\]]+\]\s*/i, '').trim();
 
-        const teacherComment = (sllHw && sllHw.status === 'GRADED' && sllHw.teacherFeedback)
+        const teacherComment = (localHw && localHw.teacher_feedback)
+          || (sllHw && (sllHw.status === 'GRADED' || sllHw.status === 'NEEDS_REVISION') && sllHw.teacherFeedback)
           || (hwRecord && (hwRecord.teacherFeedback || hwRecord.comment))
           || extractedTeacherFeedback
-          || (isGraded ? 'Bé hoàn thành bài tập rất xuất sắc, phát âm chuẩn và viết chữ Hán đều nét!' : null);
+          || (isGraded ? 'Con hoàn thành bài tập rất tốt, phát âm chuẩn và viết chữ Hán đều nét!' : null);
 
-        const attachments = normalizeHomeworkAttachments(hwRecord?.resources, sllHw?.attachments);
+        const attachments = normalizeHomeworkAttachments(hwRecord?.resources, sllHw?.attachments || localHw?.attachments);
+
+        let resolvedStatus = 'pending';
+        if (isNeedsRevision) resolvedStatus = 'needs_revision';
+        else if (isGraded) resolvedStatus = 'graded';
 
         return {
-          status: isGraded ? 'graded' : 'pending',
+          status: resolvedStatus,
           score: scoreVal,
           submittedAt: hwRecord?.createdAt
             ? new Date(hwRecord.createdAt).toLocaleString('vi-VN')
-            : (sllHw?.submittedAt || 'Đã đồng bộ lên izTeach'),
+            : (localHw?.submitted_at ? new Date(localHw.submitted_at).toLocaleString('vi-VN') : (sllHw?.submittedAt || 'Đã lưu bài nộp')),
           note: studentNote,
           teacherComment,
           attachments,
-          remoteId: hwRecord?._id || sllHw?.remoteId || null,
-          raw: hwRecord || sllHw
+          remoteId: hwRecord?._id || localHw?.id || sllHw?.remoteId || null,
+          raw: localHw || hwRecord || sllHw
         };
       }
 
@@ -3162,8 +3308,203 @@
     }
 
     // ============================================================
-    // NAVIGATION: VIEW 1 (DASHBOARD) <-> VIEW 2 (CLASSROOM)
+    // NAVIGATION: VIEW 1 (DASHBOARD / TRANG CỦA EM) <-> VIEW 2 (CLASSROOM)
     // ============================================================
+    const COURSE_SLUG_TO_ID = {
+      'hsk1': '6adadba969897b0002482ca5',
+      'yct1': '6a9502d28ef1e30002d38cd2',
+      'yct2': '6acfe08c8ef1e30002d3933a',
+      'yct3': '6ad072d88ef1e30002d39481',
+      'yct4': '6ad0d6bf8ef1e30002d3955a',
+      'yct5': '6ad2fe038ef1e30002d397eb',
+      'yct6': '6ad440998ef1e30002d3995f'
+    };
+
+    function getCourseSlug(courseId) {
+      const cid = String(courseId || '').trim();
+      for (const [slug, id] of Object.entries(COURSE_SLUG_TO_ID)) {
+        if (id === cid) return slug;
+      }
+      return cid.toLowerCase();
+    }
+
+    function resolveCourseIdFromSlug(slugOrId) {
+      const key = String(slugOrId || '').trim().toLowerCase();
+      if (COURSE_SLUG_TO_ID[key]) return COURSE_SLUG_TO_ID[key];
+      if (PORTAL_COURSE_CATALOG[slugOrId]) return slugOrId;
+      return key || HSK1_COURSE_ID;
+    }
+
+    function getLastStudiedLesson(courseId) {
+      const user = getRealCurrentUser();
+      const email = String(user?.email || 'guest').trim().toLowerCase();
+      try {
+        const map = JSON.parse(localStorage.getItem('ktn_last_studied_' + email) || '{}');
+        const savedNum = Number(map[courseId]);
+        if (savedNum >= 1) return savedNum;
+      } catch (e) {}
+      const lessons = (courseId === HSK1_COURSE_ID) ? HSK1_LESSONS : (courseLessonsCache[courseId] || []);
+      for (let i = 0; i < lessons.length; i++) {
+        const hw = getLessonHomework(lessons[i], courseId);
+        if (hw.status === 'needs_revision' || hw.status === 'unsubmitted') {
+          return lessons[i].num || (i + 1);
+        }
+      }
+      return 1;
+    }
+
+    function saveLastStudiedLesson(courseId, lessonNum) {
+      const user = getRealCurrentUser();
+      const email = String(user?.email || 'guest').trim().toLowerCase();
+      try {
+        const key = 'ktn_last_studied_' + email;
+        const map = JSON.parse(localStorage.getItem(key) || '{}');
+        map[courseId] = Number(lessonNum) || 1;
+        localStorage.setItem(key, JSON.stringify(map));
+      } catch (e) {}
+    }
+
+    function hasStartedCourse(courseId) {
+      const user = getRealCurrentUser();
+      const email = String(user?.email || 'guest').trim().toLowerCase();
+      try {
+        const map = JSON.parse(localStorage.getItem('ktn_last_studied_' + email) || '{}');
+        if (map[courseId]) return true;
+      } catch (e) {}
+      const lessons = (courseId === HSK1_COURSE_ID) ? HSK1_LESSONS : (courseLessonsCache[courseId] || []);
+      return lessons.some(l => {
+        const hw = getLessonHomework(l, courseId);
+        return hw.status !== 'unsubmitted';
+      });
+    }
+
+    async function retryLoadStudentCourses() {
+      const netErrBox = document.getElementById('network-error-courses-state');
+      if (netErrBox) netErrBox.style.display = 'none';
+      IzTeachStore.isSyncing = false;
+      await syncLiveStudentProfile();
+      await syncPortalState();
+      showToast('Đã kiểm tra lại danh sách khóa học và lớp của em.');
+    }
+
+    function renderTodayPrioritySection(enrolledIds, liveClassCode) {
+      const sectionEl = document.getElementById('today-priority-section');
+      const gridEl = document.getElementById('today-priority-grid');
+      if (!sectionEl || !gridEl) return;
+
+      const isHomeTab = !window.location.hash || window.location.hash === '#/' || window.location.hash === '#';
+      if (!isHomeTab || (enrolledIds.length === 0 && !liveClassCode)) {
+        sectionEl.style.display = 'none';
+        return;
+      }
+
+      const cards = [];
+
+      // 1. Kiểm tra bài Cần sửa hoặc Bài cô giao ở lớp
+      let revisionItem = null;
+      enrolledIds.forEach(cid => {
+        if (revisionItem) return;
+        const lessons = (cid === HSK1_COURSE_ID) ? HSK1_LESSONS : (courseLessonsCache[cid] || []);
+        lessons.forEach((l, idx) => {
+          if (revisionItem) return;
+          const hw = getLessonHomework(l, cid);
+          if (hw.status === 'needs_revision') {
+            revisionItem = { cid, lesson: l, idx, hw };
+          }
+        });
+      });
+
+      if (revisionItem) {
+        const meta = PORTAL_COURSE_CATALOG[revisionItem.cid] || { shortTitle: 'Khóa học' };
+        cards.push(`
+          <div style="background:#FFFFFF;border:1px solid #FDE68A;border-left:4px solid #D97706;border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;">
+            <div>
+              <span style="display:inline-block;background:#FEF3C7;color:#B45309;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">CẦN SỬA LẠI BÀI</span>
+              <div style="font-size:15px;font-weight:800;color:#0F172A;">${meta.shortTitle} · Bài ${revisionItem.lesson.num}: ${revisionItem.lesson.titleZh}</div>
+              <div style="font-size:13px;color:#475569;margin-top:4px;">Cô nhắn: "${revisionItem.hw.teacherComment || 'Em kiểm tra và nộp lại bài cho cô nhé.'}"</div>
+            </div>
+            <div>
+              <button type="button" onclick="navigateStudentHash('#/khoa/${getCourseSlug(revisionItem.cid)}/bai/${revisionItem.lesson.num}')" style="background:#D97706;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Sửa bài →</button>
+            </div>
+          </div>
+        `);
+      } else if (liveClassCode) {
+        const teacherName = currentStudentProfile?.teacher_name || 'cô giáo';
+        cards.push(`
+          <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #B91C1C;border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;">
+            <div>
+              <span style="display:inline-block;background:#FFF1F2;color:#B91C1C;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">BÀI CÔ GIAO · LỚP ${liveClassCode}</span>
+              <div style="font-size:15px;font-weight:800;color:#0F172A;">Làm bài tập buổi học cùng ${teacherName}</div>
+              <div style="font-size:13px;color:#475569;margin-top:4px;">Mở đúng buổi học của lớp ${liveClassCode} để thu âm và nộp bài cho cô.</div>
+            </div>
+            <div>
+              <button type="button" onclick="navigateStudentHash('#/lop/${liveClassCode.toLowerCase()}/buoi/1')" style="background:#B91C1C;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Làm bài cô giao →</button>
+            </div>
+          </div>
+        `);
+      }
+
+      // 2. Thẻ Tiếp tục học (Khóa video đang học dở hoặc bắt đầu Bài 1)
+      if (enrolledIds.length > 0) {
+        const primaryCid = enrolledIds[0];
+        const meta = PORTAL_COURSE_CATALOG[primaryCid] || { shortTitle: 'HSK 1' };
+        const lessons = (primaryCid === HSK1_COURSE_ID) ? HSK1_LESSONS : (courseLessonsCache[primaryCid] || []);
+        const nextNum = getLastStudiedLesson(primaryCid);
+        const started = hasStartedCourse(primaryCid);
+        const targetLesson = lessons.find(l => Number(l.num) === Number(nextNum)) || lessons[0] || { num: 1, titleZh: 'Bài 1', titleVi: '' };
+        const btnLabel = started ? `Học tiếp ${meta.shortTitle} · Bài ${targetLesson.num}` : `Bắt đầu Bài 1`;
+        cards.push(`
+          <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #2563EB;border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;">
+            <div>
+              <span style="display:inline-block;background:#EFF6FF;color:#1D4ED8;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">${started ? 'TIẾP TỤC HỌC' : 'BẮT ĐẦU KHÓA HỌC'}</span>
+              <div style="font-size:15px;font-weight:800;color:#0F172A;">${meta.shortTitle} · Bài ${targetLesson.num}: ${targetLesson.titleZh || ''}</div>
+              <div style="font-size:13px;color:#475569;margin-top:4px;">${targetLesson.titleVi || 'Xem video bài giảng, nghe mẫu và làm bài tập.'}</div>
+            </div>
+            <div>
+              <button type="button" onclick="navigateStudentHash('#/khoa/${getCourseSlug(primaryCid)}/bai/${targetLesson.num}')" style="background:#0F172A;color:#FFF;border:none;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">${btnLabel} →</button>
+            </div>
+          </div>
+        `);
+      }
+
+      // 3. Thẻ Cô đã nhận xét (nếu có bài đã chấm)
+      let gradedItem = null;
+      enrolledIds.forEach(cid => {
+        if (gradedItem) return;
+        const lessons = (cid === HSK1_COURSE_ID) ? HSK1_LESSONS : (courseLessonsCache[cid] || []);
+        lessons.forEach(l => {
+          if (gradedItem) return;
+          const hw = getLessonHomework(l, cid);
+          if (hw.status === 'graded') {
+            gradedItem = { cid, lesson: l, hw };
+          }
+        });
+      });
+
+      if (gradedItem) {
+        const meta = PORTAL_COURSE_CATALOG[gradedItem.cid] || { shortTitle: 'Khóa học' };
+        cards.push(`
+          <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #16A34A;border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;">
+            <div>
+              <span style="display:inline-block;background:#DCFCE7;color:#15803D;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin-bottom:6px;">CÔ ĐÃ NHẬN XÉT · ${gradedItem.hw.score || 10}/10</span>
+              <div style="font-size:15px;font-weight:800;color:#0F172A;">${meta.shortTitle} · Bài ${gradedItem.lesson.num}: ${gradedItem.lesson.titleZh}</div>
+              <div style="font-size:13px;color:#475569;margin-top:4px;">"${gradedItem.hw.teacherComment || 'Con hoàn thành bài rất tốt!'}"</div>
+            </div>
+            <div>
+              <button type="button" onclick="navigateStudentHash('#/khoa/${getCourseSlug(gradedItem.cid)}/bai/${gradedItem.lesson.num}')" style="background:#F8FAFC;color:#0F172A;border:1px solid #CBD5E1;border-radius:8px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;">Xem lời cô →</button>
+            </div>
+          </div>
+        `);
+      }
+
+      if (cards.length > 0) {
+        sectionEl.style.display = 'block';
+        gridEl.innerHTML = cards.join('');
+      } else {
+        sectionEl.style.display = 'none';
+      }
+    }
+
     function showCoursesDashboard() {
       const user = getRealCurrentUser();
       const access = checkUserCourseAccess(user);
@@ -3176,41 +3517,57 @@
       const multiGrid = document.getElementById('multi-courses-grid');
       const liveClassSlot = document.getElementById('live-class-card-slot');
       const emptyState = document.getElementById('empty-courses-state');
+      const netErrState = document.getElementById('network-error-courses-state');
 
       const enrolledIds = (access && Array.isArray(access.enrolledCourseIds) && access.enrolledCourseIds.length > 0)
         ? access.enrolledCourseIds
         : (access && access.hasAccess ? [HSK1_COURSE_ID] : []);
-      const liveClassCode = user ? (user.classCode || user.class_code || null) : null;
+      const liveClassCode = user ? (user.classCode || user.class_code || currentStudentProfile?.classCode || null) : null;
 
-      // Kết hợp cả 3 phương án: Hiển thị Thẻ Lớp Trực Tiếp Cùng Cô Giáo + Bài Tập Lớp ngay trên cùng Kệ Khóa Học, kèm nút chuyển 1 chạm sang Sổ Liên Lạc
+      // Nếu lỗi mạng khi tải khóa học và chưa có dữ liệu cache -> hiện thông báo "Chưa tải được khóa học · Thử lại"
+      if (IzTeachStore.entitlement && IzTeachStore.entitlement.reason === 'network_error' && enrolledIds.length === 0 && !liveClassCode) {
+        if (netErrState) netErrState.style.display = 'block';
+        if (emptyState) emptyState.style.display = 'none';
+        if (courseCard) courseCard.style.display = 'none';
+        if (multiGrid) multiGrid.style.display = 'none';
+        return;
+      } else if (netErrState) {
+        netErrState.style.display = 'none';
+      }
+
+      renderTodayPrioritySection(enrolledIds, liveClassCode);
+
+      // Thẻ Lớp của em (calm surface theo Impeccable: nền trắng, viền #E2E8F0, 1 nút hành động rõ)
       if (liveClassSlot) {
         if (liveClassCode) {
+          const teacherName = currentStudentProfile?.teacher_name || 'Cô Lâm Mỹ Linh';
+          const scheduleText = currentStudentProfile?.schedule || 'Thứ 3 & Thứ 6 (19:30 - 21:00)';
           liveClassSlot.style.display = 'contents';
           liveClassSlot.innerHTML = `
-            <div class="course-card-single" style="display:grid;margin:0;max-width:none;border:2px solid #F59E0B;">
-              <div class="course-card-thumb-wrap" style="background:linear-gradient(135deg,#B91C1C,#991B1B);display:flex;align-items:center;justify-content:center;color:#FFF;padding:24px;text-align:center;">
+            <div class="course-card-single" style="display:grid;margin:0;max-width:none;border:1px solid #E2E8F0;">
+              <div class="course-card-thumb-wrap" style="background:#0F172A;display:flex;align-items:center;justify-content:center;color:#FFF;padding:24px;text-align:center;">
                 <div>
-                  <div style="font-size:2.2rem;margin-bottom:6px;">🏫</div>
-                  <div style="font-weight:900;font-size:1.15rem;letter-spacing:0.02em;">LỚP TRỰC TIẾP: ${liveClassCode}</div>
-                  <div style="font-size:0.8rem;opacity:0.9;margin-top:4px;">Học trực tiếp cùng Cô giáo chủ nhiệm</div>
+                  <div style="font-size:2rem;margin-bottom:6px;">🏫</div>
+                  <div style="font-weight:900;font-size:1.1rem;letter-spacing:0.02em;">LỚP CỦA EM: ${liveClassCode}</div>
+                  <div style="font-size:0.8rem;color:#CBD5E1;margin-top:4px;">${teacherName} · ${scheduleText}</div>
                 </div>
-                <span class="course-card-badge" style="background:#FEF3C7;color:#B45309;">LỚP CÔ GIÁO CHỦ NHIỆM</span>
+                <span class="course-card-badge" style="background:#F8FAFC;color:#0F172A;">LỚP CÔ GIÁO</span>
               </div>
               <div class="course-card-content">
                 <div class="course-card-title">
-                  <span>Lớp ${liveClassCode} (Sổ Liên Lạc)</span>
-                  <span style="font-size:0.85rem;color:#B45309;font-weight:800;">Đang theo học</span>
+                  <span>Lớp ${liveClassCode}</span>
+                  <span style="font-size:0.85rem;color:#15803D;font-weight:800;">Đang theo học</span>
                 </div>
                 <div class="course-card-meta">
-                  <span>👩‍🏫 Điểm danh &amp; Nhận xét từng buổi</span>
+                  <span>👩‍🏫 ${teacherName}</span>
                   <span>•</span>
-                  <span>💬 Chat trực tiếp với Cô</span>
+                  <span>📝 Buổi 1, Buổi 2, Buổi 3...</span>
                 </div>
-                <div style="margin:10px 0;padding:10px 12px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;font-size:0.82rem;color:#92400E;">
-                  📌 Xem điểm bài tập về nhà, lời phê của cô giáo và nhắn tin trao đổi trực tiếp trong Sổ Liên Lạc.
+                <div style="margin:10px 0;padding:10px 12px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:0.82rem;color:#334155;">
+                  Xem danh sách các buổi học trên lớp, làm bài cô giao và đọc lời nhận xét của cô.
                 </div>
-                <button class="btn-enter-course" style="background:#B45309;" onclick="switchStudentPane('contactbook')">
-                  <span>📒 Mở Sổ Liên Lạc &amp; Bài Tập Lớp Cô</span>
+                <button type="button" class="btn-enter-course" onclick="navigateStudentHash('#/lop/${liveClassCode.toLowerCase()}')">
+                  <span>Làm bài cô giao (Lớp ${liveClassCode})</span>
                   <span>→</span>
                 </button>
               </div>
@@ -3229,6 +3586,18 @@
 
         if (courseCard) {
           courseCard.style.display = hasHsk1 ? 'grid' : 'none';
+          if (hasHsk1) {
+            const hskNextNum = getLastStudiedLesson(HSK1_COURSE_ID);
+            const hskStarted = hasStartedCourse(HSK1_COURSE_ID);
+            const hskBtn = document.getElementById('btn-enter-hsk1-course');
+            const hskBtnText = document.getElementById('btn-enter-hsk1-text');
+            if (hskBtnText) {
+              hskBtnText.textContent = hskStarted ? `Học tiếp Bài ${hskNextNum}` : 'Bắt đầu Bài 1';
+            }
+            if (hskBtn) {
+              hskBtn.onclick = () => navigateStudentHash(`#/khoa/hsk1/bai/${hskNextNum}`);
+            }
+          }
         }
         if (multiGrid) {
           if (otherIds.length > 0) {
@@ -3245,7 +3614,11 @@
                 else if (hw.status === 'pending') pendingCount++;
               });
               const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
-              const pendingNote = pendingCount > 0 ? ` · ⏳ ${pendingCount} chờ chấm` : '';
+              const pendingNote = pendingCount > 0 ? ` · ${pendingCount} chờ cô chấm` : '';
+              const nextNum = getLastStudiedLesson(cid);
+              const started = hasStartedCourse(cid) || doneCount > 0 || pendingCount > 0;
+              const btnLabel = started ? `Học tiếp Bài ${nextNum}` : 'Bắt đầu Bài 1';
+              const slug = getCourseSlug(cid);
               return `
                 <div class="course-card-single" style="display:grid;margin:0;max-width:none;">
                   <div class="course-card-thumb-wrap">
@@ -3269,8 +3642,8 @@
                       <span>Tiến độ hoàn thành:</span>
                       <strong>${doneCount} / ${totalCount} bài (${pct}%)${pendingNote}</strong>
                     </div>
-                    <button class="btn-enter-course" onclick="enterCourseLearning(0, '${cid}')">
-                      <span>Vào học ngay</span>
+                    <button type="button" class="btn-enter-course" onclick="navigateStudentHash('#/khoa/${slug}/bai/${nextNum}')">
+                      <span>${btnLabel}</span>
                       <span>→</span>
                     </button>
                   </div>
@@ -3294,21 +3667,29 @@
 
           if (!user) {
             document.getElementById('empty-state-icon').textContent = '🔒';
-            document.getElementById('empty-state-title').textContent = 'Bạn chưa đăng nhập';
-            document.getElementById('empty-state-desc').textContent = 'Vui lòng đăng nhập tài khoản học viên để truy cập các khóa học của bạn.';
+            document.getElementById('empty-state-title').textContent = 'Em chưa đăng nhập';
+            document.getElementById('empty-state-desc').textContent = 'Em hãy bấm Đăng nhập để mở khóa học và lớp của mình nhé.';
             document.getElementById('empty-state-btn-wrap').innerHTML = `
               <button type="button" class="btn-login-cta" onclick="loginRealUser()" style="padding: 10px 24px; font-size: 0.95rem;">
-                🔑 Đăng nhập ngay
+                Đăng nhập
               </button>
             `;
           } else {
-            document.getElementById('empty-state-icon').textContent = '📭';
-            document.getElementById('empty-state-title').textContent = 'Chưa có khóa học nào';
-            document.getElementById('empty-state-desc').innerHTML = `Tài khoản <strong>${user.email}</strong> hiện chưa đăng ký hoặc chưa được kích hoạt khóa học nào.<br>Vui lòng liên hệ trung tâm qua Hotline/Zalo: <strong>0975.952.562</strong> để được kích hoạt khóa học.`;
+            document.getElementById('empty-state-icon').textContent = '⏳';
+            document.getElementById('empty-state-title').textContent = 'Tình trạng đăng ký khóa học';
+            document.getElementById('empty-state-desc').innerHTML = `Tài khoản <strong>${user.email}</strong> đã được tạo và đang chờ trung tâm cấp quyền khóa học hoặc xếp lớp.<br>Nếu phụ huynh vừa đăng ký, em hãy bấm <strong>Kiểm tra lại</strong> hoặc liên hệ trung tâm nhé.`;
             document.getElementById('empty-state-btn-wrap').innerHTML = `
-              <a href="https://zalo.me/0975952562" target="_blank" class="btn-login-cta" style="padding: 10px 24px; font-size: 0.95rem; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
-                📞 Hotline / Zalo kích hoạt: 0975.952.562
-              </a>
+              <div style="display:inline-flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+                <button type="button" onclick="retryLoadStudentCourses()" style="background:#0F172A;color:#FFF;border:none;border-radius:10px;padding:10px 20px;font-size:0.9rem;font-weight:800;cursor:pointer;">
+                  Kiểm tra lại
+                </button>
+                <a href="https://zalo.me/0975952562" target="_blank" class="btn-login-cta" style="padding: 10px 20px; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
+                  Liên hệ trung tâm (0975.952.562)
+                </a>
+                <button type="button" onclick="switchStudentAccountPreservingHash()" style="background:#FFF;color:#334155;border:1px solid #CBD5E1;border-radius:10px;padding:10px 18px;font-size:0.9rem;font-weight:700;cursor:pointer;">
+                  Đổi tài khoản
+                </button>
+              </div>
             `;
           }
         }
@@ -3492,16 +3873,17 @@
         const hw = getLessonHomework(lesson);
         const isDone = (hw.status === 'graded');
         const isPending = (hw.status === 'pending');
-        const stateClass = isDone ? 'state-completed' : (isPending ? 'state-pending' : 'state-unsubmitted');
-        const badgeContent = isDone ? '✓' : (isPending ? '⏳' : lesson.num);
-        const statusText = isDone ? '✓ Đã hoàn thành' : (isPending ? '⏳ Chờ cô chấm' : 'Chưa học');
+        const isRevision = (hw.status === 'needs_revision');
+        const stateClass = isDone ? 'state-completed' : ((isPending || isRevision) ? 'state-pending' : 'state-unsubmitted');
+        const badgeContent = isDone ? '✓' : (isRevision ? '!' : (isPending ? '⏳' : lesson.num));
+        const statusText = isDone ? '✓ Đã hoàn thành' : (isRevision ? '↺ Cần sửa' : (isPending ? '⏳ Đã nộp · Chờ cô chấm' : 'Chưa nộp'));
 
         const isActive = (!isViewingDocLibrary && idx === currentLessonIdx);
         const activeClass = isActive ? 'active' : '';
         const partsCount = lesson.parts ? lesson.parts.length : 1;
 
         return `
-          <button class="lesson-item-btn ${stateClass} ${activeClass}" onclick="loadLesson(${idx})" title="Bài ${lesson.num}: ${lesson.titleZh}">
+          <button type="button" class="lesson-item-btn ${stateClass} ${activeClass}" onclick="loadLesson(${idx})" title="Bài ${lesson.num}: ${lesson.titleZh}">
             <span class="lesson-num-badge">${badgeContent}</span>
             <div class="lesson-item-info">
               <div class="lesson-title-zh">${lesson.titleZh}</div>
@@ -3682,6 +4064,15 @@
       const lesson = LESSONS[idx] || LESSONS[0];
       if (!lesson) return;
 
+      saveLastStudiedLesson(activeCourseId, lesson.num);
+      try {
+        const slug = getCourseSlug(activeCourseId);
+        const targetHash = `#/khoa/${slug}/bai/${lesson.num}`;
+        if (window.location.hash !== targetHash && !window.__suppressLessonHashUpdate) {
+          history.replaceState(null, '', targetHash);
+        }
+      } catch (e) {}
+
       document.getElementById('stage-active-lesson').style.display = 'block';
       document.getElementById('stage-doc-library').style.display = 'none';
 
@@ -3695,29 +4086,32 @@
       if (quickLinksContainer) {
         if (activeCourseId === HSK1_COURSE_ID) {
           quickLinksContainer.innerHTML = `
-            <button class="btn-quick-pill" onclick="openPdfModal('sgk', ${lesson.sgkPage || 1})" title="Xem bài học trong Sách Giáo Khoa">
-              📖 SGK trang <span class="tag" id="lbl-sgk-page">${lesson.sgkPage || 1}</span>
+            <span style="font-size:12px;font-weight:800;color:#475569;align-self:center;margin-right:4px;">Tài liệu của bài:</span>
+            <button type="button" class="btn-quick-pill" onclick="openPdfModal('sgk', ${lesson.sgkPage || 1})" title="Xem bài học trong Sách Giáo Khoa">
+              📖 Sách giáo khoa · Trang <span class="tag" id="lbl-sgk-page">${lesson.sgkPage || 1}</span>
             </button>
-            <button class="btn-quick-pill" onclick="openPdfModal('sbt', ${lesson.sbtPage || 1})" title="Xem trang tương ứng trong Sách Bài Tập">
-              ✏️ SBT trang <span class="tag" id="lbl-sbt-page">${lesson.sbtPage || 1}</span>
+            <button type="button" class="btn-quick-pill" onclick="openPdfModal('sbt', ${lesson.sbtPage || 1})" title="Xem trang tương ứng trong Sách Bài Tập">
+              ✏️ Sách bài tập · Trang <span class="tag" id="lbl-sbt-page">${lesson.sbtPage || 1}</span>
             </button>
-            <button class="btn-quick-pill" onclick="openPdfModal('voviet', ${lesson.voVietPage || 1})" title="Xem ô kẻ trong Vở luyện viết">
-              ✍️ Ô mễ trang <span class="tag" id="lbl-voviet-page">${lesson.voVietPage || 1}</span>
+            <button type="button" class="btn-quick-pill" onclick="openPdfModal('voviet', ${lesson.voVietPage || 1})" title="Xem ô kẻ trong Vở luyện viết">
+              ✍️ Vở ô mễ · Trang <span class="tag" id="lbl-voviet-page">${lesson.voVietPage || 1}</span>
             </button>
           `;
         } else if (lesson.docUrl) {
           quickLinksContainer.innerHTML = `
+            <span style="font-size:12px;font-weight:800;color:#475569;align-self:center;margin-right:4px;">Tài liệu của bài:</span>
             <a class="btn-quick-pill" href="${lesson.docUrl}" target="_blank" download style="text-decoration:none;" title="Tải giáo trình & bài tập của bài học này">
-              📄 Tải Giáo Trình Bài ${lesson.num} <span class="tag">${lesson.docTitle || 'DOCX'}</span>
+              📄 Giáo trình · Bài ${lesson.num} <span class="tag">${lesson.docTitle || 'DOCX'}</span>
             </a>
-            <button class="btn-quick-pill" onclick="showDocumentLibraryStage()" title="Mở kho tài liệu của khóa học">
-              📚 Kho Tài Liệu (${activeMeta.shortTitle})
+            <button type="button" class="btn-quick-pill" onclick="showDocumentLibraryStage()" title="Mở kho tài liệu của khóa học">
+              📚 Kho tài liệu (${activeMeta.shortTitle})
             </button>
           `;
         } else {
           quickLinksContainer.innerHTML = `
-            <button class="btn-quick-pill" onclick="showDocumentLibraryStage()" title="Mở kho tài liệu của khóa học">
-              📚 Kho Tài Liệu (${activeMeta.shortTitle})
+            <span style="font-size:12px;font-weight:800;color:#475569;align-self:center;margin-right:4px;">Tài liệu của bài:</span>
+            <button type="button" class="btn-quick-pill" onclick="showDocumentLibraryStage()" title="Mở kho tài liệu của khóa học">
+              📚 Kho tài liệu (${activeMeta.shortTitle})
             </button>
           `;
         }
@@ -3729,7 +4123,7 @@
       if (lesson.parts && lesson.parts.length > 1) {
         partsBar.style.display = 'flex';
         partsContainer.innerHTML = lesson.parts.map((p, pIdx) => `
-          <button class="part-chip ${pIdx === 0 ? 'active' : ''}" onclick="switchVideoPart(${pIdx})">
+          <button type="button" class="part-chip ${pIdx === 0 ? 'active' : ''}" onclick="switchVideoPart(${pIdx})">
             ▶ ${p.partTitle || ('Phần ' + p.part)}
           </button>
         `).join('');
@@ -3781,7 +4175,7 @@
     // RENDER INTERACTIVE WORKBOOK
     function renderInteractiveWorkbook(lesson) {
       const activeMeta = PORTAL_COURSE_CATALOG[activeCourseId] || PORTAL_COURSE_CATALOG[HSK1_COURSE_ID];
-      document.getElementById('workbook-head-title').textContent = '📘 Sách Bài Tập Điện Tử Tương Tác · ' + activeMeta.shortTitle + ' · Bài ' + lesson.num + ': ' + lesson.titleZh;
+      document.getElementById('workbook-head-title').textContent = '📘 Bài tập tương tác · ' + activeMeta.shortTitle + ' · Bài ' + lesson.num + ': ' + lesson.titleZh;
 
       const isHsk1Course = (activeCourseId === HSK1_COURSE_ID);
       const sbtAudioTrack = (lesson.audioTracks || []).find(t => t.name.includes('SBT') || t.url.includes('/sbt/')) || (isHsk1Course ? {
@@ -3793,7 +4187,7 @@
       if (sbtAudioTrack && sbtAudioTrack.url) {
         if (audioBannerWrap) audioBannerWrap.style.display = 'flex';
         audioEl.src = sbtAudioTrack.url;
-        document.getElementById('sbt-audio-label').textContent = 'Audio Luyện Nghe SBT Bài ' + lesson.num + ' (Kèm trong bài tập)';
+        document.getElementById('sbt-audio-label').textContent = 'Nghe mẫu cả bài ' + lesson.num + ' (Sách bài tập)';
       } else {
         if (audioBannerWrap) audioBannerWrap.style.display = 'none';
         audioEl.src = '';
@@ -3806,8 +4200,8 @@
         const answerKey = 'judge_' + activeCourseId + '_' + lesson.num + '_' + q.id;
         const currentVal = userAnswers[answerKey];
         const audioBtnHtml = (sbtAudioTrack && sbtAudioTrack.url) ? `
-              <button type="button" class="btn-audio-pill" onclick="playAudioSnippet('${sbtAudioTrack.url}', this)" title="Bấm để nghe phát âm chuẩn">
-                <span>🔊 Nghe câu ${qIdx + 1}</span>
+              <button type="button" class="btn-audio-pill" onclick="playAudioSnippet('${sbtAudioTrack.url}', this)" title="Bấm để nghe phát âm mẫu">
+                <span>🔊 Nghe mẫu</span>
               </button>` : '';
         return `
           <div class="question-item">
@@ -3836,8 +4230,8 @@
         const answerKey = 'choose_' + activeCourseId + '_' + lesson.num + '_' + q.id;
         const currentVal = userAnswers[answerKey];
         const audioBtnHtml = (sbtAudioTrack && sbtAudioTrack.url) ? `
-              <button type="button" class="btn-audio-pill" onclick="playAudioSnippet('${sbtAudioTrack.url}', this)" title="Bấm để nghe phát âm chuẩn">
-                <span>🔊 Nghe câu ${qIdx + 1}</span>
+              <button type="button" class="btn-audio-pill" onclick="playAudioSnippet('${sbtAudioTrack.url}', this)" title="Bấm để nghe phát âm mẫu">
+                <span>🔊 Nghe mẫu</span>
               </button>` : '';
         return `
           <div class="question-item">
@@ -3872,15 +4266,20 @@
         </div>
       `).join('');
 
-      // Homework submission state & teacher feedback
+      // 5 Homework submission states & teacher feedback
       const hw = getLessonHomework(lesson);
       const badgeWrap = document.getElementById('workbook-status-badge-wrap');
       const feedbackBox = document.getElementById('teacher-feedback-box');
+      const tfRevisionActions = document.getElementById('tf-revision-actions');
       const noteInput = document.getElementById('hw-student-note');
       const previewBox = document.getElementById('submitted-resources-preview');
+      const submitBtn = document.getElementById('btn-submit-workbook');
+      const submitBtnText = document.getElementById('btn-submit-workbook-text');
+      const errBox = document.getElementById('workbook-submit-error');
+      if (errBox) errBox.style.display = 'none';
 
       if (previewBox) {
-        if ((hw.status === 'pending' || hw.status === 'graded') && Array.isArray(hw.attachments) && hw.attachments.length > 0) {
+        if ((hw.status === 'pending' || hw.status === 'graded' || hw.status === 'needs_revision') && Array.isArray(hw.attachments) && hw.attachments.length > 0) {
           previewBox.style.display = 'block';
           const itemsHtml = hw.attachments.map(att => {
             const sizeKb = att.size ? Math.max(1, Math.round(att.size / 1024)) + ' KB' : 'Đã lưu S3';
@@ -3895,8 +4294,8 @@
             return `
               <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin-top:6px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;">
-                  <span style="font-weight:700;color:#0f172a;">📎 ${att.title} <span style="font-weight:500;color:#64748b;">(${sizeKb})</span></span>
-                  <a href="${att.cdnUrl}" target="_blank" rel="noopener" style="color:#2563eb;font-weight:600;text-decoration:underline;font-size:0.75rem;">Mở tệp CloudFront ↗</a>
+                  <span style="font-weight:700;color:#0f172a;">📎 Bài đã nộp: ${att.title} <span style="font-weight:500;color:#64748b;">(${sizeKb})</span></span>
+                  <a href="${att.cdnUrl}" target="_blank" rel="noopener" style="color:#2563eb;font-weight:600;text-decoration:underline;font-size:0.75rem;">Mở tệp ↗</a>
                 </div>
                 ${mediaPreviewHtml}
               </div>
@@ -3904,17 +4303,17 @@
           }).join('');
           previewBox.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;color:#15803d;font-weight:700;">
-              <span>☁️ Đã đồng bộ lên izTeach Cloud (${hw.attachments.length} tệp đính kèm)</span>
-              <span style="font-size:0.72rem;color:#475569;font-weight:600;">Mã bản ghi: ${hw.remoteId || 'Synced'} · ${hw.submittedAt || ''}</span>
+              <span>☁️ Bài đã nộp (${hw.attachments.length} tệp đính kèm)</span>
+              <span style="font-size:0.72rem;color:#475569;font-weight:600;">${hw.submittedAt || ''}</span>
             </div>
             ${itemsHtml}
           `;
-        } else if (hw.status === 'pending' || hw.status === 'graded') {
+        } else if (hw.status === 'pending' || hw.status === 'graded' || hw.status === 'needs_revision') {
           previewBox.style.display = 'block';
           previewBox.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:0.8rem;color:#15803d;font-weight:700;">
-              <span>☁️ Bài tập tương tác đã đồng bộ lên izTeach Cloud</span>
-              <span style="font-size:0.72rem;color:#475569;font-weight:600;">Mã bản ghi: ${hw.remoteId || 'Synced'} · ${hw.submittedAt || ''}</span>
+              <span>☁️ Bài tập đã nộp cho cô giáo</span>
+              <span style="font-size:0.72rem;color:#475569;font-weight:600;">${hw.submittedAt || ''}</span>
             </div>
           `;
         } else {
@@ -3923,20 +4322,80 @@
         }
       }
 
-      if (hw.status === 'graded') {
-        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#dcfce7;color:#15803d;">✓ Đã chấm: ' + hw.score + ' / 10 điểm</span>';
+      if (hw.status === 'needs_revision') {
+        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#FEF3C7;border:1px solid #FDE68A;color:#B45309;">↺ Cần sửa</span>';
         feedbackBox.style.display = 'block';
-        document.getElementById('lbl-tf-score').textContent = '⭐ ' + hw.score + ' / 10';
-        document.getElementById('lbl-tf-comment').textContent = hw.teacherComment || 'Bé hoàn thành bài tập rất xuất sắc!';
+        feedbackBox.style.background = '#FFFBEB';
+        feedbackBox.style.borderColor = '#FDE68A';
+        document.getElementById('lbl-tf-score').textContent = hw.score != null ? ('Điểm tạm: ' + hw.score + ' / 10 · Cần sửa lại') : '↺ Cô nhắc sửa lại bài';
+        document.getElementById('lbl-tf-comment').textContent = (hw.teacherComment || 'Em kiểm tra lại phần phát âm hoặc nét chữ rồi nộp lại cho cô nhé!').replace(/^\[CẦN SỬA\]\s*/i, '');
+        if (tfRevisionActions) tfRevisionActions.style.display = 'block';
         noteInput.value = hw.note || '';
+        if (submitBtnText) submitBtnText.textContent = 'Nộp lại cho cô';
+      } else if (hw.status === 'graded') {
+        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#dcfce7;color:#15803d;">✓ Đã hoàn thành · ' + hw.score + '/10</span>';
+        feedbackBox.style.display = 'block';
+        feedbackBox.style.background = '#F0FDF4';
+        feedbackBox.style.borderColor = '#86EFAC';
+        document.getElementById('lbl-tf-score').textContent = '⭐ ' + hw.score + ' / 10 · Đã hoàn thành';
+        document.getElementById('lbl-tf-comment').textContent = hw.teacherComment || 'Con hoàn thành bài tập rất xuất sắc!';
+        if (tfRevisionActions) tfRevisionActions.style.display = 'none';
+        noteInput.value = hw.note || '';
+        if (submitBtnText) submitBtnText.textContent = 'Nộp lại cho cô';
       } else if (hw.status === 'pending') {
-        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#f0fdf4;border:1px solid #22c55e;color:#15803d;">✓ Đã nộp bài (Đang chờ cô chấm)</span>';
+        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#f0fdf4;border:1px solid #22c55e;color:#15803d;">Đã nộp · Chờ cô chấm</span>';
         feedbackBox.style.display = 'none';
+        if (tfRevisionActions) tfRevisionActions.style.display = 'none';
         noteInput.value = hw.note || '';
+        if (submitBtnText) submitBtnText.textContent = 'Đã nộp · Chờ cô chấm (Bấm nếu muốn gửi bản mới)';
       } else {
-        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#f1f5f9;color:#64748b;">Chưa nộp bài</span>';
+        badgeWrap.innerHTML = '<span class="workbook-status-badge" style="background:#f1f5f9;color:#64748b;">Chưa nộp</span>';
         feedbackBox.style.display = 'none';
+        if (tfRevisionActions) tfRevisionActions.style.display = 'none';
         noteInput.value = '';
+        if (submitBtnText) submitBtnText.textContent = 'Nộp bài cho cô';
+      }
+
+      // Cập nhật thanh "Học bài tiếp theo" ở cuối bài
+      const nextHint = document.getElementById('lesson-next-status-hint');
+      const nextBtn = document.getElementById('btn-next-lesson');
+      if (nextBtn) {
+        if (currentLessonIdx + 1 < LESSONS.length) {
+          const nextLesson = LESSONS[currentLessonIdx + 1];
+          nextBtn.style.display = 'inline-flex';
+          nextBtn.innerHTML = `<span>Học bài tiếp theo (Bài ${nextLesson.num})</span><span>→</span>`;
+          if (nextHint) {
+            nextHint.textContent = hw.status === 'graded'
+              ? `Em đã hoàn thành Bài ${lesson.num}. Cùng sang Bài ${nextLesson.num}: ${nextLesson.titleZh} nhé!`
+              : `Sau khi xem xong video và nộp bài, em có thể chuyển sang Bài ${nextLesson.num}.`;
+          }
+        } else {
+          nextBtn.style.display = 'inline-flex';
+          nextBtn.innerHTML = `<span>Về danh sách khóa học</span><span>→</span>`;
+          if (nextHint) {
+            nextHint.textContent = `Chúc mừng em đã đến bài cuối cùng của khóa ${activeMeta.shortTitle}!`;
+          }
+        }
+      }
+    }
+
+    function startHomeworkRevision() {
+      const micBtn = document.getElementById('btn-mic-record');
+      const submitBtnText = document.getElementById('btn-submit-workbook-text');
+      if (submitBtnText) submitBtnText.textContent = 'Nộp lại cho cô';
+      if (micBtn) {
+        micBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        micBtn.focus();
+      }
+      showToast('Em hãy thu âm mới hoặc chọn lại ảnh bài viết rồi bấm "Nộp lại cho cô" nhé!');
+    }
+
+    function goToNextLesson() {
+      if (currentLessonIdx + 1 < LESSONS.length) {
+        loadLesson(currentLessonIdx + 1);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        navigateStudentHash('#/khoa');
       }
     }
 
@@ -3990,6 +4449,7 @@
     let portalAudioChunks = [];
     window.__recordedVoiceFile = null;
     window.__selectedHwFile = null;
+    window.__recordedVoiceDraftUrl = null;
 
     function createSynthesizedWavFile(durationSec, fileName) {
       const sampleRate = 8000;
@@ -4021,6 +4481,8 @@
     function updateChosenFilesBanner() {
       const notice = document.getElementById('file-chosen-notice');
       const nameText = document.getElementById('file-name-text');
+      const playDraftBtn = document.getElementById('btn-play-voice-draft');
+      const draftAudio = document.getElementById('voice-draft-audio');
       if (!notice || !nameText) return;
       const parts = [];
       if (window.__selectedHwFile) {
@@ -4028,6 +4490,21 @@
       }
       if (window.__recordedVoiceFile) {
         parts.push(window.__recordedVoiceFile.name + ' (' + Math.max(1, Math.round(window.__recordedVoiceFile.size / 1024)) + ' KB)');
+        try {
+          if (window.__recordedVoiceDraftUrl) URL.revokeObjectURL(window.__recordedVoiceDraftUrl);
+          window.__recordedVoiceDraftUrl = URL.createObjectURL(window.__recordedVoiceFile);
+          if (draftAudio) {
+            draftAudio.src = window.__recordedVoiceDraftUrl;
+            draftAudio.style.display = 'block';
+          }
+          if (playDraftBtn) playDraftBtn.style.display = 'inline-flex';
+        } catch (e) {}
+      } else {
+        if (playDraftBtn) playDraftBtn.style.display = 'none';
+        if (draftAudio) {
+          draftAudio.src = '';
+          draftAudio.style.display = 'none';
+        }
       }
       if (parts.length > 0) {
         notice.style.display = 'block';
@@ -4036,6 +4513,13 @@
         notice.style.display = 'none';
         nameText.textContent = '';
       }
+    }
+
+    function playRecordedVoiceDraft() {
+      const draftAudio = document.getElementById('voice-draft-audio');
+      if (!draftAudio || !draftAudio.src) return;
+      draftAudio.currentTime = 0;
+      draftAudio.play().catch(() => {});
     }
 
     async function toggleRecordVoice() {
@@ -4047,7 +4531,7 @@
         isRecording = true;
         btn.classList.add('recording');
         recordSeconds = 0;
-        text.textContent = 'Đang thu âm... 00:00 (Bấm để xong)';
+        text.textContent = 'Dừng thu (00:00)';
         icon.textContent = '⏹️';
 
         portalAudioChunks = [];
@@ -4079,15 +4563,15 @@
           recordSeconds++;
           const mins = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
           const secs = String(recordSeconds % 60).padStart(2, '0');
-          text.textContent = 'Đang thu âm... ' + mins + ':' + secs + ' (Bấm để xong)';
+          text.textContent = 'Dừng thu (' + mins + ':' + secs + ')';
         }, 1000);
       } else {
         isRecording = false;
         clearInterval(recordTimer);
         btn.classList.remove('recording');
-        icon.textContent = '✅';
+        icon.textContent = '🎙️';
         const dur = Math.max(1, recordSeconds);
-        text.textContent = 'Đã thu xong (' + dur + 's) · Thu lại';
+        text.textContent = 'Thu lại';
 
         if (portalMediaRecorder && portalMediaRecorder.state !== 'inactive') {
           try { portalMediaRecorder.stop(); } catch (e) {}
@@ -4115,14 +4599,56 @@
     }
 
     function syncStudentSubmissionToSllApp(user, courseId, lesson, unitId, hwData, fullNotes) {
+      const nowMs = Date.now();
+      const curEmail = String(user?.email || '').trim().toLowerCase();
+      const curName = user?.name || 'Học viên Khổng Tử Nhí';
+      const courseMeta = PORTAL_COURSE_CATALOG[courseId] || PORTAL_COURSE_CATALOG[HSK1_COURSE_ID];
+      const attachments = normalizeHomeworkAttachments(hwData?.resources, []);
+      const targetLessonNum = Number(lesson.num) || 1;
+      const totalLessons = LESSONS.length || 15;
+
+      // Lưu vào localStorage 'ktn_local_submitted_homeworks' để sll-teacher.html nhận tức thì
+      try {
+        const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+        const newLocalRec = {
+          id: hwData?._id || ('HW-' + courseId + '-' + targetLessonNum),
+          student_email: curEmail,
+          student_name: curName,
+          class_code: user?.classCode || currentStudentProfile?.classCode || '',
+          course_id: courseId,
+          lesson_num: targetLessonNum,
+          lesson_title: `${courseMeta.shortTitle} · Bài ${targetLessonNum}: ${lesson.titleZh || ''}`,
+          student_note: fullNotes,
+          attachments: attachments,
+          status: 'submitted',
+          score: null,
+          teacher_feedback: null,
+          submitted_at: new Date().toISOString()
+        };
+        const filtered = Array.isArray(localArr)
+          ? localArr.filter(item => !(String(item.student_email || '').toLowerCase() === curEmail && item.course_id === courseId && Number(item.lesson_num) === targetLessonNum))
+          : [];
+        filtered.unshift(newLocalRec);
+        localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(filtered));
+      } catch (e) {}
+
+      // Đồng bộ qua Worker API /api/ktn/homeworks
+      if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        window.KtnWebApp.apiRequest('/api/ktn/homeworks', {
+          method: 'POST',
+          body: {
+            courseId,
+            classCode: user?.classCode || currentStudentProfile?.classCode || null,
+            lessonNum: targetLessonNum,
+            lessonTitle: `${courseMeta.shortTitle} · Bài ${targetLessonNum}: ${lesson.titleZh || ''}`,
+            studentNote: fullNotes,
+            attachments
+          }
+        }).catch(() => {});
+      }
+
       if (!window.app || !window.app.state) return;
       try {
-        const nowMs = Date.now();
-        const curEmail = String(user?.email || '').trim().toLowerCase();
-        const curName = user?.name || 'Học viên Khổng Tử Nhí';
-        const courseMeta = PORTAL_COURSE_CATALOG[courseId] || PORTAL_COURSE_CATALOG[HSK1_COURSE_ID];
-
-        // 1. Đảm bảo học viên có mặt trong danh sách window.app.students (học viên khóa học online độc lập, không ép vào lớp cố định nếu chưa xếp lớp)
         let stu = (window.app.students || []).find(s => s && String(s.email || '').trim().toLowerCase() === curEmail);
         if (!stu) {
           const newCode = user?.code || user?.studentId || ('KTN-2026-' + (curEmail.split('@')[0] || 'STU').toUpperCase().slice(0, 6));
@@ -4135,8 +4661,8 @@
             phone: user?.phone || '',
             classCode: '',
             level: courseMeta.shortTitle || 'HSK1 3.0',
-            learned: Number(lesson.num) || 1,
-            total: LESSONS.length || 15,
+            learned: targetLessonNum,
+            total: totalLessons,
             hasLiveClass: false,
             hasOnlineCourses: true,
             hasOnlineCourse: true,
@@ -4147,9 +4673,6 @@
           }
         }
 
-        const attachments = normalizeHomeworkAttachments(hwData?.resources, []);
-        const targetLessonNum = Number(lesson.num) || 1;
-        const totalLessons = LESSONS.length || 15;
         const sllHw = {
           id: 'HW-' + (hwData?._id || nowMs),
           remoteId: hwData?._id || ('HW-' + nowMs),
@@ -4211,7 +4734,7 @@
       const lesson = LESSONS[currentLessonIdx];
 
       if (!user || !user.accessToken) {
-        alert('Vui lòng đăng nhập tài khoản học viên để nộp bài tập.');
+        alert('Em hãy đăng nhập tài khoản học sinh để nộp bài cho cô nhé.');
         loginRealUser();
         return;
       }
@@ -4222,8 +4745,12 @@
       }
 
       const btn = document.getElementById('btn-submit-workbook');
+      const btnText = document.getElementById('btn-submit-workbook-text');
+      const errBox = document.getElementById('workbook-submit-error');
       const noteInput = document.getElementById('hw-student-note');
       const note = noteInput ? noteInput.value.trim() : '';
+
+      if (errBox) errBox.style.display = 'none';
 
       const fileInput = document.querySelector('#ktn-clean-portal-mount #hw-file-input') || document.getElementById('hw-file-input');
       const inputFile = (fileInput && fileInput.files && fileInput.files[0]) ? fileInput.files[0] : window.__selectedHwFile;
@@ -4240,7 +4767,7 @@
       // Unit ID tương ứng bài học
       const unitId = (lesson.parts && lesson.parts[0] && lesson.parts[0].unitId) ? lesson.parts[0].unitId : null;
       if (!unitId) {
-        alert('Không tìm thấy Unit ID liên kết cho bài học này.');
+        alert('Không tìm thấy mã bài tập liên kết cho bài học này.');
         return;
       }
 
@@ -4266,7 +4793,8 @@
         : baseNote;
 
       btn.disabled = true;
-      btn.innerHTML = '<span>⏳ Đang tải tệp lên S3 &amp; đồng bộ bài tập vào izTeach...</span>';
+      if (btnText) btnText.textContent = 'Đang gửi…';
+      else btn.innerHTML = '<span>Đang gửi…</span>';
 
       try {
         const lessonTitle = `Bài tập ${activeMeta.shortTitle} - Bài ${lesson.num}: ${lesson.titleZh}`;
@@ -4293,9 +4821,9 @@
             recipient_id: user.email || user.id || 'ALL',
             category: 'academic',
             priority: 'MEDIUM',
-            title: `🎉 Nộp bài thành công: ${activeMeta.shortTitle} · Bài ${lesson.num}`,
-            body: `Hệ thống đã nhận ${filesToUpload.length} tệp S3 cho bài "${lesson.titleZh}". Cô giáo sẽ sớm chấm điểm & gửi nhận xét cho con!`,
-            action_url: `/custom-page/so-lien-lac-test?course=${activeCourseId}&lesson=${currentLessonIdx}`,
+            title: `🎉 Đã nộp · Chờ cô chấm: ${activeMeta.shortTitle} · Bài ${lesson.num}`,
+            body: `Hệ thống đã nhận bài nộp của con cho bài "${lesson.titleZh}". Cô giáo sẽ sớm chấm điểm & gửi nhận xét!`,
+            action_url: `/sll-hocsinh.html#/khoa/${getCourseSlug(activeCourseId)}/bai/${lesson.num}`,
             metadata: { courseId: activeCourseId, lessonNum: lesson.num, lessonIdx: currentLessonIdx, unitId, homeworkId: hwData?._id }
           });
           window.KTN_NOTIF.triggerNotificationEvent('HOMEWORK_SUBMITTED_TEACHER_ALERT', {
@@ -4303,31 +4831,33 @@
             recipient_id: 'ALL',
             category: 'academic',
             priority: 'HIGH',
-            title: `📥 Bài nộp Khóa Online mới: ${user.name || 'Học viên'} (${activeMeta.shortTitle} · Bài ${lesson.num})`,
-            body: `Học viên tự do ${user.name || user.email} vừa nộp ${filesToUpload.length} tệp S3 cho bài "${lesson.titleZh}". Nhấn để chấm ngay!`,
-            action_url: `/custom-page/so-lien-lac-test?view=course-grade&course=${activeCourseId}&lesson=${lesson.num}`,
+            title: `📥 Bài nộp mới: ${user.name || 'Học sinh'} (${activeMeta.shortTitle} · Bài ${lesson.num})`,
+            body: `Học sinh ${user.name || user.email} vừa nộp bài "${lesson.titleZh}". Nhấn để chấm ngay!`,
+            action_url: `/sll-teacher.html`,
             metadata: { courseId: activeCourseId, lessonNum: lesson.num, unitId, studentEmail: user.email, homeworkId: 'HW-' + (hwData?._id || Date.now()), isCourseHomework: true }
           });
         }
 
         btn.disabled = false;
-        btn.innerHTML = '<span>🚀 HOÀN THÀNH &amp; NỘP BÀI TẬP (1 CHẠM)</span>';
+        if (btnText) btnText.textContent = 'Đã nộp · Chờ cô chấm';
 
         window.__selectedHwFile = null;
         window.__recordedVoiceFile = null;
-        const fileNotice = document.getElementById('file-chosen-notice');
-        if (fileNotice) fileNotice.style.display = 'none';
+        const micText = document.getElementById('mic-text');
+        if (micText) micText.textContent = 'Thu âm';
+        updateChosenFilesBanner();
         if (fileInput) fileInput.value = '';
 
         renderInteractiveWorkbook(lesson);
         renderSidebarLessons();
 
-        showToast('🎉 Tuyệt vời! Bài tập Bài ' + lesson.num + ' (' + activeMeta.shortTitle + ') đã được tải lên S3 & đồng bộ trực tiếp vào izTeach!');
+        showToast('✓ Đã nộp · Chờ cô chấm! Bài tập Bài ' + lesson.num + ' (' + activeMeta.shortTitle + ') đã được gửi cho cô giáo.');
       } catch (err) {
-        console.error('[submitCurrentWorkbook] Lỗi nộp bài:', err);
+        console.error('[submitCurrentWorkbook] Lỗi nộp bài (giữ nguyên bài làm để gửi lại):', err);
         btn.disabled = false;
-        btn.innerHTML = '<span>🚀 HOÀN THÀNH &amp; NỘP BÀI TẬP (1 CHẠM)</span>';
-        alert('Không thể nộp bài tập lên máy chủ izTeach: ' + (err.message || 'Lỗi kết nối'));
+        if (btnText) btnText.textContent = 'Gửi lại';
+        else btn.innerHTML = '<span>Gửi lại</span>';
+        if (errBox) errBox.style.display = 'block';
       }
     }
 
@@ -4436,24 +4966,130 @@
     }
 
     // ============================================================
-    // UNIFIED SỔ LIÊN LẠC & TRAO ĐỔI VỚI CÔ GIÁO (TRONG CÙNG 1 FILE sll-hocsinh.html)
+    // UNIFIED LỚP CỦA EM (BUỔI 1, BUỔI 2...) & HASH ROUTER (#/...)
     // ============================================================
     let currentStudentSession = null;
     let currentStudentProfile = null;
     let hasInitializedDefaultTab = false;
+    let activeClassSessionNum = 1;
+    window.__classExDrafts = {};
+
+    const DEFAULT_CLASS_SESSIONS = {
+      'YCT2-04': [
+        {
+          session_num: 1,
+          session_title: 'Buổi 1: Hỏi thăm sức khỏe & Số đếm 1–20',
+          updated_at: '2026-04-12T10:00:00.000Z',
+          exercises: [
+            {
+              id: 'ex_1_1',
+              num: 1,
+              title: 'Bài 1: Thu âm đọc to 5 câu hội thoại hỏi thăm sức khỏe (Trang 12)',
+              prompt: 'Con bấm Thu âm đọc rõ từng câu hội thoại trong sách giáo khoa trang 12 rồi bấm Nộp bài cho cô nhé.',
+              type: 'voice'
+            },
+            {
+              id: 'ex_1_2',
+              num: 2,
+              title: 'Bài 2: Viết 6 chữ Hán bài 1 vào vở ô mễ và chụp ảnh nộp',
+              prompt: 'Con viết mỗi chữ 1 dòng vào vở ô mễ, sau đó nhờ bố/mẹ chụp ảnh đính kèm gửi cô chấm nét chữ nhé.',
+              type: 'photo'
+            }
+          ]
+        },
+        {
+          session_num: 2,
+          session_title: 'Buổi 2: Gia đình của em & Đại từ chỉ định (这 / 那)',
+          updated_at: '2026-04-14T10:00:00.000Z',
+          exercises: [
+            {
+              id: 'ex_2_1',
+              num: 1,
+              title: 'Bài 1: Thu âm giới thiệu các thành viên trong gia đình bằng tiếng Trung',
+              prompt: 'Con dùng mẫu câu "这是我的..." để giới thiệu bố, mẹ và anh/chị/em trong nhà.',
+              type: 'voice'
+            },
+            {
+              id: 'ex_2_2',
+              num: 2,
+              title: 'Bài 2: Hoàn thành bài nối từ trong Sách bài tập trang 15',
+              prompt: 'Con làm bài tập trang 15 và đính kèm ảnh chụp trang bài làm.',
+              type: 'photo'
+            }
+          ]
+        },
+        {
+          session_num: 3,
+          session_title: 'Buổi 3: Ôn tập phản xạ Nghe – Nói chủ đề Trường học',
+          updated_at: '2026-04-16T10:00:00.000Z',
+          exercises: [
+            {
+              id: 'ex_3_1',
+              num: 1,
+              title: 'Bài 1: Thu âm đọc bài khóa trang 18',
+              prompt: 'Chú ý phát âm chuẩn thanh 3 và thanh 4 khi đọc bài khóa.',
+              type: 'voice'
+            }
+          ]
+        }
+      ],
+      'YCT1-01': [
+        {
+          session_num: 1,
+          session_title: 'Buổi 1: Chào hỏi lễ phép (你好 · 谢谢 · 再见)',
+          updated_at: '2026-04-12T10:00:00.000Z',
+          exercises: [
+            {
+              id: 'ex_1_1',
+              num: 1,
+              title: 'Bài 1: Thu âm chào cô giáo và tự giới thiệu tên bằng tiếng Trung',
+              prompt: 'Con bấm Thu âm đọc to: "老师好！我叫..." rồi bấm Nộp bài cho cô nhé.',
+              type: 'voice'
+            },
+            {
+              id: 'ex_1_2',
+              num: 2,
+              title: 'Bài 2: Tô nét chữ Hán cơ bản (一, 二, 三, 人) trong vở ô mễ',
+              prompt: 'Con viết đúng thứ tự nét từ trái sang phải, từ trên xuống dưới và chụp ảnh nộp cho cô.',
+              type: 'photo'
+            }
+          ]
+        },
+        {
+          session_num: 2,
+          session_title: 'Buổi 2: Đếm số từ 1 đến 10 & Hỏi tuổi',
+          updated_at: '2026-04-15T10:00:00.000Z',
+          exercises: [
+            {
+              id: 'ex_2_1',
+              num: 1,
+              title: 'Bài 1: Thu âm đếm số từ 1 đến 10 và nói tuổi của con',
+              prompt: 'Con đọc to rõ ràng từ 一 đến 十 và câu "我...岁".',
+              type: 'voice'
+            }
+          ]
+        }
+      ]
+    };
+
+    function updateTopNavActiveTab(activeTabKey) {
+      const btnHome = document.getElementById('tab-btn-home');
+      const btnCourse = document.getElementById('tab-btn-classroom');
+      const btnClass = document.getElementById('tab-btn-contactbook');
+      if (btnHome) btnHome.classList.toggle('active', activeTabKey === 'home');
+      if (btnCourse) btnCourse.classList.toggle('active', activeTabKey === 'courses');
+      if (btnClass) btnClass.classList.toggle('active', activeTabKey === 'class');
+    }
 
     function switchStudentPane(pane) {
-      const isClassroom = pane === 'classroom';
-      const btnClass = document.getElementById('tab-btn-classroom');
-      const btnContact = document.getElementById('tab-btn-contactbook');
+      const isContactBook = (pane === 'contactbook' || pane === 'class');
       const paneClass = document.getElementById('pane-classroom');
       const paneContact = document.getElementById('pane-contactbook');
-      if (btnClass) btnClass.classList.toggle('active', isClassroom);
-      if (btnContact) btnContact.classList.toggle('active', !isClassroom);
-      if (paneClass) paneClass.style.display = isClassroom ? 'block' : 'none';
-      if (paneContact) paneContact.style.display = isClassroom ? 'none' : 'block';
-      if (!isClassroom) {
-        // Tự động tạm dừng Video và Audio bài giảng khi chuyển sang ngăn Sổ Liên Lạc để không phát tiếng chồng chéo
+      if (paneClass) paneClass.style.display = isContactBook ? 'none' : 'block';
+      if (paneContact) paneContact.style.display = isContactBook ? 'block' : 'none';
+
+      if (isContactBook) {
+        updateTopNavActiveTab('class');
         try {
           const vEl = document.getElementById('hsk1-video-player');
           const aEl = document.getElementById('sbt-native-audio');
@@ -4461,12 +5097,16 @@
           if (aEl && !aEl.paused) aEl.pause();
         } catch (e) {}
         loadStudentContactBook();
+      } else {
+        const isHome = !window.location.hash || window.location.hash === '#/' || window.location.hash === '#';
+        updateTopNavActiveTab(isHome ? 'home' : 'courses');
       }
     }
 
     function openVideoCourseDirectly(courseId) {
-      switchStudentPane('classroom');
-      enterCourseLearning(0, courseId);
+      const slug = getCourseSlug(courseId);
+      const nextNum = getLastStudiedLesson(courseId);
+      navigateStudentHash(`#/khoa/${slug}/bai/${nextNum}`);
     }
 
     function renderStudentCaseBanner(profile) {
@@ -4477,6 +5117,8 @@
         ? (profile.online_courses || profile.onlineCourses)
         : [];
       const classCode = profile?.class_code || profile?.classCode || null;
+      const teacherName = profile?.teacher_name || 'Cô Lâm Mỹ Linh';
+      const scheduleText = profile?.schedule || 'Thứ 3 & Thứ 6 (19:30 - 21:00)';
       const sCase = profile?.studentCase || (
         (courses.length > 0 && classCode) ? 'both' :
         (courses.length > 0 ? 'online_only' : (classCode ? 'sll_only' : 'unassigned'))
@@ -4484,22 +5126,22 @@
 
       if (pill) {
         if (sCase === 'both') {
-          pill.textContent = `📚 ${courses.length} Khóa Video · 🏫 Lớp ${classCode}`;
+          pill.textContent = `🏫 Lớp ${classCode} · 📚 ${courses.length} Khóa Video`;
           pill.style.background = '#DCFCE7';
           pill.style.color = '#15803D';
           pill.style.borderColor = '#86EFAC';
         } else if (sCase === 'online_only') {
-          pill.textContent = `📚 ${courses.length} Khóa Học Trực Tuyến`;
+          pill.textContent = `📚 ${courses.length} Khóa Học Video`;
           pill.style.background = '#DBEAFE';
           pill.style.color = '#1D4ED8';
           pill.style.borderColor = '#93C5FD';
         } else if (sCase === 'sll_only') {
-          pill.textContent = `🏫 Lớp Trực Tiếp: ${classCode}`;
+          pill.textContent = `🏫 Lớp ${classCode}`;
           pill.style.background = '#FEF3C7';
           pill.style.color = '#B45309';
           pill.style.borderColor = '#FDE68A';
         } else {
-          pill.textContent = '⏳ Chờ kích hoạt khóa học';
+          pill.textContent = '⏳ Chờ xếp lớp / kích hoạt khóa học';
           pill.style.background = '#F1F5F9';
           pill.style.color = '#475569';
           pill.style.borderColor = '#CBD5E1';
@@ -4507,14 +5149,12 @@
       }
 
       if (desc) {
-        if (sCase === 'both') {
-          desc.innerHTML = `Con đang theo học <strong>Lớp trực tiếp ${classCode}</strong> cùng cô giáo và sở hữu <strong>${courses.length} khóa học Video tự học</strong>.`;
+        if (classCode) {
+          desc.innerHTML = `Lớp <strong>${classCode}</strong> · Giáo viên phụ trách: <strong>${teacherName}</strong> · Lịch học: <strong>${scheduleText}</strong>`;
         } else if (sCase === 'online_only') {
-          desc.innerHTML = `Con đã kích hoạt <strong>${courses.length} khóa học Video tự học</strong>. Khi nộp bài tại Phòng Học, cô giáo sẽ chấm điểm và gửi nhận xét tại đây.`;
-        } else if (sCase === 'sll_only') {
-          desc.innerHTML = `Con đang theo học <strong>Lớp trực tiếp ${classCode}</strong> cùng cô giáo chủ nhiệm.`;
+          desc.innerHTML = `Em đang học <strong>${courses.length} khóa học Video tự học</strong>. Khi em nộp bài, cô giáo sẽ chấm và gửi lời nhận xét tại đây.`;
         } else {
-          desc.innerHTML = `Tài khoản của con chưa được gắn khóa học hoặc xếp lớp. Phụ huynh vui lòng liên hệ Hotline/Zalo <strong>0975.952.562</strong> để trung tâm kích hoạt ngay.`;
+          desc.innerHTML = `Tài khoản của em hiện chưa được xếp lớp trực tiếp. Phụ huynh vui lòng liên hệ trung tâm qua Zalo <strong>0975.952.562</strong> nếu cần hỗ trợ xếp lớp.`;
         }
       }
 
@@ -4522,7 +5162,8 @@
         chipsBox.innerHTML = courses.map(c => {
           const cid = c.id || c._id || c;
           const title = c.title || c.shortTitle || PORTAL_COURSE_CATALOG[cid]?.shortTitle || cid;
-          return `<button type="button" onclick="openVideoCourseDirectly('${cid}')" style="background:#FFF1F2;color:#B91C1C;border:1px solid #FECACA;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;" title="Bấm để mở ngay bài giảng khóa ${title}">🎬 Vào học: ${title} →</button>`;
+          const nextNum = getLastStudiedLesson(cid);
+          return `<button type="button" onclick="openVideoCourseDirectly('${cid}')" style="background:#FFF1F2;color:#B91C1C;border:1px solid #FECACA;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;" title="Bấm để mở ngay khóa ${title}">🎬 Học tiếp: ${title} (Bài ${nextNum}) →</button>`;
         }).join('');
       }
 
@@ -4596,7 +5237,7 @@
       resolvedProfile.hasOnlineCourses = mergedCourses.length > 0;
 
       currentStudentProfile = resolvedProfile;
-      const initialCase = renderStudentCaseBanner(currentStudentProfile);
+      renderStudentCaseBanner(currentStudentProfile);
 
       if (window.KtnWebApp) {
         try {
@@ -4635,17 +5276,302 @@
         } catch (e) {}
       }
 
-      const finalCase = renderStudentCaseBanner(currentStudentProfile);
+      renderStudentCaseBanner(currentStudentProfile);
       showCoursesDashboard();
-      if (!hasInitializedDefaultTab) {
-        hasInitializedDefaultTab = true;
-        if (finalCase === 'sll_only' || initialCase === 'sll_only') {
-          switchStudentPane('contactbook');
+    }
+
+    async function getClassSessionsForClass(classCode) {
+      const code = String(classCode || 'YCT2-04').trim().toUpperCase();
+      let sessions = null;
+      try {
+        const localRaw = localStorage.getItem('ktn_class_sessions_' + code);
+        if (localRaw) {
+          const parsed = JSON.parse(localRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) sessions = parsed;
         }
+      } catch (e) {}
+
+      if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        try {
+          const res = await window.KtnWebApp.apiRequest('/api/ktn/class-sessions?classCode=' + encodeURIComponent(code));
+          if (res.ok && Array.isArray(res.data?.sessions) && res.data.sessions.length > 0) {
+            if (!sessions) {
+              sessions = res.data.sessions;
+              try {
+                localStorage.setItem('ktn_class_sessions_' + code, JSON.stringify(sessions));
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (!sessions || !sessions.length) {
+        sessions = DEFAULT_CLASS_SESSIONS[code] || DEFAULT_CLASS_SESSIONS['YCT2-04'];
+      }
+      return sessions;
+    }
+
+    function getClassExerciseSubmission(classCode, sessionNum, exerciseNum) {
+      const user = getRealCurrentUser() || currentStudentProfile;
+      const curEmail = String(user?.email || '').trim().toLowerCase();
+      const syntheticLessonNum = Number(sessionNum) * 100 + Number(exerciseNum);
+      const targetCourseKey = 'CLASS_' + String(classCode || '').toUpperCase();
+      try {
+        const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+        if (Array.isArray(localArr)) {
+          const match = localArr.find(h => {
+            if (!h) return false;
+            const hEmail = String(h.student_email || h.studentEmail || '').trim().toLowerCase();
+            if (curEmail && hEmail && hEmail !== curEmail) return false;
+            return (h.course_id === targetCourseKey || h.class_code === classCode) && Number(h.lesson_num) === syntheticLessonNum;
+          });
+          if (match) return match;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    async function renderStudentClassSessions(classCode, requestedSessionNum) {
+      const cardEl = document.getElementById('student-class-sessions-card');
+      const barEl = document.getElementById('class-sessions-bar');
+      const boxEl = document.getElementById('class-active-session-box');
+      if (!cardEl || !barEl || !boxEl) return;
+
+      const effectiveClassCode = classCode || currentStudentProfile?.classCode || null;
+      if (!effectiveClassCode) {
+        cardEl.style.display = 'none';
+        return;
+      }
+      cardEl.style.display = 'block';
+
+      const sessions = await getClassSessionsForClass(effectiveClassCode);
+      if (requestedSessionNum != null) {
+        activeClassSessionNum = Number(requestedSessionNum) || 1;
+      }
+      const currentSession = sessions.find(s => Number(s.session_num) === Number(activeClassSessionNum)) || sessions[0];
+      if (!currentSession) return;
+      activeClassSessionNum = Number(currentSession.session_num) || 1;
+
+      barEl.innerHTML = sessions.map(s => {
+        const isAct = Number(s.session_num) === activeClassSessionNum;
+        return `<button type="button" onclick="navigateStudentHash('#/lop/${effectiveClassCode.toLowerCase()}/buoi/${s.session_num}')" style="padding:8px 14px;border-radius:999px;font-size:13px;font-weight:800;cursor:pointer;border:1px solid ${isAct ? '#B91C1C' : '#CBD5E1'};background:${isAct ? '#B91C1C' : '#FFFFFF'};color:${isAct ? '#FFFFFF' : '#334155'};">Buổi ${s.session_num}</button>`;
+      }).join('');
+
+      const exercises = Array.isArray(currentSession.exercises) ? currentSession.exercises : [];
+      const exHtml = exercises.map((ex, idx) => {
+        const exNum = Number(ex.num) || (idx + 1);
+        const draftKey = `${effectiveClassCode}_${activeClassSessionNum}_${exNum}`;
+        const sub = getClassExerciseSubmission(effectiveClassCode, activeClassSessionNum, exNum);
+        const status = sub ? (sub.status || 'submitted') : 'unsubmitted';
+
+        let badgeHtml = `<span style="background:#F1F5F9;color:#475569;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Chưa nộp</span>`;
+        let submitBtnLabel = 'Nộp bài cho cô';
+        if (status === 'graded') {
+          badgeHtml = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">✓ Đã hoàn thành · ${sub.score ?? 10}/10</span>`;
+          submitBtnLabel = 'Nộp lại cho cô';
+        } else if (status === 'needs_revision') {
+          badgeHtml = `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">↺ Cần sửa</span>`;
+          submitBtnLabel = 'Nộp lại cho cô';
+        } else if (status === 'submitted' || status === 'pending') {
+          badgeHtml = `<span style="background:#F0FDF4;border:1px solid #86EFAC;color:#15803D;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;">Đã nộp · Chờ cô chấm</span>`;
+          submitBtnLabel = 'Đã nộp · Chờ cô chấm';
+        }
+
+        const feedbackHtml = (sub && (sub.teacher_feedback || status === 'graded' || status === 'needs_revision')) ? `
+          <div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:${status === 'needs_revision' ? '#FFFBEB' : '#F0FDF4'};border:1px solid ${status === 'needs_revision' ? '#FDE68A' : '#86EFAC'};font-size:13px;color:#0F172A;">
+            <div style="font-weight:800;margin-bottom:4px;color:${status === 'needs_revision' ? '#B45309' : '#15803D'};">
+              ${status === 'needs_revision' ? '↺ Lời cô nhắc sửa bài:' : `⭐ Lời cô nhận xét (${sub.score ?? 10}/10):`}
+            </div>
+            <div>${(sub.teacher_feedback || 'Con làm bài rất tốt!').replace(/^\[CẦN SỬA\]\s*/i, '')}</div>
+          </div>
+        ` : '';
+
+        return `
+          <div id="class-ex-card-${exNum}" style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:16px;margin-top:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+              <div>
+                <div style="font-size:15px;font-weight:800;color:#0F172A;">${ex.title || ('Bài ' + exNum)}</div>
+                <div style="font-size:13px;color:#475569;margin-top:4px;">${ex.prompt || 'Em thu âm hoặc chụp ảnh bài làm rồi bấm Nộp bài cho cô nhé.'}</div>
+              </div>
+              ${badgeHtml}
+            </div>
+            ${feedbackHtml}
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+              <button type="button" id="btn-class-mic-${draftKey}" onclick="toggleClassExRecord('${effectiveClassCode}', ${activeClassSessionNum}, ${exNum})" style="background:#F8FAFC;color:#0F172A;border:1px solid #CBD5E1;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;">
+                🎙️ <span id="lbl-class-mic-${draftKey}">Thu âm</span>
+              </button>
+              <button type="button" id="btn-class-play-${draftKey}" onclick="playClassExDraft('${draftKey}')" style="display:none;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;">
+                🔊 Nghe lại
+              </button>
+              <label style="background:#F8FAFC;color:#0F172A;border:1px solid #CBD5E1;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                📷 Đính kèm ảnh / tệp
+                <input type="file" accept="image/*,audio/*,video/*" style="display:none;" onchange="handleClassExFile('${draftKey}', this)">
+              </label>
+              <span id="lbl-class-file-${draftKey}" style="font-size:12px;color:#15803D;font-weight:700;"></span>
+            </div>
+            <audio id="audio-class-draft-${draftKey}" controls style="display:none;width:100%;height:36px;margin-top:8px;"></audio>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+              <input type="text" id="inp-class-note-${draftKey}" value="${sub?.student_note || ''}" placeholder="Ghi chú gửi cô giáo (nếu có)..." style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;font-size:13px;">
+              <button type="button" id="btn-class-submit-${draftKey}" onclick="submitClassSessionExercise('${effectiveClassCode}', ${activeClassSessionNum}, ${exNum}, '${(ex.title || ('Bài ' + exNum)).replace(/'/g, "\\'")}')" style="background:#B91C1C;color:#FFFFFF;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;">
+                ${submitBtnLabel}
+              </button>
+            </div>
+            <div id="err-class-submit-${draftKey}" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;font-size:12.5px;font-weight:700;">
+              Chưa gửi được bài. Bài làm của em vẫn được giữ nguyên — em bấm <strong>Gửi lại</strong> nhé.
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      boxEl.innerHTML = `
+        <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px;">
+          <div style="font-size:16px;font-weight:900;color:#0F172A;">${currentSession.session_title || ('Buổi ' + activeClassSessionNum)}</div>
+          <div style="font-size:12.5px;color:#64748B;margin-top:2px;">Lớp ${effectiveClassCode} · Có ${exercises.length} bài tập cô giao trong buổi này</div>
+          ${exHtml}
+        </div>
+      `;
+    }
+
+    function toggleClassExRecord(classCode, sessionNum, exNum) {
+      const draftKey = `${classCode}_${sessionNum}_${exNum}`;
+      const lbl = document.getElementById('lbl-class-mic-' + draftKey);
+      const playBtn = document.getElementById('btn-class-play-' + draftKey);
+      const audioEl = document.getElementById('audio-class-draft-' + draftKey);
+      const fileLbl = document.getElementById('lbl-class-file-' + draftKey);
+      if (!window.__classExDrafts[draftKey]) {
+        window.__classExDrafts[draftKey] = { recording: false, timer: null, secs: 0, voiceFile: null, attachFile: null };
+      }
+      const st = window.__classExDrafts[draftKey];
+      if (!st.recording) {
+        st.recording = true;
+        st.secs = 0;
+        if (lbl) lbl.textContent = 'Dừng thu (00:00)';
+        st.timer = setInterval(() => {
+          st.secs++;
+          const m = String(Math.floor(st.secs / 60)).padStart(2, '0');
+          const s = String(st.secs % 60).padStart(2, '0');
+          if (lbl) lbl.textContent = `Dừng thu (${m}:${s})`;
+        }, 1000);
+      } else {
+        st.recording = false;
+        clearInterval(st.timer);
+        const dur = Math.max(1, st.secs);
+        st.voiceFile = createSynthesizedWavFile(dur, `Thu_am_${classCode}_Buoi${sessionNum}_Bai${exNum}.wav`);
+        if (lbl) lbl.textContent = 'Thu lại';
+        if (playBtn) playBtn.style.display = 'inline-flex';
+        if (audioEl) {
+          audioEl.src = URL.createObjectURL(st.voiceFile);
+          audioEl.style.display = 'block';
+        }
+        if (fileLbl) fileLbl.textContent = `✓ Đã thu âm (${dur}s)`;
+      }
+    }
+
+    function playClassExDraft(draftKey) {
+      const audioEl = document.getElementById('audio-class-draft-' + draftKey);
+      if (audioEl && audioEl.src) {
+        audioEl.currentTime = 0;
+        audioEl.play().catch(() => {});
+      }
+    }
+
+    function handleClassExFile(draftKey, inputEl) {
+      const file = inputEl && inputEl.files && inputEl.files[0];
+      if (!file) return;
+      if (!window.__classExDrafts[draftKey]) {
+        window.__classExDrafts[draftKey] = { recording: false, timer: null, secs: 0, voiceFile: null, attachFile: null };
+      }
+      window.__classExDrafts[draftKey].attachFile = file;
+      const fileLbl = document.getElementById('lbl-class-file-' + draftKey);
+      if (fileLbl) fileLbl.textContent = `✓ Đã chọn: ${file.name}`;
+    }
+
+    async function submitClassSessionExercise(classCode, sessionNum, exNum, exTitle) {
+      const user = getRealCurrentUser() || currentStudentProfile;
+      if (!user) {
+        loginRealUser();
+        return;
+      }
+      const draftKey = `${classCode}_${sessionNum}_${exNum}`;
+      const btn = document.getElementById('btn-class-submit-' + draftKey);
+      const errEl = document.getElementById('err-class-submit-' + draftKey);
+      const noteEl = document.getElementById('inp-class-note-' + draftKey);
+      const note = noteEl ? noteEl.value.trim() : '';
+      const st = window.__classExDrafts[draftKey] || {};
+
+      if (errEl) errEl.style.display = 'none';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Đang gửi…';
+      }
+
+      const syntheticLessonNum = Number(sessionNum) * 100 + Number(exNum);
+      const targetCourseKey = 'CLASS_' + String(classCode || '').toUpperCase();
+      const lessonTitle = `[Lớp ${classCode} · Buổi ${sessionNum}] ${exTitle}`;
+      const studentNote = note || `Con nộp ${exTitle} (Buổi ${sessionNum} - Lớp ${classCode}).`;
+      const attachments = [];
+      if (st.voiceFile) {
+        attachments.push({ title: st.voiceFile.name, size: st.voiceFile.size, mediaType: 'audio' });
+      }
+      if (st.attachFile) {
+        attachments.push({ title: st.attachFile.name, size: st.attachFile.size, mediaType: 'image' });
+      }
+
+      try {
+        const newRec = {
+          id: `HW-${classCode}-B${sessionNum}-E${exNum}-${Date.now()}`,
+          student_email: String(user.email || '').toLowerCase(),
+          student_name: user.name || 'Học sinh',
+          class_code: classCode,
+          course_id: targetCourseKey,
+          lesson_num: syntheticLessonNum,
+          lesson_title: lessonTitle,
+          student_note: studentNote,
+          attachments,
+          status: 'submitted',
+          score: null,
+          teacher_feedback: null,
+          submitted_at: new Date().toISOString()
+        };
+
+        const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+        const filtered = Array.isArray(localArr)
+          ? localArr.filter(item => !(String(item.student_email || '').toLowerCase() === newRec.student_email && item.class_code === classCode && Number(item.lesson_num) === syntheticLessonNum))
+          : [];
+        filtered.unshift(newRec);
+        localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(filtered));
+
+        if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+          await window.KtnWebApp.apiRequest('/api/ktn/homeworks', {
+            method: 'POST',
+            body: {
+              courseId: targetCourseKey,
+              classCode,
+              lessonNum: syntheticLessonNum,
+              lessonTitle,
+              studentNote,
+              attachments
+            }
+          });
+        }
+
+        await renderStudentClassSessions(classCode, sessionNum);
+        await loadStudentContactBook();
+        showToast(`✓ Đã nộp · Chờ cô chấm: ${exTitle} (Buổi ${sessionNum})`);
+      } catch (err) {
+        console.warn('[submitClassSessionExercise] Lỗi gửi bài:', err);
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Gửi lại';
+        }
+        if (errEl) errEl.style.display = 'block';
       }
     }
 
     async function loadStudentContactBook() {
+      const classCode = currentStudentProfile?.classCode || getRealCurrentUser()?.classCode || null;
+      await renderStudentClassSessions(classCode, activeClassSessionNum);
+
       const hwBox = document.getElementById('student-homework-list');
       if (!hwBox) return;
       let list = [];
@@ -4657,21 +5583,28 @@
           }
         } catch (e) {}
       }
-      // Hợp nhất với bài tập thật từ getLessonHomework (IzTeachStore.homeworkMap + Sổ Liên Lạc State)
+      // Hợp nhất với bài tập từ localStorage ('ktn_local_submitted_homeworks') và getLessonHomework
       try {
-        const localEntries = [];
+        const user = getRealCurrentUser() || currentStudentProfile;
+        const curEmail = String(user?.email || '').trim().toLowerCase();
+        const localSaved = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+        const myLocalSaved = Array.isArray(localSaved)
+          ? localSaved.filter(h => !curEmail || String(h.student_email || '').toLowerCase() === curEmail)
+          : [];
+
+        const localEntries = [...myLocalSaved];
         for (const [cid, lessonsArr] of Object.entries(courseLessonsCache || {})) {
           if (!Array.isArray(lessonsArr)) continue;
           lessonsArr.forEach(lesson => {
             const hw = getLessonHomework(lesson, cid);
-            if (hw && (hw.status === 'graded' || hw.status === 'pending' || hw.status === 'submitted')) {
+            if (hw && (hw.status === 'graded' || hw.status === 'pending' || hw.status === 'submitted' || hw.status === 'needs_revision')) {
               localEntries.push({
                 id: cid + '_' + lesson.num,
                 course_id: cid,
                 class_code: currentStudentProfile?.classCode || null,
                 lesson_num: lesson.num,
                 lesson_title: `Bài ${lesson.num}: ${lesson.titleZh || ''} (${lesson.titleVi || ''})`,
-                status: hw.status === 'graded' ? 'graded' : 'submitted',
+                status: hw.status,
                 score: hw.score ?? null,
                 teacher_feedback: hw.teacherComment || null,
                 submitted_at: hw.submittedAt || null
@@ -4681,22 +5614,26 @@
         }
         const mergedHwMap = new Map();
         [...localEntries, ...list].forEach(item => {
-          const key = (item.course_id || '') + ':' + (item.lesson_num || item.lesson_title || item.id);
+          const key = (item.course_id || item.class_code || '') + ':' + (item.lesson_num || item.lesson_title || item.id);
           mergedHwMap.set(key, item);
         });
         list = Array.from(mergedHwMap.values());
       } catch (e) {}
 
       if (!list.length) {
-        hwBox.innerHTML = '<div style="padding:14px;background:#F8FAFC;border-radius:10px;border:1px dashed #CBD5E1;">Chưa có bài tập nào được nộp. Con có thể bấm sang ngăn <strong>🎬 Phòng Học & Bài Tập</strong> để làm bài và nộp 1 chạm nhé!</div>';
+        hwBox.innerHTML = '<div style="padding:14px;background:#F8FAFC;border-radius:10px;border:1px dashed #CBD5E1;">Chưa có bài tập nào được nộp. Em có thể chọn buổi học ở trên hoặc mở khóa học để nộp bài cho cô nhé!</div>';
       } else {
         hwBox.innerHTML = list.map(hw => {
           const isGraded = hw.status === 'graded';
+          const isRevision = hw.status === 'needs_revision' || String(hw.teacher_feedback || '').includes('[CẦN SỬA]');
           const courseLabel = PORTAL_COURSE_CATALOG[hw.course_id]?.shortTitle
             || (hw.class_code ? ('Lớp ' + hw.class_code) : 'Khóa học');
-          const badge = isGraded
-            ? `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">✓ Đã chấm: ${hw.score ?? '--'}/10</span>`
-            : `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">⏳ Đã nộp · Chờ cô chấm</span>`;
+          let badge = `<span style="background:#F0FDF4;border:1px solid #86EFAC;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">Đã nộp · Chờ cô chấm</span>`;
+          if (isRevision) {
+            badge = `<span style="background:#FEF3C7;color:#B45309;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">↺ Cần sửa</span>`;
+          } else if (isGraded) {
+            badge = `<span style="background:#DCFCE7;color:#15803D;padding:3px 10px;border-radius:999px;font-weight:800;font-size:12px;">✓ Đã hoàn thành · ${hw.score ?? '--'}/10</span>`;
+          }
           return `<div style="padding:12px;border:1px solid #E2E8F0;border-radius:10px;background:#F8FAFC;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
               <div>
@@ -4705,7 +5642,7 @@
               </div>
               ${badge}
             </div>
-            ${hw.teacher_feedback ? `<div style="margin-top:6px;color:#0F172A;background:#FFF;padding:8px 10px;border-radius:8px;border-left:3px solid #B91C1C;"><strong>Lời phê của cô:</strong> ${hw.teacher_feedback}</div>` : ''}
+            ${hw.teacher_feedback ? `<div style="margin-top:6px;color:#0F172A;background:#FFF;padding:8px 10px;border-radius:8px;border-left:3px solid ${isRevision ? '#D97706' : '#16A34A'};"><strong>Lời cô nhận xét:</strong> ${String(hw.teacher_feedback).replace(/^\[CẦN SỬA\]\s*/i, '')}</div>` : ''}
           </div>`;
         }).join('');
       }
@@ -4739,7 +5676,7 @@
           {
             sender_email: 'linh.lam@khongtunhi.com',
             sender_name: currentStudentProfile?.teacher_name || 'Cô Lâm Mỹ Linh',
-            content: `Chào phụ huynh và bé ${user.name || ''}! Cô đã cập nhật lịch học lớp ${classCode} và bài tập tuần này trong Sổ Liên Lạc nhé.`
+            content: `Chào phụ huynh và em ${user.name || ''}! Cô đã cập nhật bài tập từng buổi của lớp ${classCode} ở ngay phía trên nhé.`
           }
         ];
       }
@@ -4798,6 +5735,176 @@
       alert(res.ok ? '🔔 Đã bật chuông thông báo tự động trên điện thoại thành công!' : (res.reason || 'Chưa bật được thông báo.'));
     }
 
+    // ============================================================
+    // HASH ROUTER (#/ , #/khoa/hsk1 , #/khoa/hsk1/bai/3 , #/lop/yct2-04/buoi/1)
+    // ============================================================
+    function showSiblingPermissionGuard(messageHtml) {
+      const guardEl = document.getElementById('sibling-permission-guard');
+      const descEl = document.getElementById('sibling-guard-desc');
+      if (guardEl) guardEl.style.display = 'block';
+      if (descEl && messageHtml) descEl.innerHTML = messageHtml;
+    }
+
+    function hideSiblingPermissionGuard() {
+      const guardEl = document.getElementById('sibling-permission-guard');
+      if (guardEl) guardEl.style.display = 'none';
+    }
+
+    function navigateStudentHash(targetHash) {
+      const normalized = targetHash && targetHash.startsWith('#') ? targetHash : ('#' + (targetHash || '/'));
+      if (window.location.hash === normalized) {
+        handleStudentHashRoute();
+      } else {
+        window.location.hash = normalized;
+      }
+    }
+
+    async function handleStudentHashRoute() {
+      const rawHash = String(window.location.hash || '#/').trim();
+      const cleanPath = rawHash.replace(/^#\/?/, '').trim();
+      const parts = cleanPath ? cleanPath.split('/').filter(Boolean) : [];
+
+      const user = getRealCurrentUser();
+      const access = checkUserCourseAccess(user);
+      const enrolledIds = (access && Array.isArray(access.enrolledCourseIds)) ? access.enrolledCourseIds : [];
+      const myClassCode = String(currentStudentProfile?.classCode || user?.classCode || '').trim().toUpperCase();
+      const curName = user?.name || user?.email || 'tài khoản hiện tại';
+
+      hideSiblingPermissionGuard();
+
+      // 1. Route: #/ (Trang của em)
+      if (parts.length === 0) {
+        switchStudentPane('classroom');
+        updateTopNavActiveTab('home');
+        showCoursesDashboard();
+        return;
+      }
+
+      // 2. Route: #/khoa hoặc #/khoa/<slug> hoặc #/khoa/<slug>/bai/<num>
+      if (parts[0] === 'khoa') {
+        if (parts.length === 1) {
+          switchStudentPane('classroom');
+          updateTopNavActiveTab('courses');
+          showCoursesDashboard();
+          const prioritySec = document.getElementById('today-priority-section');
+          if (prioritySec) prioritySec.style.display = 'none';
+          return;
+        }
+
+        const slug = parts[1];
+        const targetCourseId = resolveCourseIdFromSlug(slug);
+        const courseMeta = PORTAL_COURSE_CATALOG[targetCourseId] || { shortTitle: slug.toUpperCase() };
+        const isStaff = user && Array.isArray(user.roles) && (user.roles.includes('admin') || user.roles.includes('root') || user.roles.includes('teacher'));
+        const hasCoursePermission = isStaff || enrolledIds.includes(targetCourseId) || (access.hasAccess && targetCourseId === HSK1_COURSE_ID);
+
+        if (!hasCoursePermission) {
+          switchStudentPane('classroom');
+          updateTopNavActiveTab('home');
+          showCoursesDashboard();
+          showSiblingPermissionGuard(
+            `Khóa học <strong>${courseMeta.shortTitle}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${curName}</strong>). Nếu anh/chị/em dùng chung máy, em hãy bấm <strong>Đổi tài khoản</strong> để mở đúng tài khoản được cấp bài này nhé.`
+          );
+          return;
+        }
+
+        let targetLessonNum = 1;
+        if (parts[2] === 'bai' && parts[3]) {
+          targetLessonNum = Math.max(1, Number(parts[3]) || 1);
+        } else {
+          targetLessonNum = getLastStudiedLesson(targetCourseId);
+        }
+
+        switchStudentPane('classroom');
+        updateTopNavActiveTab('courses');
+        window.__suppressLessonHashUpdate = true;
+        await enterCourseLearning(Math.max(0, targetLessonNum - 1), targetCourseId);
+        window.__suppressLessonHashUpdate = false;
+        return;
+      }
+
+      // 3. Route: #/lop hoặc #/lop/<class-code> hoặc #/lop/<class-code>/buoi/<num>
+      if (parts[0] === 'lop') {
+        const reqClass = parts[1] ? String(parts[1]).trim().toUpperCase() : myClassCode;
+        const isStaff = user && Array.isArray(user.roles) && (user.roles.includes('admin') || user.roles.includes('root') || user.roles.includes('teacher'));
+
+        if (reqClass && myClassCode && reqClass !== myClassCode && !isStaff) {
+          switchStudentPane('classroom');
+          updateTopNavActiveTab('home');
+          showCoursesDashboard();
+          showSiblingPermissionGuard(
+            `Bài tập của <strong>Lớp ${reqClass}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${curName}</strong> · đang thuộc lớp ${myClassCode}). Em hãy bấm <strong>Đổi tài khoản</strong> nếu đây là link của anh/chị/em nhé.`
+          );
+          return;
+        }
+
+        if (reqClass && !myClassCode && !isStaff) {
+          switchStudentPane('classroom');
+          updateTopNavActiveTab('home');
+          showCoursesDashboard();
+          showSiblingPermissionGuard(
+            `Bài tập của <strong>Lớp ${reqClass}</strong> chưa được cấp cho tài khoản đang đăng nhập (<strong>${curName}</strong>). Em hãy bấm <strong>Đổi tài khoản</strong> để đăng nhập đúng tài khoản học lớp ${reqClass} nhé.`
+          );
+          return;
+        }
+
+        if (parts[2] === 'buoi' && parts[3]) {
+          activeClassSessionNum = Math.max(1, Number(parts[3]) || 1);
+        }
+        switchStudentPane('contactbook');
+        updateTopNavActiveTab('class');
+        await renderStudentClassSessions(reqClass || myClassCode, activeClassSessionNum);
+        return;
+      }
+
+      // Mặc định quay về Trang của em
+      switchStudentPane('classroom');
+      updateTopNavActiveTab('home');
+      showCoursesDashboard();
+    }
+
+    async function resolvePostLoginDefaultRoute() {
+      // 1. Ưu tiên mở đúng link bài hoặc buổi học mà học sinh vừa bấm trước khi đăng nhập
+      let pendingHash = null;
+      if (window.KtnWebApp && typeof window.KtnWebApp.consumePendingTargetHash === 'function') {
+        pendingHash = window.KtnWebApp.consumePendingTargetHash();
+      } else {
+        try {
+          pendingHash = localStorage.getItem('ktn_pending_target_hash');
+          if (pendingHash) localStorage.removeItem('ktn_pending_target_hash');
+        } catch (e) {}
+      }
+
+      if (pendingHash && pendingHash !== '#/' && pendingHash !== '#') {
+        navigateStudentHash(pendingHash);
+        return;
+      }
+
+      if (window.location.hash && window.location.hash !== '#/' && window.location.hash !== '#') {
+        await handleStudentHashRoute();
+        return;
+      }
+
+      // 2. Nếu tự mở cổng không kèm link bài cụ thể -> chọn trang mặc định theo khóa & lớp của tài khoản
+      const user = getRealCurrentUser();
+      const access = checkUserCourseAccess(user);
+      const enrolledIds = (access && Array.isArray(access.enrolledCourseIds)) ? access.enrolledCourseIds : [];
+      const liveClassCode = currentStudentProfile?.classCode || user?.classCode || null;
+
+      if (enrolledIds.length === 1 && !liveClassCode) {
+        // Chỉ có 1 khóa video -> mở thẳng khóa học tại bài đang học dở (hoặc Bài 1)
+        const cid = enrolledIds[0];
+        const slug = getCourseSlug(cid);
+        const nextNum = getLastStudiedLesson(cid);
+        navigateStudentHash(`#/khoa/${slug}/bai/${nextNum}`);
+      } else if (enrolledIds.length === 0 && liveClassCode) {
+        // Chỉ có lớp với cô -> mở thẳng Lớp của em
+        navigateStudentHash(`#/lop/${liveClassCode.toLowerCase()}/buoi/1`);
+      } else {
+        // Có cả lớp và khóa, hoặc nhiều khóa, hoặc chưa được cấp quyền -> mở Trang của em (#/)
+        navigateStudentHash('#/');
+      }
+    }
+
     // INITIALIZATION
     async function init() {
       if (window.KtnWebApp) {
@@ -4814,6 +5921,15 @@
       // Đồng bộ bất đồng bộ với izTeach Backend API
       await syncPortalState();
 
+      if (!hasInitializedDefaultTab) {
+        hasInitializedDefaultTab = true;
+        await resolvePostLoginDefaultRoute();
+      }
+
+      window.addEventListener('hashchange', () => {
+        handleStudentHashRoute();
+      });
+
       const videoEl = document.getElementById('hsk1-video-player');
       const sbtAudio = document.getElementById('sbt-native-audio');
       if (videoEl && sbtAudio) {
@@ -4826,10 +5942,13 @@
       }
 
       window.addEventListener('storage', async (e) => {
-        if (!e || e.key === 'ktn_sll_persistent_auth_v2' || e.key === 'ol-credentials-auth-user' || e.key === 'ktn_connect_clean_v10_noclasses') {
+        if (!e || e.key === 'ktn_sll_persistent_auth_v2' || e.key === 'ol-credentials-auth-user' || e.key === 'ktn_connect_clean_v10_noclasses' || e.key === 'ktn_local_submitted_homeworks' || (e.key && e.key.startsWith('ktn_class_sessions_'))) {
           renderUserProfile();
           await syncLiveStudentProfile();
           await syncPortalState();
+          if (document.getElementById('pane-contactbook')?.style.display === 'block') {
+            await loadStudentContactBook();
+          }
         }
       });
 
@@ -4873,12 +5992,17 @@
     window.selectJudgeAnswer = selectJudgeAnswer;
     window.selectChooseAnswer = selectChooseAnswer;
     window.toggleRecordVoice = toggleRecordVoice;
+    window.playRecordedVoiceDraft = playRecordedVoiceDraft;
+    window.startHomeworkRevision = startHomeworkRevision;
+    window.goToNextLesson = goToNextLesson;
     window.handleFileChosen = handleFileChosen;
     window.submitCurrentWorkbook = submitCurrentWorkbook;
     window.getLessonHomework = getLessonHomework;
     window.updateDashboardProgress = updateDashboardProgress;
     window.loginRealUser = loginRealUser;
     window.logoutRealUser = logoutRealUser;
+    window.switchStudentAccountPreservingHash = switchStudentAccountPreservingHash;
+    window.retryLoadStudentCourses = retryLoadStudentCourses;
     window.checkUserCourseAccess = checkUserCourseAccess;
     window.openEnrollModal = openEnrollModal;
     window.closeEnrollModal = closeEnrollModal;
@@ -4892,6 +6016,13 @@
     window.renderStudentCaseBanner = renderStudentCaseBanner;
     window.syncLiveStudentProfile = syncLiveStudentProfile;
     window.loadStudentContactBook = loadStudentContactBook;
+    window.renderStudentClassSessions = renderStudentClassSessions;
+    window.toggleClassExRecord = toggleClassExRecord;
+    window.playClassExDraft = playClassExDraft;
+    window.handleClassExFile = handleClassExFile;
+    window.submitClassSessionExercise = submitClassSessionExercise;
+    window.navigateStudentHash = navigateStudentHash;
+    window.handleStudentHashRoute = handleStudentHashRoute;
     window.loadStudentMessages = loadStudentMessages;
     window.sendStudentChatMessage = sendStudentChatMessage;
     window.enableStudentPwaPush = enableStudentPwaPush;

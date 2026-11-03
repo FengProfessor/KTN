@@ -1462,24 +1462,104 @@ export default {
       const hwId = String(body.id || '').trim();
       if (!hwId) return jsonResponse({ ok: false, message: 'Thiếu mã bài tập id.' }, 400);
 
+      const nextStatus = body.status === 'needs_revision' ? 'needs_revision' : 'graded';
+      const patchPayload = {
+        status: nextStatus,
+        score: body.score !== undefined && body.score !== null && body.score !== '' ? Number(body.score) : null,
+        teacher_feedback: String(body.teacherFeedback || ''),
+        teacher_audio_url: String(body.teacherAudioUrl || ''),
+        graded_by: session.email,
+        graded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
       // Cập nhật điểm & lời phê trực tiếp trên 1 bản ghi duy nhất (Không bao giờ nhân bản trùng lặp!)
       const sbRes = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}`, {
         method: 'PATCH',
-        body: {
-          status: 'graded',
-          score: Number(body.score),
-          teacher_feedback: String(body.teacherFeedback || ''),
-          teacher_audio_url: String(body.teacherAudioUrl || ''),
-          graded_by: session.email,
-          graded_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
+        body: patchPayload
       });
 
       return jsonResponse({
         ok: true,
-        homework: (Array.isArray(sbRes.data) && sbRes.data[0]) || null
+        homework: (Array.isArray(sbRes.data) && sbRes.data[0]) || { id: hwId, ...patchPayload }
       });
+    }
+
+    // ------------------------------------------------------------------------
+    // E2. BUỔI HỌC & BÀI TẬP THEO LỚP CÔ GIÁO (/api/ktn/class-sessions)
+    // ------------------------------------------------------------------------
+    if (path === '/api/ktn/class-sessions') {
+      const defaultSessionsByClass = {
+        'YCT2-04': [
+          {
+            classCode: 'YCT2-04',
+            sessionNum: 1,
+            title: 'Buổi 1: Chào hỏi & Tự giới thiệu bản thân (你好，我叫…)',
+            exercises: [
+              { id: 'YCT2-04-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc to 5 mẫu câu tự giới thiệu tên và tuổi', type: 'audio' },
+              { id: 'YCT2-04-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở viết chữ Hán bài 1 (你, 好, 我, 叫)', type: 'photo' }
+            ]
+          },
+          {
+            classCode: 'YCT2-04',
+            sessionNum: 2,
+            title: 'Buổi 2: Gia đình của em & Các thành viên (我的家人)',
+            exercises: [
+              { id: 'YCT2-04-B2-E1', num: 1, title: 'Bài 1: Thu âm giới thiệu các thành viên trong gia đình bằng tiếng Trung', type: 'audio' },
+              { id: 'YCT2-04-B2-E2', num: 2, title: 'Bài 2: Chụp ảnh bài tập nối từ và viết chữ Hán trang 15', type: 'photo' }
+            ]
+          },
+          {
+            classCode: 'YCT2-04',
+            sessionNum: 3,
+            title: 'Buổi 3: Thời gian & Lịch sinh hoạt hàng ngày (现在几点？)',
+            exercises: [
+              { id: 'YCT2-04-B3-E1', num: 1, title: 'Bài 1: Thu âm hỏi đáp giờ giấc và lịch đi học của em', type: 'audio' }
+            ]
+          }
+        ],
+        'YCT1-01': [
+          {
+            classCode: 'YCT1-01',
+            sessionNum: 1,
+            title: 'Buổi 1: Làm quen thanh điệu Pinyin & Lời chào đầu tiên',
+            exercises: [
+              { id: 'YCT1-01-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 4 thanh điệu và lời chào Nǐ hǎo, Lǎoshī hǎo', type: 'audio' },
+              { id: 'YCT1-01-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở tô nét cơ bản chữ Nhất (一), Nhị (二), Tam (三)', type: 'photo' }
+            ]
+          },
+          {
+            classCode: 'YCT1-01',
+            sessionNum: 2,
+            title: 'Buổi 2: Đếm số từ 1 đến 10 & Hỏi tuổi (你几岁？)',
+            exercises: [
+              { id: 'YCT1-01-B2-E1', num: 1, title: 'Bài 1: Thu âm đếm số 1-10 và nói tuổi của em', type: 'audio' }
+            ]
+          }
+        ]
+      };
+
+      if (request.method === 'GET') {
+        const classCode = String(url.searchParams.get('classCode') || 'YCT2-04').trim().toUpperCase();
+        const sessions = defaultSessionsByClass[classCode] || defaultSessionsByClass['YCT2-04'];
+        return jsonResponse({ ok: true, classCode, sessions });
+      }
+
+      if (request.method === 'POST') {
+        const session = await extractSessionFromRequest(request, env);
+        if (!session || (session.role !== 'teacher' && session.role !== 'admin')) {
+          return jsonResponse({ ok: false, message: 'Chỉ Giáo viên hoặc Quản lý mới được cập nhật buổi học.' }, 403);
+        }
+        const body = await request.json().catch(() => ({}));
+        const classCode = String(body.classCode || 'YCT2-04').trim().toUpperCase();
+        const sessionNum = Math.max(1, Number(body.sessionNum) || 1);
+        const title = String(body.title || `Buổi ${sessionNum}`).trim();
+        const exercises = Array.isArray(body.exercises) ? body.exercises : [];
+        return jsonResponse({
+          ok: true,
+          sessionItem: { classCode, sessionNum, title, exercises, updatedBy: session.email, updatedAt: new Date().toISOString() }
+        });
+      }
     }
 
     // ------------------------------------------------------------------------

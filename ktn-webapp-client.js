@@ -165,6 +165,11 @@
       stripForbiddenUrlParams();
       const session = await this.getSavedSession();
       if (!session || !session.email) {
+        try {
+          if (window.location.hash && window.location.hash.length > 2) {
+            localStorage.setItem('ktn_pending_target_hash', window.location.hash);
+          }
+        } catch {}
         window.location.replace('/?login=1');
         return null;
       }
@@ -176,11 +181,34 @@
       return session;
     },
 
-    async logout() {
+    consumePendingTargetHash() {
+      try {
+        const h = localStorage.getItem('ktn_pending_target_hash') || '';
+        if (h) localStorage.removeItem('ktn_pending_target_hash');
+        return h;
+      } catch {
+        return '';
+      }
+    },
+
+    async switchAccountPreservingTarget(targetHash) {
+      try {
+        const hashToKeep = targetHash || window.location.hash || '';
+        if (hashToKeep && hashToKeep.length > 1) {
+          localStorage.setItem('ktn_pending_target_hash', hashToKeep);
+        }
+      } catch {}
+      await this.logout({ preservePendingHash: true });
+    },
+
+    async logout(opts = {}) {
       window.__ktnAllowLogout = true;
       try {
         localStorage.removeItem(SESSION_KEY);
         localStorage.removeItem('ol-credentials-auth-user');
+        if (!opts || !opts.preservePendingHash) {
+          localStorage.removeItem('ktn_pending_target_hash');
+        }
         sessionStorage.removeItem('ktn_sll_view');
       } catch {}
       try {

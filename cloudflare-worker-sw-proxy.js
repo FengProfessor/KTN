@@ -1513,6 +1513,10 @@ export default {
     if (path === '/api/ktn/homeworks' && request.method === 'POST') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để nộp bài.' }, 401);
+      if (session.role !== 'student') {
+        return jsonResponse({ ok: false, message: 'Chỉ tài khoản Học sinh mới được phép nộp bài tập.' }, 403);
+      }
+
       const body = await request.json().catch(() => ({}));
       const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
       const firstAtt = rawAttachments.find(a => a && (a.fileUrl || a.cdnUrl || a.playUrl)) || null;
@@ -1524,9 +1528,68 @@ export default {
         return jsonResponse({ ok: false, message: 'Vui lòng thu âm hoặc chọn tệp bài làm thật (đã tải lên máy chủ) trước khi nộp bài!' }, 400);
       }
 
-      const lessonNum = Number(body.lessonNum) || 1;
-      const courseId = String(body.courseId || DEFAULT_COURSE_ID);
-      const hwId = body.id || `HW-${session.email}-${courseId}-L${lessonNum}`;
+      // 1. Tra cứu hồ sơ thật của học sinh đang đăng nhập trên Supabase ktn_students
+      const stuLookup = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
+      const sbStudent = (stuLookup.ok && Array.isArray(stuLookup.data) && stuLookup.data[0]) ? stuLookup.data[0] : null;
+      const realClassCode = String(sbStudent?.class_code || session.classCode || '').trim().toUpperCase() || null;
+      const realOnlineCourses = Array.isArray(sbStudent?.online_courses)
+        ? sbStudent.online_courses
+        : (Array.isArray(session.onlineCourses) ? session.onlineCourses : []);
+      const enrolledCourseIds = new Set(
+        realOnlineCourses.map(c => String(c?.id || c || '').trim()).filter(Boolean)
+      );
+
+      // 2. Kiểm tra lớp học (classCode) và khóa học (courseId) học sinh được phép nộp
+      const reqClass = body.classCode ? String(body.classCode).trim().toUpperCase() : null;
+      if (reqClass && reqClass !== realClassCode) {
+        return jsonResponse({
+          ok: false,
+          message: `Em không thuộc lớp ${reqClass} nên không được phép nộp bài vào lớp này.`
+        }, 403);
+      }
+
+      const lessonNum = Math.max(1, Number(body.lessonNum) || 1);
+      const courseId = String(body.courseId || (realClassCode ? `CLASS_${realClassCode}` : DEFAULT_COURSE_ID)).trim();
+      if (courseId.toUpperCase().startsWith('CLASS_')) {
+        const targetClass = courseId.slice(6).trim().toUpperCase();
+        if (!realClassCode || targetClass !== realClassCode) {
+          return jsonResponse({
+            ok: false,
+            message: `Em không thuộc lớp ${targetClass} nên không được phép nộp bài của lớp này.`
+          }, 403);
+        }
+      } else if (lessonNum > 1 && !enrolledCourseIds.has(courseId)) {
+        return jsonResponse({
+          ok: false,
+          message: 'Em chưa đăng ký khóa học này nên chưa thể nộp bài tập.'
+        }, 403);
+      }
+
+      // 3. Máy chủ tự xác định ID bài nộp từ tài khoản đã xác thực; từ chối nếu client truyền ID của học sinh khác
+      const hwId = `HW-${session.email}-${courseId}-L${lessonNum}`;
+      const clientRequestedId = String(body.id || '').trim();
+      if (clientRequestedId && clientRequestedId !== hwId) {
+        return jsonResponse({
+          ok: false,
+          message: 'Mã bài nộp (id) không thuộc quyền sở hữu của học sinh đang đăng nhập.'
+        }, 403);
+      }
+
+      // 4. Nếu bản ghi đã tồn tại, đối chiếu chủ sở hữu trước khi cập nhật
+      const existingRes = await supabaseRequest(
+        env,
+        `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}&select=id,student_email&limit=1`
+      );
+      if (existingRes.ok && Array.isArray(existingRes.data) && existingRes.data[0]) {
+        const existingOwner = normalizeEmail(existingRes.data[0].student_email || '');
+        if (existingOwner && existingOwner !== session.email) {
+          return jsonResponse({
+            ok: false,
+            message: 'Không được phép ghi đè bài nộp của học sinh khác.'
+          }, 403);
+        }
+      }
+
       const normalizedAttachments = rawAttachments.length > 0
         ? rawAttachments.map(a => ({
             title: a.title || a.fileName || 'Bài nộp',
@@ -1539,10 +1602,10 @@ export default {
 
       const hwRecord = {
         id: hwId,
-        student_code: body.studentCode || session.id,
+        student_code: sbStudent?.code || session.code || session.id,
         student_email: session.email,
-        student_name: body.studentName || session.name,
-        class_code: body.classCode || null,
+        student_name: sbStudent?.name || session.name,
+        class_code: realClassCode,
         course_id: courseId,
         lesson_num: lessonNum,
         lesson_title: String(body.lessonTitle || `Bài ${lessonNum}`),

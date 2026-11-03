@@ -4700,7 +4700,7 @@
       }
     }
 
-    function syncStudentSubmissionToSllApp(user, courseId, lesson, unitId, hwData, fullNotes) {
+    async function syncStudentSubmissionToSllApp(user, courseId, lesson, unitId, hwData, fullNotes) {
       const nowMs = Date.now();
       const curEmail = String(user?.email || '').trim().toLowerCase();
       const curName = user?.name || 'Học viên Khổng Tử Nhí';
@@ -4711,11 +4711,36 @@
       const targetLessonNum = Number(lesson.num) || 1;
       const totalLessons = LESSONS.length || 15;
 
-      // Lưu vào localStorage 'ktn_local_submitted_homeworks' sau khi đã gửi thành công lên máy chủ izTeach
+      if (!primaryFileUrl || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') {
+        throw new Error('Vui lòng thu âm hoặc chọn tệp bài làm trước khi nộp bài.');
+      }
+
+      // Gửi qua quy trình nộp bài thống nhất lên Worker API /api/ktn/homeworks và bắt buộc chờ máy chủ xác nhận 200 OK
+      const apiRes = await window.KtnWebApp.apiRequest('/api/ktn/homeworks', {
+        method: 'POST',
+        body: {
+          courseId,
+          classCode: user?.classCode || currentStudentProfile?.classCode || null,
+          lessonNum: targetLessonNum,
+          lessonTitle: `${courseMeta.shortTitle} · Bài ${targetLessonNum}: ${lesson.titleZh || ''}`,
+          fileUrl: primaryFileUrl,
+          fileType: primaryFileType,
+          studentNote: fullNotes,
+          attachments
+        }
+      });
+
+      if (!apiRes || !apiRes.ok || !apiRes.data?.ok) {
+        throw new Error((apiRes && apiRes.data && apiRes.data.message) || 'Máy chủ chưa xác nhận lưu bài nộp. Em vui lòng bấm Gửi lại nhé.');
+      }
+
+      const serverHw = apiRes.data.homework || {};
+
+      // Chỉ lưu vào localStorage 'ktn_local_submitted_homeworks' SAU KHI máy chủ đã xác nhận lưu thành công vào Supabase
       try {
         const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
         const newLocalRec = {
-          id: hwData?._id || ('HW-' + courseId + '-' + targetLessonNum),
+          id: serverHw.id || hwData?._id || (`HW-${curEmail}-${courseId}-L${targetLessonNum}`),
           student_email: curEmail,
           student_name: curName,
           class_code: user?.classCode || currentStudentProfile?.classCode || '',
@@ -4726,10 +4751,10 @@
           file_type: primaryFileType,
           student_note: fullNotes,
           attachments: attachments,
-          status: 'pending',
-          score: null,
-          teacher_feedback: null,
-          submitted_at: new Date().toISOString()
+          status: serverHw.status || 'pending',
+          score: serverHw.score ?? null,
+          teacher_feedback: serverHw.teacher_feedback ?? null,
+          submitted_at: serverHw.submitted_at || new Date().toISOString()
         };
         const filtered = Array.isArray(localArr)
           ? localArr.filter(item => !(String(item.student_email || '').toLowerCase() === curEmail && item.course_id === courseId && Number(item.lesson_num) === targetLessonNum))
@@ -4737,23 +4762,6 @@
         filtered.unshift(newLocalRec);
         localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(filtered));
       } catch (e) {}
-
-      // Đồng bộ qua Worker API /api/ktn/homeworks (nếu có fileUrl thật từ S3)
-      if (primaryFileUrl && window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
-        window.KtnWebApp.apiRequest('/api/ktn/homeworks', {
-          method: 'POST',
-          body: {
-            courseId,
-            classCode: user?.classCode || currentStudentProfile?.classCode || null,
-            lessonNum: targetLessonNum,
-            lessonTitle: `${courseMeta.shortTitle} · Bài ${targetLessonNum}: ${lesson.titleZh || ''}`,
-            fileUrl: primaryFileUrl,
-            fileType: primaryFileType,
-            studentNote: fullNotes,
-            attachments
-          }
-        }).catch(() => {});
-      }
 
       if (!window.app || !window.app.state) return;
       try {
@@ -4847,7 +4855,7 @@
         return;
       }
 
-      if (currentLessonIdx > 0 && !access.hasAccess) {
+      if (!access.hasAccess) {
         openEnrollModal();
         return;
       }
@@ -4920,29 +4928,19 @@
           }
         );
 
-        // Đồng bộ tức thì sang Sổ Liên Lạc Giáo viên / Quản lý & Cloud State
-        syncStudentSubmissionToSllApp(user, activeCourseId, lesson, unitId, hwData, fullNotes);
+        // Chờ máy chủ Worker xác nhận lưu bản ghi vào Supabase trước khi báo thành công
+        await syncStudentSubmissionToSllApp(user, activeCourseId, lesson, unitId, hwData, fullNotes);
 
         if (window.KTN_NOTIF && typeof window.KTN_NOTIF.triggerNotificationEvent === 'function') {
-          window.KTN_NOTIF.triggerNotificationEvent('HOMEWORK_SUBMITTED_CONFIRM', {
-            recipient_role: 'student',
-            recipient_id: user.email || user.id || 'ALL',
-            category: 'academic',
-            priority: 'MEDIUM',
-            title: `🎉 Đã nộp · Chờ cô chấm: ${activeMeta.shortTitle} · Bài ${lesson.num}`,
-            body: `Hệ thống đã nhận bài nộp của con cho bài "${lesson.titleZh}". Cô giáo sẽ sớm chấm điểm & gửi nhận xét!`,
-            action_url: `/sll-hocsinh.html#/khoa/${getCourseSlug(activeCourseId)}/bai/${lesson.num}`,
-            metadata: { courseId: activeCourseId, lessonNum: lesson.num, lessonIdx: currentLessonIdx, unitId, homeworkId: hwData?._id }
-          });
           window.KTN_NOTIF.triggerNotificationEvent('HOMEWORK_SUBMITTED_TEACHER_ALERT', {
             recipient_role: 'teacher',
             recipient_id: 'ALL',
             category: 'academic',
             priority: 'HIGH',
-            title: `📥 Bài nộp mới: ${user.name || 'Học sinh'} (${activeMeta.shortTitle} · Bài ${lesson.num})`,
-            body: `Học sinh ${user.name || user.email} vừa nộp bài "${lesson.titleZh}". Nhấn để chấm ngay!`,
-            action_url: `/sll-teacher.html`,
-            metadata: { courseId: activeCourseId, lessonNum: lesson.num, unitId, studentEmail: user.email, homeworkId: 'HW-' + (hwData?._id || Date.now()), isCourseHomework: true }
+            title: 'Học sinh vừa nộp bài.',
+            body: `${user.name || user.email} · ${activeMeta.shortTitle} Bài ${lesson.num}`,
+            action_url: '/sll-teacher.html',
+            metadata: { courseId: activeCourseId, lessonNum: lesson.num, unitId, studentEmail: user.email, isCourseHomework: true }
           });
         }
 
@@ -4959,7 +4957,7 @@
         renderInteractiveWorkbook(lesson);
         renderSidebarLessons();
 
-        showToast('✓ Đã nộp · Chờ cô chấm! Bài tập Bài ' + lesson.num + ' (' + activeMeta.shortTitle + ') đã được gửi cho cô giáo.');
+        showToast('Đã nộp bài thành công.');
       } catch (err) {
         console.error('[submitCurrentWorkbook] Lỗi nộp bài (giữ nguyên bài làm để gửi lại):', err);
         btn.disabled = false;

@@ -604,7 +604,7 @@
     phone: '',
     phoneError: '',
     childAge: 'Tiểu học (7–11t)',
-    submitForm() {
+    async submitForm() {
         const nameTrim = (this.parentName || '').trim();
         if (!nameTrim) {
             this.phoneError = 'Vui lòng nhập họ tên phụ huynh!';
@@ -622,78 +622,29 @@
         }
         this.phoneError = '';
         this.parentName = nameTrim;
-        this.formSubmitted = true;
-        this.formSuccessMsg = 'Cảm ơn phụ huynh ' + nameTrim + '! Khổng Tử Nhí sẽ liên hệ số ' + this.phone + ' trong 1 phút.';
 
-        // Gửi trực tiếp về Web Admin (https://khongtunhi.admin.izteach.vn/temp-user)
         const courseLabel = this.childAge || 'Tiểu học (7–11t)';
-        const leadPayload = {
-            name: nameTrim,
-            phone: phoneTrim,
-            email: 'Tiếng Trung (' + courseLabel + ')',
-            address: 'Đăng ký Học thử 0đ — Trang chủ Tiếng Trung',
-            vendorId: '3529cd2b-7af6-4fda-887c-392a79393d6a',
-            metadata: {
-                interestedCourse: {
-                    id: 'tieng-trung',
-                    title: '[Tiếng Trung] ' + courseLabel,
-                    type: 'online'
-                }
-            }
-        };
-        fetch('https://c9xi8h3a3d.execute-api.ap-southeast-1.amazonaws.com/prod/contact', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(leadPayload)
-        }).catch(() => {});
-
-        // Dong bo don hang vao So Lien Lac Admin de Phe duyet 1 cham tuc thi
-        const courseMap = {
-            'Mầm non (5–6t)': { id: '65e7704a9ea90c00080d5195', title: 'Chinese For Kids (Khóa học cho bé 5–6 tuổi)' },
-            'Tiểu học (7–11t)': { id: '6adadba969897b0002482ca5', title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)' },
-            'Thiếu niên (12–17t)': { id: '678d14b960eae20002ddf8fe', title: 'Tiếng Trung Trẻ Em 4 (Lộ trình 7–13 tuổi)' },
-            'Gói Đạo Nhân Tâm VIP (25 buổi)': { id: '6adadba969897b0002482ca5', title: 'Gói Đạo Nhân Tâm VIP (25 buổi - 100% Bản Ngữ)' }
-        };
-        const cInfo = courseMap[courseLabel] || { id: '6adadba969897b0002482ca5', title: courseLabel };
-        const cleanPhone = phoneTrim.replace(/\\D/g, '');
-        const newOrder = {
-            orderId: 'ORD-' + Date.now().toString().slice(-6),
-            studentName: nameTrim,
-            studentEmail: cleanPhone ? ('hv_' + cleanPhone + '@gmail.com') : ('hv_' + Date.now().toString().slice(-4) + '@gmail.com'),
-            phone: phoneTrim,
-            courseId: cInfo.id,
-            courseName: cInfo.title,
-            amount: 890000,
-            paymentMethod: 'VietQR',
-            paymentStatus: 'pending_verification',
-            approvalStatus: 'pending',
-            note: 'Đăng ký học thử 0đ: ' + courseLabel,
-            createdAt: new Date().toISOString(),
-            createdAtDisplay: new Date().toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'}) + ' · ' + new Date().toLocaleDateString('vi-VN')
-        };
         try {
-            var busRaw = localStorage.getItem('ktn_sll_orders_bus');
-            var bus = busRaw ? JSON.parse(busRaw) : [];
-            if (!Array.isArray(bus)) bus = [];
-            bus.unshift(newOrder);
-            localStorage.setItem('ktn_sll_orders_bus', JSON.stringify(bus));
-
-            var v1Raw = localStorage.getItem('ktn_sll_v1_state');
-            var v1 = v1Raw ? JSON.parse(v1Raw) : {};
-            if (!Array.isArray(v1.orders)) v1.orders = [];
-            v1.orders.unshift(newOrder);
-            localStorage.setItem('ktn_sll_v1_state', JSON.stringify(v1));
-            var mainKey = 'ktn_connect_clean_v10_noclasses'; var mainRaw = localStorage.getItem(mainKey); if (mainRaw) { var mainState = JSON.parse(mainRaw); if (!Array.isArray(mainState.orders)) mainState.orders = []; mainState.orders.unshift(newOrder); mainState._updatedAt = Date.now(); localStorage.setItem(mainKey, JSON.stringify(mainState)); }
-            if (typeof window.__ktnPushOrderToCloudState === 'function') { window.__ktnPushOrderToCloudState(newOrder); }
-
-            if (typeof BroadcastChannel !== 'undefined') {
-                var bc = new BroadcastChannel('ktn_sll_orders_bus');
-                bc.postMessage({ type: 'NEW_ORDER', order: newOrder });
-                bc.close();
+            const res = await fetch('/api/ktn/leads', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: nameTrim,
+                    phone: phoneTrim,
+                    childAge: courseLabel
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) {
+                throw new Error(data.error || 'Chưa gửi được đăng ký.');
             }
-        } catch (e) {}
+        } catch (err) {
+            this.phoneError = 'Chưa gửi được đăng ký lên máy chủ. Phụ huynh vui lòng thử lại nhé.';
+            return;
+        }
+
+        this.formSubmitted = true;
+        this.formSuccessMsg = 'Cảm ơn phụ huynh ' + nameTrim + '! Khổng Tử Nhí sẽ liên hệ số ' + this.phone + ' trong ít phút.';
 
         if (window.KTN_GOOGLE_SHEET_WEBHOOK) {
             fetch(window.KTN_GOOGLE_SHEET_WEBHOOK, {
@@ -2734,7 +2685,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
     }
   };
 
-  window.ktnSubmitRegistration = function(e) {
+  window.ktnSubmitRegistration = async function(e) {
     if (isSubmitting) return;
     isSubmitting = true;
 
@@ -2769,7 +2720,21 @@ if (!window.ktnSwitchFromVideoToRegister) {
       createdAtDisplay: new Date().toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'}) + ' · ' + new Date().toLocaleDateString('vi-VN')
     };
 
-    // Save to localStorage so Sổ Liên Lạc Admin reads it immediately!
+    var pushedOk = false;
+    if (typeof window.__ktnPushOrderToCloudState === 'function') {
+      pushedOk = await window.__ktnPushOrderToCloudState(newOrder);
+    }
+    if (!pushedOk) {
+      isSubmitting = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
+      }
+      alert('Chưa gửi được đăng ký lên máy chủ. Vui lòng thử lại nhé.');
+      return;
+    }
+
     try {
       var busRaw = localStorage.getItem('ktn_sll_orders_bus');
       var bus = busRaw ? JSON.parse(busRaw) : [];
@@ -2799,9 +2764,6 @@ if (!window.ktnSwitchFromVideoToRegister) {
         var bc = new BroadcastChannel('ktn_sll_orders_bus');
         bc.postMessage({ type: 'NEW_ORDER', order: newOrder });
         bc.close();
-      }
-      if (typeof window.__ktnPushOrderToCloudState === 'function') {
-        window.__ktnPushOrderToCloudState(newOrder);
       }
     } catch(err) {
       console.warn('[Lead] LocalStorage save error:', err);
@@ -4512,64 +4474,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
         </button>
     </div>
 
-    <!-- 15. Live Social Proof Toast (Randomized 50 Registrants, Bottom-Left Corner) -->
-    <div x-data="liveSocialProof()"
-         x-init="init()"
-         class="fixed left-2.5 sm:left-6 bottom-2.5 sm:bottom-6 z-30 max-w-[min(245px,calc(100vw-82px))] sm:max-w-[300px] pointer-events-none">
-        
-        <div x-show="visible && current"
-             x-cloak
-             x-transition:enter="transition ease-out duration-400 transform"
-             x-transition:enter-start="-translate-x-full opacity-0 scale-95"
-             x-transition:enter-end="translate-x-0 opacity-100 scale-100"
-             x-transition:leave="transition ease-in duration-300 transform"
-             x-transition:leave-start="translate-x-0 opacity-100 scale-100"
-             x-transition:leave-end="-translate-x-full opacity-0 scale-95"
-             class="pointer-events-auto bg-white/95 backdrop-blur-md rounded-xl p-2 sm:p-2.5 shadow-lg border border-amber-200/80 hover:border-amber-400 transition-all duration-200 flex items-center gap-2 relative group cursor-pointer hover:shadow-red-500/10"
-             @click="const el = document.getElementById('dang-ky'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); window.location.hash = '#dang-ky';">
-            
-            <!-- Dismiss Button -->
-            <button type="button"
-                    @click.stop="dismiss()" 
-                    class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-800 text-gray-500 hover:text-white flex items-center justify-center text-[10px] transition shadow border border-gray-200"
-                    title="Đóng thông báo">
-                <i class="fa-solid fa-xmark"></i>
-            </button>
-
-            <!-- Avatar / Icon with Active Status Pulse -->
-            <div class="relative shrink-0">
-                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-white font-black text-xs shadow-sm bg-primary bg-gradient-to-br"
-                     :class="current?.bg || 'from-amber-500 to-rose-600'"
-                     :style="'background: linear-gradient(135deg, ' + (['#D97706, #E11D48', '#2563EB, #4F46E5', '#EC4899, #E11D48', '#9333EA, #4F46E5', '#059669, #0D9488', '#CB3D30, #D97706'][currentIndex % 6]) + ');'"
-                     x-text="current?.avatar || 'KH'">
-                </div>
-                <span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-emerald-500 border-2 border-white rounded-full"></span>
-            </div>
-
-            <!-- Content Details -->
-            <div class="flex-1 min-w-0 pr-0.5">
-                <div class="flex items-center gap-1 leading-tight">
-                    <span class="text-[11px] font-bold text-dark truncate" x-text="current?.name"></span>
-                    <span class="text-[9px] text-gray-400 shrink-0 font-medium" x-text="'(' + current?.phone + ')'"></span>
-                </div>
-                
-                <div class="text-[10px] text-primary font-bold leading-tight mt-0.5 truncate" x-text="current?.course"></div>
-
-                <div class="flex items-center gap-1.5 mt-0.5 text-[9px] text-gray-400 font-medium leading-none">
-                    <span class="text-emerald-600 font-bold shrink-0">Đã ĐK</span>
-                    <span>•</span>
-                    <span x-text="current?.time" class="shrink-0"></span>
-                    <span>•</span>
-                    <span class="text-gray-500 truncate" x-text="current?.location"></span>
-                </div>
-            </div>
-
-            <!-- Small Arrow Indicator -->
-            <div class="shrink-0 text-amber-500 group-hover:translate-x-0.5 transition text-[10px] pr-0.5">
-                <i class="fa-solid fa-chevron-right"></i>
-            </div>
-        </div>
-    </div>
+    <!-- 15. Live Social Proof Toast (Disabled) -->
 
     <!-- Script Data & Logic Cho Bộ Trộn Ngẫu Nhiên 50 Người Đăng Ký (Social Proof) -->
     <script>
@@ -4614,101 +4519,16 @@ if (!window.ktnSwitchFromVideoToRegister) {
 
         function liveSocialProof() {
             return {
-                items: [
-                    { name: "Chị Thảo My", phone: "098***412", location: "Hà Nội", course: "Khóa Mầm Non (5-6t)", time: "Vừa xong", avatar: "TM", bg: "from-emerald-500 to-teal-500" },
-                    { name: "Anh Quốc Tuấn", phone: "091***845", location: "Hà Đông, HN", course: "Gói Đạo Nhân Tâm VIP", time: "1 phút trước", avatar: "QT", bg: "from-blue-500 to-indigo-600" },
-                    { name: "Mẹ Bảo An", phone: "093***190", location: "Cầu Giấy, HN", course: "Học Thử 0đ (1 buổi)", time: "2 phút trước", avatar: "BA", bg: "from-pink-500 to-rose-500" },
-                    { name: "Phụ huynh Minh Khang", phone: "097***432", location: "Thanh Xuân, HN", course: "Khóa Thiếu Niên (12-17t)", time: "3 phút trước", avatar: "MK", bg: "from-purple-500 to-indigo-600" },
-                    { name: "Bố Đăng Khoa", phone: "090***678", location: "Đà Nẵng", course: "Khóa Tiểu Học (7-11t)", time: "3 phút trước", avatar: "ĐK", bg: "from-emerald-500 to-teal-600" },
-                    { name: "Chị Thu Trang", phone: "096***521", location: "Bắc Ninh", course: "Gói Đạo Nhân Tâm VIP", time: "4 phút trước", avatar: "TT", bg: "from-red-500 to-amber-600" },
-                    { name: "Mẹ Tuệ Lâm", phone: "094***389", location: "Hải Phòng", course: "Học Thử 0đ (1 buổi)", time: "5 phút trước", avatar: "TL", bg: "from-violet-500 to-purple-600" },
-                    { name: "Chị Ngọc Mai", phone: "098***714", location: "Nam Từ Liêm, HN", course: "Khóa Mầm Non (5-6t)", time: "6 phút trước", avatar: "NM", bg: "from-amber-500 to-yellow-600" },
-                    { name: "Anh Hoàng Long", phone: "091***903", location: "TP.HCM", course: "Khóa Thiếu Niên (12-17t)", time: "7 phút trước", avatar: "HL", bg: "from-blue-600 to-cyan-600" },
-                    { name: "Mẹ Yến Nhi", phone: "097***655", location: "Hà Đông, HN", course: "Gói Đạo Nhân Tâm VIP", time: "8 phút trước", avatar: "YN", bg: "from-rose-500 to-pink-600" },
-                    { name: "Chị Phương Thảo", phone: "093***221", location: "Đống Đa, HN", course: "Khóa Tiểu Học (7-11t)", time: "9 phút trước", avatar: "PT", bg: "from-orange-500 to-amber-600" },
-                    { name: "Bố Gia Huy", phone: "098***883", location: "Quảng Ninh", course: "Học Thử 0đ (1 buổi)", time: "10 phút trước", avatar: "GH", bg: "from-teal-500 to-emerald-600" },
-                    { name: "Chị Hồng Hạnh", phone: "090***147", location: "Hoàng Mai, HN", course: "Khóa Mầm Non (5-6t)", time: "11 phút trước", avatar: "HH", bg: "from-red-600 to-rose-600" },
-                    { name: "Anh Tuấn Kiệt", phone: "096***936", location: "Vinh, Nghệ An", course: "Gói Đạo Nhân Tâm VIP", time: "12 phút trước", avatar: "TK", bg: "from-indigo-500 to-blue-600" },
-                    { name: "Mẹ Thanh Hằng", phone: "094***552", location: "Hà Đông, HN", course: "Khóa Thiếu Niên (12-17t)", time: "13 phút trước", avatar: "TH", bg: "from-fuchsia-500 to-pink-600" },
-                    { name: "Bố Hải Đăng", phone: "091***318", location: "Bắc Giang", course: "Khóa Tiểu Học (7-11t)", time: "14 phút trước", avatar: "HĐ", bg: "from-cyan-500 to-blue-600" },
-                    { name: "Mẹ Quỳnh Anh", phone: "098***629", location: "Long Biên, HN", course: "Học Thử 0đ (1 buổi)", time: "15 phút trước", avatar: "QA", bg: "from-amber-500 to-red-500" },
-                    { name: "Chị Kim Oanh", phone: "097***804", location: "Hải Dương", course: "Gói Đạo Nhân Tâm VIP", time: "16 phút trước", avatar: "KO", bg: "from-purple-600 to-indigo-600" },
-                    { name: "Anh Đức Trọng", phone: "093***475", location: "Tây Hồ, HN", course: "Khóa Thiếu Niên (12-17t)", time: "17 phút trước", avatar: "ĐT", bg: "from-blue-500 to-teal-500" },
-                    { name: "Mẹ Khánh Linh", phone: "090***291", location: "Ba Đình, HN", course: "Khóa Mầm Non (5-6t)", time: "18 phút trước", avatar: "KL", bg: "from-pink-500 to-purple-600" },
-                    { name: "Chị Hương Giang", phone: "096***738", location: "Thái Nguyên", course: "Học Thử 0đ (1 buổi)", time: "19 phút trước", avatar: "HG", bg: "from-emerald-500 to-green-600" },
-                    { name: "Bố Việt Anh", phone: "094***116", location: "Hà Đông, HN", course: "Gói Đạo Nhân Tâm VIP", time: "20 phút trước", avatar: "VA", bg: "from-red-500 to-amber-500" },
-                    { name: "Mẹ Thùy Chi", phone: "098***593", location: "Thanh Hóa", course: "Khóa Tiểu Học (7-11t)", time: "21 phút trước", avatar: "TC", bg: "from-amber-600 to-yellow-600" },
-                    { name: "Chị Bích Ngọc", phone: "091***402", location: "Hai Bà Trưng, HN", course: "Khóa Thiếu Niên (12-17t)", time: "22 phút trước", avatar: "BN", bg: "from-violet-600 to-indigo-600" },
-                    { name: "Anh Quang Huy", phone: "097***781", location: "Nam Định", course: "Học Thử 0đ (1 buổi)", time: "23 phút trước", avatar: "QH", bg: "from-blue-600 to-indigo-600" },
-                    { name: "Mẹ Lan Anh", phone: "093***965", location: "Cầu Giấy, HN", course: "Gói Đạo Nhân Tâm VIP", time: "24 phút trước", avatar: "LA", bg: "from-rose-500 to-red-500" },
-                    { name: "Chị Thùy Dương", phone: "090***834", location: "Hà Đông, HN", course: "Khóa Mầm Non (5-6t)", time: "25 phút trước", avatar: "TĐ", bg: "from-teal-600 to-emerald-600" },
-                    { name: "Bố Phúc Khang", phone: "096***249", location: "Vĩnh Phúc", course: "Khóa Thiếu Niên (12-17t)", time: "26 phút trước", avatar: "PK", bg: "from-purple-500 to-pink-500" },
-                    { name: "Mẹ Diệu Linh", phone: "094***670", location: "Bắc Ninh", course: "Học Thử 0đ (1 buổi)", time: "27 phút trước", avatar: "DL", bg: "from-amber-500 to-orange-600" },
-                    { name: "Chị Mai Phương", phone: "098***153", location: "Thanh Xuân, HN", course: "Gói Đạo Nhân Tâm VIP", time: "28 phút trước", avatar: "MP", bg: "from-red-600 to-rose-600" },
-                    { name: "Anh Trọng Tấn", phone: "091***728", location: "Hải Phòng", course: "Khóa Tiểu Học (7-11t)", time: "29 phút trước", avatar: "TT", bg: "from-blue-500 to-cyan-600" },
-                    { name: "Mẹ An Nhiên", phone: "097***346", location: "Hoàn Kiếm, HN", course: "Khóa Thiếu Niên (12-17t)", time: "30 phút trước", avatar: "AN", bg: "from-indigo-500 to-violet-600" },
-                    { name: "Chị Hoàng Yến", phone: "093***582", location: "Hà Đông, HN", course: "Học Thử 0đ (1 buổi)", time: "31 phút trước", avatar: "HY", bg: "from-emerald-500 to-teal-600" },
-                    { name: "Bố Tuấn Anh", phone: "090***917", location: "Phú Thọ", course: "Gói Đạo Nhân Tâm VIP", time: "32 phút trước", avatar: "TA", bg: "from-amber-500 to-red-600" },
-                    { name: "Mẹ Trà My", phone: "096***405", location: "Đà Nẵng", course: "Khóa Tiểu Học (7-11t)", time: "33 phút trước", avatar: "TM", bg: "from-pink-500 to-rose-500" },
-                    { name: "Chị Thu Thủy", phone: "094***862", location: "Nam Từ Liêm, HN", course: "Khóa Thiếu Niên (12-17t)", time: "34 phút trước", avatar: "TT", bg: "from-purple-600 to-indigo-600" },
-                    { name: "Anh Tiến Dũng", phone: "098***279", location: "Hưng Yên", course: "Học Thử 0đ (1 buổi)", time: "35 phút trước", avatar: "TD", bg: "from-blue-600 to-indigo-600" },
-                    { name: "Mẹ Hà My", phone: "091***634", location: "Hà Đông, HN", course: "Gói Đạo Nhân Tâm VIP", time: "36 phút trước", avatar: "HM", bg: "from-red-500 to-pink-600" },
-                    { name: "Chị Thanh Hương", phone: "097***198", location: "Cầu Giấy, HN", course: "Khóa Mầm Non (5-6t)", time: "37 phút trước", avatar: "TH", bg: "from-amber-500 to-yellow-600" },
-                    { name: "Bố Đức Minh", phone: "093***751", location: "Quảng Ninh", course: "Khóa Thiếu Niên (12-17t)", time: "38 phút trước", avatar: "ĐM", bg: "from-teal-500 to-cyan-600" },
-                    { name: "Mẹ Ngọc Anh", phone: "090***483", location: "Hà Nội", course: "Học Thử 0đ (1 buổi)", time: "39 phút trước", avatar: "NA", bg: "from-rose-500 to-amber-500" },
-                    { name: "Chị Hải Yến", phone: "096***820", location: "Bắc Ninh", course: "Gói Đạo Nhân Tâm VIP", time: "40 phút trước", avatar: "HY", bg: "from-indigo-600 to-blue-500" },
-                    { name: "Anh Hữu Thắng", phone: "094***357", location: "Thanh Xuân, HN", course: "Khóa Tiểu Học (7-11t)", time: "41 phút trước", avatar: "HT", bg: "from-emerald-600 to-teal-500" },
-                    { name: "Mẹ Thảo Linh", phone: "098***906", location: "Nghệ An", course: "Khóa Thiếu Niên (12-17t)", time: "42 phút trước", avatar: "TL", bg: "from-purple-500 to-rose-500" },
-                    { name: "Chị Ánh Tuyết", phone: "091***542", location: "Đống Đa, HN", course: "Học Thử 0đ (1 buổi)", time: "43 phút trước", avatar: "AT", bg: "from-amber-500 to-orange-500" },
-                    { name: "Bố Thành Đạt", phone: "097***219", location: "Hà Đông, HN", course: "Gói Đạo Nhân Tâm VIP", time: "44 phút trước", avatar: "TĐ", bg: "from-red-600 to-amber-600" },
-                    { name: "Mẹ Cẩm Tú", phone: "093***678", location: "Hải Phòng", course: "Khóa Tiểu Học (7-11t)", time: "45 phút trước", avatar: "CT", bg: "from-pink-600 to-purple-600" },
-                    { name: "Chị Mỹ Linh", phone: "090***125", location: "Ba Đình, HN", course: "Khóa Thiếu Niên (12-17t)", time: "46 phút trước", avatar: "ML", bg: "from-blue-500 to-indigo-600" },
-                    { name: "Anh Văn Hùng", phone: "096***794", location: "Thái Bình", course: "Học Thử 0đ (1 buổi)", time: "47 phút trước", avatar: "VH", bg: "from-teal-600 to-emerald-600" },
-                    { name: "Mẹ Minh Thư", phone: "094***831", location: "Hà Đông, HN", course: "Gói Đạo Nhân Tâm VIP", time: "48 phút trước", avatar: "MT", bg: "from-rose-500 to-red-600" }
-                ],
+                items: [],
                 currentIndex: 0,
                 current: null,
                 visible: false,
-                dismissed: false,
-                init() {
-                    // Trộn ngẫu nhiên danh sách 50 người (Thuật toán Fisher-Yates)
-                    for (let i = this.items.length - 1; i > 0; i--) {
-                        const j = Math.floor(Math.random() * (i + 1));
-                        [this.items[i], this.items[j]] = [this.items[j], this.items[i]];
-                    }
-                    this.current = this.items[0];
-                    // Xuất hiện lần đầu sau 1.8s
-                    setTimeout(() => {
-                        this.showNext();
-                    }, 1800);
-                },
-                showNext() {
-                    if (this.dismissed) return;
-                    this.current = this.items[this.currentIndex];
-                    this.visible = true;
-
-                    // Hiển thị trong 4.5 giây rồi trượt ra
-                    setTimeout(() => {
-                        this.visible = false;
-                        this.currentIndex = (this.currentIndex + 1) % this.items.length;
-                        // Chờ ngẫu nhiên từ 5 đến 9 giây để hiển thị người tiếp theo
-                        const nextDelay = Math.floor(Math.random() * 4000) + 5000;
-                        setTimeout(() => {
-                            this.showNext();
-                        }, nextDelay);
-                    }, 4500);
-                },
-                dismiss() {
-                    this.visible = false;
-                    this.dismissed = true;
-                    // Tự động bật lại sau 45s nếu khách vẫn ở trên trang
-                    setTimeout(() => {
-                        this.dismissed = false;
-                        this.showNext();
-                    }, 45000);
-                }
+                dismissed: true,
+                init() {},
+                showNext() {},
+                dismiss() { this.visible = false; this.dismissed = true; }
             };
-        };
+        }
 
         ;(function() {
             var showTl = Boolean(window.__ktnPublicDocs || (window.location.search || '').indexOf('preview_tl=1') !== -1);

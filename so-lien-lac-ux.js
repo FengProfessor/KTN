@@ -11529,22 +11529,11 @@
       };
     }
     if (!Array.isArray(this.state.notificationLog)) {
-      this.state.notificationLog = [
-        {
-          id: 'NOTIF-INIT-1',
-          time: 'Hôm nay · Tự động',
-          trigger: 'remindClass',
-          title: '⏰ Nhắc lịch học trước 30 phút: Lớp YCT2-04 (19:30 tối nay)',
-          body: 'Bé Lê Hoàng Ngân có ca học Buổi 19 lúc 19:30 với Cô Lâm Mỹ Linh. Phụ huynh chuẩn bị thiết bị và nhắc con nộp bài nhé!'
-        },
-        {
-          id: 'NOTIF-INIT-2',
-          time: 'Hôm qua · 21:05',
-          trigger: 'onGraded',
-          title: '👩‍🏫 Cô Lâm Mỹ Linh vừa chấm 9.5đ bài Buổi 18 của Bé Lê Hoàng Ngân',
-          body: 'Nhận xét: "Con phát âm thanh 4 rất chuẩn, chữ Hán viết đúng quy tắc bút thuận!"'
-        }
-      ];
+      this.state.notificationLog = [];
+    } else {
+      this.state.notificationLog = this.state.notificationLog.filter(
+        n => n && n.id !== 'NOTIF-INIT-1' && n.id !== 'NOTIF-INIT-2'
+      );
     }
     return this.state.notifySettings;
   };
@@ -11686,13 +11675,9 @@
       const perm = await Notification.requestPermission();
       this.renderPwaNotifyModal();
       if (perm === 'granted') {
-        this.triggerNotificationEvent('remindClass', {
-          title: '🔔 Đã bật Thông báo Đẩy (Web Push) — Học Viện Khổng Tử Nhí',
-          body: 'Hệ thống sẽ tự động báo trước giờ học 30 phút và báo ngay khi cô giáo chấm bài!',
-          force: true
-        });
+        this.showToast('Đã bật thông báo.');
       } else {
-        this.showToast('Đã bật thông báo In-App trên Sổ Liên Lạc.');
+        this.showToast('Đã lưu cài đặt thông báo.');
       }
       return perm;
     } catch {
@@ -11702,41 +11687,26 @@
 
   app.getTriggerRecipientLabel = function (triggerKey) {
     const map = {
-      remindClass: '📱 Gửi tới: Điện thoại Phụ huynh & Học sinh (trước giờ học 30p)',
-      onGraded: '📱 Gửi tới: Điện thoại Phụ huynh (ngay khi Cô chấm bài)',
-      onSubmitted: '👩‍🏫 Gửi tới: Điện thoại Giáo viên (ngay khi HS nộp bài / xong Game)',
-      onAssignedOrChat: '📱/👩‍🏫 Gửi tới: Phụ huynh & Giáo viên (khi giao bài mới / nhắn tin)'
+      remindClass: 'Nhắc lịch học',
+      onGraded: 'Cô giáo vừa nhận xét',
+      onSubmitted: 'Học sinh vừa nộp bài',
+      onAssignedOrChat: 'Bài tập & Tin nhắn mới'
     };
-    return map[triggerKey] || '📱 Thông báo Sổ Liên Lạc';
+    return map[triggerKey] || 'Thông báo';
   };
 
   app.handlePushBannerAction = function (triggerKey) {
     this.dismissPushBanner();
     this.closePwaNotifyModal();
-    if (window.sllAuth && window.sllAuth.mode === 'locked' && typeof window.sllAuth._applyRestoredUser === 'function') {
-      window.sllAuth._applyRestoredUser({
-        email: 'hoangngan@khongtunhi.com',
-        name: 'Bé Lê Hoàng Ngân',
-        id: '6ae067851a07c000028e8e4a',
-        studentId: '6ae067851a07c000028e8e4a',
-        roles: ['student']
-      });
+    if (!window.sllAuth || window.sllAuth.mode !== 'connected') {
+      return false;
     }
     if (triggerKey === 'onSubmitted') {
       this.switchRole('teacher');
       this.switchTeacherTab('grade');
-    } else if (triggerKey === 'onGraded') {
+    } else if (triggerKey === 'onGraded' || triggerKey === 'onAssignedOrChat') {
       this.switchRole('parent');
       this.switchParentSubtab('homework');
-      this.selectParentLesson(18);
-    } else if (triggerKey === 'onAssignedOrChat') {
-      this.switchRole('parent');
-      this.switchParentSubtab('homework');
-      this.selectParentLesson(19);
-    } else {
-      this.switchRole('parent');
-      this.switchParentSubtab('homework');
-      this.selectParentLesson(19);
     }
     return true;
   };
@@ -11751,7 +11721,10 @@
     return false;
   };
 
-  app.triggerNotificationEvent = function () {
+  app.triggerNotificationEvent = function (eventCode, payload = {}) {
+    if (window.KTN_NOTIF && typeof window.KTN_NOTIF.triggerNotificationEvent === 'function' && this.triggerNotificationEvent !== window.KTN_NOTIF.triggerNotificationEvent) {
+      return window.KTN_NOTIF.triggerNotificationEvent(eventCode, payload);
+    }
     return false;
   };
 

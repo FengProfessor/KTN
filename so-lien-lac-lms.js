@@ -2544,7 +2544,15 @@
       return true;
     },
 
+    isAuthenticated() {
+      if (window.__ktnLoggingOut) return false;
+      if (window.sllAuth && window.sllAuth.mode !== 'connected') return false;
+      const ctx = this.getActiveContext();
+      return Boolean(ctx && ctx.email);
+    },
+
     buildRoleNotifications() {
+      if (!this.isAuthenticated()) return [];
       const ctx = this.getActiveContext();
       const readSet = this.getReadSet();
       const now = Date.now();
@@ -2569,65 +2577,28 @@
       const orders = D.orders();
       const openAlerts = D.openAlerts();
 
-      // 2. Synthesize Live Notifications by Role
+      // 2. Chỉ tổng hợp thông báo thật ngắn gọn theo đúng vai trò đã đăng nhập
       if (ctx.role === 'admin') {
-        // A. Đơn hàng đăng ký khóa học mới (SCN-ORD-01 / SCN-ORD-02 / SCN-ORD-03)
-        orders.slice(0, 6).forEach((o, idx) => {
+        orders.filter(o => o && (o.approvalStatus === 'pending' || !o.approvalStatus)).slice(0, 5).forEach((o, idx) => {
           const oid = o.orderId || o.id || ('ORD-' + idx);
-          const isPend = o.approvalStatus === 'pending' || !o.approvalStatus;
-          const isFail = o.approvalStatus === 'failed';
           const ts = Date.parse(o.createdAt || '') || (now - (idx + 1) * 300000);
-          if (isPend) {
-            pushItem({
-              id: 'notif_admin_ord_pend_' + oid,
-              recipient_role: 'admin',
-              recipient_id: 'ALL',
-              type: 'ORDER_CREATED',
-              category: 'order',
-              priority: 'HIGH',
-              title: `🛒 Đăng ký khóa học mới: ${o.studentName || o.name || 'Học viên'} (#${oid})`,
-              body: `Học viên ${o.studentName || o.name} (${o.studentEmail || o.email}) đăng ký "${o.courseName || 'HSK1 3.0'}". Nhấn để Duyệt 1 chạm!`,
-              action_url: `/custom-page/so-lien-lac-test?view=orders&orderId=${encodeURIComponent(oid)}`,
-              timestamp: ts,
-              cta: '⚡ Duyệt đơn ngay →',
-              metadata: { orderId: oid }
-            });
-          } else if (isFail) {
-            pushItem({
-              id: 'notif_admin_ord_fail_' + oid,
-              recipient_role: 'admin',
-              recipient_id: 'ALL',
-              type: 'ORDER_PROVISION_FAILED',
-              category: 'order',
-              priority: 'HIGH',
-              title: `⚠️ Lỗi cấp quyền khóa học: Đơn #${oid} (${o.studentName || o.name})`,
-              body: `${o.errorMessage || 'Cần thử lại cấp quyền khóa học trực tuyến trên izTeach.'}`,
-              action_url: `/custom-page/so-lien-lac-test?view=orders&tab=failed`,
-              timestamp: ts,
-              cta: '🔄 Thử lại 1 chạm →',
-              metadata: { orderId: oid }
-            });
-          } else {
-            pushItem({
-              id: 'notif_admin_ord_ok_' + oid,
-              recipient_role: 'admin',
-              recipient_id: 'ALL',
-              type: 'COURSE_PROVISIONED',
-              category: 'order',
-              priority: 'LOW',
-              title: `✅ Đã kích hoạt khóa học: ${o.studentName || o.name} (#${oid})`,
-              body: `Đã mở quyền khóa "${o.courseName || 'HSK1 3.0'}" cho tài khoản ${o.studentEmail || o.email}.`,
-              action_url: `/custom-page/so-lien-lac-test?view=orders&tab=approved`,
-              timestamp: Date.parse(o.approvedAt || o.createdAt || '') || (now - 1800000),
-              read_status: true,
-              cta: 'Xem đơn hàng →',
-              metadata: { orderId: oid }
-            });
-          }
+          pushItem({
+            id: 'notif_admin_ord_pend_' + oid,
+            recipient_role: 'admin',
+            recipient_id: 'ALL',
+            type: 'ORDER_CREATED',
+            category: 'order',
+            priority: 'HIGH',
+            title: 'Đơn đăng ký mới chờ duyệt.',
+            body: `${o.studentName || o.name || 'Học viên'} · ${o.courseName || 'Khóa học'}`,
+            action_url: `/custom-page/so-lien-lac-test?view=orders&orderId=${encodeURIComponent(oid)}`,
+            timestamp: ts,
+            cta: 'Duyệt đơn →',
+            metadata: { orderId: oid }
+          });
         });
 
-        // B. Cảnh báo an toàn DLP (SCN-SEC-01)
-        openAlerts.slice(0, 4).forEach((a, idx) => {
+        openAlerts.slice(0, 3).forEach((a, idx) => {
           pushItem({
             id: 'notif_admin_dlp_' + (a.id || idx),
             recipient_role: 'admin',
@@ -2635,80 +2606,34 @@
             type: 'DLP_VIOLATION_DETECTED',
             category: 'security',
             priority: 'HIGH',
-            title: `🛡️ Cảnh báo DLP (${a.severity || 'CRITICAL'}): ${a.teacher || 'Giáo viên'}`,
-            body: `Chặn tự động tại ${a.channel || 'Tin nhắn'}: ${(a.reasons || []).join(', ')}. Nội dung: "${String(a.rawContent || '').slice(0, 75)}"`,
+            title: 'Cảnh báo tin nhắn vi phạm.',
+            body: `${a.teacher || 'Lớp học'} · ${a.channel || 'Nhóm lớp'}`,
             action_url: `/custom-page/so-lien-lac-test?view=alerts`,
             timestamp: now - (idx + 1) * 420000,
-            cta: '🛡️ Xử lý cảnh báo →',
+            cta: 'Kiểm tra →',
             metadata: { alertId: a.id }
           });
         });
-
-        // C. Bài nộp Khóa học Online từ Học viên tự do (SCN-ACAD-05)
-        courseHws.slice(0, 5).forEach((h, idx) => {
-          const isPend = h.status === 'PENDING';
-          pushItem({
-            id: 'notif_admin_chw_' + h.id + '_' + h.status,
-            recipient_role: 'admin',
-            recipient_id: 'ALL',
-            type: isPend ? 'HOMEWORK_SUBMITTED_TEACHER_ALERT' : 'HOMEWORK_GRADED',
-            category: 'academic',
-            priority: isPend ? 'HIGH' : 'MEDIUM',
-            title: isPend
-              ? `📥 Bài nộp Khóa Online chờ chấm: ${h.studentName} (${h.courseTitle} · Bài ${h.lessonNum})`
-              : `👩‍🏫 Đã chấm bài Khóa Online: ${h.studentName} (${h.courseTitle} · Bài ${h.lessonNum}: ${h.score}/10)`,
-            body: isPend
-              ? `Học viên tự do (${h.studentEmail}) vừa nộp ${(h.attachments || []).length} tệp S3 cho bài "${h.lessonTitle}".`
-              : `Giáo viên đã chấm ${h.score}/10 và đồng bộ nhận xét lên izTeach Cloud.`,
-            action_url: `/custom-page/so-lien-lac-test?view=course-grade&hwId=${encodeURIComponent(h.id)}`,
-            timestamp: D.hwTime(h) || (now - (idx + 1) * 600000),
-            cta: isPend ? '✍️ Mở chấm bài ngay →' : 'Xem chi tiết bài chấm →',
-            metadata: { homeworkId: h.id, courseId: h.courseId, lessonNum: h.lessonNum, isCourseHomework: true }
-          });
-        });
-
-        // D. Lịch vận hành lớp học trong ngày (SCN-SCHED-01)
-        pushItem({
-          id: 'notif_admin_sched_today',
-          recipient_role: 'admin',
-          recipient_id: 'ALL',
-          type: 'CLASS_STARTING_SOON',
-          category: 'schedule',
-          priority: 'MEDIUM',
-          title: `🔔 Lịch vận hành lớp hôm nay: Lớp YCT2-04 (19:30 - 20:30)`,
-          body: `Giáo viên: Cô Lâm Mỹ Linh · Sĩ số: 3 học viên cố định · Tiến độ: Buổi 18/25.`,
-          action_url: `/custom-page/so-lien-lac-test?view=classes`,
-          timestamp: now - 900000,
-          cta: 'Xem lịch & lớp học →',
-          metadata: { classCode: 'YCT2-04' }
-        });
       } else if (ctx.role === 'teacher') {
-        // A. Bài nộp Khóa học Online của học viên tự do (SCN-ACAD-05)
-        courseHws.slice(0, 6).forEach((h, idx) => {
-          const isPend = h.status === 'PENDING';
+        courseHws.filter(h => h && h.status === 'PENDING').slice(0, 5).forEach((h, idx) => {
           pushItem({
-            id: 'notif_teacher_chw_' + h.id + '_' + h.status,
+            id: 'notif_teacher_chw_' + h.id,
             recipient_role: 'teacher',
             recipient_id: 'ALL',
-            type: isPend ? 'HOMEWORK_SUBMITTED_TEACHER_ALERT' : 'HOMEWORK_GRADED',
+            type: 'HOMEWORK_SUBMITTED_TEACHER_ALERT',
             category: 'academic',
-            priority: isPend ? 'HIGH' : 'MEDIUM',
-            title: isPend
-              ? `📥 Bài nộp Khóa Online mới: ${h.studentName} (${h.courseTitle} · Bài ${h.lessonNum})`
-              : `✅ Đã chấm Khóa Online: ${h.studentName} — ${h.courseTitle} Bài ${h.lessonNum} (${h.score}/10)`,
-            body: isPend
-              ? `Học viên tự do (${h.studentEmail}) vừa nộp ${(h.attachments || []).length} tệp S3 + kết quả SBT tương tác. Nhấn để chấm bài!`
-              : `Nhận xét đã gửi: "${String(h.teacherFeedback || '').slice(0, 80)}"`,
+            priority: 'HIGH',
+            title: 'Học sinh vừa nộp bài.',
+            body: `${h.studentName} · ${h.courseTitle} Bài ${h.lessonNum}`,
             action_url: `/custom-page/so-lien-lac-test?view=course-grade&hwId=${encodeURIComponent(h.id)}`,
             timestamp: D.hwTime(h) || (now - (idx + 1) * 300000),
-            cta: isPend ? '✍️ Chấm bài Khóa học ngay →' : 'Xem / Sửa điểm →',
+            cta: 'Chấm bài →',
             metadata: { homeworkId: h.id, courseId: h.courseId, lessonNum: h.lessonNum, isCourseHomework: true }
           });
         });
 
-        // B. Bài tập Lớp học cố định chờ chấm (YCT2-04)
         const classPend = D.pending(ctx.classCodes);
-        classPend.slice(0, 4).forEach((h, idx) => {
+        classPend.slice(0, 5).forEach((h, idx) => {
           pushItem({
             id: 'notif_teacher_clshw_' + h.id,
             recipient_role: 'teacher',
@@ -2716,199 +2641,111 @@
             type: 'HOMEWORK_SUBMITTED_TEACHER_ALERT',
             category: 'academic',
             priority: 'HIGH',
-            title: `📝 Bài nộp Lớp ${h.classCode || 'YCT2-04'}: ${h.studentName} — Buổi ${D.hwLesson(h)}`,
-            body: `Học viên lớp cố định vừa nộp ${(h.attachments || []).length} tệp bài tập về nhà. Nhấn để chấm điểm!`,
+            title: 'Học sinh vừa nộp bài.',
+            body: `${h.studentName} · Lớp ${h.classCode || ''} Buổi ${D.hwLesson(h)}`,
             action_url: `/custom-page/so-lien-lac-test?view=grade&hwId=${encodeURIComponent(h.id)}`,
             timestamp: D.hwTime(h) || (now - (idx + 2) * 400000),
-            cta: '✍️ Chấm bài Lớp học →',
-            metadata: { homeworkId: h.id, classCode: h.classCode || 'YCT2-04' }
+            cta: 'Chấm bài →',
+            metadata: { homeworkId: h.id, classCode: h.classCode || '' }
           });
         });
 
-        // C. Tin nhắn từ Phụ huynh / Học sinh trong Nhóm lớp (SCN-COMM-02)
-        const roomMsgs = D.roomMessages(ctx.classCodes[0] || 'YCT2-04').filter(m => (m.senderRole || m.sender) !== 'teacher');
-        const lastParentMsg = roomMsgs[roomMsgs.length - 1];
-        pushItem({
-          id: 'notif_teacher_msg_' + (lastParentMsg ? lastParentMsg.id : 'yct204_default'),
-          recipient_role: 'teacher',
-          recipient_id: 'ALL',
-          type: 'CLASS_CHAT_MESSAGE',
-          category: 'comm',
-          priority: 'HIGH',
-          title: `💬 Tin nhắn từ Phụ huynh (Lớp ${ctx.classCodes[0] || 'YCT2-04'}): ${(lastParentMsg && lastParentMsg.senderName) || 'Mẹ Bé Hoàng Ngân'}`,
-          body: (lastParentMsg && lastParentMsg.text) || 'Cô Linh ơi, tối nay bé Hoàng Ngân đã làm xong bài viết chữ Hán Buổi 18 rồi ạ, nhờ cô kiểm tra giúp con nhé!',
-          action_url: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(ctx.classCodes[0] || 'YCT2-04')}`,
-          timestamp: (lastParentMsg && Date.parse(lastParentMsg.timestamp || '')) || (now - 540000),
-          cta: '💬 Mở Nhóm lớp phản hồi →',
-          metadata: { classCode: ctx.classCodes[0] || 'YCT2-04' }
+        (ctx.classCodes || []).forEach(cls => {
+          const roomMsgs = D.roomMessages(cls).filter(m => (m.senderRole || m.sender) !== 'teacher');
+          const lastParentMsg = roomMsgs[roomMsgs.length - 1];
+          if (lastParentMsg && lastParentMsg.text) {
+            pushItem({
+              id: 'notif_teacher_msg_' + lastParentMsg.id,
+              recipient_role: 'teacher',
+              recipient_id: 'ALL',
+              type: 'CLASS_CHAT_MESSAGE',
+              category: 'comm',
+              priority: 'MEDIUM',
+              title: 'Tin nhắn mới từ học sinh.',
+              body: `${lastParentMsg.senderName || 'Học sinh'} (${cls}): ${String(lastParentMsg.text).slice(0, 60)}`,
+              action_url: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(cls)}`,
+              timestamp: Date.parse(lastParentMsg.timestamp || '') || (now - 540000),
+              cta: 'Xem tin nhắn →',
+              metadata: { classCode: cls }
+            });
+          }
         });
-
-        // D. Nhắc giờ lên lớp (SCN-SCHED-01)
-        pushItem({
-          id: 'notif_teacher_sched_yct204',
-          recipient_role: 'teacher',
-          recipient_id: 'ALL',
-          type: 'CLASS_STARTING_SOON',
-          category: 'schedule',
-          priority: 'HIGH',
-          title: `🔔 Sắp đến giờ dạy: Lớp ${ctx.classCodes[0] || 'YCT2-04'} (19:30 tối nay)`,
-          body: `Buổi 18/25 · Sĩ số: 3 học viên. Nhấn để kiểm tra giáo án và giao bài tập cho lớp.`,
-          action_url: `/custom-page/so-lien-lac-test?view=assign`,
-          timestamp: now - 720000,
-          cta: '📋 Mở Giao bài & Lịch dạy →',
-          metadata: { classCode: ctx.classCodes[0] || 'YCT2-04' }
-        });
-      } else if (ctx.role === 'student') {
-        // Cổng Học Viên Trực Tuyến (Student Online Portal)
+      } else {
+        // Học sinh / Phụ huynh đã đăng nhập: chỉ hiện thông báo của đúng email đang đăng nhập
         const myHws = courseHws.filter(h => {
           const em = String(h.studentEmail || '').toLowerCase();
-          return !ctx.email || !em || em === ctx.email;
+          return ctx.email && em === ctx.email;
         });
 
-        // A. Kết quả chấm bài từ Cô giáo (SCN-ACAD-04)
-        myHws.filter(h => h.status === 'GRADED').forEach((h, idx) => {
+        myHws.filter(h => h.status === 'GRADED' || h.status === 'REVISION_REQUESTED').slice(0, 5).forEach((h, idx) => {
           const lIdx = Math.max(0, (Number(h.lessonNum) || 1) - 1);
           pushItem({
-            id: 'notif_stu_graded_' + h.id,
+            id: 'notif_stu_graded_' + h.id + '_' + (h.score || ''),
             recipient_role: 'student',
-            recipient_id: ctx.email || 'ALL',
+            recipient_id: ctx.email,
             type: 'HOMEWORK_GRADED',
             category: 'academic',
             priority: 'HIGH',
-            title: `👩‍🏫 Cô giáo đã chấm bài: ${h.courseTitle} · Bài ${h.lessonNum} — Điểm: ${h.score}/10`,
-            body: `Cô Lâm Mỹ Linh nhận xét: "${h.teacherFeedback || 'Con phát âm rõ, chữ Hán viết đúng thứ tự nét. Cô khen con!'}"`,
+            title: 'Cô giáo vừa nhận xét.',
+            body: `${h.courseTitle || 'Bài tập'} · Bài ${h.lessonNum}${h.score != null ? (' (' + h.score + 'đ)') : ''}`,
             action_url: `/custom-page/so-lien-lac-test?course=${h.courseId}&lesson=${lIdx}`,
             timestamp: D.hwTime(h) || (now - (idx + 1) * 240000),
-            cta: '🎯 Xem điểm & Nhận xét bài học →',
+            cta: 'Xem nhận xét →',
             metadata: { courseId: h.courseId, lessonNum: h.lessonNum, lessonIdx: lIdx, homeworkId: h.id }
           });
         });
 
-        // B. Bài tập cần hoàn thành tiếp theo (SCN-ACAD-01 / SCN-ACAD-02)
-        pushItem({
-          id: 'notif_stu_due_hsk1_l4',
-          recipient_role: 'student',
-          recipient_id: ctx.email || 'ALL',
-          type: 'HOMEWORK_DUE_REMINDER',
-          category: 'academic',
-          priority: 'HIGH',
-          title: `📚 Bài tập cần làm: HSK1 3.0 · Bài 4 — 这是我的一家 (Đây là gia đình tôi)`,
-          body: `Con đã hoàn thành xuất sắc Bài 3! Hãy xem video Bài 4, làm Sách Bài Tập tương tác và thu âm phát âm gửi cô chấm nhé!`,
-          action_url: `/custom-page/so-lien-lac-test?course=6adadba969897b0002482ca5&lesson=3`,
-          timestamp: now - 360000,
-          cta: '✍️ Vào học & Làm bài tập Bài 4 →',
-          metadata: { courseId: '6adadba969897b0002482ca5', lessonNum: 4, lessonIdx: 3 }
-        });
+        const clsCode = ctx.classCodes && ctx.classCodes[0] ? ctx.classCodes[0] : '';
+        if (clsCode) {
+          pushItem({
+            id: 'notif_stu_due_' + clsCode,
+            recipient_role: 'student',
+            recipient_id: ctx.email,
+            type: 'HOMEWORK_ASSIGNED',
+            category: 'academic',
+            priority: 'MEDIUM',
+            title: 'Cần nộp bài tập.',
+            body: `Lớp ${clsCode}`,
+            action_url: `/custom-page/so-lien-lac-test?view=homework`,
+            timestamp: now - 360000,
+            cta: 'Mở bài tập →',
+            metadata: { classCode: clsCode }
+          });
 
-        // C. Tin nhắn khích lệ từ Cô Lâm Mỹ Linh (SCN-COMM-01)
-        pushItem({
-          id: 'notif_stu_msg_teacher_1',
-          recipient_role: 'student',
-          recipient_id: ctx.email || 'ALL',
-          type: 'DIRECT_CHAT_MESSAGE',
-          category: 'comm',
-          priority: 'MEDIUM',
-          title: `💬 Tin nhắn từ Cô Lâm Mỹ Linh (Giáo viên hướng dẫn Khóa Online)`,
-          body: `Chào ${ctx.name}! Cô vừa nghe file thu âm và xem vở viết chữ Hán của con, con phát âm thanh điệu rất chuẩn. Hôm nay con học tiếp bài mới nhé!`,
-          action_url: `/custom-page/so-lien-lac-test?course=6adadba969897b0002482ca5&lesson=2`,
-          timestamp: now - 600000,
-          cta: '📖 Mở bài học xem phản hồi →',
-          metadata: { courseId: '6adadba969897b0002482ca5', lessonIdx: 2 }
-        });
+          pushItem({
+            id: 'notif_stu_sched_' + clsCode,
+            recipient_role: 'student',
+            recipient_id: ctx.email,
+            type: 'CLASS_STARTING_SOON',
+            category: 'schedule',
+            priority: 'MEDIUM',
+            title: 'Đã đến giờ học.',
+            body: `Lớp ${clsCode}`,
+            action_url: `/custom-page/so-lien-lac-test?view=home`,
+            timestamp: now - 720000,
+            cta: 'Vào lớp →',
+            metadata: { classCode: clsCode }
+          });
 
-        // D. Nhắc đến giờ tự học mỗi tối (SCN-SCHED-01)
-        pushItem({
-          id: 'notif_stu_sched_daily',
-          recipient_role: 'student',
-          recipient_id: ctx.email || 'ALL',
-          type: 'CLASS_STARTING_SOON',
-          category: 'schedule',
-          priority: 'MEDIUM',
-          title: `⏰ Đến giờ học tiếng Trung mỗi tối (20:00) rồi con ơi!`,
-          body: `Duy trì 20 phút xem video bài giảng và luyện viết chữ Hán theo ôễ mỗi ngày để nhớ từ vựng lâu gấp 3 lần nhé!`,
-          action_url: `/custom-page/so-lien-lac-test?course=65e7704a9ea90c00080d5195&lesson=1`,
-          timestamp: now - 950000,
-          cta: '🚀 Vào lớp học trực tuyến →',
-          metadata: { courseId: '65e7704a9ea90c00080d5195', lessonIdx: 1 }
-        });
-
-        // E. Thông báo kích hoạt khóa học thành công (SCN-ORD-03)
-        pushItem({
-          id: 'notif_stu_ord_provisioned',
-          recipient_role: 'student',
-          recipient_id: ctx.email || 'ALL',
-          type: 'COURSE_PROVISIONED',
-          category: 'order',
-          priority: 'LOW',
-          title: `🎓 Đã kích hoạt khóa học: Chinese For Kids & HSK1 3.0`,
-          body: `Tài khoản ${ctx.email || ctx.name} đã được cấp quyền truy cập trọn bộ video bài giảng, Sách Bài Tập và Kho Giáo Trình PDF.`,
-          action_url: `/custom-page/so-lien-lac-test`,
-          timestamp: now - 1800000,
-          cta: '📚 Xem danh sách khóa học →',
-          metadata: { courseId: '65e7704a9ea90c00080d5195' }
-        });
-      } else {
-        // Phụ huynh / Học viên Lớp cố định (parent)
-        const clsCode = ctx.classCodes[0] || 'YCT2-04';
-        pushItem({
-          id: 'notif_parent_hw_due_' + clsCode,
-          recipient_role: 'parent',
-          recipient_id: 'ALL',
-          type: 'HOMEWORK_ASSIGNED',
-          category: 'academic',
-          priority: 'HIGH',
-          title: `📚 Bài tập mới cần làm: Buổi 18 — Lớp ${clsCode}`,
-          body: `Cô Lâm Mỹ Linh vừa giao bài tập Buổi 18 cho ${ctx.name}. Bố mẹ nhắc con quay video đọc bài và chụp vở viết chữ Hán nhé!`,
-          action_url: `/custom-page/so-lien-lac-test?view=homework`,
-          timestamp: now - 300000,
-          cta: '📤 Mở nộp bài tập →',
-          metadata: { classCode: clsCode, lessonNum: 18 }
-        });
-
-        pushItem({
-          id: 'notif_parent_hw_graded_' + clsCode,
-          recipient_role: 'parent',
-          recipient_id: 'ALL',
-          type: 'HOMEWORK_GRADED',
-          category: 'academic',
-          priority: 'HIGH',
-          title: `👩‍🏫 Cô Lâm Mỹ Linh đã chấm bài của ${ctx.name} (Điểm: 9.5/10)`,
-          body: `Nhận xét: "Con phát âm chuẩn, chữ Hán viết ngay ngắn trong ôễ. Cô khen con!"`,
-          action_url: `/custom-page/so-lien-lac-test?view=homework`,
-          timestamp: now - 520000,
-          cta: '🎯 Xem điểm & Nhận xét →',
-          metadata: { classCode: clsCode, lessonNum: 17 }
-        });
-
-        pushItem({
-          id: 'notif_parent_msg_' + clsCode,
-          recipient_role: 'parent',
-          recipient_id: 'ALL',
-          type: 'CLASS_CHAT_MESSAGE',
-          category: 'comm',
-          priority: 'MEDIUM',
-          title: `💬 Tin nhắn mới từ Cô Lâm Mỹ Linh (Nhóm lớp ${clsCode})`,
-          body: `Chào quý phụ huynh lớp ${clsCode}, cô đã gửi tài liệu từ vựng trọng tâm tuần này, bố mẹ tải về cho các con ôn tập nhé!`,
-          action_url: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(clsCode)}`,
-          timestamp: now - 780000,
-          cta: '💬 Mở Nhóm lớp trao đổi →',
-          metadata: { classCode: clsCode }
-        });
-
-        pushItem({
-          id: 'notif_parent_sched_' + clsCode,
-          recipient_role: 'parent',
-          recipient_id: 'ALL',
-          type: 'CLASS_STARTING_SOON',
-          category: 'schedule',
-          priority: 'HIGH',
-          title: `🔔 Sắp đến giờ học: Lớp ${clsCode} (19:30 - 20:30 tối nay)`,
-          body: `Còn 15 phút nữa buổi học bắt đầu cùng Cô Lâm Mỹ Linh. Bố mẹ chuẩn bị thiết bị và sách vở cho ${ctx.name} nhé!`,
-          action_url: `/custom-page/so-lien-lac-test?view=home`,
-          timestamp: now - 960000,
-          cta: '🏫 Xem lịch học của con →',
-          metadata: { classCode: clsCode }
-        });
+          const roomMsgs = D.roomMessages(clsCode).filter(m => (m.senderRole || m.sender) === 'teacher');
+          const lastTeacherMsg = roomMsgs[roomMsgs.length - 1];
+          if (lastTeacherMsg && lastTeacherMsg.text) {
+            pushItem({
+              id: 'notif_stu_msg_' + lastTeacherMsg.id,
+              recipient_role: 'student',
+              recipient_id: ctx.email,
+              type: 'CLASS_CHAT_MESSAGE',
+              category: 'comm',
+              priority: 'MEDIUM',
+              title: 'Tin nhắn mới từ cô giáo.',
+              body: `${lastTeacherMsg.senderName || 'Cô giáo'}: ${String(lastTeacherMsg.text).slice(0, 60)}`,
+              action_url: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(clsCode)}`,
+              timestamp: Date.parse(lastTeacherMsg.timestamp || '') || (now - 600000),
+              cta: 'Xem tin nhắn →',
+              metadata: { classCode: clsCode }
+            });
+          }
+        }
       }
 
       items.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
@@ -3046,34 +2883,13 @@
         </div>
       `;
 
-      // Nút bắn thử thông báo thời gian thực theo đúng vai trò đang mở
-      let simButtons = '';
-      if (ctx.role === 'admin') {
-        simButtons = `
-          <button type="button" class="btn-sim-notif" onclick="window.KTN_NOTIF.simulateScenario('ORDER_CREATED')">⚡ Thử: Có người đăng ký khóa học</button>
-          <button type="button" class="btn-sim-notif" onclick="window.KTN_NOTIF.simulateScenario('DLP_VIOLATION_DETECTED')">🛡️ Thử: Cảnh báo DLP</button>
-        `;
-      } else if (ctx.role === 'teacher') {
-        simButtons = `
-          <button type="button" class="btn-sim-notif" onclick="window.KTN_NOTIF.simulateScenario('HOMEWORK_SUBMITTED_TEACHER_ALERT')">📥 Thử: Học sinh nộp bài mới</button>
-          <button type="button" class="btn-sim-notif" onclick="window.KTN_NOTIF.simulateScenario('MSG_FROM_STUDENT')">💬 Thử: Tin nhắn học sinh</button>
-          <button type="button" class="btn-sim-notif" onclick="window.KTN_NOTIF.simulateScenario('CLASS_STARTING_SOON')">⏰ Thử: Đến giờ dạy</button>
-        `;
-      } else {
-        simButtons = `
-          <button type="button" class="btn-sim-notif" onclick="window.KTN_NOTIF.simulateScenario('HOMEWORK_GRADED')">👩‍🏫 Thử: Cô chấm bài</button>
-          <button type="button" class="btn-sim-notif" onclick="window.KTN_NOTIF.simulateScenario('MSG_FROM_TEACHER')">💬 Thử: Tin nhắn giáo viên</button>
-          <button type="button" class="btn-sim-notif" onclick="window.KTN_NOTIF.simulateScenario('CLASS_STARTING_SOON')">⏰ Thử: Đến giờ học</button>
-        `;
-      }
-
       const isPwaActive = this.isPwaPermanentActive();
       const pwaBtnHtml = isPwaActive
         ? `<button type="button" class="btn-pwa-push-config is-permanent-active" onclick="window.KTN_NOTIF.requestNotificationPermissionSafe()" style="background:#ECFDF5;border-color:#10B981;color:#065F46;">
-             ✅ Đã bật thông báo vĩnh viễn trên thiết bị này (Cài 1 lần · Tự động gia hạn Token ngầm)
+             ✓ Đã bật thông báo trình duyệt
            </button>`
         : `<button type="button" class="btn-pwa-push-config" onclick="window.KTN_NOTIF.requestNotificationPermissionSafe()">
-             📲 Bật thông báo đẩy vĩnh viễn (Cài 1 lần duy nhất · Không bao giờ hết hạn)
+             🔔 Bật thông báo trình duyệt
            </button>`;
 
       drawer.innerHTML = `
@@ -3093,7 +2909,6 @@
           <nav class="ktn-notif-tabs">${tabs}</nav>
           <div id="ktn-notif-list" class="ktn-notif-scroll-area">${listHtml}</div>
           <footer class="ktn-notif-footer">
-            <div class="ktn-sim-bar">${simButtons}</div>
             ${pwaBtnHtml}
           </footer>
         </aside>
@@ -3406,6 +3221,7 @@
     },
 
     async pullCloudNotifications() {
+      if (!this.isAuthenticated()) return;
       if (this._isPullingCloudNotifs) return;
       this._isPullingCloudNotifs = true;
       try {
@@ -3427,13 +3243,14 @@
         items.slice().reverse().forEach(item => {
           if (!item || !item.id) return;
           if (existingIds.has(item.id) || PROCESSED_MSG_IDS.has(item.id)) return;
+          if (!this.evaluateRecipientMatch(item)) return;
           PROCESSED_MSG_IDS.add(item.id);
           existingIds.add(item.id);
           custom.unshift(item);
           addedAny = true;
 
           const isRecent = (now - Number(item.timestamp || item.ts || 0)) < 30 * 60 * 1000;
-          if (isRecent && !readSet.has(item.id) && (this.evaluateRecipientMatch(item) || item.forceBroadcast)) {
+          if (isRecent && !readSet.has(item.id)) {
             this.showInAppToast(item);
             if ('Notification' in window && Notification.permission === 'granted') {
               try {
@@ -3456,93 +3273,8 @@
       }
     },
 
-    simulateScenario(scenarioType) {
-      const ctx = this.getActiveContext();
-      if (scenarioType === 'ORDER_CREATED') {
-        this.triggerNotificationEvent('ORDER_CREATED', {
-          recipient_role: 'admin',
-          category: 'order',
-          priority: 'HIGH',
-          title: '🛒 Đăng ký khóa học mới: Bé Trần Minh Châu (Chinese For Kids)',
-          body: 'Phụ huynh vừa hoàn tất đăng ký khóa Chinese For Kids (890.000đ). Nhấn để Duyệt 1 chạm!',
-          action_url: '/custom-page/so-lien-lac-test?view=orders',
-          cta: '⚡ Duyệt đơn ngay →',
-          _forceShowOnCurrentTab: true
-        });
-      } else if (scenarioType === 'DLP_VIOLATION_DETECTED') {
-        this.triggerNotificationEvent('DLP_VIOLATION_DETECTED', {
-          recipient_role: 'admin',
-          category: 'security',
-          priority: 'HIGH',
-          title: '🛡️ Cảnh báo DLP Khẩn cấp: Chặn gửi SĐT/Zalo cá nhân',
-          body: 'Hệ thống vừa chặn tự động một tin nhắn chứa số điện thoại cá nhân trong nhóm lớp YCT2-04.',
-          action_url: '/custom-page/so-lien-lac-test?view=alerts',
-          cta: '🛡️ Kiểm tra cảnh báo →',
-          _forceShowOnCurrentTab: true
-        });
-      } else if (scenarioType === 'HOMEWORK_SUBMITTED_TEACHER_ALERT') {
-        this.triggerNotificationEvent('HOMEWORK_SUBMITTED_TEACHER_ALERT', {
-          recipient_role: 'teacher',
-          category: 'academic',
-          priority: 'HIGH',
-          title: '📥 Học viên vừa nộp bài: Tạ Phong Võ (HSK1 3.0 · Bài 3)',
-          body: 'Học viên tự do vừa nộp ảnh vở viết chữ Hán + bản thu âm phát âm lên S3. Nhấn để chấm ngay!',
-          action_url: '/custom-page/so-lien-lac-test?view=course-grade',
-          cta: '✍️ Chấm bài ngay →',
-          metadata: { isCourseHomework: true, courseId: '6adadba969897b0002482ca5', lessonNum: 3 },
-          _forceShowOnCurrentTab: true
-        });
-      } else if (scenarioType === 'MSG_FROM_STUDENT') {
-        this.triggerNotificationEvent('CLASS_CHAT_MESSAGE', {
-          recipient_role: 'teacher',
-          category: 'comm',
-          priority: 'HIGH',
-          title: '💬 Tin nhắn mới từ Học sinh / Phụ huynh (Lớp YCT2-04)',
-          body: 'Mẹ Bé Hoàng Ngân: "Cô Linh ơi, con vừa nộp bài đọc từ mới Buổi 18, nhờ cô sửa phát âm giúp con ạ!"',
-          action_url: '/custom-page/so-lien-lac-test?view=groups&room=YCT2-04',
-          cta: '💬 Mở Nhóm lớp trả lời →',
-          metadata: { classCode: 'YCT2-04' },
-          _forceShowOnCurrentTab: true
-        });
-      } else if (scenarioType === 'HOMEWORK_GRADED') {
-        this.triggerNotificationEvent('HOMEWORK_GRADED', {
-          recipient_role: ctx.role,
-          category: 'academic',
-          priority: 'HIGH',
-          title: '👩‍🏫 Cô Lâm Mỹ Linh vừa chấm bài: Điểm 10/10 🌟',
-          body: 'Nhận xét: "Con phát âm thanh điệu rất chuẩn, chữ Hán viết đúng thứ tự nét. Cô khen con!"',
-          action_url: ctx.isPortal ? '/custom-page/so-lien-lac-test?course=6adadba969897b0002482ca5&lesson=2' : '/custom-page/so-lien-lac-test?view=homework',
-          cta: '🎯 Xem điểm & Nhận xét →',
-          metadata: { courseId: '6adadba969897b0002482ca5', lessonIdx: 2, lessonNum: 3 },
-          _forceShowOnCurrentTab: true
-        });
-      } else if (scenarioType === 'MSG_FROM_TEACHER') {
-        this.triggerNotificationEvent('DIRECT_CHAT_MESSAGE', {
-          recipient_role: ctx.role,
-          category: 'comm',
-          priority: 'HIGH',
-          title: '💬 Tin nhắn mới từ Cô Lâm Mỹ Linh',
-          body: 'Cô đã gửi phiếu từ vựng và hướng dẫn luyện viết chữ Hán bài mới, con mở bài học để luyện tập nhé!',
-          action_url: ctx.isPortal ? '/custom-page/so-lien-lac-test?course=6adadba969897b0002482ca5&lesson=3' : '/custom-page/so-lien-lac-test?view=groups&room=YCT2-04',
-          cta: '💬 Xem tin nhắn của cô →',
-          metadata: { courseId: '6adadba969897b0002482ca5', lessonIdx: 3, classCode: 'YCT2-04' },
-          _forceShowOnCurrentTab: true
-        });
-      } else if (scenarioType === 'CLASS_STARTING_SOON') {
-        this.triggerNotificationEvent('CLASS_STARTING_SOON', {
-          recipient_role: ctx.role,
-          category: 'schedule',
-          priority: 'HIGH',
-          title: ctx.role === 'teacher' ? '⏰ Nhắc lịch dạy: Lớp YCT2-04 bắt đầu sau 15 phút!' : '⏰ Đến giờ học tiếng Trung rồi (Còn 15 phút nữa vào lớp)!',
-          body: ctx.isPortal
-            ? 'Đã đến khung giờ vàng 20:00 mỗi tối! Hãy vào hoàn thành video bài giảng và Sách Bài Tập tương tác hôm nay nhé!'
-            : 'Lớp YCT2-04 (19:30 - 20:30) sắp bắt đầu. Hãy chuẩn bị thiết bị và giáo trình sẵn sàng nhé!',
-          action_url: ctx.isPortal ? '/custom-page/so-lien-lac-test?course=6adadba969897b0002482ca5&lesson=3' : '/custom-page/so-lien-lac-test?view=home',
-          cta: '🚀 Vào lớp ngay →',
-          metadata: { courseId: '6adadba969897b0002482ca5', lessonIdx: 3, classCode: 'YCT2-04' },
-          _forceShowOnCurrentTab: true
-        });
-      }
+    simulateScenario() {
+      return false;
     },
 
     VAPID_PUBLIC_KEY: 'BFWxJ4T_sakVqTfRjAQOpN7RghDoQRo9owPWy_W1lvdoVYpqFdLJRmEOYgQEPPiEHpotoaixRt8oq2_R4VH8afM',

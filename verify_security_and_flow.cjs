@@ -412,7 +412,93 @@ async function main() {
   }
   console.log('Verified /sll-hocsinh.html delegates logout/switchAccount to KtnWebApp and uses escapeHtml.');
 
-  console.log('\nALL 6 SECURITY & API FLOW REGRESSION TESTS PASSED!');
+  console.log('\n=== [TEST 7] Full Student Bulk Sync + Online Course Homework Submission (Lesson 1 & Lesson 2) ===');
+  const adminLogin = await fetch(`${BASE_URL}/api/ktn/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: process.env.IZTEACH_ADMIN_EMAIL || 'hocvienkhongtunhi123@gmail.com',
+      password: process.env.IZTEACH_ADMIN_PASSWORD || ''
+    })
+  }).then(r => r.json());
+  if (!adminLogin.ok || !adminLogin.token) throw new Error('Admin login failed: ' + JSON.stringify(adminLogin));
+  console.log('Admin login OK -> role:', adminLogin.session.role);
+
+  const syncAllRes = await fetch(`${BASE_URL}/api/ktn/students/sync-all`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminLogin.token}`
+    }
+  }).then(r => r.json());
+  console.log('POST /api/ktn/students/sync-all ->', JSON.stringify(syncAllRes));
+  if (!syncAllRes.ok || typeof syncAllRes.syncedCount !== 'number' || syncAllRes.syncedCount < 1) {
+    throw new Error('Bulk sync failed: ' + JSON.stringify(syncAllRes));
+  }
+
+  // Test online course homework submission for Lesson 1 AND Lesson 2 (verifying no 403 and no lessonNum > 1 mismatch)
+  for (const lNum of [1, 2]) {
+    const onlineSub = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${stuLogin.token}`
+      },
+      body: JSON.stringify({
+        courseId: '6adadba969897b0002482ca5',
+        lessonNum: lNum,
+        lessonTitle: `Bài ${lNum}: HSK1 3.0`,
+        fileType: 'audio/wav',
+        fileUrl: upRes.fileUrl,
+        studentNote: `Con nộp vở bài tập khóa học Bài ${lNum} ạ`,
+        attachments: [{ title: `hsk1-bai-${lNum}.wav`, fileUrl: upRes.fileUrl, cdnUrl: upRes.fileUrl, mediaType: 'audio/wav', size: wavBuf1.length }]
+      })
+    });
+    const onlineSubJson = await onlineSub.json();
+    console.log(`Online Course Homework Submit (Lesson ${lNum}) -> status:`, onlineSub.status, '| id:', onlineSubJson.homework?.id);
+    if (onlineSub.status !== 200 || !onlineSubJson.ok) {
+      throw new Error(`Expected 200 OK for online course homework Lesson ${lNum}, got ${onlineSub.status}: ${JSON.stringify(onlineSubJson)}`);
+    }
+    if (SUPABASE_URL && SUPABASE_KEY && onlineSubJson.homework?.id) {
+      await fetch(`${SUPABASE_URL}/rest/v1/ktn_homeworks?id=eq.${encodeURIComponent(onlineSubJson.homework.id)}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_KEY }
+      });
+    }
+  }
+
+  console.log('\n=== [TEST 8] Authenticated-Only Concise Notifications & Lead Endpoint ===');
+  const unauthNotif = await fetch(`${BASE_URL}/api/ktn/notifications`);
+  console.log('Unauthenticated GET /api/ktn/notifications -> status:', unauthNotif.status);
+  if (unauthNotif.status !== 401) {
+    throw new Error(`Expected 401 for unauthenticated /api/ktn/notifications, got ${unauthNotif.status}`);
+  }
+
+  const stuNotifRes = await fetch(`${BASE_URL}/api/ktn/notifications`, {
+    headers: { 'Authorization': `Bearer ${stuLogin.token}` }
+  });
+  const stuNotifJson = await stuNotifRes.json();
+  console.log('Student GET /api/ktn/notifications -> status:', stuNotifRes.status, '| count:', (stuNotifJson.notifications || []).length);
+  if (stuNotifRes.status !== 200 || !stuNotifJson.ok || !Array.isArray(stuNotifJson.notifications)) {
+    throw new Error('Authenticated student notifications failed: ' + JSON.stringify(stuNotifJson));
+  }
+
+  const leadRes = await fetch(`${BASE_URL}/api/ktn/leads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'Phụ huynh Kiểm thử E2E',
+      phone: '0988974685',
+      childAge: 'Tiểu học (7–11t)'
+    })
+  });
+  const leadJson = await leadRes.json();
+  console.log('POST /api/ktn/leads -> status:', leadRes.status, '| body:', JSON.stringify(leadJson));
+  if (leadRes.status !== 200 || !leadJson.ok) {
+    throw new Error('POST /api/ktn/leads failed: ' + JSON.stringify(leadJson));
+  }
+
+  console.log('\nALL 8 SECURITY, SYNC, HOMEWORK, NOTIFICATION & LEAD REGRESSION TESTS PASSED!');
 }
 
 main().catch(err => {

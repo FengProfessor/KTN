@@ -2719,36 +2719,6 @@
 
         const clsCode = ctx.classCodes && ctx.classCodes[0] ? ctx.classCodes[0] : '';
         if (clsCode) {
-          pushItem({
-            id: 'notif_stu_due_' + clsCode,
-            recipient_role: 'student',
-            recipient_id: ctx.email,
-            type: 'HOMEWORK_ASSIGNED',
-            category: 'academic',
-            priority: 'MEDIUM',
-            title: 'Cần nộp bài tập.',
-            body: `Lớp ${clsCode}`,
-            action_url: `/custom-page/so-lien-lac-test?view=homework`,
-            timestamp: now - 360000,
-            cta: 'Mở bài tập →',
-            metadata: { classCode: clsCode }
-          });
-
-          pushItem({
-            id: 'notif_stu_sched_' + clsCode,
-            recipient_role: 'student',
-            recipient_id: ctx.email,
-            type: 'CLASS_STARTING_SOON',
-            category: 'schedule',
-            priority: 'MEDIUM',
-            title: 'Đã đến giờ học.',
-            body: `Lớp ${clsCode}`,
-            action_url: `/custom-page/so-lien-lac-test?view=home`,
-            timestamp: now - 720000,
-            cta: 'Vào lớp →',
-            metadata: { classCode: clsCode }
-          });
-
           const roomMsgs = D.roomMessages(clsCode).filter(m => (m.senderRole || m.sender) === 'teacher');
           const lastTeacherMsg = roomMsgs[roomMsgs.length - 1];
           if (lastTeacherMsg && lastTeacherMsg.text) {

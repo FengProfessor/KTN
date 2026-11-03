@@ -221,21 +221,16 @@
             ? session.token
             : (isWorkerToken(prevRecord?.token) ? prevRecord.token : ''));
 
-      const bestAccessToken = isRealJwt(session.accessToken)
-        ? session.accessToken
-        : (isRealJwt(prevRecord?.accessToken)
-            ? prevRecord.accessToken
-            : (isRealJwt(signedToken) ? signedToken : (session.accessToken || prevRecord?.accessToken || '')));
-
       const record = {
         ...(prevRecord || {}),
         ...session,
         role,
         roles: [role],
-        token: bestWorkerToken || bestAccessToken || signedToken || session.token || '',
-        accessToken: bestAccessToken || bestWorkerToken || '',
+        token: bestWorkerToken || signedToken || session.token || '',
+        accessToken: bestWorkerToken || 'KTN-SESSION-VERIFIED',
         savedAt: Date.now()
       };
+      delete record.izteachAccessToken;
       window.__ktnActiveSessionEmail = normEmail;
       try {
         localStorage.setItem(SESSION_KEY, JSON.stringify(record));
@@ -329,6 +324,14 @@
     },
 
     async logout(opts = {}) {
+      let priorToken = '';
+      try {
+        const rawCur = localStorage.getItem(SESSION_KEY);
+        if (rawCur) {
+          const parsedCur = JSON.parse(rawCur);
+          priorToken = String(parsedCur?.token || parsedCur?.accessToken || '').trim();
+        }
+      } catch {}
       window.__ktnLoggingOut = true;
       window.__ktnAllowLogout = true;
       window.__ktnActiveSessionEmail = '';
@@ -371,11 +374,15 @@
         await clearSessionFromIdb();
         await clearSessionFromCacheStorage();
 
+        const logoutHeaders = { 'Content-Type': 'application/json' };
+        if (priorToken && !priorToken.startsWith('KTN-')) {
+          logoutHeaders['Authorization'] = `Bearer ${priorToken}`;
+        }
         const res = await fetch(this.getApiBase() + '/api/ktn/auth/logout', {
           method: 'POST',
           credentials: 'same-origin',
           cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' }
+          headers: logoutHeaders
         });
         if (!res.ok) {
           throw new Error('Máy chủ chưa xác nhận xóa phiên đăng nhập (HTTP ' + res.status + ')');

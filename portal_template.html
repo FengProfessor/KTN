@@ -1823,7 +1823,7 @@
               <div class="workbook-header">
                 <div class="workbook-title-wrap">
                   <h3 id="workbook-head-title">Bài tập của bài · Bài 1</h3>
-                  <p>Nghe mẫu, làm bài tập trắc nghiệm, thu âm phát âm hoặc chụp ảnh vở viết để nộp cho cô.</p>
+                  <p id="workbook-head-sub">Xem trang bài tập cần làm, sau đó chụp ảnh trang bài làm hoặc thu âm giọng đọc nộp cho cô nhé.</p>
                 </div>
                 <div id="workbook-status-badge-wrap">
                   <span class="workbook-status-badge" style="background:#f1f5f9;color:#64748b;">Chưa nộp</span>
@@ -1855,46 +1855,17 @@
                 <audio id="sbt-native-audio" class="sbt-audio-player" controls preload="none" src=""></audio>
               </div>
 
-              <!-- WORKBOOK INTERACTIVE EXERCISES BODY -->
+              <!-- WORKBOOK BODY: CHỈ HIỂN THỊ HƯỚNG DẪN TRANG BÀI TẬP GỐC & NỘP ẢNH/THU ÂM (KHÔNG TỰ SINH BÀI TẬP) -->
               <div class="workbook-body" id="workbook-exercises-body">
 
-                <!-- EXERCISE 1: NGHE & PHÁN ĐOÁN ĐÚNG / SAI -->
-                <div class="exercise-block">
-                  <div class="exercise-block-title">
-                    <span>1. Luyện nghe &amp; Chọn Đúng (对) hoặc Sai (错)</span>
-                    <span class="exercise-block-tip">Bấm Nghe mẫu rồi chọn đáp án</span>
-                  </div>
-                  <div id="exercise-judge-container">
-                    <!-- Dynamic question cards with inline audio buttons -->
-                  </div>
-                </div>
-
-                <!-- EXERCISE 2: NGHE & CHỌN ĐÁP ÁN ĐÚNG -->
-                <div class="exercise-block">
-                  <div class="exercise-block-title">
-                    <span>2. Luyện nghe &amp; Chọn đáp án đúng</span>
-                    <span class="exercise-block-tip">Bấm Nghe mẫu và chọn phương án phù hợp</span>
-                  </div>
-                  <div id="exercise-choose-container">
-                    <!-- Dynamic choose question cards -->
-                  </div>
-                </div>
-
-                <!-- EXERCISE 3: VỞ LUYỆN VIẾT CHỮ HÁN Ô MỄ & THU ÂM -->
                 <div class="exercise-block" id="workbook-upload-record-block">
-                  <div class="exercise-block-title">
-                    <span>3. Vở luyện viết chữ Hán ô mễ &amp; Luyện nói</span>
-                    <span class="exercise-block-tip">Viết chữ Hán theo mẫu và thu âm giọng đọc</span>
-                  </div>
-                  <div class="hanzi-tiles-grid" id="hanzi-tiles-container">
-                    <!-- Dynamic Hanzi calligraphy tiles -->
-                  </div>
+                  <div id="workbook-page-guide-container" style="margin-bottom:14px;"></div>
 
                   <!-- ATTACH WORKBOOK PHOTO OR VOICE RECORDING -->
                   <div class="upload-action-grid">
                     <div class="action-box">
-                      <strong style="font-size:0.88rem;color:var(--text-main);">Chụp ảnh vở viết chữ Hán</strong>
-                      <small style="color:#64748b;font-size:0.78rem;">Chọn ảnh trang vở em vừa viết</small>
+                      <strong style="font-size:0.88rem;color:var(--text-main);">📸 Chụp ảnh trang bài tập / vở viết</strong>
+                      <small style="color:#64748b;font-size:0.78rem;">Chọn ảnh trang Sách bài tập hoặc Vở ô mễ em vừa làm</small>
                       <input type="file" class="file-input-cover" id="hw-file-input" accept="image/*,.pdf" onchange="handleFileChosen(event)">
                     </div>
 
@@ -1909,7 +1880,7 @@
                         </button>
                       </div>
                       <audio id="voice-draft-audio" controls style="display:none;width:100%;max-width:260px;height:34px;margin-top:4px;"></audio>
-                      <small style="color:#64748b;font-size:0.78rem;" id="voice-record-hint">Thu âm giọng đọc từ mới và mẫu câu của bài</small>
+                      <small style="color:#64748b;font-size:0.78rem;" id="voice-record-hint">Thu âm giọng đọc bài khóa / từ mới (nếu có)</small>
                     </div>
                   </div>
 
@@ -2200,7 +2171,7 @@
         badge: 'SONG NGỮ CẤP ĐỘ 3',
         lessonsCount: 20,
         meta1: '🎬 20 Video bài giảng chuẩn HD',
-        meta2: '📄 20 Giáo trình & Bài tập (.DOCX)',
+        meta2: '✍️ Rèn phản xạ Nghe - Nói - Đọc - Viết',
         thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1709666936339-2023-happy-chinese-new-year-landscape-banner-320-x-180-px-4-png.png'
       },
       '65e7636a0a1b61000825c2ef': {
@@ -2320,7 +2291,7 @@
         badge: 'GIAO TIẾP & HSK 1',
         lessonsCount: 20,
         meta1: '🎬 20 Video chuẩn Pinyin & Giao tiếp',
-        meta2: '📄 20 Giáo trình & Bài tập (.DOCX)',
+        meta2: '✍️ Luyện phản xạ & Ngữ pháp HSK 1',
         thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png'
       },
       '65f6d1c722106a0008ff81a3': {
@@ -2330,7 +2301,7 @@
         badge: 'LUYỆN THI HSK',
         lessonsCount: 20,
         meta1: '🎬 20 Video bài giảng & Chữa đề HSK',
-        meta2: '📄 20 Giáo trình & Đề luyện (.DOCX)',
+        meta2: '📄 20 Tài liệu bài tập gốc (.DOCX)',
         thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png'
       },
       '65e773c89ea90c00080d52fc': {
@@ -2340,7 +2311,7 @@
         badge: 'HSK EXAM PREP',
         lessonsCount: 20,
         meta1: '🎬 20 Video bài giảng Song ngữ',
-        meta2: '📄 20 Giáo trình & Bài tập (.DOCX)',
+        meta2: '✍️ Luyện phản xạ & Đề thi HSK',
         thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png'
       }
     };
@@ -3994,33 +3965,7 @@
           ],
           sgkPage: num,
           sbtPage: num,
-          voVietPage: num,
-          listenJudge: [
-            {
-              id: `${num}_1`,
-              audioText: `${titleZh} - ${titleVi}`,
-              question: `Con đã xem kỹ video bài giảng "${titleZh}" và đọc to theo cô giáo chưa?`,
-              correct: true
-            }
-          ],
-          listenChoose: [
-            {
-              id: `${num}_2`,
-              audioText: `Trọng tâm bài học số ${num}: ${titleVi}`,
-              question: 'Chọn trạng thái hoàn thành bài học hôm nay của con:',
-              options: [
-                'A. Con đã nắm vững từ vựng và mẫu câu trong video',
-                'B. Con muốn xem lại thêm 1 lần nữa để nhớ kỹ hơn'
-              ],
-              correct: 0
-            }
-          ],
-          hanziList: [
-            { char: '学', pinyin: 'xué', vi: 'Học tập' },
-            { char: '习', pinyin: 'xí', vi: 'Rèn luyện' },
-            { char: '好', pinyin: 'hǎo', vi: 'Tốt, giỏi' },
-            { char: '棒', pinyin: 'bàng', vi: 'Tuyệt vời' }
-          ]
+          voVietPage: num
         };
       });
     }
@@ -4426,10 +4371,10 @@
       }
     }
 
-    // RENDER INTERACTIVE WORKBOOK
+    // RENDER WORKBOOK (GIỮ ĐÚNG NGUYÊN BẢN — CHỈ HƯỚNG DẪN TRANG BÀI TẬP & CHỤP ẢNH NỘP BÀI, KHÔNG TỰ SINH CÂU HỎI)
     function renderInteractiveWorkbook(lesson) {
       const activeMeta = PORTAL_COURSE_CATALOG[activeCourseId] || PORTAL_COURSE_CATALOG[HSK1_COURSE_ID];
-      document.getElementById('workbook-head-title').textContent = '📘 Bài tập tương tác · ' + activeMeta.shortTitle + ' · Bài ' + lesson.num + ': ' + lesson.titleZh;
+      document.getElementById('workbook-head-title').textContent = '📝 Bài tập về nhà · ' + activeMeta.shortTitle + ' · Bài ' + lesson.num + ': ' + lesson.titleZh;
 
       const isHsk1Course = (activeCourseId === HSK1_COURSE_ID);
       const sbtAudioTrack = (lesson.audioTracks || []).find(t => t.name.includes('SBT') || t.url.includes('/sbt/')) || (isHsk1Course ? {
@@ -4441,84 +4386,68 @@
       if (sbtAudioTrack && sbtAudioTrack.url) {
         if (audioBannerWrap) audioBannerWrap.style.display = 'flex';
         audioEl.src = sbtAudioTrack.url;
-        document.getElementById('sbt-audio-label').textContent = 'Nghe mẫu cả bài ' + lesson.num + ' (Sách bài tập)';
+        document.getElementById('sbt-audio-label').textContent = 'File nghe Sách bài tập · Bài ' + lesson.num;
       } else {
         if (audioBannerWrap) audioBannerWrap.style.display = 'none';
         audioEl.src = '';
       }
 
-      // 1. Exercise 1: Listen & Judge
-      const judgeContainer = document.getElementById('exercise-judge-container');
-      const judgeQuestions = lesson.listenJudge || [];
-      judgeContainer.innerHTML = judgeQuestions.map((q, qIdx) => {
-        const answerKey = 'judge_' + activeCourseId + '_' + lesson.num + '_' + q.id;
-        const currentVal = userAnswers[answerKey];
-        const audioBtnHtml = (sbtAudioTrack && sbtAudioTrack.url) ? `
-              <button type="button" class="btn-audio-pill" onclick="playAudioSnippet('${sbtAudioTrack.url}', this)" title="Bấm để nghe phát âm mẫu">
-                <span>🔊 Nghe mẫu</span>
-              </button>` : '';
-        return `
-          <div class="question-item">
-            <div class="q-head">
-              <span class="q-text">Câu ${qIdx + 1}: ${q.question}</span>${audioBtnHtml}
-            </div>
-            <div style="font-size:0.8rem;color:#1e40af;margin-bottom:8px;font-style:italic;">
-              Nội dung bài học: <strong>${q.audioText}</strong>
-            </div>
-            <div class="options-grid-judge">
-              <button type="button" class="btn-option-judge ${currentVal === true ? 'selected-true' : ''}" onclick="selectJudgeAnswer('${answerKey}', true, this)">
-                <span>✅ Đúng (对 - Duì)</span>
-              </button>
-              <button type="button" class="btn-option-judge ${currentVal === false ? 'selected-false' : ''}" onclick="selectJudgeAnswer('${answerKey}', false, this)">
-                <span>❌ Sai (错 - Cuò)</span>
-              </button>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      // 2. Exercise 2: Listen & Choose
-      const chooseContainer = document.getElementById('exercise-choose-container');
-      const chooseQuestions = lesson.listenChoose || [];
-      chooseContainer.innerHTML = chooseQuestions.map((q, qIdx) => {
-        const answerKey = 'choose_' + activeCourseId + '_' + lesson.num + '_' + q.id;
-        const currentVal = userAnswers[answerKey];
-        const audioBtnHtml = (sbtAudioTrack && sbtAudioTrack.url) ? `
-              <button type="button" class="btn-audio-pill" onclick="playAudioSnippet('${sbtAudioTrack.url}', this)" title="Bấm để nghe phát âm mẫu">
-                <span>🔊 Nghe mẫu</span>
-              </button>` : '';
-        return `
-          <div class="question-item">
-            <div class="q-head">
-              <span class="q-text">Câu ${qIdx + 1}: ${q.question}</span>${audioBtnHtml}
-            </div>
-            <div style="font-size:0.8rem;color:#1e40af;margin-bottom:8px;font-style:italic;">
-              Trọng tâm: <strong>${q.audioText}</strong>
-            </div>
-            <div class="options-list-choose">
-              ${q.options.map((opt, oIdx) => `
-                <button type="button" class="btn-option-choose ${currentVal === oIdx ? 'selected' : ''}" onclick="selectChooseAnswer('${answerKey}', ${oIdx}, this)">
-                  <span class="radio-circle"></span>
-                  <span>${opt}</span>
+      const pageGuideContainer = document.getElementById('workbook-page-guide-container');
+      if (pageGuideContainer) {
+        if (isHsk1Course) {
+          const sgkPage = lesson.sgkPage || 1;
+          const sbtPage = lesson.sbtPage || 1;
+          const voVietPage = lesson.voVietPage || 1;
+          pageGuideContainer.innerHTML = `
+            <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:14px 16px;">
+              <div style="font-size:0.92rem;font-weight:800;color:#92400E;margin-bottom:8px;">
+                📌 Yêu cầu bài tập Bài ${lesson.num} (${escapeHtml(lesson.titleZh)}):
+              </div>
+              <ul style="margin:0 0 12px 18px;padding:0;font-size:0.86rem;color:#334155;line-height:1.65;">
+                <li><strong>Sách bài tập:</strong> Em mở <strong>Trang ${sbtPage}</strong>, hoàn thành các bài tập của Bài ${lesson.num} rồi chụp ảnh trang bài làm.</li>
+                <li><strong>Vở luyện viết chữ Hán ô mễ:</strong> Em mở <strong>Trang ${voVietPage}</strong>, luyện viết chữ Hán của Bài ${lesson.num} rồi chụp ảnh trang vở.</li>
+                <li><strong>Sách giáo khoa:</strong> Ôn lại từ mới và bài khóa tại <strong>Trang ${sgkPage}</strong> (có thể bấm Thu âm để gửi cô sửa phát âm).</li>
+              </ul>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button type="button" class="btn-quick-pill" onclick="openPdfModal('sbt', ${sbtPage})">
+                  ✏️ Mở Sách bài tập · Trang <span class="tag">${sbtPage}</span>
                 </button>
-              `).join('')}
+                <button type="button" class="btn-quick-pill" onclick="openPdfModal('voviet', ${voVietPage})">
+                  ✍️ Mở Vở ô mễ · Trang <span class="tag">${voVietPage}</span>
+                </button>
+                <button type="button" class="btn-quick-pill" onclick="openPdfModal('sgk', ${sgkPage})">
+                  📖 Mở Sách giáo khoa · Trang <span class="tag">${sgkPage}</span>
+                </button>
+              </div>
             </div>
-          </div>
-        `;
-      }).join('');
-
-      // 3. Exercise 3: Hanzi Tracing
-      const hanziContainer = document.getElementById('hanzi-tiles-container');
-      const hanziList = lesson.hanziList || [];
-      hanziContainer.innerHTML = hanziList.map(h => `
-        <div class="hanzi-tile-card">
-          <div class="tian-zi-ge-box">
-            <span class="tian-zi-ge-char">${h.char}</span>
-          </div>
-          <div class="hanzi-pinyin">${h.pinyin}</div>
-          <div class="hanzi-meaning">${h.vi}</div>
-        </div>
-      `).join('');
+          `;
+        } else if (lesson.docUrl) {
+          pageGuideContainer.innerHTML = `
+            <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 16px;">
+              <div style="font-size:0.92rem;font-weight:800;color:#0F172A;margin-bottom:6px;">
+                📌 Yêu cầu bài tập Bài ${lesson.num} (${escapeHtml(lesson.titleZh)}):
+              </div>
+              <div style="font-size:0.86rem;color:#334155;line-height:1.6;margin-bottom:10px;">
+                Em mở tài liệu bài tập của Bài ${lesson.num} bên dưới, làm bài vào vở rồi <strong>chụp ảnh trang bài làm</strong> hoặc <strong>thu âm giọng đọc</strong> gửi cô chấm nhé.
+              </div>
+              <a class="btn-quick-pill" href="${safeUrl(lesson.docUrl)}" target="_blank" download style="text-decoration:none;display:inline-flex;">
+                📄 Tải tài liệu bài tập · Bài ${lesson.num} <span class="tag">${escapeHtml(lesson.docTitle || 'DOCX')}</span>
+              </a>
+            </div>
+          `;
+        } else {
+          pageGuideContainer.innerHTML = `
+            <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px 16px;">
+              <div style="font-size:0.92rem;font-weight:800;color:#0F172A;margin-bottom:6px;">
+                📌 Yêu cầu bài tập Bài ${lesson.num} (${escapeHtml(lesson.titleZh)}):
+              </div>
+              <div style="font-size:0.86rem;color:#334155;line-height:1.6;">
+                Em xem kỹ video bài giảng Bài ${lesson.num}, làm bài tập cô dặn trong video vào vở rồi <strong>chụp ảnh trang vở</strong> hoặc <strong>thu âm giọng đọc</strong> gửi cô chấm nhé.
+              </div>
+            </div>
+          `;
+        }
+      }
 
       // 5 Homework submission states & teacher feedback
       const hw = getLessonHomework(lesson);

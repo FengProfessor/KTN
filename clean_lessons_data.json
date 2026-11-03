@@ -49,64 +49,6 @@
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-01.mp3"
       }
     ],
-    "hanziList": [
-      {
-        "char": "你",
-        "pinyin": "nǐ",
-        "vi": "Bạn, anh, em (ngôi thứ hai)"
-      },
-      {
-        "char": "好",
-        "pinyin": "hǎo",
-        "vi": "Tốt, đẹp, khỏe"
-      },
-      {
-        "char": "您",
-        "pinyin": "nín",
-        "vi": "Ngài, ông (kính trọng)"
-      },
-      {
-        "char": "一",
-        "pinyin": "yī",
-        "vi": "Số một"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "1_1",
-        "audioText": "你好！(Nǐ hǎo!)",
-        "question": "Người nói đang chào hỏi người đối diện một cách thân thiện.",
-        "correct": true
-      },
-      {
-        "id": "1_2",
-        "audioText": "您好！(Nín hǎo!)",
-        "question": "Từ 您 (nín) dùng để chào bạn nhỏ tuổi hơn mình.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "1_3",
-        "audioText": "AI小语，你好！",
-        "question": "Nghe và chọn câu dịch tiếng Việt chính xác:",
-        "options": [
-          "A. Xin chào AI Tiểu Ngữ!",
-          "B. Tạm biệt AI Tiểu Ngữ!"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "1_4",
-        "audioText": "老师好！",
-        "question": "Học sinh vào lớp chào cô giáo, câu nào đúng:",
-        "options": [
-          "A. 对不起 (Xin lỗi cô)",
-          "B. 老师好 (Em chào cô giáo)"
-        ],
-        "correct": 1
-      }
-    ],
     "workbookTitle": "SBT Bài 1: AI小语，你好！ (Xin chào AI Tiểu Ngữ!)"
   },
   {
@@ -153,64 +95,6 @@
       {
         "name": "Luyện nghe SBT Bài 2",
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-02.mp3"
-      }
-    ],
-    "hanziList": [
-      {
-        "char": "我",
-        "pinyin": "wǒ",
-        "vi": "Tôi, con, mình (ngôi thứ nhất)"
-      },
-      {
-        "char": "叫",
-        "pinyin": "jiào",
-        "vi": "Tên là, gọi là"
-      },
-      {
-        "char": "李",
-        "pinyin": "lǐ",
-        "vi": "Họ Lý"
-      },
-      {
-        "char": "文",
-        "pinyin": "wén",
-        "vi": "Văn"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "2_1",
-        "audioText": "我叫李文。(Wǒ jiào Lǐ Wén.)",
-        "question": "Nhân vật trong audio tự giới thiệu mình tên là Lý Văn.",
-        "correct": true
-      },
-      {
-        "id": "2_2",
-        "audioText": "你叫什么名字？",
-        "question": "Câu này mang nghĩa hỏi địa chỉ nhà ở đâu.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "2_3",
-        "audioText": "你叫什么名字？",
-        "question": "Khi được hỏi tên, bạn sẽ đáp lại thế nào:",
-        "options": [
-          "A. 我叫王平。(Tôi tên Vương Bình)",
-          "B. 我很好。(Tôi rất khỏe)"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "2_4",
-        "audioText": "很高兴认识你！",
-        "question": "Nghe và chọn ý nghĩa câu nói:",
-        "options": [
-          "A. Rất vui được làm quen với bạn!",
-          "B. Cảm ơn bạn rất nhiều!"
-        ],
-        "correct": 0
       }
     ],
     "workbookTitle": "SBT Bài 2: 我叫李文 (Mình tên là Lý Văn)"
@@ -270,64 +154,6 @@
       {
         "name": "Luyện nghe SBT Bài 3",
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-03.mp3"
-      }
-    ],
-    "hanziList": [
-      {
-        "char": "是",
-        "pinyin": "shì",
-        "vi": "Là, phải, đúng"
-      },
-      {
-        "char": "中",
-        "pinyin": "zhōng",
-        "vi": "Trung (ở giữa)"
-      },
-      {
-        "char": "国",
-        "pinyin": "guó",
-        "vi": "Quốc gia, đất nước"
-      },
-      {
-        "char": "人",
-        "pinyin": "rén",
-        "vi": "Người"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "3_1",
-        "audioText": "我是中国人。(Wǒ shì Zhōngguó rén.)",
-        "question": "Người nói giới thiệu mang quốc tịch Trung Quốc.",
-        "correct": true
-      },
-      {
-        "id": "3_2",
-        "audioText": "他是美国人吗？",
-        "question": "Câu này mang nghĩa là: \"Anh ấy có phải người Anh không?\".",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "3_3",
-        "audioText": "我是越南人。",
-        "question": "Nghe và chọn câu dịch tiếng Việt đúng:",
-        "options": [
-          "A. Tôi là người Việt Nam.",
-          "B. Tôi là người Hàn Quốc."
-        ],
-        "correct": 0
-      },
-      {
-        "id": "3_4",
-        "audioText": "你也是学生吗？",
-        "question": "Chọn câu trả lời phù hợp:",
-        "options": [
-          "A. 是，我也是学生。(Vâng, tôi cũng là học sinh)",
-          "B. 我不喝水。(Tôi không uống nước)"
-        ],
-        "correct": 0
       }
     ],
     "workbookTitle": "SBT Bài 3: 我是中国人 (Tôi là người Trung Quốc)"
@@ -415,64 +241,6 @@
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-04.mp3"
       }
     ],
-    "hanziList": [
-      {
-        "char": "这",
-        "pinyin": "zhè",
-        "vi": "Đây, này"
-      },
-      {
-        "char": "家",
-        "pinyin": "jiā",
-        "vi": "Nhà, gia đình"
-      },
-      {
-        "char": "爸",
-        "pinyin": "bà",
-        "vi": "Bố, cha"
-      },
-      {
-        "char": "妈",
-        "pinyin": "mā",
-        "vi": "Mẹ, má"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "4_1",
-        "audioText": "这是我爸爸妈妈。(Zhè shì wǒ bàba māmā.)",
-        "question": "Nhân vật đang giới thiệu bố và mẹ của mình.",
-        "correct": true
-      },
-      {
-        "id": "4_2",
-        "audioText": "我家有五口人。",
-        "question": "Câu này nghĩa là gia đình có 3 người.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "4_3",
-        "audioText": "这是我的一家。",
-        "question": "Chọn câu dịch phù hợp:",
-        "options": [
-          "A. Đây là gia đình của tôi.",
-          "B. Đây là trường học của tôi."
-        ],
-        "correct": 0
-      },
-      {
-        "id": "4_4",
-        "audioText": "你家有几口人？",
-        "question": "Chọn câu trả lời logic:",
-        "options": [
-          "A. 我家有四口人。(Nhà tôi có 4 người)",
-          "B. 今天星期三。(Hôm nay thứ tư)"
-        ],
-        "correct": 0
-      }
-    ],
     "workbookTitle": "SBT Bài 4: 这是我的一家 (Đây là gia đình của tôi)"
   },
   {
@@ -524,64 +292,6 @@
       {
         "name": "Luyện nghe SBT Bài 5",
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-05.mp3"
-      }
-    ],
-    "hanziList": [
-      {
-        "char": "今",
-        "pinyin": "jīn",
-        "vi": "Nay, hiện tại"
-      },
-      {
-        "char": "天",
-        "pinyin": "tiān",
-        "vi": "Ngày, trời"
-      },
-      {
-        "char": "休",
-        "pinyin": "xiū",
-        "vi": "Nghỉ"
-      },
-      {
-        "char": "息",
-        "pinyin": "xī",
-        "vi": "Tức, hơi thở"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "5_1",
-        "audioText": "今天我休息。(Jīntiān wǒ xiūxi.)",
-        "question": "Người nói thông báo hôm nay mình được nghỉ ngơi.",
-        "correct": true
-      },
-      {
-        "id": "5_2",
-        "audioText": "明天星期天。",
-        "question": "Câu này nghĩa là ngày mai là thứ hai.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "5_3",
-        "audioText": "今天星期几？",
-        "question": "Ý nghĩa của câu hỏi này là gì:",
-        "options": [
-          "A. Hôm nay là thứ mấy?",
-          "B. Hôm nay là ngày mấy tháng mấy?"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "5_4",
-        "audioText": "星期六你去学校吗？",
-        "question": "Chọn câu đáp lại:",
-        "options": [
-          "A. 我不去，我休息。(Tôi không đi, tôi nghỉ)",
-          "B. 我很高兴。(Tôi rất vui)"
-        ],
-        "correct": 0
       }
     ],
     "workbookTitle": "SBT Bài 5: 今天我休息 (Hôm nay tôi được nghỉ)"
@@ -637,64 +347,6 @@
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-06.mp3"
       }
     ],
-    "hanziList": [
-      {
-        "char": "手",
-        "pinyin": "shǒu",
-        "vi": "Tay"
-      },
-      {
-        "char": "机",
-        "pinyin": "jī",
-        "vi": "Máy móc, thiết bị"
-      },
-      {
-        "char": "号",
-        "pinyin": "hào",
-        "vi": "Số, hiệu"
-      },
-      {
-        "char": "多",
-        "pinyin": "duō",
-        "vi": "Nhiều, bao nhiêu"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "6_1",
-        "audioText": "你的手机号是多少？",
-        "question": "Người nói đang hỏi số điện thoại di động.",
-        "correct": true
-      },
-      {
-        "id": "6_2",
-        "audioText": "我的电话是一三八...",
-        "question": "Số 1 trong dãy số điện thoại thường đọc là yāo.",
-        "correct": true
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "6_3",
-        "audioText": "这是我的名片。",
-        "question": "Ý nghĩa câu này là:",
-        "options": [
-          "A. Đây là danh thiếp của tôi.",
-          "B. Đây là quyển sách của tôi."
-        ],
-        "correct": 0
-      },
-      {
-        "id": "6_4",
-        "audioText": "请问，您贵姓？",
-        "question": "Cách hỏi lịch sự họ của người khác:",
-        "options": [
-          "A. Xin hỏi, ngài họ gì?",
-          "B. Bạn đang đi đâu vậy?"
-        ],
-        "correct": 0
-      }
-    ],
     "workbookTitle": "SBT Bài 6: 你的手机号是多少？ (Số điện thoại của bạn là bao nhiêu?)"
   },
   {
@@ -746,64 +398,6 @@
       {
         "name": "Luyện nghe SBT Bài 7",
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-07.mp3"
-      }
-    ],
-    "hanziList": [
-      {
-        "char": "晚",
-        "pinyin": "wǎn",
-        "vi": "Tối, muộn"
-      },
-      {
-        "char": "点",
-        "pinyin": "diǎn",
-        "vi": "Giờ, điểm"
-      },
-      {
-        "char": "半",
-        "pinyin": "bàn",
-        "vi": "Nửa, rưỡi (30 phút)"
-      },
-      {
-        "char": "班",
-        "pinyin": "bān",
-        "vi": "Ca làm, lớp học"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "7_1",
-        "audioText": "我晚上六点半下班。",
-        "question": "Nhân vật tan làm vào lúc 18:30 chiều tối.",
-        "correct": true
-      },
-      {
-        "id": "7_2",
-        "audioText": "现在几点？",
-        "question": "Câu này mang nghĩa hỏi giá tiền.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "7_3",
-        "audioText": "现在差五分八点。",
-        "question": "Thời gian chính xác là mấy giờ:",
-        "options": [
-          "A. 7 giờ 55 phút (8 giờ kém 5)",
-          "B. 8 giờ 5 phút"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "7_4",
-        "audioText": "明天早上见！",
-        "question": "Lời hẹn vào thời điểm nào:",
-        "options": [
-          "A. Sáng mai gặp lại nhé!",
-          "B. Tối mai gặp lại nhé!"
-        ],
-        "correct": 0
       }
     ],
     "workbookTitle": "SBT Bài 7: 我晚上六点半下班 (Tôi tan làm lúc sáu rưỡi tối)"
@@ -859,64 +453,6 @@
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-08.mp3"
       }
     ],
-    "hanziList": [
-      {
-        "char": "也",
-        "pinyin": "yě",
-        "vi": "Cũng"
-      },
-      {
-        "char": "在",
-        "pinyin": "zài",
-        "vi": "Ở, tại"
-      },
-      {
-        "char": "医",
-        "pinyin": "yī",
-        "vi": "Y tế, bác sĩ"
-      },
-      {
-        "char": "院",
-        "pinyin": "yuàn",
-        "vi": "Viện"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "8_1",
-        "audioText": "我爸爸在医院工作。",
-        "question": "Bố của nhân vật làm việc tại bệnh viện.",
-        "correct": true
-      },
-      {
-        "id": "8_2",
-        "audioText": "我妈妈也是医生。",
-        "question": "Mẹ của nhân vật làm nghề giáo viên.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "8_3",
-        "audioText": "你在哪儿工作？",
-        "question": "Ý nghĩa của câu hỏi này:",
-        "options": [
-          "A. Bạn làm việc ở đâu?",
-          "B. Bạn đi đâu vậy?"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "8_4",
-        "audioText": "我是一名护士。",
-        "question": "Nhân vật làm nghề gì:",
-        "options": [
-          "A. Y tá",
-          "B. Kỹ sư"
-        ],
-        "correct": 0
-      }
-    ],
     "workbookTitle": "SBT Bài 8: 我爸爸也在医院工作 (Bố tôi cũng làm việc ở bệnh viện)"
   },
   {
@@ -968,64 +504,6 @@
       {
         "name": "Luyện nghe SBT Bài 9",
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-09.mp3"
-      }
-    ],
-    "hanziList": [
-      {
-        "char": "明",
-        "pinyin": "míng",
-        "vi": "Sáng, ngày mai"
-      },
-      {
-        "char": "上",
-        "pinyin": "shàng",
-        "vi": "Trên, buổi sáng (上午)"
-      },
-      {
-        "char": "学",
-        "pinyin": "xué",
-        "vi": "Học"
-      },
-      {
-        "char": "校",
-        "pinyin": "xiào",
-        "vi": "Trường"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "9_1",
-        "audioText": "我明天上午在学校学习。",
-        "question": "Sáng mai nhân vật sẽ học tập tại trường học.",
-        "correct": true
-      },
-      {
-        "id": "9_2",
-        "audioText": "图书馆在食堂东边。",
-        "question": "Thư viện nằm ở phía tây nhà ăn.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "9_3",
-        "audioText": "你今天去学校吗？",
-        "question": "Chọn câu trả lời:",
-        "options": [
-          "A. 去，我下午去。(Có, chiều tôi đi)",
-          "B. 苹果很好吃。(Táo rất ngon)"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "9_4",
-        "audioText": "我们在教室里看书。",
-        "question": "Hành động diễn ra ở đâu:",
-        "options": [
-          "A. Trong phòng học",
-          "B. Ngoài sân trường"
-        ],
-        "correct": 0
       }
     ],
     "workbookTitle": "SBT Bài 9: 我明天上午在学校学习 (Sáng mai tôi học ở trường)"
@@ -1081,64 +559,6 @@
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-10.mp3"
       }
     ],
-    "hanziList": [
-      {
-        "char": "这",
-        "pinyin": "zhè",
-        "vi": "Chỗ này, đây"
-      },
-      {
-        "char": "苹",
-        "pinyin": "píng",
-        "vi": "Táo (苹果)"
-      },
-      {
-        "char": "果",
-        "pinyin": "guǒ",
-        "vi": "Quả, trái"
-      },
-      {
-        "char": "真",
-        "pinyin": "zhēn",
-        "vi": "Thật, thật sự"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "10_1",
-        "audioText": "这儿的苹果真便宜！",
-        "question": "Người nói khen táo ở đây giá rất rẻ.",
-        "correct": true
-      },
-      {
-        "id": "10_2",
-        "audioText": "苹果多少钱一斤？",
-        "question": "Người mua đang hỏi trọng lượng quả táo.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "10_3",
-        "audioText": "太贵了，便宜一点儿吧。",
-        "question": "Người mua đang làm gì:",
-        "options": [
-          "A. Mặc cả giá (Đắt quá, bớt chút đi)",
-          "B. Khen đồ đẹp"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "10_4",
-        "audioText": "一共二十块钱。",
-        "question": "Tổng số tiền cần trả là:",
-        "options": [
-          "A. 20 đồng",
-          "B. 12 đồng"
-        ],
-        "correct": 0
-      }
-    ],
     "workbookTitle": "SBT Bài 10: 这儿的苹果真便宜！ (Táo ở đây rẻ thật đấy!)"
   },
   {
@@ -1190,64 +610,6 @@
       {
         "name": "Luyện nghe SBT Bài 11",
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-11.mp3"
-      }
-    ],
-    "hanziList": [
-      {
-        "char": "读",
-        "pinyin": "dú",
-        "vi": "Đọc, học (đại học)"
-      },
-      {
-        "char": "大",
-        "pinyin": "dà",
-        "vi": "To, lớn"
-      },
-      {
-        "char": "呢",
-        "pinyin": "ne",
-        "vi": "Đang (trợ từ)"
-      },
-      {
-        "char": "业",
-        "pinyin": "yè",
-        "vi": "Nghiệp, công việc"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "11_1",
-        "audioText": "我读大学呢。",
-        "question": "Nhân vật đang học chương trình đại học.",
-        "correct": true
-      },
-      {
-        "id": "11_2",
-        "audioText": "你在做什么呢？",
-        "question": "Câu hỏi hỏi về quê quán của đối phương.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "11_3",
-        "audioText": "我正在听音乐呢。",
-        "question": "Người nói đang làm gì:",
-        "options": [
-          "A. Đang nghe nhạc",
-          "B. Đang xem tivi"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "11_4",
-        "audioText": "他在北京大学读书。",
-        "question": "Địa điểm trường đại học ở đâu:",
-        "options": [
-          "A. Bắc Kinh",
-          "B. Thượng Hải"
-        ],
-        "correct": 0
       }
     ],
     "workbookTitle": "SBT Bài 11: 我读大学呢 (Tôi đang học đại học)"
@@ -1316,64 +678,6 @@
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-12.mp3"
       }
     ],
-    "hanziList": [
-      {
-        "char": "昨",
-        "pinyin": "zuó",
-        "vi": "Hôm qua"
-      },
-      {
-        "char": "下",
-        "pinyin": "xià",
-        "vi": "Dưới, rơi (mưa/tuyết)"
-      },
-      {
-        "char": "雪",
-        "pinyin": "xuě",
-        "vi": "Tuyết"
-      },
-      {
-        "char": "冷",
-        "pinyin": "lěng",
-        "vi": "Lạnh"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "12_1",
-        "audioText": "昨天下了雪了。",
-        "question": "Thời tiết ngày hôm qua có tuyết rơi.",
-        "correct": true
-      },
-      {
-        "id": "12_2",
-        "audioText": "今天天气很热。",
-        "question": "Hôm nay thời tiết rất lạnh buốt.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "12_3",
-        "audioText": "明天会下雨吗？",
-        "question": "Người hỏi quan tâm đến thời tiết nào:",
-        "options": [
-          "A. Trời mưa",
-          "B. Trời nắng"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "12_4",
-        "audioText": "今天比昨天冷多了。",
-        "question": "So sánh thời tiết hôm nay và hôm qua:",
-        "options": [
-          "A. Hôm nay lạnh hơn hôm qua nhiều",
-          "B. Hôm nay ấm hơn hôm qua"
-        ],
-        "correct": 0
-      }
-    ],
     "workbookTitle": "SBT Bài 12: 昨天下了雪了 (Hôm qua có tuyết rơi rồi)"
   },
   {
@@ -1425,64 +729,6 @@
       {
         "name": "Luyện nghe SBT Bài 13",
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-13.mp3"
-      }
-    ],
-    "hanziList": [
-      {
-        "char": "请",
-        "pinyin": "qǐng",
-        "vi": "Xin, mời"
-      },
-      {
-        "char": "给",
-        "pinyin": "gěi",
-        "vi": "Cho, đưa cho"
-      },
-      {
-        "char": "杯",
-        "pinyin": "bēi",
-        "vi": "Cốc, ly"
-      },
-      {
-        "char": "茶",
-        "pinyin": "chá",
-        "vi": "Trà, chè"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "13_1",
-        "audioText": "请给我一杯茶。",
-        "question": "Khách muốn gọi một cốc nước trà.",
-        "correct": true
-      },
-      {
-        "id": "13_2",
-        "audioText": "你想喝咖啡吗？",
-        "question": "Người hỏi mời bạn uống nước ngọt.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "13_3",
-        "audioText": "服务员，请结账。",
-        "question": "Khách hàng nói câu này khi nào:",
-        "options": [
-          "A. Khi muốn thanh toán tiền",
-          "B. Khi mới bước vào quán"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "13_4",
-        "audioText": "这杯绿茶非常好喝。",
-        "question": "Đánh giá về đồ uống:",
-        "options": [
-          "A. Rất ngon",
-          "B. Quá ngọt"
-        ],
-        "correct": 0
       }
     ],
     "workbookTitle": "SBT Bài 13: 请给我一杯茶 (Xin cho tôi một cốc trà)"
@@ -1538,64 +784,6 @@
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-14.mp3"
       }
     ],
-    "hanziList": [
-      {
-        "char": "看",
-        "pinyin": "kàn",
-        "vi": "Xem, nhìn, đọc"
-      },
-      {
-        "char": "电",
-        "pinyin": "diàn",
-        "vi": "Điện"
-      },
-      {
-        "char": "影",
-        "pinyin": "yǐng",
-        "vi": "Ảnh, bóng (phim)"
-      },
-      {
-        "char": "过",
-        "pinyin": "guò",
-        "vi": "Đã từng qua"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "14_1",
-        "audioText": "我看了一个电影。",
-        "question": "Nhân vật đã xem một bộ phim.",
-        "correct": true
-      },
-      {
-        "id": "14_2",
-        "audioText": "电影票三十块钱一张。",
-        "question": "Vé xem phim có giá 300 đồng.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "14_3",
-        "audioText": "这个电影很有意思。",
-        "question": "Nhận xét về bộ phim:",
-        "options": [
-          "A. Rất hay, rất thú vị",
-          "B. Rất chán"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "14_4",
-        "audioText": "周末我们一起看电影吧。",
-        "question": "Lời rủ đi xem phim vào dịp nào:",
-        "options": [
-          "A. Cuối tuần",
-          "B. Tối nay"
-        ],
-        "correct": 0
-      }
-    ],
     "workbookTitle": "SBT Bài 14: 我看了一个电影 (Tôi đã xem một bộ phim)"
   },
   {
@@ -1647,64 +835,6 @@
       {
         "name": "Luyện nghe SBT Bài 15",
         "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/sbt-15.mp3"
-      }
-    ],
-    "hanziList": [
-      {
-        "char": "大",
-        "pinyin": "dà",
-        "vi": "Đại, lớn"
-      },
-      {
-        "char": "兴",
-        "pinyin": "xīng",
-        "vi": "Hưng (Đại Hưng)"
-      },
-      {
-        "char": "机",
-        "pinyin": "jī",
-        "vi": "Máy bay, cơ"
-      },
-      {
-        "char": "场",
-        "pinyin": "chǎng",
-        "vi": "Trường, sân bay"
-      }
-    ],
-    "listenJudge": [
-      {
-        "id": "15_1",
-        "audioText": "大兴机场见！",
-        "question": "Địa điểm hẹn gặp mặt là sân bay Đại Hưng.",
-        "correct": true
-      },
-      {
-        "id": "15_2",
-        "audioText": "一路顺风！",
-        "question": "Lời chúc này nghĩa là chúc mừng năm mới.",
-        "correct": false
-      }
-    ],
-    "listenChoose": [
-      {
-        "id": "15_3",
-        "audioText": "明天见！",
-        "question": "Ý nghĩa lời chào tạm biệt:",
-        "options": [
-          "A. Ngày mai gặp lại!",
-          "B. Hẹn gặp tuần sau!"
-        ],
-        "correct": 0
-      },
-      {
-        "id": "15_4",
-        "audioText": "祝你旅途愉快！",
-        "question": "Lời chúc này dành cho người sắp làm gì:",
-        "options": [
-          "A. Đi du lịch / chuyến đi xa vui vẻ",
-          "B. Đi thi đạt điểm cao"
-        ],
-        "correct": 0
       }
     ],
     "workbookTitle": "SBT Bài 15: 大兴机场见！ (Hẹn gặp ở sân bay Đại Hưng!)"

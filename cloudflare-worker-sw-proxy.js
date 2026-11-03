@@ -32,7 +32,7 @@ const IZTEACH_ENDPOINTS = {
 };
 
 // ============================================================================
-// DANH MỤC 9 KHÓA HỌC CHUẨN + GÓI COMBO 6 KHÓA TRÊN IZTEACH (MASTER CATALOG)
+// DANH MỤC 17 KHÓA HỌC VIDEO THỰC TẾ + GÓI COMBO TRÊN IZTEACH (MASTER CATALOG)
 // ============================================================================
 const MASTER_PRODUCT_MAPPING = {
   '6adadba969897b0002482ca5': {
@@ -55,10 +55,70 @@ const MASTER_PRODUCT_MAPPING = {
     price: 890000,
     oldPrice: 1500000
   },
+  '661528ea42af880008944573': {
+    id: '661528ea42af880008944573',
+    code: 'CFK-03',
+    title: 'Chinese For Kids 3 (Khóa Song ngữ Trẻ em Cấp độ 3)',
+    shortTitle: 'Chinese For Kids 3',
+    badge: 'SONG NGỮ CẤP ĐỘ 3',
+    lessonsCount: 20,
+    price: 890000,
+    oldPrice: 1500000
+  },
+  '65e7636a0a1b61000825c2ef': {
+    id: '65e7636a0a1b61000825c2ef',
+    code: 'MINI-01',
+    title: 'Tiếng Trung Trẻ Em Mini 1 (Khóa học cho bé 4 – 6 tuổi)',
+    shortTitle: 'Tiếng Trung Trẻ Em Mini 1',
+    badge: 'MẦM NON MINI 1',
+    lessonsCount: 20,
+    price: 890000,
+    oldPrice: 1500000
+  },
+  '6600fa477c18b80008c53c88': {
+    id: '6600fa477c18b80008c53c88',
+    code: 'MINI-02',
+    title: 'Tiếng Trung Trẻ Em Mini 2 (Khóa học cho bé 5 – 7 tuổi)',
+    shortTitle: 'Tiếng Trung Trẻ Em Mini 2',
+    badge: 'MẦM NON MINI 2',
+    lessonsCount: 20,
+    price: 890000,
+    oldPrice: 1500000
+  },
+  '6600fa7da2bfe10008834e13': {
+    id: '6600fa7da2bfe10008834e13',
+    code: 'MINI-03',
+    title: 'Tiếng Trung Trẻ Em Mini 3 (Khóa học cho bé 6 – 8 tuổi)',
+    shortTitle: 'Tiếng Trung Trẻ Em Mini 3',
+    badge: 'MẦM NON MINI 3',
+    lessonsCount: 20,
+    price: 890000,
+    oldPrice: 1500000
+  },
+  '65e769bd637339000870618f': {
+    id: '65e769bd637339000870618f',
+    code: 'KIDS-01',
+    title: 'Tiếng Trung Trẻ Em 1 (Lộ trình 6 – 11 tuổi)',
+    shortTitle: 'Tiếng Trung Trẻ Em 1',
+    badge: 'CẤP ĐỘ 01',
+    lessonsCount: 25,
+    price: 890000,
+    oldPrice: 1500000
+  },
+  '66028938bfd6c90008b816e1': {
+    id: '66028938bfd6c90008b816e1',
+    code: 'KIDS-02',
+    title: 'Tiếng Trung Trẻ Em 2 (Lộ trình 6 – 12 tuổi)',
+    shortTitle: 'Tiếng Trung Trẻ Em 2',
+    badge: 'CẤP ĐỘ 02',
+    lessonsCount: 20,
+    price: 890000,
+    oldPrice: 1500000
+  },
   '6638bd09a7367400085c7ab2': {
     id: '6638bd09a7367400085c7ab2',
     code: 'KIDS-03',
-    title: 'Tiếng Trung Trẻ Em 3 (Mini vỡ lòng 5 – 6 tuổi)',
+    title: 'Tiếng Trung Trẻ Em 3 (Lộ trình 6 – 12 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em 3',
     badge: 'CẤP ĐỘ 03',
     lessonsCount: 20,
@@ -71,7 +131,7 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em 4 (Lộ trình 7 – 13 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em 4',
     badge: 'CẤP ĐỘ 04',
-    lessonsCount: 18,
+    lessonsCount: 16,
     price: 890000,
     oldPrice: 1500000
   },
@@ -95,35 +155,55 @@ const MASTER_PRODUCT_MAPPING = {
     price: 890000,
     oldPrice: 1500000
   },
-  '6983672f409cc20002e530b8': {
-    id: '6983672f409cc20002e530b8',
-    code: 'YCT-04',
-    title: 'Khóa học Tiếng Trung Trẻ Em YCT 4',
-    shortTitle: 'Tiếng Trung YCT 4',
-    badge: 'CHỨNG CHỈ YCT 4',
-    lessonsCount: 20,
-    price: 1290000,
-    oldPrice: 2000000
+  '65e772a1767c56000829518e': {
+    id: '65e772a1767c56000829518e',
+    code: 'JUNIOR-01',
+    title: 'Chinese Junior 1 (Tiếng Trung Thiếu Niên Song Ngữ)',
+    shortTitle: 'Chinese Junior 1',
+    badge: 'CHINESE JUNIOR 1',
+    lessonsCount: 25,
+    price: 990000,
+    oldPrice: 1600000
+  },
+  '6638c76dfac274000876cd13': {
+    id: '6638c76dfac274000876cd13',
+    code: 'JUNIOR-03',
+    title: 'Chinese Junior 3 (Tiếng Trung Thiếu Niên Cấp Độ 3)',
+    shortTitle: 'Chinese Junior 3',
+    badge: 'CHINESE JUNIOR 3',
+    lessonsCount: 25,
+    price: 990000,
+    oldPrice: 1600000
   },
   '65e76a533f5e7c00086715d7': {
     id: '65e76a533f5e7c00086715d7',
-    code: 'PRON-01',
-    title: 'Khóa học Phát Âm & Giao Tiếp Phản Xạ Cơ Bản',
-    shortTitle: 'Phát Âm & Phản Xạ',
-    badge: 'GIAO TIẾP PHẢN XẠ',
-    lessonsCount: 19,
-    price: 690000,
-    oldPrice: 1200000
-  },
-  '67bebce067dba000027d8119': {
-    id: '67bebce067dba000027d8119',
-    code: 'HANZI-01',
-    title: 'Khóa học Hán Tự Tư Duy & Luyện Viết Chữ Hán',
-    shortTitle: 'Hán Tự Tư Duy',
-    badge: 'HÁN TỰ TƯ DUY',
+    code: 'HSK1-20',
+    title: 'Khóa học Tiếng Trung HSK 1 & Giao Tiếp Phản Xạ',
+    shortTitle: 'Tiếng Trung HSK 1',
+    badge: 'GIAO TIẾP & HSK 1',
     lessonsCount: 20,
     price: 690000,
     oldPrice: 1200000
+  },
+  '65f6d1c722106a0008ff81a3': {
+    id: '65f6d1c722106a0008ff81a3',
+    code: 'HSK-PREP-VN',
+    title: 'Khóa học Tiếng Trung + Luyện Thi HSK Chuẩn Quốc Tế',
+    shortTitle: 'Tiếng Trung + Luyện Thi HSK',
+    badge: 'LUYỆN THI HSK',
+    lessonsCount: 20,
+    price: 890000,
+    oldPrice: 1500000
+  },
+  '65e773c89ea90c00080d52fc': {
+    id: '65e773c89ea90c00080d52fc',
+    code: 'HSK-PREP-EN',
+    title: 'Chinese + HSK Exam Preparation (Song ngữ Quốc tế)',
+    shortTitle: 'Chinese + HSK Exam Prep',
+    badge: 'HSK EXAM PREP',
+    lessonsCount: 20,
+    price: 990000,
+    oldPrice: 1600000
   },
   'BUNDLE_YCT_ALL': {
     id: 'BUNDLE_YCT_ALL',
@@ -140,7 +220,7 @@ const MASTER_PRODUCT_MAPPING = {
       '67a7290a5fdc26000238b4e9',
       '67a869302ecb9c000257d966'
     ],
-    lessonsCount: 113,
+    lessonsCount: 111,
     price: 2990000,
     oldPrice: 6000000
   }
@@ -1011,7 +1091,8 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, cogn
   const izCourseIds = [];
   let fetchedIzPermOk = false;
   if (isValidCognitoUuid(resolvedCognitoUid)) {
-    const tokenToUse = accessToken || adminToken || (await getIzTeachAdminToken(env));
+    const validIzAccessToken = (typeof accessToken === 'string' && accessToken.split('.').length === 3) ? accessToken : null;
+    const tokenToUse = validIzAccessToken || adminToken || (await getIzTeachAdminToken(env));
     if (tokenToUse) {
       try {
         const pRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(resolvedCognitoUid)}&vendorId=${encodeURIComponent(vendorId)}`, {
@@ -1089,9 +1170,36 @@ async function syncAllIzTeachStudentsToSupabase(env) {
     const nowIso = new Date().toISOString();
     const upsertMap = new Map();
 
-    // Giữ nguyên mọi học viên đã có trong Supabase
+    const PLACEHOLDER_COURSE_REMAP = {
+      '6a9502d28ef1e30002d38cd2': '65e769bd637339000870618f',
+      '6acfe08c8ef1e30002d3933a': '66028938bfd6c90008b816e1',
+      '6ad072d88ef1e30002d39481': '6638bd09a7367400085c7ab2',
+      '6ad0d6bf8ef1e30002d3955a': '678d14b960eae20002ddf8fe',
+      '6ad2fe038ef1e30002d397eb': '67a7290a5fdc26000238b4e9',
+      '6ad440998ef1e30002d3995f': '67a869302ecb9c000257d966'
+    };
+    const normalizeOnlineCourseEntries = (arr) => {
+      if (!Array.isArray(arr)) return [];
+      const seen = new Set();
+      const out = [];
+      for (const item of arr) {
+        let cid = String(item?.id || item?._id || item || '').trim();
+        if (!cid) continue;
+        if (PLACEHOLDER_COURSE_REMAP[cid]) cid = PLACEHOLDER_COURSE_REMAP[cid];
+        if (cid === '6983672f409cc20002e530b8' || cid === '67bebce067dba000027d8119') continue;
+        if (seen.has(cid)) continue;
+        seen.add(cid);
+        out.push({
+          id: cid,
+          title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || item?.title || 'Khóa học trực tuyến'
+        });
+      }
+      return out;
+    };
+
+    // Giữ nguyên mọi học viên đã có trong Supabase (chuẩn hóa tên khóa học thật)
     for (const [em, row] of byEmail.entries()) {
-      const prevCourses = Array.isArray(row.online_courses) ? row.online_courses : [];
+      const prevCourses = normalizeOnlineCourseEntries(row.online_courses);
       upsertMap.set(em, {
         code: row.code || ('KTN-' + Date.now().toString().slice(-6)),
         email: em,
@@ -1181,8 +1289,8 @@ async function syncAllIzTeachStudentsToSupabase(env) {
         changedRows.push(row);
         continue;
       }
-      const origCourseIds = (Array.isArray(orig.online_courses) ? orig.online_courses : []).map(c => String(c?.id || c || '')).sort().join(',');
-      const nextCourseIds = (Array.isArray(row.online_courses) ? row.online_courses : []).map(c => String(c?.id || c || '')).sort().join(',');
+      const origCoursesSig = JSON.stringify(Array.isArray(orig.online_courses) ? orig.online_courses : []);
+      const nextCoursesSig = JSON.stringify(Array.isArray(row.online_courses) ? row.online_courses : []);
       const hasDiff = (
         String(orig.name || '').trim() !== String(row.name || '').trim() ||
         String(orig.phone || '').trim() !== String(row.phone || '').trim() ||
@@ -1191,7 +1299,7 @@ async function syncAllIzTeachStudentsToSupabase(env) {
         String(orig.class_code || '') !== String(row.class_code || '') ||
         Boolean(orig.has_live_class) !== Boolean(row.has_live_class) ||
         Boolean(orig.has_online_courses) !== Boolean(row.has_online_courses) ||
-        origCourseIds !== nextCourseIds
+        origCoursesSig !== nextCoursesSig
       );
       if (hasDiff) {
         updatedCount++;
@@ -1613,7 +1721,7 @@ export default {
             const remoteList = Array.isArray(cData?.data) ? cData.data : (Array.isArray(cData) ? cData : []);
             for (const rc of remoteList) {
               const cid = String(rc._id || rc.id || '').trim();
-              if (!cid) continue;
+              if (!cid || !MASTER_PRODUCT_MAPPING[cid]) continue;
               const baseMeta = MASTER_PRODUCT_MAPPING[cid] || {};
               const row = {
                 course_id: cid,
@@ -1643,7 +1751,15 @@ export default {
         } catch {}
       }
 
-      // Luôn đảm bảo 9 khóa chuẩn + 1 gói Combo có mặt trong ktn_courses
+      // Tắt các khóa rỗng (0 bài) hoặc ID giả cũ trong ktn_courses
+      await supabaseRequest(
+        env,
+        'ktn_courses?course_id=in.(6983672f409cc20002e530b8,67bebce067dba000027d8119,6a9502d28ef1e30002d38cd2,6acfe08c8ef1e30002d3933a,6ad072d88ef1e30002d39481,6ad0d6bf8ef1e30002d3955a,6ad2fe038ef1e30002d397eb,6ad440998ef1e30002d3995f)',
+        { method: 'PATCH', body: { active: false, updated_at: new Date().toISOString() } }
+      );
+
+      // Luôn đảm bảo 17 khóa chuẩn + 1 gói Combo có mặt trong ktn_courses
+      let sortIdx = 1;
       for (const [cid, meta] of Object.entries(MASTER_PRODUCT_MAPPING)) {
         const baseRow = {
           course_id: cid,
@@ -1658,6 +1774,7 @@ export default {
           is_bundle: Boolean(meta.isBundle),
           bundle_course_ids: meta.bundleCourseIds || [],
           active: true,
+          sort_order: sortIdx++,
           synced_from_izteach_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
@@ -1731,7 +1848,7 @@ export default {
         return jsonResponse({ ok: false, message: 'Chỉ Quản lý hoặc Giáo viên mới được xem danh sách học viên.' }, 403);
       }
       const classFilter = String(url.searchParams.get('classCode') || '').trim().toUpperCase();
-      let query = 'ktn_students?select=*&order=updated_at.desc&limit=300';
+      let query = 'ktn_students?select=*&order=updated_at.desc&limit=2000';
       if (session.role === 'teacher') {
         const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
         if (classFilter) {

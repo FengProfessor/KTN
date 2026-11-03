@@ -11,16 +11,17 @@
   <link rel="stylesheet" href="so-lien-lac-lms.css">
   <style>
     :root { --ktn-red: #B91C1C; --ktn-bg: #F8FAFC; }
-    body { margin: 0; font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--ktn-bg); color: #0F172A; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; overflow-x: hidden; font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--ktn-bg); color: #0F172A; }
     .teacher-header {
       position: sticky; top: 0; z-index: 1000;
       display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-      padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #E2E8F0;
+      padding: 12px 16px; background: #FFFFFF; border-bottom: 1px solid #E2E8F0;
     }
-    .teacher-nav { display: flex; gap: 6px; background: #F1F5F9; padding: 4px; border-radius: 999px; }
+    .teacher-nav { display: flex; gap: 6px; flex-wrap: wrap; max-width: 100%; background: #F1F5F9; padding: 4px; border-radius: 16px; }
     .teacher-nav button {
-      border: none; background: transparent; padding: 8px 18px; border-radius: 999px;
-      font-weight: 700; font-size: 13.5px; color: #475569; cursor: pointer; font-family: inherit;
+      border: none; background: transparent; padding: 8px 14px; border-radius: 999px;
+      font-weight: 700; font-size: 13px; color: #475569; cursor: pointer; font-family: inherit;
     }
     .teacher-nav button.active { background: var(--ktn-red); color: #FFFFFF; }
     .teacher-container { max-width: 1120px; margin: 24px auto; padding: 0 16px; }
@@ -298,21 +299,23 @@
     async function loadTeacherHomeworks() {
       const box = document.getElementById('teacher-grade-list');
       const res = await KtnWebApp.apiRequest('/api/ktn/homeworks');
-      let list = (res.ok && Array.isArray(res.data?.homeworks)) ? res.data.homeworks : [];
-      try {
-        const localHw = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
-        if (Array.isArray(localHw) && localHw.length) {
-          const map = new Map();
-          [...localHw, ...list].forEach(item => { if (item && item.id) map.set(item.id, item); });
-          list = Array.from(map.values());
-        }
-      } catch (e) {}
+      const list = (res.ok && Array.isArray(res.data?.homeworks)) ? res.data.homeworks : [];
 
       if (!list.length) {
         box.innerHTML = '<div style="padding:16px;color:#64748B;">Hiện chưa có bài nộp mới nào cần chấm.</div>';
         return;
       }
-      box.innerHTML = list.map(hw => {
+      const pendingCount = list.filter(h => !h.status || h.status === 'pending').length;
+      const revisionCount = list.filter(h => h.status === 'revision_requested' || h.status === 'needs_revision').length;
+      const gradedCount = list.filter(h => h.status === 'graded').length;
+      const summaryHtml = `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+          <span style="background:#FFF1F2;color:#B91C1C;border:1px solid #FECACA;padding:4px 12px;border-radius:999px;font-size:12.5px;font-weight:800;">Chờ cô chấm: ${pendingCount}</span>
+          <span style="background:#FEF3C7;color:#B45309;border:1px solid #FDE68A;padding:4px 12px;border-radius:999px;font-size:12.5px;font-weight:800;">Cần sửa lại: ${revisionCount}</span>
+          <span style="background:#DCFCE7;color:#15803D;border:1px solid #86EFAC;padding:4px 12px;border-radius:999px;font-size:12.5px;font-weight:800;">Đã hoàn thành: ${gradedCount}</span>
+        </div>
+      `;
+      box.innerHTML = summaryHtml + list.map(hw => {
         const safeId = String(hw.id).replace(/[^a-zA-Z0-9_-]/g, '_');
         const jsHwId = esc(String(hw.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
         return `
@@ -341,9 +344,10 @@
             </div>
             <textarea id="fb-${safeId}" rows="2" placeholder="Nhập lời nhận xét của cô cho học sinh..." style="padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;font-family:inherit;font-size:13.5px;">${esc(hw.teacher_feedback || '')}</textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button type="button" class="btn-red" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'graded')">✓ Đạt / Hoàn thành</button>
-              <button type="button" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'revision_requested')">↺ Yêu cầu con sửa lại bài</button>
+              <button type="button" id="btn-grade-pass-${safeId}" class="btn-red" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'graded')">✓ Đạt / Hoàn thành</button>
+              <button type="button" id="btn-grade-rev-${safeId}" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'revision_requested')">↺ Yêu cầu con sửa lại bài</button>
             </div>
+            <div id="grade-status-${safeId}" style="display:none;padding:8px 10px;border-radius:8px;font-size:12.5px;font-weight:700;"></div>
           </div>
         </div>
       `;
@@ -356,14 +360,35 @@
         : 'graded';
       const scoreEl = document.getElementById('score-' + safeId);
       const fbEl = document.getElementById('fb-' + safeId);
+      const passBtn = document.getElementById('btn-grade-pass-' + safeId);
+      const revBtn = document.getElementById('btn-grade-rev-' + safeId);
+      const statusBox = document.getElementById('grade-status-' + safeId);
       const score = scoreEl ? Number(scoreEl.value) : 9.5;
       const teacherFeedback = fbEl ? fbEl.value.trim() : '';
       if (!teacherFeedback) {
-        alert(normalizedStatus === 'revision_requested'
-          ? 'Cô hãy ghi rõ điểm cần sửa để học sinh biết cách làm lại bài nhé.'
-          : 'Cô hãy nhập lời nhận xét cho học sinh nhé.');
+        if (statusBox) {
+          statusBox.style.display = 'block';
+          statusBox.style.background = '#FEF2F2';
+          statusBox.style.color = '#991B1B';
+          statusBox.textContent = normalizedStatus === 'revision_requested'
+            ? 'Cô hãy ghi rõ điểm cần sửa để học sinh biết cách làm lại bài nhé.'
+            : 'Cô hãy nhập lời nhận xét cho học sinh nhé.';
+        } else {
+          alert(normalizedStatus === 'revision_requested'
+            ? 'Cô hãy ghi rõ điểm cần sửa để học sinh biết cách làm lại bài nhé.'
+            : 'Cô hãy nhập lời nhận xét cho học sinh nhé.');
+        }
         if (fbEl) fbEl.focus();
         return;
+      }
+
+      if (passBtn) passBtn.disabled = true;
+      if (revBtn) revBtn.disabled = true;
+      if (statusBox) {
+        statusBox.style.display = 'block';
+        statusBox.style.background = '#EFF6FF';
+        statusBox.style.color = '#1D4ED8';
+        statusBox.textContent = 'Đang lưu kết quả chấm bài...';
       }
 
       const payload = {
@@ -379,28 +404,29 @@
       });
 
       if (!res.ok || !res.data?.ok) {
-        alert((res.data && res.data.message) || 'Chưa lưu được kết quả chấm bài lên máy chủ. Cô vui lòng kiểm tra kết nối và thử lại nhé.');
+        if (passBtn) passBtn.disabled = false;
+        if (revBtn) revBtn.disabled = false;
+        const errMsg = (res.data && res.data.message) || 'Chưa lưu được kết quả chấm bài lên máy chủ. Cô vui lòng kiểm tra kết nối và thử lại nhé.';
+        if (statusBox) {
+          statusBox.style.display = 'block';
+          statusBox.style.background = '#FEF2F2';
+          statusBox.style.color = '#991B1B';
+          statusBox.textContent = errMsg;
+        } else {
+          alert(errMsg);
+        }
         return;
       }
 
-      // Chỉ cập nhật bộ nhớ trình duyệt sau khi máy chủ xác nhận đã lưu thành công
-      try {
-        const updatedHw = res.data.homework || {};
-        const localHw = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
-        const idx = localHw.findIndex(h => h && h.id === hwId);
-        if (idx >= 0) {
-          localHw[idx].status = normalizedStatus;
-          localHw[idx].score = payload.score;
-          localHw[idx].teacher_feedback = teacherFeedback;
-          localHw[idx].graded_at = updatedHw.graded_at || new Date().toISOString();
-        }
-        localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(localHw));
-      } catch (e) {}
-
-      alert(normalizedStatus === 'revision_requested'
-        ? 'Đã gửi yêu cầu "Cần sửa" kèm lời hướng dẫn cho học sinh!'
-        : 'Đã chấm Hoàn thành và gửi lời nhận xét cho học sinh!');
-      loadTeacherHomeworks();
+      if (statusBox) {
+        statusBox.style.display = 'block';
+        statusBox.style.background = '#DCFCE7';
+        statusBox.style.color = '#15803D';
+        statusBox.textContent = normalizedStatus === 'revision_requested'
+          ? '✓ Đã gửi yêu cầu "Cần sửa" kèm lời hướng dẫn cho học sinh!'
+          : '✓ Đã chấm Hoàn thành và gửi lời nhận xét cho học sinh!';
+      }
+      await loadTeacherHomeworks();
     }
 
     function getStoredClassSessions(classCode) {

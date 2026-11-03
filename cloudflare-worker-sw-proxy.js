@@ -203,8 +203,9 @@ function computeStudentCase(stu) {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-KTN-Webhook-Secret',
-  'Access-Control-Max-Age': '86400'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-KTN-Webhook-Secret, X-KTN-Test-Mode',
+  'Access-Control-Max-Age': '86400',
+  'X-KTN-Worker-Version': 'ktn-prod-v2026.11.03'
 };
 
 function buildSwScript(vapidPublicKey) {
@@ -421,21 +422,27 @@ function getTokenRevocationKey(rawToken, jti) {
 }
 
 async function isTokenRevoked(env, rawToken, jti) {
-  const key1 = jti ? String(jti) : '';
+  const key1 = jti ? String(jti).trim() : '';
   const key2 = getTokenRevocationKey(rawToken, null);
   if ((key1 && revokedTokenMemorySet.has(key1)) || (key2 && revokedTokenMemorySet.has(key2))) {
     return true;
   }
+  const lookupIds = [key1 ? `REVOKED_${key1}` : '', key2 ? `REVOKED_${key2}` : ''].filter(Boolean);
+  if (lookupIds.length === 0) return false;
   try {
+    const inParam = lookupIds.map(id => encodeURIComponent(id)).join(',');
     const res = await supabaseRequest(
       env,
-      'ktn_payment_config?id=eq.revoked_sessions&select=course_prices&limit=1'
+      `ktn_dlp_alerts?id=in.(${inParam})&room_id=eq.AUTH_REVOKED&select=id,blocked_content&limit=5`
     );
-    if (res.ok && Array.isArray(res.data) && res.data[0]?.course_prices) {
-      const mapObj = res.data[0].course_prices;
+    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
       const now = Date.now();
-      for (const [k, exp] of Object.entries(mapObj)) {
-        if (!exp || Number(exp) > now) revokedTokenMemorySet.add(k);
+      for (const row of res.data) {
+        const exp = Number(row?.blocked_content || 0);
+        if (!exp || exp > now) {
+          const rawKey = String(row.id || '').replace(/^REVOKED_/, '');
+          if (rawKey) revokedTokenMemorySet.add(rawKey);
+        }
       }
     }
   } catch {}
@@ -443,40 +450,37 @@ async function isTokenRevoked(env, rawToken, jti) {
 }
 
 async function revokeSessionTokenServerSide(env, rawToken, jti) {
-  const key1 = jti ? String(jti) : '';
+  const key1 = jti ? String(jti).trim() : '';
   const key2 = getTokenRevocationKey(rawToken, null);
   if (key1) revokedTokenMemorySet.add(key1);
   if (key2) revokedTokenMemorySet.add(key2);
+  const keys = Array.from(new Set([key1, key2].filter(Boolean)));
+  if (keys.length === 0) return;
   try {
-    const res = await supabaseRequest(
-      env,
-      'ktn_payment_config?id=eq.revoked_sessions&select=course_prices&limit=1'
-    );
-    const existingMap = (res.ok && Array.isArray(res.data) && res.data[0]?.course_prices && typeof res.data[0].course_prices === 'object')
-      ? { ...res.data[0].course_prices }
-      : {};
     const now = Date.now();
-    const exp = now + 30 * 86400 * 1000;
-    for (const [k, v] of Object.entries(existingMap)) {
-      if (v && Number(v) < now) delete existingMap[k];
-    }
-    if (key1) existingMap[key1] = exp;
-    if (key2) existingMap[key2] = exp;
-    await supabaseRequest(env, 'ktn_payment_config', {
+    const exp = String(now + 30 * 86400 * 1000);
+    const rows = keys.map(k => ({
+      id: `REVOKED_${k}`,
+      room_id: 'AUTH_REVOKED',
+      sender_email: 'system@khongtunhi.com',
+      sender_name: 'Auth Revocation Guard',
+      sender_role: 'system',
+      blocked_content: exp,
+      reason: 'SESSION_LOGOUT_REVOKED',
+      resolved: true
+    }));
+    await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
       method: 'POST',
       prefer: 'resolution=merge-duplicates,return=minimal',
-      body: {
-        id: 'revoked_sessions',
-        bank_id: 'REVOKED',
-        bank_name: 'REVOKED_SESSIONS',
-        account_no: '',
-        account_name: 'SESSION_REVOCATION_STORE',
-        default_amount: 0,
-        auto_approve_webhook: false,
-        course_prices: existingMap,
-        updated_at: new Date().toISOString()
-      }
+      body: rows
     });
+    // Dọn các dòng thu hồi phiên đã quá hạn 30 ngày
+    const cutoffIso = new Date(now - 30 * 86400 * 1000).toISOString();
+    await supabaseRequest(
+      env,
+      `ktn_dlp_alerts?room_id=eq.AUTH_REVOKED&created_at=lt.${encodeURIComponent(cutoffIso)}`,
+      { method: 'DELETE', prefer: 'return=minimal' }
+    );
   } catch {}
 }
 
@@ -1811,8 +1815,17 @@ export default {
 
     if (path === '/api/ktn/classes') {
       if (request.method === 'GET') {
+        const session = await extractSessionFromRequest(request, env);
         const sbRes = await supabaseRequest(env, 'ktn_classes?active=eq.true&order=id.asc');
-        return jsonResponse({ ok: true, classes: sbRes.data || [] });
+        const rawClasses = Array.isArray(sbRes.data) ? sbRes.data : [];
+        const classes = session
+          ? rawClasses
+          : rawClasses.map(c => {
+              const copy = { ...c };
+              delete copy.teacher_email;
+              return copy;
+            });
+        return jsonResponse({ ok: true, classes });
       }
       if (request.method === 'POST') {
         const session = await extractSessionFromRequest(request, env);
@@ -1937,9 +1950,10 @@ export default {
 
     if ((path === '/api/ktn/orders' || path === '/api/izteach/orders') && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
-      const cleanPhone = String(body.phone || '').replace(/\D/g, '');
-      if (!body.studentName || !cleanPhone) {
-        return jsonResponse({ ok: false, message: 'Vui lòng nhập Họ tên và Số điện thoại.' }, 400);
+      const rawPhone = String(body.phone || '').trim().replace(/[\s.-]/g, '');
+      const cleanPhone = rawPhone.replace(/\D/g, '');
+      if (!String(body.studentName || '').trim() || !/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(rawPhone)) {
+        return jsonResponse({ ok: false, message: 'Vui lòng nhập đầy đủ Họ tên và Số điện thoại hợp lệ (10 số).' }, 400);
       }
 
       const orderRecord = {
@@ -2119,19 +2133,133 @@ export default {
     // ------------------------------------------------------------------------
     // E. BÀI TẬP NỘP (FILE NẶNG LƯU S3 IZTEACH, ĐIỂM & LỜI PHÊ LƯU SUPABASE)
     // ------------------------------------------------------------------------
+    const DEFAULT_SESSIONS_BY_CLASS = {
+      'YCT2-04': [
+        {
+          classCode: 'YCT2-04',
+          session_num: 1,
+          sessionNum: 1,
+          session_title: 'Buổi 1: Hỏi thăm sức khỏe & Số đếm 1–20',
+          title: 'Buổi 1: Hỏi thăm sức khỏe & Số đếm 1–20',
+          exercises: [
+            { id: 'YCT2-04-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 5 câu hội thoại hỏi thăm sức khỏe (Trang 12)', prompt: 'Con bấm Thu âm đọc rõ từng câu hội thoại trong sách giáo khoa trang 12 rồi bấm Nộp bài cho cô nhé.', type: 'audio' },
+            { id: 'YCT2-04-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở viết chữ Hán bài 1 (你, 好, 我, 叫)', prompt: 'Con viết mỗi chữ 1 dòng vào vở ô mễ, sau đó chụp ảnh đính kèm gửi cô chấm nét chữ nhé.', type: 'photo' }
+          ]
+        },
+        {
+          classCode: 'YCT2-04',
+          session_num: 2,
+          sessionNum: 2,
+          session_title: 'Buổi 2: Gia đình của em & Các thành viên (我的家人)',
+          title: 'Buổi 2: Gia đình của em & Các thành viên (我的家人)',
+          exercises: [
+            { id: 'YCT2-04-B2-E1', num: 1, title: 'Bài 1: Thu âm giới thiệu các thành viên trong gia đình bằng tiếng Trung', prompt: 'Con dùng mẫu câu "这是我的..." để giới thiệu bố, mẹ và anh/chị/em trong nhà.', type: 'audio' },
+            { id: 'YCT2-04-B2-E2', num: 2, title: 'Bài 2: Chụp ảnh bài tập nối từ trang 15', prompt: 'Con làm bài tập trang 15 và đính kèm ảnh chụp trang bài làm.', type: 'photo' }
+          ]
+        },
+        {
+          classCode: 'YCT2-04',
+          session_num: 3,
+          sessionNum: 3,
+          session_title: 'Buổi 3: Thời gian & Lịch sinh hoạt hàng ngày (现在几点？)',
+          title: 'Buổi 3: Thời gian & Lịch sinh hoạt hàng ngày (现在几点？)',
+          exercises: [
+            { id: 'YCT2-04-B3-E1', num: 1, title: 'Bài 1: Thu âm hỏi đáp giờ giấc và lịch đi học của em', prompt: 'Chú ý phát âm chuẩn thanh 3 và thanh 4 khi đọc bài khóa.', type: 'audio' }
+          ]
+        }
+      ],
+      'YCT1-01': [
+        {
+          classCode: 'YCT1-01',
+          session_num: 1,
+          sessionNum: 1,
+          session_title: 'Buổi 1: Làm quen thanh điệu Pinyin & Lời chào đầu tiên',
+          title: 'Buổi 1: Làm quen thanh điệu Pinyin & Lời chào đầu tiên',
+          exercises: [
+            { id: 'YCT1-01-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 4 thanh điệu và lời chào Nǐ hǎo, Lǎoshī hǎo', prompt: 'Con bấm Thu âm đọc to: "老师好！我叫..." rồi bấm Nộp bài cho cô nhé.', type: 'audio' },
+            { id: 'YCT1-01-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở tô nét cơ bản chữ Nhất (一), Nhị (二), Tam (三)', prompt: 'Con viết đúng thứ tự nét từ trái sang phải, từ trên xuống dưới và chụp ảnh nộp cho cô.', type: 'photo' }
+          ]
+        },
+        {
+          classCode: 'YCT1-01',
+          session_num: 2,
+          sessionNum: 2,
+          session_title: 'Buổi 2: Đếm số từ 1 đến 10 & Hỏi tuổi (你几岁？)',
+          title: 'Buổi 2: Đếm số từ 1 đến 10 & Hỏi tuổi (你几岁？)',
+          exercises: [
+            { id: 'YCT1-01-B2-E1', num: 1, title: 'Bài 1: Thu âm đếm số 1-10 và nói tuổi của em', prompt: 'Con đọc to rõ ràng từ 一 đến 十 và câu "我...岁".', type: 'audio' }
+          ]
+        }
+      ]
+    };
+
+    const getMergedClassSessions = async (targetClassCode) => {
+      const code = String(targetClassCode || '').trim().toUpperCase();
+      if (!code) return [];
+      const sbRes = await supabaseRequest(
+        env,
+        `ktn_class_sessions?class_code=eq.${encodeURIComponent(code)}&order=session_num.asc`
+      );
+      const dbRows = (sbRes.ok && Array.isArray(sbRes.data)) ? sbRes.data : [];
+      const baseDefaults = Object.prototype.hasOwnProperty.call(DEFAULT_SESSIONS_BY_CLASS, code)
+        ? DEFAULT_SESSIONS_BY_CLASS[code]
+        : [];
+      const mergedByNum = new Map();
+      baseDefaults.forEach(item => {
+        mergedByNum.set(Number(item.session_num || item.sessionNum), item);
+      });
+      dbRows.forEach(row => {
+        const sNum = Number(row.session_num) || 1;
+        mergedByNum.set(sNum, {
+          id: row.id,
+          classCode: row.class_code,
+          session_num: sNum,
+          sessionNum: sNum,
+          session_title: row.session_title,
+          title: row.session_title,
+          exercises: Array.isArray(row.exercises) ? row.exercises : [],
+          updatedBy: row.updated_by || null,
+          updatedAt: row.updated_at || null
+        });
+      });
+      return Array.from(mergedByNum.values()).sort(
+        (a, b) => Number(a.session_num || a.sessionNum) - Number(b.session_num || b.sessionNum)
+      );
+    };
+
+    const MAX_HOMEWORK_FILE_BYTES = 50 * 1024 * 1024;
+    const ALLOWED_HW_EXT_REGEX = /\.(wav|mp3|m4a|webm|ogg|aac|mp4|mov|jpg|jpeg|png|webp|gif|pdf)(\?|$)/i;
+    const DANGEROUS_HW_EXT_REGEX = /\.(exe|bat|cmd|sh|php|pl|py|js|mjs|cjs|html|htm|svg|xml|jar|msi|apk|dll|scr)(\?|$)/i;
+
     if (path === '/api/ktn/homeworks/upload-url' && request.method === 'POST') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để tải bài tập lên.' }, 401);
       const body = await request.json().catch(() => ({}));
+      if (body.fileSize !== undefined && body.fileSize !== null) {
+        const fSize = Number(body.fileSize);
+        if (!Number.isFinite(fSize) || fSize <= 0 || fSize > MAX_HOMEWORK_FILE_BYTES) {
+          return jsonResponse({
+            ok: false,
+            message: 'Dung lượng tệp bài làm không hợp lệ hoặc vượt quá giới hạn tối đa 50MB.'
+          }, 400);
+        }
+      }
       const rawName = String(body.fileName || `btvn_${Date.now()}.wav`);
       const cleanName = rawName
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[đĐ]/g, 'd')
         .replace(/[^a-zA-Z0-9._-]/g, '_');
+      if (DANGEROUS_HW_EXT_REGEX.test(cleanName) || !ALLOWED_HW_EXT_REGEX.test(cleanName)) {
+        return jsonResponse({
+          ok: false,
+          message: 'Định dạng tệp không được phép tải lên. Chỉ chấp nhận tệp âm thanh, hình ảnh, video hoặc PDF bài làm.'
+        }, 400);
+      }
       const fileType = String(body.fileType || 'audio/wav');
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
-      const s3Key = `resource/homeworks/${vendorId}/${Date.now()}-${cleanName}`;
+      const studentFolder = normalizeEmail(session.email).replace(/[^a-z0-9]/g, '_');
+      const s3Key = `resource/homeworks/${vendorId}/${studentFolder}/${Date.now()}-${cleanName}`;
       const adminToken = await getIzTeachAdminToken(env);
       if (!adminToken) return jsonResponse({ ok: false, message: 'Chưa cấu hình token kho lưu trữ S3.' }, 503);
 
@@ -2204,17 +2332,56 @@ export default {
       const fileType = String(body.fileType || firstAtt?.fileType || firstAtt?.mediaType || 'audio').trim();
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
 
-      // Chặn triệt để lỗi nộp bài thiếu fileUrl thật, tự nhét video mẫu, hoặc chèn URL ngoài hệ thống S3/CloudFront của KTN!
+      // Chặn triệt để lỗi nộp bài thiếu fileUrl thật, tự nhét video mẫu, chèn URL ngoài hệ thống S3/CloudFront của KTN hoặc dùng đường dẫn của học sinh khác!
       const validCdnPrefix = `https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/${vendorId}/`;
       const validS3Prefix = `https://online-learning-izteach-6-aws-source-bucket.s3-ap-southeast-1.amazonaws.com/resource/homeworks/${vendorId}/`;
-      if (
-        !fileUrl ||
-        (!fileUrl.startsWith(validCdnPrefix) && !fileUrl.startsWith(validS3Prefix)) ||
-        /hw_btvn_bai_1\.mp4|BTVN BAI 1\.mp4/i.test(fileUrl)
-      ) {
+      const studentFolder = normalizeEmail(session.email).replace(/[^a-z0-9]/g, '_');
+
+      const candidateUrls = [
+        fileUrl,
+        ...rawAttachments.map(a => String(a?.fileUrl || a?.cdnUrl || a?.playUrl || '').trim()).filter(Boolean)
+      ];
+
+      for (const u of candidateUrls) {
+        if (
+          !u ||
+          u.includes('..') ||
+          (!u.startsWith(validCdnPrefix) && !u.startsWith(validS3Prefix)) ||
+          /hw_btvn_bai_1\.mp4|BTVN BAI 1\.mp4/i.test(u) ||
+          DANGEROUS_HW_EXT_REGEX.test(u) ||
+          !ALLOWED_HW_EXT_REGEX.test(u)
+        ) {
+          return jsonResponse({
+            ok: false,
+            message: 'Tệp bài làm phải thuộc định dạng hợp lệ và được tải lên kho lưu trữ chính thức của Học Viện Khổng Tử Nhí trước khi nộp bài!'
+          }, 400);
+        }
+        const relPath = u.startsWith(validCdnPrefix) ? u.slice(validCdnPrefix.length) : u.slice(validS3Prefix.length);
+        const relParts = relPath.split('/').filter(Boolean);
+        if (relParts.length >= 2 && relParts[0] !== studentFolder) {
+          return jsonResponse({
+            ok: false,
+            message: 'Không được phép sử dụng đường dẫn tệp bài làm của học sinh khác.'
+          }, 403);
+        }
+      }
+
+      // Kiểm tra tệp bài làm thực sự tồn tại trên kho S3/CloudFront và có dung lượng > 0 byte
+      const headCheckUrl = fileUrl.startsWith(validS3Prefix)
+        ? (validCdnPrefix + fileUrl.slice(validS3Prefix.length))
+        : fileUrl;
+      const headRes = await fetch(headCheckUrl, { method: 'HEAD' }).catch(() => null);
+      const headSize = headRes ? Number(headRes.headers.get('content-length') || 0) : 0;
+      if (!headRes || !headRes.ok || headSize <= 0) {
         return jsonResponse({
           ok: false,
-          message: 'Tệp bài làm phải được tải lên kho lưu trữ chính thức của Học Viện Khổng Tử Nhí trước khi nộp bài!'
+          message: 'Tệp bài làm chưa được tải lên kho lưu trữ hoặc có dung lượng 0 byte. Em vui lòng tải tệp lên trước khi nộp bài!'
+        }, 400);
+      }
+      if (headSize > MAX_HOMEWORK_FILE_BYTES) {
+        return jsonResponse({
+          ok: false,
+          message: 'Dung lượng tệp bài làm vượt quá giới hạn tối đa 50MB.'
         }, 400);
       }
 
@@ -2261,6 +2428,31 @@ export default {
             ok: false,
             message: 'Mã bài tập (lessonNum) không tồn tại trong chương trình học của lớp.'
           }, 400);
+        }
+        // Kiểm tra bài tập có thực sự tồn tại trong danh sách buổi học & bài cô đã giao của lớp hay không
+        const assignedSessions = await getMergedClassSessions(targetClass);
+        if (assignedSessions.length > 0) {
+          if (lessonNum >= 100) {
+            const sNum = Math.floor(lessonNum / 100);
+            const eNum = lessonNum % 100;
+            const targetSession = assignedSessions.find(s => Number(s.session_num || s.sessionNum) === sNum);
+            const targetExercises = (targetSession && Array.isArray(targetSession.exercises)) ? targetSession.exercises : [];
+            const hasAssignedEx = Boolean(targetSession && targetExercises.some((ex, idx) => Number(ex.num || (idx + 1)) === eNum));
+            if (!hasAssignedEx) {
+              return jsonResponse({
+                ok: false,
+                message: `Bài tập số ${eNum} (Buổi ${sNum}) chưa được giao trong lớp ${targetClass}.`
+              }, 400);
+            }
+          } else {
+            const targetSession = assignedSessions.find(s => Number(s.session_num || s.sessionNum) === lessonNum);
+            if (!targetSession) {
+              return jsonResponse({
+                ok: false,
+                message: `Buổi học số ${lessonNum} chưa được giao trong lớp ${targetClass}.`
+              }, 400);
+            }
+          }
         }
       } else {
         if (lessonNum > 50) {
@@ -2454,66 +2646,6 @@ export default {
     // E2. BUỔI HỌC & BÀI TẬP THEO LỚP CÔ GIÁO (/api/ktn/class-sessions)
     // ------------------------------------------------------------------------
     if (path === '/api/ktn/class-sessions') {
-      const defaultSessionsByClass = {
-        'YCT2-04': [
-          {
-            classCode: 'YCT2-04',
-            session_num: 1,
-            sessionNum: 1,
-            session_title: 'Buổi 1: Hỏi thăm sức khỏe & Số đếm 1–20',
-            title: 'Buổi 1: Hỏi thăm sức khỏe & Số đếm 1–20',
-            exercises: [
-              { id: 'YCT2-04-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 5 câu hội thoại hỏi thăm sức khỏe (Trang 12)', prompt: 'Con bấm Thu âm đọc rõ từng câu hội thoại trong sách giáo khoa trang 12 rồi bấm Nộp bài cho cô nhé.', type: 'audio' },
-              { id: 'YCT2-04-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở viết chữ Hán bài 1 (你, 好, 我, 叫)', prompt: 'Con viết mỗi chữ 1 dòng vào vở ô mễ, sau đó chụp ảnh đính kèm gửi cô chấm nét chữ nhé.', type: 'photo' }
-            ]
-          },
-          {
-            classCode: 'YCT2-04',
-            session_num: 2,
-            sessionNum: 2,
-            session_title: 'Buổi 2: Gia đình của em & Các thành viên (我的家人)',
-            title: 'Buổi 2: Gia đình của em & Các thành viên (我的家人)',
-            exercises: [
-              { id: 'YCT2-04-B2-E1', num: 1, title: 'Bài 1: Thu âm giới thiệu các thành viên trong gia đình bằng tiếng Trung', prompt: 'Con dùng mẫu câu "这是我的..." để giới thiệu bố, mẹ và anh/chị/em trong nhà.', type: 'audio' },
-              { id: 'YCT2-04-B2-E2', num: 2, title: 'Bài 2: Chụp ảnh bài tập nối từ trang 15', prompt: 'Con làm bài tập trang 15 và đính kèm ảnh chụp trang bài làm.', type: 'photo' }
-            ]
-          },
-          {
-            classCode: 'YCT2-04',
-            session_num: 3,
-            sessionNum: 3,
-            session_title: 'Buổi 3: Thời gian & Lịch sinh hoạt hàng ngày (现在几点？)',
-            title: 'Buổi 3: Thời gian & Lịch sinh hoạt hàng ngày (现在几点？)',
-            exercises: [
-              { id: 'YCT2-04-B3-E1', num: 1, title: 'Bài 1: Thu âm hỏi đáp giờ giấc và lịch đi học của em', prompt: 'Chú ý phát âm chuẩn thanh 3 và thanh 4 khi đọc bài khóa.', type: 'audio' }
-            ]
-          }
-        ],
-        'YCT1-01': [
-          {
-            classCode: 'YCT1-01',
-            session_num: 1,
-            sessionNum: 1,
-            session_title: 'Buổi 1: Làm quen thanh điệu Pinyin & Lời chào đầu tiên',
-            title: 'Buổi 1: Làm quen thanh điệu Pinyin & Lời chào đầu tiên',
-            exercises: [
-              { id: 'YCT1-01-B1-E1', num: 1, title: 'Bài 1: Thu âm đọc 4 thanh điệu và lời chào Nǐ hǎo, Lǎoshī hǎo', prompt: 'Con bấm Thu âm đọc to: "老师好！我叫..." rồi bấm Nộp bài cho cô nhé.', type: 'audio' },
-              { id: 'YCT1-01-B1-E2', num: 2, title: 'Bài 2: Chụp ảnh vở tô nét cơ bản chữ Nhất (一), Nhị (二), Tam (三)', prompt: 'Con viết đúng thứ tự nét từ trái sang phải, từ trên xuống dưới và chụp ảnh nộp cho cô.', type: 'photo' }
-            ]
-          },
-          {
-            classCode: 'YCT1-01',
-            session_num: 2,
-            sessionNum: 2,
-            session_title: 'Buổi 2: Đếm số từ 1 đến 10 & Hỏi tuổi (你几岁？)',
-            title: 'Buổi 2: Đếm số từ 1 đến 10 & Hỏi tuổi (你几岁？)',
-            exercises: [
-              { id: 'YCT1-01-B2-E1', num: 1, title: 'Bài 1: Thu âm đếm số 1-10 và nói tuổi của em', prompt: 'Con đọc to rõ ràng từ 一 đến 十 và câu "我...岁".', type: 'audio' }
-            ]
-          }
-        ]
-      };
-
       if (request.method === 'GET') {
         const session = await extractSessionFromRequest(request, env);
         if (!session) {
@@ -2545,38 +2677,7 @@ export default {
           }
         }
 
-        const sbRes = await supabaseRequest(
-          env,
-          `ktn_class_sessions?class_code=eq.${encodeURIComponent(classCode)}&order=session_num.asc`
-        );
-
-        const dbRows = (sbRes.ok && Array.isArray(sbRes.data)) ? sbRes.data : [];
-        const baseDefaults = Object.prototype.hasOwnProperty.call(defaultSessionsByClass, classCode)
-          ? defaultSessionsByClass[classCode]
-          : [];
-
-        const mergedByNum = new Map();
-        baseDefaults.forEach(item => {
-          mergedByNum.set(Number(item.session_num || item.sessionNum), item);
-        });
-        dbRows.forEach(row => {
-          const sNum = Number(row.session_num) || 1;
-          mergedByNum.set(sNum, {
-            id: row.id,
-            classCode: row.class_code,
-            session_num: sNum,
-            sessionNum: sNum,
-            session_title: row.session_title,
-            title: row.session_title,
-            exercises: Array.isArray(row.exercises) ? row.exercises : [],
-            updatedBy: row.updated_by || null,
-            updatedAt: row.updated_at || null
-          });
-        });
-
-        const sessions = Array.from(mergedByNum.values()).sort(
-          (a, b) => Number(a.session_num || a.sessionNum) - Number(b.session_num || b.sessionNum)
-        );
+        const sessions = await getMergedClassSessions(classCode);
         return jsonResponse({ ok: true, classCode, sessions });
       }
 
@@ -2731,15 +2832,21 @@ export default {
         // Chỉ phát thông báo dựa trên sự kiện thật: Cô giáo vừa nhận xét bài tập hoặc Tin nhắn thật từ cô giáo
         for (const hw of hws) {
           if (hw.status === 'graded' || hw.status === 'revision_requested') {
+            const isRev = hw.status === 'revision_requested';
             items.push({
-              id: `NOTIF-GRADED-${hw.id}-${hw.status}-${hw.score ?? ''}-${hw.graded_at || ''}`,
+              id: `NOTIF-GRADED-${hw.id}-${hw.status}-${hw.score ?? ''}`,
               type: 'homework_graded',
               title: 'Cô giáo vừa nhận xét.',
-              body: hw.score !== null && hw.score !== undefined
-                ? `${hw.lesson_title || ('Bài ' + hw.lesson_num)} · ${hw.score}đ`
-                : (hw.lesson_title || `Bài ${hw.lesson_num}`),
+              body: isRev
+                ? `Cần sửa lại: ${hw.lesson_title || ('Bài ' + hw.lesson_num)}`
+                : (hw.score !== null && hw.score !== undefined
+                    ? `${hw.lesson_title || ('Bài ' + hw.lesson_num)} · ${hw.score}đ`
+                    : (hw.lesson_title || `Bài ${hw.lesson_num}`)),
               actionUrl: hw.class_code ? `#/lop/${hw.class_code.toLowerCase()}/buoi/1` : `#/khoa/${hw.course_id}/bai/${hw.lesson_num}`,
-              createdAt: hw.graded_at || hw.submitted_at
+              createdAt: hw.graded_at || hw.submitted_at,
+              homeworkId: hw.id,
+              courseId: hw.course_id,
+              lessonNum: hw.lesson_num
             });
           }
         }

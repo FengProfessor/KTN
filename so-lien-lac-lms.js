@@ -2701,8 +2701,21 @@
 
         myHws.filter(h => h.status === 'GRADED' || h.status === 'REVISION_REQUESTED').slice(0, 5).forEach((h, idx) => {
           const lIdx = Math.max(0, (Number(h.lessonNum) || 1) - 1);
+          const normStatus = String(h.status || 'graded').toLowerCase();
+          const canonicalHwId = String(h.id || '').startsWith('HW-' + ctx.email)
+            ? h.id
+            : `HW-${ctx.email}-${h.courseId}-L${h.lessonNum}`;
+          const canonicalNotifId = `NOTIF-GRADED-${canonicalHwId}-${normStatus}-${h.score ?? ''}`;
+          const alreadyHasSameLessonNotif = items.some(existing =>
+            existing &&
+            existing.type === 'HOMEWORK_GRADED' &&
+            existing.metadata &&
+            String(existing.metadata.courseId || '') === String(h.courseId || '') &&
+            Number(existing.metadata.lessonNum || 0) === Number(h.lessonNum || 0)
+          );
+          if (alreadyHasSameLessonNotif) return;
           pushItem({
-            id: 'notif_stu_graded_' + h.id + '_' + (h.score || ''),
+            id: canonicalNotifId,
             recipient_role: 'student',
             recipient_id: ctx.email,
             type: 'HOMEWORK_GRADED',
@@ -2713,7 +2726,7 @@
             action_url: `/custom-page/so-lien-lac-test?course=${h.courseId}&lesson=${lIdx}`,
             timestamp: D.hwTime(h) || (now - (idx + 1) * 240000),
             cta: 'Xem nhận xét →',
-            metadata: { courseId: h.courseId, lessonNum: h.lessonNum, lessonIdx: lIdx, homeworkId: h.id }
+            metadata: { courseId: h.courseId, lessonNum: h.lessonNum, lessonIdx: lIdx, homeworkId: canonicalHwId }
           });
         });
 
@@ -3190,7 +3203,13 @@
             cta: 'Xem ngay →',
             timestamp: rawItem.createdAt ? new Date(rawItem.createdAt).getTime() : now,
             read_status: readSet.has(rawItem.id),
-            metadata: { studentEmail: ctx.studentEmail, studentCode: ctx.studentCode }
+            metadata: {
+              studentEmail: ctx.studentEmail,
+              studentCode: ctx.studentCode,
+              homeworkId: rawItem.homeworkId || '',
+              courseId: rawItem.courseId || '',
+              lessonNum: rawItem.lessonNum || null
+            }
           };
           if (!this.evaluateRecipientMatch(item)) return;
           PROCESSED_MSG_IDS.add(item.id);
@@ -3263,68 +3282,18 @@
         const lastSavedEp = localStorage.getItem('ktn_saved_push_ep_v1');
         if (lastSavedEp === subJson.endpoint) return true;
 
-        let token = null;
-        if (window.IzTeachPortalClient && typeof window.IzTeachPortalClient.getServiceToken === 'function') {
-          token = await window.IzTeachPortalClient.getServiceToken().catch(() => null);
-        } else if (window.IZTEACH_STORAGE && typeof window.IZTEACH_STORAGE.ensureToken === 'function') {
-          token = await window.IZTEACH_STORAGE.ensureToken().catch(() => null);
-        } else if (app.getCloudSyncAdminToken) {
-          token = await app.getCloudSyncAdminToken().catch(() => null);
-        }
-        if (!token) return false;
-
+        if (!window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return false;
         const ctx = this.getActiveContext();
-        const vsRes = await fetch(`${this.VENDOR_SETTING_URL}?_t=${Date.now()}`, { cache: 'no-store' });
-        if (!vsRes.ok) return false;
-        const vs = await vsRes.json();
-        delete vs.vendorId;
-        delete vs.id;
-
-        let subs = [];
-        try {
-          const rawSubs = vs?.learn?.themeConfig?.seo?.otherPage?.['ktn-push-subs']?.settings?.description;
-          if (rawSubs) {
-            const parsed = JSON.parse(rawSubs);
-            if (Array.isArray(parsed?.subs)) subs = parsed.subs;
+        const res = await window.KtnWebApp.apiRequest('/api/ktn/push/subscribe', {
+          method: 'POST',
+          body: {
+            email: ctx.email || '',
+            role: ctx.role || 'student',
+            classCode: (ctx.classCodes && ctx.classCodes[0]) || null,
+            subscription: subJson
           }
-        } catch {}
-
-        const newRecord = {
-          endpoint: subJson.endpoint,
-          keys: subJson.keys,
-          role: ctx.role || 'admin',
-          email: ctx.email || '',
-          ua: (navigator.userAgent || '').slice(0, 120),
-          updatedAt: Date.now()
-        };
-
-        const merged = [newRecord, ...subs.filter(s => s && s.endpoint && s.endpoint !== subJson.endpoint)].slice(0, 30);
-        const entry = {
-          id: 'ktn-push-subs',
-          url: 'ktn-push-subs',
-          pageName: 'KTN WebPush Subscriptions',
-          settings: {
-            name: 'KTN WebPush Subscriptions',
-            description: JSON.stringify({ updatedAt: Date.now(), subs: merged }),
-            image: ''
-          }
-        };
-
-        if (!vs.learn) vs.learn = {};
-        if (!vs.learn.themeConfig) vs.learn.themeConfig = {};
-        if (!vs.learn.themeConfig.seo) vs.learn.themeConfig.seo = {};
-        if (!vs.learn.themeConfig.seo.otherPage) vs.learn.themeConfig.seo.otherPage = {};
-        vs.learn.themeConfig.seo.otherPage['ktn-push-subs'] = entry;
-        if (vs.learn.themeConfig.themeData?.seo?.otherPage) {
-          vs.learn.themeConfig.themeData.seo.otherPage['ktn-push-subs'] = entry;
-        }
-
-        const putRes = await fetch(this.VENDOR_SETTING_URL, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: token },
-          body: JSON.stringify(vs)
         });
-        if (putRes && putRes.ok) {
+        if (res && res.ok) {
           localStorage.setItem('ktn_saved_push_ep_v1', subJson.endpoint);
           return true;
         }

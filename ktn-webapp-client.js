@@ -352,6 +352,9 @@
           localStorage.removeItem('ol-credentials-auth-user');
           localStorage.removeItem('ktn_sll_view');
           localStorage.removeItem('ktn_sll_fresh_login');
+          localStorage.removeItem('ktn_local_submitted_homeworks');
+          localStorage.removeItem('ktn_notif_custom_log_v3');
+          localStorage.removeItem('ktn_saved_push_ep_v1');
           if (!opts || !opts.preservePendingHash) {
             localStorage.removeItem('ktn_pending_target_hash');
           }
@@ -378,21 +381,33 @@
         if (priorToken && !priorToken.startsWith('KTN-')) {
           logoutHeaders['Authorization'] = `Bearer ${priorToken}`;
         }
-        const res = await fetch(this.getApiBase() + '/api/ktn/auth/logout', {
-          method: 'POST',
-          credentials: 'same-origin',
-          cache: 'no-store',
-          headers: logoutHeaders
-        });
-        if (!res.ok) {
-          throw new Error('Máy chủ chưa xác nhận xóa phiên đăng nhập (HTTP ' + res.status + ')');
+        let serverRevoked = false;
+        try {
+          const res = await fetch(this.getApiBase() + '/api/ktn/auth/logout', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: logoutHeaders
+          });
+          if (res.ok) {
+            serverRevoked = true;
+          } else if (opts && opts.requireServerRevoke) {
+            throw new Error('Máy chủ chưa xác nhận xóa phiên đăng nhập (HTTP ' + res.status + ')');
+          }
+        } catch (netErr) {
+          if (opts && opts.requireServerRevoke) {
+            throw netErr;
+          }
+          if (priorToken && !priorToken.startsWith('KTN-')) {
+            try { localStorage.setItem('ktn_pending_revoke_token', priorToken); } catch {}
+          }
         }
 
         if (!opts || opts.redirect !== false) {
           const redirectUrl = (opts && opts.redirectUrl) ? opts.redirectUrl : '/?login=1';
           window.location.replace(redirectUrl);
         }
-        return { ok: true };
+        return { ok: true, serverRevoked };
       } catch (err) {
         window.__ktnLoggingOut = false;
         window.__ktnAllowLogout = false;
@@ -404,6 +419,18 @@
     },
 
     async apiRequest(path, options = {}) {
+      try {
+        const pendingRevoke = localStorage.getItem('ktn_pending_revoke_token');
+        if (pendingRevoke && path !== '/api/ktn/auth/logout') {
+          localStorage.removeItem('ktn_pending_revoke_token');
+          fetch(this.getApiBase() + '/api/ktn/auth/logout', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pendingRevoke}` }
+          }).catch(() => {});
+        }
+      } catch {}
       const session = await this.getSavedSession();
       const headers = {
         'Content-Type': 'application/json',

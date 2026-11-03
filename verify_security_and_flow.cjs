@@ -75,16 +75,20 @@ async function main() {
   console.log(`Target Base URL: ${BASE_URL} | Git Commit: ${gitCommit}`);
   console.log(`Isolated E2E Accounts: StudentA=${STUDENT_A_EMAIL} (YCT2-04) | StudentB=${STUDENT_B_EMAIL} (YCT3-02)`);
 
-  console.log('\n=== [TEST 1] Forged Token + Admin Email Header Must Return 401 ===');
+  console.log('\n=== [TEST 1] Forged Token + Admin Email Header Must Return 401 & Verify Worker Version ===');
   const forgedSessionRes = await fetch(`${BASE_URL}/api/ktn/auth/session`, {
     headers: {
       'Authorization': 'Bearer forged.token.invalid_sig_abc',
       'X-KTN-User-Email': ADMIN_EMAIL
     }
   });
-  console.log('GET /api/ktn/auth/session with forged token + admin email -> status:', forgedSessionRes.status);
+  const workerVersion = forgedSessionRes.headers.get('x-ktn-worker-version') || '';
+  console.log('GET /api/ktn/auth/session with forged token + admin email -> status:', forgedSessionRes.status, '| Worker Version:', workerVersion);
   if (forgedSessionRes.status !== 401) {
     throw new Error(`Expected 401 for forged token on /api/ktn/auth/session, got ${forgedSessionRes.status}`);
+  }
+  if (workerVersion !== 'ktn-prod-v2026.11.03') {
+    throw new Error(`Expected X-KTN-Worker-Version=ktn-prod-v2026.11.03, got "${workerVersion}"`);
   }
 
   const forgedCompressed = zlib.deflateSync(Buffer.from(JSON.stringify({
@@ -265,6 +269,15 @@ async function main() {
     throw new Error(`Expected 401 for unauthenticated /api/ktn/push/subscribe, got ${unauthPushSub.status}`);
   }
 
+  // 3d. Guest GET /api/ktn/classes strips teacher_email PII
+  const guestClassesRes = await fetch(`${BASE_URL}/api/ktn/classes`);
+  const guestClassesJson = await guestClassesRes.json();
+  const leakedTeacherEmail = (guestClassesJson.classes || []).some(c => Boolean(c.teacher_email));
+  console.log('Guest GET /api/ktn/classes -> status:', guestClassesRes.status, '| leakedTeacherEmail:', leakedTeacherEmail);
+  if (guestClassesRes.status !== 200 || leakedTeacherEmail) {
+    throw new Error('Guest GET /api/ktn/classes leaked teacher_email PII!');
+  }
+
   console.log('\n=== [TEST 4] Homework Ownership, Class Enrollment, fileUrl Domain & Score Validation Guards ===');
   const wavBuf1 = createValidWavBuffer(1, 440);
   const upRes = await fetch(`${BASE_URL}/api/ktn/homeworks/upload-url`, {
@@ -351,8 +364,53 @@ async function main() {
     throw new Error(`Expected 400 for external fileUrl, got ${badUrlRes.status}`);
   }
 
-  // 4d. Student A tries to submit invalid lessonNum (99999) -> Must return 400
-  const badLessonRes = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
+  // 4d. Student A tries to submit invalid lessonNum (99999) or unassigned exercise (901 in YCT2-04) -> Must return 400
+  for (const invalidLessonNum of [99999, 901]) {
+    const badLessonRes = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${stuALogin.token}`
+      },
+      body: JSON.stringify({
+        courseId: 'CLASS_YCT2-04',
+        classCode: 'YCT2-04',
+        lessonNum: invalidLessonNum,
+        lessonTitle: `Buổi · Bài ${invalidLessonNum}`,
+        fileType: 'audio/wav',
+        fileUrl: upRes.fileUrl
+      })
+    });
+    console.log(`Student A POST /api/ktn/homeworks with unassigned/invalid lessonNum ${invalidLessonNum} -> status:`, badLessonRes.status);
+    if (badLessonRes.status !== 400) {
+      throw new Error(`Expected 400 for unassigned/invalid lessonNum ${invalidLessonNum}, got ${badLessonRes.status}`);
+    }
+  }
+
+  // 4e. Cross-student S3 fileUrl spoofing: Student B tries to submit Student A's uploaded fileUrl -> Must return 403
+  const spoofS3OwnerRes = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${stuBLogin.token}`
+    },
+    body: JSON.stringify({
+      courseId: 'CLASS_YCT3-02',
+      classCode: 'YCT3-02',
+      lessonNum: 101,
+      lessonTitle: 'Buổi 1 · Bài 1',
+      fileType: 'audio/wav',
+      fileUrl: upRes.fileUrl
+    })
+  });
+  console.log('Student B POST /api/ktn/homeworks referencing Student A S3 fileUrl -> status:', spoofS3OwnerRes.status);
+  if (spoofS3OwnerRes.status !== 403) {
+    throw new Error(`Expected 403 when Student B references Student A S3 fileUrl, got ${spoofS3OwnerRes.status}`);
+  }
+
+  // 4f. Unuploaded / non-existent S3 fileUrl -> Must return 400
+  const ghostUrl = upRes.fileUrl.replace(/[^/]+$/, 'ghost-unuploaded-file-99999.wav');
+  const ghostFileRes = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -361,19 +419,46 @@ async function main() {
     body: JSON.stringify({
       courseId: 'CLASS_YCT2-04',
       classCode: 'YCT2-04',
-      lessonNum: 99999,
-      lessonTitle: 'Buổi 999 · Bài 99',
+      lessonNum: 101,
+      lessonTitle: 'Buổi 1 · Bài 1',
       fileType: 'audio/wav',
-      fileUrl: upRes.fileUrl
+      fileUrl: ghostUrl
     })
   });
-  console.log('Student A POST /api/ktn/homeworks with invalid lessonNum 99999 -> status:', badLessonRes.status);
-  if (badLessonRes.status !== 400) {
-    throw new Error(`Expected 400 for invalid lessonNum 99999, got ${badLessonRes.status}`);
+  console.log('Student A POST /api/ktn/homeworks with unuploaded S3 fileUrl -> status:', ghostFileRes.status);
+  if (ghostFileRes.status !== 400) {
+    throw new Error(`Expected 400 for unuploaded S3 fileUrl, got ${ghostFileRes.status}`);
   }
 
-  console.log('\n=== [TEST 5] Real S3 Audio Upload + API Flow + Score Range Check + CloudFront Playback ===');
-  const testLessonNum = 901;
+  // 4g. Disallowed file extension (.html / .exe) and oversized file (>50MB) on /api/ktn/homeworks/upload-url -> Must return 400
+  const badExtUpRes = await fetch(`${BASE_URL}/api/ktn/homeworks/upload-url`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${stuALogin.token}`
+    },
+    body: JSON.stringify({ fileName: 'exploit.html', fileType: 'text/html', fileSize: 1024 })
+  });
+  console.log('Student A POST /api/ktn/homeworks/upload-url with .html extension -> status:', badExtUpRes.status);
+  if (badExtUpRes.status !== 400) {
+    throw new Error(`Expected 400 for .html extension on upload-url, got ${badExtUpRes.status}`);
+  }
+
+  const oversizeUpRes = await fetch(`${BASE_URL}/api/ktn/homeworks/upload-url`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${stuALogin.token}`
+    },
+    body: JSON.stringify({ fileName: 'huge.wav', fileType: 'audio/wav', fileSize: 60 * 1024 * 1024 })
+  });
+  console.log('Student A POST /api/ktn/homeworks/upload-url with 60MB fileSize -> status:', oversizeUpRes.status);
+  if (oversizeUpRes.status !== 400) {
+    throw new Error(`Expected 400 for 60MB fileSize on upload-url, got ${oversizeUpRes.status}`);
+  }
+
+  console.log('\n=== [TEST 5] Real S3 Audio Upload + Assigned Exercise (201) Flow + Score Range Check + CloudFront Playback ===');
+  const testLessonNum = 201;
   const expectedServerHwId = `HW-${STUDENT_A_EMAIL}-CLASS_YCT2-04-L${testLessonNum}`;
 
   const sub1 = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
@@ -571,6 +656,41 @@ async function main() {
     throw new Error(`Expected 401 when reusing logged-out Bearer token, got ${postLogoutCheck.status}`);
   }
 
+  // 6b. Concurrent Logout Revocation (2 tokens revoked simultaneously via Promise.all - zero race conditions)
+  const [concLogin1, concLogin2] = await Promise.all([
+    fetch(`${BASE_URL}/api/ktn/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: STUDENT_A_EMAIL, password: E2E_PASSWORD })
+    }).then(r => r.json()),
+    fetch(`${BASE_URL}/api/ktn/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: STUDENT_B_EMAIL, password: E2E_PASSWORD })
+    }).then(r => r.json())
+  ]);
+  if (!concLogin1.token || !concLogin2.token) throw new Error('Concurrent login failed');
+
+  await Promise.all([
+    fetch(`${BASE_URL}/api/ktn/auth/logout`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${concLogin1.token}` }
+    }),
+    fetch(`${BASE_URL}/api/ktn/auth/logout`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${concLogin2.token}` }
+    })
+  ]);
+
+  const [concCheck1, concCheck2] = await Promise.all([
+    fetch(`${BASE_URL}/api/ktn/auth/session`, { headers: { 'Authorization': `Bearer ${concLogin1.token}` } }),
+    fetch(`${BASE_URL}/api/ktn/auth/session`, { headers: { 'Authorization': `Bearer ${concLogin2.token}` } })
+  ]);
+  console.log('Concurrent Logout Revocation Check -> status1:', concCheck1.status, '| status2:', concCheck2.status);
+  if (concCheck1.status !== 401 || concCheck2.status !== 401) {
+    throw new Error(`Concurrent logout race condition detected! status1=${concCheck1.status}, status2=${concCheck2.status}`);
+  }
+
   console.log('\n=== [TEST 7] Full Student Bulk Sync (Unbounded Pagination + Real Diff Idempotency) + Online Course Homework ===');
   const adminLogin = await fetch(`${BASE_URL}/api/ktn/auth/login`, {
     method: 'POST',
@@ -702,6 +822,22 @@ async function main() {
     throw new Error('Admin POST /api/ktn/leads testMode failed: ' + JSON.stringify(leadJson));
   }
 
+  // Invalid phone validation on /api/ktn/leads & /api/ktn/orders -> Must return 400
+  const badPhoneLead = await fetch(`${BASE_URL}/api/ktn/leads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Test SĐT Lỗi', phone: '12345', childAge: 'Tiểu học' })
+  });
+  const badPhoneOrder = await fetch(`${BASE_URL}/api/ktn/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customerName: 'Test SĐT Đơn', customerPhone: '12345', courseId: '6adadba969897b0002482ca5', amount: 499000 })
+  });
+  console.log('Invalid Phone Validation -> leads status:', badPhoneLead.status, '| orders status:', badPhoneOrder.status);
+  if (badPhoneLead.status !== 400 || badPhoneOrder.status !== 400) {
+    throw new Error(`Expected 400 for invalid phone on leads/orders, got leads=${badPhoneLead.status}, orders=${badPhoneOrder.status}`);
+  }
+
   console.log('\n=== [TEST 9] Real Browser (Puppeteer) E2E: Fake MediaStream Mic Recording + <input type=file> Upload + Teacher UI Grading ===');
   const tmpPngPath = path.join(os.tmpdir(), 'ktn_e2e_bai2_chu_han.png');
   fs.writeFileSync(
@@ -795,9 +931,12 @@ async function main() {
       () => Boolean(localStorage.getItem('ktn_sll_persistent_auth_v2')),
       { timeout: 30000 }
     );
+    await new Promise(r => setTimeout(r, 1500));
     await stuPage.goto(`${BASE_URL}/custom-page/so-lien-lac-test#/lop/yct2-04/buoi/1`, { waitUntil: 'networkidle2', timeout: 45000 });
     await stuPage.waitForSelector('#class-ex-card-1', { timeout: 25000 });
     await stuPage.waitForSelector('#class-ex-card-2', { timeout: 25000 });
+    // Wait for initial syncPortalState() / resolvePostLoginDefaultRoute() re-render to settle before starting MediaRecorder
+    await new Promise(r => setTimeout(r, 1500));
 
     // Record real audio via navigator.mediaDevices.getUserMedia + MediaRecorder on Bài 1
     await stuPage.click('#btn-class-mic-YCT2-04_1_1');
@@ -843,7 +982,7 @@ async function main() {
     await stuPage.waitForFunction(
       () => {
         const card = document.getElementById('class-ex-card-1');
-        return card && card.textContent.includes('Đã nộp · Chờ cô chấm');
+        return card && card.textContent.includes('Chờ cô chấm');
       },
       { timeout: 25000 }
     );
@@ -852,11 +991,11 @@ async function main() {
     await stuPage.waitForFunction(
       () => {
         const card = document.getElementById('class-ex-card-2');
-        return card && card.textContent.includes('Đã nộp · Chờ cô chấm');
+        return card && card.textContent.includes('Chờ cô chấm');
       },
       { timeout: 25000 }
     );
-    console.log('Step 9.2c: Browser Submit Bài 1 & Bài 2 both transitioned to "Đã nộp · Chờ cô chấm".');
+    console.log('Step 9.2c: Browser Submit Bài 1 & Bài 2 both transitioned to "Cô đã nhận bài của con · Chờ cô chấm".');
 
     // 9.3 Reload student page and verify persistence + zero synthetic notifications in UI
     await stuPage.reload({ waitUntil: 'networkidle2', timeout: 45000 });
@@ -864,11 +1003,11 @@ async function main() {
       () => {
         const c1 = document.getElementById('class-ex-card-1')?.textContent || '';
         const c2 = document.getElementById('class-ex-card-2')?.textContent || '';
-        return c1.includes('Đã nộp · Chờ cô chấm') && c2.includes('Đã nộp · Chờ cô chấm');
+        return c1.includes('Chờ cô chấm') && c2.includes('Chờ cô chấm');
       },
       { timeout: 25000 }
     );
-    console.log('Step 9.3: Student Browser Reloaded -> Both Bài 1 & Bài 2 persisted "Đã nộp · Chờ cô chấm".');
+    console.log('Step 9.3: Student Browser Reloaded -> Both Bài 1 & Bài 2 persisted "Chờ cô chấm".');
 
     // 9.4 Teacher A (linh.lam@khongtunhi.com) opens /sll-teacher.html in Browser and grades Student A's Bài 1 via Teacher UI!
     const teacherCtx = await browser.createBrowserContext();
@@ -943,6 +1082,26 @@ async function main() {
       throw new Error('Student notification check after grading failed: ' + JSON.stringify(stuNotifInBrowser));
     }
 
+    // 9.4c Notification Read-State Persistence Across Reload
+    await stuPage.evaluate(() => {
+      if (window.KTN_NOTIF && typeof window.KTN_NOTIF.markAllRead === 'function') {
+        window.KTN_NOTIF.markAllRead();
+      }
+    });
+    await stuPage.reload({ waitUntil: 'networkidle2', timeout: 45000 });
+    await new Promise(r => setTimeout(r, 1500));
+    const readPersistenceCheck = await stuPage.evaluate(() => {
+      const uiList = window.KTN_NOTIF && typeof window.KTN_NOTIF.getVisibleNotifications === 'function'
+        ? window.KTN_NOTIF.getVisibleNotifications()
+        : [];
+      const unreadCount = uiList.filter(n => n.unread).length;
+      return { totalVisible: uiList.length, unreadCount };
+    });
+    console.log('Step 9.4c: Notification Read-State Persistence Across Reload ->', JSON.stringify(readPersistenceCheck));
+    if (readPersistenceCheck.unreadCount !== 0) {
+      throw new Error('Notification read state did not persist across reload: ' + JSON.stringify(readPersistenceCheck));
+    }
+
     // 9.5 Cross-Student Isolation Check: Student B (e2e.hs.b@khongtunhi.com - YCT3-02) must NOT see Student A's homeworks or notifications
     const stuBHwRes = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
       headers: { 'Authorization': `Bearer ${stuBLogin.token}` }
@@ -958,6 +1117,56 @@ async function main() {
       throw new Error('Cross-student data leak detected!');
     }
 
+    console.log('\n=== [TEST 10] Mobile Viewport Matrix (360x800..1280x800) & Multi-Tab Logout Sync ===');
+    const viewports = [
+      { width: 360, height: 800, label: 'Android Compact 360x800' },
+      { width: 375, height: 812, label: 'iPhone SE/Mini 375x812' },
+      { width: 390, height: 844, label: 'iPhone 13/14 390x844' },
+      { width: 430, height: 932, label: 'iPhone Pro Max 430x932' },
+      { width: 768, height: 1024, label: 'iPad Portrait 768x1024' },
+      { width: 1280, height: 800, label: 'Desktop 1280x800' }
+    ];
+    for (const vp of viewports) {
+      await stuPage.setViewport({ width: vp.width, height: vp.height });
+      await new Promise(r => setTimeout(r, 250));
+      const metrics = await stuPage.evaluate(() => ({
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        hasCard1: Boolean(document.getElementById('class-ex-card-1')),
+        submitBtnVisible: Boolean(document.getElementById('btn-class-submit-YCT2-04_1_1'))
+      }));
+      const overflowPx = metrics.scrollWidth - metrics.innerWidth;
+      console.log(`Viewport ${vp.label} -> innerWidth=${metrics.innerWidth}, scrollWidth=${metrics.scrollWidth}, overflowPx=${overflowPx}`);
+      if (overflowPx > 4 || !metrics.hasCard1 || !metrics.submitBtnVisible) {
+        throw new Error(`Viewport ${vp.label} failed layout check: ${JSON.stringify(metrics)}`);
+      }
+    }
+
+    // 10.2 Multi-Tab Logout Sync: Open Tab 2 in same BrowserContext, logout in Tab 1, verify Tab 2 clears session
+    const stuPage2 = await stuCtx.newPage();
+    await stuPage2.goto(`${BASE_URL}/custom-page/so-lien-lac-test#/lop/yct2-04`, { waitUntil: 'networkidle2', timeout: 45000 });
+    const preTab2Email = await stuPage2.evaluate(() => {
+      try { return JSON.parse(localStorage.getItem('ktn_sll_persistent_auth_v2') || 'null')?.email || ''; } catch { return ''; }
+    });
+    if (preTab2Email !== STUDENT_A_EMAIL) {
+      throw new Error(`Expected Tab 2 to have ${STUDENT_A_EMAIL} before logout, got "${preTab2Email}"`);
+    }
+
+    await stuPage.evaluate(async () => {
+      if (window.KtnWebApp && typeof window.KtnWebApp.logout === 'function') {
+        await window.KtnWebApp.logout(null);
+      }
+    }).catch(() => {});
+    await stuPage2.waitForFunction(
+      () => !localStorage.getItem('ktn_sll_persistent_auth_v2') && !localStorage.getItem('ktn_local_submitted_homeworks'),
+      { timeout: 15000 }
+    );
+    const postTab2State = { hasPersistentAuth: false, hasLocalHw: false };
+    console.log('Step 10.2: Multi-Tab Logout Sync -> Tab 2 state after Tab 1 logout:', JSON.stringify(postTab2State));
+    if (postTab2State.hasPersistentAuth || postTab2State.hasLocalHw) {
+      throw new Error('Multi-tab logout failed to clear Tab 2 storage: ' + JSON.stringify(postTab2State));
+    }
+    await stuPage2.close();
     await stuCtx.close();
   } finally {
     await browser.close();
@@ -969,14 +1178,18 @@ async function main() {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         });
       }
+      await fetch(`${SUPABASE_URL}/rest/v1/ktn_payment_config?id=eq.revoked_sessions`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+      }).catch(() => {});
       const remRes = await fetch(`${SUPABASE_URL}/rest/v1/ktn_homeworks?student_email=in.(${encodeURIComponent(STUDENT_A_EMAIL)},${encodeURIComponent(STUDENT_B_EMAIL)})&select=id`, {
         headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
       }).then(r => r.json());
-      console.log('Step 9.6: Isolated E2E Cleanup Complete -> Remaining E2E test rows in ktn_homeworks:', Array.isArray(remRes) ? remRes.length : 0);
+      console.log('Step 10.3: Isolated E2E Cleanup Complete -> Remaining E2E test rows in ktn_homeworks:', Array.isArray(remRes) ? remRes.length : 0);
     }
   }
 
-  console.log('\nALL 9 SECURITY, REVOKED-PASSWORD, CHAT-AUTH, LOGOUT-REVOCATION, 1044-STUDENT DIFF-SYNC & BROWSER E2E TESTS PASSED!');
+  console.log('\nALL 10 SECURITY, CONCURRENCY, S3-OWNERSHIP, BULK-SYNC, VIEWPORT & BROWSER E2E TESTS PASSED!');
 }
 
 main().catch(err => {

@@ -33,3 +33,14 @@ CREATE TABLE IF NOT EXISTS public.ktn_class_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_ktn_class_sessions_class
   ON public.ktn_class_sessions (class_code, session_num ASC);
+
+INSERT INTO public.ktn_students (code, email, name, class_code, has_live_class, has_online_courses, online_courses)
+VALUES
+  ('KTN-2026-090', 'dachanh@khongtunhi.com', 'Bé Đắc Hanh', 'YCT2-04', TRUE, FALSE, '[]'::jsonb),
+  ('KTN-2026-091', 'anman@khongtunhi.com', 'Bé An Mẫn', 'YCT2-04', TRUE, FALSE, '[]'::jsonb),
+  ('KTN-2026-095', 'baochau@khongtunhi.com', 'Bé Bảo Châu', 'YCT3-02', TRUE, TRUE, '[{"id":"6adadba969897b0002482ca5","title":"HSK1 3.0"}]'::jsonb),
+  ('KTN-2026-096', 'giabao@khongtunhi.com', 'Bé Gia Bảo', 'YCT2-04', TRUE, FALSE, '[]'::jsonb)
+ON CONFLICT (code) DO UPDATE SET
+  class_code = EXCLUDED.class_code,
+  has_live_class = EXCLUDED.has_live_class;
+

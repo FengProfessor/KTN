@@ -228,10 +228,12 @@
         'Content-Type': 'application/json',
         ...(options.headers || {})
       };
-      if (session?.token) {
-        headers['Authorization'] = `Bearer ${session.token}`;
+      const tok = session?.token || session?.accessToken || '';
+      if (tok) {
+        headers['Authorization'] = `Bearer ${tok}`;
       }
       const res = await fetch(this.getApiBase() + path, {
+        credentials: 'same-origin',
         ...options,
         headers,
         body: options.body && typeof options.body === 'object' ? JSON.stringify(options.body) : options.body

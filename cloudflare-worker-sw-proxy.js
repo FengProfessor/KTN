@@ -388,7 +388,9 @@ async function signSessionToken(payload, secret) {
 
 async function verifySessionToken(token, secret) {
   if (!token || typeof token !== 'string' || !token.includes('.')) return null;
-  const [bodyB64, sigB64] = token.split('.');
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [bodyB64, sigB64] = parts;
   if (!bodyB64 || !sigB64) return null;
   try {
     const key = await getHmacKey(secret);
@@ -406,19 +408,127 @@ async function verifySessionToken(token, secret) {
   }
 }
 
+const verifiedIzTeachTokenCache = new Map();
+
+async function verifyIzTeachAccessToken(tok, env) {
+  if (!tok || typeof tok !== 'string') return null;
+  if (!tok.startsWith('eayJ') && !tok.startsWith('eyJ')) return null;
+  const parts = tok.split('.');
+  if (parts.length !== 3) return null;
+
+  const cached = verifiedIzTeachTokenCache.get(tok);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.session;
+  }
+
+  try {
+    const midB64u = parts[1];
+    const midPad = '='.repeat((4 - (midB64u.length % 4)) % 4);
+    const midJsonStr = atob((midB64u + midPad).replace(/-/g, '+').replace(/_/g, '/'));
+    const midObj = JSON.parse(midJsonStr);
+
+    let dec = midObj;
+    if (midObj && typeof midObj.payloadCompressed === 'string') {
+      const compB64 = midObj.payloadCompressed;
+      const compPad = '='.repeat((4 - (compB64.length % 4)) % 4);
+      const binStr = atob((compB64 + compPad).replace(/-/g, '+').replace(/_/g, '/'));
+      const compBytes = new Uint8Array(binStr.length);
+      for (let i = 0; i < binStr.length; i++) compBytes[i] = binStr.charCodeAt(i);
+      const ds = new DecompressionStream('deflate');
+      const writer = ds.writable.getWriter();
+      writer.write(compBytes);
+      writer.close();
+      const decompressedText = await new Response(ds.readable).text();
+      dec = JSON.parse(decompressedText);
+    }
+
+    const email = normalizeEmail(dec?.email || '');
+    const userId = String(dec?.userId || dec?.id || '').trim();
+    const expectedVendor = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+    const vendorId = String(dec?.vendorId || '').trim();
+    if (!email || !userId || vendorId !== expectedVendor) {
+      return null;
+    }
+
+    // Xác thực chữ ký token trực tiếp qua AWS API Gateway Custom Authorizer của izTeach.
+    // Mọi token giả mạo hoặc bị sửa đổi header/payload/signature đều bị Authorizer trả 401.
+    const permUrl = `${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(userId)}&vendorId=${encodeURIComponent(vendorId)}`;
+    const permRes = await fetch(permUrl, { headers: { Authorization: tok } });
+    if (permRes.status !== 200 && permRes.status !== 403) {
+      return null;
+    }
+
+    const decRoles = Array.isArray(dec?.roles) ? dec.roles : [];
+    let role = 'student';
+    let name = dec?.name || email.split('@')[0];
+    let code = userId;
+    let classCode = null;
+
+    if ((decRoles.includes('root') || decRoles.includes('admin')) && email !== 'quanly@khongtunhi.com') {
+      role = 'admin';
+    } else {
+      const sbTeacher = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`);
+      if (sbTeacher.ok && Array.isArray(sbTeacher.data) && sbTeacher.data[0]) {
+        const tRow = sbTeacher.data[0];
+        if (tRow.role === 'admin' && email !== 'quanly@khongtunhi.com' && (decRoles.includes('root') || decRoles.includes('admin'))) {
+          role = 'admin';
+        } else if (tRow.role === 'teacher' || email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com') {
+          role = 'teacher';
+        }
+        name = tRow.name || name;
+        code = tRow.code || code;
+      } else if (email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com') {
+        role = 'teacher';
+      } else {
+        const sbStudent = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&select=*&limit=1`);
+        if (sbStudent.ok && Array.isArray(sbStudent.data) && sbStudent.data[0]) {
+          const sRow = sbStudent.data[0];
+          role = 'student';
+          name = sRow.name || name;
+          code = sRow.code || code;
+          classCode = sRow.class_code || null;
+        }
+      }
+    }
+
+    const session = {
+      id: code,
+      code,
+      userId,
+      email,
+      name,
+      role,
+      roles: [role],
+      classCode
+    };
+    verifiedIzTeachTokenCache.set(tok, {
+      session,
+      expiresAt: Date.now() + 5 * 60 * 1000
+    });
+    return session;
+  } catch {
+    return null;
+  }
+}
+
 async function extractSessionFromRequest(request, env) {
   const authHeader = request.headers.get('Authorization') || '';
   if (authHeader.startsWith('Bearer ')) {
     const tok = authHeader.slice(7).trim();
     const verified = await verifySessionToken(tok, env.KTN_SESSION_SECRET);
     if (verified) return verified;
+    const verifiedIz = await verifyIzTeachAccessToken(tok, env);
+    if (verifiedIz) return verifiedIz;
     return null;
   }
   const cookieHeader = request.headers.get('Cookie') || '';
   const match = cookieHeader.match(/(?:^|;\s*)ktn_webapp_token=([^;]+)/);
   if (match && match[1]) {
-    const verified = await verifySessionToken(decodeURIComponent(match[1]), env.KTN_SESSION_SECRET);
+    const rawCookieTok = decodeURIComponent(match[1]);
+    const verified = await verifySessionToken(rawCookieTok, env.KTN_SESSION_SECRET);
     if (verified) return verified;
+    const verifiedIz = await verifyIzTeachAccessToken(rawCookieTok, env);
+    if (verifiedIz) return verifiedIz;
   }
   return null;
 }

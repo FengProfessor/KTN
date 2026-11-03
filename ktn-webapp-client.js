@@ -194,14 +194,49 @@
     async saveSession(session, signedToken) {
       if (!session || window.__ktnLoggingOut) return null;
       const role = detectUserRole(session);
+      const normEmail = String(session.email || '').trim().toLowerCase();
+      let prevRecord = null;
+      try {
+        const rawPrev = localStorage.getItem(SESSION_KEY);
+        if (rawPrev) {
+          const parsedPrev = JSON.parse(rawPrev);
+          if (parsedPrev && String(parsedPrev.email || '').trim().toLowerCase() === normEmail) {
+            prevRecord = parsedPrev;
+          }
+        }
+      } catch {}
+
+      const isWorkerToken = t => {
+        const s = String(t || '').trim();
+        return Boolean(s && !s.startsWith('KTN-') && s.split('.').length === 2);
+      };
+      const isRealJwt = t => {
+        const s = String(t || '').trim();
+        return Boolean(s && !s.startsWith('KTN-') && s.split('.').length >= 2);
+      };
+
+      const bestWorkerToken = isWorkerToken(signedToken)
+        ? signedToken
+        : (isWorkerToken(session.token)
+            ? session.token
+            : (isWorkerToken(prevRecord?.token) ? prevRecord.token : ''));
+
+      const bestAccessToken = isRealJwt(session.accessToken)
+        ? session.accessToken
+        : (isRealJwt(prevRecord?.accessToken)
+            ? prevRecord.accessToken
+            : (isRealJwt(signedToken) ? signedToken : (session.accessToken || prevRecord?.accessToken || '')));
+
       const record = {
+        ...(prevRecord || {}),
         ...session,
         role,
         roles: [role],
-        token: signedToken || session.token || session.accessToken || '',
+        token: bestWorkerToken || bestAccessToken || signedToken || session.token || '',
+        accessToken: bestAccessToken || bestWorkerToken || '',
         savedAt: Date.now()
       };
-      window.__ktnActiveSessionEmail = String(record.email || '').trim().toLowerCase();
+      window.__ktnActiveSessionEmail = normEmail;
       try {
         localStorage.setItem(SESSION_KEY, JSON.stringify(record));
       } catch {}
@@ -367,9 +402,9 @@
         'Content-Type': 'application/json',
         ...(options.headers || {})
       };
-      const tok = session?.token || session?.accessToken || '';
-      if (tok) {
-        headers['Authorization'] = `Bearer ${tok}`;
+      const rawTok = String(session?.token || session?.accessToken || '').trim();
+      if (rawTok && !rawTok.startsWith('KTN-')) {
+        headers['Authorization'] = `Bearer ${rawTok}`;
       }
       const res = await fetch(this.getApiBase() + path, {
         credentials: 'same-origin',
@@ -377,6 +412,22 @@
         headers,
         body: options.body && typeof options.body === 'object' ? JSON.stringify(options.body) : options.body
       });
+      if (res.status === 401 && !options._retriedAuth && path !== '/api/ktn/auth/session' && path !== '/api/ktn/auth/login') {
+        try {
+          const sessRes = await fetch(this.getApiBase() + '/api/ktn/auth/session', {
+            method: 'GET',
+            credentials: 'same-origin',
+            cache: 'no-store'
+          });
+          if (sessRes.ok) {
+            const sessData = await sessRes.json().catch(() => null);
+            if (sessData && sessData.ok && sessData.token) {
+              await this.saveSession({ ...(session || {}), ...(sessData.session || {}) }, sessData.token);
+              return await this.apiRequest(path, { ...options, _retriedAuth: true });
+            }
+          }
+        } catch {}
+      }
       const data = await res.json().catch(() => null);
       return { ok: res.ok, status: res.status, data };
     },

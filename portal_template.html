@@ -5393,7 +5393,7 @@
             hasOnlineCourses: mergedCourses.length > 0,
             onlineCourses: mergedCourses,
             studentCase: currentStudentProfile.studentCase
-          }, latestUser.token || latestUser.accessToken);
+          }, latestUser.token);
         } catch (e) {}
       }
 
@@ -5535,7 +5535,25 @@
       cardEl.style.display = 'block';
 
       const safeClassCode = escapeHtml(effectiveClassCode);
-      const sessions = await getClassSessionsForClass(effectiveClassCode);
+      const [sessions] = await Promise.all([
+        getClassSessionsForClass(effectiveClassCode),
+        (async () => {
+          if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+            try {
+              const hwRes = await window.KtnWebApp.apiRequest('/api/ktn/homeworks');
+              if (hwRes.ok && Array.isArray(hwRes.data?.homeworks)) {
+                const user = getRealCurrentUser() || currentStudentProfile;
+                const curEmail = String(user?.email || '').trim().toLowerCase();
+                const prevLocal = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+                const otherLocal = Array.isArray(prevLocal)
+                  ? prevLocal.filter(h => String(h?.student_email || h?.studentEmail || '').trim().toLowerCase() !== curEmail)
+                  : [];
+                localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify([...hwRes.data.homeworks, ...otherLocal]));
+              }
+            } catch (e) {}
+          }
+        })()
+      ]);
       if (!sessions || !sessions.length) {
         barEl.innerHTML = '';
         boxEl.innerHTML = `

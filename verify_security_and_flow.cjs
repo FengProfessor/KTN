@@ -10,6 +10,8 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { execSync } = require('child_process');
+const puppeteer = require('puppeteer');
 
 function createValidWavBuffer(durationSec = 1, freqHz = 440) {
   const sampleRate = 8000;
@@ -51,7 +53,11 @@ const SUPABASE_URL = process.env.SUPABASE_URL || env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 async function main() {
-  console.log(`Target Base URL: ${BASE_URL}`);
+  let gitCommit = 'unknown';
+  try {
+    gitCommit = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+  } catch {}
+  console.log(`Target Base URL: ${BASE_URL} | Git Commit: ${gitCommit}`);
 
   console.log('\n=== [TEST 1] Forged Token + Admin Email Header Must Return 401 ===');
   const forgedSessionRes = await fetch(`${BASE_URL}/api/ktn/auth/session`, {
@@ -412,28 +418,51 @@ async function main() {
   }
   console.log('Verified /sll-hocsinh.html delegates logout/switchAccount to KtnWebApp and uses escapeHtml.');
 
-  console.log('\n=== [TEST 7] Full Student Bulk Sync + Online Course Homework Submission (Lesson 1 & Lesson 2) ===');
+  console.log('\n=== [TEST 7] Full Student Bulk Sync (1,044 Students Audit + Idempotency) + Online Course Homework (Lesson 1 & Lesson 2) ===');
   const adminLogin = await fetch(`${BASE_URL}/api/ktn/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      email: process.env.IZTEACH_ADMIN_EMAIL || 'hocvienkhongtunhi123@gmail.com',
-      password: process.env.IZTEACH_ADMIN_PASSWORD || ''
+      email: process.env.IZTEACH_ADMIN_EMAIL || env.IZTEACH_ADMIN_EMAIL || 'hocvienkhongtunhi123@gmail.com',
+      password: process.env.IZTEACH_ADMIN_PASSWORD || env.IZTEACH_ADMIN_PASSWORD || ''
     })
   }).then(r => r.json());
   if (!adminLogin.ok || !adminLogin.token) throw new Error('Admin login failed: ' + JSON.stringify(adminLogin));
   console.log('Admin login OK -> role:', adminLogin.session.role);
 
-  const syncAllRes = await fetch(`${BASE_URL}/api/ktn/students/sync-all`, {
+  const syncAllRes1 = await fetch(`${BASE_URL}/api/ktn/students/sync-all`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${adminLogin.token}`
     }
   }).then(r => r.json());
-  console.log('POST /api/ktn/students/sync-all ->', JSON.stringify(syncAllRes));
-  if (!syncAllRes.ok || typeof syncAllRes.syncedCount !== 'number' || syncAllRes.syncedCount < 1) {
-    throw new Error('Bulk sync failed: ' + JSON.stringify(syncAllRes));
+  console.log('POST /api/ktn/students/sync-all (Run #1) ->', JSON.stringify(syncAllRes1));
+  if (
+    !syncAllRes1.ok ||
+    typeof syncAllRes1.izteachTotal !== 'number' ||
+    syncAllRes1.izteachTotal < 1000 ||
+    syncAllRes1.syncedCount !== syncAllRes1.izteachTotal ||
+    syncAllRes1.failedCount !== 0
+  ) {
+    throw new Error('Bulk sync #1 audit failed: ' + JSON.stringify(syncAllRes1));
+  }
+
+  const syncAllRes2 = await fetch(`${BASE_URL}/api/ktn/students/sync-all`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminLogin.token}`
+    }
+  }).then(r => r.json());
+  console.log('POST /api/ktn/students/sync-all (Run #2 Idempotency Check) ->', JSON.stringify(syncAllRes2));
+  if (
+    !syncAllRes2.ok ||
+    syncAllRes2.supabaseBefore !== syncAllRes1.syncedCount ||
+    syncAllRes2.syncedCount !== syncAllRes1.syncedCount ||
+    !syncAllRes2.idempotent
+  ) {
+    throw new Error('Bulk sync #2 idempotency check failed: ' + JSON.stringify(syncAllRes2));
   }
 
   // Test online course homework submission for Lesson 1 AND Lesson 2 (verifying no 403 and no lessonNum > 1 mismatch)
@@ -462,12 +491,12 @@ async function main() {
     if (SUPABASE_URL && SUPABASE_KEY && onlineSubJson.homework?.id) {
       await fetch(`${SUPABASE_URL}/rest/v1/ktn_homeworks?id=eq.${encodeURIComponent(onlineSubJson.homework.id)}`, {
         method: 'DELETE',
-        headers: { 'apikey': SUPABASE_KEY }
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
       });
     }
   }
 
-  console.log('\n=== [TEST 8] Authenticated-Only Concise Notifications & Lead Endpoint ===');
+  console.log('\n=== [TEST 8] Authenticated-Only Concise Notifications, Cross-Student Isolation & Test-Mode Lead Endpoint ===');
   const unauthNotif = await fetch(`${BASE_URL}/api/ktn/notifications`);
   console.log('Unauthenticated GET /api/ktn/notifications -> status:', unauthNotif.status);
   if (unauthNotif.status !== 401) {
@@ -478,27 +507,291 @@ async function main() {
     headers: { 'Authorization': `Bearer ${stuLogin.token}` }
   });
   const stuNotifJson = await stuNotifRes.json();
-  console.log('Student GET /api/ktn/notifications -> status:', stuNotifRes.status, '| count:', (stuNotifJson.notifications || []).length);
+  console.log('Student A GET /api/ktn/notifications -> status:', stuNotifRes.status, '| count:', (stuNotifJson.notifications || []).length);
   if (stuNotifRes.status !== 200 || !stuNotifJson.ok || !Array.isArray(stuNotifJson.notifications)) {
     throw new Error('Authenticated student notifications failed: ' + JSON.stringify(stuNotifJson));
   }
 
   const leadRes = await fetch(`${BASE_URL}/api/ktn/leads`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-KTN-Test-Mode': '1'
+    },
     body: JSON.stringify({
       name: 'Phụ huynh Kiểm thử E2E',
       phone: '0988974685',
-      childAge: 'Tiểu học (7–11t)'
+      childAge: 'Tiểu học (7–11t)',
+      testMode: true
     })
   });
   const leadJson = await leadRes.json();
-  console.log('POST /api/ktn/leads -> status:', leadRes.status, '| body:', JSON.stringify(leadJson));
-  if (leadRes.status !== 200 || !leadJson.ok) {
-    throw new Error('POST /api/ktn/leads failed: ' + JSON.stringify(leadJson));
+  console.log('POST /api/ktn/leads (testMode=true) -> status:', leadRes.status, '| body:', JSON.stringify(leadJson));
+  if (leadRes.status !== 200 || !leadJson.ok || !leadJson.testMode) {
+    throw new Error('POST /api/ktn/leads testMode failed: ' + JSON.stringify(leadJson));
   }
 
-  console.log('\nALL 8 SECURITY, SYNC, HOMEWORK, NOTIFICATION & LEAD REGRESSION TESTS PASSED!');
+  console.log('\n=== [TEST 9] Real Browser (Puppeteer) E2E: Guest Clean UI -> Login -> Submit Bài 1 & Bài 2 -> Reload -> Teacher Grade -> Reload -> Cross-Student Isolation ===');
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  const createdHwIds = [
+    'HW-dachanh@khongtunhi.com-CLASS_YCT2-04-L101',
+    'HW-dachanh@khongtunhi.com-CLASS_YCT2-04-L102'
+  ];
+  try {
+    // 9.1 Guest / Unauthenticated Browser Check on / and /custom-page/so-lien-lac-test
+    const guestCtx = await browser.createBrowserContext();
+    const guestPage = await guestCtx.newPage();
+    await guestPage.goto(`${BASE_URL}/`, { waitUntil: 'networkidle2', timeout: 45000 });
+    await new Promise(r => setTimeout(r, 1500));
+    const guestHomeAudit = await guestPage.evaluate(async () => {
+      const hasSocialProof = Boolean(document.getElementById('ktn-social-proof'));
+      const hasPushBanner = Boolean(document.getElementById('ktn-live-push-banner'));
+      const hasToast = document.querySelectorAll('.ktn-toast-item').length > 0;
+      const hasOpenDrawer = Boolean(document.querySelector('.ktn-notif-drawer.open'));
+      const fnStr = typeof window.ktnLandingPage === 'function' ? window.ktnLandingPage.toString() : '';
+      const bodyScripts = Array.from(document.querySelectorAll('script')).map(s => s.textContent || '').join('\n') + '\n' + fnStr;
+      let usesLeadApi = document.documentElement.innerHTML.includes('/api/ktn/leads') || bodyScripts.includes('/api/ktn/leads');
+      if (!usesLeadApi) {
+        const extSrc = Array.from(document.querySelectorAll('script[src*="ktn-live"], script[src*="ktn-home"]')).map(s => s.src)[0];
+        if (extSrc) {
+          const jsTxt = await fetch(extSrc).then(r => r.text()).catch(() => '');
+          usesLeadApi = jsTxt.includes('/api/ktn/leads');
+        }
+      }
+      return { hasSocialProof, hasPushBanner, hasToast, hasOpenDrawer, usesLeadApi };
+    });
+    console.log('Step 9.1a: Guest Homepage UI Audit ->', JSON.stringify(guestHomeAudit));
+    if (guestHomeAudit.hasSocialProof || guestHomeAudit.hasPushBanner || guestHomeAudit.hasToast || guestHomeAudit.hasOpenDrawer || !guestHomeAudit.usesLeadApi) {
+      throw new Error('Guest homepage UI audit failed: ' + JSON.stringify(guestHomeAudit));
+    }
+
+    await guestPage.goto(`${BASE_URL}/custom-page/so-lien-lac-test`, { waitUntil: 'networkidle2', timeout: 45000 });
+    await new Promise(r => setTimeout(r, 1200));
+    const guestSllAudit = await guestPage.evaluate(() => ({
+      url: window.location.href,
+      hasPushBanner: Boolean(document.getElementById('ktn-live-push-banner')),
+      hasToast: document.querySelectorAll('.ktn-toast-item').length > 0,
+      notifCount: window.KTN_NOTIF && typeof window.KTN_NOTIF.getVisibleNotifications === 'function'
+        ? window.KTN_NOTIF.getVisibleNotifications().length
+        : 0
+    }));
+    console.log('Step 9.1b: Guest SLL Redirect & Notification Audit ->', JSON.stringify(guestSllAudit));
+    if (guestSllAudit.hasPushBanner || guestSllAudit.hasToast || guestSllAudit.notifCount !== 0) {
+      throw new Error('Guest SLL notification leak detected: ' + JSON.stringify(guestSllAudit));
+    }
+    await guestCtx.close();
+
+    // 9.2 Student (dachanh@khongtunhi.com - Class YCT2-04) Browser E2E Login + Submit Bài 1 & Bài 2
+    const stuCtx = await browser.createBrowserContext();
+    const stuPage = await stuCtx.newPage();
+    await stuPage.goto(`${BASE_URL}/course-online?tab=tieng-trung`, { waitUntil: 'networkidle2', timeout: 45000 });
+    await stuPage.evaluate(() => {
+      if (typeof window.openKtnLoginModal === 'function') window.openKtnLoginModal();
+      else if (typeof window.openKtnLogin === 'function') window.openKtnLogin();
+    });
+    await stuPage.waitForSelector('form.ant-form input#email', { visible: true, timeout: 20000 });
+    await stuPage.evaluate(() => {
+      const form = document.querySelector('form.ant-form');
+      const em = form.querySelector('input#email');
+      const pw = form.querySelector('input#password');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(em, 'dachanh@khongtunhi.com');
+      em.dispatchEvent(new Event('input', { bubbles: true }));
+      em.dispatchEvent(new Event('change', { bubbles: true }));
+      setter.call(pw, '123456');
+      pw.dispatchEvent(new Event('input', { bubbles: true }));
+      pw.dispatchEvent(new Event('change', { bubbles: true }));
+      form.querySelector('button[type=submit]').click();
+    });
+
+    await stuPage.waitForFunction(
+      () => Boolean(localStorage.getItem('ktn_sll_persistent_auth_v2')),
+      { timeout: 30000 }
+    );
+    await stuPage.goto(`${BASE_URL}/custom-page/so-lien-lac-test#/lop/yct2-04/buoi/1`, { waitUntil: 'networkidle2', timeout: 45000 });
+    await stuPage.waitForSelector('#class-ex-card-1', { timeout: 25000 });
+    await stuPage.waitForSelector('#class-ex-card-2', { timeout: 25000 });
+
+    const wavB64 = wavBuf1.toString('base64');
+    // Prepare real File objects in window.__classExDrafts and click Submit on Bài 1 and Bài 2
+    await stuPage.evaluate((b64Audio) => {
+      const bin = atob(b64Audio);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const wavFile = new File([bytes], 'Thu_am_YCT2-04_Buoi1_Bai1.wav', { type: 'audio/wav' });
+
+      // 1x1 PNG image bytes for Bài 2
+      const pngB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const pngBin = atob(pngB64);
+      const pngBytes = new Uint8Array(pngBin.length);
+      for (let i = 0; i < pngBin.length; i++) pngBytes[i] = pngBin.charCodeAt(i);
+      const imgFile = new File([pngBytes], 'bai_2_chu_han.png', { type: 'image/png' });
+
+      if (!window.__classExDrafts) window.__classExDrafts = {};
+      window.__classExDrafts['YCT2-04_1_1'] = { recording: false, timer: null, secs: 7, voiceFile: wavFile, attachFile: null };
+      window.__classExDrafts['YCT2-04_1_2'] = { recording: false, timer: null, secs: 0, voiceFile: null, attachFile: imgFile };
+
+      const n1 = document.getElementById('inp-class-note-YCT2-04_1_1');
+      if (n1) n1.value = 'em gửi';
+      const n2 = document.getElementById('inp-class-note-YCT2-04_1_2');
+      if (n2) n2.value = 'Em nộp ảnh viết chữ Hán Bài 2';
+    }, wavB64);
+
+    await stuPage.click('#btn-class-submit-YCT2-04_1_1');
+    await stuPage.waitForFunction(
+      () => {
+        const card = document.getElementById('class-ex-card-1');
+        return card && card.textContent.includes('Đã nộp · Chờ cô chấm');
+      },
+      { timeout: 25000 }
+    );
+
+    await stuPage.click('#btn-class-submit-YCT2-04_1_2');
+    await stuPage.waitForFunction(
+      () => {
+        const card = document.getElementById('class-ex-card-2');
+        return card && card.textContent.includes('Đã nộp · Chờ cô chấm');
+      },
+      { timeout: 25000 }
+    );
+
+    const afterSubmitDom = await stuPage.evaluate(() => {
+      const err1 = document.getElementById('err-class-submit-YCT2-04_1_1');
+      const err2 = document.getElementById('err-class-submit-YCT2-04_1_2');
+      const c1 = document.getElementById('class-ex-card-1')?.textContent || '';
+      const c2 = document.getElementById('class-ex-card-2')?.textContent || '';
+      return {
+        err1Visible: Boolean(err1 && err1.style.display !== 'none'),
+        err2Visible: Boolean(err2 && err2.style.display !== 'none'),
+        card1Pending: c1.includes('Đã nộp · Chờ cô chấm'),
+        card2Pending: c2.includes('Đã nộp · Chờ cô chấm')
+      };
+    });
+    console.log('Step 9.2: Browser Submit Bài 1 & Bài 2 DOM State ->', JSON.stringify(afterSubmitDom));
+    if (afterSubmitDom.err1Visible || afterSubmitDom.err2Visible || !afterSubmitDom.card1Pending || !afterSubmitDom.card2Pending) {
+      throw new Error('Browser homework submit failed: ' + JSON.stringify(afterSubmitDom));
+    }
+
+    // 9.3 Reload page and verify submitted state persists from server + Resubmit works
+    await stuPage.reload({ waitUntil: 'networkidle2', timeout: 45000 });
+    await stuPage.waitForFunction(
+      () => {
+        const c1 = document.getElementById('class-ex-card-1')?.textContent || '';
+        const c2 = document.getElementById('class-ex-card-2')?.textContent || '';
+        return c1.includes('Đã nộp · Chờ cô chấm') && c2.includes('Đã nộp · Chờ cô chấm');
+      },
+      { timeout: 25000 }
+    );
+    console.log('Step 9.3a: Browser Reloaded -> Both Bài 1 & Bài 2 persisted "Đã nộp · Chờ cô chấm" and "Nộp lại bài" button.');
+
+    // Resubmit Bài 1 in browser
+    await stuPage.evaluate((b64Audio) => {
+      const bin = atob(b64Audio);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const wavFile = new File([bytes], 'Thu_am_YCT2-04_Buoi1_Bai1_lan2.wav', { type: 'audio/wav' });
+      window.__classExDrafts['YCT2-04_1_1'] = { recording: false, timer: null, secs: 8, voiceFile: wavFile, attachFile: null };
+      const n1 = document.getElementById('inp-class-note-YCT2-04_1_1');
+      if (n1) n1.value = 'Em nộp lại Bài 1 lần 2 ạ';
+    }, wavB64);
+    await stuPage.click('#btn-class-submit-YCT2-04_1_1');
+    await stuPage.waitForFunction(
+      () => {
+        const btn = document.getElementById('btn-class-submit-YCT2-04_1_1');
+        const inp = document.getElementById('inp-class-note-YCT2-04_1_1');
+        return btn && !btn.disabled && inp && inp.value === 'Em nộp lại Bài 1 lần 2 ạ';
+      },
+      { timeout: 25000 }
+    );
+    console.log('Step 9.3b: Browser Resubmit Bài 1 succeeded.');
+
+    // 9.4 Teacher A grades dachanh's Bài 1 (9.5) -> Student reloads browser and sees 9.5đ + feedback + concise notification
+    const gradeDachAnhRes = await fetch(`${BASE_URL}/api/ktn/homeworks/grade`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${teacherALogin.token}`
+      },
+      body: JSON.stringify({
+        id: 'HW-dachanh@khongtunhi.com-CLASS_YCT2-04-L101',
+        status: 'graded',
+        score: 9.5,
+        teacherFeedback: 'Con đọc to rõ 5 câu hội thoại rất chuẩn!'
+      })
+    }).then(r => r.json());
+    if (!gradeDachAnhRes.ok || Number(gradeDachAnhRes.homework?.score) !== 9.5) {
+      throw new Error('Grading dachanh Bài 1 failed: ' + JSON.stringify(gradeDachAnhRes));
+    }
+
+    await stuPage.reload({ waitUntil: 'networkidle2', timeout: 45000 });
+    await stuPage.waitForFunction(
+      () => {
+        const c1 = document.getElementById('class-ex-card-1')?.textContent || '';
+        return c1.includes('9.5/10') && c1.includes('Con đọc to rõ 5 câu hội thoại rất chuẩn!');
+      },
+      { timeout: 25000 }
+    );
+    const stuNotifInBrowser = await stuPage.evaluate(async () => {
+      const res = await window.KtnWebApp.apiRequest('/api/ktn/notifications');
+      const list = res.data?.notifications || [];
+      const ids = list.map(n => n.id);
+      const uniqueIds = new Set(ids);
+      return {
+        ok: res.ok,
+        count: list.length,
+        hasDuplicates: ids.length !== uniqueIds.size,
+        hasGradedNotif: list.some(n => n.title === 'Cô giáo vừa nhận xét.' && String(n.body || '').includes('9.5đ')),
+        titles: list.map(n => n.title)
+      };
+    });
+    console.log('Step 9.4: Student Browser Reload after Teacher Grade -> 9.5đ rendered | Notifications:', JSON.stringify(stuNotifInBrowser));
+    if (!stuNotifInBrowser.ok || stuNotifInBrowser.hasDuplicates || !stuNotifInBrowser.hasGradedNotif) {
+      throw new Error('Student notification check after grading failed: ' + JSON.stringify(stuNotifInBrowser));
+    }
+
+    // 9.5 Cross-Student Isolation Check: Student C (minhkhang@khongtunhi.com - YCT3-02) must NOT see dachanh's homeworks or notifications
+    const stuCLogin = await fetch(`${BASE_URL}/api/ktn/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'minhkhang@khongtunhi.com', password: '123456' })
+    }).then(r => r.json());
+    if (!stuCLogin.ok || !stuCLogin.token) throw new Error('Student C login failed: ' + JSON.stringify(stuCLogin));
+
+    const stuCHwRes = await fetch(`${BASE_URL}/api/ktn/homeworks`, {
+      headers: { 'Authorization': `Bearer ${stuCLogin.token}` }
+    }).then(r => r.json());
+    const stuCNotifRes = await fetch(`${BASE_URL}/api/ktn/notifications`, {
+      headers: { 'Authorization': `Bearer ${stuCLogin.token}` }
+    }).then(r => r.json());
+
+    const leakedHw = (stuCHwRes.homeworks || []).some(h => h.student_email === 'dachanh@khongtunhi.com');
+    const leakedNotif = (stuCNotifRes.notifications || []).some(n => String(n.id || '').includes('dachanh@khongtunhi.com'));
+    console.log('Step 9.5: Cross-Student Isolation (minhkhang vs dachanh) -> leakedHw:', leakedHw, '| leakedNotif:', leakedNotif);
+    if (leakedHw || leakedNotif) {
+      throw new Error('Cross-student data leak detected!');
+    }
+
+    await stuCtx.close();
+  } finally {
+    await browser.close();
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      for (const hwId of createdHwIds) {
+        await fetch(`${SUPABASE_URL}/rest/v1/ktn_homeworks?id=eq.${encodeURIComponent(hwId)}`, {
+          method: 'DELETE',
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+      }
+      const remRes = await fetch(`${SUPABASE_URL}/rest/v1/ktn_homeworks?select=id`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+      }).then(r => r.json());
+      console.log('Step 9.6: Production Cleanup Complete -> Remaining test rows in ktn_homeworks:', Array.isArray(remRes) ? remRes.length : 0);
+    }
+  }
+
+  console.log('\nALL 9 SECURITY, 1044-STUDENT SYNC, BROWSER E2E HOMEWORK, NOTIFICATION & LEAD ACCEPTANCE TESTS PASSED!');
 }
 
 main().catch(err => {

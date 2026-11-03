@@ -1753,7 +1753,7 @@
       }).catch(() => {});
     } catch {}
     app.saveState();
-    app.triggerNotificationEvent?.('onGraded', { title: `${app.state.teacherName || 'Cô'} vừa chấm ${score}đ Bài ${D.hwLesson(h)}`, body: fb, lessonNum: D.hwLesson(h), studentCode: (s && s.code) || h.studentCode });
+    app.triggerNotificationEvent?.('onGraded', { title: 'Cô giáo vừa nhận xét.', body: `Bài ${D.hwLesson(h)} · ${score}đ — ${fb}`, lessonNum: D.hwLesson(h), studentCode: (s && s.code) || h.studentCode, studentEmail: (s && s.email) || h.studentEmail || h.student_email });
     app.showToast(`Đã lưu ${score}đ & đồng bộ lên izTeach cho ${(s && s.name) || h.studentName || 'học viên'}.`, 'success');
     app.renderAll();
     if (goNext && nextId) app.lmsOpenGrade(nextId);
@@ -2476,22 +2476,23 @@
           isPortal: false
         };
       }
-      const stu = app.getActiveParentStudent ? app.getActiveParentStudent() : (app.students && app.students[0]);
+      const stu = app.getActiveParentStudent ? app.getActiveParentStudent() : null;
       return {
         role: 'parent',
         roleLabel: stu && stu.classCode ? `Phụ huynh · Lớp ${stu.classCode}` : 'Phụ huynh & Học viên',
         userId: String((stu && stu.userId) || acc.id || '').trim(),
-        email: String((stu && stu.email) || acc.email || '').trim().toLowerCase(),
-        name: (stu && stu.name) || acc.name || 'Bé Lê Hoàng Ngân',
-        code: String((stu && stu.code) || 'KTN-2026-089').trim(),
-        classCodes: stu && stu.classCode ? [stu.classCode] : ['YCT2-04'],
+        email: String(acc.email || (window.sllAuth?.mode === 'connected' && stu && stu.email) || '').trim().toLowerCase(),
+        name: (stu && stu.name) || acc.name || 'Học viên',
+        code: String((stu && stu.code) || acc.code || '').trim(),
+        classCodes: stu && stu.classCode ? [stu.classCode] : [],
         isPortal: false
       };
     },
 
     getReadSet() {
       try {
-        const raw = localStorage.getItem('ktn_notif_read_ids_v2');
+        localStorage.removeItem('ktn_notif_read_ids_v2');
+        const raw = localStorage.getItem('ktn_notif_read_ids_v3');
         return new Set(raw ? JSON.parse(raw) : []);
       } catch {
         return new Set();
@@ -2500,15 +2501,17 @@
 
     saveReadSet(set) {
       try {
-        localStorage.setItem('ktn_notif_read_ids_v2', JSON.stringify(Array.from(set).slice(-400)));
+        localStorage.setItem('ktn_notif_read_ids_v3', JSON.stringify(Array.from(set).slice(-400)));
       } catch {}
     },
 
     getCustomEvents() {
       try {
-        const raw = localStorage.getItem('ktn_notif_custom_log_v2');
+        localStorage.removeItem('ktn_notif_custom_log_v2');
+        const raw = localStorage.getItem('ktn_notif_custom_log_v3');
         const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr : [];
+        if (!Array.isArray(arr)) return [];
+        return arr.filter(x => x && x.id && !/\[TEST|VAPID|NOTIF-INIT/i.test(String(x.title || '') + String(x.id || '')));
       } catch {
         return [];
       }
@@ -2516,21 +2519,30 @@
 
     saveCustomEvents(list) {
       try {
-        localStorage.setItem('ktn_notif_custom_log_v2', JSON.stringify(list.slice(0, 120)));
+        const clean = (Array.isArray(list) ? list : []).filter(x => x && x.id && !/\[TEST|VAPID|NOTIF-INIT/i.test(String(x.title || '') + String(x.id || '')));
+        localStorage.setItem('ktn_notif_custom_log_v3', JSON.stringify(clean.slice(0, 120)));
       } catch {}
     },
 
     evaluateRecipientMatch(notif, ctxInput) {
       const ctx = ctxInput || this.getActiveContext();
-      if (!notif) return false;
+      if (!notif || !ctx || !ctx.email) return false;
+      if (/\[TEST|VAPID|NOTIF-INIT/i.test(String(notif.title || '') + String(notif.id || ''))) return false;
       const rRole = String(notif.recipient_role || 'all').toLowerCase();
       let roleMatch = false;
       if (rRole === 'all') roleMatch = true;
       else if (rRole === ctx.role) roleMatch = true;
-      else if (ctx.role === 'student' && !ctx.isPortal && rRole === 'parent') roleMatch = true;
+      else if ((ctx.role === 'student' || ctx.role === 'parent') && (rRole === 'student' || rRole === 'parent')) roleMatch = true;
       if (!roleMatch) return false;
 
       const rId = String(notif.recipient_id || 'ALL').trim();
+      if (notif.type === 'HOMEWORK_GRADED') {
+        return Boolean(
+          (ctx.email && rId.toLowerCase() === ctx.email) ||
+          (ctx.code && rId === ctx.code) ||
+          (ctx.userId && rId === ctx.userId)
+        );
+      }
       const idMatch = rId === 'ALL'
         || (ctx.userId && rId === ctx.userId)
         || (ctx.code && rId === ctx.code)
@@ -2546,7 +2558,15 @@
 
     isAuthenticated() {
       if (window.__ktnLoggingOut) return false;
-      if (window.sllAuth && window.sllAuth.mode !== 'connected') return false;
+      if (window.location.pathname === '/') return false;
+      const portalUser = typeof window.getRealCurrentUser === 'function' ? window.getRealCurrentUser() : null;
+      const sllConnected = Boolean(
+        window.sllAuth &&
+        window.sllAuth.mode === 'connected' &&
+        window.sllAuth.session &&
+        (window.sllAuth.session.email || window.sllAuth.session.account?.email)
+      );
+      if (!sllConnected && !(portalUser && portalUser.email)) return false;
       const ctx = this.getActiveContext();
       return Boolean(ctx && ctx.email);
     },
@@ -2574,8 +2594,10 @@
       });
 
       const courseHws = D.courseHomeworks('ALL');
-      const orders = D.orders();
-      const openAlerts = D.openAlerts();
+      const DEMO_ORDER_IDS = new Set(['ORD-20261031-001', 'ORD-20261030-002', 'ORD-20261030-003']);
+      const DEMO_ALERT_IDS = new Set(['DLP-2026-101', 'DLP-2026-102', 'DLP-2026-103']);
+      const orders = D.orders().filter(o => o && !DEMO_ORDER_IDS.has(String(o.orderId || o.id || '')));
+      const openAlerts = D.openAlerts().filter(a => a && !DEMO_ALERT_IDS.has(String(a.id || '')));
 
       // 2. Chỉ tổng hợp thông báo thật ngắn gọn theo đúng vai trò đã đăng nhập
       if (ctx.role === 'admin') {
@@ -3067,18 +3089,20 @@
     },
 
     triggerNotificationEvent(eventCode, payload = {}) {
-      if (!eventCode) return false;
+      if (!eventCode || !this.isAuthenticated()) return false;
       const now = Date.now();
       let type = eventCode;
       let category = payload.category || 'academic';
       let recipient_role = payload.recipient_role || 'all';
       let priority = payload.priority || 'HIGH';
       let action_url = payload.action_url || '/custom-page/so-lien-lac-test';
+      let recipient_id = payload.recipient_id || payload.studentEmail || payload.studentCode || 'ALL';
 
       if (eventCode === 'onGraded') {
         type = 'HOMEWORK_GRADED';
         category = 'academic';
         recipient_role = 'student';
+        recipient_id = payload.recipient_id || payload.studentEmail || payload.studentCode || 'NONE';
         action_url = `/custom-page/so-lien-lac-test?course=6adadba969897b0002482ca5&lesson=${Math.max(0, (Number(payload.lessonNum) || 1) - 1)}`;
       } else if (eventCode === 'onSubmitted') {
         type = 'HOMEWORK_SUBMITTED_TEACHER_ALERT';
@@ -3095,17 +3119,17 @@
       const notif = {
         id: payload.id || ('notif_' + now + '_' + Math.random().toString(36).slice(2, 7)),
         recipient_role,
-        recipient_id: payload.recipient_id || 'ALL',
+        recipient_id,
         type,
         category,
         priority,
         title: payload.title || 'Thông báo mới từ Học Viện Khổng Tử Nhí',
         body: payload.body || '',
         action_url,
-        cta: payload.cta || 'Nhấn để mở ngay →',
+        cta: payload.cta || 'Xem ngay →',
         timestamp: now,
         read_status: false,
-        metadata: payload.metadata || { lessonNum: payload.lessonNum, studentCode: payload.studentCode }
+        metadata: payload.metadata || { lessonNum: payload.lessonNum, studentCode: payload.studentCode, studentEmail: payload.studentEmail }
       };
 
       PROCESSED_MSG_IDS.add(notif.id);
@@ -3129,11 +3153,6 @@
           notification: notif
         });
       } catch {}
-
-      // Broadcast cross-device via CloudFront S3 Notification Bus
-      if (!payload._fromCloudPull) {
-        this.pushCloudNotification(notif).catch(() => {});
-      }
 
       // Dispatch PWA / Browser Notification if permission granted
       if (isTarget && 'Notification' in window && Notification.permission === 'granted') {
@@ -3160,64 +3179,8 @@
     CLOUD_NOTIF_CDN_URL: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/ktn-live-notifications.json',
     VENDOR_SETTING_URL: 'https://k90adfn1jk.execute-api.ap-southeast-1.amazonaws.com/prod/vendor-setting/3529cd2b-7af6-4fda-887c-392a79393d6a',
 
-    async pushCloudNotification(notif) {
-      try {
-        if (!notif || !notif.id) return false;
-        let token = null;
-        if (window.IzTeachPortalClient && typeof window.IzTeachPortalClient.getServiceToken === 'function') {
-          token = await window.IzTeachPortalClient.getServiceToken().catch(() => null);
-        } else if (window.IZTEACH_STORAGE && typeof window.IZTEACH_STORAGE.ensureToken === 'function') {
-          token = await window.IZTEACH_STORAGE.ensureToken().catch(() => null);
-        } else if (app.getCloudSyncAdminToken) {
-          token = await app.getCloudSyncAdminToken().catch(() => null);
-        }
-        if (!token) return false;
-
-        const vsRes = await fetch(`${this.VENDOR_SETTING_URL}?_t=${Date.now()}`, { cache: 'no-store' });
-        if (!vsRes.ok) return false;
-        const vs = await vsRes.json();
-        delete vs.vendorId;
-        delete vs.id;
-
-        let remoteList = [];
-        try {
-          const rawPush = vs?.learn?.themeConfig?.seo?.otherPage?.['ktn-push']?.settings?.description;
-          if (rawPush) {
-            const parsed = JSON.parse(rawPush);
-            if (Array.isArray(parsed?.items)) remoteList = parsed.items;
-            else if (parsed && parsed.id) remoteList = [parsed];
-          }
-        } catch {}
-
-        const merged = [notif, ...remoteList.filter(x => x && x.id && x.id !== notif.id)].slice(0, 25);
-        const pushEntry = {
-          id: notif.id,
-          url: 'ktn-push',
-          pageName: notif.title || 'KTN Push Bus',
-          settings: {
-            name: notif.title || 'KTN Push Bus',
-            description: JSON.stringify({ updatedAt: Date.now(), items: merged }),
-            image: ''
-          }
-        };
-        if (!vs.learn) vs.learn = {};
-        if (!vs.learn.themeConfig) vs.learn.themeConfig = {};
-        if (!vs.learn.themeConfig.seo) vs.learn.themeConfig.seo = {};
-        if (!vs.learn.themeConfig.seo.otherPage) vs.learn.themeConfig.seo.otherPage = {};
-        vs.learn.themeConfig.seo.otherPage['ktn-push'] = pushEntry;
-        if (vs.learn.themeConfig.themeData?.seo?.otherPage) {
-          vs.learn.themeConfig.themeData.seo.otherPage['ktn-push'] = pushEntry;
-        }
-
-        const putRes = await fetch(this.VENDOR_SETTING_URL, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: token },
-          body: JSON.stringify(vs)
-        });
-        return Boolean(putRes && putRes.ok);
-      } catch {
-        return false;
-      }
+    async pushCloudNotification() {
+      return false;
     },
 
     async pullCloudNotifications() {
@@ -3225,13 +3188,13 @@
       if (this._isPullingCloudNotifs) return;
       this._isPullingCloudNotifs = true;
       try {
-        const res = await fetch(`${this.VENDOR_SETTING_URL}?_t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const vs = await res.json();
-        const rawPush = vs?.learn?.themeConfig?.seo?.otherPage?.['ktn-push']?.settings?.description;
-        if (!rawPush) return;
-        const data = JSON.parse(rawPush);
-        const items = Array.isArray(data?.items) ? data.items : (data && data.id ? [data] : []);
+        let items = [];
+        if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+          const apiRes = await window.KtnWebApp.apiRequest('/api/ktn/notifications');
+          if (apiRes && apiRes.ok && Array.isArray(apiRes.data?.notifications)) {
+            items = apiRes.data.notifications;
+          }
+        }
         if (!items.length) return;
 
         const custom = this.getCustomEvents();
@@ -3239,28 +3202,31 @@
         const readSet = this.getReadSet();
         let addedAny = false;
         const now = Date.now();
+        const ctx = this.getActiveContext();
 
-        items.slice().reverse().forEach(item => {
-          if (!item || !item.id) return;
-          if (existingIds.has(item.id) || PROCESSED_MSG_IDS.has(item.id)) return;
+        items.slice().reverse().forEach(rawItem => {
+          if (!rawItem || !rawItem.id) return;
+          if (existingIds.has(rawItem.id) || PROCESSED_MSG_IDS.has(rawItem.id)) return;
+          const item = {
+            id: rawItem.id,
+            recipient_role: ctx.role,
+            recipient_id: ctx.studentEmail || ctx.studentCode || ctx.teacherEmail || ctx.userId || 'ALL',
+            type: String(rawItem.type || 'ACADEMIC').toUpperCase(),
+            category: 'academic',
+            priority: 'HIGH',
+            title: rawItem.title || 'Thông báo mới',
+            body: rawItem.body || '',
+            action_url: rawItem.actionUrl || rawItem.action_url || '/custom-page/so-lien-lac-test',
+            cta: 'Xem ngay →',
+            timestamp: rawItem.createdAt ? new Date(rawItem.createdAt).getTime() : now,
+            read_status: readSet.has(rawItem.id),
+            metadata: { studentEmail: ctx.studentEmail, studentCode: ctx.studentCode }
+          };
           if (!this.evaluateRecipientMatch(item)) return;
           PROCESSED_MSG_IDS.add(item.id);
           existingIds.add(item.id);
           custom.unshift(item);
           addedAny = true;
-
-          const isRecent = (now - Number(item.timestamp || item.ts || 0)) < 30 * 60 * 1000;
-          if (isRecent && !readSet.has(item.id)) {
-            this.showInAppToast(item);
-            if ('Notification' in window && Notification.permission === 'granted') {
-              try {
-                new Notification(item.title, {
-                  body: item.body,
-                  icon: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png'
-                });
-              } catch {}
-            }
-          }
         });
 
         if (addedAny) {

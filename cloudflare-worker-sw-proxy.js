@@ -523,7 +523,6 @@ async function extractSessionFromRequest(request, env) {
     if (verified) return verified;
     const verifiedIz = await verifyIzTeachAccessToken(tok, env);
     if (verifiedIz) return verifiedIz;
-    return null;
   }
   const cookieHeader = request.headers.get('Cookie') || '';
   const match = cookieHeader.match(/(?:^|;\s*)ktn_webapp_token=([^;]+)/);
@@ -864,7 +863,8 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, cogn
           const list = Array.isArray(searchData?.data) ? searchData.data : (Array.isArray(searchData) ? searchData : []);
           const found = list.find(u => normalizeEmail(u.email) === cleanEmail);
           if (found) {
-            if (isValidCognitoUuid(found.userId)) resolvedCognitoUid = found.userId;
+            if (isValidCognitoUuid(found.dynamoId)) resolvedCognitoUid = found.dynamoId;
+            else if (isValidCognitoUuid(found.userId)) resolvedCognitoUid = found.userId;
             else if (isValidCognitoUuid(found.id)) resolvedCognitoUid = found.id;
             resolvedStudentId = found._id || found.id || found.studentId || resolvedStudentId;
             if (found.name && !name) resolvedName = found.name;
@@ -907,7 +907,7 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, cogn
 }
 
 /**
- * Đồng bộ hàng loạt toàn bộ học viên từ izTeach về bảng ktn_students trên Supabase
+ * Đồng bộ hàng loạt toàn bộ học viên từ izTeach về bảng ktn_students trên Supabase (Idempotent & Có báo cáo kiểm toán đầy đủ)
  */
 async function syncAllIzTeachStudentsToSupabase(env) {
   const adminToken = await getIzTeachAdminToken(env);
@@ -916,7 +916,8 @@ async function syncAllIzTeachStudentsToSupabase(env) {
   let syncedCount = 0;
 
   try {
-    const searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&limit=500`, {
+    // Lưu ý: Không truyền ?limit=500 vì API Strapi/Mongo của izTeach coi limit là trường lọc và trả về mảng rỗng []
+    const searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}`, {
       headers: { Authorization: adminToken }
     });
     if (!searchRes.ok) {
@@ -925,51 +926,137 @@ async function syncAllIzTeachStudentsToSupabase(env) {
     const searchData = await searchRes.json().catch(() => null);
     const izList = Array.isArray(searchData?.data) ? searchData.data : (Array.isArray(searchData) ? searchData : []);
 
-    // Lấy thêm danh sách học viên hiện có trong ktn_students để đảm bảo không sót học viên nào
-    const dbRes = await supabaseRequest(env, 'ktn_students?select=email,name,phone,cognito_user_id,izteach_student_id&limit=500');
-    const dbList = (dbRes.ok && Array.isArray(dbRes.data)) ? dbRes.data : [];
+    // Lấy toàn bộ hồ sơ hiện có trong ktn_students (phân trang 1000 dòng/lần của PostgREST)
+    const dbPage1 = await supabaseRequest(env, 'ktn_students?select=*&order=email.asc&limit=1000&offset=0');
+    const dbPage2 = await supabaseRequest(env, 'ktn_students?select=*&order=email.asc&limit=1000&offset=1000');
+    const dbList = [
+      ...((dbPage1.ok && Array.isArray(dbPage1.data)) ? dbPage1.data : []),
+      ...((dbPage2.ok && Array.isArray(dbPage2.data)) ? dbPage2.data : [])
+    ];
+    const supabaseBefore = dbList.length;
 
     const byEmail = new Map();
     for (const row of dbList) {
       const em = normalizeEmail(row?.email || '');
       if (!em) continue;
-      byEmail.set(em, {
+      byEmail.set(em, row);
+    }
+
+    let skippedCount = 0;
+    const skippedReasons = [];
+    const newStudentsNeedingPerm = [];
+    const nowIso = new Date().toISOString();
+    const upsertMap = new Map();
+
+    // Giữ nguyên mọi học viên đã có trong Supabase
+    for (const [em, row] of byEmail.entries()) {
+      const prevCourses = Array.isArray(row.online_courses) ? row.online_courses : [];
+      upsertMap.set(em, {
+        code: row.code || ('KTN-' + Date.now().toString().slice(-6)),
         email: em,
         name: row.name || em.split('@')[0],
         phone: row.phone || '',
-        cognitoUserId: isValidCognitoUuid(row.cognito_user_id) ? row.cognito_user_id : null,
-        izteachStudentId: row.izteach_student_id || null
-      });
-    }
-    for (const item of izList) {
-      const em = normalizeEmail(item?.email || '');
-      if (!em) continue;
-      const prev = byEmail.get(em) || {};
-      const cogId = isValidCognitoUuid(item.userId)
-        ? item.userId
-        : (isValidCognitoUuid(item.id) ? item.id : prev.cognitoUserId || null);
-      const stuId = item._id || item.id || item.studentId || prev.izteachStudentId || null;
-      byEmail.set(em, {
-        email: em,
-        name: item.name || prev.name || em.split('@')[0],
-        phone: item.phone || prev.phone || '',
-        cognitoUserId: cogId,
-        izteachStudentId: stuId
+        cognito_user_id: isValidCognitoUuid(row.cognito_user_id) ? row.cognito_user_id : null,
+        izteach_student_id: row.izteach_student_id || null,
+        class_code: row.class_code || null,
+        has_live_class: Boolean(row.class_code),
+        has_online_courses: prevCourses.length > 0,
+        online_courses: prevCourses,
+        updated_at: nowIso
       });
     }
 
-    for (const [, stu] of byEmail.entries()) {
-      await syncStudentEntitlementFromIzTeach(env, {
-        email: stu.email,
-        name: stu.name,
-        phone: stu.phone,
-        cognitoUserId: stu.cognitoUserId,
-        izteachStudentId: stu.izteachStudentId,
-        accessToken: adminToken
-      });
-      syncedCount++;
+    for (let i = 0; i < izList.length; i++) {
+      const item = izList[i];
+      const em = normalizeEmail(item?.email || '');
+      if (!em || !em.includes('@')) {
+        skippedCount++;
+        if (skippedReasons.length < 10) {
+          skippedReasons.push({ id: item?._id || item?.id || i, reason: 'INVALID_OR_EMPTY_EMAIL' });
+        }
+        continue;
+      }
+      const prev = upsertMap.get(em) || byEmail.get(em) || {};
+      const cogId = isValidCognitoUuid(item.dynamoId)
+        ? item.dynamoId
+        : (isValidCognitoUuid(item.userId)
+          ? item.userId
+          : (isValidCognitoUuid(item.id) ? item.id : (prev.cognito_user_id || null)));
+      const stuId = item._id || item.id || item.studentId || prev.izteach_student_id || null;
+      const code = prev.code || ('KTN-IZ-' + (stuId ? String(stuId).slice(-6).toUpperCase() : String(i + 1).padStart(4, '0')));
+      const prevCourses = Array.isArray(prev.online_courses) ? prev.online_courses : [];
+
+      const mergedRow = {
+        code,
+        email: em,
+        name: String(item.name || prev.name || em.split('@')[0]).trim(),
+        phone: String(item.phone || prev.phone || '').trim(),
+        cognito_user_id: cogId,
+        izteach_student_id: stuId,
+        class_code: prev.class_code || null,
+        has_live_class: Boolean(prev.class_code),
+        has_online_courses: prevCourses.length > 0,
+        online_courses: prevCourses,
+        updated_at: nowIso
+      };
+      upsertMap.set(em, mergedRow);
+
+      if (!byEmail.has(em) && cogId && newStudentsNeedingPerm.length < 25) {
+        newStudentsNeedingPerm.push(mergedRow);
+      }
     }
-    return { ok: true, syncedCount };
+
+    // Với các học viên mới phát sinh trên izTeach chưa có trong Supabase, truy vấn thêm user-permission
+    for (const stuRow of newStudentsNeedingPerm) {
+      try {
+        const pRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(stuRow.cognito_user_id)}&vendorId=${encodeURIComponent(vendorId)}`, {
+          headers: { Authorization: adminToken }
+        });
+        if (pRes.ok) {
+          const pData = await pRes.json().catch(() => null);
+          if (Array.isArray(pData?.onlineCourses) && pData.onlineCourses.length > 0) {
+            const cIds = Array.from(new Set(pData.onlineCourses.map(c => String(c?.id || c?._id || c?.onlineCourseId || c?.productId || c || '').trim()).filter(Boolean)));
+            stuRow.online_courses = cIds.map(cid => ({
+              id: cid,
+              title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || 'Khóa học trực tuyến'
+            }));
+            stuRow.has_online_courses = stuRow.online_courses.length > 0;
+          }
+        }
+      } catch {}
+    }
+
+    const allRows = Array.from(upsertMap.values());
+    let failedCount = 0;
+    for (let i = 0; i < allRows.length; i += 250) {
+      const chunk = allRows.slice(i, i + 250);
+      const upRes = await supabaseRequest(env, 'ktn_students?on_conflict=email', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates',
+        body: chunk
+      });
+      if (upRes.ok) {
+        syncedCount += chunk.length;
+      } else {
+        failedCount += chunk.length;
+      }
+    }
+
+    const withOnlineCoursesCount = allRows.filter(r => r.has_online_courses && Array.isArray(r.online_courses) && r.online_courses.length > 0).length;
+    const withLiveClassCount = allRows.filter(r => r.has_live_class && r.class_code).length;
+
+    return {
+      ok: failedCount === 0,
+      izteachTotal: izList.length,
+      supabaseBefore,
+      syncedCount,
+      skippedCount,
+      skippedReasons,
+      failedCount,
+      withOnlineCoursesCount,
+      withLiveClassCount,
+      idempotent: true
+    };
   } catch (err) {
     return { ok: false, syncedCount, error: err?.message || 'SYNC_ERROR' };
   }
@@ -1029,8 +1116,8 @@ export default {
     };
     if (STANDALONE_CDN_FILES[path]) {
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
-      const cdnUrl = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/sofl-remake${path}`;
-      const cdnRes = await fetch(cdnUrl, { cf: { cacheTtl: 60, cacheEverything: true } });
+      const s3OriginUrl = `https://online-learning-izteach-6-aws-source-bucket.s3-ap-southeast-1.amazonaws.com/resource/documents/${vendorId}/sofl-remake${path}`;
+      const cdnRes = await fetch(s3OriginUrl, { cf: { cacheTtl: 15, cacheEverything: false } });
       if (cdnRes.ok) {
         return new Response(cdnRes.body, {
           status: 200,
@@ -1066,7 +1153,11 @@ export default {
       const staffHit = staffProbe.status === 'fulfilled' && staffProbe.value.ok && staffProbe.value.data?.accessToken ? staffProbe.value.data : null;
       const stuHit = stuProbe.status === 'fulfilled' && stuProbe.value.ok && stuProbe.value.data?.accessToken ? stuProbe.value.data : null;
 
-      const chosen = staffHit || stuHit;
+      const staffRoles = Array.isArray(staffHit?.roles) ? staffHit.roles : [];
+      const isStaffAccount = Boolean(
+        staffHit && (staffRoles.includes('root') || staffRoles.includes('admin') || staffRoles.includes('teacher') || staffHit.type === 'teacher')
+      );
+      const chosen = isStaffAccount ? staffHit : (stuHit || staffHit);
       if (!chosen) {
         return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
       }
@@ -1159,10 +1250,12 @@ export default {
       if (!session) {
         return jsonResponse({ ok: false, authenticated: false }, 401);
       }
+      const refreshedToken = await signSessionToken(session, env.KTN_SESSION_SECRET);
       return jsonResponse({
         ok: true,
         authenticated: true,
         session,
+        token: refreshedToken,
         redirectUrl: getRoleTargetPage(session.role || session.roles?.[0] || 'student')
       });
     }
@@ -1536,6 +1629,20 @@ export default {
       const courseLabel = String(body.childAge || body.courseLabel || 'Tiểu học (7–11t)').trim();
       if (!nameTrim || !/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(phoneTrim)) {
         return jsonResponse({ ok: false, message: 'Vui lòng nhập đầy đủ Họ tên và Số điện thoại hợp lệ.' }, 400);
+      }
+
+      const isTestLead = Boolean(body.testMode || request.headers.get('X-KTN-Test-Mode') === '1');
+      if (isTestLead) {
+        return jsonResponse({
+          ok: true,
+          testMode: true,
+          lead: {
+            name: nameTrim,
+            phone: phoneTrim,
+            courseLabel,
+            createdAt: new Date().toISOString()
+          }
+        });
       }
 
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;

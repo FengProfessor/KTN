@@ -826,14 +826,14 @@ ${ktnGlobalAuthHook}
           req.onupgradeneeded = () => {
             try {
               const db = req.result;
-              if (!db.objectStoreNames.contains('session')) db.createObjectStore('session');
+              if (!db.objectStoreNames.contains('session_store')) db.createObjectStore('session_store');
             } catch (e) {}
           };
           req.onsuccess = () => {
             try {
               const db = req.result;
-              const tx = db.transaction('session', 'readwrite');
-              tx.objectStore('session').delete('active');
+              const tx = db.transaction('session_store', 'readwrite');
+              tx.objectStore('session_store').delete('active_session');
               tx.oncomplete = () => { try { db.close(); } catch (e) {} resolve(true); };
               tx.onerror = () => { try { db.close(); } catch (e) {} reject(tx.error || new Error('IDB_DELETE_ERROR')); };
               tx.onabort = () => { try { db.close(); } catch (e) {} reject(tx.error || new Error('IDB_DELETE_ABORTED')); };

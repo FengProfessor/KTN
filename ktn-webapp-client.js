@@ -191,6 +191,53 @@
     getRolePageUrl,
     detectUserRole,
 
+    recoverIzTeachAuthToken(targetEmail) {
+      const wantEmail = String(targetEmail || '').trim().toLowerCase();
+      const isValidTok = t => {
+        const s = String(t || '').trim();
+        return Boolean(s && !s.startsWith('KTN-') && s.split('.').length >= 2);
+      };
+      try {
+        const enc = localStorage.getItem('ol-credentials-auth-user');
+        if (enc && enc.length > 2) {
+          const trimmed = enc.trim();
+          let decoded = null;
+          if (trimmed.startsWith('{')) {
+            decoded = JSON.parse(trimmed);
+          } else {
+            const vId = '3529cd2b-7af6-4fda-887c-392a79393d6a';
+            const xorKey = vId.split('').reduce((a, c) => a ^ c.charCodeAt(0), 0);
+            const chars = [];
+            for (let i = 0; i < trimmed.length; i += 2) {
+              chars.push(String.fromCharCode(parseInt(trimmed.substr(i, 2), 16) ^ xorKey));
+            }
+            const joined = chars.join('');
+            try {
+              decoded = JSON.parse(decodeURIComponent(joined));
+            } catch {
+              decoded = JSON.parse(joined);
+            }
+          }
+          if (decoded && typeof decoded === 'object') {
+            const inner = decoded.user || decoded.account || decoded.payload || decoded;
+            const decEmail = String(decoded.email || inner?.email || '').trim().toLowerCase();
+            if (!wantEmail || !decEmail || decEmail === wantEmail) {
+              const cand = decoded.token || decoded.accessToken || inner?.token || inner?.accessToken || '';
+              if (isValidTok(cand)) return String(cand).trim();
+            }
+          }
+        }
+      } catch {}
+      try {
+        const sllTok = window.sllAuth?.session?.accessToken || window.sllAuth?.session?.token || '';
+        const sllEmail = String(window.sllAuth?.session?.account?.email || window.sllAuth?.session?.email || '').trim().toLowerCase();
+        if (isValidTok(sllTok) && (!wantEmail || !sllEmail || sllEmail === wantEmail)) {
+          return String(sllTok).trim();
+        }
+      } catch {}
+      return '';
+    },
+
     async saveSession(session, signedToken) {
       if (!session || window.__ktnLoggingOut) return null;
       const role = detectUserRole(session);
@@ -206,28 +253,30 @@
         }
       } catch {}
 
-      const isWorkerToken = t => {
-        const s = String(t || '').trim();
-        return Boolean(s && !s.startsWith('KTN-') && s.split('.').length === 2);
-      };
-      const isRealJwt = t => {
+      const isValidAuthToken = t => {
         const s = String(t || '').trim();
         return Boolean(s && !s.startsWith('KTN-') && s.split('.').length >= 2);
       };
 
-      const bestWorkerToken = isWorkerToken(signedToken)
-        ? signedToken
-        : (isWorkerToken(session.token)
-            ? session.token
-            : (isWorkerToken(prevRecord?.token) ? prevRecord.token : ''));
+      const candidates = [
+        signedToken,
+        session.token,
+        session.accessToken,
+        prevRecord?.token,
+        prevRecord?.accessToken,
+        this.recoverIzTeachAuthToken(normEmail)
+      ];
+      // Ưu tiên 2-part KTN Worker token trước, sau đó đến 3-part izTeach JWT hợp lệ
+      const bestWorkerToken = candidates.map(t => String(t || '').trim()).find(s => isValidAuthToken(s) && s.split('.').length === 2) || '';
+      const bestAnyToken = bestWorkerToken || candidates.map(t => String(t || '').trim()).find(s => isValidAuthToken(s)) || '';
 
       const record = {
         ...(prevRecord || {}),
         ...session,
         role,
         roles: [role],
-        token: bestWorkerToken || signedToken || session.token || '',
-        accessToken: bestWorkerToken || 'KTN-SESSION-VERIFIED',
+        token: bestAnyToken,
+        accessToken: bestAnyToken || 'KTN-SESSION-VERIFIED',
         savedAt: Date.now()
       };
       delete record.izteachAccessToken;
@@ -251,7 +300,17 @@
         if (raw) {
           const parsed = JSON.parse(raw);
           if (parsed && parsed.email) {
-            window.__ktnActiveSessionEmail = String(parsed.email || '').trim().toLowerCase();
+            const normEm = String(parsed.email || '').trim().toLowerCase();
+            window.__ktnActiveSessionEmail = normEm;
+            const curTok = String(parsed.token || parsed.accessToken || '').trim();
+            if (!curTok || curTok.startsWith('KTN-')) {
+              const recovered = this.recoverIzTeachAuthToken(normEm);
+              if (recovered) {
+                parsed.token = recovered;
+                parsed.accessToken = recovered;
+                try { localStorage.setItem(SESSION_KEY, JSON.stringify(parsed)); } catch {}
+              }
+            }
             return parsed;
           }
         }
@@ -436,7 +495,10 @@
         'Content-Type': 'application/json',
         ...(options.headers || {})
       };
-      const rawTok = String(session?.token || session?.accessToken || '').trim();
+      let rawTok = String(session?.token || session?.accessToken || '').trim();
+      if (!rawTok || rawTok.startsWith('KTN-')) {
+        rawTok = this.recoverIzTeachAuthToken(session?.email);
+      }
       if (rawTok && !rawTok.startsWith('KTN-')) {
         headers['Authorization'] = `Bearer ${rawTok}`;
       }
@@ -448,10 +510,13 @@
       });
       if (res.status === 401 && !options._retriedAuth && path !== '/api/ktn/auth/session' && path !== '/api/ktn/auth/login') {
         try {
+          const fallbackTok = this.recoverIzTeachAuthToken(session?.email) || (rawTok && !rawTok.startsWith('KTN-') ? rawTok : '');
+          const sessHeaders = fallbackTok ? { Authorization: `Bearer ${fallbackTok}` } : {};
           const sessRes = await fetch(this.getApiBase() + '/api/ktn/auth/session', {
             method: 'GET',
             credentials: 'same-origin',
-            cache: 'no-store'
+            cache: 'no-store',
+            headers: sessHeaders
           });
           if (sessRes.ok) {
             const sessData = await sessRes.json().catch(() => null);

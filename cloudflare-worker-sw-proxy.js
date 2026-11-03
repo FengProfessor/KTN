@@ -1458,12 +1458,15 @@ export default {
       }
       const cleanSession = { ...session, accessToken: undefined, izteachAccessToken: undefined };
       const refreshedToken = await signSessionToken(cleanSession, env.KTN_SESSION_SECRET);
+      const cookieVal = encodeURIComponent(refreshedToken);
       return jsonResponse({
         ok: true,
         authenticated: true,
         session: cleanSession,
         token: refreshedToken,
         redirectUrl: getRoleTargetPage(cleanSession.role || cleanSession.roles?.[0] || 'student')
+      }, 200, {
+        'Set-Cookie': `ktn_webapp_token=${cookieVal}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`
       });
     }
 

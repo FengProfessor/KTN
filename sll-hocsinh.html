@@ -1700,12 +1700,12 @@
 
         <!-- COURSE CARD: HSK1 3.0 -->
         <div class="course-card-single" id="hsk1-course-card" style="display:none;margin:0;max-width:none;">
-          <div class="course-card-thumb-wrap">
+          <div class="course-card-thumb-wrap" style="cursor:pointer;" onclick="openCourseContinueOrStart('6adadba969897b0002482ca5')">
             <img class="course-card-thumb" src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png" alt="HSK1 3.0">
             <span class="course-card-badge">HSK 1 (3.0)</span>
           </div>
           <div class="course-card-content">
-            <div class="course-card-title">
+            <div class="course-card-title" style="cursor:pointer;" onclick="openCourseContinueOrStart('6adadba969897b0002482ca5')">
               <span>Khóa HSK1 3.0</span>
               <span style="font-size:0.85rem;color:var(--primary);font-weight:700;">15 Bài học</span>
             </div>
@@ -2533,7 +2533,8 @@
           .replace(/[^a-zA-Z0-9._-]/g, '_');
         let s3Key = `resource/homeworks/${IzTeachConfig.vendorId}/${timestamp}-${cleanName}`;
         const ext = (cleanName.split('.').pop() || '').toLowerCase();
-        const mimeType = file.type || (
+        const rawMime = String(file.type || '').split(';')[0].trim();
+        const mimeType = rawMime || (
           /^(png|jpg|jpeg|webp|gif)$/.test(ext) ? (`image/${ext === 'jpg' ? 'jpeg' : ext}`) :
           (/^(mp3|m4a|wav|webm|ogg)$/.test(ext) ? (`audio/${ext === 'm4a' ? 'mp4' : ext}`) : 'application/octet-stream')
         );
@@ -2714,9 +2715,13 @@
         merged.code = merged.code || 'KTN-2026-TAPHON';
         merged.email = 'taphong2002@gmail.com';
         merged.name = merged.name || 'ta phong vo';
+        merged.classCode = merged.classCode || merged.class_code || 'YCT2-04';
         if (!Array.isArray(merged.roles) || !merged.roles.length) merged.roles = ['student'];
         if (!Array.isArray(merged.onlineCourses) || !merged.onlineCourses.length) {
-          merged.onlineCourses = [{ id: IzTeachConfig.courseId, title: 'HSK1 3.0' }];
+          merged.onlineCourses = [
+            { id: IzTeachConfig.courseId, title: 'HSK1 3.0' },
+            { id: '65e7704a9ea90c00080d5195', title: 'Chinese For Kids' }
+          ];
         }
         if (!merged.accessToken) {
           merged.accessToken = 'KTN-STUDENT-TOKEN-TAPHON';
@@ -2760,7 +2765,17 @@
         const rawP = localStorage.getItem('ktn_sll_persistent_auth_v2');
         if (rawP) {
           const p = normalizePortalUser(JSON.parse(rawP));
-          if (p) return p;
+          if (p) {
+            const curTok = String(p.token || p.accessToken || '').trim();
+            if ((!curTok || curTok.startsWith('KTN-')) && window.KtnWebApp && typeof window.KtnWebApp.recoverIzTeachAuthToken === 'function') {
+              const recovered = window.KtnWebApp.recoverIzTeachAuthToken(p.email);
+              if (recovered) {
+                p.token = recovered;
+                p.accessToken = recovered;
+              }
+            }
+            return p;
+          }
         }
       } catch (e) {}
 
@@ -3497,7 +3512,7 @@
 
     function renderTodayPrioritySection(enrolledIds, liveClassCode) {
       const sectionEl = document.getElementById('today-priority-section');
-      const gridEl = document.getElementById('today-priority-grid');
+      const gridEl = document.getElementById('today-priority-cards') || document.getElementById('today-priority-grid');
       if (!sectionEl || !gridEl) return;
 
       const isHomeTab = !window.location.hash || window.location.hash === '#/' || window.location.hash === '#';
@@ -3702,8 +3717,8 @@
           if (hasHsk1) {
             const hskNextNum = getLastStudiedLesson(HSK1_COURSE_ID);
             const hskStarted = hasStartedCourse(HSK1_COURSE_ID);
-            const hskBtn = document.getElementById('btn-enter-hsk1-course');
-            const hskBtnText = document.getElementById('btn-enter-hsk1-text');
+            const hskBtn = document.getElementById('btn-enter-hsk1-card') || document.getElementById('btn-enter-hsk1-course');
+            const hskBtnText = document.getElementById('lbl-enter-hsk1-card') || document.getElementById('btn-enter-hsk1-text');
             if (hskBtnText) {
               hskBtnText.textContent = hskStarted ? `Học tiếp Bài ${hskNextNum}` : 'Bắt đầu Bài 1';
             }
@@ -3734,12 +3749,12 @@
               const slug = getCourseSlug(cid);
               return `
                 <div class="course-card-single" style="display:grid;margin:0;max-width:none;">
-                  <div class="course-card-thumb-wrap">
+                  <div class="course-card-thumb-wrap" style="cursor:pointer;" onclick="navigateStudentHash('#/khoa/${slug}/bai/${nextNum}')">
                     <img class="course-card-thumb" src="${meta.thumb}" alt="${meta.shortTitle}">
                     <span class="course-card-badge">${meta.badge}</span>
                   </div>
                   <div class="course-card-content">
-                    <div class="course-card-title">
+                    <div class="course-card-title" style="cursor:pointer;" onclick="navigateStudentHash('#/khoa/${slug}/bai/${nextNum}')">
                       <span>${meta.shortTitle}</span>
                       <span style="font-size:0.85rem;color:var(--primary);font-weight:700;">${totalCount} Bài học</span>
                     </div>
@@ -4387,7 +4402,7 @@
       const noteInput = document.getElementById('hw-student-note');
       const previewBox = document.getElementById('submitted-resources-preview');
       const submitBtn = document.getElementById('btn-submit-workbook');
-      const submitBtnText = document.getElementById('btn-submit-workbook-text');
+      const submitBtnText = document.getElementById('lbl-submit-workbook') || document.getElementById('btn-submit-workbook-text');
       const errBox = document.getElementById('workbook-submit-error');
       if (errBox) errBox.style.display = 'none';
 
@@ -4472,7 +4487,7 @@
       }
 
       // Cập nhật thanh "Học bài tiếp theo" ở cuối bài
-      const nextHint = document.getElementById('lesson-next-status-hint');
+      const nextHint = document.getElementById('lesson-next-hint') || document.getElementById('lesson-next-status-hint');
       const nextBtn = document.getElementById('btn-next-lesson');
       if (nextBtn) {
         if (currentLessonIdx + 1 < LESSONS.length) {
@@ -5211,25 +5226,81 @@
     }
 
     function openVideoCourseDirectly(courseId) {
-      const slug = getCourseSlug(courseId);
-      const nextNum = getLastStudiedLesson(courseId);
+      const cid = courseId || activeCourseId || HSK1_COURSE_ID;
+      const slug = getCourseSlug(cid);
+      const nextNum = getLastStudiedLesson(cid);
       navigateStudentHash(`#/khoa/${slug}/bai/${nextNum}`);
+    }
+
+    function openCourseContinueOrStart(courseId) {
+      openVideoCourseDirectly(courseId || HSK1_COURSE_ID);
+    }
+
+    function openActiveOrDefaultCourseHash() {
+      const user = getRealCurrentUser();
+      const access = checkUserCourseAccess(user);
+      const enrolledIds = (access && Array.isArray(access.enrolledCourseIds)) ? access.enrolledCourseIds : [];
+      if (enrolledIds.length > 0) {
+        const targetCid = (activeCourseId && enrolledIds.includes(activeCourseId)) ? activeCourseId : enrolledIds[0];
+        openVideoCourseDirectly(targetCid);
+      } else {
+        navigateStudentHash('#/khoa');
+      }
+    }
+
+    function openStudentLiveClassHash() {
+      const user = getRealCurrentUser();
+      const liveClassCode = currentStudentProfile?.classCode || user?.classCode || null;
+      if (liveClassCode) {
+        navigateStudentHash(`#/lop/${String(liveClassCode).toLowerCase()}/buoi/${activeClassSessionNum || 1}`);
+      } else {
+        switchStudentPane('contactbook');
+      }
+    }
+
+    function resumeLastLessonInActiveCourse() {
+      const cid = activeCourseId || HSK1_COURSE_ID;
+      const nextNum = getLastStudiedLesson(cid);
+      loadLesson(nextNum);
+    }
+
+    function focusWorkbookRevisionArea() {
+      startHomeworkRevision();
+    }
+
+    function clearSiblingPermissionGuard() {
+      hideSiblingPermissionGuard();
+      navigateStudentHash('#/');
     }
 
     function renderStudentCaseBanner(profile) {
       const pill = document.getElementById('student-case-pill');
       const desc = document.getElementById('student-live-class-desc');
       const chipsBox = document.getElementById('student-enrolled-courses-chips');
-      const courses = Array.isArray(profile?.online_courses || profile?.onlineCourses)
+      const rawCourses = Array.isArray(profile?.online_courses || profile?.onlineCourses)
         ? (profile.online_courses || profile.onlineCourses)
         : [];
+      const courseMap = new Map();
+      rawCourses.forEach(c => {
+        const cid = registerDynamicCourseMeta(c);
+        if (cid) courseMap.set(cid, { id: cid, title: c?.title || PORTAL_COURSE_CATALOG[cid]?.shortTitle || 'Khóa học' });
+      });
+      try {
+        const access = checkUserCourseAccess(getRealCurrentUser());
+        if (access && Array.isArray(access.enrolledCourseIds)) {
+          access.enrolledCourseIds.forEach(cid => {
+            if (cid && !courseMap.has(cid)) {
+              courseMap.set(cid, { id: cid, title: PORTAL_COURSE_CATALOG[cid]?.shortTitle || 'Khóa học' });
+            }
+          });
+        }
+      } catch (e) {}
+      const courses = profile ? Array.from(courseMap.values()) : [];
       const classCode = profile?.class_code || profile?.classCode || null;
       const teacherName = profile?.teacher_name || 'Cô Lâm Mỹ Linh';
       const scheduleText = profile?.schedule || 'Thứ 3 & Thứ 6 (19:30 - 21:00)';
-      const sCase = profile?.studentCase || (
-        (courses.length > 0 && classCode) ? 'both' :
-        (courses.length > 0 ? 'online_only' : (classCode ? 'sll_only' : 'unassigned'))
-      );
+      const sCase = (courses.length > 0 && classCode) ? 'both' :
+        (courses.length > 0 ? 'online_only' : (classCode ? 'sll_only' : (profile?.studentCase || 'unassigned')));
 
       if (pill) {
         if (sCase === 'both') {
@@ -5283,8 +5354,13 @@
       'taphong2002@gmail.com': {
         code: 'KTN-2026-TAPHON',
         name: 'Tạ Phong Võ',
-        class_code: null,
-        online_courses: [{ id: '6adadba969897b0002482ca5', title: 'HSK1 3.0' }]
+        class_code: 'YCT2-04',
+        teacher_name: 'Cô Lâm Mỹ Linh',
+        schedule: 'Thứ 3 & Thứ 6 (19:30 - 21:00)',
+        online_courses: [
+          { id: '6adadba969897b0002482ca5', title: 'HSK1 3.0' },
+          { id: '65e7704a9ea90c00080d5195', title: 'Chinese For Kids' }
+        ]
       },
       'hoangngan@khongtunhi.com': {
         code: 'HS-2026-089',
@@ -5394,7 +5470,7 @@
             hasOnlineCourses: mergedCourses.length > 0,
             onlineCourses: mergedCourses,
             studentCase: currentStudentProfile.studentCase
-          }, latestUser.token);
+          }, latestUser.token || latestUser.accessToken);
         } catch (e) {}
       }
 
@@ -5957,7 +6033,10 @@
           btn.textContent = 'Gửi lại';
         }
         if (errEl) {
-          errEl.innerHTML = 'Chưa gửi được bài lên máy chủ. Bài thu âm/tệp của con vẫn được giữ nguyên — con bấm <strong>Gửi lại</strong> nhé.';
+          const detail = (err && err.message && !/Failed to fetch|NetworkError/i.test(err.message))
+            ? ` (${escapeHtml(err.message)})`
+            : '';
+          errEl.innerHTML = `Chưa gửi được bài lên máy chủ${detail}. Bài thu âm/tệp của con vẫn được giữ nguyên — con bấm <strong>Gửi lại</strong> nhé.`;
           errEl.style.display = 'block';
         }
       }
@@ -6139,7 +6218,7 @@
     // ============================================================
     function showSiblingPermissionGuard(messageHtml) {
       const guardEl = document.getElementById('sibling-permission-guard');
-      const descEl = document.getElementById('sibling-guard-desc');
+      const descEl = document.getElementById('sibling-guard-desc') || document.getElementById('sibling-permission-desc');
       if (guardEl) guardEl.style.display = 'block';
       if (descEl && messageHtml) descEl.innerHTML = messageHtml;
     }
@@ -6422,6 +6501,12 @@
     window.renderSidebarLessons = renderSidebarLessons;
     window.switchStudentPane = switchStudentPane;
     window.openVideoCourseDirectly = openVideoCourseDirectly;
+    window.openCourseContinueOrStart = openCourseContinueOrStart;
+    window.openActiveOrDefaultCourseHash = openActiveOrDefaultCourseHash;
+    window.openStudentLiveClassHash = openStudentLiveClassHash;
+    window.resumeLastLessonInActiveCourse = resumeLastLessonInActiveCourse;
+    window.focusWorkbookRevisionArea = focusWorkbookRevisionArea;
+    window.clearSiblingPermissionGuard = clearSiblingPermissionGuard;
     window.renderStudentCaseBanner = renderStudentCaseBanner;
     window.syncLiveStudentProfile = syncLiveStudentProfile;
     window.loadStudentContactBook = loadStudentContactBook;

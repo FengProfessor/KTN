@@ -2006,8 +2006,7 @@
           status: 'graded',
           teacherFeedback: fb,
           attachments: h.attachments || [],
-          allowUpsertFromIzTeach: true,
-          mirroredToIzTeach: Boolean(h.courseId)
+          allowUpsertFromIzTeach: true
         }
       }).then(res => {
         if (res && res.ok && res.data?.syncStatus === 'sync_failed') {

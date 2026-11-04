@@ -1262,46 +1262,35 @@ function resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId = null) {
   const normCourseId = courseId.toLowerCase();
   const courseMap = COURSE_UNIT_MAP[normCourseId];
 
-  if (courseMap && courseMap[lessonNum]) {
-    const canonicalUnitId = courseMap[lessonNum];
-    if (cleanExplicitUnit) {
-      const normExplicit = cleanExplicitUnit.toLowerCase();
-      const isLegacyHsk1Match = normCourseId === DEFAULT_COURSE_ID.toLowerCase() &&
-        HSK1_LEGACY_VIDEO_UNIT_MAP[lessonNum]?.toLowerCase() === normExplicit;
-      if (normExplicit !== canonicalUnitId.toLowerCase() && !isLegacyHsk1Match) {
-        return {
-          isLiveClass: false,
-          valid: false,
-          courseId: normCourseId,
-          lessonNum,
-          unitId: null,
-          syncStatus: 'mapping_required',
-          reason: 'UNIT_COURSE_MISMATCH'
-        };
+  if (courseMap) {
+    if (courseMap[lessonNum]) {
+      const canonicalUnitId = courseMap[lessonNum];
+      if (cleanExplicitUnit) {
+        const normExplicit = cleanExplicitUnit.toLowerCase();
+        const isLegacyHsk1Match = normCourseId === DEFAULT_COURSE_ID.toLowerCase() &&
+          HSK1_LEGACY_VIDEO_UNIT_MAP[lessonNum]?.toLowerCase() === normExplicit;
+        if (normExplicit !== canonicalUnitId.toLowerCase() && !isLegacyHsk1Match) {
+          return {
+            isLiveClass: false,
+            valid: false,
+            courseId: normCourseId,
+            lessonNum,
+            unitId: null,
+            syncStatus: 'mapping_required',
+            reason: 'UNIT_COURSE_MISMATCH'
+          };
+        }
       }
-    }
-    return {
-      isLiveClass: false,
-      valid: true,
-      courseId: normCourseId,
-      lessonNum,
-      unitId: canonicalUnitId,
-      syncStatus: 'pending_sync'
-    };
-  }
-
-  if (cleanExplicitUnit && /^[0-9a-f]{24}$/i.test(cleanExplicitUnit)) {
-    const owner = UNIT_TO_COURSE_MAP[cleanExplicitUnit.toLowerCase()];
-    if (!owner || (owner.courseId === normCourseId && owner.lessonNum === lessonNum)) {
       return {
         isLiveClass: false,
         valid: true,
         courseId: normCourseId,
         lessonNum,
-        unitId: cleanExplicitUnit.toLowerCase(),
+        unitId: canonicalUnitId,
         syncStatus: 'pending_sync'
       };
     }
+    // Khóa học đã có trong danh mục 17 khóa nhưng lessonNum vượt phạm vi bài học của khóa
     return {
       isLiveClass: false,
       valid: false,
@@ -1309,7 +1298,34 @@ function resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId = null) {
       lessonNum,
       unitId: null,
       syncStatus: 'mapping_required',
-      reason: 'CROSS_COURSE_UNIT_MISMATCH'
+      reason: cleanExplicitUnit ? 'UNIT_COURSE_MISMATCH' : 'MAPPING_REQUIRED'
+    };
+  }
+
+  // Khóa học ngoài danh mục 17 khóa: KHÔNG tự chấp nhận unitId do trình duyệt gửi lên nếu chưa xác thực với izTeach
+  if (cleanExplicitUnit && /^[0-9a-f]{24}$/i.test(cleanExplicitUnit)) {
+    const owner = UNIT_TO_COURSE_MAP[cleanExplicitUnit.toLowerCase()];
+    if (owner && (owner.courseId !== normCourseId || owner.lessonNum !== lessonNum)) {
+      return {
+        isLiveClass: false,
+        valid: false,
+        courseId: normCourseId,
+        lessonNum,
+        unitId: null,
+        syncStatus: 'mapping_required',
+        reason: 'CROSS_COURSE_UNIT_MISMATCH'
+      };
+    }
+    return {
+      isLiveClass: false,
+      valid: false,
+      requiresRemoteVerification: true,
+      candidateUnitId: cleanExplicitUnit.toLowerCase(),
+      courseId: normCourseId,
+      lessonNum,
+      unitId: null,
+      syncStatus: 'mapping_required',
+      reason: 'UNVERIFIED_EXTERNAL_UNIT_ID'
     };
   }
 
@@ -1325,6 +1341,126 @@ function resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId = null) {
 }
 
 /**
+ * Đối chiếu mã bài học (unitId) với danh mục 346 bài chuẩn; nếu thuộc khóa học mới ngoài danh mục 17 khóa,
+ * bắt buộc xác thực trực tiếp với API /prod/unit của izTeach trước khi chấp nhận.
+ */
+async function resolveAndVerifyCourseUnitId(env, rawCourseId, rawLessonNum, explicitUnitId = null) {
+  const base = resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId);
+  if (!base.requiresRemoteVerification || !base.candidateUnitId) {
+    return base;
+  }
+  const adminToken = await getIzTeachAdminToken(env);
+  if (!adminToken) {
+    return base;
+  }
+  const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+  try {
+    const unitRes = await fetch(
+      `${IZTEACH_ENDPOINTS.courseUnits}?course=${encodeURIComponent(base.courseId)}&vendorId=${encodeURIComponent(vendorId)}`,
+      { headers: { Authorization: adminToken } }
+    );
+    if (!unitRes.ok) return base;
+    const units = await unitRes.json().catch(() => []);
+    const unitList = Array.isArray(units) ? units : (Array.isArray(units?.data) ? units.data : []);
+    const matched = unitList.find(u => {
+      if (!u) return false;
+      const uid = String(u._id || u.id || '').trim().toLowerCase();
+      if (uid !== base.candidateUnitId) return false;
+      const uCourse = String(u.course?._id || u.course || base.courseId).trim().toLowerCase();
+      return uCourse === base.courseId;
+    });
+    if (matched) {
+      return {
+        isLiveClass: false,
+        valid: true,
+        verifiedOnIzTeach: true,
+        courseId: base.courseId,
+        lessonNum: base.lessonNum,
+        unitId: base.candidateUnitId,
+        syncStatus: 'pending_sync'
+      };
+    }
+  } catch {}
+  return base;
+}
+
+const IN_FLIGHT_HOMEWORK_OPS = new Map();
+
+async function runWithHomeworkConcurrencyLock(opKey, fn) {
+  if (IN_FLIGHT_HOMEWORK_OPS.has(opKey)) {
+    const existingOutcome = await IN_FLIGHT_HOMEWORK_OPS.get(opKey).catch(() => null);
+    if (existingOutcome && existingOutcome.status === 200 && existingOutcome.data?.ok) {
+      const replayPayload = {
+        ...existingOutcome.data,
+        idempotent: true,
+        idempotentReplay: true,
+        concurrentDedup: true,
+        izteachMirror: existingOutcome.data.izteachMirror
+          ? { ...existingOutcome.data.izteachMirror, idempotent: true, idempotentReplay: true }
+          : undefined
+      };
+      return jsonResponse(replayPayload, 200);
+    }
+  }
+  let resolveLock;
+  const lockPromise = new Promise(resolve => { resolveLock = resolve; });
+  IN_FLIGHT_HOMEWORK_OPS.set(opKey, lockPromise);
+  try {
+    const response = await fn();
+    const clonedText = await response.clone().text().catch(() => '');
+    let parsedData = null;
+    try { parsedData = JSON.parse(clonedText); } catch {}
+    resolveLock({ status: response.status, data: parsedData });
+    return response;
+  } catch (err) {
+    resolveLock(null);
+    throw err;
+  } finally {
+    IN_FLIGHT_HOMEWORK_OPS.delete(opKey);
+  }
+}
+
+async function verifyIzTeachHomeworkReceipt(env, { remoteId, courseId, unitId, expectApproved = false, expectedScore = null }) {
+  const cleanRemoteId = String(remoteId || '').trim();
+  if (!/^[0-9a-f]{24}$/i.test(cleanRemoteId)) {
+    return { verified: false, reason: 'INVALID_REMOTE_ID' };
+  }
+  const adminToken = await getIzTeachAdminToken(env);
+  if (!adminToken) {
+    return { verified: false, reason: 'NO_ADMIN_TOKEN' };
+  }
+  const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+  try {
+    const res = await fetch(
+      `${IZTEACH_ENDPOINTS.homeworkApi}?vendorId=${encodeURIComponent(vendorId)}&course=${encodeURIComponent(courseId)}`,
+      { headers: { Authorization: adminToken } }
+    );
+    if (!res.ok) return { verified: false, reason: 'IZTEACH_QUERY_HTTP_' + res.status };
+    const raw = await res.json().catch(() => []);
+    const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+    const hit = list.find(item => {
+      if (!item) return false;
+      const itemId = String(item._id || item.id || '').trim().toLowerCase();
+      if (itemId !== cleanRemoteId.toLowerCase()) return false;
+      const itemCourse = String(item.course?._id || item.course || '').trim().toLowerCase();
+      const itemUnit = String(item.unit?._id || item.unit || '').trim().toLowerCase();
+      if (itemCourse !== String(courseId).toLowerCase() || itemUnit !== String(unitId).toLowerCase()) return false;
+      if (expectApproved) {
+        if (item.state !== 'approved') return false;
+        if (expectedScore !== null && expectedScore !== undefined && Number(item.mark) !== Number(expectedScore)) return false;
+      }
+      return true;
+    });
+    if (hit) {
+      return { verified: true, remoteId: String(hit._id || hit.id), record: hit };
+    }
+    return { verified: false, reason: 'RECEIPT_NOT_FOUND_ON_IZTEACH' };
+  } catch {
+    return { verified: false, reason: 'RECEIPT_VERIFY_NETWORK_ERROR' };
+  }
+}
+
+/**
  * Đồng bộ bài nộp / kết quả chấm điểm từ Supabase ktn_homeworks sang izTeach /prod/homework.
  * Chỉ đồng bộ khi xác định chính xác Course + Lesson + Unit hợp lệ và chống tạo bản ghi trùng lặp (Idempotent).
  */
@@ -1332,7 +1468,7 @@ async function mirrorHomeworkToIzTeach(env, hwRow, isGraded = false, options = {
   if (!hwRow) return { ok: false, syncStatus: 'sync_failed', reason: 'EMPTY_HW' };
 
   const explicitUnitId = options.unitId || hwRow.workbook_answers?._syncMeta?.unitId || null;
-  const resolved = resolveCourseUnitId(hwRow.course_id, hwRow.lesson_num, explicitUnitId);
+  const resolved = await resolveAndVerifyCourseUnitId(env, hwRow.course_id, hwRow.lesson_num, explicitUnitId);
 
   if (resolved.isLiveClass) {
     return {
@@ -1777,29 +1913,43 @@ async function syncAllIzTeachStudentsToSupabase(env) {
       };
       upsertMap.set(em, mergedRow);
 
-      if (!byEmail.has(em) && cogId && newStudentsNeedingPerm.length < 25) {
+      const shouldQueryPerm = Boolean(
+        cogId && (
+          !byEmail.has(em) ||
+          prevCourses.length === 0 ||
+          options.reconcilePermissions !== false
+        )
+      );
+      if (shouldQueryPerm) {
         newStudentsNeedingPerm.push(mergedRow);
       }
     }
 
-    // Với các học viên mới phát sinh trên izTeach chưa có trong Supabase, truy vấn thêm user-permission
-    for (const stuRow of newStudentsNeedingPerm) {
-      try {
-        const pRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(stuRow.cognito_user_id)}&vendorId=${encodeURIComponent(vendorId)}`, {
-          headers: { Authorization: adminToken }
-        });
-        if (pRes.ok) {
-          const pData = await pRes.json().catch(() => null);
-          if (Array.isArray(pData?.onlineCourses) && pData.onlineCourses.length > 0) {
-            const cIds = Array.from(new Set(pData.onlineCourses.map(c => String(c?.id || c?._id || c?.onlineCourseId || c?.productId || c || '').trim()).filter(Boolean)));
-            stuRow.online_courses = cIds.map(cid => ({
-              id: cid,
-              title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || 'Khóa học trực tuyến'
-            }));
-            stuRow.has_online_courses = stuRow.online_courses.length > 0;
+    // Truy vấn đầy đủ user-permission từ izTeach theo lô song song (không giới hạn 25 học viên)
+    // và trích xuất chuẩn xác qua extractIzTeachOnlineCourseIds()
+    const PERM_BATCH_SIZE = 10;
+    for (let b = 0; b < newStudentsNeedingPerm.length; b += PERM_BATCH_SIZE) {
+      const batch = newStudentsNeedingPerm.slice(b, b + PERM_BATCH_SIZE);
+      await Promise.all(batch.map(async (stuRow) => {
+        try {
+          const pRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(stuRow.cognito_user_id)}&vendorId=${encodeURIComponent(vendorId)}`, {
+            headers: { Authorization: adminToken }
+          });
+          if (pRes.ok) {
+            const pData = await pRes.json().catch(() => null);
+            const cIds = extractIzTeachOnlineCourseIds(pData);
+            if (cIds.length > 0 || !byEmail.has(stuRow.email) || options.reconcileAllPermissions) {
+              stuRow.online_courses = normalizeOnlineCourseEntries(
+                cIds.map(cid => ({
+                  id: cid,
+                  title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || 'Khóa học trực tuyến'
+                }))
+              );
+              stuRow.has_online_courses = stuRow.online_courses.length > 0;
+            }
           }
-        }
-      } catch {}
+        } catch {}
+      }));
     }
 
     const allRows = Array.from(upsertMap.values());
@@ -3409,8 +3559,8 @@ export default {
         }, 403);
       }
 
-      // Kiểm tra tính nhất quán giữa courseId, lessonNum và unitId (chặn ghép nhầm unit của khóa khác)
-      const unitResolution = resolveCourseUnitId(courseId, lessonNum, body.unitId || null);
+      // Kiểm tra tính nhất quán giữa courseId, lessonNum và unitId (chặn ghép nhầm unit của khóa khác hoặc unit ngoài danh mục chưa xác minh)
+      const unitResolution = await resolveAndVerifyCourseUnitId(env, courseId, lessonNum, body.unitId || null);
       if (!unitResolution.isLiveClass && body.unitId && !unitResolution.valid) {
         return jsonResponse({
           ok: false,
@@ -3420,199 +3570,220 @@ export default {
         }, 400);
       }
 
-      // 4. Nếu bản ghi đã tồn tại, đối chiếu chủ sở hữu và kiểm tra chống nộp trùng lặp (Idempotency)
-      let existingHw = null;
-      const existingRes = await supabaseRequest(
-        env,
-        `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}&select=*&limit=1`
-      );
-      if (existingRes.ok && Array.isArray(existingRes.data) && existingRes.data[0]) {
-        existingHw = existingRes.data[0];
-        const existingOwner = normalizeEmail(existingHw.student_email || '');
-        if (existingOwner && existingOwner !== session.email) {
-          return jsonResponse({
-            ok: false,
-            message: 'Không được phép ghi đè bài nộp của học sinh khác.'
-          }, 403);
-        }
-      }
-
       const cleanNote = String(body.studentNote || '');
-      if (
-        existingHw &&
-        existingHw.file_url === fileUrl &&
-        String(existingHw.student_note || '') === cleanNote &&
-        existingHw.status === 'pending'
-      ) {
-        const prevMeta = existingHw.workbook_answers?._syncMeta || {};
-        if (prevMeta.syncStatus === 'synced' || prevMeta.syncStatus === 'not_applicable_live_class') {
-          return jsonResponse({
-            ok: true,
-            idempotent: true,
-            idempotentReplay: true,
-            syncStatus: prevMeta.syncStatus,
-            unitId: prevMeta.unitId || unitResolution.unitId || null,
-            mirroredToIzTeach: prevMeta.syncStatus === 'synced',
-            homework: existingHw,
-            izteachMirror: {
+      const submitLockKey = `SUBMIT|${hwId}|${fileUrl}|${cleanNote}`;
+
+      return runWithHomeworkConcurrencyLock(submitLockKey, async () => {
+        // 4. Nếu bản ghi đã tồn tại, đối chiếu chủ sở hữu và kiểm tra chống nộp trùng lặp (Idempotency)
+        let existingHw = null;
+        const existingRes = await supabaseRequest(
+          env,
+          `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}&select=*&limit=1`
+        );
+        if (existingRes.ok && Array.isArray(existingRes.data) && existingRes.data[0]) {
+          existingHw = existingRes.data[0];
+          const existingOwner = normalizeEmail(existingHw.student_email || '');
+          if (existingOwner && existingOwner !== session.email) {
+            return jsonResponse({
+              ok: false,
+              message: 'Không được phép ghi đè bài nộp của học sinh khác.'
+            }, 403);
+          }
+        }
+
+        if (
+          existingHw &&
+          existingHw.file_url === fileUrl &&
+          String(existingHw.student_note || '') === cleanNote &&
+          existingHw.status === 'pending'
+        ) {
+          const prevMeta = existingHw.workbook_answers?._syncMeta || {};
+          if (prevMeta.syncStatus === 'synced' || prevMeta.syncStatus === 'not_applicable_live_class') {
+            return jsonResponse({
               ok: true,
               idempotent: true,
               idempotentReplay: true,
               syncStatus: prevMeta.syncStatus,
-              remoteId: prevMeta.izteachRemoteId || null
-            }
+              unitId: prevMeta.unitId || unitResolution.unitId || null,
+              mirroredToIzTeach: prevMeta.syncStatus === 'synced',
+              homework: existingHw,
+              izteachMirror: {
+                ok: true,
+                idempotent: true,
+                idempotentReplay: true,
+                syncStatus: prevMeta.syncStatus,
+                remoteId: prevMeta.izteachRemoteId || null
+              }
+            });
+          }
+        }
+
+        const normalizedAttachments = rawAttachments.length > 0
+          ? rawAttachments.map(a => ({
+              title: a.title || a.fileName || 'Bài nộp',
+              fileUrl: a.fileUrl || a.cdnUrl || a.playUrl || fileUrl,
+              cdnUrl: a.cdnUrl || a.fileUrl || a.playUrl || fileUrl,
+              mediaType: a.mediaType || a.fileType || fileType,
+              size: Number(a.size || a.fileSize || 0)
+            }))
+          : [{ title: 'Bài nộp của học sinh', fileUrl, cdnUrl: fileUrl, mediaType: fileType, size: 0 }];
+
+        const nowIso = new Date().toISOString();
+        const prevWb = (existingHw?.workbook_answers && typeof existingHw.workbook_answers === 'object')
+          ? existingHw.workbook_answers
+          : {};
+        const incomingWb = (body.workbookAnswers && typeof body.workbookAnswers === 'object')
+          ? body.workbookAnswers
+          : {};
+        const prevHistory = Array.isArray(prevWb._history) ? [...prevWb._history] : [];
+        if (existingHw && (existingHw.file_url !== fileUrl || existingHw.status !== 'pending' || String(existingHw.student_note || '') !== cleanNote)) {
+          prevHistory.push({
+            version: prevHistory.length + 1,
+            event: 'submission_superseded',
+            file_url: existingHw.file_url,
+            file_type: existingHw.file_type,
+            student_note: existingHw.student_note || '',
+            status: existingHw.status,
+            score: existingHw.score ?? null,
+            teacher_feedback: existingHw.teacher_feedback ?? null,
+            submitted_at: existingHw.submitted_at,
+            graded_at: existingHw.graded_at || null,
+            archived_at: nowIso
           });
         }
-      }
 
-      const normalizedAttachments = rawAttachments.length > 0
-        ? rawAttachments.map(a => ({
-            title: a.title || a.fileName || 'Bài nộp',
-            fileUrl: a.fileUrl || a.cdnUrl || a.playUrl || fileUrl,
-            cdnUrl: a.cdnUrl || a.fileUrl || a.playUrl || fileUrl,
-            mediaType: a.mediaType || a.fileType || fileType,
-            size: Number(a.size || a.fileSize || 0)
-          }))
-        : [{ title: 'Bài nộp của học sinh', fileUrl, cdnUrl: fileUrl, mediaType: fileType, size: 0 }];
-
-      const nowIso = new Date().toISOString();
-      const prevWb = (existingHw?.workbook_answers && typeof existingHw.workbook_answers === 'object')
-        ? existingHw.workbook_answers
-        : {};
-      const incomingWb = (body.workbookAnswers && typeof body.workbookAnswers === 'object')
-        ? body.workbookAnswers
-        : {};
-      const prevHistory = Array.isArray(prevWb._history) ? [...prevWb._history] : [];
-      if (existingHw && (existingHw.file_url !== fileUrl || existingHw.status !== 'pending' || String(existingHw.student_note || '') !== cleanNote)) {
-        prevHistory.push({
-          version: prevHistory.length + 1,
-          event: 'submission_superseded',
-          file_url: existingHw.file_url,
-          file_type: existingHw.file_type,
-          student_note: existingHw.student_note || '',
-          status: existingHw.status,
-          score: existingHw.score ?? null,
-          teacher_feedback: existingHw.teacher_feedback ?? null,
-          submitted_at: existingHw.submitted_at,
-          graded_at: existingHw.graded_at || null,
-          archived_at: nowIso
-        });
-      }
-
-      const nextVersion = (Number(prevWb._syncMeta?.version) || 0) + 1;
-      const nextSubmissionCount = (Number(prevWb._syncMeta?.submissionCount) || 0) + 1;
-      let initialSyncStatus = 'saved_to_supabase';
-      if (unitResolution.isLiveClass) {
-        initialSyncStatus = 'not_applicable_live_class';
-      } else if (!unitResolution.valid) {
-        initialSyncStatus = 'mapping_required';
-      } else if (body.mirroredToIzTeach) {
-        initialSyncStatus = 'synced';
-      }
-
-      const nextWorkbookAnswers = {
-        ...prevWb,
-        ...incomingWb,
-        _history: prevHistory,
-        _syncMeta: {
-          ...(prevWb._syncMeta || {}),
-          version: nextVersion,
-          submissionCount: nextSubmissionCount,
-          courseId,
-          lessonNum,
-          unitId: unitResolution.unitId || null,
-          syncStatus: initialSyncStatus,
-          izteachRemoteId: body.izteachRemoteId || prevWb._syncMeta?.izteachRemoteId || null,
-          updatedAt: nowIso
+        // KHÔNG chấp nhận cờ body.mirroredToIzTeach tự khai từ trình duyệt.
+        // Trạng thái 'synced' chỉ được gán sau khi máy chủ xác thực biên nhận thực tế trên izTeach hoặc tự đồng bộ thành công.
+        const nextVersion = (Number(prevWb._syncMeta?.version) || 0) + 1;
+        const nextSubmissionCount = (Number(prevWb._syncMeta?.submissionCount) || 0) + 1;
+        let initialSyncStatus = 'saved_to_supabase';
+        if (unitResolution.isLiveClass) {
+          initialSyncStatus = 'not_applicable_live_class';
+        } else if (!unitResolution.valid) {
+          initialSyncStatus = 'mapping_required';
         }
-      };
 
-      const hwRecord = {
-        id: hwId,
-        student_code: sbStudent?.code || session.code || session.id,
-        student_email: session.email,
-        student_name: sbStudent?.name || session.name,
-        class_code: realClassCode,
-        course_id: courseId,
-        lesson_num: lessonNum,
-        lesson_title: String(body.lessonTitle || `Bài ${lessonNum}`),
-        file_url: fileUrl,
-        file_type: fileType,
-        attachments: normalizedAttachments,
-        workbook_answers: nextWorkbookAnswers,
-        student_note: cleanNote,
-        status: 'pending', // Mới nộp / nộp lại là pending (Chờ cô chấm)
-        score: null,
-        teacher_feedback: null,
-        submitted_at: nowIso,
-        updated_at: nowIso
-      };
-
-      const sbRes = await supabaseRequest(env, 'ktn_homeworks', {
-        method: 'POST',
-        prefer: 'resolution=merge-duplicates,return=representation',
-        body: hwRecord
-      });
-
-      if (!sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
-        return jsonResponse({
-          ok: false,
-          syncStatus: 'sync_failed',
-          message: 'Máy chủ chưa lưu được bản ghi bài nộp vào cơ sở dữ liệu. Em hãy bấm Gửi lại nhé.'
-        }, sbRes.status || 500);
-      }
-
-      let savedHw = sbRes.data[0];
-      let izteachMirror = null;
-      let finalSyncStatus = initialSyncStatus;
-
-      if (unitResolution.isLiveClass) {
-        izteachMirror = { ok: true, skipped: true, syncStatus: 'not_applicable_live_class', reason: 'LIVE_CLASS_HOMEWORK' };
-      } else if (!unitResolution.valid) {
-        izteachMirror = { ok: false, skipped: true, syncStatus: 'mapping_required', reason: unitResolution.reason || 'MAPPING_REQUIRED' };
-      } else if (body.mirroredToIzTeach) {
-        finalSyncStatus = 'synced';
-        izteachMirror = {
-          ok: true,
-          idempotent: true,
-          syncStatus: 'synced',
-          remoteId: body.izteachRemoteId || nextWorkbookAnswers._syncMeta.izteachRemoteId || null,
-          courseId,
-          unitId: unitResolution.unitId
-        };
-      } else if (!body.skipIzTeachSync) {
-        izteachMirror = await mirrorHomeworkToIzTeach(env, savedHw, false, { unitId: unitResolution.unitId });
-        finalSyncStatus = izteachMirror.syncStatus || (izteachMirror.ok ? 'synced' : 'sync_failed');
-        const updatedWb = {
-          ...nextWorkbookAnswers,
+        const nextWorkbookAnswers = {
+          ...prevWb,
+          ...incomingWb,
+          _history: prevHistory,
           _syncMeta: {
-            ...nextWorkbookAnswers._syncMeta,
-            syncStatus: finalSyncStatus,
-            izteachRemoteId: izteachMirror.remoteId || nextWorkbookAnswers._syncMeta.izteachRemoteId || null,
-            lastSyncedSignature: izteachMirror.ok ? (izteachMirror.signature || null) : (nextWorkbookAnswers._syncMeta.lastSyncedSignature || null),
-            lastSyncedAt: izteachMirror.ok ? new Date().toISOString() : (nextWorkbookAnswers._syncMeta.lastSyncedAt || null),
-            lastError: izteachMirror.ok ? null : (izteachMirror.reason || izteachMirror.error || 'SYNC_FAILED')
+            ...(prevWb._syncMeta || {}),
+            version: nextVersion,
+            submissionCount: nextSubmissionCount,
+            courseId,
+            lessonNum,
+            unitId: unitResolution.unitId || null,
+            syncStatus: initialSyncStatus,
+            izteachRemoteId: prevWb._syncMeta?.izteachRemoteId || null,
+            updatedAt: nowIso
           }
         };
-        const metaPatch = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(savedHw.id)}`, {
-          method: 'PATCH',
-          prefer: 'return=representation',
-          body: { workbook_answers: updatedWb, updated_at: new Date().toISOString() }
-        });
-        if (metaPatch.ok && Array.isArray(metaPatch.data) && metaPatch.data[0]) {
-          savedHw = metaPatch.data[0];
-        } else {
-          savedHw.workbook_answers = updatedWb;
-        }
-      }
 
-      return jsonResponse({
-        ok: true,
-        syncStatus: finalSyncStatus,
-        unitId: unitResolution.unitId || null,
-        mirroredToIzTeach: Boolean(izteachMirror?.ok && !izteachMirror?.skipped),
-        homework: savedHw,
-        izteachMirror: izteachMirror || undefined
+        const hwRecord = {
+          id: hwId,
+          student_code: sbStudent?.code || session.code || session.id,
+          student_email: session.email,
+          student_name: sbStudent?.name || session.name,
+          class_code: realClassCode,
+          course_id: courseId,
+          lesson_num: lessonNum,
+          lesson_title: String(body.lessonTitle || `Bài ${lessonNum}`),
+          file_url: fileUrl,
+          file_type: fileType,
+          attachments: normalizedAttachments,
+          workbook_answers: nextWorkbookAnswers,
+          student_note: cleanNote,
+          status: 'pending', // Mới nộp / nộp lại là pending (Chờ cô chấm)
+          score: null,
+          teacher_feedback: null,
+          submitted_at: nowIso,
+          updated_at: nowIso
+        };
+
+        const sbRes = await supabaseRequest(env, 'ktn_homeworks', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=representation',
+          body: hwRecord
+        });
+
+        if (!sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+          return jsonResponse({
+            ok: false,
+            syncStatus: 'sync_failed',
+            message: 'Máy chủ chưa lưu được bản ghi bài nộp vào cơ sở dữ liệu. Em hãy bấm Gửi lại nhé.'
+          }, sbRes.status || 500);
+        }
+
+        let savedHw = sbRes.data[0];
+        let izteachMirror = null;
+        let finalSyncStatus = initialSyncStatus;
+
+        if (unitResolution.isLiveClass) {
+          izteachMirror = { ok: true, skipped: true, syncStatus: 'not_applicable_live_class', reason: 'LIVE_CLASS_HOMEWORK' };
+        } else if (!unitResolution.valid) {
+          izteachMirror = { ok: false, skipped: true, syncStatus: 'mapping_required', reason: unitResolution.reason || 'MAPPING_REQUIRED' };
+        } else if (!body.skipIzTeachSync) {
+          let verifiedReceipt = null;
+          if (body.izteachRemoteId) {
+            const checkReceipt = await verifyIzTeachHomeworkReceipt(env, {
+              remoteId: body.izteachRemoteId,
+              courseId,
+              unitId: unitResolution.unitId,
+              expectApproved: false
+            });
+            if (checkReceipt.verified) {
+              verifiedReceipt = checkReceipt;
+            }
+          }
+
+          if (verifiedReceipt) {
+            finalSyncStatus = 'synced';
+            izteachMirror = {
+              ok: true,
+              idempotent: true,
+              verifiedReceipt: true,
+              syncStatus: 'synced',
+              remoteId: verifiedReceipt.remoteId,
+              courseId,
+              unitId: unitResolution.unitId
+            };
+          } else {
+            izteachMirror = await mirrorHomeworkToIzTeach(env, savedHw, false, { unitId: unitResolution.unitId });
+            finalSyncStatus = izteachMirror.syncStatus || (izteachMirror.ok ? 'synced' : 'sync_failed');
+          }
+
+          const updatedWb = {
+            ...nextWorkbookAnswers,
+            _syncMeta: {
+              ...nextWorkbookAnswers._syncMeta,
+              syncStatus: finalSyncStatus,
+              izteachRemoteId: izteachMirror.remoteId || nextWorkbookAnswers._syncMeta.izteachRemoteId || null,
+              lastSyncedSignature: izteachMirror.ok ? (izteachMirror.signature || null) : (nextWorkbookAnswers._syncMeta.lastSyncedSignature || null),
+              lastSyncedAt: izteachMirror.ok ? new Date().toISOString() : (nextWorkbookAnswers._syncMeta.lastSyncedAt || null),
+              lastError: izteachMirror.ok ? null : (izteachMirror.reason || izteachMirror.error || 'SYNC_FAILED')
+            }
+          };
+          const metaPatch = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(savedHw.id)}`, {
+            method: 'PATCH',
+            prefer: 'return=representation',
+            body: { workbook_answers: updatedWb, updated_at: new Date().toISOString() }
+          });
+          if (metaPatch.ok && Array.isArray(metaPatch.data) && metaPatch.data[0]) {
+            savedHw = metaPatch.data[0];
+          } else {
+            savedHw.workbook_answers = updatedWb;
+          }
+        }
+
+        return jsonResponse({
+          ok: true,
+          syncStatus: finalSyncStatus,
+          unitId: unitResolution.unitId || null,
+          mirroredToIzTeach: Boolean(izteachMirror?.ok && !izteachMirror?.skipped),
+          homework: savedHw,
+          izteachMirror: izteachMirror || undefined
+        });
       });
     }
 
@@ -3641,227 +3812,263 @@ export default {
         }
       }
 
-      // Tra cứu bản ghi hiện có trong ktn_homeworks theo id hoặc theo (student_email + lesson_num)
-      let existingHw = null;
-      if (hwId) {
-        const hwLookup = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}&select=*&limit=1`);
-        if (!hwLookup.ok) {
-          return jsonResponse({ ok: false, message: 'Không thể kiểm tra thông tin bài nộp.' }, hwLookup.status || 500);
-        }
-        existingHw = (Array.isArray(hwLookup.data) && hwLookup.data[0]) || null;
-      }
-      if (!existingHw && studentEmailHint && lessonNumHint > 0) {
-        let fallbackQ = `ktn_homeworks?student_email=eq.${encodeURIComponent(studentEmailHint)}&lesson_num=eq.${lessonNumHint}&order=submitted_at.desc&limit=1`;
-        if (courseIdHint) fallbackQ += `&course_id=eq.${encodeURIComponent(courseIdHint)}`;
-        const fbRes = await supabaseRequest(env, fallbackQ);
-        if (fbRes.ok && Array.isArray(fbRes.data) && fbRes.data[0]) {
-          existingHw = fbRes.data[0];
-          hwId = existingHw.id;
-        }
-      }
-
-      // Nếu là Giáo viên: kiểm tra bài tập này có thuộc lớp cô chủ nhiệm hay không (trả 403 nếu chấm lớp của GV khác)
-      if (session.role === 'teacher') {
-        if (!existingHw && !body.allowUpsertFromIzTeach) {
-          return jsonResponse({ ok: false, message: 'Không tìm thấy bài nộp tương ứng trong cơ sở dữ liệu để cập nhật.' }, 404);
-        }
-        const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
-        let hwClass = String(existingHw?.class_code || body.classCode || '').trim().toUpperCase();
-        if (!hwClass && (existingHw?.student_email || studentEmailHint)) {
-          const targetEm = normalizeEmail(existingHw?.student_email || studentEmailHint);
-          const stuClsRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(targetEm)}&select=class_code&limit=1`);
-          if (stuClsRes.ok && Array.isArray(stuClsRes.data) && stuClsRes.data[0]?.class_code) {
-            hwClass = String(stuClsRes.data[0].class_code).trim().toUpperCase();
-          }
-        }
-        if (!hwClass || !assignedClasses.includes(hwClass)) {
-          return jsonResponse({
-            ok: false,
-            message: 'Cô không phụ trách lớp của bài nộp này nên không có quyền chấm điểm.'
-          }, 403);
-        }
-      }
-
       // Thống nhất trạng thái với supabase_schema.sql: CHECK (status IN ('pending', 'graded', 'revision_requested'))
       const nextStatus = (body.status === 'revision_requested' || body.status === 'needs_revision')
         ? 'revision_requested'
         : 'graded';
       const cleanFeedback = String(body.teacherFeedback || body.feedback || '');
       const cleanAudioUrl = String(body.teacherAudioUrl || '');
+      const gradeLockKey = `GRADE|${hwId || studentEmailHint}|${nextStatus}|${parsedScore ?? ''}|${cleanFeedback}|${cleanAudioUrl}`;
 
-      // Kiểm tra chống chấm trùng lặp (Idempotency)
-      if (
-        existingHw &&
-        existingHw.status === nextStatus &&
-        Number(existingHw.score ?? -1) === Number(parsedScore ?? -1) &&
-        String(existingHw.teacher_feedback || '') === cleanFeedback &&
-        String(existingHw.teacher_audio_url || '') === cleanAudioUrl
-      ) {
-        const prevMeta = existingHw.workbook_answers?._syncMeta || {};
-        if (prevMeta.syncStatus === 'synced' || prevMeta.syncStatus === 'not_applicable_live_class') {
-          return jsonResponse({
-            ok: true,
-            idempotent: true,
-            idempotentReplay: true,
-            syncStatus: prevMeta.syncStatus,
-            unitId: prevMeta.unitId || null,
-            mirroredToIzTeach: prevMeta.syncStatus === 'synced',
-            homework: existingHw,
-            izteachMirror: {
+      return runWithHomeworkConcurrencyLock(gradeLockKey, async () => {
+        // Tra cứu bản ghi hiện có trong ktn_homeworks theo id hoặc theo (student_email + lesson_num)
+        let existingHw = null;
+        if (hwId) {
+          const hwLookup = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}&select=*&limit=1`);
+          if (!hwLookup.ok) {
+            return jsonResponse({ ok: false, message: 'Không thể kiểm tra thông tin bài nộp.' }, hwLookup.status || 500);
+          }
+          existingHw = (Array.isArray(hwLookup.data) && hwLookup.data[0]) || null;
+        }
+        if (!existingHw && studentEmailHint && lessonNumHint > 0) {
+          let fallbackQ = `ktn_homeworks?student_email=eq.${encodeURIComponent(studentEmailHint)}&lesson_num=eq.${lessonNumHint}&order=submitted_at.desc&limit=1`;
+          if (courseIdHint) fallbackQ += `&course_id=eq.${encodeURIComponent(courseIdHint)}`;
+          const fbRes = await supabaseRequest(env, fallbackQ);
+          if (fbRes.ok && Array.isArray(fbRes.data) && fbRes.data[0]) {
+            existingHw = fbRes.data[0];
+            hwId = existingHw.id;
+          }
+        }
+
+        // Nếu là Giáo viên: kiểm tra bài tập này có thuộc lớp cô chủ nhiệm hay không (trả 403 nếu chấm lớp của GV khác)
+        if (session.role === 'teacher') {
+          if (!existingHw && !body.allowUpsertFromIzTeach) {
+            return jsonResponse({ ok: false, message: 'Không tìm thấy bài nộp tương ứng trong cơ sở dữ liệu để cập nhật.' }, 404);
+          }
+          const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+          let hwClass = String(existingHw?.class_code || body.classCode || '').trim().toUpperCase();
+          if (!hwClass && (existingHw?.student_email || studentEmailHint)) {
+            const targetEm = normalizeEmail(existingHw?.student_email || studentEmailHint);
+            const stuClsRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(targetEm)}&select=class_code&limit=1`);
+            if (stuClsRes.ok && Array.isArray(stuClsRes.data) && stuClsRes.data[0]?.class_code) {
+              hwClass = String(stuClsRes.data[0].class_code).trim().toUpperCase();
+            }
+          }
+          if (!hwClass || !assignedClasses.includes(hwClass)) {
+            return jsonResponse({
+              ok: false,
+              message: 'Cô không phụ trách lớp của bài nộp này nên không có quyền chấm điểm.'
+            }, 403);
+          }
+        }
+
+        // Kiểm tra chống chấm trùng lặp (Idempotency)
+        if (
+          existingHw &&
+          existingHw.status === nextStatus &&
+          Number(existingHw.score ?? -1) === Number(parsedScore ?? -1) &&
+          String(existingHw.teacher_feedback || '') === cleanFeedback &&
+          String(existingHw.teacher_audio_url || '') === cleanAudioUrl
+        ) {
+          const prevMeta = existingHw.workbook_answers?._syncMeta || {};
+          if (prevMeta.syncStatus === 'synced' || prevMeta.syncStatus === 'not_applicable_live_class') {
+            return jsonResponse({
               ok: true,
               idempotent: true,
               idempotentReplay: true,
               syncStatus: prevMeta.syncStatus,
-              remoteId: prevMeta.izteachRemoteId || null
-            }
+              unitId: prevMeta.unitId || null,
+              mirroredToIzTeach: prevMeta.syncStatus === 'synced',
+              homework: existingHw,
+              izteachMirror: {
+                ok: true,
+                idempotent: true,
+                idempotentReplay: true,
+                syncStatus: prevMeta.syncStatus,
+                remoteId: prevMeta.izteachRemoteId || null
+              }
+            });
+          }
+        }
+
+        const nowIso = new Date().toISOString();
+        const prevWb = (existingHw?.workbook_answers && typeof existingHw.workbook_answers === 'object')
+          ? existingHw.workbook_answers
+          : {};
+        const prevHistory = Array.isArray(prevWb._history) ? [...prevWb._history] : [];
+        if (existingHw && (existingHw.status === 'graded' || existingHw.status === 'revision_requested')) {
+          prevHistory.push({
+            version: prevHistory.length + 1,
+            event: 'grade_superseded',
+            status: existingHw.status,
+            score: existingHw.score ?? null,
+            teacher_feedback: existingHw.teacher_feedback ?? null,
+            graded_by: existingHw.graded_by || null,
+            graded_at: existingHw.graded_at || null,
+            archived_at: nowIso
           });
         }
-      }
 
-      const nowIso = new Date().toISOString();
-      const prevWb = (existingHw?.workbook_answers && typeof existingHw.workbook_answers === 'object')
-        ? existingHw.workbook_answers
-        : {};
-      const prevHistory = Array.isArray(prevWb._history) ? [...prevWb._history] : [];
-      if (existingHw && (existingHw.status === 'graded' || existingHw.status === 'revision_requested')) {
-        prevHistory.push({
-          version: prevHistory.length + 1,
-          event: 'grade_superseded',
-          status: existingHw.status,
-          score: existingHw.score ?? null,
-          teacher_feedback: existingHw.teacher_feedback ?? null,
-          graded_by: existingHw.graded_by || null,
-          graded_at: existingHw.graded_at || null,
-          archived_at: nowIso
-        });
-      }
-
-      const targetCourseForGrade = existingHw?.course_id || courseIdHint || DEFAULT_COURSE_ID;
-      const targetLessonForGrade = Number(existingHw?.lesson_num || lessonNumHint || 1);
-      const unitResolution = resolveCourseUnitId(targetCourseForGrade, targetLessonForGrade, body.unitId || prevWb._syncMeta?.unitId || null);
-      let initialSyncStatus = 'saved_to_supabase';
-      if (unitResolution.isLiveClass) {
-        initialSyncStatus = 'not_applicable_live_class';
-      } else if (!unitResolution.valid) {
-        initialSyncStatus = 'mapping_required';
-      } else if (body.mirroredToIzTeach) {
-        initialSyncStatus = 'synced';
-      }
-
-      const nextWorkbookAnswers = {
-        ...prevWb,
-        _history: prevHistory,
-        _syncMeta: {
-          ...(prevWb._syncMeta || {}),
-          version: (Number(prevWb._syncMeta?.version) || 0) + 1,
-          courseId: targetCourseForGrade,
-          lessonNum: targetLessonForGrade,
-          unitId: unitResolution.unitId || null,
-          syncStatus: initialSyncStatus,
-          updatedAt: nowIso
-        }
-      };
-
-      const patchPayload = {
-        status: nextStatus,
-        score: parsedScore,
-        teacher_feedback: cleanFeedback,
-        teacher_audio_url: cleanAudioUrl,
-        workbook_answers: nextWorkbookAnswers,
-        graded_by: session.email,
-        graded_at: nowIso,
-        updated_at: nowIso
-      };
-
-      let savedHw = null;
-      if (existingHw) {
-        const sbRes = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(existingHw.id)}`, {
-          method: 'PATCH',
-          prefer: 'return=representation',
-          body: patchPayload
-        });
-        if (!sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+        const targetCourseForGrade = existingHw?.course_id || courseIdHint || DEFAULT_COURSE_ID;
+        const targetLessonForGrade = Number(existingHw?.lesson_num || lessonNumHint || 1);
+        const unitResolution = await resolveAndVerifyCourseUnitId(env, targetCourseForGrade, targetLessonForGrade, body.unitId || prevWb._syncMeta?.unitId || null);
+        if (!unitResolution.isLiveClass && body.unitId && !unitResolution.valid) {
           return jsonResponse({
             ok: false,
-            syncStatus: 'sync_failed',
-            message: 'Không thể cập nhật trạng thái chấm bài trong cơ sở dữ liệu.'
-          }, sbRes.status || 500);
+            error: 'UNIT_COURSE_MISMATCH',
+            reason: unitResolution.reason || 'UNIT_COURSE_MISMATCH',
+            message: 'Mã bài tập (unitId) không khớp với khóa học hoặc bài học đã chọn.'
+          }, 400);
         }
-        savedHw = sbRes.data[0];
-      } else if (body.allowUpsertFromIzTeach && studentEmailHint) {
-        const upsertRow = {
-          id: hwId || (`HW-${studentEmailHint}-${targetCourseForGrade}-L${targetLessonForGrade}`),
-          student_code: String(body.studentCode || ''),
-          student_email: studentEmailHint,
-          student_name: String(body.studentName || studentEmailHint.split('@')[0]),
-          class_code: body.classCode ? String(body.classCode).trim().toUpperCase() : null,
-          course_id: targetCourseForGrade,
-          lesson_num: targetLessonForGrade,
-          lesson_title: String(body.lessonTitle || body.title || `Bài ${targetLessonForGrade}`),
-          file_url: String(body.fileUrl || (Array.isArray(body.attachments) && body.attachments[0]?.cdnUrl) || 'https://d21acfi38wn3iy.cloudfront.net/'),
-          file_type: String(body.fileType || (Array.isArray(body.attachments) && body.attachments[0]?.mediaType) || 'video'),
-          attachments: Array.isArray(body.attachments) ? body.attachments : [],
-          student_note: String(body.studentNote || ''),
-          ...patchPayload
-        };
-        const upRes = await supabaseRequest(env, 'ktn_homeworks', {
-          method: 'POST',
-          prefer: 'resolution=merge-duplicates,return=representation',
-          body: upsertRow
-        });
-        if (!upRes.ok || !Array.isArray(upRes.data) || upRes.data.length === 0) {
-          return jsonResponse({ ok: false, syncStatus: 'sync_failed', message: 'Không thể đồng bộ bản ghi bài tập sang cơ sở dữ liệu.' }, upRes.status || 500);
-        }
-        savedHw = upRes.data[0];
-      } else {
-        return jsonResponse({
-          ok: false,
-          message: 'Không tìm thấy bài nộp tương ứng trong cơ sở dữ liệu để cập nhật.'
-        }, 404);
-      }
 
-      let izteachMirror = null;
-      let finalSyncStatus = initialSyncStatus;
-      if (unitResolution.isLiveClass) {
-        izteachMirror = { ok: true, skipped: true, syncStatus: 'not_applicable_live_class', reason: 'LIVE_CLASS_HOMEWORK' };
-      } else if (!unitResolution.valid) {
-        izteachMirror = { ok: false, skipped: true, syncStatus: 'mapping_required', reason: unitResolution.reason || 'MAPPING_REQUIRED' };
-      } else if (body.mirroredToIzTeach) {
-        finalSyncStatus = 'synced';
-        izteachMirror = { ok: true, idempotent: true, syncStatus: 'synced', courseId: targetCourseForGrade, unitId: unitResolution.unitId };
-      } else if (!body.skipIzTeachSync) {
-        izteachMirror = await mirrorHomeworkToIzTeach(env, savedHw, nextStatus === 'graded', { unitId: unitResolution.unitId });
-        finalSyncStatus = izteachMirror.syncStatus || (izteachMirror.ok ? 'synced' : 'sync_failed');
-        const updatedWb = {
-          ...nextWorkbookAnswers,
+        // KHÔNG chấp nhận cờ body.mirroredToIzTeach tự khai từ trình duyệt khi chấm bài.
+        let initialSyncStatus = 'saved_to_supabase';
+        if (unitResolution.isLiveClass) {
+          initialSyncStatus = 'not_applicable_live_class';
+        } else if (!unitResolution.valid) {
+          initialSyncStatus = 'mapping_required';
+        }
+
+        const nextWorkbookAnswers = {
+          ...prevWb,
+          _history: prevHistory,
           _syncMeta: {
-            ...nextWorkbookAnswers._syncMeta,
-            syncStatus: finalSyncStatus,
-            izteachRemoteId: izteachMirror.remoteId || nextWorkbookAnswers._syncMeta.izteachRemoteId || null,
-            lastSyncedSignature: izteachMirror.ok ? (izteachMirror.signature || null) : (nextWorkbookAnswers._syncMeta.lastSyncedSignature || null),
-            lastSyncedAt: izteachMirror.ok ? new Date().toISOString() : (nextWorkbookAnswers._syncMeta.lastSyncedAt || null),
-            lastError: izteachMirror.ok ? null : (izteachMirror.reason || izteachMirror.error || 'SYNC_FAILED')
+            ...(prevWb._syncMeta || {}),
+            version: (Number(prevWb._syncMeta?.version) || 0) + 1,
+            courseId: targetCourseForGrade,
+            lessonNum: targetLessonForGrade,
+            unitId: unitResolution.unitId || null,
+            syncStatus: initialSyncStatus,
+            updatedAt: nowIso
           }
         };
-        const metaPatch = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(savedHw.id)}`, {
-          method: 'PATCH',
-          prefer: 'return=representation',
-          body: { workbook_answers: updatedWb, updated_at: new Date().toISOString() }
-        });
-        if (metaPatch.ok && Array.isArray(metaPatch.data) && metaPatch.data[0]) {
-          savedHw = metaPatch.data[0];
-        } else {
-          savedHw.workbook_answers = updatedWb;
-        }
-      }
 
-      return jsonResponse({
-        ok: true,
-        syncStatus: finalSyncStatus,
-        unitId: unitResolution.unitId || null,
-        mirroredToIzTeach: Boolean(izteachMirror?.ok && !izteachMirror?.skipped),
-        homework: savedHw,
-        izteachMirror: izteachMirror || undefined
+        const patchPayload = {
+          status: nextStatus,
+          score: parsedScore,
+          teacher_feedback: cleanFeedback,
+          teacher_audio_url: cleanAudioUrl,
+          workbook_answers: nextWorkbookAnswers,
+          graded_by: session.email,
+          graded_at: nowIso,
+          updated_at: nowIso
+        };
+
+        let savedHw = null;
+        if (existingHw) {
+          const sbRes = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(existingHw.id)}`, {
+            method: 'PATCH',
+            prefer: 'return=representation',
+            body: patchPayload
+          });
+          if (!sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+            return jsonResponse({
+              ok: false,
+              syncStatus: 'sync_failed',
+              message: 'Không thể cập nhật trạng thái chấm bài trong cơ sở dữ liệu.'
+            }, sbRes.status || 500);
+          }
+          savedHw = sbRes.data[0];
+        } else if (body.allowUpsertFromIzTeach && studentEmailHint) {
+          const upsertRow = {
+            id: hwId || (`HW-${studentEmailHint}-${targetCourseForGrade}-L${targetLessonForGrade}`),
+            student_code: String(body.studentCode || ''),
+            student_email: studentEmailHint,
+            student_name: String(body.studentName || studentEmailHint.split('@')[0]),
+            class_code: body.classCode ? String(body.classCode).trim().toUpperCase() : null,
+            course_id: targetCourseForGrade,
+            lesson_num: targetLessonForGrade,
+            lesson_title: String(body.lessonTitle || body.title || `Bài ${targetLessonForGrade}`),
+            file_url: String(body.fileUrl || (Array.isArray(body.attachments) && body.attachments[0]?.cdnUrl) || 'https://d21acfi38wn3iy.cloudfront.net/'),
+            file_type: String(body.fileType || (Array.isArray(body.attachments) && body.attachments[0]?.mediaType) || 'video'),
+            attachments: Array.isArray(body.attachments) ? body.attachments : [],
+            student_note: String(body.studentNote || ''),
+            ...patchPayload
+          };
+          const upRes = await supabaseRequest(env, 'ktn_homeworks', {
+            method: 'POST',
+            prefer: 'resolution=merge-duplicates,return=representation',
+            body: upsertRow
+          });
+          if (!upRes.ok || !Array.isArray(upRes.data) || upRes.data.length === 0) {
+            return jsonResponse({ ok: false, syncStatus: 'sync_failed', message: 'Không thể đồng bộ bản ghi bài tập sang cơ sở dữ liệu.' }, upRes.status || 500);
+          }
+          savedHw = upRes.data[0];
+        } else {
+          return jsonResponse({
+            ok: false,
+            message: 'Không tìm thấy bài nộp tương ứng trong cơ sở dữ liệu để cập nhật.'
+          }, 404);
+        }
+
+        let izteachMirror = null;
+        let finalSyncStatus = initialSyncStatus;
+        if (unitResolution.isLiveClass) {
+          izteachMirror = { ok: true, skipped: true, syncStatus: 'not_applicable_live_class', reason: 'LIVE_CLASS_HOMEWORK' };
+        } else if (!unitResolution.valid) {
+          izteachMirror = { ok: false, skipped: true, syncStatus: 'mapping_required', reason: unitResolution.reason || 'MAPPING_REQUIRED' };
+        } else if (!body.skipIzTeachSync) {
+          let verifiedReceipt = null;
+          if (body.izteachRemoteId) {
+            const checkReceipt = await verifyIzTeachHomeworkReceipt(env, {
+              remoteId: body.izteachRemoteId,
+              courseId: targetCourseForGrade,
+              unitId: unitResolution.unitId,
+              expectApproved: nextStatus === 'graded',
+              expectedScore: parsedScore
+            });
+            if (checkReceipt.verified) {
+              verifiedReceipt = checkReceipt;
+            }
+          }
+
+          if (verifiedReceipt) {
+            finalSyncStatus = 'synced';
+            izteachMirror = {
+              ok: true,
+              idempotent: true,
+              verifiedReceipt: true,
+              syncStatus: 'synced',
+              remoteId: verifiedReceipt.remoteId,
+              courseId: targetCourseForGrade,
+              unitId: unitResolution.unitId
+            };
+          } else {
+            izteachMirror = await mirrorHomeworkToIzTeach(env, savedHw, nextStatus === 'graded', { unitId: unitResolution.unitId });
+            finalSyncStatus = izteachMirror.syncStatus || (izteachMirror.ok ? 'synced' : 'sync_failed');
+          }
+
+          const updatedWb = {
+            ...nextWorkbookAnswers,
+            _syncMeta: {
+              ...nextWorkbookAnswers._syncMeta,
+              syncStatus: finalSyncStatus,
+              izteachRemoteId: izteachMirror.remoteId || nextWorkbookAnswers._syncMeta.izteachRemoteId || null,
+              lastSyncedSignature: izteachMirror.ok ? (izteachMirror.signature || null) : (nextWorkbookAnswers._syncMeta.lastSyncedSignature || null),
+              lastSyncedAt: izteachMirror.ok ? new Date().toISOString() : (nextWorkbookAnswers._syncMeta.lastSyncedAt || null),
+              lastError: izteachMirror.ok ? null : (izteachMirror.reason || izteachMirror.error || 'SYNC_FAILED')
+            }
+          };
+          const metaPatch = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(savedHw.id)}`, {
+            method: 'PATCH',
+            prefer: 'return=representation',
+            body: { workbook_answers: updatedWb, updated_at: new Date().toISOString() }
+          });
+          if (metaPatch.ok && Array.isArray(metaPatch.data) && metaPatch.data[0]) {
+            savedHw = metaPatch.data[0];
+          } else {
+            savedHw.workbook_answers = updatedWb;
+          }
+        }
+
+        return jsonResponse({
+          ok: true,
+          syncStatus: finalSyncStatus,
+          unitId: unitResolution.unitId || null,
+          mirroredToIzTeach: Boolean(izteachMirror?.ok && !izteachMirror?.skipped),
+          homework: savedHw,
+          izteachMirror: izteachMirror || undefined
+        });
       });
     }
 

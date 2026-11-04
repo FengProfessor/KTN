@@ -345,6 +345,9 @@ function loadWorkerInstance() {
 
       if (u.pathname.endsWith('/prod/student')) {
         const email = (u.searchParams.get('email') || '').toLowerCase();
+        if (!email && Array.isArray(state.izteach.studentList)) {
+          return new Response(JSON.stringify(state.izteach.studentList), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
         const hit = state.tables.ktn_students.find(s => s.email.toLowerCase() === email);
         if (hit && hit.cognito_user_id) {
           return new Response(JSON.stringify([{
@@ -1218,6 +1221,233 @@ async function runSuite() {
         stillUnread.length === 0 &&
         (notifsAfterReload.data?.notifications || []).every(n => !n.target_email || n.target_email === 'e2e.hs.a@khongtunhi.com'),
       `marked=${unreadIds.length}, stillUnreadAfterReload=${stillUnread.length}`
+    );
+  }
+
+  // ============================================================================
+  // GROUP E: PRE-DEPLOY HARDENING (SPOOFED MIRROR FLAG, CONCURRENT RACE, UNCATALOGUED UNIT, >25 BULK SYNC)
+  // ============================================================================
+  {
+    const HSK1_ID = '6adadba969897b0002482ca5';
+    // 1. Client Spoofed mirroredToIzTeach: true is NEVER trusted by Server
+    state.faults.izteachHomeworkFail = true;
+    const spoofedSubmitWhenDown = await callApi('/api/ktn/homeworks', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: HSK1_ID,
+        lessonNum: 4,
+        lessonTitle: 'HSK 1 - Bài 4 (Spoof Test)',
+        fileUrl: `${CDN_HW_A}/hsk1_l4_spoof.wav`,
+        fileType: 'audio/wav',
+        studentNote: 'Client tự khai mirroredToIzTeach=true khi izTeach sập',
+        mirroredToIzTeach: true,
+        izteachRemoteId: '66fa99999999999999999999'
+      }
+    });
+    const spoofedGradeWhenDown = await callApi('/api/ktn/homeworks/grade', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        id: 'HW-e2e.hs.a@khongtunhi.com-' + HSK1_ID + '-L4',
+        score: 9.0,
+        status: 'graded',
+        teacherFeedback: 'Client tự khai mirroredToIzTeach=true khi chấm bài',
+        mirroredToIzTeach: true,
+        izteachRemoteId: '66fa99999999999999999999'
+      }
+    });
+    state.faults.izteachHomeworkFail = false;
+
+    const postsBeforeSpoofUp = state.izteach.homeworkPosts.length;
+    const spoofedSubmitWhenUp = await callApi('/api/ktn/homeworks', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: HSK1_ID,
+        lessonNum: 5,
+        lessonTitle: 'HSK 1 - Bài 5 (Spoof Verified Server Mirror)',
+        fileUrl: `${CDN_HW_A}/hsk1_l5_spoof.wav`,
+        fileType: 'audio/wav',
+        studentNote: 'Client tự khai mirroredToIzTeach=true nhưng server tự đẩy thật sang izTeach',
+        mirroredToIzTeach: true,
+        izteachRemoteId: '66fa88888888888888888888'
+      }
+    });
+    const postsAfterSpoofUp = state.izteach.homeworkPosts.length;
+
+    record(
+      'E1-CLIENT-SPOOF-MIRROR-REJECTED',
+      'GROUP_E',
+      'Server ignores client-supplied mirroredToIzTeach:true — reports sync_failed when izTeach is down and performs real izTeach POST when unverified',
+      spoofedSubmitWhenDown.status === 200 &&
+        spoofedSubmitWhenDown.data?.syncStatus === 'sync_failed' &&
+        spoofedSubmitWhenDown.data?.mirroredToIzTeach === false &&
+        spoofedGradeWhenDown.status === 200 &&
+        spoofedGradeWhenDown.data?.syncStatus === 'sync_failed' &&
+        spoofedGradeWhenDown.data?.mirroredToIzTeach === false &&
+        spoofedSubmitWhenUp.status === 200 &&
+        spoofedSubmitWhenUp.data?.syncStatus === 'synced' &&
+        postsAfterSpoofUp === postsBeforeSpoofUp + 1,
+      `downSubmitSync=${spoofedSubmitWhenDown.data?.syncStatus}, downGradeSync=${spoofedGradeWhenDown.data?.syncStatus}, realPostsAdded=${postsAfterSpoofUp - postsBeforeSpoofUp}`
+    );
+
+    // 2. Concurrent Double-Submit & Double-Grade Race Condition (Promise.all)
+    const postsBeforeConcurrentSubmit = state.izteach.homeworkPosts.length;
+    const concurrentPayload = {
+      courseId: HSK1_ID,
+      lessonNum: 6,
+      lessonTitle: 'HSK 1 - Bài 6 (Concurrent Submit)',
+      fileUrl: `${CDN_HW_A}/hsk1_l6_race.wav`,
+      fileType: 'audio/wav',
+      studentNote: 'Bấm nộp 2 lần liên tiếp cùng lúc'
+    };
+    const [raceSub1, raceSub2] = await Promise.all([
+      callApi('/api/ktn/homeworks', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${studentAToken}` },
+        body: concurrentPayload
+      }),
+      callApi('/api/ktn/homeworks', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${studentAToken}` },
+        body: concurrentPayload
+      })
+    ]);
+    const postsAfterConcurrentSubmit = state.izteach.homeworkPosts.length;
+
+    const postsBeforeConcurrentGrade = state.izteach.homeworkPosts.length;
+    const concurrentGradePayload = {
+      id: `HW-e2e.hs.a@khongtunhi.com-${HSK1_ID}-L6`,
+      score: 9.5,
+      status: 'graded',
+      teacherFeedback: 'Chấm đồng thời 2 request cùng lúc'
+    };
+    const [raceGrade1, raceGrade2] = await Promise.all([
+      callApi('/api/ktn/homeworks/grade', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${teacherAToken}` },
+        body: concurrentGradePayload
+      }),
+      callApi('/api/ktn/homeworks/grade', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${teacherAToken}` },
+        body: concurrentGradePayload
+      })
+    ]);
+    const postsAfterConcurrentGrade = state.izteach.homeworkPosts.length;
+
+    record(
+      'E2-CONCURRENT-SUBMIT-AND-GRADE-DEDUP',
+      'GROUP_E',
+      'Simultaneous Promise.all([req1, req2]) for submit and grade deduplicate in-flight and create exactly 1 record on izTeach',
+      raceSub1.status === 200 &&
+        raceSub2.status === 200 &&
+        postsAfterConcurrentSubmit === postsBeforeConcurrentSubmit + 1 &&
+        Boolean(raceSub1.data?.idempotentReplay || raceSub2.data?.idempotentReplay) &&
+        raceGrade1.status === 200 &&
+        raceGrade2.status === 200 &&
+        postsAfterConcurrentGrade === postsBeforeConcurrentGrade + 1 &&
+        Boolean(raceGrade1.data?.idempotentReplay || raceGrade2.data?.idempotentReplay),
+      `submitPostsDelta=${postsAfterConcurrentSubmit - postsBeforeConcurrentSubmit}, gradePostsDelta=${postsAfterConcurrentGrade - postsBeforeConcurrentGrade}`
+    );
+
+    // 3. Uncatalogued unitId Guard (Catalogued Course vs Uncatalogued Course with Live Verification)
+    const bogusUnitOnCataloguedCourse = await callApi('/api/ktn/homeworks', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: HSK1_ID,
+        lessonNum: 30,
+        unitId: '66ff11112222333344445555',
+        fileUrl: `${CDN_HW_A}/bogus_unit.wav`,
+        fileType: 'audio/wav'
+      }
+    });
+
+    // Grant an uncatalogued course to Student A and test unverified vs verified unitId
+    const UNCATALOGUED_COURSE = '66ff00000000000000000999';
+    const VERIFIED_NEW_UNIT = '66ff00000000000000000abc';
+    state.izteach.unitsByCourse[UNCATALOGUED_COURSE] = [
+      { _id: VERIFIED_NEW_UNIT, title: 'Bài 1 khóa mới', type: 'video', index: 0, video: 'vid-new-1' }
+    ];
+    const stuARow = state.tables.ktn_students.find(s => s.email === 'e2e.hs.a@khongtunhi.com');
+    stuARow.online_courses.push({ id: UNCATALOGUED_COURSE, title: 'Khóa mới mở rộng' });
+    state.izteach.permissionsByUid[stuARow.cognito_user_id].push(UNCATALOGUED_COURSE);
+
+    const bogusUnitOnUncataloguedCourse = await callApi('/api/ktn/homeworks', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: UNCATALOGUED_COURSE,
+        lessonNum: 1,
+        unitId: '66ff99999999999999999999', // Not in izTeach /prod/unit
+        fileUrl: `${CDN_HW_A}/bogus_uncat.wav`,
+        fileType: 'audio/wav'
+      }
+    });
+
+    const verifiedUnitOnUncataloguedCourse = await callApi('/api/ktn/homeworks', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: UNCATALOGUED_COURSE,
+        lessonNum: 1,
+        unitId: VERIFIED_NEW_UNIT, // Present in izTeach /prod/unit
+        fileUrl: `${CDN_HW_A}/verified_uncat.wav`,
+        fileType: 'audio/wav'
+      }
+    });
+
+    record(
+      'E3-UNCATALOGUED-UNIT-STRICT-VERIFICATION',
+      'GROUP_E',
+      'Rejects uncatalogued unitId on catalogued course (400) and unverified unitId on uncatalogued course (400); only accepts izTeach-verified unitId',
+      bogusUnitOnCataloguedCourse.status === 400 &&
+        bogusUnitOnCataloguedCourse.data?.error === 'UNIT_COURSE_MISMATCH' &&
+        bogusUnitOnUncataloguedCourse.status === 400 &&
+        bogusUnitOnUncataloguedCourse.data?.error === 'UNIT_COURSE_MISMATCH' &&
+        verifiedUnitOnUncataloguedCourse.status === 200 &&
+        verifiedUnitOnUncataloguedCourse.data?.syncStatus === 'synced' &&
+        verifiedUnitOnUncataloguedCourse.data?.unitId === VERIFIED_NEW_UNIT,
+      `bogusCat=${bogusUnitOnCataloguedCourse.status}, bogusUncat=${bogusUnitOnUncataloguedCourse.status}, verifiedUncat=${verifiedUnitOnUncataloguedCourse.status} (${verifiedUnitOnUncataloguedCourse.data?.syncStatus})`
+    );
+
+    // 4. Bulk Sync >25 Students Without Cap & Array user-permission Extraction
+    const bulkStudents = [];
+    for (let i = 1; i <= 30; i++) {
+      const uid = `99999999-0000-4000-8000-${String(i).padStart(12, '0')}`;
+      const email = `bulksync.hs${i}@khongtunhi.com`;
+      bulkStudents.push({
+        _id: `66b00000000000000000${String(i).padStart(4, '0')}`,
+        userId: uid,
+        email,
+        name: `Học sinh Bulk ${i}`,
+        phone: `09000000${String(i).padStart(2, '0')}`
+      });
+      state.izteach.permissionsByUid[uid] = [HSK1_ID];
+    }
+    state.izteach.studentList = bulkStudents;
+
+    const bulkSyncRes = await callApi('/api/ktn/students/sync-all', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {}
+    });
+
+    const syncedBulkRows = state.tables.ktn_students.filter(s => s.email.startsWith('bulksync.hs'));
+    const all30HaveCourses = syncedBulkRows.length === 30 && syncedBulkRows.every(
+      s => Array.isArray(s.online_courses) && s.online_courses.some(c => c.id === HSK1_ID)
+    );
+
+    record(
+      'E4-BULK-SYNC-UNLIMITED-PERMISSIONS',
+      'GROUP_E',
+      'Bulk sync reconciles user-permission for all 30 new students (no 25-student cap) and extracts array-formatted permissions',
+      bulkSyncRes.status === 200 &&
+        bulkSyncRes.data?.ok === true &&
+        all30HaveCourses,
+      `syncedStudents=${syncedBulkRows.length}/30, allHaveHSK1=${all30HaveCourses}`
     );
   }
 

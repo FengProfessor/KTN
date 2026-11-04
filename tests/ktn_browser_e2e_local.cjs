@@ -214,6 +214,12 @@ function createTestEnvironment() {
       }
 
       if (method === 'POST') {
+        if (table === 'ktn_homeworks' && state.faults?.supabaseHomeworkPostFail) {
+          return new Response(JSON.stringify({ message: 'Simulated Supabase outage' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' }
+          });
+        }
         const bodyData = init.body ? JSON.parse(init.body) : {};
         const items = Array.isArray(bodyData) ? bodyData : [bodyData];
         const prefer = String((init.headers && (init.headers.Prefer || init.headers.prefer)) || '');
@@ -532,10 +538,14 @@ async function runBrowserSuite() {
   const port = server.address().port;
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  const browser = await puppeteer.launch({
+  const launchOpts = {
     headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+  };
+  if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+    launchOpts.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  const browser = await puppeteer.launch(launchOpts);
 
   try {
     console.log('================================================================================');
@@ -773,23 +783,80 @@ async function runBrowserSuite() {
       );
 
       // =======================================================================
-      // B4: Student A submits live-class homework in YCT2-04 -> Teacher grades
-      //     9.5/10 -> Student reloads and sees 9.5/10 + feedback in UI
+      // B4: Student A records via real DOM microphone button (#btn-class-rec-...),
+      //     tests transient failure recovery ("Gửi lại" preserves audio),
+      //     submits via #btn-class-submit-..., Teacher grades via real Teacher UI
+      //     (so-lien-lac.html), and Student reloads to see 9.5/10 + feedback
       // =======================================================================
-      const b4SubmitState = await page.evaluate(async () => {
-        await renderStudentClassSessions('YCT2-04', 1);
-        window.__classExDrafts = window.__classExDrafts || {};
-        const blob = new Blob(['mock-audio-content'], { type: 'audio/webm' });
-        const file = new File([blob], 'bai-doc-trang-8.webm', { type: 'audio/webm' });
-        window.__classExDrafts['YCT2-04_1_1'] = {
-          recording: false,
-          submitting: false,
-          timer: null,
-          secs: 7,
-          voiceFile: file,
-          attachFile: null
+      await page.evaluate(() => {
+        // Install browser-level MediaRecorder & getUserMedia mock for headless Chromium
+        if (!navigator.mediaDevices) navigator.mediaDevices = {};
+        navigator.mediaDevices.getUserMedia = async () => ({
+          getTracks: () => [{ stop: () => {} }]
+        });
+        window.MediaRecorder = class MockMediaRecorder {
+          constructor(stream, opts) {
+            this.stream = stream;
+            this.mimeType = (opts && opts.mimeType) || 'audio/webm';
+            this.state = 'inactive';
+            this.ondataavailable = null;
+            this.onstop = null;
+          }
+          static isTypeSupported() { return true; }
+          start() {
+            this.state = 'recording';
+            setTimeout(() => {
+              if (this.ondataavailable) {
+                const chunk = new Blob(['mock-recorded-voice-pcm-data'], { type: this.mimeType });
+                this.ondataavailable({ data: chunk });
+              }
+            }, 20);
+          }
+          stop() {
+            this.state = 'inactive';
+            setTimeout(() => {
+              if (this.onstop) this.onstop();
+            }, 30);
+          }
         };
-        await submitClassSessionExercise('YCT2-04', 1, 1, 'Bài 1: Thu âm đọc to 5 câu hội thoại trang 8');
+      });
+
+      // Step B4.1: Navigate to #/lop/yct2-04/buoi/1 so the class view is visible, then click real DOM microphone button (#btn-class-mic-YCT2-04_1_1) twice (start -> stop)
+      await page.evaluate(async () => {
+        const guardEl = document.getElementById('sibling-permission-guard');
+        if (guardEl) guardEl.style.display = 'none';
+        if (typeof switchPortalView === 'function') switchPortalView('sll');
+        await renderStudentClassSessions('YCT2-04', 1);
+      });
+      await page.evaluate(() => document.getElementById('btn-class-mic-YCT2-04_1_1').click());
+      await new Promise(r => setTimeout(r, 80));
+      await page.evaluate(() => document.getElementById('btn-class-mic-YCT2-04_1_1').click());
+      await new Promise(r => setTimeout(r, 100));
+
+      // Step B4.2: Simulate transient server error (503) when clicking #btn-class-submit-YCT2-04_1_1
+      //            Verify red banner appears, button says "Gửi lại", and recorded voiceFile is preserved!
+      state.faults = state.faults || {};
+      state.faults.supabaseHomeworkPostFail = true;
+      await page.evaluate(() => document.getElementById('btn-class-submit-YCT2-04_1_1').click());
+      await new Promise(r => setTimeout(r, 250));
+      const b4FailedAttempt = await page.evaluate(() => {
+        const errEl = document.getElementById('err-class-submit-YCT2-04_1_1');
+        const btnEl = document.getElementById('btn-class-submit-YCT2-04_1_1');
+        const draft = window.__classExDrafts && window.__classExDrafts['YCT2-04_1_1'];
+        return {
+          errVisible: errEl ? errEl.style.display === 'block' : false,
+          errText: errEl ? errEl.innerText.trim() : '',
+          btnText: btnEl ? btnEl.innerText.trim() : '',
+          voiceFilePreserved: Boolean(draft && draft.voiceFile)
+        };
+      });
+
+      // Step B4.3: Restore server and click "Gửi lại" (#btn-class-submit-YCT2-04_1_1)
+      state.faults.supabaseHomeworkPostFail = false;
+      await page.evaluate(() => document.getElementById('btn-class-submit-YCT2-04_1_1').click());
+      await new Promise(r => setTimeout(r, 300));
+
+      const b4SubmitState = await page.evaluate(() => {
         const localSaved = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
         const myHw = localSaved.find(h => h.class_code === 'YCT2-04' && Number(h.lesson_num) === 101);
         const errEl = document.getElementById('err-class-submit-YCT2-04_1_1');
@@ -801,18 +868,86 @@ async function runBrowserSuite() {
         };
       });
 
-      // Teacher grades the homework on the server
-      const gradeRes = await callApi('/api/ktn/homeworks/grade', {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${teacherAToken}` },
-        body: {
-          id: b4SubmitState.homeworkId,
-          score: 9.5,
-          feedback: 'Con đọc rất to và chuẩn thanh điệu!'
+      // Step B4.4: Teacher opens real Teacher Portal (so-lien-lac.html) in an isolated Chromium context and grades via Teacher UI
+      const teacherContext = await (browser.createBrowserContext ? browser.createBrowserContext() : browser.createIncognitoBrowserContext());
+      const teacherPage = await teacherContext.newPage();
+      await teacherPage.setRequestInterception(true);
+      teacherPage.on('request', req => {
+        const u = req.url();
+        if (u.startsWith(baseUrl) || u.startsWith('data:') || u.startsWith('blob:')) {
+          req.continue();
+        } else if (u.includes('d21acfi38wn3iy.cloudfront.net') || u.includes('amazonaws.com')) {
+          req.respond({
+            status: 200,
+            headers: {
+              'Access-Control-Allow-Origin': '*',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              ok: true,
+              _id: '660000000000000000000777',
+              url: `${baseUrl}/mock-s3-put`,
+              link: '3529cd2b-7af6-4fda-887c-392a79393d6a/homework/11111111-2222-3333-4444-555555555551/bai-doc.webm'
+            })
+          });
+        } else {
+          req.abort();
         }
       });
+      await teacherPage.evaluateOnNewDocument((token) => {
+        localStorage.setItem('ktn_sll_persistent_auth_v2', JSON.stringify({
+          id: 'KTN-GV-LINH',
+          email: 'linh.lam@khongtunhi.com',
+          name: 'Cô Lâm Mỹ Linh',
+          role: 'teacher',
+          roles: ['teacher'],
+          token,
+          accessToken: token,
+          assignedClasses: ['YCT2-04']
+        }));
+      }, teacherAToken);
+      await teacherPage.goto(`${baseUrl}/so-lien-lac.html`, { waitUntil: 'domcontentloaded' });
+      await new Promise(r => setTimeout(r, 450));
 
-      // Student re-syncs contact book from server
+      const teacherGradeUiResult = await teacherPage.evaluate(async (targetHwId) => {
+        const app = window.app;
+        if (!app) return { ok: false, reason: 'NO_APP' };
+        const hwApiRes = await window.KtnWebApp.apiRequest('/api/ktn/homeworks?classCode=YCT2-04');
+        const serverHws = (hwApiRes && hwApiRes.ok && Array.isArray(hwApiRes.data?.homeworks)) ? hwApiRes.data.homeworks : [];
+        app.state.homeworks = serverHws.map(row => ({
+          id: row.id,
+          remoteId: row.id,
+          studentCode: row.student_code,
+          studentEmail: row.student_email,
+          studentName: row.student_name,
+          classCode: row.class_code,
+          courseId: row.course_id,
+          lessonNum: row.lesson_num,
+          lessonTitle: row.lesson_title,
+          status: row.status,
+          score: row.score,
+          teacherFeedback: row.teacher_feedback || '',
+          attachments: row.attachments || []
+        }));
+        app.lmsOpenGrade(targetHwId);
+        const scoreInput = document.getElementById('lms-grade-score');
+        const fbInput = document.getElementById('lms-grade-fb');
+        if (scoreInput) scoreInput.value = '9.5';
+        if (fbInput) fbInput.value = 'Con đọc rất to và chuẩn thanh điệu!';
+        const saved = app.lmsSaveGrade(false);
+        await new Promise(r => setTimeout(r, 350));
+        return {
+          ok: Boolean(saved),
+          modalOpened: Boolean(scoreInput && fbInput)
+        };
+      }, b4SubmitState.homeworkId);
+      await teacherPage.close();
+      await teacherContext.close();
+
+      // Verify in mock Supabase that Teacher UI grade persisted 9.5 on the server
+      const gradedRowInDb = state.tables.ktn_homeworks.find(h => h.id === b4SubmitState.homeworkId);
+
+      // Step B4.5: Student re-syncs contact book from server
       const b4AfterGrade = await page.evaluate(async () => {
         await loadStudentContactBook();
         const hwBox = document.getElementById('student-homework-list');
@@ -823,13 +958,18 @@ async function runBrowserSuite() {
 
       record(
         'B4-STUDENT-SUBMIT-AND-TEACHER-GRADE-E2E-UI',
-        'Student submits YCT2-04 class task without false error, teacher grades 9.5/10, and student UI updates to 9.5/10 with feedback',
-        b4SubmitState.submitted === true &&
+        'Student records via DOM mic button, recovers from 503 with preserved audio ("Gửi lại"), Teacher grades 9.5/10 via Teacher UI, and Student UI displays 9.5/10 + feedback',
+        b4FailedAttempt.errVisible === true &&
+          b4FailedAttempt.voiceFilePreserved === true &&
+          b4FailedAttempt.btnText.includes('Gửi lại') &&
+          b4SubmitState.submitted === true &&
           b4SubmitState.errVisible === false &&
-          gradeRes.status === 200 &&
+          teacherGradeUiResult.ok === true &&
+          teacherGradeUiResult.modalOpened === true &&
+          Number(gradedRowInDb?.score) === 9.5 &&
           b4AfterGrade.hwHtml.includes('9.5/10') &&
           b4AfterGrade.hwHtml.includes('Con đọc rất to và chuẩn thanh điệu!'),
-        `submitted=${b4SubmitState.submitted}, errVisible=${b4SubmitState.errVisible}, errText="${b4SubmitState.errText}", gradeStatus=${gradeRes.status}`
+        `retryPreserved=${b4FailedAttempt.voiceFilePreserved}, submitted=${b4SubmitState.submitted}, teacherUi=${teacherGradeUiResult.ok}, dbScore=${gradedRowInDb?.score}`
       );
 
       // =======================================================================

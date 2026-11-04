@@ -12,8 +12,8 @@
 | **2. Không phá dữ liệu Production** | Không chạy test ghi/xóa trên production `khongtunhi.com`; bổ sung khóa chặn `ALLOW_PRODUCTION_WRITE_TESTS` trong `verify_security_and_flow.cjs` và CI | Đã khóa an toàn | **PASS** |
 | **3. Kiểm tra cú pháp JS (`node --check`)** | Tất cả file Worker, Client SDK, LMS/UX và Test Suite không có lỗi cú pháp | 9/9 file đạt `node --check` | **PASS** |
 | **4. Đồng nhất File Nguồn ↔ File Đích** | `node build_clean_real_portal.js` sinh ra `sll-hocsinh.html` và `demo_hsk1_student_portal.html` khớp 100% (`git diff --exit-code` = 0) | Không lệch byte nào | **PASS** |
-| **5. Bộ kiểm thử Đồng bộ 3 chiều & Failure Injection** | 100% PASS trên Groups A, C, D (`tests/ktn_three_way_reliability_suite.cjs`) | **26/26 PASS** | **PASS** |
-| **6. Bộ kiểm thử Trình duyệt Thật (Chromium E2E)** | 100% PASS trên Group B (`tests/ktn_browser_e2e_local.cjs`) | **5/5 PASS** | **PASS** |
+| **5. Bộ kiểm thử Đồng bộ 3 chiều & Failure Injection** | 100% PASS trên Groups A, C, D, E (`tests/ktn_three_way_reliability_suite.cjs`) | **30/30 PASS** | **PASS** |
+| **6. Bộ kiểm thử Trình duyệt Thật (Chromium E2E trong CI)** | 100% PASS trên Group B (`tests/ktn_browser_e2e_local.cjs` chạy cả ở local và GitHub Actions) | **5/5 PASS** | **PASS** |
 | **7. Triển khai lên Production (`khongtunhi.com`)** | Chỉ triển khai khi Quản lý/Chủ dự án phê duyệt lệnh deploy | **PENDING DEPLOY APPROVAL** | **READY** |
 
 ---

@@ -12,6 +12,7 @@
  */
 (function (window) {
   'use strict';
+  if (window.KtnWebApp && window.KtnWebApp.__initialized) return;
 
   const IDB_NAME = 'ktn_webapp_auth_db';
   const IDB_STORE = 'session_store';
@@ -639,5 +640,6 @@
   stripForbiddenUrlParams();
   window.__ktnEscapeHtml = escapeHtml;
   window.__ktnSafeUrl = safeUrl;
+  KtnWebApp.__initialized = true;
   window.KtnWebApp = KtnWebApp;
 })(window);

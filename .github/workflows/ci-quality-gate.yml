@@ -50,6 +50,16 @@ jobs:
           node build_clean_real_portal.js
           git diff --exit-code sll-hocsinh.html
 
-      - name: Run Three-Way Sync, RBAC, Curriculum & Failure-Injection Suite (Groups A, C, D)
+      - name: Run Three-Way Sync, RBAC, Curriculum & Failure-Injection Suite (Groups A, C, D, E)
         run: |
           node tests/ktn_three_way_reliability_suite.cjs
+
+      - name: Run Headless Chromium Browser E2E Suite (Group B — Real DOM & Teacher/Student Flows)
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+          PUPPETEER_EXECUTABLE_PATH: "/usr/bin/google-chrome"
+          NODE_PATH: "/tmp/ktn-ci-deps/node_modules"
+        run: |
+          mkdir -p /tmp/ktn-ci-deps
+          npm --prefix /tmp/ktn-ci-deps install --no-save puppeteer
+          node tests/ktn_browser_e2e_local.cjs

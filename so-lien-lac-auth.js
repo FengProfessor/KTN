@@ -159,13 +159,28 @@
       if (!session || !session.account?.email) return;
       const email = this.normalizeEmail(session.account.email);
       session.account.email = email;
+      let prevSaved = null;
+      try {
+        const rawPrev = localStorage.getItem('ktn_sll_persistent_auth_v2');
+        if (rawPrev) {
+          const parsedPrev = JSON.parse(rawPrev);
+          if (parsedPrev && this.normalizeEmail(parsedPrev.email || '') === email) {
+            prevSaved = parsedPrev;
+          }
+        }
+      } catch {}
+      const primaryRole = (Array.isArray(session.roles) && session.roles[0]) || prevSaved?.role || 'student';
+      const workerToken = session.token || prevSaved?.token || session.accessToken || prevSaved?.accessToken || '';
       const persistObj = {
-        id: session.account.id || email,
-        studentId: session.account.id || email,
-        name: session.account.name || email.split('@')[0],
+        ...(prevSaved || {}),
+        id: session.account.id || prevSaved?.id || email,
+        studentId: session.account.id || prevSaved?.studentId || email,
+        name: session.account.name || prevSaved?.name || email.split('@')[0],
         email,
-        roles: session.roles || ['student'],
-        accessToken: session.accessToken || 'KTN-PERSIST-TOKEN',
+        role: primaryRole,
+        roles: session.roles || [primaryRole],
+        token: workerToken,
+        accessToken: session.accessToken || workerToken || 'KTN-PERSIST-TOKEN',
         accessTokenExpiredAt: Date.now() + 365 * 86400000,
         savedAt: Date.now()
       };
@@ -210,6 +225,7 @@
           ? { scope: 'assigned', permissions: ['classes.read', 'students.read', 'homeworks.read', 'homeworks.grade'], assignments: { verified: true, classIds: ['YCT2-04', 'YCT3-02'], studentIds: ['KTN-2026-089', 'KTN-2026-090', 'KTN-2026-091', 'KTN-2026-092', 'KTN-2026-095'] } }
           : { scope: 'self', permissions: ['courses.watch', 'homeworks.read', 'homeworks.submit', 'chat.parent'], assignments: null },
         source: 'izteach',
+        token: rawUser.token || user.token || rawUser.accessToken || user.accessToken || '',
         accessToken: rawUser.accessToken || user.accessToken || rawUser.token || 'KTN-PERSIST-TOKEN',
         expiresAt: Date.now() + 365 * 86400000
       };

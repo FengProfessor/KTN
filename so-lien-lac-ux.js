@@ -9430,8 +9430,7 @@
           status: 'graded',
           teacherFeedback: rawFeedback,
           attachments: hw.attachments || [],
-          allowUpsertFromIzTeach: true,
-          mirroredToIzTeach: true
+          allowUpsertFromIzTeach: true
         }
       }).catch(() => {});
     }

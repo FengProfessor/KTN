@@ -425,13 +425,6 @@
           document.cookie = 'ktn_sll_auth_v2=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
           document.cookie = 'ktn_sll_auth_v2=; domain=.khongtunhi.com; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
         } catch {}
-        try {
-          if (typeof BroadcastChannel !== 'undefined') {
-            const bc = new BroadcastChannel('ktn_auth_bus');
-            bc.postMessage({ type: 'LOGOUT', ts: Date.now() });
-            bc.close();
-          }
-        } catch {}
 
         await clearSessionFromIdb();
         await clearSessionFromCacheStorage();
@@ -448,19 +441,34 @@
             cache: 'no-store',
             headers: logoutHeaders
           });
-          if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (res.ok && data?.revoked === true) {
             serverRevoked = true;
-          } else if (opts && opts.requireServerRevoke) {
-            throw new Error('Máy chủ chưa xác nhận xóa phiên đăng nhập (HTTP ' + res.status + ')');
+            try { localStorage.removeItem('ktn_pending_revoke_token'); } catch {}
+          } else {
+            if (priorToken && !priorToken.startsWith('KTN-')) {
+              try { localStorage.setItem('ktn_pending_revoke_token', priorToken); } catch {}
+            }
+            if (opts && opts.requireServerRevoke) {
+              throw new Error('Máy chủ chưa xác nhận xóa phiên đăng nhập (HTTP ' + res.status + ')');
+            }
           }
         } catch (netErr) {
-          if (opts && opts.requireServerRevoke) {
-            throw netErr;
-          }
           if (priorToken && !priorToken.startsWith('KTN-')) {
             try { localStorage.setItem('ktn_pending_revoke_token', priorToken); } catch {}
           }
+          if (opts && opts.requireServerRevoke) {
+            throw netErr;
+          }
         }
+
+        try {
+          if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('ktn_auth_bus');
+            bc.postMessage({ type: 'LOGOUT', ts: Date.now() });
+            bc.close();
+          }
+        } catch {}
 
         if (!opts || opts.redirect !== false) {
           const redirectUrl = (opts && opts.redirectUrl) ? opts.redirectUrl : '/?login=1';
@@ -481,12 +489,16 @@
       try {
         const pendingRevoke = localStorage.getItem('ktn_pending_revoke_token');
         if (pendingRevoke && path !== '/api/ktn/auth/logout') {
-          localStorage.removeItem('ktn_pending_revoke_token');
           fetch(this.getApiBase() + '/api/ktn/auth/logout', {
             method: 'POST',
             credentials: 'same-origin',
             cache: 'no-store',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pendingRevoke}` }
+          }).then(async r => {
+            const d = await r.json().catch(() => null);
+            if (r.ok && d?.revoked === true) {
+              try { localStorage.removeItem('ktn_pending_revoke_token'); } catch {}
+            }
           }).catch(() => {});
         }
       } catch {}
@@ -615,6 +627,7 @@
     if (typeof BroadcastChannel !== 'undefined') {
       const bc = new BroadcastChannel('ktn_auth_bus');
       bc.onmessage = (ev) => {
+        if (window.__ktnAllowLogout) return;
         if (ev && ev.data && ev.data.type === 'LOGOUT' && isProtectedPortalPath()) {
           window.__ktnLoggingOut = true;
           window.location.replace('/?login=1');

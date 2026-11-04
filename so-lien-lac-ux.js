@@ -5644,8 +5644,12 @@
       const info = this.getLessonAssignmentInfo(classCode, sNum);
       const assignments = (info.tasks || []).map((t, idx) => ({
         id: 't' + (idx + 1),
+        num: idx + 1,
         type: t.format === 'image' ? 'image' : 'audio',
         title: t.title || `Bài tập ${idx + 1}`,
+        prompt: t.format === 'image'
+          ? 'Em làm bài tập trong sách rồi chụp ảnh trang bài làm gửi cô nhé.'
+          : 'Em bấm Thu âm giọng đọc hoặc quay video gửi cô nhé.',
         instruction: t.format === 'image'
           ? 'Em làm bài tập trong sách rồi chụp ảnh trang bài làm gửi cô nhé.'
           : 'Em bấm Thu âm giọng đọc hoặc quay video gửi cô nhé.'
@@ -5656,6 +5660,7 @@
           classCode,
           sessionNum: sNum,
           title: info.lessonName || info.title || `Buổi ${sNum}`,
+          exercises: assignments,
           assignments
         }
       });
@@ -5666,7 +5671,7 @@
   };
 
   app.syncStudentEntitlementToServer = async function (stu, action = 'set', explicitCourseIds = null) {
-    if (!stu || !stu.email || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return null;
+    if (!stu || !stu.email || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return { ok: false, error: 'NO_CLIENT' };
     try {
       const courseIds = Array.isArray(explicitCourseIds)
         ? explicitCourseIds
@@ -5689,9 +5694,9 @@
           stu.userId = res.data.student.cognito_user_id;
         }
       }
-      return res?.data || null;
-    } catch {
-      return null;
+      return { ok: Boolean(res?.ok && res?.data?.ok), status: res?.status || 0, data: res?.data || null };
+    } catch (err) {
+      return { ok: false, error: err?.message || 'NETWORK_ERROR' };
     }
   };
 
@@ -5759,6 +5764,10 @@
     if (this.currentRole !== 'admin') return false;
     const stu = this.students[studentIdx];
     if (!stu) return false;
+    const prevOnline = stu.hasOnlineCourses;
+    const prevCourseIds = Array.isArray(stu.courseIds) ? stu.courseIds.slice() : [];
+    const prevProgress = stu.progress;
+    const prevAttendance = stu.attendance;
     stu.hasOnlineCourses = !stu.hasOnlineCourses;
     stu.courseIds = stu.hasOnlineCourses ? ['6adadba969897b0002482ca5'] : [];
     if (!stu.hasLiveClass) {
@@ -5780,11 +5789,22 @@
         })
       }).catch(() => null);
     }
-    this.syncStudentEntitlementToServer?.(
+    Promise.resolve(this.syncStudentEntitlementToServer?.(
       stu,
       stu.hasOnlineCourses ? 'grant' : 'revoke',
       ['6adadba969897b0002482ca5']
-    );
+    )).then(syncRes => {
+      if (syncRes && syncRes.ok === false && syncRes.error !== 'NO_CLIENT') {
+        stu.hasOnlineCourses = prevOnline;
+        stu.courseIds = prevCourseIds;
+        stu.progress = prevProgress;
+        stu.attendance = prevAttendance;
+        stu.caseType = this.computeStudentCase(stu);
+        this.saveState();
+        this.renderAll();
+        this.showToast(`⚠️ Chưa đồng bộ được quyền khóa học cho ${stu.name} (${syncRes.data?.message || syncRes.error || 'Lỗi máy chủ'}). Đã hoàn tác trạng thái.`, 'error');
+      }
+    }).catch(() => null);
     this.saveState();
     this.renderAll();
     const meta = this.getCaseMeta(stu.caseType);

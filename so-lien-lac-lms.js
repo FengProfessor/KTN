@@ -329,6 +329,7 @@
           sbCourseMapped.push({
             _id: row.id,
             id: row.id,
+            _source: 'supabase',
             courseId: row.course_id || '6adadba969897b0002482ca5',
             lessonNum: lNum,
             lessonTitle: row.lesson_title || `Bài ${lNum}`,
@@ -347,8 +348,12 @@
         }
       });
 
-      const normalizedAll = [...sbCourseMapped, ...rawList].map(normalizeIzTeachHwItem).filter(Boolean);
-      // Gộp theo (học viên + khóa học + bài học) để bản ghi Đã chấm (state=approved) kế thừa & hiển thị thay cho bản ghi Chờ chấm cũ mà không cần DELETE làm mất file S3
+      const normalizedAll = [...sbCourseMapped, ...rawList].map(raw => {
+        const norm = normalizeIzTeachHwItem(raw);
+        if (norm && raw?._source) norm._source = raw._source;
+        return norm;
+      }).filter(Boolean);
+      // Gộp theo (học viên + khóa học + bài học) ưu tiên bản ghi mới hơn từ Supabase (bao gồm cả trường hợp học sinh nộp lại sau khi đã được chấm)
       const dedupMap = new Map();
       normalizedAll.forEach(item => {
         const stuKey = String(item.studentEmail || item.userId || item.studentCode || item.studentName || '').toLowerCase();
@@ -357,10 +362,9 @@
         if (!prev) {
           dedupMap.set(key, item);
         } else {
-          // Ưu tiên bản ghi mới hơn hoặc bản ghi đã chấm điểm
-          if (item.status === 'GRADED' && prev.status !== 'GRADED') {
+          if (item.updatedAtMs > prev.updatedAtMs) {
             dedupMap.set(key, item);
-          } else if (item.updatedAtMs > prev.updatedAtMs && !(prev.status === 'GRADED' && item.status !== 'GRADED')) {
+          } else if (item.updatedAtMs === prev.updatedAtMs && item.status === 'GRADED' && prev.status !== 'GRADED') {
             dedupMap.set(key, item);
           }
         }
@@ -375,7 +379,7 @@
           const idx = app.state.homeworks.findIndex(x => x && (x.remoteId === nh.remoteId || x.id === nh.id));
           if (idx >= 0) {
             const cur = app.state.homeworks[idx];
-            if (cur.status === 'GRADED' && nh.status !== 'GRADED') return;
+            if (cur.status === 'GRADED' && nh.status !== 'GRADED' && (nh.updatedAtMs || 0) <= (cur.updatedAtMs || 0)) return;
             app.state.homeworks[idx] = { ...cur, ...nh };
           } else {
             app.state.homeworks.push(nh);
@@ -626,7 +630,7 @@
       allStateHws.forEach(pushCandidate);
       izHws.forEach(pushCandidate);
 
-      // Deduplicate theo (Học viên + Khóa học + Bài học), ưu tiên bản đã chấm (GRADED) hoặc mới nhất
+      // Deduplicate theo (Học viên + Khóa học + Bài học), ưu tiên bản mới nhất (kể cả khi học sinh nộp lại PENDING sau khi đã chấm)
       const byStuCourseLesson = new Map();
       combined.forEach(h => {
         const stuKey = String(h.studentEmail || h.userId || h.studentCode || h.studentName || '').toLowerCase();
@@ -635,11 +639,11 @@
         if (!prev) {
           byStuCourseLesson.set(k, h);
         } else {
-          const prevGraded = prev.status === 'GRADED';
-          const curGraded = h.status === 'GRADED';
-          if (curGraded && !prevGraded) {
+          const prevTime = D.hwTime(prev);
+          const curTime = D.hwTime(h);
+          if (curTime > prevTime) {
             byStuCourseLesson.set(k, h);
-          } else if (curGraded === prevGraded && D.hwTime(h) > D.hwTime(prev)) {
+          } else if (curTime === prevTime && h.status === 'GRADED' && prev.status !== 'GRADED') {
             byStuCourseLesson.set(k, h);
           }
         }
@@ -1995,6 +1999,7 @@
           studentCode: h.studentCode || s?.code || '',
           classCode: classId || '',
           courseId: h.courseId || '',
+          unitId: h.unitId || null,
           lessonNum: Number(h.lessonNum) || D.hwLesson(h) || 1,
           lessonTitle: h.lessonTitle || h.title || '',
           score,
@@ -2002,7 +2007,13 @@
           teacherFeedback: fb,
           attachments: h.attachments || [],
           allowUpsertFromIzTeach: true,
-          mirroredToIzTeach: true
+          mirroredToIzTeach: Boolean(h.courseId)
+        }
+      }).then(res => {
+        if (res && res.ok && res.data?.syncStatus === 'sync_failed') {
+          app.showToast(`⚠️ Đã lưu điểm ${score}đ vào Sổ liên lạc (Supabase), nhưng đồng bộ sang izTeach tạm thời lỗi. Hệ thống đã ghi nhận để đồng bộ lại.`, 'warn');
+        } else if (res && !res.ok) {
+          app.showToast(`⚠️ Lỗi lưu điểm trên máy chủ: ${res.data?.message || ('HTTP ' + res.status)}`, 'error');
         }
       }).catch(() => {});
     }

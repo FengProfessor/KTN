@@ -1,0 +1,55 @@
+name: KTN Three-Way Sync & Security Quality Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  ALLOW_PRODUCTION_WRITE_TESTS: "false"
+
+jobs:
+  quality-and-reliability-gate:
+    name: Syntax, Build Drift & Three-Way Reliability Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enforce Production Safety Gate (Block Unapproved Production Writes)
+        run: |
+          if [ "${ALLOW_PRODUCTION_WRITE_TESTS}" = "true" ]; then
+            echo "ERROR: ALLOW_PRODUCTION_WRITE_TESTS must never be enabled in automated CI."
+            exit 1
+          fi
+          echo "[SAFE] Production write guard verified (ALLOW_PRODUCTION_WRITE_TESTS=false)."
+
+      - name: JS Syntax Check (Core Worker, Client SDK, LMS/UX & Test Suites)
+        run: |
+          node --check cloudflare-worker-sw-proxy.js
+          node --check ktn-webapp-client.js
+          node --check so-lien-lac-ux.js
+          node --check so-lien-lac-lms.js
+          node --check so-lien-lac-auth.js
+          node --check build_clean_real_portal.js
+          node --check verify_security_and_flow.cjs
+          node --check tests/ktn_three_way_reliability_suite.cjs
+          node --check tests/ktn_browser_e2e_local.cjs
+
+      - name: Verify Student Portal Build Consistency (No Unbuilt Template Drift)
+        run: |
+          node build_clean_real_portal.js
+          git diff --exit-code sll-hocsinh.html
+
+      - name: Run Three-Way Sync, RBAC, Curriculum & Failure-Injection Suite (Groups A, C, D)
+        run: |
+          node tests/ktn_three_way_reliability_suite.cjs

@@ -32,7 +32,9 @@ screenshots_challenger_m3_2/
 temp_banners/
 test_evidence/
 test_output/
-tests/
+tests/*
+!tests/ktn_three_way_reliability_suite.cjs
+!tests/ktn_browser_e2e_local.cjs
 ebook-bulk-rollout/
 ebook-detail-prototype/
 free-library-redesign/

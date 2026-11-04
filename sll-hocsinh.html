@@ -2504,19 +2504,33 @@
 
       async getCourseUnits(token, targetCourseId) {
         const cid = targetCourseId || activeCourseId || IzTeachConfig.courseId;
-        // Ưu tiên gọi qua cổng Cloudflare Worker (/api/ktn/courses/units) để hỗ trợ mọi khóa học mới thứ 10, 11...
+        // Ưu tiên gọi qua cổng Cloudflare Worker (/api/ktn/courses/units) có kiểm tra phân quyền khóa học
         try {
-          const apiBase = (window.KtnWebApp && typeof window.KtnWebApp.getApiBase === 'function')
-            ? window.KtnWebApp.getApiBase()
-            : 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
-          const wRes = await fetch(`${apiBase}/api/ktn/courses/units?courseId=${encodeURIComponent(cid)}`);
-          if (wRes.ok) {
-            const wData = await wRes.json();
-            if (Array.isArray(wData?.units) && wData.units.length > 0) {
-              return wData.units;
+          if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+            const wRes = await window.KtnWebApp.apiRequest(`/api/ktn/courses/units?courseId=${encodeURIComponent(cid)}`);
+            if (wRes.status === 403) {
+              throw new Error('UNIT_NOT_ENTITLED');
+            }
+            if (wRes.ok && Array.isArray(wRes.data?.units) && wRes.data.units.length > 0) {
+              return wRes.data.units;
+            }
+          } else {
+            const apiBase = 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+            const headers = token && !String(token).startsWith('KTN-') ? { Authorization: `Bearer ${token}` } : {};
+            const wRes = await fetch(`${apiBase}/api/ktn/courses/units?courseId=${encodeURIComponent(cid)}`, { headers });
+            if (wRes.status === 403) {
+              throw new Error('UNIT_NOT_ENTITLED');
+            }
+            if (wRes.ok) {
+              const wData = await wRes.json();
+              if (Array.isArray(wData?.units) && wData.units.length > 0) {
+                return wData.units;
+              }
             }
           }
-        } catch (e) {}
+        } catch (e) {
+          if (e && e.message === 'UNIT_NOT_ENTITLED') throw e;
+        }
         const url = `${IzTeachConfig.endpoints.unit}?course=${encodeURIComponent(cid)}&vendorId=${encodeURIComponent(IzTeachConfig.vendorId)}`;
         const res = await this.fetchWithServiceToken(url, { method: 'GET' });
         if (res.status === 200) {
@@ -2827,9 +2841,11 @@
         merged.code = merged.code || 'KTN-2026-TAPHON';
         merged.email = 'taphong2002@gmail.com';
         merged.name = merged.name || 'ta phong vo';
-        merged.classCode = merged.classCode || merged.class_code || 'YCT2-04';
+        const hasExplicitClassCode = Object.prototype.hasOwnProperty.call(rawUser, 'classCode') || Object.prototype.hasOwnProperty.call(rawUser, 'class_code');
+        merged.classCode = hasExplicitClassCode ? (merged.classCode || merged.class_code || null) : null;
         if (!Array.isArray(merged.roles) || !merged.roles.length) merged.roles = ['student'];
-        if (!Array.isArray(merged.onlineCourses) || !merged.onlineCourses.length) {
+        const hasExplicitOnlineCourses = Boolean(rawUser._serverSynced) || Array.isArray(rawUser.onlineCourses) || Array.isArray(rawUser.online_courses);
+        if (!hasExplicitOnlineCourses) {
           merged.onlineCourses = [
             { id: IzTeachConfig.courseId, title: 'HSK1 3.0' },
             { id: '65e7704a9ea90c00080d5195', title: 'Chinese For Kids' }
@@ -2956,6 +2972,28 @@
       const studentId = String(user.studentId || user.code || '').trim();
       const set = new Set();
 
+      const profileMatchesUser = Boolean(
+        currentStudentProfile &&
+        String(currentStudentProfile.email || '').trim().toLowerCase() === email
+      );
+      const isServerSynced = Boolean(
+        user._serverSynced ||
+        (profileMatchesUser && currentStudentProfile._serverSynced)
+      );
+
+      if (isServerSynced) {
+        const authoritativeList = profileMatchesUser
+          ? (currentStudentProfile.online_courses || currentStudentProfile.onlineCourses || [])
+          : (user.onlineCourses || user.online_courses || []);
+        if (Array.isArray(authoritativeList)) {
+          authoritativeList.forEach(c => {
+            const cid = registerDynamicCourseMeta(c);
+            if (cid && PORTAL_COURSE_CATALOG[cid]) set.add(cid);
+          });
+        }
+        return Array.from(set);
+      }
+
       if (email === 'taphong2002@gmail.com' || userId === 'bc21991c-ce9b-465d-b85f-dbb1821e51a9') {
         set.add(HSK1_COURSE_ID);
       }
@@ -2974,7 +3012,7 @@
           if (cid && PORTAL_COURSE_CATALOG[cid]) set.add(cid);
         });
       }
-      if (currentStudentProfile && String(currentStudentProfile.email || '').trim().toLowerCase() === email) {
+      if (profileMatchesUser) {
         const profCourses = currentStudentProfile.online_courses || currentStudentProfile.onlineCourses || [];
         if (Array.isArray(profCourses)) {
           profCourses.forEach(c => {
@@ -3081,8 +3119,12 @@
         return { hasAccess: true, reason: 'staff', label: 'Ban Quản Lý & Giáo Viên', enrolledCourseIds: Object.keys(PORTAL_COURSE_CATALOG) };
       }
 
+      const isServerSynced = Boolean(
+        user._serverSynced ||
+        (currentStudentProfile && String(currentStudentProfile.email || '').trim().toLowerCase() === String(user.email || '').trim().toLowerCase() && currentStudentProfile._serverSynced)
+      );
       const localIds = getLocalEnrolledCourseIds(user);
-      const backendIds = (IzTeachStore.entitlement && IzTeachStore.entitlementUserId === user.id && Array.isArray(IzTeachStore.entitlement.enrolledCourseIds))
+      const backendIds = (!isServerSynced && IzTeachStore.entitlement && IzTeachStore.entitlementUserId === user.id && Array.isArray(IzTeachStore.entitlement.enrolledCourseIds))
         ? IzTeachStore.entitlement.enrolledCourseIds
         : [];
       const mergedIds = Array.from(new Set([...localIds, ...backendIds]));
@@ -3093,17 +3135,18 @@
           reason: 'enrolled',
           label: 'Học viên chính thức',
           enrolledCourseIds: mergedIds,
-          onlineCourses: mergedIds.map(id => ({ id, title: PORTAL_COURSE_CATALOG[id]?.shortTitle || 'Khóa học' }))
+          onlineCourses: mergedIds.map(id => ({ id, title: PORTAL_COURSE_CATALOG[id]?.shortTitle || 'Khóa học' })),
+          _serverVerified: isServerSynced
         };
         IzTeachStore.entitlement = ent;
         return ent;
       }
 
-      if (IzTeachStore.entitlement && IzTeachStore.entitlementUserId === user.id) {
+      if (!isServerSynced && IzTeachStore.entitlement && IzTeachStore.entitlementUserId === user.id) {
         return IzTeachStore.entitlement;
       }
 
-      const notEnt = { hasAccess: false, reason: 'not_enrolled', label: 'Chưa kích hoạt khóa học', enrolledCourseIds: [] };
+      const notEnt = { hasAccess: false, reason: 'not_enrolled', label: 'Chưa kích hoạt khóa học', enrolledCourseIds: [], _serverVerified: isServerSynced };
       IzTeachStore.entitlement = notEnt;
       return notEnt;
     }
@@ -3124,6 +3167,10 @@
 
       const roles = user.roles || [];
       const isStaff = roles.includes('admin') || roles.includes('root') || roles.includes('teacher');
+      const isServerSynced = Boolean(
+        user._serverSynced ||
+        (currentStudentProfile && String(currentStudentProfile.email || '').trim().toLowerCase() === String(user.email || '').trim().toLowerCase() && currentStudentProfile._serverSynced)
+      );
       const localIds = getLocalEnrolledCourseIds(user);
       const hasLocalPaid = localIds.length > 0;
       const userId = user.id;
@@ -3139,7 +3186,7 @@
         IzTeachStore.entitlement = { hasAccess: true, reason: 'staff', label: 'Ban Quản Lý & Giáo Viên', enrolledCourseIds: Object.keys(PORTAL_COURSE_CATALOG) };
         IzTeachStore.entitlementUserId = userId;
       } else if (hasLocalPaid) {
-        const prevIds = (IzTeachStore.entitlement && IzTeachStore.entitlementUserId === userId && Array.isArray(IzTeachStore.entitlement.enrolledCourseIds))
+        const prevIds = (!isServerSynced && IzTeachStore.entitlement && IzTeachStore.entitlementUserId === userId && Array.isArray(IzTeachStore.entitlement.enrolledCourseIds))
           ? IzTeachStore.entitlement.enrolledCourseIds
           : [];
         const mergedIds = Array.from(new Set([...localIds, ...prevIds]));
@@ -3148,11 +3195,12 @@
           reason: 'enrolled',
           label: 'Học viên chính thức',
           enrolledCourseIds: mergedIds,
-          onlineCourses: mergedIds.map(id => ({ id, title: PORTAL_COURSE_CATALOG[id]?.shortTitle || 'Khóa học' }))
+          onlineCourses: mergedIds.map(id => ({ id, title: PORTAL_COURSE_CATALOG[id]?.shortTitle || 'Khóa học' })),
+          _serverVerified: isServerSynced
         };
         IzTeachStore.entitlementUserId = userId;
-      } else if (IzTeachStore.entitlementUserId !== userId) {
-        IzTeachStore.entitlement = { hasAccess: false, reason: 'not_enrolled', label: 'Chưa kích hoạt khóa học', enrolledCourseIds: [] };
+      } else if (isServerSynced || IzTeachStore.entitlementUserId !== userId) {
+        IzTeachStore.entitlement = { hasAccess: false, reason: 'not_enrolled', label: 'Chưa kích hoạt khóa học', enrolledCourseIds: [], _serverVerified: isServerSynced };
         IzTeachStore.entitlementUserId = userId;
       }
 
@@ -3182,15 +3230,31 @@
               ent = await IzTeachPortalClient.checkCourseEntitlement(userId, effectiveToken);
             }
           }
-          const latestLocalIds = getLocalEnrolledCourseIds(user);
-          const mergedIds = Array.from(new Set([...(ent.enrolledCourseIds || []), ...latestLocalIds]));
+          const latestUser = getRealCurrentUser() || user;
+          const latestSynced = Boolean(
+            latestUser._serverSynced ||
+            (currentStudentProfile && String(currentStudentProfile.email || '').trim().toLowerCase() === String(latestUser.email || '').trim().toLowerCase() && currentStudentProfile._serverSynced)
+          );
+          const latestLocalIds = getLocalEnrolledCourseIds(latestUser);
+          const mergedIds = latestSynced
+            ? latestLocalIds
+            : Array.from(new Set([...(ent.enrolledCourseIds || []), ...latestLocalIds]));
           if (mergedIds.length > 0) {
             ent = {
               hasAccess: true,
               reason: 'enrolled',
               label: 'Học viên chính thức',
               enrolledCourseIds: mergedIds,
-              onlineCourses: mergedIds.map(id => ({ id, title: PORTAL_COURSE_CATALOG[id]?.shortTitle || 'Khóa học' }))
+              onlineCourses: mergedIds.map(id => ({ id, title: PORTAL_COURSE_CATALOG[id]?.shortTitle || 'Khóa học' })),
+              _serverVerified: latestSynced
+            };
+          } else if (latestSynced) {
+            ent = {
+              hasAccess: false,
+              reason: 'not_enrolled',
+              label: 'Chưa kích hoạt khóa học',
+              enrolledCourseIds: [],
+              _serverVerified: true
             };
           }
           IzTeachStore.entitlement = ent;
@@ -3486,9 +3550,17 @@
           rawFeedback.includes('[CẦN SỬA]') ||
           Boolean(sllHw && (sllHw.status === 'REVISION_REQUESTED' || sllHw.status === 'NEEDS_REVISION'));
 
-        const isBackendGraded = Boolean(hwRecord && (hwRecord.state === 'approved' || (hwRecord.mark !== undefined && hwRecord.mark !== null)));
-        const isSllGraded = Boolean(sllHw && (sllHw.status === 'GRADED' || (sllHw.score !== undefined && sllHw.score !== null)));
-        const isLocalGraded = Boolean(localHw && localHw.status === 'graded');
+        const localTs = Date.parse(localHw?.updated_at || localHw?.submitted_at || '') || 0;
+        const backendTs = Date.parse(hwRecord?.updatedAt || hwRecord?.createdAt || '') || 0;
+        const isLocalResubmittedPending = Boolean(
+          localHw &&
+          String(localHw.status || '').toLowerCase() === 'pending' &&
+          (localTs >= backendTs || !backendTs)
+        );
+
+        const isBackendGraded = !isLocalResubmittedPending && Boolean(hwRecord && (hwRecord.state === 'approved' || (hwRecord.mark !== undefined && hwRecord.mark !== null)));
+        const isSllGraded = !isLocalResubmittedPending && Boolean(sllHw && (sllHw.status === 'GRADED' || (sllHw.score !== undefined && sllHw.score !== null)));
+        const isLocalGraded = Boolean(localHw && String(localHw.status || '').toLowerCase() === 'graded');
         const isGraded = !isNeedsRevision && (isBackendGraded || isSllGraded || isLocalGraded);
 
         const scoreVal = (localHw && localHw.score != null)
@@ -4017,13 +4089,15 @@
     async function enterCourseLearning(initialLesson = 0, targetCourseId) {
       const user = getRealCurrentUser();
       const access = checkUserCourseAccess(user);
-      if (!access.hasAccess) {
+      const cid = targetCourseId || activeCourseId || HSK1_COURSE_ID;
+      const isStaff = Boolean(user && Array.isArray(user.roles) && (user.roles.includes('admin') || user.roles.includes('root') || user.roles.includes('teacher')));
+      const enrolledIds = Array.isArray(access?.enrolledCourseIds) ? access.enrolledCourseIds : [];
+      if (!isStaff && (!access.hasAccess || !enrolledIds.includes(cid))) {
         showToast('⚠️ Tài khoản của bạn chưa được kích hoạt khóa học này.');
         showCoursesDashboard();
         return false;
       }
 
-      const cid = targetCourseId || activeCourseId || HSK1_COURSE_ID;
       activeCourseId = cid;
       const meta = PORTAL_COURSE_CATALOG[cid] || PORTAL_COURSE_CATALOG[HSK1_COURSE_ID];
 
@@ -4836,13 +4910,15 @@
         method: 'POST',
         body: {
           courseId,
+          unitId: unitId || null,
           lessonNum: targetLessonNum,
           lessonTitle: `${courseMeta.shortTitle} · Bài ${targetLessonNum}: ${lesson.titleZh || ''}`,
           fileUrl: primaryFileUrl,
           fileType: primaryFileType,
           studentNote: fullNotes,
           attachments,
-          mirroredToIzTeach
+          mirroredToIzTeach,
+          izteachRemoteId: (hwData && hwData._id && !String(hwData._id).startsWith('HW-')) ? hwData._id : null
         }
       });
 
@@ -4870,7 +4946,8 @@
           status: serverHw.status || 'pending',
           score: serverHw.score ?? null,
           teacher_feedback: serverHw.teacher_feedback ?? null,
-          submitted_at: serverHw.submitted_at || new Date().toISOString()
+          submitted_at: serverHw.submitted_at || new Date().toISOString(),
+          updated_at: serverHw.updated_at || new Date().toISOString()
         };
         const filtered = Array.isArray(localArr)
           ? localArr.filter(item => !(String(item.student_email || '').toLowerCase() === curEmail && item.course_id === courseId && Number(item.lesson_num) === targetLessonNum))
@@ -5473,7 +5550,7 @@
       'taphong2002@gmail.com': {
         code: 'KTN-2026-TAPHON',
         name: 'Tạ Phong Võ',
-        class_code: 'YCT2-04',
+        class_code: null,
         teacher_name: 'Cô Lâm Mỹ Linh',
         schedule: 'Thứ 3 & Thứ 6 (19:30 - 21:00)',
         online_courses: [
@@ -5521,10 +5598,13 @@
         ? window.app.students.find(s => String(s.email || '').trim().toLowerCase() === email)
         : null;
 
+      const userHasExplicitClass = Object.prototype.hasOwnProperty.call(user, 'classCode') || Object.prototype.hasOwnProperty.call(user, 'class_code');
       let resolvedProfile = {
         ...(builtin || {}),
         ...(user || {}),
-        class_code: user?.classCode || appStu?.classCode || builtin?.class_code || null,
+        class_code: userHasExplicitClass
+          ? (user.classCode || user.class_code || null)
+          : (appStu?.classCode || builtin?.class_code || null),
         teacher_name: user?.teacherName || appStu?.teacher || builtin?.teacher_name || 'Cô Lâm Mỹ Linh',
         schedule: user?.schedule || builtin?.schedule || 'Thứ 3 & Thứ 6 (19:30 - 21:00)'
       };
@@ -5541,12 +5621,15 @@
         return Array.from(map.values());
       };
 
-      let mergedCourses = mergeCoursesList(builtin?.online_courses, appStu?.onlineCourses, user?.onlineCourses);
+      let mergedCourses = user._serverSynced
+        ? mergeCoursesList(user?.onlineCourses, user?.online_courses)
+        : mergeCoursesList(builtin?.online_courses, appStu?.onlineCourses, user?.onlineCourses);
       resolvedProfile.online_courses = mergedCourses;
       resolvedProfile.onlineCourses = mergedCourses;
       resolvedProfile.classCode = resolvedProfile.class_code;
       resolvedProfile.hasLiveClass = Boolean(resolvedProfile.class_code);
       resolvedProfile.hasOnlineCourses = mergedCourses.length > 0;
+      resolvedProfile._serverSynced = Boolean(user._serverSynced);
 
       currentStudentProfile = resolvedProfile;
       renderStudentCaseBanner(currentStudentProfile);
@@ -5572,7 +5655,8 @@
               hasLiveClass: Boolean(classCode),
               hasOnlineCourses: mergedCourses.length > 0,
               online_courses: mergedCourses,
-              onlineCourses: mergedCourses
+              onlineCourses: mergedCourses,
+              _serverSynced: true
             };
           }
         } catch (e) {}
@@ -5593,7 +5677,8 @@
             hasLiveClass: Boolean(currentStudentProfile.classCode),
             hasOnlineCourses: mergedCourses.length > 0,
             onlineCourses: mergedCourses,
-            studentCase: currentStudentProfile.studentCase
+            studentCase: currentStudentProfile.studentCase,
+            _serverSynced: Boolean(currentStudentProfile._serverSynced)
           }, latestUser.token || latestUser.accessToken);
         } catch (e) {}
       }
@@ -6170,19 +6255,30 @@
     async function loadStudentContactBook() {
       if (window.__ktnLoggingOut) return;
       const classCode = currentStudentProfile?.classCode || getRealCurrentUser()?.classCode || null;
-      await renderStudentClassSessions(classCode, activeClassSessionNum);
-
-      const hwBox = document.getElementById('student-homework-list');
-      if (!hwBox) return;
       let list = [];
       if (window.KtnWebApp) {
         try {
           const res = await KtnWebApp.apiRequest('/api/ktn/homeworks');
           if (res.ok && Array.isArray(res.data?.homeworks)) {
             list = res.data.homeworks;
+            try {
+              const localArr = JSON.parse(localStorage.getItem('ktn_local_submitted_homeworks') || '[]');
+              const map = new Map();
+              (Array.isArray(localArr) ? localArr : []).forEach(h => {
+                if (h && h.id) map.set(h.id, h);
+              });
+              list.forEach(sHw => {
+                if (sHw && sHw.id) map.set(sHw.id, sHw);
+              });
+              localStorage.setItem('ktn_local_submitted_homeworks', JSON.stringify(Array.from(map.values())));
+            } catch (e) {}
           }
         } catch (e) {}
       }
+      await renderStudentClassSessions(classCode, activeClassSessionNum);
+
+      const hwBox = document.getElementById('student-homework-list');
+      if (!hwBox) return;
       // Hợp nhất với bài tập từ localStorage ('ktn_local_submitted_homeworks') và getLessonHomework
       try {
         const user = getRealCurrentUser() || currentStudentProfile;
@@ -6425,7 +6521,7 @@
         const targetCourseId = resolveCourseIdFromSlug(slug);
         const courseMeta = PORTAL_COURSE_CATALOG[targetCourseId] || { shortTitle: slug.toUpperCase() };
         const isStaff = user && Array.isArray(user.roles) && (user.roles.includes('admin') || user.roles.includes('root') || user.roles.includes('teacher'));
-        const hasCoursePermission = isStaff || enrolledIds.includes(targetCourseId) || (access.hasAccess && targetCourseId === HSK1_COURSE_ID);
+        const hasCoursePermission = isStaff || enrolledIds.includes(targetCourseId);
 
         if (!hasCoursePermission) {
           switchStudentPane('classroom');

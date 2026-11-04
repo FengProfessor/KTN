@@ -516,7 +516,11 @@ async function isTokenRevoked(env, rawToken, jti) {
       env,
       `ktn_dlp_alerts?id=in.(${inParam})&room_id=eq.AUTH_REVOKED&select=id,blocked_content&limit=5`
     );
-    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+    if (!res || !res.ok) {
+      // Fail-closed: nếu kho thu hồi phiên không phản hồi hợp lệ, từ chối token để không lọt phiên đã đăng xuất
+      return true;
+    }
+    if (Array.isArray(res.data) && res.data.length > 0) {
       const now = Date.now();
       for (const row of res.data) {
         const exp = Number(row?.blocked_content || 0);
@@ -526,17 +530,23 @@ async function isTokenRevoked(env, rawToken, jti) {
         }
       }
     }
-  } catch {}
+  } catch {
+    return true;
+  }
   return Boolean((key1 && revokedTokenMemorySet.has(key1)) || (key2 && revokedTokenMemorySet.has(key2)));
 }
 
 async function revokeSessionTokenServerSide(env, rawToken, jti) {
+  const cleanRaw = String(rawToken || '').trim();
+  if (cleanRaw) {
+    verifiedIzTeachTokenCache.delete(cleanRaw);
+  }
   const key1 = jti ? String(jti).trim() : '';
-  const key2 = getTokenRevocationKey(rawToken, null);
+  const key2 = getTokenRevocationKey(cleanRaw, null);
   if (key1) revokedTokenMemorySet.add(key1);
   if (key2) revokedTokenMemorySet.add(key2);
   const keys = Array.from(new Set([key1, key2].filter(Boolean)));
-  if (keys.length === 0) return;
+  if (keys.length === 0) return { ok: true, persisted: true };
   try {
     const now = Date.now();
     const exp = String(now + 30 * 86400 * 1000);
@@ -550,19 +560,25 @@ async function revokeSessionTokenServerSide(env, rawToken, jti) {
       reason: 'SESSION_LOGOUT_REVOKED',
       resolved: true
     }));
-    await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+    const res = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
       method: 'POST',
       prefer: 'resolution=merge-duplicates,return=minimal',
       body: rows
     });
+    if (!res || !res.ok) {
+      return { ok: false, persisted: false, status: res?.status || 503 };
+    }
     // Dọn các dòng thu hồi phiên đã quá hạn 30 ngày
     const cutoffIso = new Date(now - 30 * 86400 * 1000).toISOString();
     await supabaseRequest(
       env,
       `ktn_dlp_alerts?room_id=eq.AUTH_REVOKED&created_at=lt.${encodeURIComponent(cutoffIso)}`,
       { method: 'DELETE', prefer: 'return=minimal' }
-    );
-  } catch {}
+    ).catch(() => null);
+    return { ok: true, persisted: true };
+  } catch {
+    return { ok: false, persisted: false, status: 503 };
+  }
 }
 
 const verifiedIzTeachTokenCache = new Map();
@@ -681,9 +697,9 @@ async function extractSessionFromRequest(request, env) {
       if (await isTokenRevoked(env, tok, verified.jti)) return null;
       return verified;
     }
+    if (await isTokenRevoked(env, tok, null)) return null;
     const verifiedIz = await verifyIzTeachAccessToken(tok, env);
     if (verifiedIz) {
-      if (await isTokenRevoked(env, tok, null)) return null;
       return verifiedIz;
     }
   }
@@ -696,9 +712,9 @@ async function extractSessionFromRequest(request, env) {
       if (await isTokenRevoked(env, rawCookieTok, verified.jti)) return null;
       return verified;
     }
+    if (await isTokenRevoked(env, rawCookieTok, null)) return null;
     const verifiedIz = await verifyIzTeachAccessToken(rawCookieTok, env);
     if (verifiedIz) {
-      if (await isTokenRevoked(env, rawCookieTok, null)) return null;
       return verifiedIz;
     }
   }
@@ -848,6 +864,23 @@ function isValidCognitoUuid(id) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id || '').trim());
 }
 
+function extractIzTeachOnlineCourseIds(permData) {
+  const list = Array.isArray(permData) ? permData : (permData && typeof permData === 'object' ? [permData] : []);
+  const ids = [];
+  const seen = new Set();
+  for (const item of list) {
+    const arr = Array.isArray(item?.onlineCourses) ? item.onlineCourses : [];
+    for (const c of arr) {
+      const cid = String(c?.id || c?._id || c?.onlineCourseId || c?.productId || c || '').trim();
+      if (cid && !seen.has(cid)) {
+        seen.add(cid);
+        ids.push(cid);
+      }
+    }
+  }
+  return ids;
+}
+
 async function provisionStudentOnIzTeach(env, order) {
   const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
   const adminToken = await getIzTeachAdminToken(env);
@@ -939,11 +972,7 @@ async function provisionStudentOnIzTeach(env, order) {
     });
     if (permRes.ok) {
       const permData = await permRes.json().catch(() => null);
-      if (Array.isArray(permData?.onlineCourses)) {
-        existingIzCourseIds = permData.onlineCourses
-          .map(c => String(c?.id || c?._id || c?.onlineCourseId || c?.productId || c || '').trim())
-          .filter(Boolean);
-      }
+      existingIzCourseIds = extractIzTeachOnlineCourseIds(permData);
     }
   } catch {}
 
@@ -971,30 +1000,63 @@ async function provisionStudentOnIzTeach(env, order) {
   }
 
   // Tầng 4.5: Nếu ở chế độ đối soát tuyệt đối (replaceCourses: true), thu hồi các khóa học đã bỏ chọn trên izTeach
+  let coursesToRemove = [];
   if (order.replaceCourses === true) {
     const targetSet = new Set(targetCourseIds.map(id => String(id || '').trim()).filter(Boolean));
-    const coursesToRemove = existingIzCourseIds.filter(cid => cid && !targetSet.has(cid));
+    coursesToRemove = existingIzCourseIds.filter(cid => cid && !targetSet.has(cid));
     if (coursesToRemove.length > 0) {
-      try {
-        await fetch(`${IZTEACH_ENDPOINTS.userPermission}/remove-products/${encodeURIComponent(cognitoUserId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: adminToken },
-          body: JSON.stringify({
-            vendorId,
-            userId: cognitoUserId,
-            productIds: coursesToRemove,
-            productType: 'online-course'
-          })
-        });
-      } catch {}
+      const remRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}/remove-products/${encodeURIComponent(cognitoUserId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: adminToken },
+        body: JSON.stringify({
+          vendorId,
+          userId: cognitoUserId,
+          productIds: coursesToRemove,
+          productType: 'online-course'
+        })
+      }).catch(e => ({ ok: false, status: 503, _err: e }));
+      if (!remRes || !remRes.ok) {
+        const errTxt = remRes && typeof remRes.text === 'function' ? await remRes.text().catch(() => '') : (remRes?._err?.message || 'NETWORK_ERROR');
+        return { ok: false, error: 'Lỗi thu hồi khóa học cũ trên izTeach khi đối soát: ' + (errTxt || ('HTTP ' + (remRes?.status || 503))) };
+      }
     }
   }
 
-  const allGrantedIds = order.replaceCourses === true
+  // Tầng 5: Xác minh sau cập nhật (Read-After-Write Verification) trực tiếp trên izTeach user-permission
+  let verifiedIzCourseIds = order.replaceCourses === true
     ? Array.from(new Set(targetCourseIds))
     : Array.from(new Set([...existingIzCourseIds, ...targetCourseIds]));
+  if (missingCourseIds.length > 0 || coursesToRemove.length > 0) {
+    try {
+      const verifyRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(cognitoUserId)}&vendorId=${encodeURIComponent(vendorId)}`, {
+        headers: { Authorization: adminToken }
+      });
+      if (!verifyRes.ok) {
+        return { ok: false, error: 'Không xác minh được quyền khóa học trên izTeach sau cập nhật (HTTP ' + verifyRes.status + ')' };
+      }
+      const verifyData = await verifyRes.json().catch(() => null);
+      if (verifyData && typeof verifyData === 'object') {
+        verifiedIzCourseIds = extractIzTeachOnlineCourseIds(verifyData);
+        const verifiedSet = new Set(verifiedIzCourseIds);
+        const stillMissing = targetCourseIds.filter(cid => cid && !verifiedSet.has(cid));
+        if (stillMissing.length > 0) {
+          return { ok: false, error: 'izTeach chưa xác nhận cấp khóa học: ' + stillMissing.join(', ') };
+        }
+        if (order.replaceCourses === true && coursesToRemove.length > 0) {
+          const stillPresent = coursesToRemove.filter(cid => verifiedSet.has(cid));
+          if (stillPresent.length > 0) {
+            return { ok: false, error: 'izTeach chưa xác nhận thu hồi khóa học: ' + stillPresent.join(', ') };
+          }
+        }
+      }
+    } catch (verifyErr) {
+      return { ok: false, error: 'Lỗi xác minh quyền khóa học trên izTeach: ' + (verifyErr?.message || 'NETWORK_ERROR') };
+    }
+  }
+
   return {
     ok: true,
+    verified: true,
     cognitoUserId,
     izteachStudentId,
     email,
@@ -1002,19 +1064,20 @@ async function provisionStudentOnIzTeach(env, order) {
     initialPassword,
     courseId: targetCourseIds[0] || DEFAULT_COURSE_ID,
     grantedCourseIds: targetCourseIds,
-    allCourseIds: allGrantedIds
+    allCourseIds: verifiedIzCourseIds
   };
 }
 
 /**
  * Thu hồi khóa học trực tiếp trên izTeach (PUT /user-permission/remove-products/:cognitoUserId)
+ * Không bao giờ coi skipped: true là thành công; bắt buộc xác minh sau khi thu hồi.
  */
 async function revokeStudentCoursesOnIzTeach(env, { email, cognitoUserId, removeCourseIds = [] }) {
   const cleanIds = Array.from(new Set((Array.isArray(removeCourseIds) ? removeCourseIds : []).map(id => String(id || '').trim()).filter(Boolean)));
-  if (cleanIds.length === 0) return { ok: true, removedCourseIds: [] };
+  if (cleanIds.length === 0) return { ok: true, verified: true, removedCourseIds: [] };
   const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
   const adminToken = await getIzTeachAdminToken(env);
-  if (!adminToken) return { ok: false, error: 'Missing izTeach admin token' };
+  if (!adminToken) return { ok: false, skipped: false, reason: 'NO_ADMIN_TOKEN', error: 'Missing izTeach admin token' };
 
   let resolvedUid = isValidCognitoUuid(cognitoUserId) ? cognitoUserId : null;
   const cleanEmail = normalizeEmail(email);
@@ -1046,7 +1109,12 @@ async function revokeStudentCoursesOnIzTeach(env, { email, cognitoUserId, remove
   }
 
   if (!resolvedUid) {
-    return { ok: true, skipped: true, reason: 'NO_COGNITO_UID' };
+    return {
+      ok: false,
+      skipped: false,
+      reason: 'NO_COGNITO_UID',
+      error: 'Không tìm thấy Cognito UUID trên izTeach cho học viên ' + (cleanEmail || '')
+    };
   }
 
   try {
@@ -1062,15 +1130,72 @@ async function revokeStudentCoursesOnIzTeach(env, { email, cognitoUserId, remove
     });
     if (!revRes.ok) {
       const errTxt = await revRes.text().catch(() => '');
-      return { ok: false, error: errTxt || ('HTTP ' + revRes.status), cognitoUserId: resolvedUid };
+      return { ok: false, skipped: false, status: revRes.status, reason: 'IZTEACH_HTTP_' + revRes.status, error: errTxt || ('HTTP ' + revRes.status), cognitoUserId: resolvedUid };
     }
-    return { ok: true, cognitoUserId: resolvedUid, removedCourseIds: cleanIds };
+
+    // Xác minh sau thu hồi (Read-After-Write Verification) trên izTeach user-permission
+    const verifyRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(resolvedUid)}&vendorId=${encodeURIComponent(vendorId)}`, {
+      headers: { Authorization: adminToken }
+    });
+    if (!verifyRes.ok) {
+      return {
+        ok: false,
+        skipped: false,
+        status: verifyRes.status,
+        reason: 'VERIFY_FAILED',
+        error: 'Không thể xác minh trạng thái thu hồi khóa học trên izTeach (HTTP ' + verifyRes.status + ')',
+        cognitoUserId: resolvedUid
+      };
+    }
+    const verifyData = await verifyRes.json().catch(() => null);
+    const remainingIds = extractIzTeachOnlineCourseIds(verifyData);
+    const remainingSet = new Set(remainingIds);
+    const stillPresent = cleanIds.filter(cid => remainingSet.has(cid));
+    if (stillPresent.length > 0) {
+      return {
+        ok: false,
+        skipped: false,
+        reason: 'REVOKE_VERIFICATION_MISMATCH',
+        error: 'izTeach vẫn còn giữ khóa học sau lệnh thu hồi: ' + stillPresent.join(', '),
+        cognitoUserId: resolvedUid,
+        remainingCourseIds: remainingIds
+      };
+    }
+
+    return {
+      ok: true,
+      verified: true,
+      skipped: false,
+      cognitoUserId: resolvedUid,
+      removedCourseIds: cleanIds,
+      remainingCourseIds: remainingIds
+    };
   } catch (err) {
-    return { ok: false, error: err?.message || 'REVOKE_ERROR', cognitoUserId: resolvedUid };
+    return { ok: false, skipped: false, reason: 'REVOKE_ERROR', error: err?.message || 'REVOKE_ERROR', cognitoUserId: resolvedUid };
   }
 }
 
-const HSK1_UNIT_MAP = {
+const COURSE_UNIT_MAP = {
+  '6adadba969897b0002482ca5': { 1: '6adadbcaf75fe5000247ca71', 2: '6adadc3b69897b0002482d22', 3: '6adae08769897b000248340a', 4: '6adf1b51e2681300028de363', 5: '6adf1fade5b2290002718df9', 6: '6adf22e9e5b22900027199e7', 7: '6adf3578b3cfe60002ab5a55', 8: '6adf3707b3cfe60002ab5fd6', 9: '6ae52ef17b101100026bb5d7', 10: '6ae546eaa1908400020410e3', 11: '6ae54a51fab31400021bee3b', 12: '6ae54f37a1908400020426c9', 13: '6ae550b3a190840002042a62', 14: '6ae558d7fab31400021c1676', 15: '6ae56d92b734640002ce863a' },
+  '678d14b960eae20002ddf8fe': { 1: '678d14ef83903000028fb716', 2: '67bbd7167e21a900021ce2ce', 3: '67bbd7187e21a900021ce2e1', 4: '67bbd7197e21a900021ce2e8', 5: '67bbd7237e21a900021ce2fe', 6: '67bbd7247e21a900021ce302', 7: '67bbd7267e21a900021ce30f', 8: '67bbd728f0b1030002fa0e2f', 9: '67bbd729f0b1030002fa0e34', 10: '67bbd72af0b1030002fa0e39', 11: '67bbd72cf0b1030002fa0e40', 12: '67bbd72ef0b1030002fa0e59', 13: '67bbd730f0b1030002fa0e5e', 14: '67bbd731f0b1030002fa0e62', 15: '67bbd732f0b1030002fa0e69', 16: '67bbd735f0b1030002fa0e6e' },
+  '65e7704a9ea90c00080d5195': { 1: '663e2cb2f960e80008fb905a', 2: '663e2cb3ef5f220008fee283', 3: '663e2cb6d87762000820b409', 4: '663e2cb8d87762000820b40c', 5: '663e2cba501e8b00082e04d9', 6: '663e2cbcf6e78b000877efb4', 7: '663e2cbf0710270008948856', 8: '663e2cc1501e8b00082e04eb', 9: '663e2cc3071027000894885d', 10: '663e2cc60710270008948862', 11: '663e2cc90710270008948867', 12: '663e2ccb501e8b00082e04f5', 13: '663e2ccd071027000894887c', 14: '663e2ccf501e8b00082e04fa', 15: '663e2cd2f6e78b000877efba', 16: '663e2cd4501e8b00082e0502', 17: '663e2cd6501e8b00082e0505', 18: '663e2cd807102700089488c2', 19: '663e2cdaf6e78b000877efe1', 20: '663e2cdced505f0008ed1f31' },
+  '6638bd09a7367400085c7ab2': { 1: '6638bd156090c200087ed9d4', 2: '6638bd156090c200087ed9d0', 3: '6638bd146090c200087ed9cc', 4: '6638bd14a7367400085c7abc', 5: '6638bd136090c200087ed9c2', 6: '6638bd126090c200087ed9be', 7: '6638bd126090c200087ed9ba', 8: '6638bd126090c200087ed9b6', 9: '6638bd116090c200087ed9b2', 10: '6638bd116090c200087ed9ae', 11: '6638bd106090c200087ed9aa', 12: '6638bd106090c200087ed9a6', 13: '6638bd0f6090c200087ed9a2', 14: '6638bd0f6090c200087ed99e', 15: '6638bd0e6090c200087ed99a', 16: '6638bd0e6090c200087ed996', 17: '6638bd0d6090c200087ed992', 18: '6638bd0d6090c200087ed98d', 19: '6638bd0c6090c200087ed989', 20: '6638bd0c6090c200087ed985' },
+  '65e76a533f5e7c00086715d7': { 1: '65e8bfe290ed4a0008fe87aa', 2: '65e8c00e90ed4a0008fe87b8', 3: '65e8c02b90ed4a0008fe87c2', 4: '65e8c03990ed4a0008fe87c9', 5: '65e8c04590ed4a0008fe87d1', 6: '65e8c05390ed4a0008fe87db', 7: '65e8c05d90ed4a0008fe87e1', 8: '65e8c06690ed4a0008fe87e7', 9: '65f6d4deaf683f0008c040f1', 10: '65e8c070fcfcaf0008525490', 11: '65e8c086d3b8e900089c49a4', 12: '65e8c090d3b8e900089c49ae', 13: '65e8c099d3b8e900089c49b4', 14: '65e8c0a3fcfcaf000852549e', 15: '65e8c0add3b8e900089c49ca', 16: '65e8c0b7d3b8e900089c49d1', 17: '65e8c0cafcfcaf00085254a8', 18: '65e8c0d4fcfcaf00085254af', 19: '65e8c0defcfcaf00085254b7', 20: '69230bd3bafc0800020a6860' },
+  '67a869302ecb9c000257d966': { 1: '67a86940e7d5cf000204abf3', 2: '67a86941e7d5cf000204abf8', 3: '67a869432ecb9c000257d99a', 4: '67a869442ecb9c000257d99f', 5: '67a869462ecb9c000257d9a8', 6: '67a869482ecb9c000257d9ad', 7: '67a86949e7d5cf000204ac68', 8: '67a8694b2ecb9c000257d9b4', 9: '67a8694de7d5cf000204ac79', 10: '67a8694ee7d5cf000204ac7e', 11: '67a869502ecb9c000257d9be', 12: '67a86951e7d5cf000204ac8c', 13: '67a86953e7d5cf000204ac96', 14: '67a86955e7d5cf000204ac9f', 15: '67a869572ecb9c000257d9d3', 16: '67a86959e570870002de0282', 17: '67a8695b2ecb9c000257d9ea', 18: '67a8695ee7d5cf000204acb5', 19: '67a86960e7d5cf000204acc3', 20: '67a86962e7d5cf000204accf' },
+  '67a7290a5fdc26000238b4e9': { 1: '67a729145fdc26000238b517', 2: '67a729d74be3170002dfb3cc', 3: '67a72a294be3170002dfb432', 4: '67a72a2b4be3170002dfb43d', 5: '67a72a2c4be3170002dfb447', 6: '67a72a2d5fdc26000238b725', 7: '67a72a2e5fdc26000238b737', 8: '67a72a305fdc26000238b73f', 9: '67a72a325fdc26000238b749', 10: '67a72a334be3170002dfb462', 11: '67a72a354be3170002dfb466', 12: '67a72a364be3170002dfb46a', 13: '67a72a384be3170002dfb472', 14: '67a72a394be3170002dfb476', 15: '67a72a3b4be3170002dfb47b', 16: '67a72a3d4be3170002dfb484', 17: '67a72a3e4be3170002dfb489', 18: '67a72a404be3170002dfb48d', 19: '67a72a424be3170002dfb494', 20: '67a72a434be3170002dfb498' },
+  '65e769bd637339000870618f': { 1: '6607ce6f21dc710008875026', 2: '6607ce7921dc71000887503f', 3: '6607ce7b21dc710008875048', 4: '6607ce7eb00d8d00089262f1', 5: '6607d0df8b279e00081a54c8', 6: '6607d1a283e588000871ab9d', 7: '6607d19ce4925800089d37db', 8: '6607d1a3380b740008b3c779', 9: '6607d1a583e588000871aba6', 10: '6607d1a883e588000871abab', 11: '6607d2fbdacfda000857bafe', 12: '6607d3ba83e588000871ae8b', 13: '6607d3c783e588000871aea2', 14: '6607d3d683e588000871aead', 15: '6607d3e783e588000871aed4', 16: '6607d3f08b279e00081a5894', 17: '6607d3fe8b279e00081a5911', 18: '6607d405dacfda000857bc26', 19: '6607d417dacfda000857bc46', 20: '6607d41fdacfda000857bc54', 21: '6607d4318b279e00081a5947', 22: '6607d4438b279e00081a5985', 23: '6607d43b8b279e00081a5972', 24: '6607d4578b279e00081a5991', 25: '6607d473dacfda000857bd0d' },
+  '66028938bfd6c90008b816e1': { 1: '66028942bfd6c90008b8172f', 2: '66028942bfd6c90008b8172c', 3: '66028942bfd6c90008b8172a', 4: '66028941bfd6c90008b81728', 5: '660289416be3ad000881bd3d', 6: '660289406be3ad000881bd3b', 7: '660289406be3ad000881bd39', 8: '660289406be3ad000881bd37', 9: '6602893fbfd6c90008b8170f', 10: '6602893fbfd6c90008b8170d', 11: '6602893fbfd6c90008b8170b', 12: '6602893fbfd6c90008b81708', 13: '6602893fbfd6c90008b81706', 14: '6602893ebfd6c90008b81704', 15: '6602893ebfd6c90008b81702', 16: '6602893ebfd6c90008b81700', 17: '6602893ebfd6c90008b816fc', 18: '6602893ebfd6c90008b816fe', 19: '6602893dbfd6c90008b816fa', 20: '6602893dbfd6c90008b816f8' },
+  '65e7636a0a1b61000825c2ef': { 1: '66151e91edf4a8000831d55c', 2: '66151e9340e05d00084ef497', 3: '66151e95159f810008a94f95', 4: '66151e9f32008f0008b9a45e', 5: '66151ee3d226ed0008a4de6f', 6: '66151ee529101d00087a7e42', 7: '66151ef0159f810008a94fd8', 8: '66151ef232008f0008b9a47e', 9: '66151ef4d226ed0008a4de77', 10: '66151efb32008f0008b9a492', 11: '66151efc32008f0008b9a497', 12: '66151efe159f810008a94fe1', 13: '66151f0132008f0008b9a4b3', 14: '66151f02d226ed0008a4de8d', 15: '66151f04d226ed0008a4de94', 16: '66151f0732008f0008b9a4b8', 17: '66151f0932008f0008b9a4c0', 18: '66151f0ad226ed0008a4dea7', 19: '66151f0d32008f0008b9a4c2', 20: '66151f0f29101d00087a7e48' },
+  '6600fa477c18b80008c53c88': { 1: '661a40df8b116f00081e5907', 2: '661a40f0deefc7000889f048', 3: '661a413df4a2b80008a9ba4a', 4: '661a413ef4a2b80008a9ba5c', 5: '661a41418b116f00081e5944', 6: '661a4144f4a2b80008a9ba5f', 7: '661a4146f4a2b80008a9ba65', 8: '661a414b8b116f00081e5953', 9: '661a414dba471c00088b6ac8', 10: '661a41508b116f00081e595c', 11: '661a4152f4a2b80008a9ba73', 12: '661a41548b116f00081e5991', 13: '661a41b78b116f00081e5a40', 14: '661a41ba8b116f00081e5a46', 15: '661a41bc8b116f00081e5a4d', 16: '661a41bf8b116f00081e5a53', 17: '661a41c18b116f00081e5a5b', 18: '661a41c4deefc7000889f12b', 19: '661a41c68b116f00081e5a66', 20: '661a41c98b116f00081e5a6d' },
+  '6600fa7da2bfe10008834e13': { 1: '66024f93bfeae0000840c495', 2: '66024f95bfeae0000840c49a', 3: '66024f97bfeae0000840c49f', 4: '66024f99bfeae0000840c4a4', 5: '66024f9abfeae0000840c4aa', 6: '66024f9cbfeae0000840c4af', 7: '66024f9ebfeae0000840c4b4', 8: '66024f9f8fe62f0008deb5f1', 9: '66024fa1bfeae0000840c4bc', 10: '66024fa3bfeae0000840c4c7', 11: '66024fa58fe62f0008deb5fa', 12: '66024fa78fe62f0008deb600', 13: '66024fa9752cee00085b3a25', 14: '66024fab752cee00085b3a2d', 15: '66024fae752cee00085b3a36', 16: '66024fb18fe62f0008deb606', 17: '66024fb38fe62f0008deb60b', 18: '66024fb7752cee00085b3a45', 19: '66024fb8752cee00085b3a4a', 20: '66024fbb8fe62f0008deb614' },
+  '661528ea42af880008944573': { 1: '661528f42c3c210008e6b336', 2: '661528f42c3c210008e6b334', 3: '661528f42c3c210008e6b332', 4: '661528f42c3c210008e6b330', 5: '661528f3f8789400080a4118', 6: '661528f3f8789400080a4116', 7: '661528f3f8789400080a4114', 8: '661528f3f8789400080a4112', 9: '661528f3f8789400080a4110', 10: '661528f2f8789400080a410e', 11: '661528f2b6ac6d0008597d67', 12: '661528f2f8789400080a410c', 13: '661528f142af88000894457d', 14: '661528f02c3c210008e6b32b', 15: '661528f02c3c210008e6b329', 16: '661528f02c3c210008e6b327', 17: '661528ef2c3c210008e6b325', 18: '6638e9108a44d500081e86e7', 19: '661528ef2c3c210008e6b323', 20: '661528ef2c3c210008e6b321' },
+  '65e772a1767c56000829518e': { 1: '6607c0f24b876a0008abaf44', 2: '6607c0f5dc20050008a26631', 3: '6607c0fa4b876a0008abaf50', 4: '6607c0fb0f3de50009512e2e', 5: '6607c10f0f3de50009512e52', 6: '6607c1100f3de50009512e58', 7: '6607c1130f3de50009512e60', 8: '6607c1150f3de50009512e65', 9: '6607c118dc20050008a26645', 10: '6607c444dde7ed00080ac105', 11: '6607c452dde7ed00080ac11e', 12: '6607c45fe1beeb0008a7b8fc', 13: '6607c486e1beeb0008a7b91b', 14: '6607c497e1beeb0008a7b956', 15: '6607c4a5e1beeb0008a7b979', 16: '6607c4b94fcf630008747361', 17: '6607c5e2e1beeb0008a7ba80', 18: '6607c603e1beeb0008a7baa6', 19: '6607c6174fcf630008747451', 20: '6607c62da8818d0008df4e49', 21: '6607c639a8818d0008df4e6f', 22: '6607c64fa8818d0008df4e7d', 23: '6607c65ea8818d0008df4ea2', 24: '6607c672a8818d0008df4eb2', 25: '6607c689a8818d0008df4f14' },
+  '6638c76dfac274000876cd13': { 1: '6638c78283319a00088e117a', 2: '6638c7813d17360007de7f60', 3: '6638c78183319a00088e1175', 4: '6638c78083319a00088e1171', 5: '6638c77f83319a00088e116d', 6: '6638c77f83319a00088e1168', 7: '6638c77e83319a00088e1164', 8: '6638c77dd0d47e00085fdb46', 9: '6638c77cd0d47e00085fdb42', 10: '6638c77cd0d47e00085fdb3e', 11: '6638c77cd0d47e00085fdb3a', 12: '6638c77bd0d47e00085fdb36', 13: '6638c77bfac274000876cd35', 14: '6638c77ad0d47e00085fdb32', 15: '6638c77afac274000876cd2a', 16: '6638c7793d17360007de7f55', 17: '6638c7793d17360007de7f51', 18: '6638c7783d17360007de7f4d', 19: '6638c7773d17360007de7f47', 20: '6638c7763d17360007de7f41', 21: '6638c776d0d47e00085fdb2c', 22: '6638c7743d17360007de7f38', 23: '6638c773d0d47e00085fdb28', 24: '6638c77154f6eb00082e04c6', 25: '6638c77054f6eb00082e04c1' },
+  '65f6d1c722106a0008ff81a3': { 1: '6614c0a823f8f80008b8edd0', 2: '6614c31359e3f70008eb70c5', 3: '6614c5563e5a010009106e88', 4: '6614c891672f5c00089031f3', 5: '6614c9df13ff200008e8856e', 6: '661521b35643be0008808bd3', 7: '661521b5b288f40008d4fbb1', 8: '661521b8b288f40008d4fbb9', 9: '661521ba5643be0008808bdb', 10: '661521bc5643be0008808be1', 11: '661521bf5643be0008808be9', 12: '661521c1b288f40008d4fbbd', 13: '661521c35643be0008808bf6', 14: '661521c55643be0008808bfb', 15: '661521c75643be0008808c00', 16: '661521ca5643be0008808c06', 17: '661521ccb288f40008d4fbc2', 18: '661521ceb288f40008d4fbc8', 19: '661521d05643be0008808c12', 20: '661521d25643be0008808c1d' },
+  '65e773c89ea90c00080d52fc': { 1: '66023c4cac192d0008a1befd', 2: '66023de8cb4b7b0008c2f5d9', 3: '660240cb1626fb00080af3d0', 4: '660240cd1626fb00080af3d7', 5: '660240cf1626fb00080af3e0', 6: '660240d01626fb00080af3e5', 7: '660240d21626fb00080af3ed', 8: '660240d41626fb00080af3f2', 9: '660240d61626fb00080af3fa', 10: '660240d81626fb00080af405', 11: '660240dc1626fb00080af40d', 12: '660240de1626fb00080af415', 13: '660240e009e20700084d7a87', 14: '660240e38d79cc0008436752', 15: '660240fc1626fb00080af433', 16: '660240fd1626fb00080af438', 17: '660240ff1626fb00080af43e', 18: '6602410209e20700084d7b57', 19: '6602410509e20700084d7b5c', 20: '6602410609e20700084d7b61' }
+};
+
+const HSK1_LEGACY_VIDEO_UNIT_MAP = {
   1: '6adadbcaf75fe5000247ca71',
   2: '6adadc3b69897b0002482d22',
   3: '6adf1a4fe2681300028de082',
@@ -1088,31 +1213,197 @@ const HSK1_UNIT_MAP = {
   15: '6ae56f7f9902f90002d5ebdc'
 };
 
+const UNIT_TO_COURSE_MAP = (() => {
+  const rev = {};
+  for (const [cid, lessons] of Object.entries(COURSE_UNIT_MAP)) {
+    for (const [lNum, uId] of Object.entries(lessons)) {
+      rev[String(uId).toLowerCase()] = { courseId: cid.toLowerCase(), lessonNum: Number(lNum) };
+    }
+  }
+  for (const [lNum, uId] of Object.entries(HSK1_LEGACY_VIDEO_UNIT_MAP)) {
+    rev[String(uId).toLowerCase()] = { courseId: DEFAULT_COURSE_ID.toLowerCase(), lessonNum: Number(lNum) };
+  }
+  return rev;
+})();
+
 /**
- * Đồng bộ bài nộp / kết quả chấm điểm từ Supabase ktn_homeworks sang izTeach /prod/homework
+ * Phân giải chính xác Course -> Lesson -> Unit cho toàn bộ 17 khóa học (346 bài).
+ * Tuyệt đối KHÔNG fallback bài lớp trực tiếp (CLASS_*) hoặc khóa khác sang HSK1.
  */
-async function mirrorHomeworkToIzTeach(env, hwRow, isGraded = false) {
-  if (!hwRow) return { ok: false, reason: 'EMPTY_HW' };
+function resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId = null) {
+  const courseId = String(rawCourseId || '').trim();
+  const lessonNum = Number(rawLessonNum) || 0;
+  const cleanExplicitUnit = explicitUnitId ? String(explicitUnitId).trim() : '';
+
+  if (courseId.toUpperCase().startsWith('CLASS_') || lessonNum >= 100) {
+    return {
+      isLiveClass: true,
+      valid: false,
+      courseId,
+      lessonNum,
+      unitId: null,
+      syncStatus: 'not_applicable_live_class',
+      reason: 'LIVE_CLASS_HOMEWORK'
+    };
+  }
+
+  if (!/^[0-9a-f]{24}$/i.test(courseId) || lessonNum < 1) {
+    return {
+      isLiveClass: false,
+      valid: false,
+      courseId,
+      lessonNum,
+      unitId: null,
+      syncStatus: 'mapping_required',
+      reason: 'INVALID_COURSE_OR_LESSON'
+    };
+  }
+
+  const normCourseId = courseId.toLowerCase();
+  const courseMap = COURSE_UNIT_MAP[normCourseId];
+
+  if (courseMap && courseMap[lessonNum]) {
+    const canonicalUnitId = courseMap[lessonNum];
+    if (cleanExplicitUnit) {
+      const normExplicit = cleanExplicitUnit.toLowerCase();
+      const isLegacyHsk1Match = normCourseId === DEFAULT_COURSE_ID.toLowerCase() &&
+        HSK1_LEGACY_VIDEO_UNIT_MAP[lessonNum]?.toLowerCase() === normExplicit;
+      if (normExplicit !== canonicalUnitId.toLowerCase() && !isLegacyHsk1Match) {
+        return {
+          isLiveClass: false,
+          valid: false,
+          courseId: normCourseId,
+          lessonNum,
+          unitId: null,
+          syncStatus: 'mapping_required',
+          reason: 'UNIT_COURSE_MISMATCH'
+        };
+      }
+    }
+    return {
+      isLiveClass: false,
+      valid: true,
+      courseId: normCourseId,
+      lessonNum,
+      unitId: canonicalUnitId,
+      syncStatus: 'pending_sync'
+    };
+  }
+
+  if (cleanExplicitUnit && /^[0-9a-f]{24}$/i.test(cleanExplicitUnit)) {
+    const owner = UNIT_TO_COURSE_MAP[cleanExplicitUnit.toLowerCase()];
+    if (!owner || (owner.courseId === normCourseId && owner.lessonNum === lessonNum)) {
+      return {
+        isLiveClass: false,
+        valid: true,
+        courseId: normCourseId,
+        lessonNum,
+        unitId: cleanExplicitUnit.toLowerCase(),
+        syncStatus: 'pending_sync'
+      };
+    }
+    return {
+      isLiveClass: false,
+      valid: false,
+      courseId: normCourseId,
+      lessonNum,
+      unitId: null,
+      syncStatus: 'mapping_required',
+      reason: 'CROSS_COURSE_UNIT_MISMATCH'
+    };
+  }
+
+  return {
+    isLiveClass: false,
+    valid: false,
+    courseId: normCourseId,
+    lessonNum,
+    unitId: null,
+    syncStatus: 'mapping_required',
+    reason: 'MAPPING_REQUIRED'
+  };
+}
+
+/**
+ * Đồng bộ bài nộp / kết quả chấm điểm từ Supabase ktn_homeworks sang izTeach /prod/homework.
+ * Chỉ đồng bộ khi xác định chính xác Course + Lesson + Unit hợp lệ và chống tạo bản ghi trùng lặp (Idempotent).
+ */
+async function mirrorHomeworkToIzTeach(env, hwRow, isGraded = false, options = {}) {
+  if (!hwRow) return { ok: false, syncStatus: 'sync_failed', reason: 'EMPTY_HW' };
+
+  const explicitUnitId = options.unitId || hwRow.workbook_answers?._syncMeta?.unitId || null;
+  const resolved = resolveCourseUnitId(hwRow.course_id, hwRow.lesson_num, explicitUnitId);
+
+  if (resolved.isLiveClass) {
+    return {
+      ok: true,
+      skipped: true,
+      syncStatus: 'not_applicable_live_class',
+      reason: 'LIVE_CLASS_HOMEWORK'
+    };
+  }
+
+  if (!resolved.valid || !resolved.unitId) {
+    return {
+      ok: false,
+      skipped: true,
+      syncStatus: 'mapping_required',
+      reason: resolved.reason || 'MAPPING_REQUIRED',
+      courseId: resolved.courseId,
+      lessonNum: resolved.lessonNum
+    };
+  }
+
+  const courseId = resolved.courseId;
+  const unitId = resolved.unitId;
+  const lessonNum = resolved.lessonNum;
+  const cleanEmail = normalizeEmail(hwRow.student_email || '');
+  const baseNote = String(hwRow.student_note || '').trim();
+  const feedback = String(hwRow.teacher_feedback || '').trim();
+  const statusStr = String(hwRow.status || (isGraded ? 'graded' : 'pending'));
+  const scoreVal = isGraded && hwRow.score !== null && hwRow.score !== undefined ? Number(hwRow.score) : null;
+
+  const signature = JSON.stringify({
+    courseId,
+    unitId,
+    lessonNum,
+    fileUrl: String(hwRow.file_url || ''),
+    status: statusStr,
+    state: isGraded ? 'approved' : 'submitted',
+    score: scoreVal,
+    feedback,
+    note: baseNote
+  });
+
+  const prevMeta = (hwRow.workbook_answers && typeof hwRow.workbook_answers === 'object' && hwRow.workbook_answers._syncMeta) || {};
+  if (!options.force && prevMeta.syncStatus === 'synced' && prevMeta.lastSyncedSignature === signature) {
+    return {
+      ok: true,
+      idempotent: true,
+      syncStatus: 'synced',
+      remoteId: prevMeta.izteachRemoteId || null,
+      courseId,
+      unitId,
+      lessonNum,
+      signature
+    };
+  }
+
   const adminToken = await getIzTeachAdminToken(env);
-  if (!adminToken) return { ok: false, reason: 'NO_ADMIN_TOKEN' };
+  if (!adminToken) {
+    return { ok: false, syncStatus: 'sync_failed', reason: 'NO_ADMIN_TOKEN', courseId, unitId, lessonNum, signature };
+  }
   const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
   const s3Bucket = 'https://online-learning-izteach-6-aws-source-bucket.s3-ap-southeast-1.amazonaws.com';
   const cdnPrefix = 'https://d21acfi38wn3iy.cloudfront.net/';
 
   let cognitoUserId = hwRow.cognito_user_id || '';
-  const cleanEmail = normalizeEmail(hwRow.student_email || '');
   if (!cognitoUserId && cleanEmail) {
     const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(cleanEmail)}&select=cognito_user_id&limit=1`);
     if (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]?.cognito_user_id) {
       cognitoUserId = stuRes.data[0].cognito_user_id;
     }
   }
-
-  const lessonNum = Number(hwRow.lesson_num) || 1;
-  const unitIdx = lessonNum > 100 ? ((lessonNum - 100 - 1) % 15) + 1 : ((lessonNum - 1) % 15) + 1;
-  const unitId = HSK1_UNIT_MAP[unitIdx] || HSK1_UNIT_MAP[1];
-  const rawCourseId = String(hwRow.course_id || '').trim();
-  const courseId = /^[0-9a-f]{24}$/i.test(rawCourseId) ? rawCourseId : DEFAULT_COURSE_ID;
 
   const rawAtts = Array.isArray(hwRow.attachments) && hwRow.attachments.length > 0
     ? hwRow.attachments
@@ -1145,14 +1436,13 @@ async function mirrorHomeworkToIzTeach(env, hwRow, isGraded = false) {
     };
   });
 
-  const baseNote = String(hwRow.student_note || '').trim();
-  const feedback = String(hwRow.teacher_feedback || '').trim();
-  const combinedNotes = isGraded && feedback
+  const hasFeedback = Boolean(feedback && (isGraded || statusStr === 'revision_requested'));
+  const combinedNotes = hasFeedback
     ? (baseNote ? `${baseNote}\n[Nhận xét Giáo viên]: ${feedback}` : `[Nhận xét Giáo viên]: ${feedback}`)
     : baseNote;
 
   const payload = {
-    title: hwRow.lesson_title || `Bài tập Buổi ${lessonNum}`,
+    title: hwRow.lesson_title || `Bài tập Bài ${lessonNum}`,
     notes: combinedNotes,
     vendorId,
     course: courseId,
@@ -1161,8 +1451,8 @@ async function mirrorHomeworkToIzTeach(env, hwRow, isGraded = false) {
     name: hwRow.student_name || cleanEmail.split('@')[0] || 'Học viên',
     email: cleanEmail,
     state: isGraded ? 'approved' : 'submitted',
-    mark: isGraded && hwRow.score !== null && hwRow.score !== undefined ? Number(hwRow.score) : undefined,
-    teacherFeedback: isGraded ? feedback : undefined,
+    mark: scoreVal !== null ? scoreVal : undefined,
+    teacherFeedback: hasFeedback ? feedback : undefined,
     type: 'multiple-files',
     resources
   };
@@ -1173,11 +1463,42 @@ async function mirrorHomeworkToIzTeach(env, hwRow, isGraded = false) {
       headers: { 'Content-Type': 'application/json', Authorization: adminToken },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) return { ok: false, status: res.status };
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        syncStatus: 'sync_failed',
+        reason: 'IZTEACH_HTTP_' + res.status,
+        courseId,
+        unitId,
+        lessonNum,
+        signature
+      };
+    }
     const data = await res.json().catch(() => null);
-    return { ok: true, data: data?.data || data };
+    const remoteObj = data?.data || data || {};
+    const remoteId = remoteObj._id || remoteObj.id || prevMeta.izteachRemoteId || null;
+    return {
+      ok: true,
+      syncStatus: 'synced',
+      remoteId,
+      courseId,
+      unitId,
+      lessonNum,
+      signature,
+      data: remoteObj
+    };
   } catch (err) {
-    return { ok: false, error: err?.message || 'MIRROR_HW_ERROR' };
+    return {
+      ok: false,
+      syncStatus: 'sync_failed',
+      reason: 'MIRROR_HW_ERROR',
+      error: err?.message || 'MIRROR_HW_ERROR',
+      courseId,
+      unitId,
+      lessonNum,
+      signature
+    };
   }
 }
 
@@ -1234,9 +1555,17 @@ async function mergeAndUpsertStudentCourses(env, { email, name, phone, cognitoUs
     prefer: 'resolution=merge-duplicates,return=representation',
     body: payload
   });
-  const saved = (Array.isArray(sbRes.data) && sbRes.data[0]) || payload;
+  if (!sbRes || !sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+    return {
+      ok: false,
+      error: 'SUPABASE_UPSERT_FAILED',
+      status: sbRes?.status || 503
+    };
+  }
+  const saved = sbRes.data[0];
   return {
     ...saved,
+    ok: true,
     studentCase: computeStudentCase(saved)
   };
 }
@@ -1299,11 +1628,10 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, cogn
         });
         if (pRes.ok) {
           const pData = await pRes.json().catch(() => null);
-          if (Array.isArray(pData?.onlineCourses)) {
+          if (pData && typeof pData === 'object') {
             fetchedIzPermOk = true;
-            for (const c of pData.onlineCourses) {
-              const cid = String(c?.id || c?._id || c?.onlineCourseId || c?.productId || c || '').trim();
-              if (cid) izCourseIds.push(cid);
+            for (const cid of extractIzTeachOnlineCourseIds(pData)) {
+              izCourseIds.push(cid);
             }
           }
         }
@@ -1785,11 +2113,15 @@ export default {
       const cookieTok = cookieMatch && cookieMatch[1] ? decodeURIComponent(cookieMatch[1]) : '';
 
       let sessionEmail = '';
-      for (const rawTok of [bearerTok, cookieTok]) {
-        if (!rawTok) continue;
+      let allPersisted = true;
+      const uniqueToks = Array.from(new Set([bearerTok, cookieTok].filter(Boolean)));
+      for (const rawTok of uniqueToks) {
         const verified = await verifySessionToken(rawTok, env.KTN_SESSION_SECRET);
         if (verified?.email) sessionEmail = verified.email;
-        await revokeSessionTokenServerSide(env, rawTok, verified?.jti || null);
+        const revRes = await revokeSessionTokenServerSide(env, rawTok, verified?.jti || null);
+        if (!revRes || !revRes.ok || !revRes.persisted) {
+          allPersisted = false;
+        }
       }
 
       if (sessionEmail) {
@@ -1798,9 +2130,19 @@ export default {
         }).catch(() => null);
       }
 
-      return jsonResponse({ ok: true, revoked: true }, 200, {
+      const clearCookieHeader = {
         'Set-Cookie': 'ktn_webapp_token=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax'
-      });
+      };
+      if (!allPersisted) {
+        return jsonResponse({
+          ok: false,
+          revoked: false,
+          retryable: true,
+          message: 'Máy chủ chưa xác nhận lưu trạng thái thu hồi phiên. Vui lòng thử lại.'
+        }, 503, clearCookieHeader);
+      }
+
+      return jsonResponse({ ok: true, revoked: true }, 200, clearCookieHeader);
     }
 
     // ------------------------------------------------------------------------
@@ -1841,6 +2183,53 @@ export default {
         return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để tải danh sách bài học.' }, 401);
       }
       const courseId = String(url.searchParams.get('courseId') || DEFAULT_COURSE_ID).trim();
+      if (!/^[0-9a-f]{24}$/i.test(courseId)) {
+        return jsonResponse({ ok: false, error: 'INVALID_COURSE_ID', message: 'Mã khóa học (courseId) không hợp lệ.' }, 400);
+      }
+
+      // Kiểm tra phân quyền truy cập bài giảng theo đúng vai trò trước khi dùng Admin Token gọi izTeach
+      if (session.role === 'student') {
+        const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
+        let stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+        let onlineList = Array.isArray(stuRow?.online_courses)
+          ? stuRow.online_courses
+          : (Array.isArray(session.onlineCourses) ? session.onlineCourses : []);
+        let enrolledIds = new Set(onlineList.map(c => String(c?.id || c?._id || c || '').trim().toLowerCase()).filter(Boolean));
+
+        if (!enrolledIds.has(courseId.toLowerCase())) {
+          const syncedStu = await syncStudentEntitlementFromIzTeach(env, {
+            email: session.email,
+            name: stuRow?.name || session.name,
+            phone: stuRow?.phone || '',
+            cognitoUserId: stuRow?.cognito_user_id || session.userId,
+            izteachStudentId: stuRow?.izteach_student_id || session.studentId,
+            accessToken: session.izteachAccessToken || session.accessToken
+          });
+          if (syncedStu && Array.isArray(syncedStu.online_courses)) {
+            enrolledIds = new Set(syncedStu.online_courses.map(c => String(c?.id || c?._id || c || '').trim().toLowerCase()).filter(Boolean));
+          }
+        }
+
+        if (!enrolledIds.has(courseId.toLowerCase())) {
+          return jsonResponse({
+            ok: false,
+            error: 'COURSE_NOT_ENTITLED',
+            courseId,
+            message: 'Tài khoản của em chưa được cấp quyền truy cập khóa học này.'
+          }, 403);
+        }
+      } else if (session.role === 'teacher') {
+        const tRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(session.email)}&active=eq.true&limit=1`);
+        const isActiveTeacher = (tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0) ||
+          session.email === 'linh.lam@khongtunhi.com' ||
+          session.email === 'thu.ha@khongtunhi.com';
+        if (!isActiveTeacher) {
+          return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE', message: 'Tài khoản giáo viên chưa được kích hoạt.' }, 403);
+        }
+      } else if (session.role !== 'admin') {
+        return jsonResponse({ ok: false, message: 'Không có quyền truy cập danh sách bài giảng.' }, 403);
+      }
+
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
       const tokenToUse = session.izteachAccessToken || session.accessToken || (await getIzTeachAdminToken(env));
       if (!tokenToUse) {
@@ -2084,18 +2473,34 @@ export default {
         return jsonResponse({ ok: false, message: 'Vui lòng nhập email học viên.' }, 400);
       }
 
+      const rawCourseIds = Array.isArray(body.courseIds)
+        ? body.courseIds
+        : (body.courseId ? [body.courseId] : []);
+
       if (session.role === 'teacher') {
+        if (rawCourseIds.length > 0) {
+          return jsonResponse({
+            ok: false,
+            message: 'Giáo viên chỉ được xếp học viên vào lớp mình chủ nhiệm, không được cấp hoặc thu hồi khóa học trực tuyến.'
+          }, 403);
+        }
         const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
         const targetClass = String(body.classCode || '').trim().toUpperCase();
         if (!targetClass || !assignedClasses.includes(targetClass)) {
           return jsonResponse({ ok: false, message: 'Cô chỉ được xếp học viên vào lớp cô chủ nhiệm.' }, 403);
         }
+        const stuCheck = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&select=email,class_code&limit=1`);
+        const existingStu = (stuCheck.ok && Array.isArray(stuCheck.data) && stuCheck.data[0]) ? stuCheck.data[0] : null;
+        const currentStuClass = String(existingStu?.class_code || '').trim().toUpperCase();
+        if (currentStuClass && !assignedClasses.includes(currentStuClass)) {
+          return jsonResponse({
+            ok: false,
+            message: `Học viên đang thuộc lớp ${currentStuClass} của giáo viên khác. Chỉ Quản lý (Admin) mới được chuyển lớp liên giáo viên.`
+          }, 403);
+        }
       }
 
-      const rawCourseIds = Array.isArray(body.courseIds)
-        ? body.courseIds
-        : (body.courseId ? [body.courseId] : []);
-      const resolvedIds = rawCourseIds.length > 0 ? resolveOrderCourseIds(rawCourseIds) : [];
+      const resolvedIds = (session.role === 'admin' && rawCourseIds.length > 0) ? resolveOrderCourseIds(rawCourseIds) : [];
 
       let cognitoUserId = body.cognitoUserId || null;
       let izteachStudentId = body.izteachStudentId || null;
@@ -2115,6 +2520,8 @@ export default {
           return jsonResponse({
             ok: false,
             retryable: true,
+            syncStatus: 'sync_failed',
+            error: 'IZTEACH_PROVISION_FAILED',
             message: `Chưa tạo hoặc kích hoạt được tài khoản đăng nhập trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Hồ sơ chưa được lưu — vui lòng bấm thử lại.`
           }, 502);
         }
@@ -2124,15 +2531,29 @@ export default {
         }
       }
 
-      // Nếu thu hồi khóa học (action === 'revoke'), gọi ngay PUT /user-permission/remove-products/:cognitoUserId trên izTeach!
+      // Nếu thu hồi khóa học (action === 'revoke'), gọi ngay PUT /user-permission/remove-products/:cognitoUserId trên izTeach và xác minh!
       let izteachRevokeResult = null;
-      if (action === 'revoke' && resolvedIds.length > 0) {
+      if (action === 'revoke') {
+        if (resolvedIds.length === 0) {
+          return jsonResponse({ ok: false, message: 'Vui lòng chọn ít nhất 1 khóa học cần thu hồi.' }, 400);
+        }
         izteachRevokeResult = await revokeStudentCoursesOnIzTeach(env, {
           email,
           cognitoUserId,
           removeCourseIds: resolvedIds
         });
-        if (izteachRevokeResult?.cognitoUserId && !cognitoUserId) {
+        if (!izteachRevokeResult || !izteachRevokeResult.ok || izteachRevokeResult.skipped) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            syncStatus: 'sync_failed',
+            error: izteachRevokeResult?.reason || 'IZTEACH_REVOKE_FAILED',
+            izteachResult: izteachRevokeResult || undefined,
+            izteachRevoked: izteachRevokeResult || undefined,
+            message: `Chưa thu hồi được khóa học trên izTeach (${izteachRevokeResult?.error || izteachRevokeResult?.reason || 'Lỗi dịch vụ upstream'}). Quyền học trên Sổ Liên Lạc chưa bị xóa để tránh lệch dữ liệu — vui lòng thử lại.`
+          }, 502);
+        }
+        if (izteachRevokeResult.cognitoUserId && !cognitoUserId) {
           cognitoUserId = izteachRevokeResult.cognitoUserId;
         }
       }
@@ -2150,8 +2571,22 @@ export default {
         codeHint: body.code || ''
       });
 
+      if (!updatedStudent || updatedStudent.ok === false) {
+        return jsonResponse({
+          ok: false,
+          partialFailure: true,
+          syncStatus: 'partial_failure_supabase',
+          izteachUpdated: true,
+          supabaseUpdated: false,
+          error: 'SUPABASE_SYNC_FAILED',
+          izteachRevoked: izteachRevokeResult || undefined,
+          message: 'Đã cập nhật trên izTeach nhưng chưa lưu được vào cơ sở dữ liệu Supabase. Vui lòng bấm đồng bộ lại.'
+        }, 502);
+      }
+
       return jsonResponse({
         ok: true,
+        syncStatus: 'synced',
         student: updatedStudent,
         izteachRevoked: izteachRevokeResult || undefined,
         message: 'Đã cập nhật khóa học & lớp học cho học viên ' + email + ' thành công!'
@@ -2192,25 +2627,41 @@ export default {
         const classId = String(body.id || body.classCode || '').trim().toUpperCase();
         if (!classId) return jsonResponse({ ok: false, message: 'Vui lòng nhập mã lớp (VD: YCT2-04).' }, 400);
 
+        const existingCls = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(classId)}&select=*&limit=1`);
+        const existingRow = (existingCls.ok && Array.isArray(existingCls.data) && existingCls.data[0]) ? existingCls.data[0] : null;
+
         if (session.role === 'teacher') {
           const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
-          const existingCls = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(classId)}&select=id,teacher_email&limit=1`);
-          const existingRow = Array.isArray(existingCls.data) && existingCls.data[0];
-          if (existingRow && !assignedClasses.includes(classId)) {
-            return jsonResponse({ ok: false, message: 'Cô không phụ trách lớp ' + classId + ' nên không có quyền chỉnh sửa.' }, 403);
+          if (!existingRow || !assignedClasses.includes(classId)) {
+            return jsonResponse({
+              ok: false,
+              message: !existingRow
+                ? 'Chỉ Quản lý (Admin) mới được phép mở thêm lớp học mới.'
+                : ('Cô không phụ trách lớp ' + classId + ' nên không có quyền chỉnh sửa.')
+            }, 403);
+          }
+          if (body.teacherEmail && normalizeEmail(body.teacherEmail) !== normalizeEmail(existingRow.teacher_email || session.email)) {
+            return jsonResponse({
+              ok: false,
+              message: 'Giáo viên không được tự ý chuyển quyền chủ nhiệm lớp cho tài khoản khác.'
+            }, 403);
           }
         }
 
-        const tEmail = normalizeEmail(body.teacherEmail || (session.role === 'teacher' ? session.email : 'linh.lam@khongtunhi.com'));
-        const tCode = String(body.teacherCode || 'GV-KTN-08').trim();
+        const tEmail = session.role === 'teacher'
+          ? normalizeEmail(existingRow?.teacher_email || session.email)
+          : normalizeEmail(body.teacherEmail || existingRow?.teacher_email || 'linh.lam@khongtunhi.com');
+        const tCode = session.role === 'teacher'
+          ? String(existingRow?.teacher_code || session.code || 'GV-KTN-08').trim()
+          : String(body.teacherCode || existingRow?.teacher_code || 'GV-KTN-08').trim();
         const row = {
           id: classId,
-          name: body.name || ('Lớp ' + classId),
+          name: body.name || existingRow?.name || ('Lớp ' + classId),
           teacher_code: tCode,
           teacher_email: tEmail,
-          schedule: body.schedule || '19:30 Thứ 3 & Thứ 6',
-          total_lessons: Number(body.totalLessons || body.total_lessons) || 25,
-          current_lesson: Number(body.currentLesson || body.current_lesson) || 1,
+          schedule: body.schedule || existingRow?.schedule || '19:30 Thứ 3 & Thứ 6',
+          total_lessons: Number(body.totalLessons || body.total_lessons || existingRow?.total_lessons) || 25,
+          current_lesson: Number(body.currentLesson || body.current_lesson || existingRow?.current_lesson) || 1,
           active: true,
           updated_at: new Date().toISOString()
         };
@@ -2942,6 +3393,7 @@ export default {
         if (!enrolledCourseIds.has(courseId)) {
           return jsonResponse({
             ok: false,
+            error: 'COURSE_NOT_ENTITLED',
             message: 'Em chưa đăng ký khóa học này nên chưa thể nộp bài tập.'
           }, 403);
         }
@@ -2957,18 +3409,59 @@ export default {
         }, 403);
       }
 
-      // 4. Nếu bản ghi đã tồn tại, đối chiếu chủ sở hữu trước khi cập nhật
+      // Kiểm tra tính nhất quán giữa courseId, lessonNum và unitId (chặn ghép nhầm unit của khóa khác)
+      const unitResolution = resolveCourseUnitId(courseId, lessonNum, body.unitId || null);
+      if (!unitResolution.isLiveClass && body.unitId && !unitResolution.valid) {
+        return jsonResponse({
+          ok: false,
+          error: 'UNIT_COURSE_MISMATCH',
+          reason: unitResolution.reason || 'UNIT_COURSE_MISMATCH',
+          message: 'Mã bài tập (unitId) không khớp với khóa học hoặc bài học đã chọn.'
+        }, 400);
+      }
+
+      // 4. Nếu bản ghi đã tồn tại, đối chiếu chủ sở hữu và kiểm tra chống nộp trùng lặp (Idempotency)
+      let existingHw = null;
       const existingRes = await supabaseRequest(
         env,
-        `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}&select=id,student_email&limit=1`
+        `ktn_homeworks?id=eq.${encodeURIComponent(hwId)}&select=*&limit=1`
       );
       if (existingRes.ok && Array.isArray(existingRes.data) && existingRes.data[0]) {
-        const existingOwner = normalizeEmail(existingRes.data[0].student_email || '');
+        existingHw = existingRes.data[0];
+        const existingOwner = normalizeEmail(existingHw.student_email || '');
         if (existingOwner && existingOwner !== session.email) {
           return jsonResponse({
             ok: false,
             message: 'Không được phép ghi đè bài nộp của học sinh khác.'
           }, 403);
+        }
+      }
+
+      const cleanNote = String(body.studentNote || '');
+      if (
+        existingHw &&
+        existingHw.file_url === fileUrl &&
+        String(existingHw.student_note || '') === cleanNote &&
+        existingHw.status === 'pending'
+      ) {
+        const prevMeta = existingHw.workbook_answers?._syncMeta || {};
+        if (prevMeta.syncStatus === 'synced' || prevMeta.syncStatus === 'not_applicable_live_class') {
+          return jsonResponse({
+            ok: true,
+            idempotent: true,
+            idempotentReplay: true,
+            syncStatus: prevMeta.syncStatus,
+            unitId: prevMeta.unitId || unitResolution.unitId || null,
+            mirroredToIzTeach: prevMeta.syncStatus === 'synced',
+            homework: existingHw,
+            izteachMirror: {
+              ok: true,
+              idempotent: true,
+              idempotentReplay: true,
+              syncStatus: prevMeta.syncStatus,
+              remoteId: prevMeta.izteachRemoteId || null
+            }
+          });
         }
       }
 
@@ -2982,6 +3475,58 @@ export default {
           }))
         : [{ title: 'Bài nộp của học sinh', fileUrl, cdnUrl: fileUrl, mediaType: fileType, size: 0 }];
 
+      const nowIso = new Date().toISOString();
+      const prevWb = (existingHw?.workbook_answers && typeof existingHw.workbook_answers === 'object')
+        ? existingHw.workbook_answers
+        : {};
+      const incomingWb = (body.workbookAnswers && typeof body.workbookAnswers === 'object')
+        ? body.workbookAnswers
+        : {};
+      const prevHistory = Array.isArray(prevWb._history) ? [...prevWb._history] : [];
+      if (existingHw && (existingHw.file_url !== fileUrl || existingHw.status !== 'pending' || String(existingHw.student_note || '') !== cleanNote)) {
+        prevHistory.push({
+          version: prevHistory.length + 1,
+          event: 'submission_superseded',
+          file_url: existingHw.file_url,
+          file_type: existingHw.file_type,
+          student_note: existingHw.student_note || '',
+          status: existingHw.status,
+          score: existingHw.score ?? null,
+          teacher_feedback: existingHw.teacher_feedback ?? null,
+          submitted_at: existingHw.submitted_at,
+          graded_at: existingHw.graded_at || null,
+          archived_at: nowIso
+        });
+      }
+
+      const nextVersion = (Number(prevWb._syncMeta?.version) || 0) + 1;
+      const nextSubmissionCount = (Number(prevWb._syncMeta?.submissionCount) || 0) + 1;
+      let initialSyncStatus = 'saved_to_supabase';
+      if (unitResolution.isLiveClass) {
+        initialSyncStatus = 'not_applicable_live_class';
+      } else if (!unitResolution.valid) {
+        initialSyncStatus = 'mapping_required';
+      } else if (body.mirroredToIzTeach) {
+        initialSyncStatus = 'synced';
+      }
+
+      const nextWorkbookAnswers = {
+        ...prevWb,
+        ...incomingWb,
+        _history: prevHistory,
+        _syncMeta: {
+          ...(prevWb._syncMeta || {}),
+          version: nextVersion,
+          submissionCount: nextSubmissionCount,
+          courseId,
+          lessonNum,
+          unitId: unitResolution.unitId || null,
+          syncStatus: initialSyncStatus,
+          izteachRemoteId: body.izteachRemoteId || prevWb._syncMeta?.izteachRemoteId || null,
+          updatedAt: nowIso
+        }
+      };
+
       const hwRecord = {
         id: hwId,
         student_code: sbStudent?.code || session.code || session.id,
@@ -2994,11 +3539,13 @@ export default {
         file_url: fileUrl,
         file_type: fileType,
         attachments: normalizedAttachments,
-        workbook_answers: body.workbookAnswers || {},
-        student_note: String(body.studentNote || ''),
-        status: 'pending', // Mới nộp là pending (Chờ cô chấm)
-        submitted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        workbook_answers: nextWorkbookAnswers,
+        student_note: cleanNote,
+        status: 'pending', // Mới nộp / nộp lại là pending (Chờ cô chấm)
+        score: null,
+        teacher_feedback: null,
+        submitted_at: nowIso,
+        updated_at: nowIso
       };
 
       const sbRes = await supabaseRequest(env, 'ktn_homeworks', {
@@ -3010,18 +3557,60 @@ export default {
       if (!sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
         return jsonResponse({
           ok: false,
+          syncStatus: 'sync_failed',
           message: 'Máy chủ chưa lưu được bản ghi bài nộp vào cơ sở dữ liệu. Em hãy bấm Gửi lại nhé.'
         }, sbRes.status || 500);
       }
 
-      const savedHw = sbRes.data[0];
+      let savedHw = sbRes.data[0];
       let izteachMirror = null;
-      if (!body.mirroredToIzTeach && !body.skipIzTeachSync) {
-        izteachMirror = await mirrorHomeworkToIzTeach(env, savedHw, false);
+      let finalSyncStatus = initialSyncStatus;
+
+      if (unitResolution.isLiveClass) {
+        izteachMirror = { ok: true, skipped: true, syncStatus: 'not_applicable_live_class', reason: 'LIVE_CLASS_HOMEWORK' };
+      } else if (!unitResolution.valid) {
+        izteachMirror = { ok: false, skipped: true, syncStatus: 'mapping_required', reason: unitResolution.reason || 'MAPPING_REQUIRED' };
+      } else if (body.mirroredToIzTeach) {
+        finalSyncStatus = 'synced';
+        izteachMirror = {
+          ok: true,
+          idempotent: true,
+          syncStatus: 'synced',
+          remoteId: body.izteachRemoteId || nextWorkbookAnswers._syncMeta.izteachRemoteId || null,
+          courseId,
+          unitId: unitResolution.unitId
+        };
+      } else if (!body.skipIzTeachSync) {
+        izteachMirror = await mirrorHomeworkToIzTeach(env, savedHw, false, { unitId: unitResolution.unitId });
+        finalSyncStatus = izteachMirror.syncStatus || (izteachMirror.ok ? 'synced' : 'sync_failed');
+        const updatedWb = {
+          ...nextWorkbookAnswers,
+          _syncMeta: {
+            ...nextWorkbookAnswers._syncMeta,
+            syncStatus: finalSyncStatus,
+            izteachRemoteId: izteachMirror.remoteId || nextWorkbookAnswers._syncMeta.izteachRemoteId || null,
+            lastSyncedSignature: izteachMirror.ok ? (izteachMirror.signature || null) : (nextWorkbookAnswers._syncMeta.lastSyncedSignature || null),
+            lastSyncedAt: izteachMirror.ok ? new Date().toISOString() : (nextWorkbookAnswers._syncMeta.lastSyncedAt || null),
+            lastError: izteachMirror.ok ? null : (izteachMirror.reason || izteachMirror.error || 'SYNC_FAILED')
+          }
+        };
+        const metaPatch = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(savedHw.id)}`, {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: { workbook_answers: updatedWb, updated_at: new Date().toISOString() }
+        });
+        if (metaPatch.ok && Array.isArray(metaPatch.data) && metaPatch.data[0]) {
+          savedHw = metaPatch.data[0];
+        } else {
+          savedHw.workbook_answers = updatedWb;
+        }
       }
 
       return jsonResponse({
         ok: true,
+        syncStatus: finalSyncStatus,
+        unitId: unitResolution.unitId || null,
+        mirroredToIzTeach: Boolean(izteachMirror?.ok && !izteachMirror?.skipped),
         homework: savedHw,
         izteachMirror: izteachMirror || undefined
       });
@@ -3077,7 +3666,14 @@ export default {
           return jsonResponse({ ok: false, message: 'Không tìm thấy bài nộp tương ứng trong cơ sở dữ liệu để cập nhật.' }, 404);
         }
         const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
-        const hwClass = String(existingHw?.class_code || body.classCode || '').trim().toUpperCase();
+        let hwClass = String(existingHw?.class_code || body.classCode || '').trim().toUpperCase();
+        if (!hwClass && (existingHw?.student_email || studentEmailHint)) {
+          const targetEm = normalizeEmail(existingHw?.student_email || studentEmailHint);
+          const stuClsRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(targetEm)}&select=class_code&limit=1`);
+          if (stuClsRes.ok && Array.isArray(stuClsRes.data) && stuClsRes.data[0]?.class_code) {
+            hwClass = String(stuClsRes.data[0].class_code).trim().toUpperCase();
+          }
+        }
         if (!hwClass || !assignedClasses.includes(hwClass)) {
           return jsonResponse({
             ok: false,
@@ -3090,12 +3686,88 @@ export default {
       const nextStatus = (body.status === 'revision_requested' || body.status === 'needs_revision')
         ? 'revision_requested'
         : 'graded';
+      const cleanFeedback = String(body.teacherFeedback || body.feedback || '');
+      const cleanAudioUrl = String(body.teacherAudioUrl || '');
+
+      // Kiểm tra chống chấm trùng lặp (Idempotency)
+      if (
+        existingHw &&
+        existingHw.status === nextStatus &&
+        Number(existingHw.score ?? -1) === Number(parsedScore ?? -1) &&
+        String(existingHw.teacher_feedback || '') === cleanFeedback &&
+        String(existingHw.teacher_audio_url || '') === cleanAudioUrl
+      ) {
+        const prevMeta = existingHw.workbook_answers?._syncMeta || {};
+        if (prevMeta.syncStatus === 'synced' || prevMeta.syncStatus === 'not_applicable_live_class') {
+          return jsonResponse({
+            ok: true,
+            idempotent: true,
+            idempotentReplay: true,
+            syncStatus: prevMeta.syncStatus,
+            unitId: prevMeta.unitId || null,
+            mirroredToIzTeach: prevMeta.syncStatus === 'synced',
+            homework: existingHw,
+            izteachMirror: {
+              ok: true,
+              idempotent: true,
+              idempotentReplay: true,
+              syncStatus: prevMeta.syncStatus,
+              remoteId: prevMeta.izteachRemoteId || null
+            }
+          });
+        }
+      }
+
       const nowIso = new Date().toISOString();
+      const prevWb = (existingHw?.workbook_answers && typeof existingHw.workbook_answers === 'object')
+        ? existingHw.workbook_answers
+        : {};
+      const prevHistory = Array.isArray(prevWb._history) ? [...prevWb._history] : [];
+      if (existingHw && (existingHw.status === 'graded' || existingHw.status === 'revision_requested')) {
+        prevHistory.push({
+          version: prevHistory.length + 1,
+          event: 'grade_superseded',
+          status: existingHw.status,
+          score: existingHw.score ?? null,
+          teacher_feedback: existingHw.teacher_feedback ?? null,
+          graded_by: existingHw.graded_by || null,
+          graded_at: existingHw.graded_at || null,
+          archived_at: nowIso
+        });
+      }
+
+      const targetCourseForGrade = existingHw?.course_id || courseIdHint || DEFAULT_COURSE_ID;
+      const targetLessonForGrade = Number(existingHw?.lesson_num || lessonNumHint || 1);
+      const unitResolution = resolveCourseUnitId(targetCourseForGrade, targetLessonForGrade, body.unitId || prevWb._syncMeta?.unitId || null);
+      let initialSyncStatus = 'saved_to_supabase';
+      if (unitResolution.isLiveClass) {
+        initialSyncStatus = 'not_applicable_live_class';
+      } else if (!unitResolution.valid) {
+        initialSyncStatus = 'mapping_required';
+      } else if (body.mirroredToIzTeach) {
+        initialSyncStatus = 'synced';
+      }
+
+      const nextWorkbookAnswers = {
+        ...prevWb,
+        _history: prevHistory,
+        _syncMeta: {
+          ...(prevWb._syncMeta || {}),
+          version: (Number(prevWb._syncMeta?.version) || 0) + 1,
+          courseId: targetCourseForGrade,
+          lessonNum: targetLessonForGrade,
+          unitId: unitResolution.unitId || null,
+          syncStatus: initialSyncStatus,
+          updatedAt: nowIso
+        }
+      };
+
       const patchPayload = {
         status: nextStatus,
         score: parsedScore,
-        teacher_feedback: String(body.teacherFeedback || ''),
-        teacher_audio_url: String(body.teacherAudioUrl || ''),
+        teacher_feedback: cleanFeedback,
+        teacher_audio_url: cleanAudioUrl,
+        workbook_answers: nextWorkbookAnswers,
         graded_by: session.email,
         graded_at: nowIso,
         updated_at: nowIso
@@ -3111,20 +3783,21 @@ export default {
         if (!sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
           return jsonResponse({
             ok: false,
+            syncStatus: 'sync_failed',
             message: 'Không thể cập nhật trạng thái chấm bài trong cơ sở dữ liệu.'
           }, sbRes.status || 500);
         }
         savedHw = sbRes.data[0];
       } else if (body.allowUpsertFromIzTeach && studentEmailHint) {
         const upsertRow = {
-          id: hwId || ('HW-IZ-' + Date.now()),
+          id: hwId || (`HW-${studentEmailHint}-${targetCourseForGrade}-L${targetLessonForGrade}`),
           student_code: String(body.studentCode || ''),
           student_email: studentEmailHint,
           student_name: String(body.studentName || studentEmailHint.split('@')[0]),
           class_code: body.classCode ? String(body.classCode).trim().toUpperCase() : null,
-          course_id: courseIdHint || DEFAULT_COURSE_ID,
-          lesson_num: lessonNumHint || 1,
-          lesson_title: String(body.lessonTitle || body.title || `Bài ${lessonNumHint || 1}`),
+          course_id: targetCourseForGrade,
+          lesson_num: targetLessonForGrade,
+          lesson_title: String(body.lessonTitle || body.title || `Bài ${targetLessonForGrade}`),
           file_url: String(body.fileUrl || (Array.isArray(body.attachments) && body.attachments[0]?.cdnUrl) || 'https://d21acfi38wn3iy.cloudfront.net/'),
           file_type: String(body.fileType || (Array.isArray(body.attachments) && body.attachments[0]?.mediaType) || 'video'),
           attachments: Array.isArray(body.attachments) ? body.attachments : [],
@@ -3137,7 +3810,7 @@ export default {
           body: upsertRow
         });
         if (!upRes.ok || !Array.isArray(upRes.data) || upRes.data.length === 0) {
-          return jsonResponse({ ok: false, message: 'Không thể đồng bộ bản ghi bài tập sang cơ sở dữ liệu.' }, upRes.status || 500);
+          return jsonResponse({ ok: false, syncStatus: 'sync_failed', message: 'Không thể đồng bộ bản ghi bài tập sang cơ sở dữ liệu.' }, upRes.status || 500);
         }
         savedHw = upRes.data[0];
       } else {
@@ -3148,12 +3821,45 @@ export default {
       }
 
       let izteachMirror = null;
-      if (!body.mirroredToIzTeach && !body.skipIzTeachSync) {
-        izteachMirror = await mirrorHomeworkToIzTeach(env, savedHw, nextStatus === 'graded');
+      let finalSyncStatus = initialSyncStatus;
+      if (unitResolution.isLiveClass) {
+        izteachMirror = { ok: true, skipped: true, syncStatus: 'not_applicable_live_class', reason: 'LIVE_CLASS_HOMEWORK' };
+      } else if (!unitResolution.valid) {
+        izteachMirror = { ok: false, skipped: true, syncStatus: 'mapping_required', reason: unitResolution.reason || 'MAPPING_REQUIRED' };
+      } else if (body.mirroredToIzTeach) {
+        finalSyncStatus = 'synced';
+        izteachMirror = { ok: true, idempotent: true, syncStatus: 'synced', courseId: targetCourseForGrade, unitId: unitResolution.unitId };
+      } else if (!body.skipIzTeachSync) {
+        izteachMirror = await mirrorHomeworkToIzTeach(env, savedHw, nextStatus === 'graded', { unitId: unitResolution.unitId });
+        finalSyncStatus = izteachMirror.syncStatus || (izteachMirror.ok ? 'synced' : 'sync_failed');
+        const updatedWb = {
+          ...nextWorkbookAnswers,
+          _syncMeta: {
+            ...nextWorkbookAnswers._syncMeta,
+            syncStatus: finalSyncStatus,
+            izteachRemoteId: izteachMirror.remoteId || nextWorkbookAnswers._syncMeta.izteachRemoteId || null,
+            lastSyncedSignature: izteachMirror.ok ? (izteachMirror.signature || null) : (nextWorkbookAnswers._syncMeta.lastSyncedSignature || null),
+            lastSyncedAt: izteachMirror.ok ? new Date().toISOString() : (nextWorkbookAnswers._syncMeta.lastSyncedAt || null),
+            lastError: izteachMirror.ok ? null : (izteachMirror.reason || izteachMirror.error || 'SYNC_FAILED')
+          }
+        };
+        const metaPatch = await supabaseRequest(env, `ktn_homeworks?id=eq.${encodeURIComponent(savedHw.id)}`, {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: { workbook_answers: updatedWb, updated_at: new Date().toISOString() }
+        });
+        if (metaPatch.ok && Array.isArray(metaPatch.data) && metaPatch.data[0]) {
+          savedHw = metaPatch.data[0];
+        } else {
+          savedHw.workbook_answers = updatedWb;
+        }
       }
 
       return jsonResponse({
         ok: true,
+        syncStatus: finalSyncStatus,
+        unitId: unitResolution.unitId || null,
+        mirroredToIzTeach: Boolean(izteachMirror?.ok && !izteachMirror?.skipped),
         homework: savedHw,
         izteachMirror: izteachMirror || undefined
       });
@@ -3219,7 +3925,16 @@ export default {
         }
         const sessionNum = Math.max(1, Number(body.sessionNum || body.session_num) || 1);
         const title = String(body.title || body.session_title || `Buổi ${sessionNum}`).trim();
-        const exercises = Array.isArray(body.exercises) ? body.exercises : [];
+        const rawExercises = Array.isArray(body.exercises)
+          ? body.exercises
+          : (Array.isArray(body.assignments) ? body.assignments : []);
+        const exercises = rawExercises.map((ex, idx) => ({
+          id: String(ex?.id || `${classCode}-B${sessionNum}-E${idx + 1}`).trim(),
+          num: Number(ex?.num || ex?.order) || (idx + 1),
+          title: String(ex?.title || `Bài ${idx + 1}`).trim(),
+          prompt: String(ex?.prompt || ex?.instruction || '').trim(),
+          type: String(ex?.type || 'audio').trim()
+        }));
 
         const rowToSave = {
           id: `${classCode}-B${sessionNum}`,
@@ -3268,7 +3983,7 @@ export default {
     if (path === '/api/ktn/messages' && request.method === 'GET') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
-      const rawRoomId = url.searchParams.get('roomId') || '';
+      const rawRoomId = url.searchParams.get('roomId') || url.searchParams.get('classCode') || '';
       const access = await canAccessChatRoom(env, session, rawRoomId);
       if (!access.allowed) {
         return jsonResponse({ ok: false, message: access.message }, access.status);
@@ -3433,7 +4148,57 @@ export default {
         }
       }
 
-      return jsonResponse({ ok: true, notifications: items.slice(0, 15) });
+      const readStateRes = await supabaseRequest(
+        env,
+        `ktn_dlp_alerts?room_id=eq.NOTIF_READ_STATE&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=10`
+      );
+      const readSet = new Set();
+      if (readStateRes.ok && Array.isArray(readStateRes.data)) {
+        for (const r of readStateRes.data) {
+          try {
+            const parsed = JSON.parse(r.blocked_content || '[]');
+            if (Array.isArray(parsed)) parsed.forEach(id => readSet.add(String(id)));
+          } catch {}
+        }
+      }
+
+      const hydrated = items.slice(0, 15).map(it => ({
+        ...it,
+        target_email: session.email,
+        read: readSet.has(it.id)
+      }));
+
+      return jsonResponse({ ok: true, notifications: hydrated });
+    }
+
+    if (path === '/api/ktn/notifications/read' && (request.method === 'PATCH' || request.method === 'POST')) {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      const body = await request.json().catch(() => ({}));
+      const ids = Array.isArray(body.ids)
+        ? body.ids.map(x => String(x || '').trim()).filter(Boolean)
+        : (body.id ? [String(body.id).trim()] : []);
+      if (ids.length === 0) {
+        return jsonResponse({ ok: true, markedCount: 0 });
+      }
+      const sbRes = await supabaseRequest(env, 'ktn_dlp_alerts', {
+        method: 'POST',
+        body: {
+          id: 'NREAD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          room_id: 'NOTIF_READ_STATE',
+          sender_email: session.email,
+          sender_name: session.name || session.email,
+          sender_role: session.role || 'student',
+          blocked_content: JSON.stringify(ids),
+          reason: 'NOTIFICATION_READ_STATE'
+        }
+      });
+      if (!sbRes.ok) {
+        return jsonResponse({ ok: false, message: 'Chưa lưu được trạng thái đã đọc thông báo.' }, sbRes.status || 500);
+      }
+      return jsonResponse({ ok: true, markedCount: ids.length, ids });
     }
 
     if (path === '/api/ktn/push/subscribe' && request.method === 'POST') {

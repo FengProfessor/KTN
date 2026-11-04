@@ -63,6 +63,14 @@ if (fs.existsSync(envPath)) {
 }
 
 const BASE_URL = process.env.KTN_TEST_BASE_URL || 'https://khongtunhi.com';
+const IS_PRODUCTION_URL = /khongtunhi\.com|workers\.dev/i.test(BASE_URL);
+if (IS_PRODUCTION_URL && process.env.ALLOW_PRODUCTION_WRITE_TESTS !== 'true') {
+  console.error(
+    `[SAFETY GUARD] Refusing to run write/E2E tests against production (${BASE_URL}) without ALLOW_PRODUCTION_WRITE_TESTS=true.\n` +
+    `Use "node tests/ktn_three_way_reliability_suite.cjs" and "node tests/ktn_browser_e2e_local.cjs" for local/CI verification.`
+  );
+  process.exit(1);
+}
 const SUPABASE_URL = process.env.SUPABASE_URL || env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '';
 const E2E_PASSWORD = process.env.KTN_E2E_PASSWORD || env.KTN_E2E_PASSWORD || process.env.KTN_STAFF_AND_TEST_PASSWORD || env.KTN_STAFF_AND_TEST_PASSWORD || '';

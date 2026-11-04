@@ -2264,8 +2264,9 @@
       const sName = String(matched.name || '').toLowerCase();
       if (sMail === 'taphong2002@gmail.com' || sName.includes('ta phong')) {
         matched.hasOnlineCourses = true;
-        if (!Array.isArray(matched.courseIds)) matched.courseIds = [];
-        matched.courseIds = ['6adadba969897b0002482ca5'];
+        if (!Array.isArray(matched.courseIds) || matched.courseIds.length === 0) {
+          matched.courseIds = ['6adadba969897b0002482ca5'];
+        }
       }
     }
 
@@ -4562,6 +4563,7 @@
     if ($('t-new-class-id')) $('t-new-class-id').value = '';
     this.reconcileTeacherSelection();
     this.saveState();
+    this.syncClassToServer?.(cls, 'upsert');
     this.renderAll();
     this.showToast(`Đã tạo lớp "${cls.id}" (${totalLessons} buổi · ${schedule}).`);
     return cls;
@@ -4704,6 +4706,7 @@
     this.persistEntitlementsToState();
     this.reconcileTeacherSelection();
     this.saveState();
+    this.syncStudentEntitlementToServer?.(stu, 'assign_class');
     this.renderAll();
     this.showToast(`Đã thêm ${stu.name} (${stu.email}) vào lớp ${activeCls.id} (Buổi ${lessonNum}/${totalLessons}).`);
     return stu;
@@ -4788,6 +4791,7 @@
       }
     });
     this.saveState();
+    this.syncClassToServer?.(cls, 'upsert');
     this.renderAll();
     this.showToast(`Đã cập nhật lớp ${cls.id}: ${total} buổi (${sched}).`);
     return true;
@@ -4892,6 +4896,7 @@
     }
     this._syncLessonNameToHomeworks(activeCls.id, lessonNum, lessonName);
     this.saveState();
+    this.syncClassSessionToServer?.(activeCls.id, lessonNum);
     this.renderAll();
     this.showToast(lessonName ? `Đã lưu tên Buổi ${lessonNum}: "${lessonName}".` : `Đã xóa tên bài học Buổi ${lessonNum}.`);
     return lessonName;
@@ -4973,6 +4978,7 @@
     if (titleEl) titleEl.value = '';
     this.teacherAssignLessonNum = lessonNum;
     this.saveState();
+    this.syncClassSessionToServer?.(activeCls.id, lessonNum);
     this.renderAll();
     const savedInfo = this.getLessonAssignmentInfo(activeCls.id, lessonNum);
     const fmtBadge = format === 'game' ? '🎮 Mini-Game' : (format === 'image' ? '📷 Ảnh' : '🎬 Video');
@@ -5008,6 +5014,7 @@
       };
     }
     this.saveState();
+    this.syncClassSessionToServer?.(activeCls.id, lessonNum);
     this.renderAll();
     return true;
   };
@@ -5588,6 +5595,15 @@
           }
         }
         await this.pushSilentCloudState?.(this.state);
+        if (role === 'teacher' && createdRecord) {
+          this.syncTeacherToServer?.(createdRecord, classCode ? [classCode] : []);
+        } else if (role === 'student' && createdRecord) {
+          this.syncStudentEntitlementToServer?.(
+            createdRecord,
+            hasOnlineCourses ? 'grant' : 'assign_class',
+            hasOnlineCourses ? ['6adadba969897b0002482ca5'] : []
+          );
+        }
       }
 
       return this.lastProvisionResult;
@@ -5596,6 +5612,106 @@
         submitBtn.disabled = false;
         submitBtn.textContent = role === 'teacher' ? '+ Tạo tài khoản Giáo viên' : '+ Tạo tài khoản Học viên';
       }
+    }
+  };
+
+  app.syncClassToServer = async function (cls, action = 'upsert') {
+    if (!cls || !cls.id || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return null;
+    try {
+      const method = action === 'delete' ? 'DELETE' : 'POST';
+      const res = await window.KtnWebApp.apiRequest('/api/ktn/classes', {
+        method,
+        body: {
+          id: cls.id,
+          name: cls.title || cls.name || ('Lớp ' + cls.id),
+          teacherCode: cls.teacherCode || 'GV-KTN-08',
+          teacherName: cls.teacherName || 'Cô Lâm Mỹ Linh',
+          teacherEmail: cls.teacherEmail || 'linh.lam@khongtunhi.com',
+          schedule: cls.schedule || '19:30 Thứ 3 & Thứ 6',
+          totalLessons: Number(cls.totalLessons) || 25
+        }
+      });
+      return res?.data || null;
+    } catch {
+      return null;
+    }
+  };
+
+  app.syncClassSessionToServer = async function (classCode, lessonNum) {
+    if (!classCode || classCode === 'DEFAULT' || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return null;
+    try {
+      const sNum = Math.max(1, Number(lessonNum) || 1);
+      const info = this.getLessonAssignmentInfo(classCode, sNum);
+      const assignments = (info.tasks || []).map((t, idx) => ({
+        id: 't' + (idx + 1),
+        type: t.format === 'image' ? 'image' : 'audio',
+        title: t.title || `Bài tập ${idx + 1}`,
+        instruction: t.format === 'image'
+          ? 'Em làm bài tập trong sách rồi chụp ảnh trang bài làm gửi cô nhé.'
+          : 'Em bấm Thu âm giọng đọc hoặc quay video gửi cô nhé.'
+      }));
+      const res = await window.KtnWebApp.apiRequest('/api/ktn/class-sessions', {
+        method: 'POST',
+        body: {
+          classCode,
+          sessionNum: sNum,
+          title: info.lessonName || info.title || `Buổi ${sNum}`,
+          assignments
+        }
+      });
+      return res?.data || null;
+    } catch {
+      return null;
+    }
+  };
+
+  app.syncStudentEntitlementToServer = async function (stu, action = 'set', explicitCourseIds = null) {
+    if (!stu || !stu.email || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return null;
+    try {
+      const courseIds = Array.isArray(explicitCourseIds)
+        ? explicitCourseIds
+        : (Array.isArray(stu.courseIds) ? stu.courseIds : []);
+      const res = await window.KtnWebApp.apiRequest('/api/ktn/students/courses', {
+        method: 'POST',
+        body: {
+          email: stu.email,
+          name: stu.name,
+          phone: stu.phone || '',
+          code: stu.code || '',
+          cognitoUserId: stu.userId || null,
+          action,
+          courseIds,
+          classCode: stu.classCode !== undefined ? (stu.classCode || null) : undefined
+        }
+      });
+      if (res?.ok && res.data?.student) {
+        if (res.data.student.cognito_user_id && !stu.userId) {
+          stu.userId = res.data.student.cognito_user_id;
+        }
+      }
+      return res?.data || null;
+    } catch {
+      return null;
+    }
+  };
+
+  app.syncTeacherToServer = async function (teacher, assignedClasses = []) {
+    if (!teacher || !teacher.email || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return null;
+    try {
+      const res = await window.KtnWebApp.apiRequest('/api/ktn/teachers', {
+        method: 'POST',
+        body: {
+          code: teacher.code,
+          name: teacher.name,
+          email: teacher.email,
+          phone: teacher.phone || '',
+          specialty: teacher.specialty || 'Giáo viên Tiếng Trung Thiếu Nhi',
+          assignedClasses
+        }
+      });
+      return res?.data || null;
+    } catch {
+      return null;
     }
   };
 
@@ -5631,6 +5747,7 @@
     this.persistEntitlementsToState();
     this.reconcileTeacherSelection();
     this.saveState(true);
+    this.syncStudentEntitlementToServer?.(stu, 'assign_class');
     this.renderAll();
     const meta = this.getCaseMeta(stu.caseType);
     const clsTeacher = stu.hasLiveClass ? this.getStudentTeacher(stu) : null;
@@ -5650,8 +5767,9 @@
     }
     stu.caseType = this.computeStudentCase(stu);
     const adminToken = window.IZTEACH_STORAGE?.getAccessToken ? window.IZTEACH_STORAGE.getAccessToken() : null;
-    if (stu.hasOnlineCourses && stu.userId && adminToken && typeof fetch === 'function') {
-      fetch(`https://vs1ocpw7ri.execute-api.ap-southeast-1.amazonaws.com/prod/user-permission/add-products/${encodeURIComponent(stu.userId)}`, {
+    if (stu.userId && adminToken && typeof fetch === 'function') {
+      const epAction = stu.hasOnlineCourses ? 'add-products' : 'remove-products';
+      fetch(`https://vs1ocpw7ri.execute-api.ap-southeast-1.amazonaws.com/prod/user-permission/${epAction}/${encodeURIComponent(stu.userId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: adminToken },
         body: JSON.stringify({
@@ -5662,6 +5780,11 @@
         })
       }).catch(() => null);
     }
+    this.syncStudentEntitlementToServer?.(
+      stu,
+      stu.hasOnlineCourses ? 'grant' : 'revoke',
+      ['6adadba969897b0002482ca5']
+    );
     this.saveState();
     this.renderAll();
     const meta = this.getCaseMeta(stu.caseType);
@@ -5995,6 +6118,14 @@
         this.reconcileTeacherSelection?.();
       }
       this.syncApprovedOrdersToStudents?.();
+
+      // Đồng bộ đơn hàng đã duyệt & quyền khóa học lên Supabase qua Worker API
+      if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        window.KtnWebApp.apiRequest('/api/ktn/orders/approve', {
+          method: 'POST',
+          body: { orderId, order }
+        }).catch(() => {});
+      }
 
       // Lưu state cục bộ và đẩy snapshot lên AWS Cloud State
       this.saveState();
@@ -7572,7 +7703,7 @@
       return;
     }
 
-    this.classes.push({
+    const newCls = {
       id: classId,
       title,
       schedule,
@@ -7581,9 +7712,11 @@
       teacherName: teacher.name,
       teacherEmail: teacher.email,
       studentCodes: []
-    });
+    };
+    this.classes.push(newCls);
 
     this.saveState();
+    this.syncClassToServer?.(newCls, 'upsert');
     $('admin-create-class-dialog')?.close();
     this.renderAll();
     this.renderAdminOverview();
@@ -7622,6 +7755,7 @@
       cls.teacherEmail = teacher.email;
     }
     this.saveState();
+    this.syncClassToServer?.(cls, 'upsert');
     $('admin-edit-class-dialog')?.close();
     this.renderAll();
     this.renderAdminOverview();
@@ -7640,6 +7774,7 @@
       }
     });
     this.saveState();
+    this.syncClassToServer?.({ id: classId }, 'delete');
     $('admin-edit-class-dialog')?.close();
     this.renderAll();
     this.renderAdminOverview();
@@ -7702,6 +7837,10 @@
     const cls = this.classes.find(c => c.id === classId);
     if (cls && Array.isArray(cls.studentCodes) && !cls.studentCodes.includes(stuId)) {
       cls.studentCodes.push(stuId);
+    }
+    const targetStuForSync = appStu || (Array.isArray(this.izStudents) && this.izStudents.find(s => s.id === stuId || s.email === stuId || s.code === stuId));
+    if (targetStuForSync) {
+      this.syncStudentEntitlementToServer?.({ ...targetStuForSync, classCode: classId }, 'assign_class');
     }
     this.saveState();
     $('admin-enroll-student-dialog')?.close();
@@ -9254,6 +9393,28 @@
     hw.teacherFeedback = rawFeedback;
     hw.updatedAtMs = Date.now();
     window.IZTEACH_STORAGE.markHomeworkRecord(hw.remoteId || hw.id, score, rawFeedback, hw);
+    if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+      const gradedLessonNum = Number(hw.lessonNum) || this.parseLessonNumber(hw.lesson, activeLessonObj?.n || 1);
+      window.KtnWebApp.apiRequest('/api/ktn/homeworks/grade', {
+        method: 'PATCH',
+        body: {
+          id: hw.remoteId || hw.id,
+          studentEmail: hw.studentEmail || stu?.email || '',
+          studentName: hw.studentName || stu?.name || '',
+          studentCode: hw.studentCode || stu?.code || '',
+          classCode: hw.classCode || stu?.classCode || '',
+          courseId: hw.courseId || '',
+          lessonNum: gradedLessonNum,
+          lessonTitle: hw.title || `Buổi ${gradedLessonNum}`,
+          score,
+          status: 'graded',
+          teacherFeedback: rawFeedback,
+          attachments: hw.attachments || [],
+          allowUpsertFromIzTeach: true,
+          mirroredToIzTeach: true
+        }
+      }).catch(() => {});
+    }
     this.previewHwDlp('teacher', '');
     this.saveState();
     this.renderAll();

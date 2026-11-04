@@ -70,7 +70,7 @@
       title: 'Chinese For Kids',
       fullTitle: 'Chinese For Kids — Tiếng Trung Trẻ Em',
       icon: '🧒',
-      totalLessons: 3,
+      totalLessons: 20,
       badgeCls: 'b'
     },
     '65e733b0e3317300084c5ce4': {
@@ -78,9 +78,24 @@
       title: 'Tiếng Trung Tổng Hợp',
       fullTitle: 'Giáo trình Tiếng Trung Tổng Hợp',
       icon: '📗',
-      totalLessons: 3,
+      totalLessons: 20,
       badgeCls: 'ok'
-    }
+    },
+    '661528ea42af880008944573': { id: '661528ea42af880008944573', title: 'CFK 03 (Cơ Bản 1)', fullTitle: 'Chinese For Kids 03 (Sơ Cấp 1 — Cơ Bản)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '6638b66f9347040008bc9e0d': { id: '6638b66f9347040008bc9e0d', title: 'CFK 03 (Cơ Bản 2)', fullTitle: 'Chinese For Kids 03 (Sơ Cấp 2 — Cơ Bản)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '6638bd09a7367400085c7ab2': { id: '6638bd09a7367400085c7ab2', title: 'CFK 03 (Nâng Cao)', fullTitle: 'Chinese For Kids 03 (Lộ trình Nâng Cao)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '678cb7ac0f868000028ca34b': { id: '678cb7ac0f868000028ca34b', title: 'CFK 04 (Cơ Bản 1)', fullTitle: 'Chinese For Kids 04 (Sơ Cấp 1 — Cơ Bản)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '678d0c7a495c2d0002a743d2': { id: '678d0c7a495c2d0002a743d2', title: 'CFK 04 (Cơ Bản 2)', fullTitle: 'Chinese For Kids 04 (Sơ Cấp 2 — Cơ Bản)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '678d14b960eae20002ddf8fe': { id: '678d14b960eae20002ddf8fe', title: 'CFK 04 (Nâng Cao)', fullTitle: 'Chinese For Kids 04 (Lộ trình Nâng Cao)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '678d20810f868000028ce258': { id: '678d20810f868000028ce258', title: 'CFK 05 (Cơ Bản 1)', fullTitle: 'Chinese For Kids 05 (Trung Cấp 1 — Cơ Bản)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '67a6ec062364d200022a9fc2': { id: '67a6ec062364d200022a9fc2', title: 'CFK 05 (Cơ Bản 2)', fullTitle: 'Chinese For Kids 05 (Trung Cấp 2 — Cơ Bản)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '67a7290a5fdc26000238b4e9': { id: '67a7290a5fdc26000238b4e9', title: 'CFK 05 (Nâng Cao)', fullTitle: 'Chinese For Kids 05 (Lộ trình Nâng Cao)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '67a730b72ecb9c0002579ff5': { id: '67a730b72ecb9c0002579ff5', title: 'CFK 06 (Cơ Bản 1)', fullTitle: 'Chinese For Kids 06 (Trung Cấp 1 — Cơ Bản)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '67a8559560ef5900022d26ce': { id: '67a8559560ef5900022d26ce', title: 'CFK 06 (Cơ Bản 2)', fullTitle: 'Chinese For Kids 06 (Trung Cấp 2 — Cơ Bản)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '67a869302ecb9c000257d966': { id: '67a869302ecb9c000257d966', title: 'CFK 06 (Nâng Cao)', fullTitle: 'Chinese For Kids 06 (Lộ trình Nâng Cao)', icon: '🧒', totalLessons: 20, badgeCls: 'b' },
+    '65e769bd637339000870618f': { id: '65e769bd637339000870618f', title: 'Chinh Phục YCT 1', fullTitle: 'Chinh Phục Chứng Chỉ Quốc Tế YCT Cấp Độ 1', icon: '🏆', totalLessons: 20, badgeCls: 'r' },
+    '65e76a533f5e7c00086715d7': { id: '65e76a533f5e7c00086715d7', title: 'Phát Âm & Giao Tiếp', fullTitle: 'Luyện Phát Âm Chuẩn & Giao Tiếp Phản Xạ', icon: '🎙️', totalLessons: 20, badgeCls: 'ok' },
+    '66028938bfd6c90008b816e1': { id: '66028938bfd6c90008b816e1', title: 'Chinh Phục YCT 2', fullTitle: 'Chinh Phục Chứng Chỉ Quốc Tế YCT Cấp Độ 2', icon: '🏆', totalLessons: 20, badgeCls: 'r' }
   };
   const ONLINE_COURSE_LIST = Object.values(ONLINE_COURSES_CATALOG);
 
@@ -252,11 +267,87 @@
         token = await window.IzTeachPortalClient.getServiceToken();
       }
       const headers = token ? { Authorization: token } : {};
-      const res = await fetch(`${IZ_HOMEWORK_API}/filter?vendorId=${IZ_VENDOR_ID}&_limit=500&_sort=createdAt:DESC`, { headers });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      const rawList = Array.isArray(data) ? data : (data.data || data.items || []);
-      const normalizedAll = rawList.map(normalizeIzTeachHwItem).filter(Boolean);
+      const [izRes, sbRes] = await Promise.all([
+        fetch(`${IZ_HOMEWORK_API}/filter?vendorId=${IZ_VENDOR_ID}&_limit=500&_sort=createdAt:DESC`, { headers }).catch(() => null),
+        (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function')
+          ? window.KtnWebApp.apiRequest('/api/ktn/homeworks').catch(() => null)
+          : Promise.resolve(null)
+      ]);
+      let rawList = [];
+      if (izRes && izRes.ok) {
+        const data = await izRes.json().catch(() => []);
+        rawList = Array.isArray(data) ? data : (data.data || data.items || []);
+      }
+      const sbRows = (sbRes && sbRes.ok && Array.isArray(sbRes.data?.homeworks)) ? sbRes.data.homeworks : [];
+      const sbCourseMapped = [];
+      const sbClassMapped = [];
+      sbRows.forEach(row => {
+        if (!row) return;
+        const lNum = Number(row.lesson_num) || 1;
+        const isClassSessionHw = lNum >= 100 || String(row.course_id || '').startsWith('CLASS-');
+        const isGraded = row.status === 'graded' || (row.score !== null && row.score !== undefined);
+        const rawAtts = Array.isArray(row.attachments) && row.attachments.length > 0
+          ? row.attachments.map((a, idx) => ({
+              id: a.id || `${row.id}-${idx}`,
+              title: a.title || row.lesson_title || 'Bài nộp',
+              mediaType: a.mediaType || row.file_type || 'audio',
+              size: Number(a.size || 0),
+              cdnUrl: a.cdnUrl || a.fileUrl || row.file_url,
+              playUrl: a.playUrl || a.cdnUrl || a.fileUrl || row.file_url
+            }))
+          : (row.file_url ? [{
+              id: `${row.id}-0`,
+              title: row.lesson_title || 'Bài nộp',
+              mediaType: row.file_type || 'audio',
+              size: 0,
+              cdnUrl: row.file_url,
+              playUrl: row.file_url
+            }] : []);
+
+        if (isClassSessionHw) {
+          const sessionNum = lNum >= 100 ? Math.max(1, lNum - 100) : lNum;
+          sbClassMapped.push({
+            id: row.id,
+            remoteId: row.id,
+            classCode: row.class_code || 'YCT2-04',
+            lesson: `Buổi ${sessionNum}`,
+            lessonNumber: sessionNum,
+            lessonNum: sessionNum,
+            title: row.lesson_title || `Buổi ${sessionNum}`,
+            studentCode: row.student_code || '',
+            studentEmail: String(row.student_email || '').toLowerCase(),
+            studentName: row.student_name || '',
+            submittedAt: fmtShort(row.submitted_at || row.updated_at),
+            updatedAtMs: Date.parse(row.updated_at || row.submitted_at || '') || Date.now(),
+            parentNote: row.student_note || '',
+            status: isGraded ? 'GRADED' : 'PENDING',
+            score: isGraded && row.score != null ? Number(row.score) : null,
+            teacherFeedback: isGraded ? (row.teacher_feedback || 'Cô đã chấm bài của con!') : 'Chờ cô giáo đang nhận xét...',
+            attachments: rawAtts
+          });
+        } else {
+          sbCourseMapped.push({
+            _id: row.id,
+            id: row.id,
+            courseId: row.course_id || '6adadba969897b0002482ca5',
+            lessonNum: lNum,
+            lessonTitle: row.lesson_title || `Bài ${lNum}`,
+            title: row.lesson_title || `Bài ${lNum}`,
+            studentCode: row.student_code || '',
+            studentEmail: String(row.student_email || '').toLowerCase(),
+            studentName: row.student_name || '',
+            notes: row.student_note || '',
+            status: isGraded ? 'GRADED' : 'PENDING',
+            score: isGraded && row.score != null ? Number(row.score) : null,
+            teacherFeedback: row.teacher_feedback || '',
+            updatedAt: row.updated_at || row.submitted_at,
+            createdAt: row.submitted_at || row.updated_at,
+            attachments: rawAtts
+          });
+        }
+      });
+
+      const normalizedAll = [...sbCourseMapped, ...rawList].map(normalizeIzTeachHwItem).filter(Boolean);
       // Gộp theo (học viên + khóa học + bài học) để bản ghi Đã chấm (state=approved) kế thừa & hiển thị thay cho bản ghi Chờ chấm cũ mà không cần DELETE làm mất file S3
       const dedupMap = new Map();
       normalizedAll.forEach(item => {
@@ -277,10 +368,10 @@
       const normalized = Array.from(dedupMap.values());
       L.izHw = { status: 'ok', at: Date.now(), items: normalized, error: '' };
 
-      // Đồng bộ vào app.state.homeworks để mọi thao tác chấm bài hoạt động thống nhất
+      // Đồng bộ cả bài tập khóa học lẫn bài tập buổi học trên lớp vào app.state.homeworks
       if (app.state) {
         if (!Array.isArray(app.state.homeworks)) app.state.homeworks = [];
-        normalized.forEach(nh => {
+        [...sbClassMapped, ...normalized].forEach(nh => {
           const idx = app.state.homeworks.findIndex(x => x && (x.remoteId === nh.remoteId || x.id === nh.id));
           if (idx >= 0) {
             const cur = app.state.homeworks[idx];
@@ -307,37 +398,179 @@
   }
   app.lmsFetchIz = async function (force) {
     if (L.iz.status === 'loading') return false;
-    if (!force && L.iz.status === 'ok' && Date.now() - L.iz.at < 5 * 60 * 1000) return false;
+    if (!force && L.iz.status === 'ok' && Date.now() - L.iz.at < 60 * 1000) return false;
     const token = adminSessionToken();
-    if (!token) { L.iz.status = 'none'; return false; }
+    const hasKtnSession = Boolean(window.KtnWebApp && typeof window.KtnWebApp.getSession === 'function' && window.KtnWebApp.getSession());
+    if (!token && !hasKtnSession) { L.iz.status = 'none'; return false; }
     L.iz.status = 'loading';
     if (force) applyShell();
     try {
-      const PAGE = 2000;
-      const all = [];
-      for (let skip = 0, i = 0; i < 10; i++, skip += PAGE) {
-        const res = await fetch(`${IZ_STUDENT_API}?vendorId=${IZ_VENDOR_ID}&_limit=${PAGE}&_skip=${skip}`, { headers: { Authorization: token } });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const arr = await res.json();
-        if (!Array.isArray(arr)) throw new Error('dữ liệu không hợp lệ');
-        all.push(...arr);
-        if (arr.length < PAGE) break;
+      // 1. Đồng bộ Lớp học, Học viên và Đơn hàng từ Supabase qua Worker API (/api/ktn/*)
+      let sbStudents = [];
+      if (hasKtnSession && window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        const curRole = role();
+        const [clsRes, stuRes, ordRes] = await Promise.all([
+          window.KtnWebApp.apiRequest('/api/ktn/classes').catch(() => null),
+          (curRole === 'admin' || curRole === 'teacher') ? window.KtnWebApp.apiRequest('/api/ktn/students').catch(() => null) : Promise.resolve(null),
+          curRole === 'admin' ? window.KtnWebApp.apiRequest('/api/ktn/orders').catch(() => null) : Promise.resolve(null)
+        ]);
+        if (clsRes?.ok && Array.isArray(clsRes.data?.classes) && Array.isArray(app.classes)) {
+          clsRes.data.classes.forEach(sc => {
+            if (!sc || !sc.id) return;
+            const existingCls = app.classes.find(c => String(c.id).toUpperCase() === String(sc.id).toUpperCase());
+            if (existingCls) {
+              existingCls.schedule = sc.schedule || existingCls.schedule;
+              existingCls.totalLessons = Number(sc.total_lessons || sc.totalLessons) || existingCls.totalLessons || 25;
+              if (sc.teacher_code) existingCls.teacherCode = sc.teacher_code;
+              if (sc.teacher_name) existingCls.teacherName = sc.teacher_name;
+              if (sc.teacher_email) existingCls.teacherEmail = sc.teacher_email;
+            } else {
+              app.classes.push({
+                id: sc.id,
+                name: sc.name || sc.id,
+                title: sc.name || ('Lớp ' + sc.id),
+                schedule: sc.schedule || '19:30 Thứ 3 & Thứ 6',
+                totalLessons: Number(sc.total_lessons || sc.totalLessons) || 25,
+                teacherCode: sc.teacher_code || 'GV-KTN-08',
+                teacherName: sc.teacher_name || 'Cô Lâm Mỹ Linh',
+                teacherEmail: sc.teacher_email || 'linh.lam@khongtunhi.com',
+                studentCodes: []
+              });
+            }
+          });
+        }
+        if (ordRes?.ok && Array.isArray(ordRes.data?.orders) && app.state) {
+          if (!Array.isArray(app.state.orders)) app.state.orders = [];
+          ordRes.data.orders.forEach(so => {
+            if (!so || !so.order_id) return;
+            const mappedOrd = {
+              orderId: so.order_id,
+              studentName: so.student_name || 'Học viên',
+              studentEmail: so.student_email || '',
+              phone: so.phone || '',
+              courseId: so.course_id || '6adadba969897b0002482ca5',
+              courseName: so.course_name || 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+              amount: Number(so.amount) || 890000,
+              paymentMethod: so.payment_method || 'VietQR',
+              paymentStatus: so.payment_status === 'paid' ? 'paid' : 'pending_verification',
+              approvalStatus: so.approval_status || 'pending',
+              assignedUserId: so.assigned_user_id || null,
+              assignedStudentId: so.assigned_student_id || null,
+              approvedAt: so.approved_at || null,
+              approvedBy: so.approved_by || null,
+              createdAt: so.created_at || new Date().toISOString(),
+              createdAtDisplay: fmtIzDate(so.created_at)
+            };
+            const idx = app.state.orders.findIndex(o => (o.orderId || o.id) === so.order_id);
+            if (idx >= 0) app.state.orders[idx] = { ...app.state.orders[idx], ...mappedOrd };
+            else app.state.orders.unshift(mappedOrd);
+          });
+        }
+        if (stuRes?.ok && Array.isArray(stuRes.data?.students)) {
+          sbStudents = stuRes.data.students;
+          sbStudents.forEach(ss => {
+            if (!ss || !ss.email) return;
+            const em = String(ss.email).trim().toLowerCase();
+            const cIds = Array.isArray(ss.online_courses)
+              ? ss.online_courses.map(c => String(c?.id || c || '').trim()).filter(Boolean)
+              : [];
+            const rosterHit = (app.students || []).find(r => r && String(r.email || '').trim().toLowerCase() === em);
+            if (rosterHit) {
+              if (ss.class_code !== undefined) {
+                rosterHit.classCode = ss.class_code || '';
+                rosterHit.hasLiveClass = Boolean(ss.class_code);
+              }
+              rosterHit.hasOnlineCourses = cIds.length > 0;
+              rosterHit.courseIds = cIds;
+              if (ss.cognito_user_id && !rosterHit.userId) rosterHit.userId = ss.cognito_user_id;
+              if (app.computeStudentCase) rosterHit.caseType = app.computeStudentCase(rosterHit);
+            } else if (ss.class_code && Array.isArray(app.students)) {
+              const newRoster = {
+                name: ss.name || em.split('@')[0],
+                parent: 'Phụ huynh ' + (ss.name || em.split('@')[0]),
+                email: em,
+                phone: ss.phone || '',
+                userId: ss.cognito_user_id || '',
+                code: ss.code || ('KTN-' + em.split('@')[0].toUpperCase().slice(0, 6)),
+                classCode: ss.class_code,
+                hasLiveClass: true,
+                hasOnlineCourses: cIds.length > 0,
+                courseIds: cIds,
+                progress: 'Buổi 1/25',
+                attendance: 'Đang theo học'
+              };
+              if (app.computeStudentCase) newRoster.caseType = app.computeStudentCase(newRoster);
+              app.students.push(newRoster);
+            }
+          });
+        }
       }
+
+      // 2. Lấy danh sách từ izTeach CRM (nếu có token izTeach trực tiếp) hoặc từ bảng ktn_students đã đồng bộ
+      const all = [];
+      if (token) {
+        const PAGE = 2000;
+        for (let skip = 0, i = 0; i < 10; i++, skip += PAGE) {
+          const res = await fetch(`${IZ_STUDENT_API}?vendorId=${IZ_VENDOR_ID}&_limit=${PAGE}&_skip=${skip}`, { headers: { Authorization: token } });
+          if (!res.ok) break;
+          const arr = await res.json();
+          if (!Array.isArray(arr)) break;
+          all.push(...arr);
+          if (arr.length < PAGE) break;
+        }
+      }
+
+      const sbByEmail = new Map();
+      sbStudents.forEach(s => {
+        if (s?.email) sbByEmail.set(String(s.email).trim().toLowerCase(), s);
+      });
+
       const seen = new Set();
-      const mapped = all.filter(s => s && (s.id || s._id) && !seen.has(s.id || s._id) && seen.add(s.id || s._id)).map(s => ({
-        id: s.id || s._id,
-        userId: s.userId || '',
-        name: String(s.name || '').trim() || String(s.email || '').split('@')[0],
-        email: String(s.email || '').trim().toLowerCase(),
-        phone: String(s.phone || '').trim(),
-        createdAt: fmtIzDate(s.createdAt),
-        createdTimestamp: Date.parse(s.createdAt || '') || 0,
-        isActive: s.state !== 'unverified',
-        isBlock: Boolean(s.isBlock),
-        onlineCount: Array.isArray(s.onlineCourses) ? s.onlineCourses.length : 0,
-        classCode: '',
-        source: 'izteach'
-      }));
+      const mapped = [];
+      all.forEach(s => {
+        const sid = s && (s.id || s._id);
+        if (!sid || seen.has(sid)) return;
+        seen.add(sid);
+        const em = String(s.email || '').trim().toLowerCase();
+        const sbMatch = sbByEmail.get(em);
+        const sbCourseCount = Array.isArray(sbMatch?.online_courses) ? sbMatch.online_courses.length : 0;
+        mapped.push({
+          id: sid,
+          userId: s.userId || s.dynamoId || sbMatch?.cognito_user_id || '',
+          name: String(s.name || sbMatch?.name || '').trim() || em.split('@')[0],
+          email: em,
+          phone: String(s.phone || sbMatch?.phone || '').trim(),
+          createdAt: fmtIzDate(s.createdAt || sbMatch?.updated_at),
+          createdTimestamp: Date.parse(s.createdAt || sbMatch?.updated_at || '') || 0,
+          isActive: s.state !== 'unverified',
+          isBlock: Boolean(s.isBlock),
+          onlineCount: sbMatch ? sbCourseCount : (Array.isArray(s.onlineCourses) ? s.onlineCourses.length : 0),
+          classCode: sbMatch?.class_code || '',
+          source: 'izteach'
+        });
+        if (em) sbByEmail.delete(em);
+      });
+
+      sbByEmail.forEach(sb => {
+        const sid = sb.izteach_student_id || sb.cognito_user_id || sb.code || sb.email;
+        if (!sid || seen.has(sid)) return;
+        seen.add(sid);
+        mapped.push({
+          id: sid,
+          userId: sb.cognito_user_id || '',
+          name: String(sb.name || '').trim() || String(sb.email || '').split('@')[0],
+          email: String(sb.email || '').trim().toLowerCase(),
+          phone: String(sb.phone || '').trim(),
+          createdAt: fmtIzDate(sb.updated_at),
+          createdTimestamp: Date.parse(sb.updated_at || '') || 0,
+          isActive: true,
+          isBlock: false,
+          onlineCount: Array.isArray(sb.online_courses) ? sb.online_courses.length : 0,
+          classCode: sb.class_code || '',
+          source: 'supabase'
+        });
+      });
+
       app.izMasterStudents = mapped;
       app.izStudents = mapped.slice();
       L.iz = { status: 'ok', at: Date.now(), total: mapped.length, error: '' };
@@ -1752,6 +1985,27 @@
         }
       }).catch(() => {});
     } catch {}
+    if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+      window.KtnWebApp.apiRequest('/api/ktn/homeworks/grade', {
+        method: 'PATCH',
+        body: {
+          id: oldRemoteId,
+          studentEmail: h.studentEmail || s?.email || '',
+          studentName: h.studentName || s?.name || '',
+          studentCode: h.studentCode || s?.code || '',
+          classCode: classId || '',
+          courseId: h.courseId || '',
+          lessonNum: Number(h.lessonNum) || D.hwLesson(h) || 1,
+          lessonTitle: h.lessonTitle || h.title || '',
+          score,
+          status: 'graded',
+          teacherFeedback: fb,
+          attachments: h.attachments || [],
+          allowUpsertFromIzTeach: true,
+          mirroredToIzTeach: true
+        }
+      }).catch(() => {});
+    }
     app.saveState();
     app.triggerNotificationEvent?.('onGraded', { title: 'Cô giáo vừa nhận xét.', body: `Bài ${D.hwLesson(h)} · ${score}đ — ${fb}`, lessonNum: D.hwLesson(h), studentCode: (s && s.code) || h.studentCode, studentEmail: (s && s.email) || h.studentEmail || h.student_email });
     app.showToast(`Đã lưu ${score}đ & đồng bộ lên izTeach cho ${(s && s.name) || h.studentName || 'học viên'}.`, 'success');
@@ -2326,7 +2580,7 @@
       const z = D.izList().find(s => s.id === row.izId);
       if (!z) return false;
       const name = String(z.name || '').trim() || String(z.email).split('@')[0];
-      app.students.push({
+      const newStu = {
         name,
         parent: 'Phụ huynh ' + name.replace(/^Bé\s+/i, 'bé '),
         email: String(z.email || '').toLowerCase(),
@@ -2344,8 +2598,10 @@
         target: '',
         note: '',
         _entUpdatedAt: Date.now()
-      });
+      };
+      app.students.push(newStu);
       app.persistEntitlementsToState?.();
+      app.syncStudentEntitlementToServer?.(newStu, 'assign_class');
       app.showToast(`Đã xếp ${name} vào lớp ${classId}.`);
     }
     app.saveState();
@@ -2427,6 +2683,7 @@
         app.lmsFetchCourseHomeworks();
       }
       if (r === 'teacher') {
+        app.lmsFetchIz();
         app.lmsFetchCourseHomeworks();
         notifyNewTeacherClasses();
         // Màn chấm/giao bài luôn theo 1 lớp: chế độ "Tất cả" cũ trộn học sinh nhiều lớp dưới nhãn của một lớp

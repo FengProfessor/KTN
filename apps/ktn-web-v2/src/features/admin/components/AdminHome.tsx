@@ -128,9 +128,7 @@ export const AdminHome: React.FC = () => {
   const classesList = isDemoMode ? DEMO_CLASSES : classesQuery.data || [];
 
   const pendingOrders = ordersList.filter((o) => o.approval_status === 'pending');
-  const unassignedStudents = studentsList.filter(
-    (s) => !s.class_code || !s.has_online_courses
-  );
+  const unassignedStudents = studentsList.filter((s) => !s.class_code);
   const activeClasses = classesList.filter((c) => c.active !== false);
 
   const hasApiError =

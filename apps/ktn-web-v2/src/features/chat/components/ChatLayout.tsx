@@ -121,7 +121,7 @@ export const ChatLayout: React.FC = () => {
                 { id: 'demo_unread', label: 'Có tin chưa đọc' },
                 { id: 'demo_sending', label: 'Đang gửi...' },
                 { id: 'demo_failed', label: 'Gửi lỗi + Thử lại' },
-                { id: 'live_real', label: 'Dữ liệu BFF thật' },
+                { id: 'live_real', label: 'Dữ liệu thật' },
               ] as const
             ).map((st) => (
               <button
@@ -190,7 +190,9 @@ export const ChatLayout: React.FC = () => {
 
               <MessageList
                 messages={messages}
-                currentUserEmail={user?.email || 'hoangngan@khongtunhi.com'}
+                currentUserEmail={
+                  user?.email || (isDemoMode ? 'hoangngan@khongtunhi.com' : '')
+                }
                 currentUserName={user?.name}
                 canManagePin={canManagePin}
                 isLoading={isMessagesLoading}

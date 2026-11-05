@@ -26,6 +26,7 @@ export const AppShell: React.FC = () => {
   const queryClient = useQueryClient();
 
   const user = useAuthStore((s) => s.user);
+  const isRestoring = useAuthStore((s) => s.isRestoring);
   const logout = useAuthStore((s) => s.logout);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const setDemoMode = useUiStore((s) => s.setDemoMode);
@@ -33,6 +34,7 @@ export const AppShell: React.FC = () => {
   const setNotifDropdownOpen = useUiStore((s) => s.setNotifDropdownOpen);
   const resetSessionUiState = useUiStore((s) => s.resetSessionUiState);
 
+  const isRestoringLiveSession = isRestoring && !isDemoMode && !user;
   const effectiveRole = user?.role || 'student';
 
   const { data: chatRooms = [] } = useChatRooms();
@@ -65,7 +67,7 @@ export const AppShell: React.FC = () => {
       if (isDemoMode) return DEMO_HOMEWORKS;
       return ktnApi.getHomeworks();
     },
-    enabled: effectiveRole === 'teacher' && (Boolean(user) || isDemoMode),
+    enabled: !isRestoringLiveSession && effectiveRole === 'teacher' && (Boolean(user) || isDemoMode),
   });
 
   const adminOrdersQuery = useQuery<KtnOrder[]>({
@@ -74,7 +76,7 @@ export const AppShell: React.FC = () => {
       if (isDemoMode) return [];
       return ktnApi.getOrders();
     },
-    enabled: effectiveRole === 'admin' && (Boolean(user) || isDemoMode),
+    enabled: !isRestoringLiveSession && effectiveRole === 'admin' && (Boolean(user) || isDemoMode),
   });
 
   const notificationsList = notificationsQuery.data?.notifications || [];
@@ -134,21 +136,25 @@ export const AppShell: React.FC = () => {
     navigate('/login');
   };
 
-  const headerInfo = resolveHeaderTitle(location.pathname, effectiveRole, user);
+  const headerInfo = isRestoringLiveSession
+    ? { title: 'Khổng Tử Nhí', subtitle: 'Đang khôi phục phiên...' }
+    : resolveHeaderTitle(location.pathname, effectiveRole, user);
 
   return (
     <div className="flex min-h-screen flex-col bg-[#FAF8F5] text-stone-900">
       <DemoControlBar />
 
       <div className="flex flex-1">
-        {/* Role-Specific Desktop Navigation */}
-        <RoleDesktopNavigation
-          role={effectiveRole}
-          user={user}
-          isDemoMode={isDemoMode}
-          badges={navBadges}
-          onLogout={handleLogout}
-        />
+        {/* Role-Specific Desktop Navigation (hidden while restoring unverified live session) */}
+        {!isRestoringLiveSession && (
+          <RoleDesktopNavigation
+            role={effectiveRole}
+            user={user}
+            isDemoMode={isDemoMode}
+            badges={navBadges}
+            onLogout={handleLogout}
+          />
+        )}
 
         {/* Main Content Area */}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -306,7 +312,7 @@ export const AppShell: React.FC = () => {
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
-              ) : (
+              ) : isRestoringLiveSession ? null : (
                 <button
                   type="button"
                   onClick={() => navigate('/login')}
@@ -325,7 +331,9 @@ export const AppShell: React.FC = () => {
           </main>
 
           {/* Purposeful Role-Based Mobile Bottom Navigation */}
-          <RoleBottomNavigation role={effectiveRole} badges={navBadges} />
+          {!isRestoringLiveSession && (
+            <RoleBottomNavigation role={effectiveRole} badges={navBadges} />
+          )}
         </div>
       </div>
     </div>

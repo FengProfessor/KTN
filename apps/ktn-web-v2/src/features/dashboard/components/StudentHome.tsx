@@ -354,84 +354,104 @@ export const StudentHome: React.FC = () => {
 
       {/* Khu vực 4: Gần đây (Unified Compact Feed) */}
       <section className="space-y-2">
-        <SectionHeading
-          title="Gần đây"
-          count={homeworks.length + notificationsList.length}
-          actionLabel="Thông báo →"
-          onAction={() => navigate('/notifications')}
-        />
-
-        {homeworks.length === 0 && notificationsList.length === 0 ? (
-          <EmptyState
-            icon={Bell}
-            title="Chưa có hoạt động mới"
-            description="Điểm bài tập và tin nhắn của giáo viên sẽ hiển thị tại đây."
-          />
-        ) : (
-          <MobileTaskList testId="student-recent-feed">
-            {homeworks.slice(0, 2).map((hw) => {
-              const rawTitle = (hw.lesson_title || '').trim();
-              const displayTitle =
-                /^(bài|lớp|buổi)\b/i.test(rawTitle) || hw.lesson_num > 100
-                  ? rawTitle || `Bài ${hw.lesson_num}`
-                  : `Bài ${hw.lesson_num}: ${rawTitle || 'Bài thu âm'}`;
-              return (
-              <CompactListItem
-                key={`hw-${hw.id}`}
-                icon={
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
-                    <Award className="h-4 w-4" />
-                  </div>
-                }
-                title={displayTitle}
-                subtitle={
-                  hw.teacher_feedback || hw.student_note || 'Đang chờ giáo viên chấm'
-                }
-                badge={
-                  hw.status === 'graded' ? (
-                    <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                      <CheckCircle2 className="h-2.5 w-2.5" />
-                      {hw.score}/10
-                    </span>
-                  ) : (
-                    <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                      Chờ chấm
-                    </span>
-                  )
-                }
-                meta={formatRelativeTime(hw.submitted_at)}
-                onClick={() =>
-                  navigate(
-                    `/learning?courseId=${encodeURIComponent(hw.course_id)}&lesson=${hw.lesson_num}&tab=homework`
-                  )
-                }
+        {(() => {
+          const shownHwLessons = new Set(
+            homeworks.slice(0, 2).map((hw) => hw.lesson_num)
+          );
+          const dedupedNotifications = notificationsList.filter(
+            (n) =>
+              !(
+                n.type === 'homework_graded' &&
+                n.lessonNum !== undefined &&
+                shownHwLessons.has(Number(n.lessonNum))
+              )
+          );
+          const totalFeedCount = homeworks.length + dedupedNotifications.length;
+          return (
+            <>
+              <SectionHeading
+                title="Gần đây"
+                count={totalFeedCount}
+                actionLabel="Thông báo →"
+                onAction={() => navigate('/notifications')}
               />
-              );
-            })}
 
-            {notificationsList.slice(0, 3).map((notif) => (
-              <CompactListItem
-                key={notif.id}
-                testId={`dashboard-notif-item-${notif.id}`}
-                unread={!notif.read}
-                icon={
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-800">
-                    <Bell className="h-4 w-4" />
-                  </div>
-                }
-                title={notif.title}
-                subtitle={notif.body}
-                meta={formatRelativeTime(notif.createdAt)}
-                onClick={() => {
-                  if (!notif.read) {
-                    markReadMutation.mutate(notif.id);
-                  }
-                  navigate(resolveNotificationLink(notif));
-                }}
-              />
-            ))}
-          </MobileTaskList>
-        )}
+              {totalFeedCount === 0 ? (
+                <EmptyState
+                  icon={Bell}
+                  title="Chưa có hoạt động mới"
+                  description="Điểm bài tập và tin nhắn của giáo viên sẽ hiển thị tại đây."
+                />
+              ) : (
+                <MobileTaskList testId="student-recent-feed">
+                  {homeworks.slice(0, 2).map((hw) => {
+                    const rawTitle = (hw.lesson_title || '').trim();
+                    const displayTitle =
+                      /^(bài|lớp|buổi)\b/i.test(rawTitle) || hw.lesson_num > 100
+                        ? rawTitle || `Bài ${hw.lesson_num}`
+                        : `Bài ${hw.lesson_num}: ${rawTitle || 'Bài thu âm'}`;
+                    return (
+                      <CompactListItem
+                        key={`hw-${hw.id}`}
+                        icon={
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                            <Award className="h-4 w-4" />
+                          </div>
+                        }
+                        title={displayTitle}
+                        subtitle={
+                          hw.teacher_feedback ||
+                          hw.student_note ||
+                          'Đang chờ giáo viên chấm'
+                        }
+                        badge={
+                          hw.status === 'graded' ? (
+                            <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                              <CheckCircle2 className="h-2.5 w-2.5" />
+                              {hw.score}/10
+                            </span>
+                          ) : (
+                            <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                              Chờ chấm
+                            </span>
+                          )
+                        }
+                        meta={formatRelativeTime(hw.submitted_at)}
+                        onClick={() =>
+                          navigate(
+                            `/learning?courseId=${encodeURIComponent(hw.course_id)}&lesson=${hw.lesson_num}&tab=homework`
+                          )
+                        }
+                      />
+                    );
+                  })}
+
+                  {dedupedNotifications.slice(0, 2).map((notif) => (
+                    <CompactListItem
+                      key={notif.id}
+                      testId={`dashboard-notif-item-${notif.id}`}
+                      unread={!notif.read}
+                      icon={
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-800">
+                          <Bell className="h-4 w-4" />
+                        </div>
+                      }
+                      title={notif.title}
+                      subtitle={notif.body}
+                      meta={formatRelativeTime(notif.createdAt)}
+                      onClick={() => {
+                        if (!notif.read) {
+                          markReadMutation.mutate(notif.id);
+                        }
+                        navigate(resolveNotificationLink(notif));
+                      }}
+                    />
+                  ))}
+                </MobileTaskList>
+              )}
+            </>
+          );
+        })()}
       </section>
     </div>
   );

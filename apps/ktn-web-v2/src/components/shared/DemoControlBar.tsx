@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { FlaskConical, Wifi, WifiOff, ChevronDown, ChevronUp } from 'lucide-react';
-import { useUiStore } from '@/stores/useUiStore';
+import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { cn } from '@/lib/utils';
 
@@ -17,8 +17,8 @@ export const DemoControlBar: React.FC = () => {
   const { user, setDemoUser, syncModeUser } = useAuthStore();
   const [expanded, setExpanded] = useState(false);
 
-  // Never show DemoControlBar in Live mode or Production builds unless Demo Mode is explicitly active
-  if (!isDemoMode) {
+  // Never show DemoControlBar in Live mode or Production builds unless Demo Mode is explicitly allowed and active
+  if (!isDemoMode || !isDemoAllowedInEnv()) {
     return null;
   }
 

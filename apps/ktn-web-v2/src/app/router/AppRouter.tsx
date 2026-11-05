@@ -11,7 +11,7 @@ import { TeacherWorkspace } from '@/features/teacher/components/TeacherWorkspace
 import { AdminWorkspace } from '@/features/admin/components/AdminWorkspace';
 import { LoginPage } from '@/features/auth/components/LoginPage';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
-import { useUiStore } from '@/stores/useUiStore';
+import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
 import type { UserRole } from '@/types/ktn.types';
 
 const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> = ({
@@ -29,6 +29,10 @@ const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> 
         <Loader2 className="h-6 w-6 animate-spin text-red-800" />
       </div>
     );
+  }
+
+  if (!user && !isDemoMode) {
+    return <Navigate to="/login" replace />;
   }
 
   const role: UserRole = user?.role || 'student';
@@ -76,11 +80,11 @@ export const AppRouter: React.FC = () => {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const setDemoMode = useUiStore((s) => s.setDemoMode);
 
-  // Allow URL query ?demo=1 or ?mode=live to switch seamlessly during automated or manual testing
+  // Allow URL query ?demo=1 or ?mode=live to switch seamlessly during automated or manual testing (only when demo is allowed in env)
   useEffect(() => {
     const demoParam = searchParams.get('demo');
     const modeParam = searchParams.get('mode');
-    if (demoParam === '1' || modeParam === 'demo') {
+    if ((demoParam === '1' || modeParam === 'demo') && isDemoAllowedInEnv()) {
       setDemoMode(true);
       syncModeUser(true);
     } else if (demoParam === '0' || modeParam === 'live') {
@@ -91,7 +95,7 @@ export const AppRouter: React.FC = () => {
 
   // Hydrate real session or populate demo persona
   useEffect(() => {
-    if (isDemoMode) {
+    if (isDemoMode && isDemoAllowedInEnv()) {
       if (!user) {
         setDemoUser(DEMO_USERS.student_both);
       } else {
@@ -118,8 +122,22 @@ export const AppRouter: React.FC = () => {
         }
       >
         <Route index element={<RoleHome />} />
-        <Route path="learning" element={<LearningPage />} />
-        <Route path="classrooms" element={<ClassroomsPage />} />
+        <Route
+          path="learning"
+          element={
+            <RequireRole allowed={['student']}>
+              <LearningPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="classrooms"
+          element={
+            <RequireRole allowed={['student']}>
+              <ClassroomsPage />
+            </RequireRole>
+          }
+        />
         <Route path="chat" element={<ChatLayout />} />
         <Route path="notifications" element={<NotificationCenter />} />
         <Route

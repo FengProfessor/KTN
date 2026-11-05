@@ -13,6 +13,7 @@ import {
   GraduationCap,
   Sparkles,
   AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
@@ -137,7 +138,7 @@ export const ClassroomsPage: React.FC = () => {
   // Never display a fake class if user has no assigned class in live mode
   const assignedClass: KtnClassItem | null = activeClassCode
     ? (classesQuery.data || []).find((c) => c.id === activeClassCode) ||
-      DEMO_CLASSES.find((c) => c.id === activeClassCode) ||
+      (isDemoMode ? DEMO_CLASSES.find((c) => c.id === activeClassCode) : null) ||
       null
     : null;
 
@@ -153,8 +154,35 @@ export const ClassroomsPage: React.FC = () => {
     ? user.onlineCourses
     : [];
 
+  const hasApiError =
+    !isDemoMode && (classesQuery.isError || sessionsQuery.isError || homeworksQuery.isError);
+
   return (
-    <div data-testid="classrooms-page" className="space-y-4">
+    <div data-testid="classrooms-page" className="space-y-3 sm:space-y-4">
+      {hasApiError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900"
+        >
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
+            <span>Chưa tải được dữ liệu lớp học.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              classesQuery.refetch();
+              sessionsQuery.refetch();
+              homeworksQuery.refetch();
+            }}
+            className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Thử lại
+          </button>
+        </div>
+      )}
+
       {/* Section 1: Clear Separation Between Live Classroom & Video Courses */}
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
         {/* Live Classroom Card (7 cols) */}

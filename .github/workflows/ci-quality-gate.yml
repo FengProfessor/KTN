@@ -63,3 +63,14 @@ jobs:
           mkdir -p /tmp/ktn-ci-deps
           npm --prefix /tmp/ktn-ci-deps install --no-save puppeteer
           node tests/ktn_browser_e2e_local.cjs
+
+      - name: Run KTN React UI V2 Quality Gate (Typecheck, Unit Tests, Build & Playwright E2E)
+        working-directory: apps/ktn-web-v2
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:unit
+          npm run build
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+

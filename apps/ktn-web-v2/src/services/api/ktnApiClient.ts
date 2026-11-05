@@ -171,9 +171,10 @@ export const ktnApi = {
       if (res.authenticated && res.session) {
         return saveStoredSession(res.session, res.token);
       }
+      clearStoredSession();
       return null;
     } catch (err) {
-      if (err instanceof KtnApiError && err.status === 401) {
+      if (err instanceof KtnApiError && (err.status === 401 || err.status === 403)) {
         clearStoredSession();
         return null;
       }

@@ -12,6 +12,8 @@ import {
   ClipboardList,
   MessageSquare,
   Bell,
+  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -148,6 +150,7 @@ export const AdminWorkspace: React.FC = () => {
 
   const updateEntitlementMutation = useMutation({
     mutationFn: async (params: {
+      action?: 'grant' | 'revoke';
       email: string;
       courseId: string;
       classCode: string;
@@ -157,7 +160,7 @@ export const AdminWorkspace: React.FC = () => {
         return { message: 'Updated' };
       }
       await ktnApi.manageStudentCourses({
-        action: 'grant',
+        action: params.action || 'grant',
         email: params.email,
         courseIds: [params.courseId],
         classCode: params.classCode,
@@ -177,6 +180,10 @@ export const AdminWorkspace: React.FC = () => {
   const ordersList = ordersQuery.data || [];
   const studentsList = studentsQuery.data || [];
 
+  const hasApiError =
+    !isDemoMode &&
+    (ordersQuery.isError || studentsQuery.isError || classesQuery.isError);
+
   const showOrders = activeTab === 'all' || activeTab === 'orders';
   const showPermissions = activeTab === 'all' || activeTab === 'more';
   const showStudents = activeTab === 'all' || activeTab === 'students';
@@ -184,20 +191,16 @@ export const AdminWorkspace: React.FC = () => {
 
   return (
     <div data-testid="admin-workspace-page" className="space-y-3 sm:space-y-4">
-      {/* Compact Header & Section Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 shadow-2xs">
-        <h1 className="font-display text-base font-bold text-stone-900 sm:text-lg">
-          Tổng quan học vụ
-        </h1>
-
-        <div className="flex flex-wrap items-center gap-1">
+      {/* Compact Section Switcher */}
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-2.5 py-2 shadow-2xs">
+        <div className="flex w-full items-center gap-1 overflow-x-auto">
           {(
             [
               { id: 'all', label: 'Tất cả', to: '/admin' },
               { id: 'students', label: `Học viên (${studentsList.length})`, to: '/admin/students' },
               { id: 'classes', label: `Lớp (${classesList.length})`, to: '/admin/classes' },
               { id: 'orders', label: `Đơn hàng (${ordersList.length})`, to: '/admin/orders' },
-              { id: 'more', label: 'Phân quyền & Thêm', to: '/admin/more' },
+              { id: 'more', label: 'Phân quyền', to: '/admin/more' },
             ] as const
           ).map((t) => (
             <button
@@ -205,7 +208,7 @@ export const AdminWorkspace: React.FC = () => {
               type="button"
               data-testid={`admin-tab-${t.id}`}
               onClick={() => navigate(t.to)}
-              className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-colors ${
+              className={`min-h-[34px] shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold transition-colors ${
                 activeTab === t.id
                   ? 'bg-red-800 text-white'
                   : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
@@ -217,6 +220,30 @@ export const AdminWorkspace: React.FC = () => {
         </div>
       </div>
 
+      {hasApiError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900"
+        >
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
+            <span>Chưa tải được dữ liệu quản trị.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              ordersQuery.refetch();
+              studentsQuery.refetch();
+              classesQuery.refetch();
+            }}
+            className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Thử lại
+          </button>
+        </div>
+      )}
+
       {/* Orders & Entitlements Grid */}
       {(showOrders || showPermissions) && (
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
@@ -226,12 +253,13 @@ export const AdminWorkspace: React.FC = () => {
               onSubmit={(e) => {
                 e.preventDefault();
                 updateEntitlementMutation.mutate({
+                  action: 'grant',
                   email: targetEmail,
                   courseId: targetCourseId,
                   classCode: targetClassCode,
                 });
               }}
-              className={`space-y-3 rounded-xl border border-stone-200 bg-white p-4 shadow-2xs ${
+              className={`space-y-3 rounded-xl border border-stone-200 bg-white p-3.5 shadow-2xs ${
                 showOrders ? 'lg:col-span-5' : 'lg:col-span-12'
               }`}
             >
@@ -281,19 +309,37 @@ export const AdminWorkspace: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                data-testid="admin-grant-course-btn"
-                disabled={updateEntitlementMutation.isPending}
-                className="inline-flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
-              >
-                {updateEntitlementMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <PlusCircle className="h-4 w-4" />
-                )}
-                <span>Cấp quyền & Xếp lớp</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  data-testid="admin-grant-course-btn"
+                  disabled={updateEntitlementMutation.isPending}
+                  className="inline-flex min-h-[38px] flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-800 px-3 py-2 text-xs font-bold text-white hover:bg-red-900"
+                >
+                  {updateEntitlementMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <PlusCircle className="h-4 w-4" />
+                  )}
+                  <span>Cấp quyền & Xếp lớp</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="admin-revoke-course-btn"
+                  disabled={updateEntitlementMutation.isPending}
+                  onClick={() =>
+                    updateEntitlementMutation.mutate({
+                      action: 'revoke',
+                      email: targetEmail,
+                      courseId: targetCourseId,
+                      classCode: targetClassCode,
+                    })
+                  }
+                  className="inline-flex min-h-[38px] shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"
+                >
+                  Thu hồi
+                </button>
+              </div>
 
               {activeTab === 'more' && (
                 <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-100 pt-3">

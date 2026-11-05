@@ -13,6 +13,7 @@ import {
   Loader2,
   Send,
   ExternalLink,
+  AlertCircle,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -90,15 +91,15 @@ export const TeacherWorkspace: React.FC = () => {
 
   const classesList = useMemo(() => {
     const raw = isDemoMode ? DEMO_CLASSES : classesQuery.data || [];
-    if (!user?.email) return raw;
-    const owned = raw.filter(
+    if (isDemoMode || user?.role === 'admin') return raw;
+    if (!user?.email) return [];
+    return raw.filter(
       (c) =>
-        !c.teacher_email ||
-        c.teacher_email.toLowerCase() === user.email.toLowerCase() ||
-        c.teacher_code === user.code
+        (c.teacher_email &&
+          c.teacher_email.toLowerCase() === user.email.toLowerCase()) ||
+        (c.teacher_code && user.code && c.teacher_code === user.code)
     );
-    return owned.length > 0 ? owned : raw;
-  }, [isDemoMode, classesQuery.data, user?.email, user?.code]);
+  }, [isDemoMode, classesQuery.data, user?.email, user?.code, user?.role]);
 
   useEffect(() => {
     if (!selectedClassId && classesList.length > 0) {
@@ -255,46 +256,67 @@ export const TeacherWorkspace: React.FC = () => {
 
   const sessionsList = sessionsQuery.data || [];
   const studentsList = studentsQuery.data || [];
+  const hasApiError =
+    !isDemoMode && (classesQuery.isError || homeworksQuery.isError);
 
   return (
     <div data-testid="teacher-workspace-page" className="space-y-3 sm:space-y-4">
-      {/* Compact Header & Class Selector */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 shadow-2xs">
-        <div className="min-w-0">
-          <h1 className="font-display text-base font-bold text-stone-900 sm:text-lg">
-            Lớp của tôi
-          </h1>
-        </div>
+      {/* Compact Class Selector Bar */}
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-2.5 py-2 shadow-2xs">
+        {classesList.length > 0 ? (
+          <select
+            aria-label="Chọn lớp phụ trách"
+            data-testid="teacher-class-select"
+            value={effectiveClassId}
+            onChange={(e) => setSelectedClassId(e.target.value)}
+            className="min-h-[36px] min-w-0 flex-1 rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none sm:max-w-xs"
+          >
+            {classesList.map((cls) => (
+              <option key={cls.id} value={cls.id}>
+                {cls.id} · {cls.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-xs font-semibold text-stone-600">
+            Chưa có lớp được phân công
+          </span>
+        )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          {classesList.length > 0 && (
-            <select
-              aria-label="Chọn lớp phụ trách"
-              data-testid="teacher-class-select"
-              value={effectiveClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
-              className="min-h-[36px] rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
-            >
-              {classesList.map((cls) => (
-                <option key={cls.id} value={cls.id}>
-                  {cls.id} · {cls.name}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {effectiveClassId && (
-            <button
-              type="button"
-              onClick={() => navigate(`/chat?room=class:${effectiveClassId}`)}
-              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              <span>Tin nhắn {effectiveClassId}</span>
-            </button>
-          )}
-        </div>
+        {effectiveClassId && (
+          <button
+            type="button"
+            onClick={() => navigate(`/chat?room=class:${effectiveClassId}`)}
+            className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span>Nhóm {effectiveClassId}</span>
+          </button>
+        )}
       </div>
+
+      {hasApiError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900"
+        >
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
+            <span>Chưa tải được dữ liệu lớp học.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              classesQuery.refetch();
+              homeworksQuery.refetch();
+            }}
+            className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Thử lại
+          </button>
+        </div>
+      )}
 
       {/* Compact Sub-Navigation Tabs */}
       <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:items-center">
@@ -396,7 +418,9 @@ export const TeacherWorkspace: React.FC = () => {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="rounded bg-red-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                            Bài {hw.lesson_num}
+                            {hw.lesson_num > 100
+                              ? `Buổi ${Math.floor(hw.lesson_num / 100)} · Bài ${hw.lesson_num % 100}`
+                              : `Bài ${hw.lesson_num}`}
                           </span>
                           <span className="truncate font-display text-xs font-bold text-stone-900 sm:text-sm">
                             {hw.student_name || hw.student_email}

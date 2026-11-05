@@ -123,18 +123,30 @@ async function runSuite() {
     await studentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="chat-composer-input"]', { timeout: 8000 });
     await studentPage.fill('[data-testid="chat-composer-input"]', 'Bản nháp riêng của Hoàng Ngân');
+    const draftBeforeLogout = await studentPage.evaluate(() =>
+      localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')
+    );
     await studentPage.click('[data-testid="logout-btn"]');
     await studentPage.waitForSelector('[data-testid="login-page"]', { timeout: 8000 });
-    const draftAfterLogout = await studentPage.evaluate(() => {
-      const raw = localStorage.getItem('ktn_v2_ui_prefs');
-      if (!raw) return {};
-      return JSON.parse(raw)?.state?.roomDrafts || {};
+    const storageAfterLogout = await studentPage.evaluate(() => {
+      const remainingDraftKeys = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('ktn_v2_chat_draft_')) remainingDraftKeys.push(k);
+      }
+      return {
+        sessionRaw: localStorage.getItem('ktn_v2_auth_session'),
+        remainingDraftKeys,
+      };
     });
     recordTest(
       'TEST A',
       'A5',
       'Logout revokes session, clears room drafts in storage, and redirects to /login',
-      Object.keys(draftAfterLogout).length === 0
+      draftBeforeLogout === 'Bản nháp riêng của Hoàng Ngân' &&
+        storageAfterLogout.sessionRaw === null &&
+        storageAfterLogout.remainingDraftKeys.length === 0,
+      `draftBefore="${draftBeforeLogout}", remainingDrafts=${storageAfterLogout.remainingDraftKeys.length}`
     );
 
     // A6: Admin login loads Admin Home (/) and Admin Workspace (/admin)
@@ -917,20 +929,67 @@ async function runSuite() {
       !seesTeacherNav && !adminSeesStudentNav && !teacherSeesAdminNav
     );
 
-    // H8: Role protection via URL & API (Teacher blocked from /admin)
+    // H8: Role protection via URL & API (Teacher blocked from /admin and /learning; API RBAC enforced)
     await teacherPage.goto(`${baseUrl}/admin`, { waitUntil: 'domcontentloaded' });
+    await teacherPage.waitForSelector('[data-testid="role-forbidden-guard"]', { timeout: 8000 });
+    await teacherPage.goto(`${baseUrl}/learning`, { waitUntil: 'domcontentloaded' });
     await teacherPage.waitForSelector('[data-testid="role-forbidden-guard"]', { timeout: 8000 });
     await teacherPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await teacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+
+    const studentRbacApi = await studentPage.evaluate(async () => {
+      const raw = localStorage.getItem('ktn_v2_auth_session');
+      const token = raw ? JSON.parse(raw).token : '';
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
+      const gradeRes = await fetch('/api/ktn/homeworks/grade', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ id: 'HW-1', score: 10, status: 'graded' }),
+      });
+      const orderRes = await fetch('/api/ktn/orders/approve', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ order_id: 'ORD-1' }),
+      });
+      return { gradeStatus: gradeRes.status, orderStatus: orderRes.status };
+    });
+
+    const teacherRbacApi = await teacherPage.evaluate(async () => {
+      const raw = localStorage.getItem('ktn_v2_auth_session');
+      const token = raw ? JSON.parse(raw).token : '';
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
+      const orderRes = await fetch('/api/ktn/orders/approve', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ order_id: 'ORD-1' }),
+      });
+      const courseRes = await fetch('/api/ktn/students/courses', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'grant', email: 'a@b.c', course_ids: ['1'] }),
+      });
+      return { orderStatus: orderRes.status, courseStatus: courseRes.status };
+    });
+
     recordTest(
       'TEST H',
       'H8',
-      'Role protection blocks Teacher from /admin and Student from /teacher and /admin',
-      true
+      'Role protection blocks unauthorized routes and enforces 403 RBAC on grading/orders/course APIs',
+      studentRbacApi.gradeStatus === 403 &&
+        studentRbacApi.orderStatus === 403 &&
+        teacherRbacApi.orderStatus === 403 &&
+        teacherRbacApi.courseStatus === 403,
+      `student(grade=${studentRbacApi.gradeStatus},order=${studentRbacApi.orderStatus}) teacher(order=${teacherRbacApi.orderStatus},course=${teacherRbacApi.courseStatus})`
     );
 
     // H9: Demo / Live isolation (DemoControlBar hidden in Live mode; failed live login never falls back to demoUser)
-    const demoBarVisibleInLive = await studentPage.isVisible('[data-testid="demo-control-bar"]');
+    const demoBarVisibleInLive = await studentPage.isVisible('[data-testid="mode-indicator-bar"]');
     const liveAuthCheckContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const liveAuthCheckPage = await liveAuthCheckContext.newPage();
     await liveAuthCheckPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
@@ -976,15 +1035,38 @@ async function runSuite() {
           const overflow = document.documentElement.scrollWidth - window.innerWidth;
           const bodyText = document.body.innerText || '';
           const hasLeakedTokens =
-            bodyText.includes('DEMO-MODE-ONLY') || bodyText.includes('undefined');
-          return { headerHeight, overflow, hasLeakedTokens };
+            bodyText.includes('DEMO-MODE-ONLY') ||
+            bodyText.includes('undefined') ||
+            bodyText.includes('VIDEO HLS') ||
+            bodyText.includes('403 COURSE_NOT_ENTITLED');
+          const visibleNavBars = Array.from(document.querySelectorAll('nav')).filter((el) => {
+            const st = window.getComputedStyle(el);
+            return st.display !== 'none' && st.visibility !== 'hidden' && el.offsetHeight > 0;
+          }).length;
+          const primaryBtn = document.querySelector(
+            '[data-testid="dashboard-continue-learning-btn"], [data-testid="teacher-home-grade-btn"], [data-testid="admin-quick-orders"]'
+          );
+          const ctaAboveFold = primaryBtn
+            ? primaryBtn.getBoundingClientRect().bottom <= window.innerHeight - 52
+            : false;
+          return {
+            headerHeight,
+            overflow,
+            hasLeakedTokens,
+            visibleNavBars,
+            ctaAboveFold,
+          };
         });
 
         recordTest(
           'TEST I',
           `I-${rp.role}-${mw.width}px`,
-          `Compact mobile layout for ${rp.role} at ${mw.width}px (header=${metrics.headerHeight}px <= 56px, overflow=${metrics.overflow}px)`,
-          metrics.headerHeight <= 56 && metrics.overflow <= 2 && !metrics.hasLeakedTokens,
+          `Compact mobile layout for ${rp.role} at ${mw.width}px (header=${metrics.headerHeight}px <= 56px, navBars=${metrics.visibleNavBars}, ctaAboveFold=${metrics.ctaAboveFold}, overflow=${metrics.overflow}px)`,
+          metrics.headerHeight <= 56 &&
+            metrics.overflow <= 2 &&
+            !metrics.hasLeakedTokens &&
+            metrics.visibleNavBars === 1 &&
+            metrics.ctaAboveFold,
           JSON.stringify(metrics)
         );
 

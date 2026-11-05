@@ -11,6 +11,8 @@ import {
   BellRing,
   Check,
   ExternalLink,
+  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
@@ -211,89 +213,93 @@ export const NotificationCenter: React.FC = () => {
         </div>
       )}
 
-      {/* Compact Header Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-stone-200 bg-white p-3.5 shadow-2xs">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-800 text-white shadow-2xs">
-            <Bell className="h-4 w-4" />
+      {!isDemoMode && notificationsQuery.isError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900"
+        >
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
+            <span>Chưa tải được danh sách thông báo.</span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-display text-sm font-bold text-stone-900 sm:text-base">
-                Thông báo
-              </h1>
-              {unreadCount > 0 && (
-                <span
-                  data-testid="notifications-unread-count-pill"
-                  className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white"
-                >
-                  {unreadCount} chưa đọc
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-stone-500">
-              Điểm bài tập, tin nhắn lớp và lịch học mới nhất
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            data-testid="enable-web-push-btn"
-            onClick={handleEnableWebPush}
-            className={`inline-flex min-h-[36px] items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors ${
-              pushEnabled
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                : 'border-stone-300 bg-stone-50 text-stone-700 hover:bg-stone-100'
-            }`}
+            onClick={() => notificationsQuery.refetch()}
+            className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
           >
-            <BellRing className="h-3.5 w-3.5" />
-            <span>{pushEnabled ? 'Đã bật thông báo' : 'Bật thông báo'}</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="mark-all-notifications-read-btn"
-            disabled={unreadCount === 0 || markReadMutation.isPending}
-            onClick={handleMarkAllRead}
-            className="inline-flex min-h-[36px] items-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900 disabled:opacity-40"
-          >
-            <CheckCheck className="h-3.5 w-3.5" />
-            <span>Đọc tất cả</span>
+            <RotateCcw className="h-3 w-3" />
+            Thử lại
           </button>
         </div>
-      </div>
+      )}
 
-      {/* Filter Tabs & List */}
-      <div className="rounded-2xl border border-stone-200 bg-white p-3.5 sm:p-4 shadow-2xs">
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-stone-200 pb-2.5">
-          {(
-            [
-              { id: 'all', label: `Tất cả (${notifications.length})` },
-              { id: 'unread', label: `Chưa đọc (${unreadCount})` },
-              { id: 'homework', label: 'Chấm bài' },
-              { id: 'chat', label: 'Tin nhắn' },
-            ] as const
-          ).map((tab) => (
+      {/* Filter Tabs & List in a Single Compact Card */}
+      <div className="rounded-2xl border border-stone-200 bg-white p-3 sm:p-4 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {(
+              [
+                { id: 'all', label: `Tất cả (${notifications.length})` },
+                { id: 'unread', label: `Chưa đọc (${unreadCount})` },
+                { id: 'homework', label: 'Chấm bài' },
+                { id: 'chat', label: 'Tin nhắn' },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                data-testid={`notif-filter-${tab.id}`}
+                onClick={() => setFilterTab(tab.id)}
+                className={`min-h-[34px] shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold transition-colors ${
+                  filterTab === tab.id
+                    ? 'bg-red-800 text-white'
+                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {unreadCount > 0 && (
+              <span
+                data-testid="notifications-unread-count-pill"
+                className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white"
+              >
+                {unreadCount} mới
+              </span>
+            )}
+
             <button
-              key={tab.id}
               type="button"
-              data-testid={`notif-filter-${tab.id}`}
-              onClick={() => setFilterTab(tab.id)}
-              className={`min-h-[34px] rounded-xl px-3 py-1 text-xs font-bold transition-colors ${
-                filterTab === tab.id
-                  ? 'bg-red-800 text-white'
-                  : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+              data-testid="enable-web-push-btn"
+              onClick={handleEnableWebPush}
+              className={`inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
+                pushEnabled
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                  : 'border-stone-300 bg-stone-50 text-stone-700 hover:bg-stone-100'
               }`}
             >
-              {tab.label}
+              <BellRing className="h-3.5 w-3.5" />
+              <span>{pushEnabled ? 'Đã bật' : 'Bật chuông'}</span>
             </button>
-          ))}
+
+            <button
+              type="button"
+              data-testid="mark-all-notifications-read-btn"
+              disabled={unreadCount === 0 || markReadMutation.isPending}
+              onClick={handleMarkAllRead}
+              className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white shadow-2xs hover:bg-red-900 disabled:opacity-40"
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              <span>Đọc tất cả</span>
+            </button>
+          </div>
         </div>
 
         {/* Items */}
-        <div className="mt-3 space-y-2">
+        <div className="mt-2.5 space-y-2">
           {filteredList.length === 0 ? (
             <div
               data-testid="notifications-empty-state"

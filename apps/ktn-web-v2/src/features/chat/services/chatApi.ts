@@ -109,7 +109,7 @@ export const chatApi = {
     const normalizeRoom = (r: ChatRoom): ChatRoom => ({
       ...r,
       unreadCount: typeof r.unreadCount === 'number' ? r.unreadCount : r.unread ? 1 : 0,
-      memberCount: r.type === 'class' ? 16 : r.type === 'course' ? 42 : 2
+      memberCount: typeof r.memberCount === 'number' ? r.memberCount : undefined
     });
 
     return {

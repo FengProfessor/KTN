@@ -46,15 +46,15 @@ export const TeacherHome: React.FC = () => {
 
   const assignedClasses = useMemo(() => {
     const raw = isDemoMode ? DEMO_CLASSES : classesQuery.data || [];
-    if (!user?.email) return raw;
-    const filtered = raw.filter(
+    if (isDemoMode || user?.role === 'admin') return raw;
+    if (!user?.email) return [];
+    return raw.filter(
       (c) =>
-        !c.teacher_email ||
-        c.teacher_email.toLowerCase() === user.email.toLowerCase() ||
-        c.teacher_code === user.code
+        (c.teacher_email &&
+          c.teacher_email.toLowerCase() === user.email.toLowerCase()) ||
+        (c.teacher_code && user.code && c.teacher_code === user.code)
     );
-    return filtered.length > 0 ? filtered : raw;
-  }, [isDemoMode, classesQuery.data, user?.email, user?.code]);
+  }, [isDemoMode, classesQuery.data, user?.email, user?.code, user?.role]);
 
   const homeworksQuery = useQuery<KtnHomework[]>({
     queryKey: ['ktn-homeworks', 'teacher-all', user?.email, isDemoMode],
@@ -71,7 +71,15 @@ export const TeacherHome: React.FC = () => {
     [chatRooms]
   );
 
-  const allHomeworks = homeworksQuery.data || [];
+  const assignedClassIds = useMemo(
+    () => new Set(assignedClasses.map((c) => c.id)),
+    [assignedClasses]
+  );
+  const allHomeworks = useMemo(() => {
+    const raw = homeworksQuery.data || [];
+    if (isDemoMode || user?.role === 'admin') return raw;
+    return raw.filter((h) => !h.class_code || assignedClassIds.has(h.class_code));
+  }, [homeworksQuery.data, isDemoMode, user?.role, assignedClassIds]);
   const filteredHomeworks = useMemo(() => {
     if (selectedClassFilter === 'ALL') return allHomeworks;
     return allHomeworks.filter((h) => h.class_code === selectedClassFilter);
@@ -316,7 +324,11 @@ export const TeacherHome: React.FC = () => {
                     )}
                   </div>
                 }
-                title={`${hw.student_name || hw.student_email} · Bài ${hw.lesson_num}`}
+                title={`${hw.student_name || hw.student_email} · ${
+                  hw.lesson_num > 100
+                    ? `Buổi ${Math.floor(hw.lesson_num / 100)} · Bài ${hw.lesson_num % 100}`
+                    : `Bài ${hw.lesson_num}`
+                }`}
                 subtitle={hw.student_note || hw.lesson_title}
                 badge={
                   hw.status === 'pending' ? (

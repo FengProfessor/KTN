@@ -95,15 +95,20 @@ export const DEMO_USERS: Record<string, KtnUserSession> = {
   }
 };
 
-const initialAuthUser = getStoredSession();
-const initialIsDemo = typeof window !== 'undefined' && window.location.search.includes('demo=1');
+import { isDemoAllowedInEnv } from './useUiStore';
+
+const storedTokenExists = Boolean(getStoredSession()?.token);
+const initialIsDemo =
+  isDemoAllowedInEnv() &&
+  typeof window !== 'undefined' &&
+  window.location.search.includes('demo=1');
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: initialIsDemo ? DEMO_USERS.student_both : initialAuthUser,
-  authUser: initialAuthUser,
+  user: initialIsDemo ? DEMO_USERS.student_both : null,
+  authUser: null,
   demoUser: DEMO_USERS.student_both,
   isLoading: false,
-  isRestoring: Boolean(initialAuthUser) && !initialIsDemo,
+  isRestoring: storedTokenExists && !initialIsDemo,
   error: null,
 
   async login(email: string, password: string) {

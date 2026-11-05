@@ -168,7 +168,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               <Lock className="h-7 w-7" />
             </div>
             <span className="mt-3 rounded-full bg-amber-500/20 px-3 py-0.5 text-[11px] font-bold uppercase tracking-wider text-amber-300">
-              Bảo vệ bản quyền khóa học (403 COURSE_NOT_ENTITLED)
+              Khóa học có bản quyền
             </span>
             <h3 className="mt-2 font-display text-base font-bold sm:text-lg">
               Tài khoản chưa mở khóa học phần {courseName}
@@ -200,10 +200,10 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               <AlertTriangle className="h-7 w-7" />
             </div>
             <h3 className="mt-3 font-display text-base font-bold">
-              Không tải được luồng phát video bài giảng
+              Không tải được video bài giảng
             </h3>
             <p className="mt-1 max-w-md text-xs text-stone-400">
-              Đường truyền mạng đang gián đoạn hoặc phiên xem video đã hết hạn bảo mật. Hãy nhấn thử lại để cấp quyền phát mới.
+              Đường truyền mạng đang gián đoạn hoặc phiên xem video đã hết hạn. Hãy nhấn thử lại để phát tiếp.
             </p>
             <button
               type="button"
@@ -225,7 +225,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
           >
             <Loader2 className="h-9 w-9 animate-spin text-amber-400" />
             <p className="mt-3 text-xs font-semibold text-stone-200">
-              Đang xác thực quyền học viên & kết nối máy chủ HLS...
+              Đang tải bài giảng...
             </p>
             <p className="mt-1 text-[11px] text-stone-400">{lessonTitle}</p>
           </div>
@@ -249,7 +249,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             setInternalStatus('paused');
             if (!isCompleted) onMarkCompleted();
           }}
-          poster="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='%23450a0a'/><stop offset='55%' stop-color='%237f1d1d'/><stop offset='100%' stop-color='%231c1917'/></linearGradient></defs><rect width='1280' height='720' fill='url(%23g)'/><circle cx='640' cy='320' r='68' fill='%23f59e0b' fill-opacity='0.2' stroke='%23fbbf24' stroke-width='3'/><polygon points='622,290 622,350 675,320' fill='%23fef3c7'/><text x='640' y='445' text-anchor='middle' fill='%23fef3c7' font-family='sans-serif' font-size='28' font-weight='bold'>HỌC VIỆN KHỔNG TỬ NHÍ — PHÒNG HỌC VIDEO HLS</text></svg>"
+          poster="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='%23450a0a'/><stop offset='55%' stop-color='%237f1d1d'/><stop offset='100%' stop-color='%231c1917'/></linearGradient></defs><rect width='1280' height='720' fill='url(%23g)'/><circle cx='640' cy='320' r='68' fill='%23f59e0b' fill-opacity='0.2' stroke='%23fbbf24' stroke-width='3'/><polygon points='622,290 622,350 675,320' fill='%23fef3c7'/><text x='640' y='445' text-anchor='middle' fill='%23fef3c7' font-family='sans-serif' font-size='28' font-weight='bold'>HỌC VIỆN KHỔNG TỬ NHÍ — PHÒNG HỌC TRỰC TUYẾN</text></svg>"
           className="h-full w-full object-contain"
         />
       </div>

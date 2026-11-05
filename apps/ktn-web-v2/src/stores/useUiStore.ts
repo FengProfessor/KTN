@@ -34,10 +34,21 @@ function readInitialFailedQueue(): Record<string, ChatMessage[]> {
 function readInitialCompletedLessons(): Record<string, boolean> {
   try {
     const raw = localStorage.getItem(COMPLETED_LESSONS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : { '6adadba969897b0002482ca5:1': true };
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
   } catch {
-    return { '6adadba969897b0002482ca5:1': true };
+    return {};
   }
+}
+
+export function isDemoAllowedInEnv(): boolean {
+  if (import.meta.env.DEV) return true;
+  if (
+    import.meta.env.VITE_ENABLE_DEMO === 'true' ||
+    import.meta.env.VITE_ENABLE_DEMO_BAR === 'true'
+  ) {
+    return true;
+  }
+  return false;
 }
 
 interface UiState {
@@ -94,8 +105,11 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
-  isDemoMode: typeof window !== 'undefined' && window.location.search.includes('demo=1'),
-  setDemoMode: (val) => set({ isDemoMode: val }),
+  isDemoMode:
+    isDemoAllowedInEnv() &&
+    typeof window !== 'undefined' &&
+    window.location.search.includes('demo=1'),
+  setDemoMode: (val) => set({ isDemoMode: val && isDemoAllowedInEnv() }),
 
   sidebarOpen: false,
   setSidebarOpen: (val) => set({ sidebarOpen: val }),

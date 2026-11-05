@@ -228,7 +228,20 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       auth.syncModeUser(false);
       expect(useAuthStore.getState().user).toBeNull();
     });
+
+    it('starts with empty completedLessons (no fabricated Lesson 1 completion) and clears localStorage chat drafts on identity switch', () => {
+      localStorage.removeItem('ktn_v2_completed_lessons');
+      expect(useUiStore.getState().completedLessons).toEqual({});
+
+      useUiStore.getState().setRoomDraft('class:YCT2-04', 'Bản nháp riêng tư');
+      expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBe('Bản nháp riêng tư');
+
+      useUiStore.getState().resetSessionUiState();
+      expect(useUiStore.getState().draftByRoom).toEqual({});
+      expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
+    });
   });
 });
+
 
 

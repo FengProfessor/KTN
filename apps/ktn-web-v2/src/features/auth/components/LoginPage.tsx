@@ -15,7 +15,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
-import { useUiStore } from '@/stores/useUiStore';
+import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
 
 const loginSchema = z.object({
   email: z.string().min(3, 'Vui lòng nhập email hoặc mã học viên hợp lệ'),
@@ -74,9 +74,10 @@ export const LoginPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const showDevTools =
-    import.meta.env.DEV ||
-    searchParams.get('demo') === '1' ||
-    searchParams.get('qa') === '1';
+    isDemoAllowedInEnv() &&
+    (import.meta.env.DEV ||
+      searchParams.get('demo') === '1' ||
+      searchParams.get('qa') === '1');
 
   const devHarnessToken = import.meta.env.VITE_QA_PASS || 'ktn-session-verify';
 

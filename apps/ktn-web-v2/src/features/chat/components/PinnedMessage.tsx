@@ -38,19 +38,23 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
             <Pin className="h-3 w-3 rotate-45 fill-amber-600 text-amber-700" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-0.5 rounded bg-amber-600/15 px-1.5 py-0.2 text-[9.5px] font-bold uppercase tracking-wider text-amber-900">
+            <div
+              className={`flex gap-1.5 ${
+                expanded ? 'flex-col items-start' : 'items-center min-w-0'
+              }`}
+            >
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-600/15 px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider text-amber-900">
                 <Sparkles className="h-2.5 w-2.5" />
                 Ghim
               </span>
               {pinnedMessage.pinnedBy && (
-                <span className="hidden text-[10.5px] font-medium text-amber-800/80 sm:inline">
+                <span className="hidden shrink-0 text-[10.5px] font-medium text-amber-800/80 sm:inline">
                   • {pinnedMessage.pinnedBy}{' '}
                   {pinnedMessage.updatedAt ? `(${formatChatTimestamp(pinnedMessage.updatedAt)})` : ''}
                 </span>
               )}
               <p
-                className={`text-xs font-medium text-stone-800 ${
+                className={`min-w-0 flex-1 text-xs font-medium text-stone-800 ${
                   expanded ? 'whitespace-pre-wrap' : 'truncate'
                 }`}
               >

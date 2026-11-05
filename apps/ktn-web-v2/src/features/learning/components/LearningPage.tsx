@@ -11,6 +11,8 @@ import {
   Volume2,
   ListVideo,
   MessageSquare,
+  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { HlsVideoPlayer, VideoPlayerStatus } from './HlsVideoPlayer';
 import { HomeworkPanel } from './HomeworkPanel';
@@ -82,16 +84,25 @@ export const LearningPage: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
   });
 
-  const coursesList =
-    coursesQuery.data && coursesQuery.data.length > 0 ? coursesQuery.data : DEMO_COURSES;
+  const coursesList = useMemo(() => {
+    if (isDemoMode) return DEMO_COURSES;
+    return coursesQuery.data || [];
+  }, [isDemoMode, coursesQuery.data]);
 
   const activeCourse: KtnCourse = useMemo(() => {
     return (
       coursesList.find((c) => c.id === selectedCourseId) ||
       coursesList[0] ||
-      DEMO_COURSES[0]
+      (isDemoMode
+        ? DEMO_COURSES[0]
+        : {
+            id: selectedCourseId,
+            code: 'HSK',
+            title: 'Khóa học tiếng Trung Khổng Tử Nhí',
+            shortTitle: 'Khóa học',
+          })
     );
-  }, [coursesList, selectedCourseId]);
+  }, [coursesList, selectedCourseId, isDemoMode]);
 
   // 2. Fetch Lesson Units for Selected Course (enforces 403 COURSE_NOT_ENTITLED on BFF)
   const unitsQuery = useQuery<KtnLessonUnit[]>({
@@ -109,14 +120,14 @@ export const LearningPage: React.FC = () => {
         }
         if (videoDemoScenario === 'unentitled') {
           throw new KtnApiError({
-            message: 'Tài khoản chưa được mở khóa khóa học này (403 COURSE_NOT_ENTITLED).',
+            message: 'Tài khoản chưa được mở khóa khóa học này.',
             status: 403,
             code: 'COURSE_NOT_ENTITLED',
           });
         }
         if (videoDemoScenario === 'error') {
           throw new KtnApiError({
-            message: 'Không tải được luồng phát video bài giảng.',
+            message: 'Không tải được video bài giảng.',
             status: 502,
             code: 'STREAM_ERROR',
           });
@@ -139,10 +150,10 @@ export const LearningPage: React.FC = () => {
   }, [unitsQuery.data, isDemoMode]);
 
   const activeLesson: KtnLessonUnit | null = useMemo(() => {
+    if (lessons.length === 0) return null;
     return (
       lessons.find((l) => Number(l.num) === Number(selectedLessonNum)) ||
       lessons[0] ||
-      DEMO_LESSONS[0] ||
       null
     );
   }, [lessons, selectedLessonNum]);
@@ -286,12 +297,12 @@ export const LearningPage: React.FC = () => {
   ).length;
 
   return (
-    <div data-testid="video-learning-page" className="space-y-4">
+    <div data-testid="video-learning-page" className="space-y-3 sm:space-y-4">
       {/* Demo Mode Video State Switcher */}
       {isDemoMode && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-2 text-xs">
           <span className="font-semibold text-amber-950">
-            Trạng thái kiểm thử Phòng học Video HLS (Demo):
+            Trạng thái kiểm thử Phòng học (Demo):
           </span>
           <div className="flex flex-wrap items-center gap-1">
             {(
@@ -324,56 +335,76 @@ export const LearningPage: React.FC = () => {
         </div>
       )}
 
-      {/* Course Selector Header (Compact on mobile) */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-stone-200 bg-white p-3 sm:p-4 shadow-2xs">
-        <div className="min-w-0">
+      {!isDemoMode && coursesQuery.isError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900"
+        >
           <div className="flex items-center gap-1.5">
-            <span className="rounded bg-red-800 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
-              Video HLS
-            </span>
-            <span className="text-[11px] font-semibold text-stone-500">
-              Hoàn thành {completedCount}/{lessons.length} bài
-            </span>
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
+            <span>Chưa tải được danh sách khóa học.</span>
           </div>
-          <h1 className="mt-0.5 truncate font-display text-sm font-bold text-stone-900 sm:text-lg">
+          <button
+            type="button"
+            onClick={() => {
+              coursesQuery.refetch();
+              unitsQuery.refetch();
+            }}
+            className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {/* Course Selector Header (Compact on mobile) */}
+      <div className="space-y-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 shadow-2xs sm:flex sm:items-center sm:justify-between sm:space-y-0 sm:px-4 sm:py-3">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <h1 className="truncate font-display text-sm font-bold text-stone-900 sm:text-base">
             {activeCourse.title}
           </h1>
+          <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-bold text-stone-700">
+            {completedCount}/{lessons.length} bài
+          </span>
         </div>
 
-        {/* Course Level Pills */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {coursesList.slice(0, 4).map((course) => {
-            const isEntitled =
-              isDemoMode ||
-              user?.role === 'teacher' ||
-              user?.role === 'admin' ||
-              (user?.onlineCourses || []).some((c) => c.id === course.id);
+        {/* Course Level Pills (Single-line horizontal scroll on mobile) */}
+        {coursesList.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
+            {coursesList.slice(0, 4).map((course) => {
+              const isEntitled =
+                isDemoMode ||
+                user?.role === 'teacher' ||
+                user?.role === 'admin' ||
+                (user?.onlineCourses || []).some((c) => c.id === course.id);
 
-            return (
-              <button
-                key={course.id}
-                type="button"
-                data-testid={`select-course-${course.id}`}
-                onClick={() => {
-                  setSelectedCourseId(course.id);
-                  setSelectedLessonNum(1);
-                }}
-                className={`inline-flex min-h-[34px] items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition-all ${
-                  activeCourse.id === course.id
-                    ? 'bg-red-800 text-white shadow-2xs'
-                    : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
-                }`}
-              >
-                <span>{course.shortTitle || course.code}</span>
-                {!isEntitled && (
-                  <span className="rounded bg-stone-200 px-1 py-0.2 text-[9px] text-stone-600">
-                    Khóa
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+              return (
+                <button
+                  key={course.id}
+                  type="button"
+                  data-testid={`select-course-${course.id}`}
+                  onClick={() => {
+                    setSelectedCourseId(course.id);
+                    setSelectedLessonNum(1);
+                  }}
+                  className={`inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                    activeCourse.id === course.id
+                      ? 'bg-red-800 text-white shadow-2xs'
+                      : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  <span>{course.shortTitle || course.code}</span>
+                  {!isEntitled && (
+                    <span className="rounded bg-stone-200 px-1 py-0.2 text-[10px] text-stone-600">
+                      Khóa
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Main Responsive Grid: Video + Tabs on Left (8 cols), Lesson List Sidebar on Right (4 cols) */}
@@ -398,226 +429,241 @@ export const LearningPage: React.FC = () => {
             onRequestUnlockCourse={() => navigate('/chat')}
           />
 
-          {/* Mobile Lesson Drawer Trigger */}
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 lg:hidden">
-            <div className="min-w-0">
-              <p className="text-[10.5px] font-bold uppercase text-red-800">
-                Bài {activeLesson?.num || 1}/{lessons.length}
-              </p>
-              <p className="truncate text-xs font-semibold text-stone-900">
-                {activeLesson?.title}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setMobileLessonDrawerOpen((prev) => !prev)}
-              className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg bg-stone-100 px-2.5 py-1.5 text-xs font-bold text-stone-800"
-            >
-              <ListVideo className="h-3.5 w-3.5 text-red-800" />
-              <span>Chọn bài ({lessons.length})</span>
-            </button>
-          </div>
+          {/* Mobile Lesson Drawer Trigger & Content Tabs (Only when entitled and lessons exist) */}
+          {activeLesson && playerStatusOverride !== 'unentitled' && (
+            <>
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 lg:hidden">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase text-red-800">
+                    Bài {activeLesson.num}/{lessons.length}
+                  </p>
+                  <p className="truncate text-xs font-semibold text-stone-900">
+                    {activeLesson.title}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileLessonDrawerOpen((prev) => !prev)}
+                  className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg bg-stone-100 px-2.5 py-1.5 text-xs font-bold text-stone-800"
+                >
+                  <ListVideo className="h-3.5 w-3.5 text-red-800" />
+                  <span>Chọn bài ({lessons.length})</span>
+                </button>
+              </div>
 
-          {mobileLessonDrawerOpen && (
-            <div className="rounded-2xl border border-stone-200 bg-white p-2.5 lg:hidden">
-              <div className="max-h-56 space-y-1 overflow-y-auto">
-                {lessons.map((lesson) => {
-                  const isSelected = Number(lesson.num) === Number(activeLesson?.num);
-                  const done = Boolean(completedLessons[`${activeCourse.id}:${lesson.num}`]);
-                  return (
+              {mobileLessonDrawerOpen && (
+                <div className="rounded-2xl border border-stone-200 bg-white p-2.5 lg:hidden">
+                  <div className="max-h-56 space-y-1 overflow-y-auto">
+                    {lessons.map((lesson) => {
+                      const isSelected = Number(lesson.num) === Number(activeLesson.num);
+                      const done = Boolean(
+                        completedLessons[`${activeCourse.id}:${lesson.num}`]
+                      );
+                      return (
+                        <button
+                          key={lesson._id || lesson.num}
+                          type="button"
+                          onClick={() => {
+                            setSelectedLessonNum(lesson.num);
+                            setMobileLessonDrawerOpen(false);
+                          }}
+                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs ${
+                            isSelected
+                              ? 'bg-red-50 font-bold text-red-900'
+                              : 'text-stone-700 hover:bg-stone-50'
+                          }`}
+                        >
+                          <span className="truncate">{lesson.title}</span>
+                          {done && (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Lesson Navigation Tabs: Nội dung / MP3 / Bài tập / Hỏi GV */}
+              <div className="rounded-xl border border-stone-200 bg-white p-3 sm:p-4 shadow-2xs">
+                <div className="flex items-center justify-between gap-1.5 overflow-x-auto border-b border-stone-200 pb-2">
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
-                      key={lesson._id || lesson.num}
                       type="button"
-                      onClick={() => {
-                        setSelectedLessonNum(lesson.num);
-                        setMobileLessonDrawerOpen(false);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs ${
-                        isSelected
-                          ? 'bg-red-50 font-bold text-red-900'
-                          : 'text-stone-700 hover:bg-stone-50'
+                      data-testid="tab-lesson-overview"
+                      onClick={() => setActiveTab('overview')}
+                      className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                        activeTab === 'overview'
+                          ? 'bg-red-800 text-white'
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                       }`}
                     >
-                      <span className="truncate">{lesson.title}</span>
-                      {done && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />}
+                      <BookOpen className="h-3.5 w-3.5" />
+                      <span>Nội dung</span>
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
-          {/* Lesson Navigation Tabs: Tổng quan / Nghe MP3 / Nộp Bài tập */}
-          <div className="rounded-2xl border border-stone-200 bg-white p-3 sm:p-4 shadow-2xs">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  data-testid="tab-lesson-overview"
-                  onClick={() => setActiveTab('overview')}
-                  className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${
-                    activeTab === 'overview'
-                      ? 'bg-red-800 text-white'
-                      : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                  }`}
-                >
-                  <BookOpen className="h-3.5 w-3.5" />
-                  <span>Nội dung</span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="tab-lesson-audio"
-                  onClick={() => setActiveTab('audio')}
-                  className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${
-                    activeTab === 'audio'
-                      ? 'bg-red-800 text-white'
-                      : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                  }`}
-                >
-                  <Headphones className="h-3.5 w-3.5" />
-                  <span>MP3 ({activeLesson?.audioTracks?.length || 0})</span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="tab-lesson-homework"
-                  onClick={() => setActiveTab('homework')}
-                  className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${
-                    activeTab === 'homework'
-                      ? 'bg-red-800 text-white'
-                      : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                  }`}
-                >
-                  <FileCheck2 className="h-3.5 w-3.5" />
-                  <span>Bài tập</span>
-                  {currentLessonHomework?.status === 'graded' && (
-                    <span className="rounded-full bg-emerald-600 px-1.5 py-0.2 text-[10px] text-white">
-                      {currentLessonHomework.score}đ
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(
-                    user?.classCode
-                      ? `/chat?room=class:${user.classCode}`
-                      : `/chat?room=course:${activeCourse.id}`
-                  )
-                }
-                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                <span>Hỏi giáo viên</span>
-              </button>
-            </div>
-
-            {/* Tab 1: Overview */}
-            {activeTab === 'overview' && (
-              <div className="mt-3 space-y-3">
-                <div>
-                  <h2
-                    data-testid="active-lesson-title"
-                    className="font-display text-sm font-bold text-stone-900 sm:text-base"
-                  >
-                    {activeLesson?.title}
-                  </h2>
-                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-stone-600">
-                    {activeLesson?.grammar ||
-                      'Xem video bài giảng, luyện nghe phát âm chuẩn và gửi bản thu âm bài tập bên dưới.'}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-2">
-                    <span className="block text-[10px] font-bold uppercase text-stone-500">
-                      SGK • Tr.{activeLesson?.sgkPage || 1}
-                    </span>
-                    <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
-                      Đọc theo bài
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-2">
-                    <span className="block text-[10px] font-bold uppercase text-stone-500">
-                      SBT • Tr.{activeLesson?.sbtPage || 1}
-                    </span>
-                    <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
-                      Nghe MP3
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-2.5 py-2">
-                    <span className="block text-[10px] font-bold uppercase text-amber-900">
-                      Viết • Tr.{activeLesson?.voVietPage || 1}
-                    </span>
-                    <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
-                      Thu âm nộp
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Tab 2: Audio Tracks */}
-            {activeTab === 'audio' && (
-              <div className="mt-3 space-y-2">
-                {!activeLesson?.audioTracks || activeLesson.audioTracks.length === 0 ? (
-                  <p className="py-3 text-center text-xs text-stone-500">
-                    Âm thanh đã tích hợp trực tiếp trong video bài giảng.
-                  </p>
-                ) : (
-                  activeLesson.audioTracks.map((audio, idx) => (
-                    <div
-                      key={idx}
-                      className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-stone-50 p-2.5"
+                    <button
+                      type="button"
+                      data-testid="tab-lesson-audio"
+                      onClick={() => setActiveTab('audio')}
+                      className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                        activeTab === 'audio'
+                          ? 'bg-red-800 text-white'
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                      }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-800 text-white">
-                          <Volume2 className="h-3.5 w-3.5" />
+                      <Headphones className="h-3.5 w-3.5" />
+                      <span>MP3 ({activeLesson.audioTracks?.length || 0})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid="tab-lesson-homework"
+                      onClick={() => setActiveTab('homework')}
+                      className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                        activeTab === 'homework'
+                          ? 'bg-red-800 text-white'
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                      }`}
+                    >
+                      <FileCheck2 className="h-3.5 w-3.5" />
+                      <span>Bài tập</span>
+                      {currentLessonHomework?.status === 'graded' && (
+                        <span className="rounded-full bg-emerald-600 px-1.5 py-0.2 text-[10px] text-white">
+                          {currentLessonHomework.score}đ
                         </span>
-                        <p className="text-xs font-bold text-stone-900">{audio.name}</p>
-                      </div>
-                      <audio controls preload="none" src={audio.url} className="h-8 max-w-xs" />
+                      )}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        user?.classCode
+                          ? `/chat?room=class:${user.classCode}`
+                          : `/chat?room=course:${activeCourse.id}`
+                      )
+                    }
+                    className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    <span>Hỏi GV</span>
+                  </button>
+                </div>
+
+                {/* Tab 1: Overview */}
+                {activeTab === 'overview' && (
+                  <div className="mt-2.5 space-y-2.5">
+                    <div>
+                      <h2
+                        data-testid="active-lesson-title"
+                        className="font-display text-sm font-bold text-stone-900 sm:text-base"
+                      >
+                        {activeLesson.title}
+                      </h2>
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-stone-600">
+                        {activeLesson.grammar ||
+                          'Xem video bài giảng, luyện nghe phát âm chuẩn và gửi bản thu âm bài tập.'}
+                      </p>
                     </div>
-                  ))
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-2">
+                        <span className="block text-[10px] font-bold uppercase text-stone-500">
+                          SGK • Tr.{activeLesson.sgkPage || 1}
+                        </span>
+                        <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
+                          Đọc theo bài
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-2">
+                        <span className="block text-[10px] font-bold uppercase text-stone-500">
+                          SBT • Tr.{activeLesson.sbtPage || 1}
+                        </span>
+                        <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
+                          Nghe MP3
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-2.5 py-2">
+                        <span className="block text-[10px] font-bold uppercase text-amber-900">
+                          Viết • Tr.{activeLesson.voVietPage || 1}
+                        </span>
+                        <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
+                          Thu âm nộp
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2: Audio Tracks */}
+                {activeTab === 'audio' && (
+                  <div className="mt-2.5 space-y-2">
+                    {!activeLesson.audioTracks || activeLesson.audioTracks.length === 0 ? (
+                      <p className="py-3 text-center text-xs text-stone-500">
+                        Âm thanh đã tích hợp trực tiếp trong video bài giảng.
+                      </p>
+                    ) : (
+                      activeLesson.audioTracks.map((audio, idx) => (
+                        <div
+                          key={idx}
+                          className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-stone-50 p-2.5"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-800 text-white">
+                              <Volume2 className="h-3.5 w-3.5" />
+                            </span>
+                            <p className="text-xs font-bold text-stone-900">{audio.name}</p>
+                          </div>
+                          <audio
+                            controls
+                            preload="none"
+                            src={audio.url}
+                            className="h-8 max-w-xs"
+                          />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* Tab 3: Homework */}
+                {activeTab === 'homework' && (
+                  <div className="mt-2.5">
+                    <HomeworkPanel
+                      key={`${activeCourse.id}:${activeLesson.num}`}
+                      courseId={activeCourse.id}
+                      lessonNum={activeLesson.num}
+                      lessonTitle={activeLesson.title}
+                      classCode={user?.classCode || ''}
+                      existingSubmission={currentLessonHomework}
+                      isSubmitting={submitHomeworkMutation.isPending}
+                      onSubmitHomework={async (params) => {
+                        await submitHomeworkMutation.mutateAsync(params);
+                      }}
+                    />
+                  </div>
                 )}
               </div>
-            )}
 
-            {/* Tab 3: Homework */}
-            {activeTab === 'homework' && activeLesson && (
-              <div className="mt-3">
-                <HomeworkPanel
-                  key={`${activeCourse.id}:${activeLesson.num}`}
-                  courseId={activeCourse.id}
-                  lessonNum={activeLesson.num}
-                  lessonTitle={activeLesson.title}
-                  classCode={user?.classCode || ''}
-                  existingSubmission={currentLessonHomework}
-                  isSubmitting={submitHomeworkMutation.isPending}
-                  onSubmitHomework={async (params) => {
-                    await submitHomeworkMutation.mutateAsync(params);
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {activeTab !== 'homework' && activeLesson && (
-            <HomeworkPanel
-              key={`${activeCourse.id}:${activeLesson.num}`}
-              courseId={activeCourse.id}
-              lessonNum={activeLesson.num}
-              lessonTitle={activeLesson.title}
-              classCode={user?.classCode || ''}
-              existingSubmission={currentLessonHomework}
-              isSubmitting={submitHomeworkMutation.isPending}
-              onSubmitHomework={async (params) => {
-                await submitHomeworkMutation.mutateAsync(params);
-              }}
-            />
+              {activeTab !== 'homework' && (
+                <div className="hidden lg:block">
+                  <HomeworkPanel
+                    key={`${activeCourse.id}:${activeLesson.num}`}
+                    courseId={activeCourse.id}
+                    lessonNum={activeLesson.num}
+                    lessonTitle={activeLesson.title}
+                    classCode={user?.classCode || ''}
+                    existingSubmission={currentLessonHomework}
+                    isSubmitting={submitHomeworkMutation.isPending}
+                    onSubmitHomework={async (params) => {
+                      await submitHomeworkMutation.mutateAsync(params);
+                    }}
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
 

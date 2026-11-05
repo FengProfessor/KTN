@@ -1137,6 +1137,85 @@ async function runSuite() {
       JSON.stringify(chatLayoutCheck)
     );
 
+    // =========================================================================
+    // TEST J — V3 ONE-CLICK PROVISIONING, VIETNAMESE SEARCH, 3-WAY SYNC & ATTENDANCE
+    // =========================================================================
+    await adminAuditPage.setViewportSize({ width: 1440, height: 900 });
+    await adminAuditPage.goto(`${baseUrl}/admin`, { waitUntil: 'domcontentloaded' });
+    await adminAuditPage.waitForSelector('[data-testid="admin-workspace-page"]', { timeout: 8000 });
+
+    // J1: One-click Student Provisioning without selecting a class -> class_code is '' (never YCT2-04) + ephemeral credential banner
+    await adminAuditPage.click('[data-testid="admin-open-create-student-btn"]');
+    await adminAuditPage.waitForSelector('[data-testid="admin-create-student-modal"]', { timeout: 5000 });
+    const v3Email = `dangnam.v3.${Date.now()}@khongtunhi.com`;
+    await adminAuditPage.fill('[data-testid="provision-student-name-input"]', 'Bé Đặng Nhật Nam');
+    await adminAuditPage.fill('[data-testid="provision-student-email-input"]', v3Email);
+    await adminAuditPage.fill('[data-testid="provision-student-phone-input"]', '0905112233');
+    await adminAuditPage.fill('[data-testid="provision-student-parent-input"]', 'Chị Đặng Thu Hà');
+    await adminAuditPage.click('[data-testid="provision-student-submit-btn"]');
+
+    await adminAuditPage.waitForSelector('[data-testid="admin-credential-handoff-banner"]', {
+      timeout: 10000,
+    });
+    const bannerText = await adminAuditPage.textContent('[data-testid="admin-credential-handoff-banner"]');
+    recordTest(
+      'TEST J',
+      'J1',
+      'Admin 1-click student provisioning creates student without default YCT2-04 and displays one-time credential handoff banner',
+      Boolean(bannerText && bannerText.includes(v3Email) && !bannerText.includes('123456')),
+      `Provisioned: ${v3Email}`
+    );
+
+    // J2: Server-side Vietnamese unaccented search ("dang nhat nam") finds "Bé Đặng Nhật Nam"
+    await adminAuditPage.fill('[data-testid="admin-search-input"]', 'dang nhat nam');
+    await adminAuditPage.waitForTimeout(450);
+    const searchBody = await adminAuditPage.textContent('[data-testid="admin-workspace-page"]');
+    recordTest(
+      'TEST J',
+      'J2',
+      'Admin server-side Vietnamese unaccented search ("dang nhat nam") matches "Bé Đặng Nhật Nam" with zero default YCT2-04',
+      Boolean(
+        searchBody &&
+          searchBody.includes('Bé Đặng Nhật Nam') &&
+          searchBody.includes('Chưa xếp lớp')
+      ),
+      'Matched unaccented search + Chưa xếp lớp'
+    );
+
+    // J3: 3-System Sync Health panel is visible and refreshes cleanly
+    await adminAuditPage.goto(`${baseUrl}/admin/more`, { waitUntil: 'domcontentloaded' });
+    await adminAuditPage.waitForSelector('[data-testid="admin-sync-health-card"]', { timeout: 8000 });
+    await adminAuditPage.click('[data-testid="admin-sync-retry-all-btn"]');
+    const syncHealthText = await adminAuditPage.textContent('[data-testid="admin-sync-health-card"]');
+    recordTest(
+      'TEST J',
+      'J3',
+      'Admin 3-System Reconciliation & Sync Health panel renders and refreshes sync status',
+      Boolean(syncHealthText && syncHealthText.includes('Đồng bộ 3 hệ thống')),
+      'Sync health verified'
+    );
+
+    // J4: Teacher Attendance saving on /teacher/classes persists to ktn_attendance and reflects on Student /classrooms
+    await teacherPage.setViewportSize({ width: 1440, height: 900 });
+    await teacherPage.goto(`${baseUrl}/teacher/classes`, { waitUntil: 'domcontentloaded' });
+    await teacherPage.waitForSelector('[data-testid="teacher-save-attendance-btn"]', { timeout: 8000 });
+    await teacherPage.click('[data-testid="teacher-save-attendance-btn"]');
+    await teacherPage.waitForTimeout(500);
+
+    await studentPage.setViewportSize({ width: 1440, height: 900 });
+    await studentPage.goto(`${baseUrl}/classrooms?class=YCT2-04&session=1`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await studentPage.waitForSelector('[data-testid="student-attendance-summary-badge"]', { timeout: 8000 });
+    const attBadgeText = await studentPage.textContent('[data-testid="student-attendance-summary-badge"]');
+    recordTest(
+      'TEST J',
+      'J4',
+      'Teacher saves classroom attendance -> Student immediately sees attendance badge on /classrooms',
+      Boolean(attBadgeText && attBadgeText.includes('Chuyên cần')),
+      attBadgeText?.trim() || ''
+    );
+
     await adminAuditContext.close();
     await studentContext.close();
     await teacherContext.close();

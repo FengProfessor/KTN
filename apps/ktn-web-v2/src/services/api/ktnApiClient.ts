@@ -1,4 +1,5 @@
 import type {
+  KtnAttendanceResponse,
   KtnClassItem,
   KtnClassSession,
   KtnCourse,
@@ -6,7 +7,11 @@ import type {
   KtnLessonUnit,
   KtnNotification,
   KtnOrder,
+  KtnProvisionStudentResponse,
   KtnStudentRecord,
+  KtnStudentSearchResult,
+  KtnSyncStatusResponse,
+  KtnTeacherRecord,
   KtnUserSession
 } from '@/types/ktn.types';
 
@@ -102,6 +107,13 @@ export async function ktnRequest<T>(
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 12000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
 
   let res: Response;
   try {
@@ -357,14 +369,76 @@ export const ktnApi = {
     return Array.isArray(res.students) ? res.students : [];
   },
 
+  async searchStudents(
+    params: {
+      q?: string;
+      classCode?: string;
+      courseId?: string;
+      accountStatus?: string;
+      syncStatus?: string;
+      limit?: number;
+      offset?: number;
+    },
+    signal?: AbortSignal
+  ): Promise<KtnStudentSearchResult> {
+    const sp = new URLSearchParams();
+    if (params.q) sp.set('q', params.q);
+    if (params.classCode) sp.set('classCode', params.classCode);
+    if (params.courseId) sp.set('courseId', params.courseId);
+    if (params.accountStatus) sp.set('accountStatus', params.accountStatus);
+    if (params.syncStatus) sp.set('syncStatus', params.syncStatus);
+    sp.set('limit', String(params.limit ?? 25));
+    sp.set('offset', String(params.offset ?? 0));
+    return ktnRequest<KtnStudentSearchResult>(
+      `/api/ktn/admin/students/search?${sp.toString()}`,
+      { signal }
+    );
+  },
+
+  async provisionStudent(payload: {
+    name: string;
+    email: string;
+    phone?: string;
+    parentName?: string;
+    classCode?: string | null;
+    courseIds?: string[];
+    note?: string;
+    idempotencyKey?: string;
+  }): Promise<KtnProvisionStudentResponse> {
+    return ktnRequest<KtnProvisionStudentResponse>(
+      '/api/ktn/admin/students/provision',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
   async manageStudentCourses(payload: {
     action: 'grant' | 'revoke' | 'set' | 'assign_class';
     email: string;
     name?: string;
     courseIds?: string[];
     classCode?: string | null;
-  }): Promise<{ student: KtnStudentRecord; message: string }> {
-    const res = await ktnRequest<{ ok: boolean; student: KtnStudentRecord; message: string }>(
+  }): Promise<{
+    student: KtnStudentRecord;
+    message: string;
+    syncStatus?: string;
+    accountStatus?: string;
+    accountCreated?: boolean;
+    existingAccount?: boolean;
+    initialPassword?: string | null;
+  }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      student: KtnStudentRecord;
+      message: string;
+      syncStatus?: string;
+      accountStatus?: string;
+      accountCreated?: boolean;
+      existingAccount?: boolean;
+      initialPassword?: string | null;
+    }>(
       '/api/ktn/students/courses',
       {
         method: 'POST',
@@ -374,13 +448,59 @@ export const ktnApi = {
     return res;
   },
 
+  async getTeachers(q?: string): Promise<KtnTeacherRecord[]> {
+    const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+    const res = await ktnRequest<{ ok: boolean; teachers: KtnTeacherRecord[] }>(
+      `/api/ktn/teachers${qs}`
+    );
+    return Array.isArray(res.teachers) ? res.teachers : [];
+  },
+
+  async saveTeacher(payload: {
+    code?: string;
+    name: string;
+    email: string;
+    phone?: string;
+    specialty?: string;
+    assignedClasses?: string[];
+  }): Promise<{
+    ok: boolean;
+    teacher: KtnTeacherRecord;
+    provisioningStatus: string;
+    readyToLogin: boolean;
+    accountCreated?: boolean;
+    existingAccount?: boolean;
+    initialPassword?: string | null;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/teachers', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
   async getOrders(): Promise<KtnOrder[]> {
     const res = await ktnRequest<{ ok: boolean; orders: KtnOrder[] }>('/api/ktn/orders');
     return Array.isArray(res.orders) ? res.orders : [];
   },
 
-  async approveOrder(orderId: string, classCode?: string): Promise<{ message: string; studentEmail: string }> {
-    const res = await ktnRequest<{ ok: boolean; message: string; studentEmail: string }>(
+  async approveOrder(orderId: string, classCode?: string): Promise<{
+    message: string;
+    studentEmail: string;
+    syncStatus?: string;
+    accountCreated?: boolean;
+    existingAccount?: boolean;
+    initialPassword?: string | null;
+  }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      message: string;
+      studentEmail: string;
+      syncStatus?: string;
+      accountCreated?: boolean;
+      existingAccount?: boolean;
+      initialPassword?: string | null;
+    }>(
       '/api/ktn/orders/approve',
       {
         method: 'POST',
@@ -388,5 +508,51 @@ export const ktnApi = {
       }
     );
     return res;
+  },
+
+  async getSyncStatus(): Promise<KtnSyncStatusResponse> {
+    return ktnRequest<KtnSyncStatusResponse>('/api/ktn/admin/sync-status');
+  },
+
+  async retrySyncItem(payload: {
+    type: 'student_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
+    email?: string;
+    orderId?: string;
+    homeworkId?: string;
+  }): Promise<{ ok: boolean; syncStatus?: string; message?: string }> {
+    return ktnRequest('/api/ktn/admin/sync-retry', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getAttendance(params: {
+    classCode: string;
+    sessionNum?: number;
+  }): Promise<KtnAttendanceResponse> {
+    const sp = new URLSearchParams();
+    sp.set('classCode', params.classCode);
+    if (params.sessionNum && params.sessionNum > 0) {
+      sp.set('sessionNum', String(params.sessionNum));
+    }
+    return ktnRequest<KtnAttendanceResponse>(`/api/ktn/attendance?${sp.toString()}`);
+  },
+
+  async saveAttendance(payload: {
+    classCode: string;
+    sessionNum: number;
+    date?: string;
+    records: Array<{
+      studentEmail: string;
+      studentName?: string;
+      status: 'present' | 'absent_excused' | 'absent_unexcused' | 'late';
+      note?: string;
+    }>;
+  }): Promise<KtnAttendanceResponse> {
+    return ktnRequest<KtnAttendanceResponse>('/api/ktn/attendance', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   }
 };
+

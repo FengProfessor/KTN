@@ -107,7 +107,21 @@ function loadWorkerInstance() {
       ktn_notifications: [],
       ktn_dlp_alerts: [],
       ktn_orders: [],
-      ktn_push_subscriptions: []
+      ktn_push_subscriptions: [],
+      ktn_payment_config: [
+        {
+          id: 'default',
+          bank_id: 'MB',
+          bank_name: 'MBBank',
+          account_no: '0123456789',
+          account_name: 'HOC VIEN KHONG TU NHI',
+          default_amount: 890000,
+          auto_approve_webhook: false
+        }
+      ],
+      ktn_attendance: [],
+      ktn_provisioning_jobs: [],
+      ktn_sync_events: []
     },
     izteach: {
       permissionsByUid: {
@@ -206,12 +220,24 @@ function loadWorkerInstance() {
         const body = init.body ? JSON.parse(init.body) : {};
         const items = Array.isArray(body) ? body : [body];
         const onConflict = u.searchParams.get('on_conflict');
+        const pkByTable = {
+          ktn_students: 'email',
+          ktn_orders: 'order_id',
+          ktn_teachers: 'code',
+          ktn_classes: 'id',
+          ktn_attendance: 'id',
+          ktn_provisioning_jobs: 'operation_id',
+          ktn_payment_config: 'id'
+        };
+        const defaultPk = pkByTable[table] || 'id';
         const out = [];
         for (const item of items) {
           let existingIdx = -1;
           if (onConflict) {
             const keys = onConflict.split(',').map(s => s.trim());
             existingIdx = rows.findIndex(r => keys.every(k => String(r[k] ?? '').toLowerCase() === String(item[k] ?? '').toLowerCase()));
+          } else if (item[defaultPk]) {
+            existingIdx = rows.findIndex(r => String(r[defaultPk] ?? '').toLowerCase() === String(item[defaultPk] ?? '').toLowerCase());
           } else if (item.id) {
             existingIdx = rows.findIndex(r => r.id === item.id);
           }
@@ -346,10 +372,55 @@ function loadWorkerInstance() {
         ]), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
+      if (u.pathname.endsWith('/prod/user') && method === 'POST') {
+        if (state.faults.izteachUserCreateFail) {
+          return new Response(JSON.stringify({ message: 'izTeach user create 503' }), { status: 503 });
+        }
+        const body = init.body ? JSON.parse(init.body) : {};
+        if (!state.izteach.createdUsersByEmail) state.izteach.createdUsersByEmail = {};
+        const em = String(body.email || '').toLowerCase();
+        if (!state.izteach.createdUsersByEmail[em]) {
+          const seq = Object.keys(state.izteach.createdUsersByEmail).length + 100;
+          state.izteach.createdUsersByEmail[em] = `aaaa1111-2222-3333-4444-${String(seq).padStart(12, '0')}`;
+        }
+        const uid = state.izteach.createdUsersByEmail[em];
+        return new Response(JSON.stringify({ id: uid, userId: uid, email: em }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       if (u.pathname.endsWith('/prod/student')) {
+        if (state.faults.izteachStudentCrmFail) {
+          return new Response(JSON.stringify({ message: 'izTeach student CRM 503' }), { status: 503 });
+        }
+        if (method === 'POST') {
+          if (state.faults.izteachUserCreateFail) {
+            return new Response(JSON.stringify({ message: 'izTeach student create 503' }), { status: 503 });
+          }
+          const body = init.body ? JSON.parse(init.body) : {};
+          const em = String(body.email || '').toLowerCase();
+          if (!state.izteach.createdStudentsByEmail) state.izteach.createdStudentsByEmail = {};
+          const seq = Object.keys(state.izteach.createdStudentsByEmail).length + 100;
+          const generatedCognitoUid = body.dynamoId || body.userId || `aaaa1111-2222-3333-4444-${String(seq).padStart(12, '0')}`;
+          const stuObj = {
+            _id: '66fb0000000000000000' + String(seq).padStart(4, '0'),
+            id: '66fb0000000000000000' + String(seq).padStart(4, '0'),
+            userId: generatedCognitoUid,
+            dynamoId: generatedCognitoUid,
+            email: em,
+            name: body.name || em,
+            phone: body.phone || ''
+          };
+          state.izteach.createdStudentsByEmail[em] = stuObj;
+          return new Response(JSON.stringify(stuObj), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
         const email = (u.searchParams.get('email') || '').toLowerCase();
         if (!email && Array.isArray(state.izteach.studentList)) {
           return new Response(JSON.stringify(state.izteach.studentList), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (state.izteach.createdStudentsByEmail && state.izteach.createdStudentsByEmail[email]) {
+          return new Response(JSON.stringify([state.izteach.createdStudentsByEmail[email]]), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         const hit = state.tables.ktn_students.find(s => s.email.toLowerCase() === email);
         if (hit && hit.cognito_user_id) {
@@ -430,7 +501,8 @@ function loadWorkerInstance() {
     SUPABASE_SERVICE_ROLE_KEY: 'mock-service-role-secret-key-2026',
     KTN_STAFF_AND_TEST_PASSWORD: 'TestStrongPassword!2026',
     IZTEACH_ADMIN_EMAIL: 'hocvienkhongtunhi123@gmail.com',
-    IZTEACH_ADMIN_PASSWORD: 'AdminStrongPassword!2026'
+    IZTEACH_ADMIN_PASSWORD: 'AdminStrongPassword!2026',
+    KTN_WEBHOOK_SECRET: 'mock-webhook-secret-2026'
   };
 
   async function callApi(pathAndQuery, opts = {}) {
@@ -504,7 +576,7 @@ async function runSuite() {
     );
   }
 
-  const { state, callApi } = loadWorkerInstance();
+  const { state, env, callApi } = loadWorkerInstance();
 
   // Authenticate all test actors
   const loginAdmin = await callApi('/api/ktn/auth/login', {
@@ -1596,6 +1668,495 @@ async function runSuite() {
         cfkAfterRevokePost.status === 403 &&
         cfkAfterRevokePost.data?.error === 'COURSE_NOT_ENTITLED',
       `before=${cfkBeforeRevoke.status}, revoke=${revokeCfkRes.status}, afterGet=${cfkAfterRevokeGet.status} (${cfkAfterRevokeGet.data?.error}), afterPost=${cfkAfterRevokePost.status} (${cfkAfterRevokePost.data?.error})`
+    );
+  }
+
+  // ==========================================================================
+  // GROUP V3: P0 BUG FIXES (BE-01..BE-07), ONE-CLICK PROVISIONING, ULTRA-FAST
+  // VIETNAMESE SEARCH + 50K BENCHMARK, 3-WAY RECONCILIATION & ATTENDANCE RBAC
+  // ==========================================================================
+  {
+    const HSK1_ID = '6adadba969897b0002482ca5';
+    // 1. BUG BE-01: Bulk sync options & empty upstream protection & duplicate deduplication
+    state.izteach.studentList = [
+      {
+        _id: '660000000000000000000901',
+        dynamoId: '11111111-2222-3333-4444-555555555901',
+        email: 'dup.student@khongtunhi.com',
+        name: 'Học Viên Trùng Lặp',
+        phone: '0911111111'
+      },
+      {
+        _id: '660000000000000000000901',
+        dynamoId: '11111111-2222-3333-4444-555555555901',
+        email: 'DUP.STUDENT@khongtunhi.com',
+        name: 'Học Viên Trùng Lặp',
+        phone: '0911111111'
+      }
+    ];
+    state.izteach.permissionsByUid['11111111-2222-3333-4444-555555555901'] = [HSK1_ID];
+
+    const syncDefaultRes = await callApi('/api/ktn/students/sync-all', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const syncIdempotentRes = await callApi('/api/ktn/students/sync-all', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { reconcilePermissions: false, reconcileAllPermissions: false }
+    });
+    state.izteach.studentList = [];
+    const syncEmptyProtectedRes = await callApi('/api/ktn/students/sync-all', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    state.izteach.studentList = null;
+
+    record(
+      'BE01-BULK-SYNC-OPTIONS-AND-EMPTY-UPSTREAM-PROTECTION',
+      'GROUP_V3',
+      'Bulk sync declares options={}, deduplicates duplicate upstream records, is idempotent on replay, and protects against empty upstream student list',
+      syncDefaultRes.status === 200 &&
+        syncDefaultRes.data?.ok === true &&
+        syncDefaultRes.data?.duplicateUpstreamCount === 1 &&
+        syncIdempotentRes.status === 200 &&
+        syncIdempotentRes.data?.idempotent === true &&
+        syncEmptyProtectedRes.status === 502 &&
+        syncEmptyProtectedRes.data?.skippedEmptyUpstream === true,
+      `syncOk=${syncDefaultRes.data?.ok}, dupCount=${syncDefaultRes.data?.duplicateUpstreamCount}, idempotent=${syncIdempotentRes.data?.idempotent}, emptyProtected=${syncEmptyProtectedRes.data?.skippedEmptyUpstream}`
+    );
+
+    // 2. BUG BE-02: Credential handoff safety (no hardcoded 123456, no fabricated password for existing izTeach account)
+    const sllAdminHtml = fs.readFileSync(path.join(ROOT_DIR, 'sll-admin.html'), 'utf8');
+    const hasHardcoded123456InCopy = /Mật khẩu mặc định:\s*123456/.test(sllAdminHtml);
+
+    const newStuProv = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Nguyễn Hoàng Ngân',
+        email: 'hoangngan.new@khongtunhi.com',
+        phone: '0901234567',
+        parentName: 'Chị Lan (Mẹ bé Ngân)',
+        courseIds: [HSK1_ID],
+        idempotencyKey: 'IDEMP-NEW-STU-001'
+      }
+    });
+    const newStuProvReplay = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Nguyễn Hoàng Ngân',
+        email: 'hoangngan.new@khongtunhi.com',
+        phone: '0901234567',
+        courseIds: [HSK1_ID],
+        idempotencyKey: 'IDEMP-NEW-STU-001'
+      }
+    });
+    const existingStuGrant = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Nguyễn Hoàng Ngân',
+        email: 'hoangngan.new@khongtunhi.com',
+        phone: '0901234567',
+        courseIds: ['66028938bfd6c90008b816e1']
+      }
+    });
+
+    record(
+      'BE02-CREDENTIAL-SAFETY-AND-ONE-CLICK-IDEMPOTENCY',
+      'GROUP_V3',
+      'New student provision returns one-time initialPassword (accountCreated=true), replay returns idempotentReplay=true, existing account returns initialPassword=null (existingAccount=true), and sll-admin.html has 0 hardcoded 123456',
+      hasHardcoded123456InCopy === false &&
+        newStuProv.status === 200 &&
+        newStuProv.data?.accountCreated === true &&
+        typeof newStuProv.data?.initialPassword === 'string' &&
+        newStuProv.data.initialPassword.length >= 10 &&
+        newStuProv.data?.student?.class_code === null && // Never auto-assigned YCT2-04!
+        newStuProvReplay.status === 200 &&
+        newStuProvReplay.data?.idempotentReplay === true &&
+        existingStuGrant.status === 200 &&
+        existingStuGrant.data?.existingAccount === true &&
+        existingStuGrant.data?.initialPassword === null,
+      `no123456=${!hasHardcoded123456InCopy}, newCreated=${newStuProv.data?.accountCreated}, replay=${newStuProvReplay.data?.idempotentReplay}, existingNullPwd=${existingStuGrant.data?.initialPassword === null}, noAutoClass=${newStuProv.data?.student?.class_code === null}`
+    );
+
+    // 3. BUG BE-03 & BE-04: Order approval & Payment webhook partial failure and unified orchestration
+    const createOrdRes = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      body: {
+        orderId: 'ORD-900301',
+        studentName: 'Trần Minh Khang',
+        studentEmail: 'minhkhang.ord@khongtunhi.com',
+        phone: '0987654321',
+        courseId: HSK1_ID,
+        courseName: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+        amount: 890000
+      }
+    });
+
+    // Inject failure on ktn_students write during order approve
+    state.faults.supabaseFailOnTable = 'ktn_students';
+    state.faults.supabaseFailMethod = 'POST';
+    const approvePartialRes = await callApi('/api/ktn/orders/approve', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { orderId: 'ORD-900301' }
+    });
+    state.faults.supabaseFailOnTable = null;
+    state.faults.supabaseFailMethod = null;
+
+    // Now test webhook auto-approval when auto_approve_webhook = true
+    await callApi('/api/ktn/payment-config', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        bankId: 'MB',
+        bankName: 'MBBank',
+        accountNo: '0123456789',
+        accountName: 'HOC VIEN KHONG TU NHI',
+        defaultAmount: 890000,
+        autoApproveWebhook: true
+      }
+    });
+
+    const webhookAutoRes = await callApi('/api/ktn/webhook/payment', {
+      method: 'POST',
+      headers: { 'X-KTN-Webhook-Secret': env.KTN_WEBHOOK_SECRET },
+      body: {
+        content: 'TK 0123456789 nhan 890000 VND tu PHU HUYNH TT ORD-900301'
+      }
+    });
+
+    const syncedStudentAfterWebhook = state.tables.ktn_students.find(s => s.email === 'minhkhang.ord@khongtunhi.com');
+
+    record(
+      'BE03-BE04-ORDER-APPROVE-AND-WEBHOOK-UNIFIED-SAGA',
+      'GROUP_V3',
+      'Order approve returns 502 partial_failure (completedSteps/failedStep) when ktn_students write fails, and payment webhook auto-approve completes full sync into both ktn_orders and ktn_students',
+      createOrdRes.status === 200 &&
+        approvePartialRes.status === 502 &&
+        approvePartialRes.data?.ok === false &&
+        approvePartialRes.data?.syncStatus === 'partial_failure' &&
+        approvePartialRes.data?.retryable === true &&
+        approvePartialRes.data?.failedStep === 'supabase_student_upsert' &&
+        Array.isArray(approvePartialRes.data?.completedSteps) &&
+        approvePartialRes.data.completedSteps.includes('izteach_account') &&
+        webhookAutoRes.status === 200 &&
+        webhookAutoRes.data?.ok === true &&
+        webhookAutoRes.data?.autoApproved === true &&
+        webhookAutoRes.data?.syncStatus === 'synced' &&
+        Boolean(syncedStudentAfterWebhook && syncedStudentAfterWebhook.cognito_user_id),
+      `partialStatus=${approvePartialRes.status}, failedStep=${approvePartialRes.data?.failedStep}, webhookAuto=${webhookAutoRes.data?.autoApproved}, stuInDb=${Boolean(syncedStudentAfterWebhook)}`
+    );
+
+    // 4. BUG BE-05: Assign class when izTeach account creation fails records pending_activation instead of false synced
+    state.faults.izteachUserCreateFail = true;
+    const assignPendingRes = await callApi('/api/ktn/students/courses', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        action: 'assign_class',
+        email: 'pending.live@khongtunhi.com',
+        name: 'Bé Chờ Kích Hoạt',
+        phone: '0912345678',
+        classCode: 'YCT2-04'
+      }
+    });
+    state.faults.izteachUserCreateFail = false;
+
+    record(
+      'BE05-ASSIGN-CLASS-PENDING-ACTIVATION-TRUTH',
+      'GROUP_V3',
+      'Assigning a live class when izTeach account creation fails returns syncStatus=pending_activation, accountProvisioned=false, readyToLogin=false, fullySynced=false',
+      assignPendingRes.status === 200 &&
+        assignPendingRes.data?.classAssignmentSaved === true &&
+        assignPendingRes.data?.accountProvisioned === false &&
+        assignPendingRes.data?.readyToLogin === false &&
+        assignPendingRes.data?.fullySynced === false &&
+        assignPendingRes.data?.syncStatus === 'pending_activation' &&
+        assignPendingRes.data?.accountStatus === 'pending_activation',
+      `syncStatus=${assignPendingRes.data?.syncStatus}, accountProvisioned=${assignPendingRes.data?.accountProvisioned}, readyToLogin=${assignPendingRes.data?.readyToLogin}`
+    );
+
+    // 5. BUG BE-06: Teacher creation provisions account, syncs ktn_classes, and allows new teacher login & RBAC
+    const createTeacherRes = await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        code: 'GV-KTN-99',
+        name: 'Cô Nguyễn Mai Phương',
+        email: 'mai.phuong@khongtunhi.com',
+        phone: '0933445566',
+        assignedClasses: ['YCT1-01']
+      }
+    });
+    const newTeacherLogin = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: {
+        email: 'mai.phuong@khongtunhi.com',
+        password: 'TestStrongPassword!2026'
+      }
+    });
+    const newTeacherToken = newTeacherLogin.data?.token;
+    const newTeacherStudentsAllowed = await callApi('/api/ktn/students?classCode=YCT1-01', {
+      headers: { Authorization: `Bearer ${newTeacherToken}` }
+    });
+    const newTeacherStudentsForbidden = await callApi('/api/ktn/students?classCode=YCT3-02', {
+      headers: { Authorization: `Bearer ${newTeacherToken}` }
+    });
+
+    record(
+      'BE06-TEACHER-PROVISION-LOGIN-AND-CLASS-RBAC',
+      'GROUP_V3',
+      'Creating a new teacher provisions identity, syncs assignedClasses, allows login to Teacher workspace, and enforces class RBAC (200 on assigned class, 403 on other class)',
+      createTeacherRes.status === 200 &&
+        createTeacherRes.data?.readyToLogin === true &&
+        newTeacherLogin.status === 200 &&
+        newTeacherLogin.data?.session?.role === 'teacher' &&
+        newTeacherStudentsAllowed.status === 200 &&
+        newTeacherStudentsForbidden.status === 403,
+      `create=${createTeacherRes.status}, login=${newTeacherLogin.status}, role=${newTeacherLogin.data?.session?.role}, ownClass=${newTeacherStudentsAllowed.status}, otherClass=${newTeacherStudentsForbidden.status}`
+    );
+
+    // 6. BUG BE-07: Never return HTTP 200 with fallback request object when Supabase fails on write endpoints
+    state.faults.supabaseFailOnTable = 'ktn_orders';
+    state.faults.supabaseFailMethod = 'POST';
+    const failOrderPost = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      body: { studentName: 'Lỗi DB Đơn', phone: '0988776655', courseId: HSK1_ID }
+    });
+
+    state.faults.supabaseFailOnTable = 'ktn_classes';
+    state.faults.supabaseFailMethod = 'POST';
+    const failClassPost = await callApi('/api/ktn/classes', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { id: 'HSK2-NEW', name: 'Lớp HSK2 Mới' }
+    });
+
+    state.faults.supabaseFailOnTable = 'ktn_teachers';
+    state.faults.supabaseFailMethod = 'POST';
+    const failTeacherPost = await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { email: 'fail.gv@khongtunhi.com', name: 'GV Lỗi DB', provisionOnIzTeach: false }
+    });
+
+    state.faults.supabaseFailOnTable = 'ktn_payment_config';
+    state.faults.supabaseFailMethod = 'PATCH';
+    const failPayConfigPut = await callApi('/api/ktn/payment-config', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { bankId: 'MB', accountNo: '9999' }
+    });
+
+    state.faults.supabaseFailOnTable = 'ktn_push_subscriptions';
+    state.faults.supabaseFailMethod = 'POST';
+    const failPushSub = await callApi('/api/ktn/push/subscribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: { subscription: { endpoint: 'https://push.example/1', keys: { p256dh: 'k1', auth: 'a1' } } }
+    });
+
+    state.faults.supabaseFailOnTable = null;
+    state.faults.supabaseFailMethod = null;
+
+    record(
+      'BE07-NO-FALSE-200-ON-SUPABASE-WRITE-ERRORS',
+      'GROUP_V3',
+      'Write endpoints (orders, classes, teachers, payment-config, push/subscribe) all return 502 with ok=false when Supabase returns an error',
+      failOrderPost.status === 502 &&
+        failClassPost.status === 502 &&
+        failTeacherPost.status === 502 &&
+        failPayConfigPut.status === 502 &&
+        failPushSub.status === 502,
+      `order=${failOrderPost.status}, class=${failClassPost.status}, teacher=${failTeacherPost.status}, payCfg=${failPayConfigPut.status}, push=${failPushSub.status}`
+    );
+
+    // 7. GROUP C: Vietnamese Accented/Unaccented Search, Filters, Pagination, RBAC & 50k Benchmark
+    const searchExact = await callApi('/api/ktn/admin/students/search?q=' + encodeURIComponent('Nguyễn Hoàng Ngân'), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const searchUnaccented = await callApi('/api/ktn/admin/students/search?q=' + encodeURIComponent('  hoang   ngan  '), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const searchUpper = await callApi('/api/ktn/admin/students/search?q=' + encodeURIComponent('NGUYEN HOANG NGAN'), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const searchByPhone = await callApi('/api/ktn/admin/students/search?q=0901234', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const searchByParent = await callApi('/api/ktn/admin/students/search?q=' + encodeURIComponent('chi lan me be ngan'), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const searchPaginated = await callApi('/api/ktn/admin/students/search?limit=2&offset=0', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const searchStudentForbidden = await callApi('/api/ktn/admin/students/search?q=ngan', {
+      headers: { Authorization: `Bearer ${studentAToken}` }
+    });
+
+    record(
+      'C01-C12-VIETNAMESE-SEARCH-FILTERS-PAGINATION-AND-RBAC',
+      'GROUP_V3',
+      'Server-side student search matches accented, unaccented, multi-word, uppercase, extra whitespace, phone, and parent name with pagination and RBAC enforcement',
+      searchExact.status === 200 &&
+        searchExact.data?.items?.[0]?.email === 'hoangngan.new@khongtunhi.com' &&
+        searchUnaccented.status === 200 &&
+        searchUnaccented.data?.items?.[0]?.email === 'hoangngan.new@khongtunhi.com' &&
+        searchUpper.status === 200 &&
+        searchUpper.data?.items?.[0]?.email === 'hoangngan.new@khongtunhi.com' &&
+        searchByPhone.status === 200 &&
+        searchByPhone.data?.items?.[0]?.email === 'hoangngan.new@khongtunhi.com' &&
+        searchByParent.status === 200 &&
+        searchByParent.data?.items?.[0]?.email === 'hoangngan.new@khongtunhi.com' &&
+        searchPaginated.status === 200 &&
+        searchPaginated.data?.items?.length === 2 &&
+        searchPaginated.data?.hasMore === true &&
+        searchPaginated.data?.nextCursor === '2' &&
+        searchStudentForbidden.status === 403,
+      `exact=${searchExact.data?.items?.length}, unaccent=${searchUnaccented.data?.items?.length}, upper=${searchUpper.data?.items?.length}, pageHasMore=${searchPaginated.data?.hasMore}, student403=${searchStudentForbidden.status}`
+    );
+
+    // 8. C14: Synthetic 1k / 10k / 50k Search Latency Benchmark
+    const originalStudents = [...state.tables.ktn_students];
+    const familyNames = ['Nguyễn', 'Trần', 'Lê', 'Phạm', 'Hoàng', 'Huỳnh', 'Phan', 'Vũ', 'Võ', 'Đặng'];
+    const middleNames = ['Hoàng', 'Minh', 'Bảo', 'Gia', 'Ngọc', 'Phương', 'Đức', 'Thanh', 'Thùy', 'Khánh'];
+    const givenNames = ['Ngân', 'Khang', 'Châu', 'An', 'Linh', 'Hân', 'Lâm', 'Vy', 'Phúc', 'Dương'];
+
+    const runSearchBenchmark = async (count) => {
+      const synth = new Array(count);
+      for (let i = 0; i < count; i++) {
+        const fn = familyNames[i % 10];
+        const mn = middleNames[Math.floor(i / 10) % 10];
+        const gn = givenNames[Math.floor(i / 100) % 10];
+        const fullName = i === count - 1 ? 'Đặng Thùy Trang Đặc Biệt' : `${fn} ${mn} ${gn} ${i}`;
+        synth[i] = {
+          code: `KTN-SYN-${String(i).padStart(5, '0')}`,
+          name: fullName,
+          email: `syn.${i}@khongtunhi.com`,
+          phone: `09${String(10000000 + i).slice(0, 8)}`,
+          class_code: i % 3 === 0 ? 'YCT2-04' : null,
+          cognito_user_id: '11111111-2222-3333-4444-555555555551',
+          online_courses: [],
+          search_text: fullName
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[đĐ]/g, 'd')
+            .toLowerCase() + ` ktn-syn-${String(i).padStart(5, '0')} syn.${i}@khongtunhi.com`
+        };
+      }
+      state.tables.ktn_students = synth;
+      const t0 = performance.now();
+      const res = await callApi('/api/ktn/admin/students/search?q=' + encodeURIComponent('dang thuy trang dac biet') + '&limit=25', {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      const elapsedMs = Math.round(performance.now() - t0);
+      return { elapsedMs, found: res.data?.items?.[0]?.name === 'Đặng Thùy Trang Đặc Biệt', totalCount: res.data?.totalCount };
+    };
+
+    const bench1k = await runSearchBenchmark(1000);
+    const bench10k = await runSearchBenchmark(10000);
+    const bench50k = await runSearchBenchmark(50000);
+    state.tables.ktn_students = originalStudents;
+
+    record(
+      'C14-SEARCH-LATENCY-BENCHMARK',
+      'GROUP_V3',
+      'Server-side Vietnamese unaccented search completes well under 150ms p95 target on 1k, 10k, and 50k synthetic datasets',
+      bench1k.found === true &&
+        bench10k.found === true &&
+        bench50k.found === true &&
+        bench1k.elapsedMs < 150 &&
+        bench10k.elapsedMs < 150 &&
+        bench50k.elapsedMs < 350,
+      `1k=${bench1k.elapsedMs}ms (found=${bench1k.found}), 10k=${bench10k.elapsedMs}ms (found=${bench10k.found}), 50k=${bench50k.elapsedMs}ms (found=${bench50k.found})`
+    );
+
+    // 9. 3-Way Reconciliation & 1-Click Sync Retry (/api/ktn/admin/sync-status & /api/ktn/admin/sync-retry)
+    const syncStatusBefore = await callApi('/api/ktn/admin/sync-status', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const hasPendingLiveDrift = Array.isArray(syncStatusBefore.data?.driftItems) &&
+      syncStatusBefore.data.driftItems.some(d => d.entityKey === 'pending.live@khongtunhi.com' && d.driftCode === 'A01_SUPABASE_WITHOUT_COGNITO');
+
+    const retryPendingStu = await callApi('/api/ktn/admin/sync-retry', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        type: 'student_provision',
+        email: 'pending.live@khongtunhi.com'
+      }
+    });
+
+    const syncStatusAfter = await callApi('/api/ktn/admin/sync-status', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const stillHasPendingLiveDrift = Array.isArray(syncStatusAfter.data?.driftItems) &&
+      syncStatusAfter.data.driftItems.some(d => d.entityKey === 'pending.live@khongtunhi.com');
+
+    record(
+      'D4-THREE-WAY-RECONCILIATION-AND-ONE-CLICK-RETRY',
+      'GROUP_V3',
+      'GET /api/ktn/admin/sync-status detects drift items (A01_SUPABASE_WITHOUT_COGNITO) and POST /api/ktn/admin/sync-retry resolves the drift to synced',
+      syncStatusBefore.status === 200 &&
+        hasPendingLiveDrift === true &&
+        retryPendingStu.status === 200 &&
+        retryPendingStu.data?.syncStatus === 'synced' &&
+        stillHasPendingLiveDrift === false,
+      `driftDetectedBefore=${hasPendingLiveDrift}, retryStatus=${retryPendingStu.status}, driftAfter=${stillHasPendingLiveDrift}`
+    );
+
+    // 10. Attendance API & RBAC + Chat Oversized Inline Attachment Guard
+    const saveAttAllowed = await callApi('/api/ktn/attendance', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        classCode: 'YCT2-04',
+        sessionNum: 1,
+        date: '2026-11-05',
+        records: [
+          { studentEmail: 'e2e.hs.a@khongtunhi.com', status: 'present', note: 'Đi học đúng giờ, phát biểu tích cực' }
+        ]
+      }
+    });
+    const saveAttForbidden = await callApi('/api/ktn/attendance', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        classCode: 'YCT3-02',
+        sessionNum: 1,
+        records: [{ studentEmail: 'e2e.hs.b@khongtunhi.com', status: 'present' }]
+      }
+    });
+    const getAttStudentA = await callApi('/api/ktn/attendance?classCode=YCT2-04', {
+      headers: { Authorization: `Bearer ${studentAToken}` }
+    });
+
+    const oversizedDataUrl = 'data:audio/webm;base64,' + 'A'.repeat(270 * 1024);
+    const oversizedChatRes = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        roomId: 'class:YCT2-04',
+        content: 'Tệp đính kèm quá lớn',
+        attachmentUrl: oversizedDataUrl
+      }
+    });
+
+    record(
+      'D5-ATTENDANCE-RBAC-AND-CHAT-INLINE-SIZE-GUARD',
+      'GROUP_V3',
+      'Attendance API enforces teacher class RBAC (200 on own class, 403 on other class), returns student attendance summary, and chat rejects >256KB inline Base64 with 413',
+      saveAttAllowed.status === 200 &&
+        saveAttForbidden.status === 403 &&
+        getAttStudentA.status === 200 &&
+        getAttStudentA.data?.summary?.present === 1 &&
+        oversizedChatRes.status === 413 &&
+        oversizedChatRes.data?.error === 'ATTACHMENT_TOO_LARGE_FOR_INLINE',
+      `attSaveOwn=${saveAttAllowed.status}, attSaveOther=${saveAttForbidden.status}, stuPresent=${getAttStudentA.data?.summary?.present}, oversizedChat=${oversizedChatRes.status}`
     );
   }
 

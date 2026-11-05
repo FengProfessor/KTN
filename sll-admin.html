@@ -444,23 +444,41 @@
       }).join('');
     }
 
+      const ephemeralInitialPasswords = new Map();
+
     async function approveOrderNow(orderId, orderPayload) {
       const res = await KtnWebApp.apiRequest('/api/ktn/orders/approve', {
         method: 'POST',
         body: { orderId, order: orderPayload }
       });
-      if (!res.ok) {
-        alert(res.data?.message || 'Chưa duyệt được đơn hàng.');
+      if (!res.ok || res.data?.ok === false) {
+        const failedStep = res.data?.failedStep ? ` (Bước lỗi: ${res.data.failedStep})` : '';
+        alert((res.data?.message || 'Chưa hoàn tất kích hoạt đơn hàng.') + failedStep);
+        loadAdminOrders();
         return;
       }
-      copyApprovedAccount(res.data.studentEmail);
+      const em = String(res.data.studentEmail || '').trim().toLowerCase();
+      if (em && res.data.accountCreated && res.data.initialPassword) {
+        ephemeralInitialPasswords.set(em, String(res.data.initialPassword));
+      }
+      copyApprovedAccount(res.data.studentEmail, {
+        initialPassword: res.data.accountCreated ? res.data.initialPassword : null,
+        accountCreated: Boolean(res.data.accountCreated),
+        credentialMode: res.data.credentialMode || ''
+      });
       loadAdminOrders();
     }
 
-    function copyApprovedAccount(email) {
-      const text = `Học Viện Khổng Tử Nhí gửi thông tin tài khoản học tập:\n- Trang đăng nhập: https://khongtunhi.com/?login=1\n- Tài khoản: ${email}\n- Mật khẩu mặc định: 123456`;
+    function copyApprovedAccount(email, handoffInfo = null) {
+      const cleanEmail = String(email || '').trim();
+      const lowerEmail = cleanEmail.toLowerCase();
+      const oneTimePwd = (handoffInfo && handoffInfo.initialPassword) || ephemeralInitialPasswords.get(lowerEmail) || null;
+      const pwdLine = oneTimePwd
+        ? `- Mật khẩu khởi tạo lần đầu: ${oneTimePwd} (Vui lòng đổi mật khẩu sau khi đăng nhập)`
+        : `- Mật khẩu: Sử dụng mật khẩu hiện tại của tài khoản (hoặc chọn "Quên mật khẩu" tại https://khongtunhi.com/?login=1 để đặt lại)`;
+      const text = `Học Viện Khổng Tử Nhí gửi thông tin tài khoản học tập:\n- Trang đăng nhập: https://khongtunhi.com/?login=1\n- Tài khoản: ${cleanEmail}\n${pwdLine}`;
       navigator.clipboard?.writeText(text);
-      alert('📋 Đã kích hoạt trên izTeach & sao chép thông tin tài khoản để gửi Zalo cho phụ huynh:\n\n' + text);
+      alert('📋 Đã sao chép thông tin bàn giao tài khoản để gửi Zalo cho phụ huynh:\n\n' + text);
     }
 
     async function loadAdminStudents() {

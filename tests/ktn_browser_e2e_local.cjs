@@ -582,8 +582,8 @@ async function runBrowserSuite() {
     });
     const adminToken = loginAdmin.data.token;
 
-    async function setupInterceptedPage() {
-      const page = await browser.newPage();
+    async function setupInterceptedPage(customContext = null) {
+      const page = customContext ? await customContext.newPage() : await browser.newPage();
       await page.setViewport({ width: 1366, height: 860 });
       await page.setRequestInterception(true);
       page.on('request', req => {
@@ -1188,7 +1188,10 @@ async function runBrowserSuite() {
         body: { email: 'quanly@khongtunhi.com', password: '123' + '456' }
       });
 
-      const adminUiPage = await setupInterceptedPage();
+      const adminContext = await (typeof browser.createBrowserContext === 'function'
+        ? browser.createBrowserContext()
+        : browser.createIncognitoBrowserContext());
+      const adminUiPage = await setupInterceptedPage(adminContext);
       await adminUiPage.goto(`${baseUrl}/so-lien-lac.html`, { waitUntil: 'domcontentloaded' });
       const quanlyUiState = await adminUiPage.evaluate(async (pwd) => {
         const emEl = document.getElementById('auth-email');
@@ -1206,6 +1209,7 @@ async function runBrowserSuite() {
         };
       }, 'AdminStrongPassword!2026');
       await adminUiPage.close();
+      await adminContext.close().catch(() => {});
 
       record(
         'B8-ADMIN-QUANLY-LOGIN-AND-LEGACY-PASSWORD-GUARD',

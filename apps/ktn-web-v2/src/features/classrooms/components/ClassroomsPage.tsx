@@ -79,6 +79,23 @@ export const ClassroomsPage: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
   });
 
+  const attendanceQuery = useQuery({
+    queryKey: ['ktn-student-attendance', activeClassCode, user?.email, isDemoMode],
+    queryFn: async () => {
+      if (isDemoMode || !activeClassCode) {
+        return {
+          ok: true,
+          classCode: activeClassCode,
+          sessionNum: null,
+          records: [],
+          summary: { total: 1, present: 1, late: 0, absentExcused: 0, absentUnexcused: 0 },
+        };
+      }
+      return ktnApi.getAttendance({ classCode: activeClassCode });
+    },
+    enabled: Boolean(activeClassCode) && (Boolean(user) || isDemoMode),
+  });
+
   const submitLiveClassHwMutation = useMutation({
     mutationFn: async (payload: {
       lessonNum: number;
@@ -230,7 +247,7 @@ export const ClassroomsPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-3">
                 <button
                   type="button"
                   onClick={() => navigate(`/chat?room=class:${assignedClass.id}`)}
@@ -239,6 +256,17 @@ export const ClassroomsPage: React.FC = () => {
                   <MessageSquare className="h-3.5 w-3.5" />
                   Chat lớp {assignedClass.id}
                 </button>
+
+                {attendanceQuery.data?.summary && (
+                  <span
+                    data-testid="student-attendance-summary-badge"
+                    className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-900"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
+                    Chuyên cần: {attendanceQuery.data.summary.present + attendanceQuery.data.summary.late}/
+                    {Math.max(1, attendanceQuery.data.summary.total)} buổi
+                  </span>
+                )}
               </div>
             </>
           ) : (

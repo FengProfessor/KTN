@@ -290,3 +290,96 @@ BEGIN
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.ktn_dlp_alerts; EXCEPTION WHEN DUPLICATE_OBJECT THEN NULL; END;
   END IF;
 END $$;
+
+-- 11. NÂNG CẤP V3: BẢNG ĐIỀU PHỐI TÀI KHOẢN & NHẬT KÝ ĐỐI SOÁT 3 BÊN
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+ALTER TABLE public.ktn_students
+  ADD COLUMN IF NOT EXISTS parent_name TEXT,
+  ADD COLUMN IF NOT EXISTS izteach_student_id TEXT,
+  ADD COLUMN IF NOT EXISTS has_live_class BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS has_online_courses BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS account_status TEXT DEFAULT 'ready_to_login',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT,
+  ADD COLUMN IF NOT EXISTS internal_note TEXT,
+  ADD COLUMN IF NOT EXISTS search_text TEXT;
+
+ALTER TABLE public.ktn_teachers
+  ADD COLUMN IF NOT EXISTS assigned_classes JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS cognito_user_id TEXT,
+  ADD COLUMN IF NOT EXISTS izteach_staff_id TEXT,
+  ADD COLUMN IF NOT EXISTS provisioning_status TEXT DEFAULT 'ready_to_login',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'teacher',
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS internal_note TEXT,
+  ADD COLUMN IF NOT EXISTS search_text TEXT;
+
+ALTER TABLE public.ktn_orders
+  ADD COLUMN IF NOT EXISTS provisioning_status TEXT DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
+  ADD COLUMN IF NOT EXISTS operation_id TEXT,
+  ADD COLUMN IF NOT EXISTS class_code TEXT,
+  ADD COLUMN IF NOT EXISTS approved_by TEXT,
+  ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS completed_steps JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS failed_step TEXT,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT;
+
+ALTER TABLE public.ktn_homeworks
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS izteach_remote_id TEXT,
+  ADD COLUMN IF NOT EXISTS unit_id TEXT,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT;
+
+ALTER TABLE public.ktn_attendance
+  ADD COLUMN IF NOT EXISTS student_email TEXT,
+  ADD COLUMN IF NOT EXISTS session_num INTEGER,
+  ADD COLUMN IF NOT EXISTS updated_by TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS public.ktn_provisioning_jobs (
+  operation_id TEXT PRIMARY KEY,
+  idempotency_key TEXT UNIQUE,
+  job_type TEXT NOT NULL,
+  target_email TEXT NOT NULL,
+  actor_email TEXT,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  retryable BOOLEAN DEFAULT true,
+  completed_steps JSONB DEFAULT '[]'::jsonb,
+  failed_step TEXT,
+  request_payload JSONB DEFAULT '{}'::jsonb,
+  response_payload JSONB DEFAULT '{}'::jsonb,
+  error_code TEXT,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.ktn_sync_events (
+  id TEXT PRIMARY KEY,
+  operation_id TEXT,
+  event_type TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  source_system TEXT DEFAULT 'worker_bff',
+  sync_status TEXT NOT NULL,
+  drift_code TEXT,
+  details JSONB DEFAULT '{}'::jsonb,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ktn_students_email_lower ON public.ktn_students (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_ktn_students_code_lower ON public.ktn_students (LOWER(code));
+CREATE INDEX IF NOT EXISTS idx_ktn_students_class_code ON public.ktn_students (class_code);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_phone ON public.ktn_students (phone);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_name_trgm ON public.ktn_students USING GIN (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_search_text_trgm ON public.ktn_students USING GIN (search_text gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_ktn_attendance_class_date ON public.ktn_attendance (class_code, date DESC);
+CREATE INDEX IF NOT EXISTS idx_ktn_attendance_student_date ON public.ktn_attendance (student_code, date DESC);
+

@@ -24,7 +24,8 @@ export default defineConfig({
   plugins: [react(), ktnLocalWorkerPlugin()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src'),
+      'hls.js': path.resolve(__dirname, './node_modules/hls.js/dist/hls.light.mjs')
     }
   },
   server: {
@@ -35,6 +36,30 @@ export default defineConfig({
     port: 4173,
     host: true
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/hls.js')) {
+            return 'vendor-hls';
+          }
+          if (
+            id.includes('node_modules/react') ||
+            id.includes('node_modules/react-dom') ||
+            id.includes('node_modules/react-router') ||
+            id.includes('node_modules/@tanstack') ||
+            id.includes('node_modules/zustand')
+          ) {
+            return 'vendor-react';
+          }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons';
+          }
+          return undefined;
+        }
+      }
+    }
+  },
   test: {
     globals: true,
     environment: 'jsdom',
@@ -42,3 +67,4 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.{ts,tsx}', 'tests/integration/**/*.test.{ts,tsx}']
   }
 });
+

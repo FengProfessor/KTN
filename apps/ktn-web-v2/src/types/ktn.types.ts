@@ -161,6 +161,9 @@ export interface KtnNotification {
   read: boolean;
 }
 
+export type AccountStatus = 'ready_to_login' | 'pending_activation' | 'error';
+export type SyncStatus = 'synced' | 'pending_activation' | 'partial_failure' | 'sync_failed' | 'drift_detected';
+
 export interface KtnStudentRecord {
   code: string;
   email: string;
@@ -168,12 +171,62 @@ export interface KtnStudentRecord {
   parent_name?: string;
   phone?: string;
   cognito_user_id?: string | null;
+  izteach_student_id?: string | null;
   class_code: string | null;
   has_live_class: boolean;
   has_online_courses: boolean;
   online_courses: OnlineCourseEntitlement[];
   studentCase: StudentCase;
+  accountStatus?: AccountStatus | string;
+  syncStatus?: SyncStatus | string;
+  readyToLogin?: boolean;
+  fullySynced?: boolean;
+  last_sync_error?: string | null;
+  internal_note?: string | null;
   updated_at?: string;
+}
+
+export interface KtnStudentSearchResult {
+  ok: boolean;
+  items: KtnStudentRecord[];
+  students: KtnStudentRecord[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+  query: string;
+  queryMs: number;
+}
+
+export interface KtnProvisionStudentResponse {
+  ok: boolean;
+  operationId: string;
+  idempotentReplay?: boolean;
+  syncStatus: string;
+  accountStatus: string;
+  accountProvisioned: boolean;
+  readyToLogin: boolean;
+  fullySynced: boolean;
+  accountCreated: boolean;
+  existingAccount: boolean;
+  credentialMode: string;
+  initialPassword?: string | null;
+  student: KtnStudentRecord;
+  message: string;
+}
+
+export interface KtnTeacherRecord {
+  code: string;
+  name: string;
+  email: string;
+  phone?: string;
+  specialty?: string;
+  assigned_classes: string[];
+  active: boolean;
+  cognito_user_id?: string | null;
+  provisioningStatus?: string;
+  syncStatus?: string;
 }
 
 export interface KtnOrder {
@@ -187,5 +240,65 @@ export interface KtnOrder {
   payment_method: string;
   payment_status: 'pending_verification' | 'paid' | 'refunded' | 'cancelled';
   approval_status: 'pending' | 'approved' | 'rejected';
+  provisioning_status?: string;
+  provisioningStatus?: string;
+  assigned_user_id?: string | null;
   created_at: string;
 }
+
+export interface KtnSyncDriftItem {
+  id: string;
+  driftCode: string;
+  severity: 'error' | 'warning';
+  entityType: 'student' | 'order' | 'homework' | string;
+  entityKey: string;
+  title: string;
+  detail: string;
+  retryAction?: {
+    type: 'student_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
+    email?: string;
+    orderId?: string;
+    homeworkId?: string;
+  };
+}
+
+export interface KtnSyncStatusResponse {
+  ok: boolean;
+  checkedAt: string;
+  summary: {
+    totalStudents: number;
+    healthyCount: number;
+    needsResyncCount: number;
+    manualReviewCount: number;
+    driftTotal: number;
+  };
+  driftItems: KtnSyncDriftItem[];
+}
+
+export interface KtnAttendanceRecord {
+  id: string;
+  class_code: string;
+  session_num: number;
+  student_email: string;
+  student_name: string;
+  status: 'present' | 'absent_excused' | 'absent_unexcused' | 'late';
+  note?: string;
+  recorded_by?: string;
+  session_date?: string;
+  updated_at?: string;
+}
+
+export interface KtnAttendanceResponse {
+  ok: boolean;
+  classCode: string;
+  sessionNum: number | null;
+  records: KtnAttendanceRecord[];
+  summary: {
+    total: number;
+    present: number;
+    late: number;
+    absentExcused: number;
+    absentUnexcused: number;
+  };
+}
+

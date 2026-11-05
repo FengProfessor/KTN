@@ -231,6 +231,81 @@ export const TeacherWorkspace: React.FC = () => {
     },
   });
 
+  // 7. Attendance state & mutation for active class
+  const [attendanceSessionNum, setAttendanceSessionNum] = useState<number>(1);
+  const [attendanceMap, setAttendanceMap] = useState<
+    Record<string, 'present' | 'late' | 'absent_excused' | 'absent_unexcused'>
+  >({});
+
+  const attendanceQuery = useQuery({
+    queryKey: ['ktn-attendance', effectiveClassId, attendanceSessionNum, isDemoMode],
+    queryFn: async () => {
+      if (isDemoMode || !effectiveClassId) {
+        return {
+          ok: true,
+          classCode: effectiveClassId,
+          sessionNum: attendanceSessionNum,
+          records: [],
+          summary: { total: 0, present: 0, late: 0, absentExcused: 0, absentUnexcused: 0 },
+        };
+      }
+      return ktnApi.getAttendance({
+        classCode: effectiveClassId,
+        sessionNum: attendanceSessionNum,
+      });
+    },
+    enabled: Boolean(effectiveClassId) && (Boolean(user) || isDemoMode),
+  });
+
+  useEffect(() => {
+    const recs = attendanceQuery.data?.records || [];
+    if (recs.length > 0) {
+      const next: Record<string, 'present' | 'late' | 'absent_excused' | 'absent_unexcused'> = {};
+      for (const r of recs) {
+        next[r.student_email] = r.status;
+      }
+      setAttendanceMap(next);
+    }
+  }, [attendanceQuery.data]);
+
+  const saveAttendanceMutation = useMutation({
+    mutationFn: async () => {
+      const records = (studentsQuery.data || []).map((st) => ({
+        studentEmail: st.email,
+        studentName: st.name,
+        status: attendanceMap[st.email] || ('present' as const),
+      }));
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 300));
+        return {
+          ok: true,
+          classCode: effectiveClassId,
+          sessionNum: attendanceSessionNum,
+          records: [],
+          summary: {
+            total: records.length,
+            present: records.length,
+            late: 0,
+            absentExcused: 0,
+            absentUnexcused: 0,
+          },
+        };
+      }
+      return ktnApi.saveAttendance({
+        classCode: effectiveClassId,
+        sessionNum: attendanceSessionNum,
+        records,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-attendance', effectiveClassId] });
+      addToast({
+        title: `Đã lưu điểm danh Buổi ${attendanceSessionNum} lớp ${effectiveClassId}!`,
+        variant: 'success',
+      });
+    },
+  });
+
   const homeworks = homeworksQuery.data || [];
   const filteredHomeworks = useMemo(() => {
     return homeworks.filter((hw) => {
@@ -670,33 +745,85 @@ export const TeacherWorkspace: React.FC = () => {
         </div>
       )}
 
-      {/* SubTab 3: Student Roster */}
+      {/* SubTab 3: Student Roster & Attendance */}
       {activeSubTab === 'students' && (
         <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs">
-          <h2 className="font-display text-sm font-bold text-stone-900">
-            Học viên lớp {effectiveClassId} ({studentsList.length})
-          </h2>
-          <div className="mt-2.5 divide-y divide-stone-100">
-            {studentsList.map((st) => (
-              <div
-                key={st.code || st.email}
-                className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-3">
+            <h2 className="font-display text-sm font-bold text-stone-900">
+              Học viên & Điểm danh lớp {effectiveClassId} ({studentsList.length})
+            </h2>
+
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-stone-600">Buổi:</label>
+              <input
+                type="number"
+                min={1}
+                aria-label="Buổi điểm danh"
+                data-testid="teacher-attendance-session-input"
+                value={attendanceSessionNum}
+                onChange={(e) => setAttendanceSessionNum(Math.max(1, Number(e.target.value) || 1))}
+                className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-xs font-bold text-stone-900"
+              />
+              <button
+                type="button"
+                data-testid="teacher-save-attendance-btn"
+                disabled={saveAttendanceMutation.isPending || studentsList.length === 0}
+                onClick={() => saveAttendanceMutation.mutate()}
+                className="inline-flex min-h-[34px] items-center gap-1 rounded-xl bg-emerald-700 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-bold text-stone-900 sm:text-sm">
-                    {st.name}
-                  </p>
-                  <p className="truncate text-[11px] text-stone-500">{st.email}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/chat?room=student:${st.email}`)}
-                  className="min-h-[36px] rounded-xl border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-900 hover:bg-red-100"
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Lưu điểm danh</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2.5 divide-y divide-stone-100">
+            {studentsList.map((st) => {
+              const attStatus = attendanceMap[st.email] || 'present';
+              return (
+                <div
+                  key={st.code || st.email}
+                  className="flex flex-wrap items-center justify-between gap-2 py-2.5"
                 >
-                  Nhắn tin
-                </button>
-              </div>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-bold text-stone-900 sm:text-sm">
+                      {st.name}
+                    </p>
+                    <p className="truncate text-[11px] text-stone-500">{st.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      aria-label={`Điểm danh ${st.name}`}
+                      data-testid={`teacher-attendance-select-${st.email}`}
+                      value={attStatus}
+                      onChange={(e) =>
+                        setAttendanceMap((prev) => ({
+                          ...prev,
+                          [st.email]: e.target.value as
+                            | 'present'
+                            | 'late'
+                            | 'absent_excused'
+                            | 'absent_unexcused',
+                        }))
+                      }
+                      className="min-h-[34px] rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1 text-xs font-bold text-stone-800"
+                    >
+                      <option value="present">Có mặt</option>
+                      <option value="late">Đi muộn</option>
+                      <option value="absent_excused">Vắng có phép</option>
+                      <option value="absent_unexcused">Vắng không phép</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/chat?room=student:${st.email}`)}
+                      className="min-h-[36px] rounded-xl border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-900 hover:bg-red-100"
+                    >
+                      Nhắn tin
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

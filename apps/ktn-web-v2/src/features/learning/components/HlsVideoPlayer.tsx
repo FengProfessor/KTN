@@ -96,21 +96,27 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
         setInternalStatus('ready');
       });
 
+      let mediaRecoveredOnce = false;
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              // If fallback MP4 exists or demo environment blocks external m3u8, switch cleanly to ready or error
               if (fallbackVideoUrl && fallbackVideoUrl !== activeUrl) {
                 cleanupHls();
                 videoEl.src = fallbackVideoUrl;
-                setInternalStatus('ready');
               } else {
-                setInternalStatus('ready');
+                cleanupHls();
+                setInternalStatus('error');
               }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError();
+              if (!mediaRecoveredOnce) {
+                mediaRecoveredOnce = true;
+                hls.recoverMediaError();
+              } else {
+                cleanupHls();
+                setInternalStatus('error');
+              }
               break;
             default:
               cleanupHls();
@@ -123,7 +129,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
       videoEl.src = activeUrl;
       setInternalStatus('ready');
     } else {
-      setInternalStatus('ready');
+      setInternalStatus('error');
     }
 
     return () => {
@@ -244,6 +250,10 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
           onLoadedMetadata={(e) => {
             setDuration(e.currentTarget.duration || 0);
             setInternalStatus('ready');
+          }}
+          onError={() => {
+            cleanupHls();
+            setInternalStatus('error');
           }}
           onEnded={() => {
             setInternalStatus('paused');

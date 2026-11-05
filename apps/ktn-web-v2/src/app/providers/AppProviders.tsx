@@ -1,7 +1,25 @@
 import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, HashRouter } from 'react-router-dom';
 import { ToastViewport } from '@/components/ui/ToastViewport';
+
+declare global {
+  interface Window {
+    __KTN_EMBED_MODE__?: boolean;
+  }
+}
+
+export function shouldUseHashRouter(): boolean {
+  if (import.meta.env.VITE_ROUTER_MODE === 'hash') return true;
+  if (typeof window !== 'undefined') {
+    if (window.__KTN_EMBED_MODE__ === true) return true;
+    if (window.location.pathname.includes('/custom-page/')) return true;
+    if (document.getElementById('ktn-react-v2-root') && !document.getElementById('root')) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [queryClient] = useState(
@@ -16,12 +34,15 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children
       })
   );
 
+  const RouterComponent = shouldUseHashRouter() ? HashRouter : BrowserRouter;
+
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <RouterComponent>
         {children}
         <ToastViewport />
-      </BrowserRouter>
+      </RouterComponent>
     </QueryClientProvider>
   );
 };
+

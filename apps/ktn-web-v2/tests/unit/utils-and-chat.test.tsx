@@ -18,6 +18,8 @@ import {
   formatShortPersonName,
   resolveHeaderTitle,
 } from '../../src/app/navigation/roleRoutes';
+import { shouldUseHashRouter } from '../../src/app/providers/AppProviders';
+import { ktnApi } from '../../src/services/api/ktnApiClient';
 import type { ChatMessage } from '../../src/features/chat/types/chat.types';
 
 describe('KTN UI V2 — Unit & State Machine Tests', () => {
@@ -241,7 +243,29 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
     });
   });
+
+  describe('7. V3 Embed Mode Detection & API Contract Surface', () => {
+    it('detects izTeach Custom Page embed mode and switches to HashRouter cleanly', () => {
+      delete (window as unknown as Record<string, unknown>).__KTN_EMBED_MODE__;
+      expect(shouldUseHashRouter()).toBe(false);
+
+      (window as unknown as Record<string, unknown>).__KTN_EMBED_MODE__ = true;
+      expect(shouldUseHashRouter()).toBe(true);
+      delete (window as unknown as Record<string, unknown>).__KTN_EMBED_MODE__;
+    });
+
+    it('exposes V3 provisioning, Vietnamese search, 3-way reconciliation, and attendance API methods', () => {
+      expect(typeof ktnApi.searchStudents).toBe('function');
+      expect(typeof ktnApi.provisionStudent).toBe('function');
+      expect(typeof ktnApi.saveTeacher).toBe('function');
+      expect(typeof ktnApi.getSyncStatus).toBe('function');
+      expect(typeof ktnApi.retrySyncItem).toBe('function');
+      expect(typeof ktnApi.getAttendance).toBe('function');
+      expect(typeof ktnApi.saveAttendance).toBe('function');
+    });
+  });
 });
+
 
 
 

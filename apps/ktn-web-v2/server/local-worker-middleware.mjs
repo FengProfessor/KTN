@@ -248,6 +248,9 @@ export function createLocalWorkerHarness() {
         }
       ],
       ktn_push_subscriptions: [],
+      ktn_attendance: [],
+      ktn_provisioning_jobs: [],
+      ktn_sync_events: [],
       ktn_payment_config: [
         {
           id: 'default',
@@ -261,6 +264,44 @@ export function createLocalWorkerHarness() {
       ]
     },
     izteach: {
+      students: [
+        {
+          _id: '65f000000000000000000089',
+          id: '65f000000000000000000089',
+          dynamoId: 'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68',
+          userId: 'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68',
+          email: 'hoangngan@khongtunhi.com',
+          name: 'Bé Nguyễn Hoàng Ngân',
+          phone: '0912345601'
+        },
+        {
+          _id: '6abb2c0b8b46e30002add37b',
+          id: '6abb2c0b8b46e30002add37b',
+          dynamoId: 'bc21991c-ce9b-465d-b85f-dbb1821e51a9',
+          userId: 'bc21991c-ce9b-465d-b85f-dbb1821e51a9',
+          email: 'taphong2002@gmail.com',
+          name: 'Tạ Phong Võ',
+          phone: '0988000111'
+        },
+        {
+          _id: '65f000000000000000000102',
+          id: '65f000000000000000000102',
+          dynamoId: '22222222-3333-4444-5555-666666666662',
+          userId: '22222222-3333-4444-5555-666666666662',
+          email: 'minhkhang@khongtunhi.com',
+          name: 'Bé Trần Minh Khang',
+          phone: '0912345604'
+        },
+        {
+          _id: '65f000000000000000000999',
+          id: '65f000000000000000000999',
+          dynamoId: '424d2085-8685-4a49-a5e8-8fb63b0c85c5',
+          userId: '424d2085-8685-4a49-a5e8-8fb63b0c85c5',
+          email: 'taphong2002vip@gmail.com',
+          name: 'Tạ Phong (Chưa cấp khóa)',
+          phone: '0912345699'
+        }
+      ],
       permissionsByUid: {
         'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68': [
           '6adadba969897b0002482ca5',
@@ -355,14 +396,24 @@ export function createLocalWorkerHarness() {
         const onConflict = u.searchParams.get('on_conflict');
         const prefer = String((init.headers && (init.headers.Prefer || init.headers.prefer)) || '');
         const isUpsert = Boolean(onConflict || prefer.includes('resolution=merge-duplicates'));
+        const pkByTable = {
+          ktn_students: 'email',
+          ktn_orders: 'order_id',
+          ktn_teachers: 'code',
+          ktn_classes: 'id',
+          ktn_attendance: 'id',
+          ktn_provisioning_jobs: 'operation_id',
+          ktn_payment_config: 'id'
+        };
+        const defaultPk = pkByTable[table] || 'id';
         const out = [];
         for (const item of items) {
           let existingIdx = -1;
           if (onConflict) {
             const keys = onConflict.split(',').map(s => s.trim());
             existingIdx = rows.findIndex(r => keys.every(k => String(r[k] ?? '').toLowerCase() === String(item[k] ?? '').toLowerCase()));
-          } else if (isUpsert && table === 'ktn_students' && item.email) {
-            existingIdx = rows.findIndex(r => String(r.email || '').toLowerCase() === String(item.email || '').toLowerCase());
+          } else if (isUpsert && item[defaultPk]) {
+            existingIdx = rows.findIndex(r => String(r[defaultPk] || '').toLowerCase() === String(item[defaultPk] || '').toLowerCase());
           } else if (item.id) {
             existingIdx = rows.findIndex(r => r.id === item.id);
           }
@@ -468,6 +519,39 @@ export function createLocalWorkerHarness() {
           status: 401,
           headers: { 'Content-Type': 'application/json' }
         });
+      }
+
+      if (p.endsWith('/prod/student')) {
+        if (method === 'GET') {
+          const emailQ = String(u.searchParams.get('email') || '').toLowerCase();
+          const list = emailQ
+            ? state.izteach.students.filter(s => String(s.email || '').toLowerCase() === emailQ)
+            : state.izteach.students;
+          return new Response(JSON.stringify({ data: list }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        if (method === 'POST') {
+          const body = init.body ? JSON.parse(init.body) : {};
+          const seq = String(state.izteach.students.length + 1).padStart(4, '0');
+          const generatedCognitoUid = body.dynamoId || body.userId || (`bbbb1111-2222-3333-4444-00000000${seq}`);
+          const created = {
+            _id: '66fb0000000000000000' + seq,
+            id: '66fb0000000000000000' + seq,
+            dynamoId: generatedCognitoUid,
+            userId: generatedCognitoUid,
+            ...body
+          };
+          state.izteach.students.push(created);
+          if (!state.izteach.permissionsByUid[generatedCognitoUid]) {
+            state.izteach.permissionsByUid[generatedCognitoUid] = [];
+          }
+          return new Response(JSON.stringify(created), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
       }
 
       if (p.endsWith('/prod/user-permission') && method === 'GET') {

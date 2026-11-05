@@ -370,6 +370,10 @@ async function main() {
     }, tag=${args.releaseTag}, commit=${gitCommit}, pageId=${args.pageId})`
   );
 
+  if (!args.dryRun && !args.rollbackManifest) {
+    assertCustomPageWriteAllowed(args.pageId, args.allowProdOverwrite);
+  }
+
   if (args.rollbackManifest) {
     const rbPath = path.resolve(process.cwd(), args.rollbackManifest);
     if (!fs.existsSync(rbPath)) {

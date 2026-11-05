@@ -284,16 +284,22 @@ function createTestEnvironment() {
             type: 'student'
           }), { status: 200, headers: { 'content-type': 'application/json' } });
         }
-        return new Response(JSON.stringify({
-          token: 'mock-izteach-admin-token',
-          accessToken: 'mock-izteach-admin-token',
-          id: '2c01e488-d866-4341-a0db-644fe6ba1202',
-          userId: '2c01e488-d866-4341-a0db-644fe6ba1202',
-          email: email || 'hocvienkhongtunhi123@gmail.com',
-          roles: ['root', 'admin'],
-          type: 'admin'
-        }), {
-          status: 200,
+        if (email === 'hocvienkhongtunhi123@gmail.com') {
+          return new Response(JSON.stringify({
+            token: 'mock-izteach-admin-token',
+            accessToken: 'mock-izteach-admin-token',
+            id: '2c01e488-d866-4341-a0db-644fe6ba1202',
+            userId: '2c01e488-d866-4341-a0db-644fe6ba1202',
+            email,
+            roles: ['root', 'admin'],
+            type: 'admin'
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          });
+        }
+        return new Response(JSON.stringify({ message: 'Invalid credentials' }), {
+          status: 401,
           headers: { 'content-type': 'application/json' }
         });
       }
@@ -709,6 +715,7 @@ async function runBrowserSuite() {
         const user = getRealCurrentUser();
         const access = checkUserCourseAccess(user);
         const enrolledIds = access?.enrolledCourseIds || [];
+        const chatRoomIds = getStudentGroupRoomsList().map(r => r.roomId);
         // Try hash route to revoked course cfk1
         window.location.hash = '#/khoa/cfk1/bai/1';
         await handleStudentHashRoute();
@@ -716,20 +723,25 @@ async function runBrowserSuite() {
         return {
           hasCfk1AfterRevoke: enrolledIds.includes('65e7704a9ea90c00080d5195'),
           hasHsk1AfterRevoke: enrolledIds.includes('6adadba969897b00080d5195') || enrolledIds.includes('6adadba969897b0002482ca5'),
+          chatRoomHasCfk1AfterRevoke: chatRoomIds.includes('course:65e7704a9ea90c00080d5195'),
+          chatRoomHasHsk1AfterRevoke: chatRoomIds.includes('course:6adadba969897b0002482ca5'),
           guardVisibleForRevoked: guardEl ? guardEl.style.display === 'block' : false,
-          enrolledIds
+          enrolledIds,
+          chatRoomIds
         };
       });
 
       record(
         'B3-COURSE-REVOKE-REFLECTED-ON-RELOAD',
-        'After server revoke of Chinese For Kids, reload clears stale localStorage and blocks access to revoked course',
+        'After server revoke of Chinese For Kids, reload clears stale localStorage, removes revoked course pill from Nhóm lớp strip, and blocks access to revoked course',
         revokeRes.status === 200 &&
           b3State.hasCfk1AfterRevoke === false &&
           b3State.hasHsk1AfterRevoke === true &&
+          b3State.chatRoomHasCfk1AfterRevoke === false &&
+          b3State.chatRoomHasHsk1AfterRevoke === true &&
           b3State.guardVisibleForRevoked === true &&
           !b3State.enrolledIds.includes('65e7704a9ea90c00080d5195'),
-        `revokeStatus=${revokeRes.status}, hasCfk1AfterRevoke=${b3State.hasCfk1AfterRevoke}, guardVisible=${b3State.guardVisibleForRevoked}`
+        `revokeStatus=${revokeRes.status}, hasCfk1AfterRevoke=${b3State.hasCfk1AfterRevoke}, chatRooms=${JSON.stringify(b3State.chatRoomIds)}, guardVisible=${b3State.guardVisibleForRevoked}`
       );
 
       await page.close();
@@ -970,6 +982,254 @@ async function runBrowserSuite() {
           b4AfterGrade.hwHtml.includes('9.5/10') &&
           b4AfterGrade.hwHtml.includes('Con đọc rất to và chuẩn thanh điệu!'),
         `retryPreserved=${b4FailedAttempt.voiceFilePreserved}, submitted=${b4SubmitState.submitted}, teacherUi=${teacherGradeUiResult.ok}, dbScore=${gradedRowInDb?.score}`
+      );
+
+      // =======================================================================
+      // B6: 💬 Nhóm lớp UI, 👥 Nhóm chung (class & online course) vs 👩‍🏫 Nhắn riêng Cô,
+      //     Teacher 📌 Ghim thông báo, and Student 1-on-1 privacy
+      // =======================================================================
+      await callApi('/api/ktn/messages/pin', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${teacherAToken}` },
+        body: {
+          roomId: 'course:6adadba969897b0002482ca5',
+          content: '📌 Cô Linh nhắc cả khóa HSK1 3.0 nộp bài thu âm Bài 1 trước Chủ Nhật nhé!'
+        }
+      });
+
+      const b6NhomLop = await page.evaluate(async () => {
+        const navBtnText = document.getElementById('tab-btn-contactbook')?.textContent?.trim() || '';
+        const avatarText = document.querySelector('#ktn-user-badge .user-avatar')?.textContent?.trim() || '';
+        // Open 💬 Nhóm lớp via normal navigation (hash #/nhom-lop / openStudentLiveClassHash)
+        openStudentLiveClassHash();
+        await new Promise(r => setTimeout(r, 250));
+        const sessionsCardHiddenByDefault = document.getElementById('student-class-sessions-card')?.style.display === 'none';
+        const bannerHiddenByDefault = document.getElementById('student-live-class-banner')?.style.display === 'none';
+
+        // Switch to online course room (course:6adadba969897b0002482ca5) in 👥 Nhóm chung
+        await selectStudentGroupRoom('course:6adadba969897b0002482ca5');
+        await new Promise(r => setTimeout(r, 200));
+        const targetRoomAfterSelect = resolveActiveStudentChatTarget().roomId;
+        const groupRoomsList = getStudentGroupRoomsList().map(r => r.roomId);
+        const pinnedTextInCourse = document.getElementById('student-chat-pinned-text')?.textContent?.trim() || '';
+        const chatInp = document.getElementById('student-chat-input');
+        if (chatInp) chatInp.value = 'Em chào Cô và các bạn nhóm khóa HSK1 3.0!';
+        await sendStudentChatMessage();
+        await new Promise(r => setTimeout(r, 200));
+        const groupChatHtml = document.getElementById('student-chat-messages')?.innerHTML || '';
+
+        // Toggle to 👩‍🏫 Nhắn riêng Cô (student:e2e.hs.a@khongtunhi.com)
+        await switchStudentChatMode('private');
+        await new Promise(r => setTimeout(r, 200));
+        const pinnedHiddenInPrivate = document.getElementById('student-chat-pinned-banner')?.style.display === 'none';
+        if (chatInp) chatInp.value = 'Cô ơi em nhắn riêng 1-1 hỏi bài ạ!';
+        await sendStudentChatMessage();
+        await new Promise(r => setTimeout(r, 200));
+        const privateChatHtml = document.getElementById('student-chat-messages')?.innerHTML || '';
+
+        // Simulate rapid room switching under out-of-order network latency:
+        // Request 1 (course room) is delayed 160ms; Request 2 (private mode) resolves in 15ms.
+        const origApiReq = window.KtnWebApp.apiRequest.bind(window.KtnWebApp);
+        window.KtnWebApp.apiRequest = async function(path, opts) {
+          if (String(path).includes('course%3A6adadba969897b0002482ca5')) {
+            await new Promise(r => setTimeout(r, 160));
+          }
+          return origApiReq(path, opts);
+        };
+        const pSlow = selectStudentGroupRoom('course:6adadba969897b0002482ca5');
+        await new Promise(r => setTimeout(r, 20));
+        const pFast = switchStudentChatMode('private');
+        await Promise.all([pSlow, pFast]);
+        window.KtnWebApp.apiRequest = origApiReq;
+        const afterRaceHtml = document.getElementById('student-chat-messages')?.innerHTML || '';
+        const afterRaceTitle = document.getElementById('student-chat-card-title')?.textContent || '';
+        const rapidSwitchOk = afterRaceTitle.includes('Nhắn riêng Cô') &&
+          afterRaceHtml.includes('Cô ơi em nhắn riêng 1-1 hỏi bài ạ!') &&
+          !afterRaceHtml.includes('Em chào Cô và các bạn nhóm khóa HSK1 3.0!');
+
+        // Try reading another student's 1-1 room -> must be blocked (403)
+        const crossStudentRes = await window.KtnWebApp.apiRequest('/api/ktn/messages?roomId=' + encodeURIComponent('student:taphong2002@gmail.com'));
+
+        return {
+          navBtnText,
+          avatarText,
+          sessionsCardHiddenByDefault,
+          bannerHiddenByDefault,
+          targetRoomAfterSelect,
+          groupRoomsList,
+          pinnedTextInCourse,
+          noDoublePin: !pinnedTextInCourse.startsWith('📌'),
+          groupMsgSent: groupChatHtml.includes('Em chào Cô và các bạn nhóm khóa HSK1 3.0!'),
+          pinnedHiddenInPrivate,
+          privateMsgSent: privateChatHtml.includes('Cô ơi em nhắn riêng 1-1 hỏi bài ạ!'),
+          rapidSwitchOk,
+          crossStudentStatus: crossStudentRes.status,
+          crossStudentError: crossStudentRes.data?.error
+        };
+      });
+
+      record(
+        'B6-NHOM-LOP-GROUP-COURSE-PRIVATE-PIN-E2E',
+        '💬 Nhóm lớp tab hides homework clutter by default, switches between 👥 Nhóm chung (course:HSK1 with Teacher 📌 Ghim) & 👩‍🏫 Nhắn riêng Cô, guards rapid room switching, and blocks cross-student 1-1 access (403)',
+        b6NhomLop.navBtnText.includes('Nhóm lớp') &&
+          !b6NhomLop.navBtnText.includes('Sổ liên lạc') &&
+          b6NhomLop.avatarText === 'BA' &&
+          b6NhomLop.sessionsCardHiddenByDefault === true &&
+          b6NhomLop.bannerHiddenByDefault === true &&
+          b6NhomLop.pinnedTextInCourse.includes('Cô Linh nhắc cả khóa HSK1 3.0') &&
+          b6NhomLop.noDoublePin === true &&
+          b6NhomLop.groupMsgSent === true &&
+          b6NhomLop.pinnedHiddenInPrivate === true &&
+          b6NhomLop.privateMsgSent === true &&
+          b6NhomLop.rapidSwitchOk === true &&
+          b6NhomLop.crossStudentStatus === 403 &&
+          b6NhomLop.crossStudentError === 'STUDENT_PRIVATE_ROOM_FORBIDDEN',
+        `nav="${b6NhomLop.navBtnText}", avatar="${b6NhomLop.avatarText}", sessionsHidden=${b6NhomLop.sessionsCardHiddenByDefault}, bannerHidden=${b6NhomLop.bannerHiddenByDefault}, noDoublePin=${b6NhomLop.noDoublePin}, rapidSwitchOk=${b6NhomLop.rapidSwitchOk}, crossRead=${b6NhomLop.crossStudentStatus} (${b6NhomLop.crossStudentError})`
+      );
+
+      // =======================================================================
+      // B7: Student inside course lesson (#/khoa/hsk1/bai/1) clicks #btn-mic-record
+      //     (🎙️ Thu âm) and triggers window 'focus' / syncLiveStudentProfile / syncPortalState
+      //     -> MUST stay inside #view-course-learning and NEVER jump to #view-courses-dashboard
+      // =======================================================================
+      const b7MicNoRedirect = await page.evaluate(async () => {
+        if (!navigator.mediaDevices) navigator.mediaDevices = {};
+        navigator.mediaDevices.getUserMedia = async () => {
+          // Simulate browser permission dialog closing and firing window focus
+          setTimeout(() => window.dispatchEvent(new Event('focus')), 5);
+          return { getTracks: () => [{ stop: () => {} }] };
+        };
+        window.location.hash = '#/khoa/hsk1/bai/1';
+        await handleStudentHashRoute();
+
+        const learningEl = document.getElementById('view-course-learning');
+        const dashEl = document.getElementById('view-courses-dashboard');
+        const beforeLearningDisplay = learningEl ? learningEl.style.display : '';
+        const beforeDashDisplay = dashEl ? dashEl.style.display : '';
+
+        // Click #btn-mic-record to start recording
+        const micBtn = document.getElementById('btn-mic-record');
+        micBtn.click();
+        await new Promise(r => setTimeout(r, 50));
+
+        // Explicitly fire focus event + background syncs + delayed resolvePostLoginDefaultRoute while recording
+        window.dispatchEvent(new Event('focus'));
+        await syncLiveStudentProfile();
+        await syncPortalState();
+        await resolvePostLoginDefaultRoute();
+
+        const duringLearningDisplay = learningEl ? learningEl.style.display : '';
+        const duringDashDisplay = dashEl ? dashEl.style.display : '';
+        const isRecordingActive = Boolean(window.isRecording);
+
+        // Click #btn-mic-record again to stop recording, then fire focus event again
+        micBtn.click();
+        await new Promise(r => setTimeout(r, 60));
+        window.dispatchEvent(new Event('focus'));
+        await syncLiveStudentProfile();
+        await syncPortalState();
+        await resolvePostLoginDefaultRoute();
+
+        const afterLearningDisplay = learningEl ? learningEl.style.display : '';
+        const afterDashDisplay = dashEl ? dashEl.style.display : '';
+        const hasRecordedVoiceFile = Boolean(window.__recordedVoiceFile && window.__recordedVoiceFile.size > 0);
+
+        return {
+          beforeLearningDisplay,
+          beforeDashDisplay,
+          duringLearningDisplay,
+          duringDashDisplay,
+          isRecordingActive,
+          afterLearningDisplay,
+          afterDashDisplay,
+          hasRecordedVoiceFile,
+          hashAfter: window.location.hash
+        };
+      });
+
+      record(
+        'B7-COURSE-MIC-RECORD-NO-REDIRECT-ON-FOCUS',
+        'Student clicking 🎙️ Thu âm (#btn-mic-record) inside #/khoa/hsk1/bai/1 stays in #view-course-learning and never jumps to #view-courses-dashboard when window focus / profile sync fires',
+        b7MicNoRedirect.beforeLearningDisplay === 'block' &&
+          b7MicNoRedirect.beforeDashDisplay === 'none' &&
+          b7MicNoRedirect.duringLearningDisplay === 'block' &&
+          b7MicNoRedirect.duringDashDisplay === 'none' &&
+          b7MicNoRedirect.isRecordingActive === true &&
+          b7MicNoRedirect.afterLearningDisplay === 'block' &&
+          b7MicNoRedirect.afterDashDisplay === 'none' &&
+          b7MicNoRedirect.hasRecordedVoiceFile === true &&
+          b7MicNoRedirect.hashAfter.startsWith('#/khoa/hsk1'),
+        `before=${b7MicNoRedirect.beforeLearningDisplay}/${b7MicNoRedirect.beforeDashDisplay}, during=${b7MicNoRedirect.duringLearningDisplay}/${b7MicNoRedirect.duringDashDisplay}, after=${b7MicNoRedirect.afterLearningDisplay}/${b7MicNoRedirect.afterDashDisplay}, recorded=${b7MicNoRedirect.hasRecordedVoiceFile}`
+      );
+
+      // =======================================================================
+      // B8: Admin login with quanly / quanly@khongtunhi.com, khongtunhi@gmail.com,
+      //     and hocvienkhongtunhi123@gmail.com succeeds with role='admin' & token,
+      //     while legacy '123456' password remains blocked (401)
+      // =======================================================================
+      const adminRootLogin = await callApi('/api/ktn/auth/login', {
+        method: 'POST',
+        body: { email: 'hocvienkhongtunhi123@gmail.com', password: 'AdminStrongPassword!2026' }
+      });
+      const quanlyEmailLogin = await callApi('/api/ktn/auth/login', {
+        method: 'POST',
+        body: { email: 'quanly@khongtunhi.com', password: 'AdminStrongPassword!2026' }
+      });
+      const khongtunhiEmailLogin = await callApi('/api/ktn/auth/login', {
+        method: 'POST',
+        body: { email: 'khongtunhi@gmail.com', password: 'AdminStrongPassword!2026' }
+      });
+      const quanlyAliasLogin = await callApi('/api/ktn/auth/login', {
+        method: 'POST',
+        body: { email: 'quanly', password: 'TestStrongPassword!2026' }
+      });
+      const quanlyWeakPwdLogin = await callApi('/api/ktn/auth/login', {
+        method: 'POST',
+        body: { email: 'quanly@khongtunhi.com', password: '123' + '456' }
+      });
+
+      const adminUiPage = await setupInterceptedPage();
+      await adminUiPage.goto(`${baseUrl}/so-lien-lac.html`, { waitUntil: 'domcontentloaded' });
+      const quanlyUiState = await adminUiPage.evaluate(async (pwd) => {
+        const emEl = document.getElementById('auth-email');
+        const pwEl = document.getElementById('auth-password');
+        if (emEl) emEl.value = 'quanly';
+        if (pwEl) pwEl.value = pwd;
+        await window.sllAuth.login(new Event('submit'));
+        const savedSllSession = JSON.parse(localStorage.getItem('sll_session_v2') || 'null');
+        const savedKtnToken = localStorage.getItem('sll_ktn_token');
+        return {
+          activeRole: window.sllAuth?.activeRole,
+          sessionEmail: window.sllAuth?.session?.account?.email,
+          savedRole: savedSllSession?.role,
+          hasKtnToken: Boolean(savedKtnToken && savedKtnToken.split('.').length === 2)
+        };
+      }, 'AdminStrongPassword!2026');
+      await adminUiPage.close();
+
+      record(
+        'B8-ADMIN-QUANLY-LOGIN-AND-LEGACY-PASSWORD-GUARD',
+        'quanly@khongtunhi.com (or alias "quanly"), khongtunhi@gmail.com, and hocvienkhongtunhi123@gmail.com authenticate with role="admin" and receive signed token, while <8 char legacy password returns 401',
+        adminRootLogin.status === 200 &&
+          adminRootLogin.data?.session?.role === 'admin' &&
+          adminRootLogin.data?.user?.role === 'admin' &&
+          Boolean(adminRootLogin.data?.token) &&
+          quanlyEmailLogin.status === 200 &&
+          quanlyEmailLogin.data?.session?.role === 'admin' &&
+          quanlyEmailLogin.data?.user?.role === 'admin' &&
+          Boolean(quanlyEmailLogin.data?.token) &&
+          khongtunhiEmailLogin.status === 200 &&
+          khongtunhiEmailLogin.data?.session?.role === 'admin' &&
+          Boolean(khongtunhiEmailLogin.data?.token) &&
+          quanlyAliasLogin.status === 200 &&
+          quanlyAliasLogin.data?.session?.role === 'admin' &&
+          quanlyAliasLogin.data?.session?.email === 'quanly@khongtunhi.com' &&
+          quanlyWeakPwdLogin.status === 401 &&
+          quanlyUiState.activeRole === 'admin' &&
+          quanlyUiState.sessionEmail === 'quanly@khongtunhi.com' &&
+          quanlyUiState.savedRole === 'admin' &&
+          quanlyUiState.hasKtnToken === true,
+        `root=${adminRootLogin.status}(${adminRootLogin.data?.session?.role}), quanly=${quanlyEmailLogin.status}(${quanlyEmailLogin.data?.session?.role}), khongtunhi=${khongtunhiEmailLogin.status}(${khongtunhiEmailLogin.data?.session?.role}), alias=${quanlyAliasLogin.status}, weak=${quanlyWeakPwdLogin.status}, uiRole=${quanlyUiState.activeRole}, hasToken=${quanlyUiState.hasKtnToken}`
       );
 
       // =======================================================================

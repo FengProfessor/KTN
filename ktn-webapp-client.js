@@ -186,7 +186,12 @@
     safeUrl,
 
     getApiBase() {
-      return window.KTN_WORKER_API_BASE || '';
+      if (window.KTN_WORKER_API_BASE) return window.KTN_WORKER_API_BASE;
+      const h = String((typeof window !== 'undefined' && window.location && window.location.hostname) || '').toLowerCase();
+      if (h && h !== 'localhost' && h !== '127.0.0.1') {
+        return 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+      }
+      return '';
     },
 
     getRolePageUrl,

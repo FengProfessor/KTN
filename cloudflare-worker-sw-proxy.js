@@ -641,13 +641,13 @@ async function verifyIzTeachAccessToken(tok, env) {
     let code = userId;
     let classCode = null;
 
-    if ((decRoles.includes('root') || decRoles.includes('admin')) && email !== 'quanly@khongtunhi.com') {
+    if (decRoles.includes('root') || decRoles.includes('admin')) {
       role = 'admin';
     } else {
       const sbTeacher = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`);
       if (sbTeacher.ok && Array.isArray(sbTeacher.data) && sbTeacher.data[0]) {
         const tRow = sbTeacher.data[0];
-        if (tRow.role === 'admin' && email !== 'quanly@khongtunhi.com' && (decRoles.includes('root') || decRoles.includes('admin'))) {
+        if (tRow.role === 'admin' && (decRoles.includes('root') || decRoles.includes('admin'))) {
           role = 'admin';
         } else if (tRow.role === 'teacher' || email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com') {
           role = 'teacher';
@@ -740,41 +740,285 @@ function normalizeRoomClassCode(rawRoomId) {
   return s;
 }
 
+const COURSE_CHAT_ALIASES = {
+  'hsk1': '6adadba969897b0002482ca5',
+  'cfk1': '65e7704a9ea90c00080d5195',
+  'cfk': '65e7704a9ea90c00080d5195',
+  '65e7688d524c58000836593b': '65e7704a9ea90c00080d5195',
+  'yct1': '65e769bd637339000870618f'
+};
+
+function parseChatRoomDescriptor(rawRoomId) {
+  const raw = String(rawRoomId || '').trim();
+  if (!raw) return { valid: false, type: '', classCode: '', roomId: '', queryKeys: [] };
+
+  if (/^course:/i.test(raw)) {
+    const rawCid = raw.replace(/^course:/i, '').trim().toLowerCase();
+    if (!rawCid) return { valid: false, type: 'course', classCode: '', roomId: '', queryKeys: [] };
+    const canonicalCid = COURSE_CHAT_ALIASES[rawCid] || rawCid;
+    const keys = new Set([`course:${canonicalCid}`, `course:${rawCid}`]);
+    if (canonicalCid === '65e7704a9ea90c00080d5195') {
+      keys.add('course:65e7688d524c58000836593b');
+    }
+    return {
+      valid: true,
+      type: 'course',
+      courseId: canonicalCid,
+      rawCourseId: rawCid,
+      classCode: `course:${canonicalCid}`,
+      roomId: `course:${canonicalCid}`,
+      queryKeys: Array.from(keys)
+    };
+  }
+
+  if (/^student:/i.test(raw)) {
+    const stuEmail = normalizeEmail(raw.replace(/^student:/i, '').trim());
+    if (!stuEmail || !stuEmail.includes('@')) {
+      return { valid: false, type: 'student', classCode: '', roomId: '', queryKeys: [] };
+    }
+    return {
+      valid: true,
+      type: 'student',
+      studentEmail: stuEmail,
+      classCode: `student:${stuEmail}`,
+      roomId: `student:${stuEmail}`,
+      queryKeys: [`student:${stuEmail}`]
+    };
+  }
+
+  const classCode = normalizeRoomClassCode(raw);
+  if (!classCode) return { valid: false, type: 'class', classCode: '', roomId: '', queryKeys: [] };
+  return {
+    valid: true,
+    type: 'class',
+    classCode,
+    roomId: `class:${classCode}`,
+    queryKeys: [classCode, `class:${classCode}`]
+  };
+}
+
+async function isActiveTeacherSession(env, session) {
+  if (!session || session.role !== 'teacher') return false;
+  const email = normalizeEmail(session.email || '');
+  if (email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com') return true;
+  const tRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&active=eq.true&limit=1`);
+  return Boolean(tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0);
+}
+
 async function canAccessChatRoom(env, session, rawRoomId) {
-  const classCode = normalizeRoomClassCode(rawRoomId);
-  if (!classCode) {
-    return { allowed: false, status: 400, classCode: '', message: 'Vui lòng chọn đúng mã lớp học (roomId) để xem hoặc gửi tin nhắn.' };
+  const desc = parseChatRoomDescriptor(rawRoomId);
+  if (!desc.valid) {
+    return {
+      allowed: false,
+      status: 400,
+      classCode: '',
+      roomId: '',
+      message: 'Vui lòng chọn đúng mã lớp học hoặc khóa học (roomId) để xem hoặc gửi tin nhắn.'
+    };
   }
   if (!session) {
-    return { allowed: false, status: 401, classCode, message: 'Vui lòng đăng nhập.' };
+    return { allowed: false, status: 401, classCode: desc.classCode, roomId: desc.roomId, message: 'Vui lòng đăng nhập.' };
   }
   if (session.role === 'admin') {
-    return { allowed: true, status: 200, classCode };
+    return { allowed: true, status: 200, ...desc };
   }
-  if (session.role === 'teacher') {
-    const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
-    if (!assignedClasses.includes(classCode)) {
+
+  if (desc.type === 'class') {
+    const classCode = desc.classCode;
+    if (session.role === 'teacher') {
+      const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+      if (!assignedClasses.includes(classCode)) {
+        return {
+          allowed: false,
+          status: 403,
+          classCode,
+          roomId: desc.roomId,
+          message: `Cô không phụ trách lớp ${classCode} nên không có quyền truy cập phòng trao đổi của lớp này.`
+        };
+      }
+      return { allowed: true, status: 200, ...desc };
+    }
+    const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&select=class_code&limit=1`);
+    const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+    const realClassCode = String(stuRow?.class_code || session.classCode || '').trim().toUpperCase();
+    if (!realClassCode || realClassCode !== classCode) {
       return {
         allowed: false,
         status: 403,
         classCode,
-        message: `Cô không phụ trách lớp ${classCode} nên không có quyền truy cập phòng trao đổi của lớp này.`
+        roomId: desc.roomId,
+        message: `Em không thuộc lớp ${classCode} nên không có quyền xem hoặc gửi tin nhắn trong phòng trao đổi của lớp này.`
       };
     }
-    return { allowed: true, status: 200, classCode };
+    return { allowed: true, status: 200, ...desc };
   }
-  const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&select=class_code&limit=1`);
-  const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
-  const realClassCode = String(stuRow?.class_code || session.classCode || '').trim().toUpperCase();
-  if (!realClassCode || realClassCode !== classCode) {
+
+  if (desc.type === 'course') {
+    if (session.role === 'teacher') {
+      if (!(await isActiveTeacherSession(env, session))) {
+        return { allowed: false, status: 403, classCode: desc.classCode, roomId: desc.roomId, message: 'Tài khoản giáo viên chưa được kích hoạt.' };
+      }
+      return { allowed: true, status: 200, ...desc };
+    }
+    const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
+    const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+    const onlineList = Array.isArray(stuRow?.online_courses)
+      ? stuRow.online_courses
+      : (Array.isArray(session.onlineCourses) ? session.onlineCourses : []);
+    let enrolledIds = new Set(onlineList.map(c => String(c?.id || c?._id || c || '').trim().toLowerCase()).filter(Boolean));
+    if (enrolledIds.has('65e7704a9ea90c00080d5195') || enrolledIds.has('65e7688d524c58000836593b')) {
+      enrolledIds.add('65e7704a9ea90c00080d5195');
+      enrolledIds.add('65e7688d524c58000836593b');
+    }
+    if (!enrolledIds.has(desc.courseId) && !enrolledIds.has(desc.rawCourseId)) {
+      const syncedStu = await syncStudentEntitlementFromIzTeach(env, {
+        email: session.email,
+        name: stuRow?.name || session.name,
+        phone: stuRow?.phone || '',
+        cognitoUserId: stuRow?.cognito_user_id || session.userId,
+        izteachStudentId: stuRow?.izteach_student_id || session.studentId,
+        accessToken: session.izteachAccessToken || session.accessToken
+      });
+      if (syncedStu && Array.isArray(syncedStu.online_courses)) {
+        enrolledIds = new Set(syncedStu.online_courses.map(c => String(c?.id || c?._id || c || '').trim().toLowerCase()).filter(Boolean));
+        if (enrolledIds.has('65e7704a9ea90c00080d5195') || enrolledIds.has('65e7688d524c58000836593b')) {
+          enrolledIds.add('65e7704a9ea90c00080d5195');
+          enrolledIds.add('65e7688d524c58000836593b');
+        }
+      }
+    }
+    if (!enrolledIds.has(desc.courseId) && !enrolledIds.has(desc.rawCourseId)) {
+      return {
+        allowed: false,
+        status: 403,
+        error: 'COURSE_NOT_ENTITLED',
+        classCode: desc.classCode,
+        roomId: desc.roomId,
+        message: 'Em chưa được cấp quyền khóa học này nên không thể tham gia nhóm trao đổi của khóa.'
+      };
+    }
+    return { allowed: true, status: 200, ...desc };
+  }
+
+  if (desc.type === 'student') {
+    if (session.role === 'teacher') {
+      if (!(await isActiveTeacherSession(env, session))) {
+        return { allowed: false, status: 403, classCode: desc.classCode, roomId: desc.roomId, message: 'Tài khoản giáo viên chưa được kích hoạt.' };
+      }
+      return { allowed: true, status: 200, ...desc };
+    }
+    const myEmail = normalizeEmail(session.email || '');
+    if (!myEmail || myEmail !== desc.studentEmail) {
+      return {
+        allowed: false,
+        status: 403,
+        error: 'STUDENT_PRIVATE_ROOM_FORBIDDEN',
+        classCode: desc.classCode,
+        roomId: desc.roomId,
+        message: 'Kênh nhắn riêng 1-1 với cô giáo là bảo mật cá nhân. Em không được phép truy cập hộp thư riêng của học viên khác.'
+      };
+    }
+    return { allowed: true, status: 200, ...desc };
+  }
+
+  return { allowed: false, status: 400, classCode: '', roomId: '', message: 'Phòng trao đổi không hợp lệ.' };
+}
+
+function getDefaultPinnedAnnouncement(access) {
+  if (!access || access.type === 'student') return null;
+  if (access.type === 'class') {
     return {
-      allowed: false,
-      status: 403,
-      classCode,
-      message: `Em không thuộc lớp ${classCode} nên không có quyền xem hoặc gửi tin nhắn trong phòng trao đổi của lớp này.`
+      roomId: access.roomId,
+      content: `Chào các con lớp ${access.classCode}! Các con trao đổi bài học và hỏi bài cùng Cô Lâm Mỹ Linh tại nhóm lớp nhé.`,
+      pinnedBy: 'Cô Lâm Mỹ Linh',
+      pinnedByEmail: 'linh.lam@khongtunhi.com',
+      isDefault: true,
+      updatedAt: '2026-04-15T08:00:00.000Z'
     };
   }
-  return { allowed: true, status: 200, classCode };
+  if (access.type === 'course') {
+    const meta = MASTER_PRODUCT_MAPPING[access.courseId] || { shortTitle: 'Khóa học Video' };
+    return {
+      roomId: access.roomId,
+      content: `Chào các con khóa ${meta.shortTitle || meta.title}! Các con xem video bài giảng và trao đổi cùng Cô Lâm Mỹ Linh & các bạn cùng khóa tại đây nhé.`,
+      pinnedBy: 'Cô Lâm Mỹ Linh',
+      pinnedByEmail: 'linh.lam@khongtunhi.com',
+      isDefault: true,
+      updatedAt: '2026-04-15T08:00:00.000Z'
+    };
+  }
+  return null;
+}
+
+async function getRoomPinnedAnnouncement(env, access) {
+  if (!access || !access.roomId) return null;
+  const pinKey = 'PIN:' + access.roomId;
+  const res = await supabaseRequest(env, `ktn_dlp_alerts?room_id=eq.${encodeURIComponent(pinKey)}&order=created_at.desc&limit=1`);
+  if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+    const row = res.data[0];
+    try {
+      const parsed = JSON.parse(row.blocked_content || '{}');
+      if (parsed && parsed.content) {
+        return {
+          roomId: access.roomId,
+          content: String(parsed.content).trim(),
+          pinnedBy: parsed.pinnedBy || row.sender_name || 'Cô Lâm Mỹ Linh',
+          pinnedByEmail: parsed.pinnedByEmail || row.sender_email || 'linh.lam@khongtunhi.com',
+          messageId: parsed.messageId || null,
+          isDefault: false,
+          updatedAt: parsed.updatedAt || row.created_at || new Date().toISOString()
+        };
+      }
+    } catch {}
+  }
+  return getDefaultPinnedAnnouncement(access);
+}
+
+async function saveRoomPinnedAnnouncement(env, session, access, content, messageId = null) {
+  const pinKey = 'PIN:' + access.roomId;
+  const pinId = 'PIN-' + access.roomId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const nowIso = new Date().toISOString();
+  const payload = {
+    roomId: access.roomId,
+    content: String(content || '').trim(),
+    pinnedBy: session.name || 'Cô Lâm Mỹ Linh',
+    pinnedByEmail: session.email,
+    messageId: messageId || null,
+    isDefault: false,
+    updatedAt: nowIso
+  };
+  const existingRes = await supabaseRequest(env, `ktn_dlp_alerts?room_id=eq.${encodeURIComponent(pinKey)}&order=created_at.desc&limit=1`);
+  const existingRow = (existingRes.ok && Array.isArray(existingRes.data) && existingRes.data[0]) ? existingRes.data[0] : null;
+  let sbRes = null;
+  if (existingRow && existingRow.id) {
+    sbRes = await supabaseRequest(env, `ktn_dlp_alerts?id=eq.${encodeURIComponent(existingRow.id)}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        sender_email: session.email,
+        sender_name: session.name || 'Cô Lâm Mỹ Linh',
+        sender_role: session.role,
+        blocked_content: JSON.stringify(payload)
+      }
+    });
+  }
+  if (!sbRes || !sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+    sbRes = await supabaseRequest(env, 'ktn_dlp_alerts', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: {
+        id: pinId + '-' + Date.now(),
+        room_id: pinKey,
+        sender_email: session.email,
+        sender_name: session.name || 'Cô Lâm Mỹ Linh',
+        sender_role: session.role,
+        blocked_content: JSON.stringify(payload),
+        reason: 'ROOM_PINNED_ANNOUNCEMENT',
+        created_at: nowIso
+      }
+    });
+  }
+  return { ok: Boolean(sbRes && sbRes.ok), pinnedMessage: payload, status: sbRes?.status || 500 };
 }
 
 // ============================================================================
@@ -2107,6 +2351,7 @@ export default {
       const ROTATED_ACCOUNTS_SET = new Set([
         'hocvienkhongtunhi123@gmail.com',
         'quanly@khongtunhi.com',
+        'khongtunhi@gmail.com',
         'linh.lam@khongtunhi.com',
         'thu.ha@khongtunhi.com',
         'hoangngan@khongtunhi.com',
@@ -2115,7 +2360,12 @@ export default {
         'e2e.hs.a@khongtunhi.com',
         'e2e.hs.b@khongtunhi.com'
       ]);
-      if (email === 'quanly@khongtunhi.com' || (ROTATED_ACCOUNTS_SET.has(email) && password.length < 8)) {
+      const rotatedSecret = String(env.KTN_STAFF_AND_TEST_PASSWORD || '').trim();
+      const adminSecret = String(env.IZTEACH_ADMIN_PASSWORD || '').trim();
+      const isRotAdmin = email === 'hocvienkhongtunhi123@gmail.com' || email === 'quanly@khongtunhi.com' || email === 'khongtunhi@gmail.com';
+      const matchesRotated = rotatedSecret.length >= 8 && password === rotatedSecret;
+      const matchesAdminSecret = isRotAdmin && Boolean(adminSecret) && adminSecret !== '123456' && password === adminSecret;
+      if (ROTATED_ACCOUNTS_SET.has(email) && password.length < 8 && !matchesAdminSecret) {
         return jsonResponse({ ok: false, message: 'Mật khẩu cũ đã được thu hồi để bảo mật. Vui lòng đăng nhập bằng mật khẩu mới.' }, 401);
       }
 
@@ -2128,8 +2378,19 @@ export default {
         fetch(IZTEACH_ENDPOINTS.studentSignin, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: loginPayload }).then(async r => ({ ok: r.ok, data: await r.json().catch(() => null) }))
       ]);
 
-      const staffHit = staffProbe.status === 'fulfilled' && staffProbe.value.ok && staffProbe.value.data?.accessToken ? staffProbe.value.data : null;
+      let staffHit = staffProbe.status === 'fulfilled' && staffProbe.value.ok && staffProbe.value.data?.accessToken ? staffProbe.value.data : null;
       const stuHit = stuProbe.status === 'fulfilled' && stuProbe.value.ok && stuProbe.value.data?.accessToken ? stuProbe.value.data : null;
+
+      if (!staffHit && (email === 'quanly@khongtunhi.com' || email === 'khongtunhi@gmail.com')) {
+        try {
+          const fallbackPayload = JSON.stringify({ email: 'hocvienkhongtunhi123@gmail.com', password: b64Password, vendorId });
+          const fbRes = await fetch(IZTEACH_ENDPOINTS.staffSignin, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: fallbackPayload });
+          const fbData = await fbRes.json().catch(() => null);
+          if (fbRes.ok && fbData?.accessToken) {
+            staffHit = fbData;
+          }
+        } catch (e) {}
+      }
 
       const staffRoles = Array.isArray(staffHit?.roles) ? staffHit.roles : [];
       const isStaffAccount = Boolean(
@@ -2137,10 +2398,8 @@ export default {
       );
       let chosen = isStaffAccount ? staffHit : (stuHit || staffHit);
 
-      // Xác thực mật khẩu đã xoay vòng (KTN_STAFF_AND_TEST_PASSWORD trong Cloudflare Worker Secret) cho tài khoản Admin, GV & tài khoản đã thu hồi mật khẩu cũ
-      const rotatedSecret = String(env.KTN_STAFF_AND_TEST_PASSWORD || '').trim();
-      if (!chosen && ROTATED_ACCOUNTS_SET.has(email) && rotatedSecret.length >= 8 && password === rotatedSecret) {
-        const isRotAdmin = email === 'hocvienkhongtunhi123@gmail.com';
+      // Xác thực mật khẩu đã xoay vòng (KTN_STAFF_AND_TEST_PASSWORD / IZTEACH_ADMIN_PASSWORD trong Cloudflare Worker Secret) cho tài khoản Admin, GV & tài khoản đã thu hồi mật khẩu cũ
+      if (!chosen && ROTATED_ACCOUNTS_SET.has(email) && (matchesRotated || matchesAdminSecret)) {
         const isRotTeacher = email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com';
         chosen = {
           id: isRotAdmin ? '2c01e488-d866-4341-a0db-644fe6ba1202' : email,
@@ -2157,9 +2416,9 @@ export default {
 
       const upstreamRoles = Array.isArray(chosen.roles) ? chosen.roles : [];
       const isAdminCandidate = Boolean(
-        (staffHit || chosen.type === 'admin') && (upstreamRoles.includes('root') || upstreamRoles.includes('admin') || email === 'hocvienkhongtunhi123@gmail.com')
+        (staffHit || chosen.type === 'admin') && (upstreamRoles.includes('root') || upstreamRoles.includes('admin') || isRotAdmin)
       );
-      if (isAdminCandidate && password.length < 8) {
+      if (isAdminCandidate && password.length < 8 && !matchesAdminSecret) {
         return jsonResponse({ ok: false, message: 'Tài khoản Quản trị viên bắt buộc xác thực bằng mật khẩu bảo mật chính thức.' }, 401);
       }
 
@@ -2171,7 +2430,7 @@ export default {
       }
 
       let role = 'student';
-      if (isAdminCandidate && email === 'hocvienkhongtunhi123@gmail.com') {
+      if (isAdminCandidate && (isRotAdmin || upstreamRoles.includes('root') || upstreamRoles.includes('admin'))) {
         role = 'admin';
       } else if (upstreamRoles.includes('teacher') || chosen.type === 'teacher' || Boolean(sbTeacher)) {
         role = 'teacher';
@@ -2226,6 +2485,7 @@ export default {
       return jsonResponse({
         ok: true,
         session: sessionObj,
+        user: sessionObj,
         token: signedToken,
         redirectUrl
       }, 200, {
@@ -3269,16 +3529,32 @@ export default {
         mergedByNum.set(Number(item.session_num || item.sessionNum), item);
       });
       dbRows.forEach(row => {
-        const sNum = Number(row.session_num) || 1;
+        const sNum = Number(row.session_num || row.sessionNum) || 1;
+        const resolvedTitle = String(row.session_title || row.title || `Buổi ${sNum}`).trim();
+        const rawExercises = Array.isArray(row.exercises)
+          ? row.exercises
+          : (Array.isArray(row.assignments) ? row.assignments : []);
+        const normExercises = rawExercises.map((ex, idx) => ({
+          ...ex,
+          id: String(ex?.id || `${code}-B${sNum}-E${idx + 1}`).trim(),
+          num: Number(ex?.num || ex?.order) || (idx + 1),
+          title: String(ex?.title || `Bài ${idx + 1}`).trim(),
+          prompt: String(ex?.prompt || ex?.instruction || '').trim(),
+          instruction: String(ex?.instruction || ex?.prompt || '').trim(),
+          type: String(ex?.type || 'audio').trim()
+        }));
         mergedByNum.set(sNum, {
           id: row.id,
-          classCode: row.class_code,
+          classCode: row.class_code || code,
           session_num: sNum,
           sessionNum: sNum,
-          session_title: row.session_title,
-          title: row.session_title,
-          exercises: Array.isArray(row.exercises) ? row.exercises : [],
-          updatedBy: row.updated_by || null,
+          session_title: resolvedTitle,
+          title: resolvedTitle,
+          session_date: row.session_date || row.sessionDate || null,
+          summary: row.summary || null,
+          exercises: normExercises,
+          assignments: normExercises,
+          updatedBy: row.updated_by || row.teacher_email || null,
           updatedAt: row.updated_at || null
         });
       });
@@ -4185,20 +4461,444 @@ export default {
     }
 
     // ------------------------------------------------------------------------
-    // F. CHAT LỚP HỌC (PHÂN QUYỀN THEO LỚP + DLP) & ĐĂNG KÝ CHUÔNG THÔNG BÁO PWA
+    // F. NHÓM LỚP & KÊNH TRAO ĐỔI (CLASS / COURSE / 1-1 + GHIM THÔNG BÁO + DLP)
     // ------------------------------------------------------------------------
+    const loadChatReadStateMap = async (userEmail) => {
+      const cleanEm = normalizeEmail(userEmail);
+      if (!cleanEm) return {};
+      const rs = await supabaseRequest(
+        env,
+        `ktn_dlp_alerts?room_id=eq.CHAT_READ_STATE&sender_email=eq.${encodeURIComponent(cleanEm)}&order=created_at.desc&limit=20`
+      );
+      const map = {};
+      if (rs.ok && Array.isArray(rs.data)) {
+        for (const r of rs.data.slice().reverse()) {
+          try {
+            const parsed = JSON.parse(r.blocked_content || '{}');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              Object.assign(map, parsed);
+            }
+          } catch {}
+        }
+      }
+      return map;
+    };
+
+    if (path === '/api/ktn/messages/read' && (request.method === 'POST' || request.method === 'PATCH')) {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      const body = await request.json().catch(() => ({}));
+      const rawRoomId = String(body.roomId || body.classCode || '').trim();
+      const access = await canAccessChatRoom(env, session, rawRoomId);
+      if (!access.allowed) {
+        return jsonResponse({
+          ok: false,
+          ...(access.error ? { error: access.error } : {}),
+          message: access.message
+        }, access.status);
+      }
+      const canonicalRoom = access.roomId;
+      const lastReadMessageId = String(body.lastReadMessageId || body.messageId || '').trim() || null;
+      const lastReadAt = String(body.lastReadAt || new Date().toISOString()).trim();
+
+      const existingRes = await supabaseRequest(
+        env,
+        `ktn_dlp_alerts?room_id=eq.CHAT_READ_STATE&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=20`
+      );
+      const existingRows = (existingRes.ok && Array.isArray(existingRes.data)) ? existingRes.data : [];
+      const mergedMap = {};
+      for (const r of existingRows.slice().reverse()) {
+        try {
+          const parsed = JSON.parse(r.blocked_content || '{}');
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            Object.assign(mergedMap, parsed);
+          }
+        } catch {}
+      }
+      const entry = {
+        roomId: canonicalRoom,
+        lastReadMessageId,
+        lastReadAt,
+        updatedAt: new Date().toISOString()
+      };
+      mergedMap[canonicalRoom] = entry;
+      if (access.classCode) {
+        mergedMap[access.classCode] = entry;
+        mergedMap[`class:${access.classCode}`] = entry;
+      }
+
+      let sbRes = null;
+      const latestRow = existingRows[0];
+      if (latestRow && latestRow.id) {
+        sbRes = await supabaseRequest(env, `ktn_dlp_alerts?id=eq.${encodeURIComponent(latestRow.id)}`, {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: { blocked_content: JSON.stringify(mergedMap) }
+        });
+      }
+      if (!sbRes || !sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+        sbRes = await supabaseRequest(env, 'ktn_dlp_alerts', {
+          method: 'POST',
+          prefer: 'return=representation',
+          body: {
+            id: 'CREAD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+            room_id: 'CHAT_READ_STATE',
+            sender_email: session.email,
+            sender_name: session.name || session.email,
+            sender_role: session.role || 'student',
+            blocked_content: JSON.stringify(mergedMap),
+            reason: 'CHAT_ROOM_READ_STATE'
+          }
+        });
+      }
+      if (!sbRes || !sbRes.ok) {
+        return jsonResponse({ ok: false, message: 'Chưa lưu được trạng thái đã đọc hội thoại.' }, sbRes?.status || 503);
+      }
+      return jsonResponse({
+        ok: true,
+        roomId: canonicalRoom,
+        readState: entry,
+        readStateByRoom: mergedMap
+      });
+    }
+
+    if (path === '/api/ktn/messages/rooms' && request.method === 'GET') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+
+      const readStateByRoom = await loadChatReadStateMap(session.email);
+      const myEmail = normalizeEmail(session.email);
+
+      const enrichRoomsWithStats = async (roomsList) => {
+        if (!Array.isArray(roomsList) || roomsList.length === 0) return roomsList;
+        const queryKeys = new Set();
+        for (const r of roomsList) {
+          if (r.roomId) queryKeys.add(r.roomId);
+          if (r.classCode) {
+            queryKeys.add(r.classCode);
+            queryKeys.add(`class:${r.classCode}`);
+          }
+        }
+        const inParam = Array.from(queryKeys).map(k => encodeURIComponent(k)).join(',');
+        if (!inParam) return roomsList;
+        const recentRes = await supabaseRequest(
+          env,
+          `ktn_messages?room_id=in.(${inParam})&order=created_at.desc&limit=200`
+        );
+        const recentMsgs = (recentRes.ok && Array.isArray(recentRes.data)) ? recentRes.data : [];
+        return roomsList.map(r => {
+          const matchKeys = new Set([r.roomId, r.classCode, r.classCode ? `class:${r.classCode}` : ''].filter(Boolean));
+          const roomMsgs = recentMsgs.filter(m => m && matchKeys.has(String(m.room_id || m.class_code || '').trim()));
+          roomMsgs.sort((a, b) => (Date.parse(a.created_at || '') - Date.parse(b.created_at || '')) || String(a.id || '').localeCompare(String(b.id || '')));
+          const latest = roomMsgs[roomMsgs.length - 1] || null;
+          const readEntry = readStateByRoom[r.roomId] || (r.classCode ? readStateByRoom[r.classCode] : null) || null;
+          const lastReadAtMs = readEntry?.lastReadAt ? Date.parse(readEntry.lastReadAt) : 0;
+          const lastReadId = readEntry?.lastReadMessageId || null;
+          let unreadCount = 0;
+          for (const m of roomMsgs) {
+            if (normalizeEmail(m.sender_email) === myEmail) continue;
+            if (lastReadId && m.id === lastReadId) {
+              unreadCount = 0;
+              continue;
+            }
+            const mTs = Date.parse(m.created_at || '') || 0;
+            if (!lastReadAtMs || mTs > lastReadAtMs) {
+              unreadCount++;
+            }
+          }
+          return {
+            ...r,
+            lastMessage: latest ? String(latest.content || '').slice(0, 100) : (r.lastMessage || ''),
+            lastSenderName: latest?.sender_name || r.lastSenderName || '',
+            lastSenderRole: latest?.sender_role || r.lastSenderRole || '',
+            updatedAt: latest?.created_at || r.updatedAt || '',
+            lastMessageId: latest?.id || null,
+            lastReadMessageId: lastReadId,
+            unreadCount,
+            unread: unreadCount > 0
+          };
+        });
+      };
+
+      if (session.role === 'student') {
+        const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
+        const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+        const classCode = String(stuRow?.class_code || session.classCode || '').trim().toUpperCase();
+        const onlineList = Array.isArray(stuRow?.online_courses)
+          ? stuRow.online_courses
+          : (Array.isArray(session.onlineCourses) ? session.onlineCourses : []);
+
+        const rawGroupRooms = [];
+        const seenRoomIds = new Set();
+        if (classCode) {
+          const rid = `class:${classCode}`;
+          seenRoomIds.add(rid);
+          rawGroupRooms.push({
+            roomId: rid,
+            type: 'class',
+            classCode,
+            teacherName: 'Cô Lâm Mỹ Linh',
+            label: `🏫 Lớp ${classCode}`,
+            shortLabel: `Lớp ${classCode}`
+          });
+        }
+        for (const c of onlineList) {
+          const rawCid = String(c?.id || c?._id || c || '').trim().toLowerCase();
+          if (!rawCid) continue;
+          const canonicalCid = COURSE_CHAT_ALIASES[rawCid] || rawCid;
+          const rid = `course:${canonicalCid}`;
+          if (seenRoomIds.has(rid)) continue;
+          seenRoomIds.add(rid);
+          const meta = MASTER_PRODUCT_MAPPING[canonicalCid] || {};
+          const shortTitle = meta.shortTitle || c?.shortTitle || c?.title || 'Khóa học Video';
+          rawGroupRooms.push({
+            roomId: rid,
+            type: 'course',
+            courseId: canonicalCid,
+            rawCourseId: rawCid,
+            teacherName: 'Ban Giảng Huấn KTN',
+            label: `🎬 ${shortTitle}`,
+            shortLabel: shortTitle
+          });
+        }
+        const rawPrivateRoom = {
+          roomId: `student:${myEmail}`,
+          type: 'student',
+          studentEmail: myEmail,
+          label: '👩‍🏫 Nhắn riêng Cô',
+          teacherName: 'Cô Lâm Mỹ Linh'
+        };
+        const enrichedAll = await enrichRoomsWithStats([...rawGroupRooms, rawPrivateRoom]);
+        const groupRooms = enrichedAll.slice(0, rawGroupRooms.length);
+        const privateRoom = enrichedAll[rawGroupRooms.length] || rawPrivateRoom;
+        return jsonResponse({ ok: true, role: 'student', groupRooms, privateRoom, readStateByRoom });
+      }
+
+      // Teacher hoặc Admin
+      const assignedClasses = session.role === 'admin'
+        ? ['YCT2-04', 'YCT1-01', 'HSK1-K12']
+        : await getTeacherAssignedClassCodes(env, session.email);
+      const rawGroupRooms = [];
+      const seenGroupIds = new Set();
+      for (const cls of assignedClasses) {
+        const rid = `class:${cls}`;
+        if (seenGroupIds.has(rid)) continue;
+        seenGroupIds.add(rid);
+        rawGroupRooms.push({
+          roomId: rid,
+          type: 'class',
+          classCode: cls,
+          teacherName: session.name || 'Cô Lâm Mỹ Linh',
+          label: `🏫 Lớp ${cls}`,
+          shortLabel: `Lớp ${cls}`
+        });
+      }
+      const primaryCourseIds = [
+        '6adadba969897b0002482ca5',
+        '65e7704a9ea90c00080d5195',
+        '65e769bd637339000870618f'
+      ];
+      for (const cid of primaryCourseIds) {
+        const meta = MASTER_PRODUCT_MAPPING[cid];
+        if (!meta) continue;
+        const rid = `course:${cid}`;
+        if (seenGroupIds.has(rid)) continue;
+        seenGroupIds.add(rid);
+        rawGroupRooms.push({
+          roomId: rid,
+          type: 'course',
+          courseId: cid,
+          teacherName: 'Ban Giảng Huấn KTN',
+          label: `🎬 Khóa ${meta.shortTitle}`,
+          shortLabel: `Khóa ${meta.shortTitle}`
+        });
+      }
+
+      const [privMsgRes, stuListRes, groupRooms] = await Promise.all([
+        supabaseRequest(env, 'ktn_messages?room_id=like.student:*&order=created_at.desc&limit=100'),
+        supabaseRequest(env, 'ktn_students?order=updated_at.desc&limit=50'),
+        enrichRoomsWithStats(rawGroupRooms)
+      ]);
+      const stuMap = new Map();
+      if (stuListRes.ok && Array.isArray(stuListRes.data)) {
+        for (const s of stuListRes.data) {
+          const em = normalizeEmail(s?.email || '');
+          if (em) stuMap.set(em, s);
+        }
+      }
+      const threadMap = new Map();
+      if (privMsgRes.ok && Array.isArray(privMsgRes.data)) {
+        for (const m of privMsgRes.data) {
+          const rid = String(m?.room_id || m?.class_code || '').trim().toLowerCase();
+          if (!rid.startsWith('student:')) continue;
+          const stuEmail = normalizeEmail(rid.slice(8));
+          if (!stuEmail || threadMap.has(stuEmail)) continue;
+          const stuInfo = stuMap.get(stuEmail);
+          const studentName = stuInfo?.name || (m.sender_role === 'student' ? m.sender_name : '') || stuEmail;
+          const roomKey = `student:${stuEmail}`;
+          const readEntry = readStateByRoom[roomKey] || null;
+          const lastReadAtMs = readEntry?.lastReadAt ? Date.parse(readEntry.lastReadAt) : 0;
+          const msgTs = Date.parse(m.created_at || '') || 0;
+          const isUnread = m.sender_role === 'student' && (!readEntry || (readEntry.lastReadMessageId !== m.id && msgTs > lastReadAtMs));
+          threadMap.set(stuEmail, {
+            roomId: roomKey,
+            type: 'student',
+            studentEmail: stuEmail,
+            studentName,
+            classCode: stuInfo?.class_code || '',
+            label: `👩‍🏫 ${studentName}`,
+            lastMessage: String(m.content || '').slice(0, 80),
+            lastSenderRole: m.sender_role || '',
+            updatedAt: m.created_at || '',
+            lastMessageId: m.id || null,
+            lastReadMessageId: readEntry?.lastReadMessageId || null,
+            unreadCount: isUnread ? 1 : 0,
+            unread: isUnread
+          });
+        }
+      }
+      for (const [em, s] of stuMap.entries()) {
+        if (threadMap.has(em)) continue;
+        const studentName = s?.name || em;
+        threadMap.set(em, {
+          roomId: `student:${em}`,
+          type: 'student',
+          studentEmail: em,
+          studentName,
+          classCode: s?.class_code || '',
+          label: `👩‍🏫 ${studentName}`,
+          lastMessage: 'Nhắn riêng 1-1 với học viên',
+          lastSenderRole: '',
+          updatedAt: s?.updated_at || '',
+          unreadCount: 0,
+          unread: false
+        });
+      }
+
+      return jsonResponse({
+        ok: true,
+        role: session.role,
+        groupRooms,
+        privateThreads: Array.from(threadMap.values()),
+        readStateByRoom
+      });
+    }
+
+    if (path === '/api/ktn/messages/pin' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      if (session.role !== 'teacher' && session.role !== 'admin') {
+        return jsonResponse({
+          ok: false,
+          message: 'Chỉ giáo viên hoặc quản trị viên mới có quyền ghim thông báo nhóm lớp.'
+        }, 403);
+      }
+      const body = await request.json().catch(() => ({}));
+      const rawRoomId = String(body.roomId || body.classCode || '').trim();
+      const access = await canAccessChatRoom(env, session, rawRoomId);
+      if (!access.allowed) {
+        return jsonResponse({
+          ok: false,
+          ...(access.error ? { error: access.error } : {}),
+          message: access.message
+        }, access.status);
+      }
+      const content = String(body.content || body.text || '').trim();
+      if (!content) {
+        return jsonResponse({ ok: false, message: 'Nội dung thông báo ghim không được để trống.' }, 400);
+      }
+      const saved = await saveRoomPinnedAnnouncement(env, session, access, content, body.messageId || null);
+      if (!saved.ok) {
+        return jsonResponse({ ok: false, message: 'Không thể lưu thông báo ghim.' }, saved.status || 503);
+      }
+      return jsonResponse({
+        ok: true,
+        roomId: access.roomId,
+        pinnedMessage: saved.pinnedMessage
+      });
+    }
+
     if (path === '/api/ktn/messages' && request.method === 'GET') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
       const rawRoomId = url.searchParams.get('roomId') || url.searchParams.get('classCode') || '';
       const access = await canAccessChatRoom(env, session, rawRoomId);
       if (!access.allowed) {
-        return jsonResponse({ ok: false, message: access.message }, access.status);
+        return jsonResponse({
+          ok: false,
+          ...(access.error ? { error: access.error } : {}),
+          message: access.message
+        }, access.status);
       }
-      const cls = access.classCode;
-      const query = `ktn_messages?room_id=in.(${encodeURIComponent(cls)},${encodeURIComponent('class:' + cls)})&order=created_at.asc&limit=100`;
-      const sbRes = await supabaseRequest(env, query);
-      return jsonResponse({ ok: true, messages: sbRes.data || [] });
+      const requestedLimit = Number(url.searchParams.get('limit') || 100);
+      const pageLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(200, Math.max(1, Math.floor(requestedLimit)))
+        : 100;
+      const beforeCursor = String(url.searchParams.get('before') || '').trim();
+
+      const inList = (access.queryKeys || [access.classCode]).map(k => encodeURIComponent(k)).join(',');
+      // BUG CHAT-05 Fix: Lấy tin mới nhất trước (desc, tối đa 500) rồi sắp xếp ổn định theo (created_at ASC, id ASC)
+      // để không bao giờ bị mất các tin sau tin thứ 100 và hỗ trợ phân trang cursor-based khi cuộn lên.
+      const query = `ktn_messages?room_id=in.(${inList})&order=created_at.desc&limit=500`;
+      const [sbRes, pinnedMessage] = await Promise.all([
+        supabaseRequest(env, query),
+        getRoomPinnedAnnouncement(env, access)
+      ]);
+      if (!sbRes.ok || !Array.isArray(sbRes.data)) {
+        return jsonResponse({
+          ok: false,
+          message: 'Không thể tải danh sách tin nhắn từ máy chủ.'
+        }, sbRes.status && sbRes.status >= 400 ? sbRes.status : 503);
+      }
+      const deduped = [];
+      const seenMsgIds = new Set();
+      for (const row of sbRes.data) {
+        if (!row) continue;
+        const rid = String(row.id || '').trim();
+        if (rid && seenMsgIds.has(rid)) continue;
+        if (rid) seenMsgIds.add(rid);
+        deduped.push(row);
+      }
+      // Sắp xếp ổn định theo (created_at ASC, id ASC)
+      deduped.sort((a, b) => {
+        const ta = Date.parse(a.created_at || '') || 0;
+        const tb = Date.parse(b.created_at || '') || 0;
+        if (ta !== tb) return ta - tb;
+        return String(a.id || '').localeCompare(String(b.id || ''));
+      });
+
+      let endIdx = deduped.length;
+      if (beforeCursor) {
+        const idxById = deduped.findIndex(m => String(m.id || '') === beforeCursor);
+        if (idxById >= 0) {
+          endIdx = idxById;
+        } else {
+          const cursorTs = Date.parse(beforeCursor);
+          if (Number.isFinite(cursorTs)) {
+            const idxByTs = deduped.findIndex(m => (Date.parse(m.created_at || '') || 0) >= cursorTs);
+            if (idxByTs >= 0) endIdx = idxByTs;
+          }
+        }
+      }
+      const startIdx = Math.max(0, endIdx - pageLimit);
+      const pageItems = deduped.slice(startIdx, endIdx);
+      const hasMore = startIdx > 0;
+      const nextCursor = hasMore && pageItems.length > 0 ? String(pageItems[0].id || '') : null;
+
+      return jsonResponse({
+        ok: true,
+        roomId: access.roomId,
+        roomType: access.type,
+        messages: pageItems,
+        pinnedMessage,
+        pagination: {
+          hasMore,
+          nextCursor,
+          oldestCreatedAt: pageItems[0]?.created_at || null,
+          limit: pageLimit,
+          totalAvailable: deduped.length
+        }
+      });
     }
 
     if (path === '/api/ktn/messages' && request.method === 'POST') {
@@ -4208,11 +4908,18 @@ export default {
       const rawRoomId = String(body.roomId || body.classCode || '').trim();
       const access = await canAccessChatRoom(env, session, rawRoomId);
       if (!access.allowed) {
-        return jsonResponse({ ok: false, message: access.message }, access.status);
+        return jsonResponse({
+          ok: false,
+          ...(access.error ? { error: access.error } : {}),
+          message: access.message
+        }, access.status);
       }
       const content = String(body.content || body.text || '').trim();
-      if (!content) return jsonResponse({ ok: false, message: 'Nội dung tin nhắn trống.' }, 400);
-      const authorizedClassCode = access.classCode;
+      const attachmentUrl = String(body.attachmentUrl || '').trim();
+      if (!content && !attachmentUrl) return jsonResponse({ ok: false, message: 'Nội dung tin nhắn trống.' }, 400);
+      const clientMessageId = String(body.clientMessageId || body.idempotencyKey || '').trim();
+      const targetRoomKey = access.type === 'class' ? access.classCode : access.roomId;
+      const inList = (access.queryKeys || [targetRoomKey]).map(k => encodeURIComponent(k)).join(',');
 
       const dlp = inspectDlpContent(content);
       if (dlp.blocked) {
@@ -4220,7 +4927,7 @@ export default {
           method: 'POST',
           body: {
             id: 'DLP-' + Date.now(),
-            room_id: authorizedClassCode,
+            room_id: targetRoomKey,
             sender_email: session.email,
             sender_name: session.name,
             sender_role: session.role,
@@ -4231,26 +4938,100 @@ export default {
         return jsonResponse({
           ok: false,
           dlpBlocked: true,
+          ...(clientMessageId ? { clientMessageId } : {}),
           message: 'Tin nhắn chứa SĐT hoặc liên kết ngoài luồng đã bị hệ thống bảo vệ DLP chặn.'
         }, 422);
       }
 
-      // Máy chủ tự sinh ID tin nhắn và gắn cứng class_code theo lớp đã phân quyền (không tin body.id từ client)
-      const msgRecord = {
-        id: 'MSG-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-        room_id: authorizedClassCode,
-        class_code: authorizedClassCode,
-        sender_email: session.email,
-        sender_name: session.name,
-        sender_role: session.role,
-        content,
-        attachment_url: String(body.attachmentUrl || '')
-      };
-      const sbRes = await supabaseRequest(env, 'ktn_messages', {
-        method: 'POST',
-        body: msgRecord
+      if (!globalThis.__ktnClientMessageIdMap) globalThis.__ktnClientMessageIdMap = new Map();
+      const clientDedupKey = clientMessageId ? `${session.email}|${targetRoomKey}|${clientMessageId}` : '';
+
+      const msgLockKey = `MSG|${targetRoomKey}|${session.email}|${clientMessageId || content}|${attachmentUrl}`;
+      return runWithHomeworkConcurrencyLock(msgLockKey, async () => {
+        if (clientDedupKey && globalThis.__ktnClientMessageIdMap.has(clientDedupKey)) {
+          const cachedMsg = globalThis.__ktnClientMessageIdMap.get(clientDedupKey);
+          return jsonResponse({
+            ok: true,
+            persisted: true,
+            idempotent: true,
+            clientMessageId,
+            serverMessageId: cachedMsg.id,
+            message: cachedMsg
+          });
+        }
+
+        // Kiểm tra chống gửi trùng lặp trong vòng 4 giây gần nhất trên máy chủ
+        const recentRes = await supabaseRequest(
+          env,
+          `ktn_messages?room_id=in.(${inList})&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=5`
+        );
+        if (recentRes.ok && Array.isArray(recentRes.data)) {
+          const nowMs = Date.now();
+          const duplicateHit = recentRes.data.find(m => {
+            if (!m || String(m.content || '').trim() !== content) return false;
+            if (String(m.attachment_url || '') !== attachmentUrl) return false;
+            const createdMs = Date.parse(m.created_at || '');
+            return Number.isFinite(createdMs) && Math.abs(nowMs - createdMs) <= 4000;
+          });
+          if (duplicateHit && duplicateHit.id) {
+            if (clientDedupKey) globalThis.__ktnClientMessageIdMap.set(clientDedupKey, duplicateHit);
+            return jsonResponse({
+              ok: true,
+              persisted: true,
+              idempotent: true,
+              ...(clientMessageId ? { clientMessageId } : {}),
+              serverMessageId: duplicateHit.id,
+              message: duplicateHit
+            });
+          }
+        }
+
+        // Máy chủ tự sinh ID tin nhắn và gắn cứng room_id theo phòng đã phân quyền
+        const nowIso = new Date().toISOString();
+        const msgRecord = {
+          id: 'MSG-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          room_id: targetRoomKey,
+          class_code: targetRoomKey,
+          sender_email: session.email,
+          sender_name: session.name,
+          sender_role: session.role,
+          content: content || '[Tệp đính kèm]',
+          attachment_url: attachmentUrl,
+          created_at: nowIso
+        };
+        const sbRes = await supabaseRequest(env, 'ktn_messages', {
+          method: 'POST',
+          prefer: 'return=representation',
+          body: msgRecord
+        });
+        const savedRow = (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) ? sbRes.data[0] : null;
+        if (!savedRow || !savedRow.id) {
+          return jsonResponse({
+            ok: false,
+            persisted: false,
+            ...(clientMessageId ? { clientMessageId } : {}),
+            message: 'Máy chủ chưa lưu được tin nhắn vào cơ sở dữ liệu. Vui lòng thử lại.'
+          }, sbRes.status && sbRes.status >= 400 ? sbRes.status : 503);
+        }
+
+        if (clientDedupKey) {
+          globalThis.__ktnClientMessageIdMap.set(clientDedupKey, savedRow);
+        }
+
+        let pinnedMessage = null;
+        if ((session.role === 'teacher' || session.role === 'admin') && body.isPinned === true) {
+          const pinRes = await saveRoomPinnedAnnouncement(env, session, access, content, savedRow.id);
+          pinnedMessage = pinRes.pinnedMessage;
+        }
+        return jsonResponse({
+          ok: true,
+          persisted: true,
+          ...(clientMessageId ? { clientMessageId } : {}),
+          serverMessageId: savedRow.id,
+          message: savedRow,
+          ...(pinnedMessage ? { pinnedMessage } : {})
+        });
       });
-      return jsonResponse({ ok: true, message: (Array.isArray(sbRes.data) && sbRes.data[0]) || msgRecord });
     }
 
     if (path === '/api/ktn/notifications' && request.method === 'GET') {
@@ -4272,17 +5053,28 @@ export default {
         for (const hw of hws) {
           if (hw.status === 'graded' || hw.status === 'revision_requested') {
             const isRev = hw.status === 'revision_requested';
+            const rawCourseId = String(hw.course_id || '').trim();
+            const isLiveClassHw = rawCourseId.toUpperCase().startsWith('CLASS_') || (!rawCourseId && Boolean(hw.class_code)) || Number(hw.lesson_num) >= 100;
+            const liveCls = rawCourseId.toUpperCase().startsWith('CLASS_')
+              ? rawCourseId.slice(6).trim()
+              : String(hw.class_code || classCode || '').trim();
+            const sNum = isLiveClassHw
+              ? (Number(hw.lesson_num) >= 100 ? Math.floor(Number(hw.lesson_num) / 100) : (Number(hw.lesson_num) || 1))
+              : (Number(hw.lesson_num) || 1);
             items.push({
               id: `NOTIF-GRADED-${hw.id}-${hw.status}-${hw.score ?? ''}`,
               type: 'homework_graded',
+              classCode: liveCls || classCode || '',
               title: 'Cô giáo vừa nhận xét.',
               body: isRev
                 ? `Cần sửa lại: ${hw.lesson_title || ('Bài ' + hw.lesson_num)}`
                 : (hw.score !== null && hw.score !== undefined
                     ? `${hw.lesson_title || ('Bài ' + hw.lesson_num)} · ${hw.score}đ`
                     : (hw.lesson_title || `Bài ${hw.lesson_num}`)),
-              actionUrl: hw.class_code ? `#/lop/${hw.class_code.toLowerCase()}/buoi/1` : `#/khoa/${hw.course_id}/bai/${hw.lesson_num}`,
-              createdAt: hw.graded_at || hw.submitted_at,
+              actionUrl: (isLiveClassHw && liveCls)
+                ? `#/lop/${liveCls.toLowerCase()}/buoi/${sNum}`
+                : `#/khoa/${rawCourseId}/bai/${sNum}`,
+              createdAt: hw.graded_at || hw.updated_at || hw.submitted_at,
               homeworkId: hw.id,
               courseId: hw.course_id,
               lessonNum: hw.lesson_num
@@ -4291,25 +5083,65 @@ export default {
         }
 
         if (classCode) {
-          const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${encodeURIComponent(classCode)},${encodeURIComponent('class:' + classCode)})&sender_role=in.(teacher,admin)&order=created_at.desc&limit=1`);
-          const latestMsg = Array.isArray(msgRes.data) && msgRes.data[0] ? msgRes.data[0] : null;
-          if (latestMsg) {
+          const sessRes = await supabaseRequest(env, `ktn_class_sessions?class_code=eq.${encodeURIComponent(classCode)}&order=updated_at.desc&limit=5`);
+          const classSessions = Array.isArray(sessRes.data) ? sessRes.data : [];
+          for (const cs of classSessions) {
+            const sNum = Number(cs.session_num) || 1;
+            const exList = Array.isArray(cs.exercises) ? cs.exercises : (Array.isArray(cs.assignments) ? cs.assignments : []);
             items.push({
-              id: `NOTIF-MSG-${classCode}-${latestMsg.id}`,
-              type: 'chat_message',
+              id: `NOTIF-ASSIGN-${classCode}-S${sNum}-${cs.updated_at || cs.id || sNum}`,
+              type: 'homework_assigned',
               classCode,
-              title: 'Tin nhắn mới từ cô giáo.',
-              body: `${latestMsg.sender_name || 'Cô giáo'}: ${String(latestMsg.content || '').slice(0, 60)}`,
-              actionUrl: `#/lop/${classCode.toLowerCase()}/buoi/1`,
-              createdAt: latestMsg.created_at
+              sessionNum: sNum,
+              title: `Bài tập mới Lớp ${classCode} · Buổi ${sNum}`,
+              body: `${cs.title || ('Buổi ' + sNum)}${exList.length ? ` (${exList.length} bài tập)` : ''}`,
+              actionUrl: `#/lop/${classCode.toLowerCase()}/buoi/${sNum}`,
+              createdAt: cs.updated_at || cs.created_at || new Date().toISOString()
             });
           }
+        }
+
+        const myEmail = normalizeEmail(session.email);
+        const roomQuerySet = new Set([`student:${myEmail}`]);
+        if (classCode) {
+          roomQuerySet.add(classCode);
+          roomQuerySet.add(`class:${classCode}`);
+        }
+        const onlineList = Array.isArray(stu?.online_courses)
+          ? stu.online_courses
+          : (Array.isArray(session.onlineCourses) ? session.onlineCourses : []);
+        for (const c of onlineList) {
+          const rawCid = String(c?.id || c?._id || c || '').trim().toLowerCase();
+          if (!rawCid) continue;
+          const canonicalCid = COURSE_CHAT_ALIASES[rawCid] || rawCid;
+          roomQuerySet.add(`course:${canonicalCid}`);
+        }
+        const roomInParam = Array.from(roomQuerySet).map(k => encodeURIComponent(k)).join(',');
+        const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${roomInParam})&sender_role=in.(teacher,admin)&order=created_at.desc&limit=5`);
+        const teacherMsgs = Array.isArray(msgRes.data) ? msgRes.data : [];
+        for (const latestMsg of teacherMsgs) {
+          const rawRoom = String(latestMsg.room_id || latestMsg.class_code || classCode || '').trim();
+          const isPrivate = rawRoom.toLowerCase().startsWith('student:');
+          const isCourseRoom = rawRoom.toLowerCase().startsWith('course:');
+          const isPinned = Boolean(latestMsg.attachment && latestMsg.attachment.pinned);
+          items.push({
+            id: `NOTIF-MSG-${classCode || rawRoom}-${latestMsg.id}`,
+            type: isPinned ? 'announcement_pinned' : 'chat_message',
+            classCode: classCode || rawRoom,
+            roomId: rawRoom,
+            messageId: latestMsg.id,
+            title: isPinned
+              ? 'Thông báo quan trọng được ghim.'
+              : (isPrivate ? 'Cô giáo vừa nhắn riêng cho em.' : 'Tin nhắn mới từ cô giáo.'),
+            body: `${latestMsg.sender_name || 'Cô giáo'}: ${String(latestMsg.content || '').slice(0, 60)}`,
+            actionUrl: (classCode && !isPrivate && !isCourseRoom) ? `#/lop/${classCode.toLowerCase()}/buoi/1` : '#/nhom-lop',
+            createdAt: latestMsg.created_at
+          });
         }
       } else if (session.role === 'teacher') {
         const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
         if (assignedClasses.length > 0) {
           const classListParam = assignedClasses.map(c => encodeURIComponent(c)).join(',');
-          const roomListParam = assignedClasses.flatMap(c => [encodeURIComponent(c), encodeURIComponent('class:' + c)]).join(',');
           const hwRes = await supabaseRequest(env, `ktn_homeworks?class_code=in.(${classListParam})&status=eq.pending&order=submitted_at.desc&limit=15`);
           const pendingHws = Array.isArray(hwRes.data) ? hwRes.data : [];
           for (const hw of pendingHws) {
@@ -4324,22 +5156,39 @@ export default {
               createdAt: hw.submitted_at
             });
           }
-          const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${roomListParam})&sender_role=eq.student&order=created_at.desc&limit=5`);
-          const seenRooms = new Set();
-          for (const m of (Array.isArray(msgRes.data) ? msgRes.data : [])) {
-            const normRoom = normalizeRoomClassCode(m.class_code || m.room_id);
-            if (!normRoom || seenRooms.has(normRoom)) continue;
-            seenRooms.add(normRoom);
-            items.push({
-              id: `NOTIF-TMSG-${normRoom}-${m.id}`,
-              type: 'chat_message',
-              classCode: normRoom,
-              title: 'Tin nhắn mới từ học sinh.',
-              body: `${m.sender_name || m.sender_email} (${normRoom}): ${String(m.content || '').slice(0, 60)}`,
-              actionUrl: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(normRoom)}`,
-              createdAt: m.created_at
-            });
-          }
+        }
+        const roomKeys = [
+          ...assignedClasses.flatMap(c => [c, `class:${c}`]),
+          'course:6adadba969897b0002482ca5',
+          'course:65e7704a9ea90c00080d5195',
+          'course:65e769bd637339000870618f'
+        ];
+        const roomListParam = roomKeys.map(c => encodeURIComponent(c)).join(',');
+        const [groupMsgRes, privMsgRes] = await Promise.all([
+          supabaseRequest(env, `ktn_messages?room_id=in.(${roomListParam})&sender_role=eq.student&order=created_at.desc&limit=5`),
+          supabaseRequest(env, 'ktn_messages?room_id=like.student:*&sender_role=eq.student&order=created_at.desc&limit=5')
+        ]);
+        const mergedStudentMsgs = [
+          ...(Array.isArray(groupMsgRes.data) ? groupMsgRes.data : []),
+          ...(Array.isArray(privMsgRes.data) ? privMsgRes.data : [])
+        ].sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
+        const seenRooms = new Set();
+        for (const m of mergedStudentMsgs) {
+          const rawR = String(m.room_id || m.class_code || '').trim();
+          const normRoom = /^course:|^student:/i.test(rawR) ? rawR : normalizeRoomClassCode(rawR);
+          if (!normRoom || seenRooms.has(normRoom)) continue;
+          seenRooms.add(normRoom);
+          const isPrivate = /^student:/i.test(normRoom);
+          items.push({
+            id: `NOTIF-TMSG-${normRoom}-${m.id}`,
+            type: 'chat_message',
+            classCode: normRoom,
+            roomId: normRoom,
+            title: isPrivate ? 'Học sinh vừa nhắn riêng (1-1).' : 'Tin nhắn mới từ học sinh.',
+            body: `${m.sender_name || m.sender_email} (${normRoom}): ${String(m.content || '').slice(0, 60)}`,
+            actionUrl: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(normRoom)}`,
+            createdAt: m.created_at
+          });
         }
       } else if (session.role === 'admin') {
         const ordRes = await supabaseRequest(env, 'ktn_orders?approval_status=eq.pending&order=created_at.desc&limit=10');
@@ -4357,7 +5206,7 @@ export default {
 
       const readStateRes = await supabaseRequest(
         env,
-        `ktn_dlp_alerts?room_id=eq.NOTIF_READ_STATE&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=10`
+        `ktn_dlp_alerts?room_id=eq.NOTIF_READ_STATE&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=50`
       );
       const readSet = new Set();
       if (readStateRes.ok && Array.isArray(readStateRes.data)) {
@@ -4369,13 +5218,15 @@ export default {
         }
       }
 
+      items.sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0));
+
       const hydrated = items.slice(0, 15).map(it => ({
         ...it,
         target_email: session.email,
         read: readSet.has(it.id)
       }));
 
-      return jsonResponse({ ok: true, notifications: hydrated });
+      return jsonResponse({ ok: true, notifications: hydrated, readIds: Array.from(readSet) });
     }
 
     if (path === '/api/ktn/notifications/read' && (request.method === 'PATCH' || request.method === 'POST')) {
@@ -4390,22 +5241,51 @@ export default {
       if (ids.length === 0) {
         return jsonResponse({ ok: true, markedCount: 0 });
       }
-      const sbRes = await supabaseRequest(env, 'ktn_dlp_alerts', {
-        method: 'POST',
-        body: {
-          id: 'NREAD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-          room_id: 'NOTIF_READ_STATE',
-          sender_email: session.email,
-          sender_name: session.name || session.email,
-          sender_role: session.role || 'student',
-          blocked_content: JSON.stringify(ids),
-          reason: 'NOTIFICATION_READ_STATE'
-        }
-      });
+      const existingReadRes = await supabaseRequest(
+        env,
+        `ktn_dlp_alerts?room_id=eq.NOTIF_READ_STATE&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=50`
+      );
+      const mergedSet = new Set();
+      const existingRows = (existingReadRes.ok && Array.isArray(existingReadRes.data)) ? existingReadRes.data : [];
+      for (const r of existingRows.slice().reverse()) {
+        try {
+          const parsed = JSON.parse(r.blocked_content || '[]');
+          if (Array.isArray(parsed)) parsed.forEach(id => { if (id) mergedSet.add(String(id).trim()); });
+        } catch {}
+      }
+      ids.forEach(id => mergedSet.add(id));
+      const mergedIds = Array.from(mergedSet).slice(-500);
+
+      let sbRes = null;
+      const latestRow = existingRows[0];
+      if (latestRow && latestRow.id) {
+        sbRes = await supabaseRequest(env, `ktn_dlp_alerts?id=eq.${encodeURIComponent(latestRow.id)}`, {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: {
+            blocked_content: JSON.stringify(mergedIds)
+          }
+        });
+      }
+      if (!sbRes || !sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+        sbRes = await supabaseRequest(env, 'ktn_dlp_alerts', {
+          method: 'POST',
+          prefer: 'return=representation',
+          body: {
+            id: 'NREAD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+            room_id: 'NOTIF_READ_STATE',
+            sender_email: session.email,
+            sender_name: session.name || session.email,
+            sender_role: session.role || 'student',
+            blocked_content: JSON.stringify(mergedIds),
+            reason: 'NOTIFICATION_READ_STATE'
+          }
+        });
+      }
       if (!sbRes.ok) {
         return jsonResponse({ ok: false, message: 'Chưa lưu được trạng thái đã đọc thông báo.' }, sbRes.status || 500);
       }
-      return jsonResponse({ ok: true, markedCount: ids.length, ids });
+      return jsonResponse({ ok: true, markedCount: ids.length, totalReadCount: mergedIds.length, ids });
     }
 
     if (path === '/api/ktn/push/subscribe' && request.method === 'POST') {

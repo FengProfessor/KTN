@@ -48,62 +48,99 @@
     .exercise-edit-row input {
       flex: 1; padding: 9px 12px; border: 1px solid #CBD5E1; border-radius: 8px; font-size: 13.5px;
     }
+    .teacher-mode-segmented {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: #F1F5F9;
+      padding: 4px; border-radius: 10px; margin-bottom: 10px;
+    }
+    .teacher-mode-btn {
+      border: none; background: transparent; color: #475569; padding: 8px 10px;
+      border-radius: 8px; font-size: 12.5px; font-weight: 800; cursor: pointer; font-family: inherit;
+      white-space: nowrap;
+    }
+    .teacher-mode-btn.active {
+      background: #FFFFFF; color: var(--ktn-red); box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+    }
+    .teacher-room-strip {
+      display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 10px;
+      scrollbar-width: none;
+    }
+    .teacher-room-strip::-webkit-scrollbar { display: none; }
+    .teacher-room-pill {
+      border: 1px solid #CBD5E1; background: #F8FAFC; color: #334155;
+      padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 800;
+      cursor: pointer; white-space: nowrap; font-family: inherit;
+    }
+    .teacher-room-pill.active {
+      background: #FFF1F2; color: var(--ktn-red); border-color: #FDA4AF;
+    }
+    .teacher-pin-banner {
+      background: #FFFBEB; border: 1px solid #FDE68A; border-left: 3px solid #D97706;
+      border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: 12.5px; color: #92400E;
+    }
+    @media (max-width: 640px) {
+      .teacher-header { padding: 8px 10px; gap: 6px; }
+      .teacher-nav { order: 3; width: 100%; justify-content: space-between; padding: 3px; border-radius: 12px; }
+      .teacher-nav button { flex: 1; text-align: center; padding: 7px 6px; font-size: 12px; white-space: nowrap; }
+      .teacher-container { margin: 10px auto; padding: 0 10px; }
+      .card { padding: 12px; border-radius: 12px; margin-bottom: 12px; }
+      .hw-item { padding: 12px; gap: 10px; }
+      #teacher-welcome-label { display: none; }
+      .teacher-mode-btn { font-size: 11.5px; padding: 8px 6px; }
+      #teacher-room-select { display: none; }
+      #teacher-chat-box { height: 420px !important; }
+    }
   </style>
   <script src="ktn-webapp-client.js"></script>
 </head>
 <body>
   <header class="teacher-header">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <img src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png" alt="Logo" style="width:36px;height:36px;border-radius:50%;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <img src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png" alt="Logo" style="width:32px;height:32px;border-radius:50%;">
       <div>
-        <strong style="color:#B91C1C;font-size:15px;">CỔNG GIÁO VIÊN KHỔNG TỬ NHÍ</strong>
-        <div id="teacher-welcome-label" style="font-size:12px;color:#64748B;">Đang xác thực giáo viên...</div>
+        <strong style="color:#B91C1C;font-size:14px;">GIÁO VIÊN</strong>
+        <div id="teacher-welcome-label" style="font-size:11.5px;color:#64748B;">Đang tải...</div>
       </div>
     </div>
 
     <nav class="teacher-nav" aria-label="Menu Giáo viên">
-      <button type="button" id="t-btn-grade" class="active" onclick="switchTeacherTab('grade')">Chấm bài tập</button>
-      <button type="button" id="t-btn-assign" onclick="switchTeacherTab('assign')">Buổi học &amp; Giao bài</button>
-      <button type="button" id="t-btn-groups" onclick="switchTeacherTab('groups')">Trao đổi lớp</button>
+      <button type="button" id="t-btn-grade" class="active" onclick="switchTeacherTab('grade')">📝 Chấm bài</button>
+      <button type="button" id="t-btn-assign" onclick="switchTeacherTab('assign')">📅 Giao bài</button>
+      <button type="button" id="t-btn-groups" onclick="switchTeacherTab('groups')">💬 Nhóm lớp</button>
     </nav>
 
-    <div style="display:flex;gap:8px;">
-      <button type="button" class="btn-outline" style="border-color:#FECACA;color:#B91C1C;background:#FFF1F2;" onclick="enableTeacherPwa()">Bật thông báo</button>
-      <button type="button" class="btn-outline" onclick="KtnWebApp.logout()">Đăng xuất</button>
+    <div style="display:flex;gap:6px;margin-left:auto;">
+      <button type="button" class="btn-outline" style="border-color:#FECACA;color:#B91C1C;background:#FFF1F2;padding:6px 10px;font-size:12px;" onclick="enableTeacherPwa()" title="Bật thông báo">🔔</button>
+      <button type="button" class="btn-outline" style="padding:6px 10px;font-size:12px;" onclick="KtnWebApp.logout()">Thoát</button>
     </div>
   </header>
 
   <main class="teacher-container">
-    <!-- TAB 1: CHẤM BÀI (2 NÚT RÕ RÀNG: ĐẠT / HOÀN THÀNH HOẶC YÊU CẦU CON SỬA LẠI BÀI) -->
+    <!-- TAB 1: CHẤM BÀI -->
     <section id="t-pane-grade" class="teacher-pane active">
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
-          <div>
-            <h2 style="margin:0;font-size:18px;">Danh sách bài nộp của học sinh</h2>
-            <p style="margin:4px 0 0;font-size:13px;color:#64748B;">Cô có thể chấm Đạt/Hoàn thành hoặc bấm Yêu cầu con sửa lại bài để học sinh thu âm/nộp lại.</p>
-          </div>
-          <button type="button" class="btn-outline" onclick="loadTeacherHomeworks()">Làm mới danh sách</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <h2 style="margin:0;font-size:16px;">📝 Bài nộp học sinh</h2>
+          <button type="button" class="btn-outline" style="font-size:12px;padding:6px 10px;" onclick="loadTeacherHomeworks()">🔄 Làm mới</button>
         </div>
-        <div id="teacher-grade-list">Đang tải danh sách bài nộp...</div>
+        <div id="teacher-grade-list">Đang tải...</div>
       </div>
     </section>
 
-    <!-- TAB 2: QUẢN LÝ BUỔI HỌC & DANH SÁCH BÀI TẬP TRONG BUỔI (TỐI GIẢN: BUỔI 1, BUỔI 2... -> BÀI 1, BÀI 2...) -->
+    <!-- TAB 2: QUẢN LÝ BUỔI HỌC & GIAO BÀI -->
     <section id="t-pane-assign" class="teacher-pane">
       <div class="card">
-        <h2 style="margin-top:0;font-size:18px;">Thiết lập Buổi học &amp; Giao bài tập cho lớp</h2>
-        <p style="font-size:13.5px;color:#475569;margin-top:4px;">Mỗi buổi học gồm Tên buổi học và Danh sách các bài tập (Bài 1, Bài 2...). Học sinh vào lớp sẽ thấy ngay từng bài và nộp bài trực tiếp tại đó.</p>
+        <h2 style="margin:0 0 12px;font-size:16px;">📅 Giao bài theo buổi</h2>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:640px;margin-bottom:16px;">
-          <label style="font-size:13px;font-weight:700;">Lớp phụ trách:
-            <select id="assign-class-code" onchange="loadTeacherClassSessionEditor()" style="width:100%;padding:9px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
-              <option value="YCT2-04">Lớp YCT2-04 (Thứ 3 &amp; Thứ 6)</option>
-              <option value="YCT1-01">Lớp YCT1-01 (Thứ 2 &amp; Thứ 5)</option>
-              <option value="YCT3-02">Lớp YCT3-02 (Thứ 4 &amp; Chủ Nhật)</option>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:640px;margin-bottom:12px;">
+          <label style="font-size:12.5px;font-weight:700;">Lớp:
+            <select id="assign-class-code" onchange="loadTeacherClassSessionEditor()" style="width:100%;padding:8px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
+              <option value="YCT2-04">YCT2-04 (T3 &amp; T6)</option>
+              <option value="YCT1-01">YCT1-01 (T2 &amp; T5)</option>
+              <option value="YCT3-02">YCT3-02 (T4 &amp; CN)</option>
             </select>
           </label>
-          <label style="font-size:13px;font-weight:700;">Chọn buổi học:
-            <select id="assign-lesson-num" onchange="loadTeacherClassSessionEditor()" style="width:100%;padding:9px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
+          <label style="font-size:12.5px;font-weight:700;">Buổi:
+            <select id="assign-lesson-num" onchange="loadTeacherClassSessionEditor()" style="width:100%;padding:8px;border-radius:8px;border:1px solid #CBD5E1;margin-top:4px;">
               <option value="1">Buổi 1</option>
               <option value="2">Buổi 2</option>
               <option value="3">Buổi 3</option>
@@ -114,44 +151,75 @@
         </div>
 
         <form onsubmit="saveTeacherClassSession(event)" style="max-width:740px;">
-          <div style="margin-bottom:14px;">
-            <label style="display:block;font-size:13px;font-weight:700;margin-bottom:6px;">Tên buổi học:</label>
-            <input type="text" id="assign-session-title" required placeholder="Ví dụ: Buổi 1: Chào hỏi & Tự giới thiệu bản thân" style="width:100%;padding:10px 12px;border:1px solid #CBD5E1;border-radius:8px;font-size:14px;box-sizing:border-box;">
+          <div style="margin-bottom:10px;">
+            <label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:4px;">Tên buổi học:</label>
+            <input type="text" id="assign-session-title" required placeholder="VD: Buổi 1: Chào hỏi & Tự giới thiệu" style="width:100%;padding:9px 10px;border:1px solid #CBD5E1;border-radius:8px;font-size:13.5px;box-sizing:border-box;">
           </div>
 
-          <div style="margin-bottom:14px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-              <label style="font-size:13px;font-weight:700;">Danh sách bài tập trong buổi (Bài 1, Bài 2...):</label>
-              <button type="button" class="btn-outline" onclick="addExerciseRowToSessionEditor()" style="font-size:12px;padding:5px 10px;">+ Thêm bài tập</button>
+          <div style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <label style="font-size:12.5px;font-weight:700;">Bài tập:</label>
+              <button type="button" class="btn-outline" onclick="addExerciseRowToSessionEditor()" style="font-size:12px;padding:4px 10px;">+ Bài tập</button>
             </div>
             <div id="assign-exercises-container"></div>
           </div>
 
-          <div style="display:flex;align-items:center;gap:12px;">
-            <button type="submit" class="btn-red">Lưu &amp; Giao bài cho lớp</button>
-            <span id="assign-save-status" style="font-size:13px;color:#15803D;font-weight:600;"></span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button type="submit" class="btn-red">✓ Giao bài</button>
+            <span id="assign-save-status" style="font-size:12.5px;color:#15803D;font-weight:600;"></span>
           </div>
         </form>
       </div>
     </section>
 
-    <!-- TAB 3: NHÓM LỚP (TRAO ĐỔI VỚI HỌC SINH / PHỤ HUYNH) -->
+    <!-- TAB 3: NHÓM LỚP & HỘP THƯ 1-1 -->
     <section id="t-pane-groups" class="teacher-pane">
       <div class="card">
-        <h2 style="margin-top:0;font-size:18px;">Trao đổi với học sinh trong lớp</h2>
-        <div style="margin-bottom:12px;">
-          <label style="font-size:13px;font-weight:700;">Phòng trao đổi lớp:
-            <select id="teacher-room-select" onchange="loadTeacherChat()" style="padding:8px 12px;border-radius:8px;border:1px solid #CBD5E1;margin-left:8px;">
-              <option value="class:YCT2-04">Lớp YCT2-04</option>
-              <option value="class:YCT1-01">Lớp YCT1-01</option>
-              <option value="class:YCT3-02">Lớp YCT3-02</option>
-            </select>
-          </label>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <h2 id="teacher-chat-title" style="margin:0;font-size:16px;">💬 Nhóm lớp trao đổi</h2>
+          <select id="teacher-room-select" onchange="onTeacherRoomSelectChange(this.value)" style="padding:6px 10px;border-radius:8px;border:1px solid #CBD5E1;font-weight:700;font-size:12.5px;">
+            <option value="class:YCT2-04">🏫 Lớp YCT2-04</option>
+            <option value="class:YCT1-01">🏫 Lớp YCT1-01</option>
+            <option value="class:YCT3-02">🏫 Lớp YCT3-02</option>
+            <option value="course:6adadba969897b0002482ca5">🎬 Khóa HSK1 3.0</option>
+            <option value="course:65e7704a9ea90c00080d5195">🎬 Khóa Chinese For Kids</option>
+            <option value="course:65e769bd637339000870618f">🎬 Khóa Tiếng Trung Trẻ Em 1</option>
+            <option value="student:taphong2002@gmail.com">👩‍🏫 HS: Tạ Phong Võ (1-1)</option>
+            <option value="student:hoangngan@khongtunhi.com">👩‍🏫 HS: Nguyễn Hoàng Ngân (1-1)</option>
+          </select>
         </div>
-        <div id="teacher-chat-box" style="height:340px;overflow-y:auto;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:14px;margin-bottom:10px;"></div>
-        <form onsubmit="sendTeacherChat(event)" style="display:flex;gap:8px;">
-          <input type="text" id="teacher-chat-input" placeholder="Nhập thông báo hoặc phản hồi cho học sinh..." style="flex:1;padding:10px;border:1px solid #CBD5E1;border-radius:8px;" required>
-          <button type="submit" class="btn-red">Gửi tin nhắn</button>
+
+        <!-- BỘ LỌC NHANH: NHÓM LỚP & KHÓA vs NHẮN RIÊNG HS (1-1) -->
+        <div class="teacher-mode-segmented" role="tablist">
+          <button type="button" id="btn-teacher-mode-group" class="teacher-mode-btn active" onclick="switchTeacherChatFilter('group')">
+            👥 Nhóm Lớp &amp; Khóa
+          </button>
+          <button type="button" id="btn-teacher-mode-private" class="teacher-mode-btn" onclick="switchTeacherChatFilter('private')">
+            👩‍🏫 Nhắn riêng HS (1-1)
+          </button>
+        </div>
+
+        <!-- DẢI PILL CHỌN PHÒNG NHANH -->
+        <div id="teacher-room-strip" class="teacher-room-strip"></div>
+
+        <!-- THÔNG BÁO GHIM CỦA PHÒNG & Ô GHIM NHANH -->
+        <div id="teacher-pinned-banner" class="teacher-pin-banner">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div style="flex:1;min-width:0;">
+              <strong>📌 Thông báo lớp:</strong>
+              <span id="teacher-pinned-text">Chào các con! Các con trao đổi bài học và hỏi bài cùng Cô Lâm Mỹ Linh tại nhóm lớp nhé.</span>
+            </div>
+          </div>
+          <div id="teacher-pin-editor-row" style="display:flex;gap:6px;margin-top:6px;">
+            <input type="text" id="teacher-pin-input" placeholder="Nhập nội dung thông báo ghim đầu nhóm..." style="flex:1;padding:6px 10px;border:1px solid #FCD34D;border-radius:8px;font-size:12px;background:#FFFFFF;">
+            <button type="button" id="btn-teacher-pin-save" onclick="pinTeacherAnnouncement()" style="background:#D97706;color:#FFFFFF;border:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">📌 Ghim</button>
+          </div>
+        </div>
+
+        <div id="teacher-chat-box" style="height:310px;overflow-y:auto;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:12px;margin-bottom:8px;"></div>
+        <form onsubmit="sendTeacherChat(event)" style="display:flex;gap:6px;">
+          <input type="text" id="teacher-chat-input" placeholder="Nhập tin nhắn trao đổi..." style="flex:1;padding:9px 10px;border:1px solid #CBD5E1;border-radius:8px;" required>
+          <button type="submit" class="btn-red">Gửi</button>
         </form>
       </div>
     </section>
@@ -204,13 +272,14 @@
     };
 
     function switchTeacherTab(tab) {
+      const normTab = tab === 'chat' ? 'groups' : tab;
       ['grade', 'assign', 'groups'].forEach(t => {
-        document.getElementById('t-btn-' + t).classList.toggle('active', t === tab);
-        document.getElementById('t-pane-' + t).classList.toggle('active', t === tab);
+        document.getElementById('t-btn-' + t).classList.toggle('active', t === normTab);
+        document.getElementById('t-pane-' + t).classList.toggle('active', t === normTab);
       });
-      if (tab === 'grade') loadTeacherHomeworks();
-      if (tab === 'assign') loadTeacherClassSessionEditor();
-      if (tab === 'groups') loadTeacherChat();
+      if (normTab === 'grade') loadTeacherHomeworks();
+      if (normTab === 'assign') loadTeacherClassSessionEditor();
+      if (normTab === 'groups') loadTeacherChat();
     }
 
     function appendQuickRubric(hwId, text) {
@@ -276,23 +345,25 @@
         if (isAudio) {
           return `
             <div style="margin-top:8px;padding:8px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;">
-              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:4px;">Nghe bài thu âm của học sinh (${sTitle}):</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;color:#334155;margin-bottom:4px;">
+                <span>🎙️ ${sTitle}</span>
+                <a href="${sUrl}" target="_blank" rel="noopener" style="font-size:11.5px;color:#B91C1C;text-decoration:underline;">Mở ↗</a>
+              </div>
               <audio controls preload="metadata" src="${sUrl}" style="width:100%;height:36px;"></audio>
-              <div style="margin-top:4px;"><a href="${sUrl}" target="_blank" rel="noopener" style="font-size:12px;color:#B91C1C;text-decoration:underline;">Mở tệp âm thanh ở tab mới ↗</a></div>
             </div>
           `;
         }
         if (isImage) {
           return `
             <div style="margin-top:8px;padding:8px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;">
-              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">Ảnh bài làm (${sTitle}):</div>
+              <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">📷 ${sTitle}</div>
               <a href="${sUrl}" target="_blank" rel="noopener">
                 <img src="${sUrl}" alt="${sTitle}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid #CBD5E1;display:block;" />
               </a>
             </div>
           `;
         }
-        return `<div style="margin-top:6px;"><a href="${sUrl}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;text-decoration:underline;">Mở xem bài làm (${sTitle}) ↗</a></div>`;
+        return `<div style="margin-top:6px;"><a href="${sUrl}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#B91C1C;text-decoration:underline;">📎 ${sTitle} ↗</a></div>`;
       }).join('');
     }
 
@@ -302,7 +373,7 @@
       const list = (res.ok && Array.isArray(res.data?.homeworks)) ? res.data.homeworks : [];
 
       if (!list.length) {
-        box.innerHTML = '<div style="padding:16px;color:#64748B;">Hiện chưa có bài nộp mới nào cần chấm.</div>';
+        box.innerHTML = '<div style="padding:16px;color:#64748B;">Chưa có bài nộp mới.</div>';
         return;
       }
       const pendingCount = list.filter(h => !h.status || h.status === 'pending').length;
@@ -329,12 +400,12 @@
               <strong>${esc(hw.lesson_title || ('Bài ' + hw.lesson_num))}</strong>
               ${hw.class_code ? `<span style="margin-left:6px;background:#F1F5F9;padding:2px 8px;border-radius:6px;font-size:12px;">Lớp ${esc(hw.class_code)}</span>` : ''}
             </div>
-            ${hw.student_note ? `<div style="font-size:13px;color:#475569;background:#F8FAFC;padding:8px 10px;border-radius:8px;margin-bottom:8px;">Lời nhắn của em: "${esc(hw.student_note)}"</div>` : ''}
+            ${hw.student_note ? `<div style="font-size:13px;color:#475569;background:#F8FAFC;padding:8px 10px;border-radius:8px;margin-bottom:8px;">💬 "${esc(hw.student_note)}"</div>` : ''}
             ${renderHomeworkMediaPreview(hw)}
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
             <div style="display:flex;align-items:center;gap:8px;">
-              <label style="font-size:12.5px;font-weight:700;color:#475569;">Điểm số (0-10):</label>
+              <label style="font-size:12.5px;font-weight:700;color:#475569;">Điểm:</label>
               <input type="number" step="0.5" min="0" max="10" id="score-${safeId}" value="${esc(hw.score ?? 9.5)}" style="width:90px;padding:7px 10px;border:1px solid #CBD5E1;border-radius:8px;">
             </div>
             <div class="quick-rubric-row">
@@ -344,8 +415,8 @@
             </div>
             <textarea id="fb-${safeId}" rows="2" placeholder="Nhập lời nhận xét của cô cho học sinh..." style="padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;font-family:inherit;font-size:13.5px;">${esc(hw.teacher_feedback || '')}</textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button type="button" id="btn-grade-pass-${safeId}" class="btn-red" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'graded')">✓ Đạt / Hoàn thành</button>
-              <button type="button" id="btn-grade-rev-${safeId}" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'revision_requested')">↺ Yêu cầu con sửa lại bài</button>
+              <button type="button" id="btn-grade-pass-${safeId}" class="btn-red" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'graded')">✓ Hoàn thành</button>
+              <button type="button" id="btn-grade-rev-${safeId}" class="btn-amber" style="flex:1;" onclick="submitTeacherDecision('${jsHwId}', '${safeId}', 'revision_requested')">↺ Sửa bài</button>
             </div>
             <div id="grade-status-${safeId}" style="display:none;padding:8px 10px;border-radius:8px;font-size:12.5px;font-weight:700;"></div>
           </div>
@@ -453,7 +524,7 @@
           localStorage.setItem('ktn_class_sessions_' + classCode, JSON.stringify(sessions));
         }
       } catch (e) {}
-      const found = sessions.find(s => Number(s.sessionNum) === sessionNum) || {
+      const found = sessions.find(s => Number(s.sessionNum || s.session_num) === sessionNum) || {
         classCode,
         sessionNum,
         title: `Buổi ${sessionNum}: Bài học lớp ${classCode}`,
@@ -462,13 +533,14 @@
         ]
       };
 
-      document.getElementById('assign-session-title').value = found.title || '';
+      document.getElementById('assign-session-title').value = found.title || found.session_title || '';
       const container = document.getElementById('assign-exercises-container');
       container.innerHTML = '';
-      (found.exercises || []).forEach((ex, idx) => {
-        appendExerciseInputRow(ex.title || `Bài ${idx + 1}: `);
+      const exList = found.exercises || found.assignments || [];
+      exList.forEach((ex, idx) => {
+        appendExerciseInputRow(ex.title || ex.prompt || ex.instruction || `Bài ${idx + 1}: `);
       });
-      if (!found.exercises || !found.exercises.length) {
+      if (!exList.length) {
         appendExerciseInputRow('Bài 1: ');
       }
     }
@@ -545,34 +617,244 @@
       }
     }
 
-    async function loadTeacherChat() {
-      const roomId = document.getElementById('teacher-room-select').value;
-      const res = await KtnWebApp.apiRequest('/api/ktn/messages?roomId=' + encodeURIComponent(roomId));
-      const msgs = (res.ok && Array.isArray(res.data?.messages)) ? res.data.messages : [];
-      const box = document.getElementById('teacher-chat-box');
-      box.innerHTML = msgs.map(m => `
-        <div style="margin-bottom:8px;padding:8px 12px;border-radius:10px;background:${m.sender_role === 'teacher' ? '#FEF2F2' : '#FFFFFF'};border:1px solid #E2E8F0;">
-          <strong style="font-size:12px;color:#B91C1C;">${esc(m.sender_name)}:</strong>
-          <div style="font-size:13.5px;margin-top:2px;">${esc(m.content)}</div>
-        </div>
-      `).join('') || '<div style="color:#94A3B8;font-size:13px;">Chưa có tin nhắn trong lớp này.</div>';
-      box.scrollTop = box.scrollHeight;
+    function deduplicateTeacherMessages(list) {
+      if (!Array.isArray(list)) return [];
+      const seenIds = new Set();
+      const seenFingerprints = new Map();
+      const out = [];
+      for (const m of list) {
+        if (!m || typeof m !== 'object') continue;
+        const id = String(m.id || '').trim();
+        if (id) {
+          if (seenIds.has(id)) continue;
+          seenIds.add(id);
+        }
+        const role = String(m.sender_role || '').trim();
+        const sender = String(m.sender_email || m.sender_name || '').trim().toLowerCase();
+        const text = String(m.content || '').trim();
+        const tsMs = Date.parse(m.created_at || '') || 0;
+        const fpKey = `${role}|${sender}|${text}`;
+        if (text && seenFingerprints.has(fpKey)) {
+          const prevTs = seenFingerprints.get(fpKey);
+          if (!id || (tsMs && prevTs && Math.abs(tsMs - prevTs) < 4000)) {
+            continue;
+          }
+        }
+        if (text) seenFingerprints.set(fpKey, tsMs || Date.now());
+        out.push(m);
+      }
+      return out;
     }
 
-    async function sendTeacherChat(e) {
-      e.preventDefault();
-      const roomId = document.getElementById('teacher-room-select').value;
-      const input = document.getElementById('teacher-chat-input');
-      const res = await KtnWebApp.apiRequest('/api/ktn/messages', {
+    let teacherChatFilter = 'group';
+    let teacherGroupRooms = [
+      { roomId: 'class:YCT2-04', label: '🏫 Lớp YCT2-04', kind: 'class' },
+      { roomId: 'class:YCT1-01', label: '🏫 Lớp YCT1-01', kind: 'class' },
+      { roomId: 'course:6adadba969897b0002482ca5', label: '🎬 HSK1 3.0', kind: 'course' },
+      { roomId: 'course:65e7704a9ea90c00080d5195', label: '🎬 Chinese For Kids', kind: 'course' }
+    ];
+    let teacherPrivateThreads = [
+      { roomId: 'student:taphong2002@gmail.com', studentEmail: 'taphong2002@gmail.com', studentName: 'Tạ Phong', label: '👩‍🏫 HS: Tạ Phong' },
+      { roomId: 'student:hocsinh@khongtunhi.com', studentEmail: 'hocsinh@khongtunhi.com', studentName: 'Minh An (YCT2-04)', label: '👩‍🏫 HS: Minh An (YCT2-04)' }
+    ];
+
+    async function syncTeacherChatRoomsList() {
+      try {
+        const res = await KtnWebApp.apiRequest('/api/ktn/messages/rooms');
+        if (res.ok && res.data?.ok) {
+          if (Array.isArray(res.data.groupRooms) && res.data.groupRooms.length > 0) {
+            teacherGroupRooms = res.data.groupRooms.map(r => ({
+              roomId: r.roomId,
+              label: r.label || r.roomId,
+              kind: r.kind || (String(r.roomId || '').startsWith('course:') ? 'course' : 'class'),
+              latestPreview: r.latestPreview || '',
+              messageCount: Number(r.messageCount || 0)
+            }));
+          }
+          if (Array.isArray(res.data.privateThreads) && res.data.privateThreads.length > 0) {
+            const merged = [...res.data.privateThreads];
+            teacherPrivateThreads.forEach(def => {
+              if (!merged.some(t => t.roomId === def.roomId)) merged.push(def);
+            });
+            teacherPrivateThreads = merged;
+          }
+        }
+      } catch (e) {}
+      renderTeacherRoomControls();
+    }
+
+    let teacherChatReqSeq = 0;
+
+    function renderTeacherRoomControls() {
+      const selectEl = document.getElementById('teacher-room-select');
+      const stripEl = document.getElementById('teacher-room-strip');
+      const btnGroup = document.getElementById('btn-teacher-mode-group');
+      const btnPrivate = document.getElementById('btn-teacher-mode-private');
+      const currentRoomId = selectEl ? selectEl.value : 'class:YCT2-04';
+
+      if (selectEl) {
+        const allOptions = [
+          ...teacherGroupRooms.map(r => ({ roomId: r.roomId, label: `${r.label.replace(/^🏫\s*|^🎬\s*/, r.kind === 'course' ? '🎬 Khóa ' : '🏫 ')}` })),
+          ...teacherPrivateThreads.map(t => ({ roomId: t.roomId, label: t.label || `👩‍🏫 HS: ${t.studentName || t.studentEmail}` }))
+        ];
+        const existingValues = new Set(allOptions.map(o => o.roomId));
+        if (currentRoomId && !existingValues.has(currentRoomId)) {
+          allOptions.push({ roomId: currentRoomId, label: currentRoomId });
+        }
+        selectEl.innerHTML = allOptions.map(o => `<option value="${esc(o.roomId)}"${o.roomId === currentRoomId ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
+        selectEl.value = currentRoomId;
+      }
+
+      if (btnGroup && btnPrivate) {
+        const isPrivate = teacherChatFilter === 'private';
+        const unreadPrivCount = (teacherPrivateThreads || []).filter(t => t && t.unread).length;
+        btnGroup.style.background = !isPrivate ? '#FFFFFF' : 'transparent';
+        btnGroup.style.color = !isPrivate ? '#DC2626' : '#64748B';
+        btnGroup.style.boxShadow = !isPrivate ? '0 1px 2px rgba(0,0,0,0.06)' : 'none';
+
+        btnPrivate.style.background = isPrivate ? '#FFFFFF' : 'transparent';
+        btnPrivate.style.color = isPrivate ? '#DC2626' : '#64748B';
+        btnPrivate.style.boxShadow = isPrivate ? '0 1px 2px rgba(0,0,0,0.06)' : 'none';
+        btnPrivate.innerHTML = `👩‍🏫 Nhắn riêng HS (1‑1)${unreadPrivCount > 0 ? ` <span style="background:#DC2626;color:#FFF;padding:1px 5px;border-radius:999px;font-size:10px;margin-left:2px;">${unreadPrivCount}</span>` : ''}`;
+      }
+
+      if (stripEl) {
+        const list = teacherChatFilter === 'private' ? teacherPrivateThreads : teacherGroupRooms;
+        stripEl.innerHTML = list.map(item => {
+          const isActive = item.roomId === currentRoomId;
+          const unreadDot = item.unread ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#DC2626;margin-left:5px;vertical-align:middle;" title="Tin nhắn mới từ học sinh"></span>` : '';
+          const countBadge = item.messageCount ? `<span style="background:${isActive ? '#FCA5A5' : '#E2E8F0'};color:${isActive ? '#7F1D1D' : '#475569'};padding:1px 5px;border-radius:999px;font-size:10px;margin-left:4px;">${item.messageCount}</span>` : '';
+          const previewTip = item.lastMessage ? ` title="${esc(item.lastMessage)}"` : '';
+          return `<button type="button" class="teacher-room-pill ${isActive ? 'active' : ''}" data-room-id="${esc(item.roomId)}"${previewTip} onclick="selectTeacherChatRoom('${esc(item.roomId)}')" style="padding:6px 11px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;cursor:pointer;border:1.5px solid ${isActive ? '#DC2626' : '#CBD5E1'};background:${isActive ? '#FEF2F2' : '#FFFFFF'};color:${isActive ? '#B91C1C' : '#475569'};">${esc(item.label || item.studentName || item.roomId)}${unreadDot}${countBadge}</button>`;
+        }).join('');
+      }
+    }
+
+    function switchTeacherChatFilter(mode) {
+      teacherChatFilter = mode === 'private' ? 'private' : 'group';
+      const selectEl = document.getElementById('teacher-room-select');
+      const cur = selectEl ? selectEl.value : '';
+      if (teacherChatFilter === 'private' && !String(cur).startsWith('student:')) {
+        const firstPriv = teacherPrivateThreads[0]?.roomId || 'student:taphong2002@gmail.com';
+        if (selectEl) {
+          renderTeacherRoomControls();
+          selectEl.value = firstPriv;
+        }
+      } else if (teacherChatFilter === 'group' && String(cur).startsWith('student:')) {
+        const firstGrp = teacherGroupRooms[0]?.roomId || 'class:YCT2-04';
+        if (selectEl) {
+          renderTeacherRoomControls();
+          selectEl.value = firstGrp;
+        }
+      }
+      renderTeacherRoomControls();
+      loadTeacherChat();
+    }
+
+    function selectTeacherChatRoom(roomId) {
+      const selectEl = document.getElementById('teacher-room-select');
+      if (!selectEl || !roomId) return;
+      teacherChatFilter = String(roomId).startsWith('student:') ? 'private' : 'group';
+      renderTeacherRoomControls();
+      selectEl.value = roomId;
+      renderTeacherRoomControls();
+      loadTeacherChat();
+    }
+
+    function onTeacherRoomSelectChange(roomId) {
+      teacherChatFilter = String(roomId || '').startsWith('student:') ? 'private' : 'group';
+      renderTeacherRoomControls();
+      loadTeacherChat();
+    }
+
+    async function pinTeacherAnnouncement(customContent) {
+      const selectEl = document.getElementById('teacher-room-select');
+      const pinInput = document.getElementById('teacher-pin-input');
+      const pinTextEl = document.getElementById('teacher-pinned-text');
+      const roomId = selectEl ? selectEl.value : 'class:YCT2-04';
+      const content = (typeof customContent === 'string' ? customContent : (pinInput ? pinInput.value : '')).trim();
+      if (!content) return;
+      const res = await KtnWebApp.apiRequest('/api/ktn/messages/pin', {
         method: 'POST',
-        body: { roomId, classCode: roomId.replace('class:', ''), content: input.value.trim() }
+        body: { roomId, content }
       });
-      if (!res.ok) {
-        alert(res.data?.message || 'Không gửi được tin nhắn.');
+      if (res.ok && res.data?.ok && res.data?.pinnedMessage) {
+        if (pinTextEl) pinTextEl.textContent = String(res.data.pinnedMessage.content || '').replace(/^(?:📌\s*)+/u, '').trim();
+        if (pinInput && typeof customContent !== 'string') pinInput.value = '';
+      }
+    }
+
+    function pinTeacherAnnouncementFromMsg(btnEl) {
+      const text = btnEl?.getAttribute('data-pin-content') || '';
+      if (text) pinTeacherAnnouncement(text);
+    }
+
+    async function loadTeacherChat() {
+      const selectEl = document.getElementById('teacher-room-select');
+      const box = document.getElementById('teacher-chat-box');
+      if (!selectEl || !box) return;
+      const reqSeq = ++teacherChatReqSeq;
+      const roomId = selectEl.value || 'class:YCT2-04';
+      const isPrivate = String(roomId).startsWith('student:');
+      const pinBanner = document.getElementById('teacher-pinned-banner');
+      const pinTextEl = document.getElementById('teacher-pinned-text');
+      if (pinBanner) {
+        pinBanner.style.display = isPrivate ? 'none' : 'block';
+      }
+      renderTeacherRoomControls();
+
+      const res = await KtnWebApp.apiRequest('/api/ktn/messages?roomId=' + encodeURIComponent(roomId));
+      if (reqSeq !== teacherChatReqSeq || selectEl.value !== roomId) return;
+      if (!res.ok || !res.data?.ok) {
+        if (!box.children.length) {
+          box.innerHTML = '<div style="color:#DC2626;font-size:13px;">Không tải được tin nhắn từ máy chủ. Vui lòng thử lại.</div>';
+        }
         return;
       }
-      input.value = '';
-      loadTeacherChat();
+      if (!isPrivate && res.data?.pinnedMessage && res.data.pinnedMessage.content && pinTextEl) {
+        pinTextEl.textContent = String(res.data.pinnedMessage.content).replace(/^(?:📌\s*)+/u, '').trim();
+      }
+      const msgs = deduplicateTeacherMessages(Array.isArray(res.data?.messages) ? res.data.messages : []);
+      box.innerHTML = msgs.map(m => `
+        <div class="teacher-chat-msg-item" data-msg-id="${esc(m.id || '')}" data-sender-role="${esc(m.sender_role || '')}" style="margin-bottom:8px;padding:8px 12px;border-radius:10px;background:${m.sender_role === 'teacher' ? '#FEF2F2' : '#FFFFFF'};border:1px solid #E2E8F0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+            <strong style="font-size:12px;color:#B91C1C;">${esc(m.sender_name)}:</strong>
+            ${!isPrivate ? `<button type="button" class="btn-pin-msg" data-pin-content="${esc(m.content)}" onclick="pinTeacherAnnouncementFromMsg(this)" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;border-radius:6px;padding:2px 6px;font-size:10.5px;font-weight:700;cursor:pointer;">📌 Ghim</button>` : ''}
+          </div>
+          <div class="teacher-chat-msg-text" style="font-size:13.5px;margin-top:2px;">${esc(m.content)}</div>
+        </div>
+      `).join('') || '<div style="color:#94A3B8;font-size:13px;">Chưa có tin nhắn trong phòng này.</div>';
+      box.scrollTop = box.scrollHeight;
+      syncTeacherChatRoomsList();
+    }
+
+    let isSendingTeacherChat = false;
+    async function sendTeacherChat(e) {
+      e.preventDefault();
+      if (isSendingTeacherChat) return;
+      const roomId = document.getElementById('teacher-room-select').value;
+      const input = document.getElementById('teacher-chat-input');
+      const content = input ? input.value.trim() : '';
+      if (!content) return;
+      const submitBtn = e.target?.querySelector?.('button[type="submit"]');
+      isSendingTeacherChat = true;
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        const res = await KtnWebApp.apiRequest('/api/ktn/messages', {
+          method: 'POST',
+          body: { roomId, classCode: roomId.replace('class:', ''), content }
+        });
+        const savedMsg = res.ok && res.data?.ok && res.data?.message && res.data.message.id ? res.data.message : null;
+        if (!savedMsg) {
+          alert(res.data?.message || 'Không gửi được tin nhắn (chưa lưu được vào hệ thống).');
+          return;
+        }
+        input.value = '';
+        await loadTeacherChat();
+      } finally {
+        isSendingTeacherChat = false;
+        if (submitBtn) submitBtn.disabled = false;
+      }
     }
 
     async function enableTeacherPwa() {
@@ -587,6 +869,12 @@
         `Giáo viên: ${currentTeacherSession.name || currentTeacherSession.email} (${currentTeacherSession.email})`;
       loadTeacherHomeworks();
       loadTeacherClassSessionEditor();
+      setInterval(() => {
+        const groupsPane = document.getElementById('t-pane-groups');
+        if (groupsPane && groupsPane.classList.contains('active') && !isSendingTeacherChat) {
+          loadTeacherChat();
+        }
+      }, 4000);
     });
   </script>
 </body>

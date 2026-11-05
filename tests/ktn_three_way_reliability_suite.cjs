@@ -159,9 +159,12 @@ function loadWorkerInstance() {
       if (rawVal.startsWith('eq.')) {
         const target = rawVal.slice(3);
         if (String(row[k] ?? '') !== target) return false;
-      } else if (rawVal.startsWith('ilike.')) {
-        const target = rawVal.slice(6).toLowerCase();
-        if (String(row[k] ?? '').toLowerCase() !== target) return false;
+      } else if (rawVal.startsWith('ilike.') || rawVal.startsWith('like.')) {
+        const isCaseInsensitive = rawVal.startsWith('ilike.');
+        const pattern = rawVal.slice(isCaseInsensitive ? 6 : 5);
+        const regexStr = '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/[*%]/g, '.*') + '$';
+        const re = new RegExp(regexStr, isCaseInsensitive ? 'i' : '');
+        if (!re.test(String(row[k] ?? ''))) return false;
       } else if (rawVal.startsWith('in.(')) {
         const list = rawVal.slice(4, -1).split(',').map(s => s.replace(/^"|"$/g, ''));
         if (!list.includes(String(row[k] ?? ''))) return false;
@@ -1448,6 +1451,151 @@ async function runSuite() {
         bulkSyncRes.data?.ok === true &&
         all30HaveCourses,
       `syncedStudents=${syncedBulkRows.length}/30, allHaveHSK1=${all30HaveCourses}`
+    );
+
+    // 5. Course Group Chat (course:6adadba969897b0002482ca5), Teacher Pin Announcement, and Student 1-on-1 Privacy Isolation
+    const loginTaphong = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: { email: 'taphong2002@gmail.com', password: 'TestStrongPassword!2026', role: 'student' }
+    });
+    const taphongToken = loginTaphong.data.token;
+
+    // 5a. Enrolled online student posts to course:6adadba969897b0002482ca5 -> 200
+    const courseChatPostA = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${taphongToken}` },
+      body: {
+        roomId: `course:${HSK1_ID}`,
+        content: 'Chào Cô và các bạn cùng khóa HSK1 3.0 ạ!'
+      }
+    });
+    // Student B (only enrolled in CFK, not HSK1) cannot read or post to course:HSK1_ID -> 403
+    const courseChatReadUnentitled = await callApi(`/api/ktn/messages?roomId=${encodeURIComponent('course:' + HSK1_ID)}`, {
+      headers: { Authorization: `Bearer ${studentBToken}` }
+    });
+    // Teacher pins announcement in course:HSK1_ID -> 200, visible to Student in GET /api/ktn/messages
+    const teacherPinRes = await callApi('/api/ktn/messages/pin', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        roomId: `course:${HSK1_ID}`,
+        content: 'Lịch ôn tập trực tuyến khóa HSK1 3.0 tối Thứ 7 tuần này lúc 20:00 nhé các con!'
+      }
+    });
+    const studentTryPinRes = await callApi('/api/ktn/messages/pin', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${taphongToken}` },
+      body: {
+        roomId: `course:${HSK1_ID}`,
+        content: 'Học sinh thử tự ghim'
+      }
+    });
+    const courseChatGetA = await callApi(`/api/ktn/messages?roomId=${encodeURIComponent('course:' + HSK1_ID)}`, {
+      headers: { Authorization: `Bearer ${taphongToken}` }
+    });
+
+    // 5b. 1-on-1 private chat: taphong2002@gmail.com writes to student:taphong2002@gmail.com -> 200
+    // Student B (e2e.hs.b@khongtunhi.com) tries to read or write student:taphong2002@gmail.com -> 403
+    const privPostOwn = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${taphongToken}` },
+      body: {
+        roomId: 'student:taphong2002@gmail.com',
+        content: 'Cô ơi cho em hỏi riêng về thanh 3 biến điệu với ạ!'
+      }
+    });
+    const privReadCrossStudent = await callApi('/api/ktn/messages?roomId=student%3Ataphong2002%40gmail.com', {
+      headers: { Authorization: `Bearer ${studentBToken}` }
+    });
+    const privWriteCrossStudent = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentBToken}` },
+      body: {
+        roomId: 'student:taphong2002@gmail.com',
+        content: 'Giả mạo nhắn vào phòng riêng bạn khác'
+      }
+    });
+    const teacherNotifPrivRes = await callApi('/api/ktn/notifications', {
+      headers: { Authorization: `Bearer ${teacherAToken}` }
+    });
+    const teacherGotPrivNotif = Array.isArray(teacherNotifPrivRes.data?.notifications) &&
+      teacherNotifPrivRes.data.notifications.some(n =>
+        n.type === 'chat_message' &&
+        (n.roomId === 'student:taphong2002@gmail.com' || n.classCode === 'student:taphong2002@gmail.com')
+      );
+
+    const teacherReplyPriv = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        roomId: 'student:taphong2002@gmail.com',
+        content: 'Chào Phong, khi 2 thanh 3 đi liền nhau thì âm đầu đọc thành thanh 2 nhé!'
+      }
+    });
+    const teacherRoomsRes = await callApi('/api/ktn/messages/rooms', {
+      headers: { Authorization: `Bearer ${teacherAToken}` }
+    });
+
+    record(
+      'E5-COURSE-GROUP-CHAT-PIN-AND-1ON1-PRIVACY',
+      'GROUP_E',
+      'Course group chat (course:HSK1), Teacher pinned announcement, Teacher 1-1 notification, and 1-on-1 student:<email> privacy isolation enforce strict RBAC & error codes',
+      courseChatPostA.status === 200 &&
+        courseChatReadUnentitled.status === 403 &&
+        courseChatReadUnentitled.data?.error === 'COURSE_NOT_ENTITLED' &&
+        teacherPinRes.status === 200 &&
+        studentTryPinRes.status === 403 &&
+        courseChatGetA.status === 200 &&
+        courseChatGetA.data?.pinnedMessage?.content?.includes('Lịch ôn tập trực tuyến khóa HSK1 3.0') &&
+        privPostOwn.status === 200 &&
+        privReadCrossStudent.status === 403 &&
+        privReadCrossStudent.data?.error === 'STUDENT_PRIVATE_ROOM_FORBIDDEN' &&
+        privWriteCrossStudent.status === 403 &&
+        privWriteCrossStudent.data?.error === 'STUDENT_PRIVATE_ROOM_FORBIDDEN' &&
+        teacherGotPrivNotif === true &&
+        teacherReplyPriv.status === 200 &&
+        teacherRoomsRes.status === 200 &&
+        Array.isArray(teacherRoomsRes.data?.privateThreads) &&
+        teacherRoomsRes.data.privateThreads.some(t => t.roomId === 'student:taphong2002@gmail.com'),
+      `coursePost=${courseChatPostA.status}, unentitledErr=${courseChatReadUnentitled.data?.error}, pin=${teacherPinRes.status}, privCrossErr=${privReadCrossStudent.data?.error}, teacherPrivNotif=${teacherGotPrivNotif}`
+    );
+
+    // 5c. Course revocation immediately blocks student from reading/writing revoked course room
+    const CFK1_ID = '65e7704a9ea90c00080d5195';
+    const cfkBeforeRevoke = await callApi(`/api/ktn/messages?roomId=${encodeURIComponent('course:' + CFK1_ID)}`, {
+      headers: { Authorization: `Bearer ${taphongToken}` }
+    });
+    const revokeCfkRes = await callApi('/api/ktn/students/courses', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        email: 'taphong2002@gmail.com',
+        action: 'revoke',
+        courseIds: [CFK1_ID]
+      }
+    });
+    const cfkAfterRevokeGet = await callApi(`/api/ktn/messages?roomId=${encodeURIComponent('course:' + CFK1_ID)}`, {
+      headers: { Authorization: `Bearer ${taphongToken}` }
+    });
+    const cfkAfterRevokePost = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${taphongToken}` },
+      body: {
+        roomId: `course:${CFK1_ID}`,
+        content: 'Thử gửi tin sau khi đã thu hồi khóa CFK1'
+      }
+    });
+    record(
+      'E6-COURSE-REVOCATION-BLOCKS-COURSE-ROOM',
+      'GROUP_E',
+      'Revoking a course immediately blocks student from reading/writing course:<revokedId> with 403 COURSE_NOT_ENTITLED',
+      cfkBeforeRevoke.status === 200 &&
+        revokeCfkRes.status === 200 &&
+        cfkAfterRevokeGet.status === 403 &&
+        cfkAfterRevokeGet.data?.error === 'COURSE_NOT_ENTITLED' &&
+        cfkAfterRevokePost.status === 403 &&
+        cfkAfterRevokePost.data?.error === 'COURSE_NOT_ENTITLED',
+      `before=${cfkBeforeRevoke.status}, revoke=${revokeCfkRes.status}, afterGet=${cfkAfterRevokeGet.status} (${cfkAfterRevokeGet.data?.error}), afterPost=${cfkAfterRevokePost.status} (${cfkAfterRevokePost.data?.error})`
     );
   }
 

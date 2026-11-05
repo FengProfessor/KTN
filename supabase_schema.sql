@@ -162,16 +162,22 @@ ON CONFLICT (code) DO NOTHING;
 
 -- 6. BẢNG ĐIỂM DANH THEO BUỔI HỌC (THAY THẾ CHUỖI TEXT TĨNH CŨ)
 CREATE TABLE IF NOT EXISTS public.ktn_attendance (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   class_code TEXT NOT NULL REFERENCES public.ktn_classes(id) ON DELETE CASCADE,
-  student_code TEXT NOT NULL REFERENCES public.ktn_students(code) ON DELETE CASCADE,
+  student_code TEXT REFERENCES public.ktn_students(code) ON DELETE CASCADE,
   student_email TEXT NOT NULL,
-  lesson_num INTEGER NOT NULL,
+  student_name TEXT DEFAULT '',
+  lesson_num INTEGER NOT NULL DEFAULT 1,
+  session_num INTEGER DEFAULT 1,
+  date TEXT DEFAULT CURRENT_DATE::text,
   status TEXT NOT NULL DEFAULT 'present'
-    CHECK (status IN ('present', 'excused', 'absent')),
+    CHECK (status IN ('present', 'late', 'excused', 'absent', 'absent_excused', 'absent_unexcused')),
+  note TEXT DEFAULT '',
   teacher_note TEXT DEFAULT '',
   recorded_by TEXT,
+  updated_by TEXT,
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (class_code, student_code, lesson_num)
 );
 
@@ -336,10 +342,21 @@ ALTER TABLE public.ktn_homeworks
   ADD COLUMN IF NOT EXISTS last_sync_error TEXT;
 
 ALTER TABLE public.ktn_attendance
+  ALTER COLUMN id TYPE TEXT USING id::text,
+  ALTER COLUMN id SET DEFAULT gen_random_uuid()::text,
+  ALTER COLUMN student_code DROP NOT NULL,
+  ALTER COLUMN lesson_num SET DEFAULT 1,
   ADD COLUMN IF NOT EXISTS student_email TEXT,
-  ADD COLUMN IF NOT EXISTS session_num INTEGER,
+  ADD COLUMN IF NOT EXISTS student_name TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS session_num INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS date TEXT DEFAULT CURRENT_DATE::text,
+  ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '',
   ADD COLUMN IF NOT EXISTS updated_by TEXT,
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.ktn_attendance DROP CONSTRAINT IF EXISTS ktn_attendance_status_check;
+ALTER TABLE public.ktn_attendance ADD CONSTRAINT ktn_attendance_status_check
+  CHECK (status IN ('present', 'late', 'excused', 'absent', 'absent_excused', 'absent_unexcused'));
 
 CREATE TABLE IF NOT EXISTS public.ktn_provisioning_jobs (
   operation_id TEXT PRIMARY KEY,

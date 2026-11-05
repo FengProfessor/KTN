@@ -258,11 +258,17 @@ export const TeacherWorkspace: React.FC = () => {
   });
 
   useEffect(() => {
-    const recs = attendanceQuery.data?.records || [];
+    const recs = attendanceQuery.data?.records || attendanceQuery.data?.attendance || [];
     if (recs.length > 0) {
       const next: Record<string, 'present' | 'late' | 'absent_excused' | 'absent_unexcused'> = {};
       for (const r of recs) {
-        next[r.student_email] = r.status;
+        const normalizedStatus =
+          r.status === 'excused'
+            ? 'absent_excused'
+            : r.status === 'absent'
+            ? 'absent_unexcused'
+            : r.status;
+        next[r.student_email] = normalizedStatus;
       }
       setAttendanceMap(next);
     }

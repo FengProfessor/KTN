@@ -250,12 +250,21 @@ export interface KtnSyncDriftItem {
   id: string;
   driftCode: string;
   severity: 'error' | 'warning';
-  entityType: 'student' | 'order' | 'homework' | string;
+  entityType: 'student' | 'order' | 'homework' | 'class' | string;
   entityKey: string;
   title: string;
   detail: string;
+  studentName?: string;
+  studentEmail?: string;
+  reason?: string;
   retryAction?: {
-    type: 'student_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
+    type:
+      | 'student_sync'
+      | 'student_provision'
+      | 'teacher_provision'
+      | 'order_approve'
+      | 'homework_sync'
+      | 'bulk_sync';
     email?: string;
     orderId?: string;
     homeworkId?: string;
@@ -271,6 +280,7 @@ export interface KtnSyncStatusResponse {
     needsResyncCount: number;
     manualReviewCount: number;
     driftTotal: number;
+    totalDriftItems?: number;
   };
   driftItems: KtnSyncDriftItem[];
 }
@@ -281,7 +291,7 @@ export interface KtnAttendanceRecord {
   session_num: number;
   student_email: string;
   student_name: string;
-  status: 'present' | 'absent_excused' | 'absent_unexcused' | 'late';
+  status: 'present' | 'absent_excused' | 'absent_unexcused' | 'late' | 'excused' | 'absent';
   note?: string;
   recorded_by?: string;
   session_date?: string;
@@ -293,10 +303,13 @@ export interface KtnAttendanceResponse {
   classCode: string;
   sessionNum: number | null;
   records: KtnAttendanceRecord[];
+  attendance?: KtnAttendanceRecord[];
   summary: {
     total: number;
     present: number;
     late: number;
+    absent?: number;
+    excused?: number;
     absentExcused: number;
     absentUnexcused: number;
   };

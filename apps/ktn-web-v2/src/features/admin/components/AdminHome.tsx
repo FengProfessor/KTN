@@ -111,7 +111,7 @@ export const AdminHome: React.FC = () => {
         await new Promise((r) => setTimeout(r, 300));
         return { message: 'Approved', studentEmail: 'giahan@khongtunhi.com' };
       }
-      return ktnApi.approveOrder(orderId, 'YCT2-04');
+      return ktnApi.approveOrder(orderId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });

@@ -515,7 +515,7 @@ export const ktnApi = {
   },
 
   async retrySyncItem(payload: {
-    type: 'student_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
+    type: 'student_provision' | 'student_sync' | 'teacher_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
     email?: string;
     orderId?: string;
     homeworkId?: string;

@@ -647,9 +647,12 @@ async function verifyIzTeachAccessToken(tok, env) {
       const sbTeacher = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`);
       if (sbTeacher.ok && Array.isArray(sbTeacher.data) && sbTeacher.data[0]) {
         const tRow = sbTeacher.data[0];
+        if (tRow.active === false) {
+          return null;
+        }
         if (tRow.role === 'admin' && (decRoles.includes('root') || decRoles.includes('admin'))) {
           role = 'admin';
-        } else if (tRow.role === 'teacher' || email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com') {
+        } else {
           role = 'teacher';
         }
         name = tRow.name || name;
@@ -724,6 +727,13 @@ async function extractSessionFromRequest(request, env) {
 async function getTeacherAssignedClassCodes(env, teacherEmail) {
   const email = normalizeEmail(teacherEmail || '');
   if (!email) return [];
+  const tRes = await supabaseRequest(
+    env,
+    `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`
+  );
+  if (tRes.ok && Array.isArray(tRes.data) && tRes.data[0] && tRes.data[0].active === false) {
+    return [];
+  }
   const res = await supabaseRequest(
     env,
     `ktn_classes?teacher_email=eq.${encodeURIComponent(email)}&active=eq.true&select=id`
@@ -2179,6 +2189,30 @@ function generateOperationId(prefix = 'PROV') {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
 }
 
+async function runWithProvisioningLock(lockKey, taskFn) {
+  const key = String(lockKey || '').trim().toLowerCase();
+  if (!key) return taskFn();
+  if (!globalThis.__ktnProvisioningLocksMap) globalThis.__ktnProvisioningLocksMap = new Map();
+  const prevPromise = globalThis.__ktnProvisioningLocksMap.get(key) || Promise.resolve();
+  let releaseLock;
+  const nextPromise = new Promise((resolve) => {
+    releaseLock = resolve;
+  });
+  globalThis.__ktnProvisioningLocksMap.set(
+    key,
+    prevPromise.then(() => nextPromise, () => nextPromise)
+  );
+  await prevPromise.catch(() => {});
+  try {
+    return await taskFn();
+  } finally {
+    releaseLock();
+    if (globalThis.__ktnProvisioningLocksMap.get(key) === nextPromise) {
+      globalThis.__ktnProvisioningLocksMap.delete(key);
+    }
+  }
+}
+
 async function saveProvisioningJobState(env, jobRecord) {
   if (!jobRecord || !jobRecord.operation_id) return null;
   if (!globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap = new Map();
@@ -2280,216 +2314,235 @@ async function approveAndProvisionOrder(env, {
     };
   }
 
-  let order = orderInput || null;
-  const ordLookup = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(cleanOrderId)}&limit=1`);
-  if (ordLookup.ok && Array.isArray(ordLookup.data) && ordLookup.data[0]) {
-    order = { ...(order || {}), ...ordLookup.data[0] };
-  }
-  if (!order) {
-    return {
-      ok: false,
-      httpStatus: 404,
-      operationId: opId,
-      syncStatus: 'not_found',
-      retryable: false,
-      completedSteps: [],
-      failedStep: 'lookup_order',
-      message: 'Không tìm thấy đơn hàng ' + cleanOrderId
-    };
-  }
+  return runWithProvisioningLock(`order_approve:${cleanOrderId}`, async () => {
+    let order = orderInput || null;
+    const ordLookup = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(cleanOrderId)}&limit=1`);
+    if (ordLookup.ok && Array.isArray(ordLookup.data) && ordLookup.data[0]) {
+      order = { ...(order || {}), ...ordLookup.data[0] };
+    }
+    if (!order) {
+      return {
+        ok: false,
+        httpStatus: 404,
+        operationId: opId,
+        syncStatus: 'not_found',
+        retryable: false,
+        completedSteps: [],
+        failedStep: 'lookup_order',
+        message: 'Không tìm thấy đơn hàng ' + cleanOrderId
+      };
+    }
 
-  const completedSteps = [];
-  await saveProvisioningJobState(env, {
-    operation_id: opId,
-    idempotency_key: `order_approve:${cleanOrderId}`,
-    job_type: 'order_approve',
-    actor_email: approvedBy,
-    target_email: normalizeEmail(order.student_email || order.studentEmail || ''),
-    target_role: 'student',
-    status: 'running',
-    sync_status: 'pending',
-    completed_steps: completedSteps,
-    request_payload: { orderId: cleanOrderId, approvedBy, classCode }
-  });
-
-  // Bước 1 & 2: Tạo/xác minh tài khoản & cấp quyền khóa học trên izTeach
-  const prov = await provisionStudentOnIzTeach(env, order);
-  if (!prov.ok) {
+    const completedSteps = [];
     await saveProvisioningJobState(env, {
       operation_id: opId,
-      status: 'failed',
-      sync_status: 'sync_failed',
+      idempotency_key: `order_approve:${cleanOrderId}`,
+      job_type: 'order_approve',
+      actor_email: approvedBy,
+      target_email: normalizeEmail(order.student_email || order.studentEmail || ''),
+      target_role: 'student',
+      status: 'running',
+      sync_status: 'pending',
       completed_steps: completedSteps,
-      failed_step: 'izteach_provision',
-      error_code: 'IZTEACH_PROVISION_FAILED',
-      error_message: prov.error || 'Lỗi cấp quyền trên izTeach',
-      retryable: true
+      request_payload: { orderId: cleanOrderId, approvedBy, classCode }
     });
-    return {
-      ok: false,
-      httpStatus: 502,
-      operationId: opId,
-      orderId: cleanOrderId,
-      syncStatus: 'sync_failed',
-      retryable: true,
-      completedSteps,
-      failedStep: 'izteach_provision',
-      error: 'IZTEACH_PROVISION_FAILED',
-      message: prov.error || 'Chưa cấp được quyền học trên izTeach.'
+
+    // Bước 1 & 2: Tạo/xác minh tài khoản & cấp quyền khóa học trên izTeach
+    const prov = await provisionStudentOnIzTeach(env, order);
+    if (!prov.ok) {
+      await saveProvisioningJobState(env, {
+        operation_id: opId,
+        status: 'failed',
+        sync_status: 'sync_failed',
+        completed_steps: completedSteps,
+        failed_step: 'izteach_provision',
+        error_code: 'IZTEACH_PROVISION_FAILED',
+        error_message: prov.error || 'Lỗi cấp quyền trên izTeach',
+        retryable: true
+      });
+      return {
+        ok: false,
+        httpStatus: 502,
+        operationId: opId,
+        orderId: cleanOrderId,
+        syncStatus: 'sync_failed',
+        retryable: true,
+        completedSteps,
+        failedStep: 'izteach_provision',
+        error: 'IZTEACH_PROVISION_FAILED',
+        message: prov.error || 'Chưa cấp được quyền học trên izTeach.'
+      };
+    }
+
+    completedSteps.push('izteach_account');
+    completedSteps.push('izteach_permissions');
+
+    // Bước 3: Cập nhật ktn_orders trên Supabase và KIỂM TRA KẾT QUẢ GHI
+    const nowIso = new Date().toISOString();
+    // Tách biệt trạng thái thanh toán và trạng thái kích hoạt (nếu gọi từ approve thủ công mà không truyền paymentStatusOverride thì giữ nguyên payment_status hiện có, mặc định pending_verification nếu chưa thanh toán)
+    const resolvedPaymentStatus = paymentStatusOverride !== undefined
+      ? paymentStatusOverride
+      : (order.payment_status || order.paymentStatus || 'pending_verification');
+
+    const baseOrderUpdatePayload = {
+      order_id: cleanOrderId,
+      student_name: String(order.student_name || order.studentName || prov.name || 'Học viên').trim(),
+      student_email: prov.email,
+      phone: String(order.phone || '').trim(),
+      course_id: order.course_id || order.courseId || prov.courseId || DEFAULT_COURSE_ID,
+      course_name: order.course_name || order.courseName || MASTER_PRODUCT_MAPPING[prov.courseId]?.title || 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+      amount: Number(order.amount) || 890000,
+      payment_method: order.payment_method || order.paymentMethod || 'VietQR',
+      payment_status: resolvedPaymentStatus,
+      approval_status: 'approved',
+      assigned_user_id: prov.cognitoUserId,
+      assigned_student_id: prov.izteachStudentId,
+      approved_at: nowIso,
+      approved_by: approvedBy,
+      updated_at: nowIso
     };
-  }
 
-  completedSteps.push('izteach_account');
-  completedSteps.push('izteach_permissions');
+    const extOrderUpdatePayload = {
+      ...baseOrderUpdatePayload,
+      provisioning_status: 'synced',
+      sync_status: 'synced',
+      operation_id: opId
+    };
 
-  // Bước 3: Cập nhật ktn_orders trên Supabase và KIỂM TRA KẾT QUẢ GHI
-  const nowIso = new Date().toISOString();
-  // Tách biệt trạng thái thanh toán và trạng thái kích hoạt (nếu gọi từ approve thủ công mà không truyền paymentStatusOverride thì giữ nguyên payment_status hiện có hoặc paid nếu đã thanh toán)
-  const resolvedPaymentStatus = paymentStatusOverride !== undefined
-    ? paymentStatusOverride
-    : (order.payment_status && order.payment_status !== 'pending_verification' ? order.payment_status : (order.payment_status || 'paid'));
+    let ordWriteRes = await supabaseRequest(env, 'ktn_orders', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=representation',
+      body: extOrderUpdatePayload
+    });
+    if ((!ordWriteRes || !ordWriteRes.ok) && ordWriteRes?.status === 400) {
+      ordWriteRes = await supabaseRequest(env, 'ktn_orders', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates,return=representation',
+        body: baseOrderUpdatePayload
+      });
+    }
 
-  const orderUpdatePayload = {
-    order_id: cleanOrderId,
-    student_name: String(order.student_name || order.studentName || prov.name || 'Học viên').trim(),
-    student_email: prov.email,
-    phone: String(order.phone || '').trim(),
-    course_id: order.course_id || order.courseId || prov.courseId || DEFAULT_COURSE_ID,
-    course_name: order.course_name || order.courseName || MASTER_PRODUCT_MAPPING[prov.courseId]?.title || 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
-    amount: Number(order.amount) || 890000,
-    payment_method: order.payment_method || order.paymentMethod || 'VietQR',
-    payment_status: resolvedPaymentStatus,
-    approval_status: 'approved',
-    assigned_user_id: prov.cognitoUserId,
-    assigned_student_id: prov.izteachStudentId,
-    approved_at: nowIso,
-    approved_by: approvedBy,
-    updated_at: nowIso
-  };
+    const orderWriteOk = Boolean(ordWriteRes && ordWriteRes.ok && Array.isArray(ordWriteRes.data) && ordWriteRes.data.length > 0);
+    if (orderWriteOk) {
+      completedSteps.push('supabase_order_update');
+    }
 
-  const ordWriteRes = await supabaseRequest(env, 'ktn_orders', {
-    method: 'POST',
-    prefer: 'resolution=merge-duplicates,return=representation',
-    body: orderUpdatePayload
-  });
+    // Bước 4: Cập nhật/cộng dồn khóa học vào bảng ktn_students trên Supabase và KIỂM TRA KẾT QUẢ GHI
+    const resolvedClassCode = classCode !== undefined
+      ? classCode
+      : (order.class_code || order.classCode || undefined);
+    const studentCode = 'KTN-' + cleanOrderId.replace(/^ORD-/, '');
+    const updatedStu = await mergeAndUpsertStudentCourses(env, {
+      email: prov.email,
+      name: prov.name,
+      phone: order.phone || '',
+      cognitoUserId: prov.cognitoUserId,
+      izteachStudentId: prov.izteachStudentId,
+      addCourseIds: prov.allCourseIds || prov.grantedCourseIds || [prov.courseId],
+      classCode: resolvedClassCode,
+      codeHint: studentCode,
+      accountStatus: 'active',
+      syncStatus: orderWriteOk ? 'synced' : 'partial_failure',
+      lastSyncError: orderWriteOk ? null : 'SUPABASE_ORDER_UPDATE_FAILED'
+    });
 
-  const orderWriteOk = Boolean(ordWriteRes && ordWriteRes.ok && Array.isArray(ordWriteRes.data) && ordWriteRes.data.length > 0);
-  if (orderWriteOk) {
-    completedSteps.push('supabase_order_update');
-  }
+    const stuWriteOk = Boolean(updatedStu && updatedStu.ok !== false);
+    if (stuWriteOk) {
+      completedSteps.push('supabase_student_upsert');
+    }
 
-  // Bước 4: Cập nhật/cộng dồn khóa học vào bảng ktn_students trên Supabase và KIỂM TRA KẾT QUẢ GHI
-  const studentCode = 'KTN-' + cleanOrderId.replace(/^ORD-/, '');
-  const updatedStu = await mergeAndUpsertStudentCourses(env, {
-    email: prov.email,
-    name: prov.name,
-    phone: order.phone || '',
-    cognitoUserId: prov.cognitoUserId,
-    izteachStudentId: prov.izteachStudentId,
-    addCourseIds: prov.allCourseIds || prov.grantedCourseIds || [prov.courseId],
-    classCode: classCode !== undefined ? classCode : undefined,
-    codeHint: studentCode,
-    accountStatus: 'active',
-    syncStatus: orderWriteOk ? 'synced' : 'partial_failure',
-    lastSyncError: orderWriteOk ? null : 'SUPABASE_ORDER_UPDATE_FAILED'
-  });
+    if (!orderWriteOk || !stuWriteOk) {
+      const failedStep = !orderWriteOk ? 'supabase_order_update' : 'supabase_student_upsert';
+      await saveProvisioningJobState(env, {
+        operation_id: opId,
+        status: 'partial_failure',
+        sync_status: 'partial_failure',
+        completed_steps: completedSteps,
+        failed_step: failedStep,
+        cognito_user_id: prov.cognitoUserId,
+        izteach_student_id: prov.izteachStudentId,
+        error_code: failedStep.toUpperCase() + '_FAILED',
+        error_message: 'Đã cấp quyền trên izTeach nhưng lưu dữ liệu vào Supabase chưa hoàn tất.',
+        retryable: true
+      });
+      await logSyncEvent(env, {
+        operationId: opId,
+        eventType: 'order_approve',
+        sourceSystem: 'izteach',
+        targetSystem: 'supabase',
+        entityType: 'order',
+        entityKey: cleanOrderId,
+        status: 'partial_failure',
+        driftCode: !stuWriteOk ? 'A02_IZTEACH_WITHOUT_SUPABASE_STUDENT' : 'A08_ORDER_APPROVED_WITHOUT_COMPLETE_SYNC',
+        errorCode: failedStep.toUpperCase() + '_FAILED',
+        errorMessage: 'izTeach đã cấp quyền nhưng Supabase ghi thất bại ở bước ' + failedStep,
+        details: { orderId: cleanOrderId, email: prov.email, completedSteps, failedStep },
+        createdBy: approvedBy
+      });
+      return {
+        ok: false,
+        httpStatus: 502,
+        operationId: opId,
+        orderId: cleanOrderId,
+        partialFailure: true,
+        syncStatus: 'partial_failure',
+        retryable: true,
+        completedSteps,
+        failedStep,
+        cognitoUserId: prov.cognitoUserId,
+        izteachStudentId: prov.izteachStudentId,
+        studentEmail: prov.email,
+        grantedCourseIds: prov.grantedCourseIds,
+        allCourseIds: prov.allCourseIds,
+        accountCreated: Boolean(prov.accountCreated),
+        existingAccount: Boolean(prov.existingAccount),
+        credentialMode: prov.credentialMode,
+        defaultPassword: prov.initialPassword,
+        initialPassword: prov.initialPassword,
+        message: 'Đã cấp tài khoản/khóa học trên izTeach nhưng chưa lưu hoàn tất vào Supabase (' + failedStep + '). Vui lòng bấm Đồng bộ lại để hoàn tất.'
+      };
+    }
 
-  const stuWriteOk = Boolean(updatedStu && updatedStu.ok !== false);
-  if (stuWriteOk) {
-    completedSteps.push('supabase_student_upsert');
-  }
-
-  if (!orderWriteOk || !stuWriteOk) {
-    const failedStep = !orderWriteOk ? 'supabase_order_update' : 'supabase_student_upsert';
     await saveProvisioningJobState(env, {
       operation_id: opId,
-      status: 'partial_failure',
-      sync_status: 'partial_failure',
+      status: 'completed',
+      sync_status: 'synced',
       completed_steps: completedSteps,
-      failed_step: failedStep,
+      failed_step: null,
       cognito_user_id: prov.cognitoUserId,
       izteach_student_id: prov.izteachStudentId,
-      error_code: failedStep.toUpperCase() + '_FAILED',
-      error_message: 'Đã cấp quyền trên izTeach nhưng lưu dữ liệu vào Supabase chưa hoàn tất.',
-      retryable: true
+      result_summary: {
+        orderId: cleanOrderId,
+        email: prov.email,
+        grantedCourseIds: prov.grantedCourseIds,
+        accountCreated: prov.accountCreated,
+        existingAccount: prov.existingAccount
+      }
     });
-    await logSyncEvent(env, {
-      operationId: opId,
-      eventType: 'order_approve',
-      sourceSystem: 'izteach',
-      targetSystem: 'supabase',
-      entityType: 'order',
-      entityKey: cleanOrderId,
-      status: 'partial_failure',
-      driftCode: !stuWriteOk ? 'A02_IZTEACH_WITHOUT_SUPABASE_STUDENT' : 'A08_ORDER_APPROVED_WITHOUT_COMPLETE_SYNC',
-      errorCode: failedStep.toUpperCase() + '_FAILED',
-      errorMessage: 'izTeach đã cấp quyền nhưng Supabase ghi thất bại ở bước ' + failedStep,
-      details: { orderId: cleanOrderId, email: prov.email, completedSteps, failedStep },
-      createdBy: approvedBy
-    });
+
     return {
-      ok: false,
-      httpStatus: 502,
+      ok: true,
+      httpStatus: 200,
       operationId: opId,
       orderId: cleanOrderId,
-      partialFailure: true,
-      syncStatus: 'partial_failure',
-      retryable: true,
+      syncStatus: 'synced',
       completedSteps,
-      failedStep,
+      failedStep: null,
       cognitoUserId: prov.cognitoUserId,
       izteachStudentId: prov.izteachStudentId,
       studentEmail: prov.email,
       grantedCourseIds: prov.grantedCourseIds,
       allCourseIds: prov.allCourseIds,
+      student: updatedStu,
+      order: ordWriteRes.data[0],
       accountCreated: Boolean(prov.accountCreated),
       existingAccount: Boolean(prov.existingAccount),
       credentialMode: prov.credentialMode,
       defaultPassword: prov.initialPassword,
       initialPassword: prov.initialPassword,
-      message: 'Đã cấp tài khoản/khóa học trên izTeach nhưng chưa lưu hoàn tất vào Supabase (' + failedStep + '). Vui lòng bấm Đồng bộ lại để hoàn tất.'
+      message: `Đã duyệt đơn & kích hoạt cộng dồn ${prov.grantedCourseIds.length} khóa học trên izTeach và Supabase thành công!`
     };
-  }
-
-  await saveProvisioningJobState(env, {
-    operation_id: opId,
-    status: 'completed',
-    sync_status: 'synced',
-    completed_steps: completedSteps,
-    failed_step: null,
-    cognito_user_id: prov.cognitoUserId,
-    izteach_student_id: prov.izteachStudentId,
-    result_summary: {
-      orderId: cleanOrderId,
-      email: prov.email,
-      grantedCourseIds: prov.grantedCourseIds,
-      accountCreated: prov.accountCreated,
-      existingAccount: prov.existingAccount
-    }
   });
-
-  return {
-    ok: true,
-    httpStatus: 200,
-    operationId: opId,
-    orderId: cleanOrderId,
-    syncStatus: 'synced',
-    completedSteps,
-    failedStep: null,
-    cognitoUserId: prov.cognitoUserId,
-    izteachStudentId: prov.izteachStudentId,
-    studentEmail: prov.email,
-    grantedCourseIds: prov.grantedCourseIds,
-    allCourseIds: prov.allCourseIds,
-    student: updatedStu,
-    order: ordWriteRes.data[0],
-    accountCreated: Boolean(prov.accountCreated),
-    existingAccount: Boolean(prov.existingAccount),
-    credentialMode: prov.credentialMode,
-    defaultPassword: prov.initialPassword,
-    initialPassword: prov.initialPassword,
-    message: `Đã duyệt đơn & kích hoạt cộng dồn ${prov.grantedCourseIds.length} khóa học trên izTeach và Supabase thành công!`
-  };
 }
 
 /**
@@ -2799,6 +2852,7 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
     let unchangedCount = 0;
 
     for (const row of allRows) {
+      row.search_text = buildStudentSearchText(row);
       const orig = byEmail.get(row.email);
       if (!orig) {
         createdCount++;
@@ -2830,11 +2884,19 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
     let failedCount = 0;
     for (let i = 0; i < changedRows.length; i += 250) {
       const chunk = changedRows.slice(i, i + 250);
-      const upRes = await supabaseRequest(env, 'ktn_students?on_conflict=email', {
+      let upRes = await supabaseRequest(env, 'ktn_students?on_conflict=email', {
         method: 'POST',
         prefer: 'resolution=merge-duplicates',
         body: chunk
       });
+      if ((!upRes || !upRes.ok) && upRes?.status === 400) {
+        const baseChunk = chunk.map(({ search_text, ...rest }) => rest);
+        upRes = await supabaseRequest(env, 'ktn_students?on_conflict=email', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates',
+          body: baseChunk
+        });
+      }
       if (!upRes.ok) {
         failedCount += chunk.length;
       }
@@ -3026,11 +3088,19 @@ export default {
         };
       }
 
-      // Cho phép giáo viên mới được tạo trong ktn_teachers (active = true) đăng nhập bằng mật khẩu nhân sự chính thức (matchesRotated) hoặc tài khoản izTeach đã cấp
+      // Cho phép giáo viên mới được tạo trong ktn_teachers (active = true) đăng nhập bằng mật khẩu nhân sự chính thức (matchesRotated) hoặc tài khoản izTeach đã cấp; chặn giáo viên đã bị vô hiệu hóa (active = false)
       let sbTeacher = null;
-      const tRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&active=eq.true&limit=1`);
+      const tRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&limit=1`);
       if (tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0) {
-        sbTeacher = tRes.data[0];
+        const teacherRow = tRes.data[0];
+        if (teacherRow.active === false) {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_INACTIVE',
+            message: 'Tài khoản giáo viên này đã ngừng hoạt động. Vui lòng liên hệ Quản lý học vụ.'
+          }, 403);
+        }
+        sbTeacher = teacherRow;
       }
       if (!chosen && sbTeacher && matchesRotated) {
         chosen = {
@@ -3553,15 +3623,27 @@ export default {
       const normTokens = normalizeViSearchText(rawQ).split(' ').filter(Boolean);
       const longestToken = normTokens.slice().sort((a, b) => b.length - a.length)[0] || '';
       let sbRes = null;
+      let fastRows = [];
       if (longestToken.length >= 2) {
         const fastQuery = `${query}&search_text=ilike.*${encodeURIComponent(longestToken)}*`;
         const fastRes = await supabaseRequest(env, fastQuery);
         if (fastRes && fastRes.ok && Array.isArray(fastRes.data) && fastRes.data.length > 0) {
-          sbRes = fastRes;
+          fastRows = fastRes.data;
+          if (fastRows.length >= pageLimit) {
+            sbRes = fastRes;
+          }
         }
       }
       if (!sbRes) {
         sbRes = await supabaseRequest(env, query);
+        if (sbRes && sbRes.ok && Array.isArray(sbRes.data) && fastRows.length > 0) {
+          const mergedByEmail = new Map();
+          for (const r of [...fastRows, ...sbRes.data]) {
+            const key = normalizeEmail(r.email) || r.code || Math.random().toString();
+            if (!mergedByEmail.has(key)) mergedByEmail.set(key, r);
+          }
+          sbRes = { ...sbRes, data: Array.from(mergedByEmail.values()) };
+        }
       }
       if (!sbRes || !sbRes.ok) {
         return jsonResponse({
@@ -3641,184 +3723,187 @@ export default {
         return jsonResponse({ ok: false, message: 'Vui lòng nhập Họ và tên học viên.' }, 400);
       }
 
-      if (idempotencyKey) {
-        const completedJob = await getCompletedJobByIdempotencyKey(env, idempotencyKey);
-        if (completedJob && completedJob.result_summary) {
-          return jsonResponse({
-            ok: true,
-            idempotentReplay: true,
-            operationId: completedJob.operation_id,
-            ...completedJob.result_summary
-          });
+      const lockKey = idempotencyKey ? `idem:${idempotencyKey}` : `student_provision:${email}`;
+      return runWithProvisioningLock(lockKey, async () => {
+        if (idempotencyKey) {
+          const completedJob = await getCompletedJobByIdempotencyKey(env, idempotencyKey);
+          if (completedJob && completedJob.result_summary) {
+            return jsonResponse({
+              ok: true,
+              idempotentReplay: true,
+              operationId: completedJob.operation_id,
+              ...completedJob.result_summary
+            });
+          }
         }
-      }
 
-      const opId = generateOperationId('PROV-STU');
-      const completedSteps = [];
-      await saveProvisioningJobState(env, {
-        operation_id: opId,
-        idempotency_key: idempotencyKey || null,
-        job_type: 'student_create',
-        actor_email: session.email,
-        target_email: email,
-        target_role: 'student',
-        status: 'running',
-        sync_status: 'pending',
-        completed_steps: completedSteps,
-        request_payload: {
+        const opId = generateOperationId('PROV-STU');
+        const completedSteps = [];
+        await saveProvisioningJobState(env, {
+          operation_id: opId,
+          idempotency_key: idempotencyKey || null,
+          job_type: 'student_create',
+          actor_email: session.email,
+          target_email: email,
+          target_role: 'student',
+          status: 'running',
+          sync_status: 'pending',
+          completed_steps: completedSteps,
+          request_payload: {
+            email,
+            name,
+            phone,
+            parentName,
+            classCode,
+            courseIds: resolvedCourseIds
+          }
+        });
+
+        // Luôn kích hoạt tài khoản đăng nhập trên izTeach để học sinh vào cổng KTN học được ngay (kể cả học sinh chỉ học lớp trực tiếp)
+        const prov = await provisionStudentOnIzTeach(env, {
+          student_email: email,
+          student_name: name,
+          phone,
+          courseIds: resolvedCourseIds,
+          skipCourses: resolvedCourseIds.length === 0,
+          replaceCourses: Boolean(body.replaceCourses),
+          cognito_user_id: body.cognitoUserId || null
+        });
+
+        if (!prov.ok) {
+          await saveProvisioningJobState(env, {
+            operation_id: opId,
+            status: 'failed',
+            sync_status: 'sync_failed',
+            completed_steps: completedSteps,
+            failed_step: 'izteach_account_provision',
+            error_code: 'IZTEACH_PROVISION_FAILED',
+            error_message: prov.error || 'Lỗi tạo tài khoản trên izTeach',
+            retryable: true
+          });
+          return jsonResponse({
+            ok: false,
+            operationId: opId,
+            retryable: true,
+            syncStatus: 'sync_failed',
+            accountStatus: 'sync_error',
+            completedSteps,
+            failedStep: 'izteach_account_provision',
+            error: 'IZTEACH_PROVISION_FAILED',
+            message: `Chưa khởi tạo được tài khoản học viên trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Vui lòng bấm Thử lại.`
+          }, 502);
+        }
+
+        completedSteps.push('izteach_account');
+        if (resolvedCourseIds.length > 0) {
+          completedSteps.push('izteach_permissions');
+        }
+
+        const updatedStudent = await mergeAndUpsertStudentCourses(env, {
           email,
           name,
           phone,
           parentName,
-          classCode,
-          courseIds: resolvedCourseIds
-        }
-      });
-
-      // Luôn kích hoạt tài khoản đăng nhập trên izTeach để học sinh vào cổng KTN học được ngay (kể cả học sinh chỉ học lớp trực tiếp)
-      const prov = await provisionStudentOnIzTeach(env, {
-        student_email: email,
-        student_name: name,
-        phone,
-        courseIds: resolvedCourseIds,
-        skipCourses: resolvedCourseIds.length === 0,
-        replaceCourses: Boolean(body.replaceCourses),
-        cognito_user_id: body.cognitoUserId || null
-      });
-
-      if (!prov.ok) {
-        await saveProvisioningJobState(env, {
-          operation_id: opId,
-          status: 'failed',
-          sync_status: 'sync_failed',
-          completed_steps: completedSteps,
-          failed_step: 'izteach_account_provision',
-          error_code: 'IZTEACH_PROVISION_FAILED',
-          error_message: prov.error || 'Lỗi tạo tài khoản trên izTeach',
-          retryable: true
-        });
-        return jsonResponse({
-          ok: false,
-          operationId: opId,
-          retryable: true,
-          syncStatus: 'sync_failed',
-          accountStatus: 'sync_error',
-          completedSteps,
-          failedStep: 'izteach_account_provision',
-          error: 'IZTEACH_PROVISION_FAILED',
-          message: `Chưa khởi tạo được tài khoản học viên trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Vui lòng bấm Thử lại.`
-        }, 502);
-      }
-
-      completedSteps.push('izteach_account');
-      if (resolvedCourseIds.length > 0) {
-        completedSteps.push('izteach_permissions');
-      }
-
-      const updatedStudent = await mergeAndUpsertStudentCourses(env, {
-        email,
-        name,
-        phone,
-        parentName,
-        cognitoUserId: prov.cognitoUserId,
-        izteachStudentId: prov.izteachStudentId,
-        addCourseIds: body.replaceCourses ? [] : resolvedCourseIds,
-        replaceCourseIds: body.replaceCourses ? resolvedCourseIds : null,
-        classCode,
-        codeHint: body.code || '',
-        accountStatus: 'active',
-        syncStatus: 'synced',
-        lastSyncError: null,
-        internalNote
-      });
-
-      if (!updatedStudent || updatedStudent.ok === false) {
-        await saveProvisioningJobState(env, {
-          operation_id: opId,
-          status: 'partial_failure',
-          sync_status: 'partial_failure',
-          completed_steps: completedSteps,
-          failed_step: 'supabase_student_upsert',
-          cognito_user_id: prov.cognitoUserId,
-          izteach_student_id: prov.izteachStudentId,
-          error_code: 'SUPABASE_UPSERT_FAILED',
-          error_message: 'Đã tạo tài khoản trên izTeach nhưng lưu hồ sơ vào Supabase thất bại.',
-          retryable: true
-        });
-        await logSyncEvent(env, {
-          operationId: opId,
-          eventType: 'student_create',
-          sourceSystem: 'izteach',
-          targetSystem: 'supabase',
-          entityType: 'student',
-          entityKey: email,
-          status: 'partial_failure',
-          driftCode: 'A02_IZTEACH_WITHOUT_SUPABASE_STUDENT',
-          errorCode: 'SUPABASE_UPSERT_FAILED',
-          errorMessage: 'Đã tạo tài khoản izTeach nhưng chưa lưu được vào bảng ktn_students',
-          details: { email, name, classCode, courseIds: resolvedCourseIds, completedSteps },
-          createdBy: session.email
-        });
-        return jsonResponse({
-          ok: false,
-          operationId: opId,
-          partialFailure: true,
-          retryable: true,
-          syncStatus: 'partial_failure',
-          accountStatus: 'sync_error',
-          completedSteps,
-          failedStep: 'supabase_student_upsert',
           cognitoUserId: prov.cognitoUserId,
           izteachStudentId: prov.izteachStudentId,
+          addCourseIds: body.replaceCourses ? [] : resolvedCourseIds,
+          replaceCourseIds: body.replaceCourses ? resolvedCourseIds : null,
+          classCode,
+          codeHint: body.code || '',
+          accountStatus: 'active',
+          syncStatus: 'synced',
+          lastSyncError: null,
+          internalNote
+        });
+
+        if (!updatedStudent || updatedStudent.ok === false) {
+          await saveProvisioningJobState(env, {
+            operation_id: opId,
+            status: 'partial_failure',
+            sync_status: 'partial_failure',
+            completed_steps: completedSteps,
+            failed_step: 'supabase_student_upsert',
+            cognito_user_id: prov.cognitoUserId,
+            izteach_student_id: prov.izteachStudentId,
+            error_code: 'SUPABASE_UPSERT_FAILED',
+            error_message: 'Đã tạo tài khoản trên izTeach nhưng lưu hồ sơ vào Supabase thất bại.',
+            retryable: true
+          });
+          await logSyncEvent(env, {
+            operationId: opId,
+            eventType: 'student_create',
+            sourceSystem: 'izteach',
+            targetSystem: 'supabase',
+            entityType: 'student',
+            entityKey: email,
+            status: 'partial_failure',
+            driftCode: 'A02_IZTEACH_WITHOUT_SUPABASE_STUDENT',
+            errorCode: 'SUPABASE_UPSERT_FAILED',
+            errorMessage: 'Đã tạo tài khoản izTeach nhưng chưa lưu được vào bảng ktn_students',
+            details: { email, name, classCode, courseIds: resolvedCourseIds, completedSteps },
+            createdBy: session.email
+          });
+          return jsonResponse({
+            ok: false,
+            operationId: opId,
+            partialFailure: true,
+            retryable: true,
+            syncStatus: 'partial_failure',
+            accountStatus: 'sync_error',
+            completedSteps,
+            failedStep: 'supabase_student_upsert',
+            cognitoUserId: prov.cognitoUserId,
+            izteachStudentId: prov.izteachStudentId,
+            accountCreated: Boolean(prov.accountCreated),
+            existingAccount: Boolean(prov.existingAccount),
+            credentialMode: prov.credentialMode,
+            initialPassword: prov.initialPassword,
+            error: 'SUPABASE_SYNC_FAILED',
+            message: 'Đã tạo tài khoản trên izTeach nhưng chưa lưu được hồ sơ vào Supabase. Vui lòng bấm Đồng bộ lại.'
+          }, 502);
+        }
+
+        completedSteps.push('supabase_student_upsert');
+        if (classCode) completedSteps.push('class_assignment');
+
+        const responseSummary = {
+          operationId: opId,
+          syncStatus: 'synced',
+          accountStatus: 'active',
+          readyToLogin: true,
+          fullySynced: true,
+          completedSteps,
+          failedStep: null,
+          student: updatedStudent,
+          cognitoUserId: prov.cognitoUserId,
+          izteachStudentId: prov.izteachStudentId,
+          grantedCourseIds: prov.grantedCourseIds,
+          allCourseIds: prov.allCourseIds,
+          classCode,
           accountCreated: Boolean(prov.accountCreated),
           existingAccount: Boolean(prov.existingAccount),
           credentialMode: prov.credentialMode,
           initialPassword: prov.initialPassword,
-          error: 'SUPABASE_SYNC_FAILED',
-          message: 'Đã tạo tài khoản trên izTeach nhưng chưa lưu được hồ sơ vào Supabase. Vui lòng bấm Đồng bộ lại.'
-        }, 502);
-      }
+          message: prov.accountCreated
+            ? `Đã tạo mới tài khoản học viên ${name} (${email}) và kích hoạt thành công!`
+            : `Đã cập nhật hồ sơ & quyền học cho tài khoản học viên ${name} (${email}) thành công!`
+        };
 
-      completedSteps.push('supabase_student_upsert');
-      if (classCode) completedSteps.push('class_assignment');
+        await saveProvisioningJobState(env, {
+          operation_id: opId,
+          status: 'completed',
+          sync_status: 'synced',
+          completed_steps: completedSteps,
+          failed_step: null,
+          cognito_user_id: prov.cognitoUserId,
+          izteach_student_id: prov.izteachStudentId,
+          result_summary: responseSummary
+        });
 
-      const responseSummary = {
-        operationId: opId,
-        syncStatus: 'synced',
-        accountStatus: 'active',
-        readyToLogin: true,
-        fullySynced: true,
-        completedSteps,
-        failedStep: null,
-        student: updatedStudent,
-        cognitoUserId: prov.cognitoUserId,
-        izteachStudentId: prov.izteachStudentId,
-        grantedCourseIds: prov.grantedCourseIds,
-        allCourseIds: prov.allCourseIds,
-        classCode,
-        accountCreated: Boolean(prov.accountCreated),
-        existingAccount: Boolean(prov.existingAccount),
-        credentialMode: prov.credentialMode,
-        initialPassword: prov.initialPassword,
-        message: prov.accountCreated
-          ? `Đã tạo mới tài khoản học viên ${name} (${email}) và kích hoạt thành công!`
-          : `Đã cập nhật hồ sơ & quyền học cho tài khoản học viên ${name} (${email}) thành công!`
-      };
-
-      await saveProvisioningJobState(env, {
-        operation_id: opId,
-        status: 'completed',
-        sync_status: 'synced',
-        completed_steps: completedSteps,
-        failed_step: null,
-        cognito_user_id: prov.cognitoUserId,
-        izteach_student_id: prov.izteachStudentId,
-        result_summary: responseSummary
-      });
-
-      return jsonResponse({
-        ok: true,
-        ...responseSummary
+        return jsonResponse({
+          ok: true,
+          ...responseSummary
+        });
       });
     }
 
@@ -4106,7 +4191,21 @@ export default {
           }, 502);
         }
 
-        // Đồng bộ danh sách lớp phụ trách vào bảng ktn_teachers
+        // Đồng bộ danh sách lớp phụ trách vào bảng ktn_teachers (gỡ lớp khỏi giáo viên cũ nếu đổi chủ nhiệm)
+        const prevTeacherEmail = normalizeEmail(existingRow?.teacher_email || '');
+        if (prevTeacherEmail && prevTeacherEmail !== tEmail) {
+          const prevLookup = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(prevTeacherEmail)}&limit=1`);
+          const prevTeacher = (prevLookup.ok && Array.isArray(prevLookup.data) && prevLookup.data[0]) || null;
+          if (prevTeacher && Array.isArray(prevTeacher.assigned_classes)) {
+            const filteredPrev = prevTeacher.assigned_classes
+              .map(c => String(c || '').trim().toUpperCase())
+              .filter(c => c && c !== classId);
+            await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(prevTeacher.code)}`, {
+              method: 'PATCH',
+              body: { assigned_classes: filteredPrev, updated_at: new Date().toISOString() }
+            });
+          }
+        }
         if (tEmail) {
           const tLookup = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(tEmail)}&limit=1`);
           const existingTeacher = (tLookup.ok && Array.isArray(tLookup.data) && tLookup.data[0]) || null;
@@ -4189,7 +4288,7 @@ export default {
         }
         let teachers = (Array.isArray(sbRes.data) ? sbRes.data : []).map(t => ({
           ...t,
-          provisioningStatus: t.provisioning_status || (isValidCognitoUuid(t.cognito_user_id) || t.email === 'linh.lam@khongtunhi.com' || t.email === 'thu.ha@khongtunhi.com' ? 'ready_to_login' : 'ready_to_login'),
+          provisioningStatus: t.provisioning_status || (isValidCognitoUuid(t.cognito_user_id) || t.email === 'linh.lam@khongtunhi.com' || t.email === 'thu.ha@khongtunhi.com' || Boolean(env.KTN_STAFF_AND_TEST_PASSWORD) ? 'ready_to_login' : 'pending_external_provisioning'),
           syncStatus: t.sync_status || 'synced'
         }));
         if (q) {
@@ -4204,7 +4303,7 @@ export default {
       if (request.method === 'POST') {
         // Giải quyết triệt để BUG BE-06 & BUG BE-07:
         // - Kiểm tra lỗi ghi Supabase (trả 502 nếu lỗi, không trả object giả)
-        // - Cấp/xác minh tài khoản đăng nhập cho giáo viên và đồng bộ 2 chiều với ktn_classes
+        // - Cấp/xác minh tài khoản đăng nhập cho giáo viên và đồng bộ 2 chiều với ktn_classes (bao gồm thu hồi lớp cũ khi chuyển phân công)
         // - Phân biệt rõ ready_to_login vs pending_external_provisioning
         const session = await extractSessionFromRequest(request, env);
         if (!session || session.role !== 'admin') {
@@ -4212,21 +4311,28 @@ export default {
         }
         const body = await request.json().catch(() => ({}));
         const tEmail = normalizeEmail(body.email || '');
-        const tCode = String(body.code || ('GV-KTN-' + Date.now().toString().slice(-4))).trim().toUpperCase();
         if (!tEmail || !tEmail.includes('@')) {
           return jsonResponse({ ok: false, message: 'Vui lòng nhập email giáo viên hợp lệ.' }, 400);
         }
-        const tName = String(body.name || tEmail.split('@')[0]).trim();
-        const assignedClasses = Array.from(new Set(
-          (Array.isArray(body.assignedClasses) ? body.assignedClasses : (body.classCode ? [body.classCode] : []))
-            .map(c => String(c || '').trim().toUpperCase())
-            .filter(Boolean)
-        ));
 
-        let cognitoUserId = body.cognitoUserId || null;
+        const existingTeaLookup = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(tEmail)}&limit=1`);
+        const existingTeaRow = (existingTeaLookup.ok && Array.isArray(existingTeaLookup.data) && existingTeaLookup.data[0]) || null;
+
+        const tCode = String(body.code || existingTeaRow?.code || ('GV-KTN-' + Date.now().toString().slice(-4))).trim().toUpperCase();
+        const tName = String(body.name || existingTeaRow?.name || tEmail.split('@')[0]).trim();
+        const hasExplicitAssignedClasses = Array.isArray(body.assignedClasses) || body.classCode !== undefined;
+        const assignedClasses = hasExplicitAssignedClasses
+          ? Array.from(new Set(
+              (Array.isArray(body.assignedClasses) ? body.assignedClasses : (body.classCode ? [body.classCode] : []))
+                .map(c => String(c || '').trim().toUpperCase())
+                .filter(Boolean)
+            ))
+          : (Array.isArray(existingTeaRow?.assigned_classes) ? existingTeaRow.assigned_classes.map(c => String(c || '').trim().toUpperCase()).filter(Boolean) : []);
+
+        let cognitoUserId = body.cognitoUserId || existingTeaRow?.cognito_user_id || null;
         let initialPassword = null;
         let accountCreated = false;
-        let existingAccount = false;
+        let existingAccount = Boolean(existingTeaRow);
         let provisioningStatus = 'ready_to_login';
 
         // Nếu yêu cầu đồng bộ tài khoản đăng nhập lên izTeach (mặc định bật khi tạo giáo viên mới)
@@ -4234,7 +4340,7 @@ export default {
           const prov = await provisionStudentOnIzTeach(env, {
             student_email: tEmail,
             student_name: tName,
-            phone: String(body.phone || '').trim(),
+            phone: String(body.phone || existingTeaRow?.phone || '').trim(),
             courseIds: [],
             skipCourses: true,
             cognito_user_id: cognitoUserId
@@ -4252,14 +4358,15 @@ export default {
           }
         }
 
+        const isActive = body.active !== undefined ? Boolean(body.active) : (existingTeaRow?.active !== undefined ? Boolean(existingTeaRow.active) : true);
         const baseTeacherRow = {
           code: tCode,
           name: tName,
           email: tEmail,
-          phone: String(body.phone || '').trim(),
-          specialty: String(body.specialty || 'Giáo viên Tiếng Trung Thiếu Nhi').trim(),
+          phone: String(body.phone ?? existingTeaRow?.phone ?? '').trim(),
+          specialty: String(body.specialty || existingTeaRow?.specialty || 'Giáo viên Tiếng Trung Thiếu Nhi').trim(),
           assigned_classes: assignedClasses,
-          active: body.active !== undefined ? Boolean(body.active) : true
+          active: isActive
         };
 
         const extendedTeacherRow = {
@@ -4291,31 +4398,74 @@ export default {
           }, 502);
         }
 
-        // Đồng bộ 2 chiều: Cập nhật teacher_email & teacher_code cho các lớp được phân công trong ktn_classes (tạo mới lớp nếu chưa có)
-        for (const clsId of assignedClasses) {
-          const patchCls = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(clsId)}`, {
-            method: 'PATCH',
-            prefer: 'return=representation',
-            body: {
-              teacher_code: tCode,
-              teacher_email: tEmail,
-              active: true,
-              updated_at: new Date().toISOString()
+        // Thu hồi các lớp cũ từng gắn với tEmail nhưng không còn nằm trong assignedClasses (hoặc khi giáo viên bị khóa active=false)
+        if (hasExplicitAssignedClasses || !isActive) {
+          const prevClassesRes = await supabaseRequest(
+            env,
+            `ktn_classes?teacher_email=eq.${encodeURIComponent(tEmail)}&select=id`
+          );
+          if (prevClassesRes.ok && Array.isArray(prevClassesRes.data)) {
+            const nextSet = isActive ? new Set(assignedClasses) : new Set();
+            for (const prevCls of prevClassesRes.data) {
+              const prevClsId = String(prevCls?.id || '').trim().toUpperCase();
+              if (prevClsId && !nextSet.has(prevClsId)) {
+                await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(prevClsId)}`, {
+                  method: 'PATCH',
+                  body: {
+                    teacher_code: null,
+                    teacher_email: null,
+                    updated_at: new Date().toISOString()
+                  }
+                });
+              }
             }
-          });
-          if (!patchCls.ok || !Array.isArray(patchCls.data) || patchCls.data.length === 0) {
-            await supabaseRequest(env, 'ktn_classes?on_conflict=id', {
-              method: 'POST',
-              prefer: 'resolution=merge-duplicates,return=representation',
+          }
+        }
+
+        // Đồng bộ 2 chiều: Cập nhật teacher_email & teacher_code cho các lớp được phân công trong ktn_classes (tạo mới lớp nếu chưa có)
+        if (isActive) {
+          for (const clsId of assignedClasses) {
+            const clsLookup = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(clsId)}&select=*&limit=1`);
+            const oldClsRow = (clsLookup.ok && Array.isArray(clsLookup.data) && clsLookup.data[0]) || null;
+            const oldOwnerEmail = normalizeEmail(oldClsRow?.teacher_email || '');
+            if (oldOwnerEmail && oldOwnerEmail !== tEmail) {
+              const oldOwnerRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(oldOwnerEmail)}&limit=1`);
+              const oldOwner = (oldOwnerRes.ok && Array.isArray(oldOwnerRes.data) && oldOwnerRes.data[0]) || null;
+              if (oldOwner && Array.isArray(oldOwner.assigned_classes)) {
+                const nextOldOwnerClasses = oldOwner.assigned_classes
+                  .map(c => String(c || '').trim().toUpperCase())
+                  .filter(c => c && c !== clsId);
+                await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(oldOwner.code)}`, {
+                  method: 'PATCH',
+                  body: { assigned_classes: nextOldOwnerClasses, updated_at: new Date().toISOString() }
+                });
+              }
+            }
+
+            const patchCls = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(clsId)}`, {
+              method: 'PATCH',
+              prefer: 'return=representation',
               body: {
-                id: clsId,
-                name: `Lớp ${clsId}`,
                 teacher_code: tCode,
                 teacher_email: tEmail,
                 active: true,
                 updated_at: new Date().toISOString()
               }
             });
+            if (!patchCls.ok || !Array.isArray(patchCls.data) || patchCls.data.length === 0) {
+              await supabaseRequest(env, 'ktn_classes?on_conflict=id', {
+                method: 'POST',
+                prefer: 'resolution=merge-duplicates,return=representation',
+                body: {
+                  id: clsId,
+                  name: `Lớp ${clsId}`,
+                  teacher_code: tCode,
+                  teacher_email: tEmail,
+                  active: true,
+                  updated_at: new Date().toISOString()
+                }
+              });
+            }
           }
         }
 
@@ -4703,9 +4853,10 @@ export default {
         return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới được xem trạng thái đối soát đồng bộ 3 hệ thống.' }, 403);
       }
 
-      const [stuRes, teaRes, ordRes, hwRes, jobRes] = await Promise.all([
+      const [stuRes, teaRes, clsRes, ordRes, hwRes, jobRes] = await Promise.all([
         supabaseRequest(env, 'ktn_students?select=*&order=updated_at.desc&limit=2000'),
         supabaseRequest(env, 'ktn_teachers?select=*&order=code.asc'),
+        supabaseRequest(env, 'ktn_classes?select=*&order=id.asc'),
         supabaseRequest(env, 'ktn_orders?select=*&order=created_at.desc&limit=300'),
         supabaseRequest(env, 'ktn_homeworks?select=*&order=updated_at.desc&limit=200'),
         supabaseRequest(env, 'ktn_provisioning_jobs?select=*&order=updated_at.desc&limit=100').catch(() => ({ ok: false, data: [] }))
@@ -4713,11 +4864,13 @@ export default {
 
       const students = Array.isArray(stuRes.data) ? stuRes.data : [];
       const teachers = Array.isArray(teaRes.data) ? teaRes.data : [];
+      const classes = Array.isArray(clsRes.data) ? clsRes.data : [];
       const orders = Array.isArray(ordRes.data) ? ordRes.data : [];
       const homeworks = Array.isArray(hwRes.data) ? hwRes.data : [];
       const dbJobs = (jobRes && jobRes.ok && Array.isArray(jobRes.data)) ? jobRes.data : [];
       const memJobs = globalThis.__ktnProvisioningJobsMap ? Array.from(globalThis.__ktnProvisioningJobsMap.values()) : [];
       const studentByEmail = new Map();
+      const seenStudentCognitoMap = new Map();
       for (const s of students) {
         const em = normalizeEmail(s.email);
         if (em) studentByEmail.set(em, s);
@@ -4731,35 +4884,62 @@ export default {
         const enriched = enrichStudentRowV3(s);
         const hasCognito = isValidCognitoUuid(s.cognito_user_id);
         const courses = Array.isArray(s.online_courses) ? s.online_courses : [];
+        if (hasCognito) {
+          const prevEm = seenStudentCognitoMap.get(s.cognito_user_id);
+          if (prevEm && prevEm !== normalizeEmail(s.email)) {
+            const dupReason = `Trùng Cognito User ID (${s.cognito_user_id}) giữa ${s.email} và ${prevEm}.`;
+            driftItems.push({
+              id: `DRIFT-STU-DUP-${s.email}`,
+              driftCode: 'A05_DUPLICATE_STUDENT_PROFILE',
+              severity: 'manual_review',
+              entityType: 'student',
+              entityKey: s.email,
+              title: `${s.name || s.email} (${s.email})`,
+              detail: dupReason,
+              studentName: s.name,
+              studentEmail: s.email,
+              reason: dupReason,
+              retryable: false
+            });
+          } else {
+            seenStudentCognitoMap.set(s.cognito_user_id, normalizeEmail(s.email));
+          }
+        }
         if (enriched.syncStatus === 'partial_failure' || enriched.syncStatus === 'sync_failed') {
+          const reason = s.last_sync_error || 'Đồng bộ quyền học hoặc hồ sơ giữa izTeach và Supabase chưa hoàn tất.';
           driftItems.push({
             id: `DRIFT-STU-ERR-${s.email}`,
             driftCode: 'A03_STUDENT_SYNC_FAILED',
             severity: 'needs_resync',
             entityType: 'student',
             entityKey: s.email,
+            title: `${s.name || s.email} (${s.email})`,
+            detail: reason,
             studentName: s.name,
             studentEmail: s.email,
             classCode: s.class_code || null,
             syncStatus: enriched.syncStatus,
             accountStatus: enriched.accountStatus,
-            reason: s.last_sync_error || 'Đồng bộ quyền học hoặc hồ sơ giữa izTeach và Supabase chưa hoàn tất.',
+            reason,
             retryable: true,
             retryAction: { type: 'student_sync', email: s.email }
           });
         } else if (!hasCognito && (courses.length > 0 || s.class_code)) {
+          const reason = 'Học viên đã có hồ sơ trên Supabase nhưng chưa có Cognito User ID trên izTeach để đăng nhập.';
           driftItems.push({
             id: `DRIFT-STU-NOCOG-${s.email}`,
             driftCode: 'A01_SUPABASE_WITHOUT_COGNITO',
             severity: 'needs_resync',
             entityType: 'student',
             entityKey: s.email,
+            title: `${s.name || s.email} (${s.email})`,
+            detail: reason,
             studentName: s.name,
             studentEmail: s.email,
             classCode: s.class_code || null,
             syncStatus: 'pending_activation',
             accountStatus: 'pending_activation',
-            reason: 'Học viên đã có hồ sơ trên Supabase nhưng chưa có Cognito User ID trên izTeach để đăng nhập.',
+            reason,
             retryable: true,
             retryAction: { type: 'student_provision', email: s.email, classCode: s.class_code, courseIds: courses.map(c => c.id || c) }
           });
@@ -4768,58 +4948,131 @@ export default {
         }
       }
 
+      // 1b. Khi gọi POST /api/ktn/admin/sync-check: đối chiếu trực tiếp với danh sách học viên trên izTeach (phát hiện tài khoản có trên izTeach nhưng thiếu trên Supabase)
+      if (path === '/api/ktn/admin/sync-check' && request.method === 'POST') {
+        try {
+          const adminToken = await getIzTeachAdminToken(env);
+          if (adminToken) {
+            const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+            const izRes = await fetch(
+              `${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}`,
+              { headers: { Authorization: adminToken } }
+            );
+            if (izRes && izRes.ok) {
+              const izJson = await izRes.json().catch(() => null);
+              const izList = Array.isArray(izJson?.data) ? izJson.data : (Array.isArray(izJson) ? izJson : []);
+              for (const izItem of izList) {
+                const izEm = normalizeEmail(izItem?.email || '');
+                if (!izEm || !izEm.includes('@')) continue;
+                if (!studentByEmail.has(izEm)) {
+                  const reason = `Học viên ${izItem.name || izEm} (${izEm}) đã có tài khoản trên izTeach nhưng chưa có trong bảng ktn_students trên Supabase.`;
+                  driftItems.push({
+                    id: `DRIFT-IZ-MISSING-SB-${izEm}`,
+                    driftCode: 'A02_IZTEACH_WITHOUT_SUPABASE',
+                    severity: 'needs_resync',
+                    entityType: 'student',
+                    entityKey: izEm,
+                    title: `${izItem.name || izEm} (${izEm})`,
+                    detail: reason,
+                    studentName: izItem.name || izEm,
+                    studentEmail: izEm,
+                    syncStatus: 'missing_supabase',
+                    reason,
+                    retryable: true,
+                    retryAction: { type: 'student_sync', email: izEm }
+                  });
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
       // 2. Kiểm tra đơn hàng đã thanh toán / đã duyệt nhưng thiếu hồ sơ học viên hoặc quyền học
       for (const ord of orders) {
         const em = normalizeEmail(ord.student_email);
         const stu = studentByEmail.get(em);
         if (ord.approval_status === 'approved' && (!stu || !isValidCognitoUuid(stu.cognito_user_id))) {
+          const reason = `Đơn hàng ${ord.order_id} đã đánh dấu Đã duyệt nhưng học viên ${em} chưa được đồng bộ đầy đủ vào bảng học viên.`;
           driftItems.push({
             id: `DRIFT-ORD-${ord.order_id}`,
             driftCode: 'A08_ORDER_APPROVED_WITHOUT_STUDENT_SYNC',
             severity: 'needs_resync',
             entityType: 'order',
             entityKey: ord.order_id,
+            title: `Đơn ${ord.order_id} · ${ord.student_name || em}`,
+            detail: reason,
             studentName: ord.student_name,
             studentEmail: em,
             orderId: ord.order_id,
             syncStatus: 'partial_failure',
-            reason: `Đơn hàng ${ord.order_id} đã đánh dấu Đã duyệt nhưng học viên ${em} chưa được đồng bộ đầy đủ vào bảng học viên.`,
+            reason,
             retryable: true,
             retryAction: { type: 'order_approve', orderId: ord.order_id }
           });
         } else if (ord.payment_status === 'paid' && ord.approval_status !== 'approved') {
+          const reason = `Đơn hàng ${ord.order_id} đã nhận thanh toán (paid) nhưng chưa kích hoạt khóa học cho học viên.`;
           driftItems.push({
             id: `DRIFT-ORD-PAID-${ord.order_id}`,
             driftCode: 'A07_ORDER_PAID_PENDING_PROVISIONING',
             severity: 'needs_resync',
             entityType: 'order',
             entityKey: ord.order_id,
+            title: `Đơn ${ord.order_id} · ${ord.student_name || em}`,
+            detail: reason,
             studentName: ord.student_name,
             studentEmail: em,
             orderId: ord.order_id,
             syncStatus: 'pending',
-            reason: `Đơn hàng ${ord.order_id} đã nhận thanh toán (paid) nhưng chưa kích hoạt khóa học cho học viên.`,
+            reason,
             retryable: true,
             retryAction: { type: 'order_approve', orderId: ord.order_id }
           });
         }
       }
 
-      // 3. Kiểm tra giáo viên chưa hoàn tất kích hoạt ngoài hoặc thiếu phân công
+      // 3. Kiểm tra giáo viên chưa hoàn tất kích hoạt ngoài hoặc lớp gắn với giáo viên ngừng hoạt động
+      const teacherByEmail = new Map();
       for (const t of teachers) {
+        const tem = normalizeEmail(t.email);
+        if (tem) teacherByEmail.set(tem, t);
         if (t.active && t.provisioning_status === 'pending_external_provisioning') {
+          const reason = `Giáo viên ${t.name} (${t.email}) đã có trong Supabase nhưng chưa đồng bộ tài khoản izTeach.`;
           driftItems.push({
             id: `DRIFT-TEA-${t.email}`,
             driftCode: 'A09_TEACHER_PENDING_EXTERNAL_PROVISIONING',
             severity: 'manual_review',
             entityType: 'teacher',
             entityKey: t.email,
+            title: `${t.name || t.email} (${t.email})`,
+            detail: reason,
             teacherName: t.name,
             teacherEmail: t.email,
             syncStatus: 'pending_activation',
-            reason: `Giáo viên ${t.name} (${t.email}) đã có trong Supabase nhưng chưa đồng bộ tài khoản izTeach.`,
+            reason,
             retryable: true,
             retryAction: { type: 'teacher_provision', email: t.email, code: t.code, name: t.name }
+          });
+        }
+      }
+
+      for (const cls of classes) {
+        if (cls.active === false) continue;
+        const tem = normalizeEmail(cls.teacher_email || '');
+        if (!tem) continue;
+        const assignedTeacher = teacherByEmail.get(tem);
+        if (assignedTeacher && assignedTeacher.active === false) {
+          const reason = `Lớp ${cls.id} đang gắn với giáo viên ${assignedTeacher.name || tem} đã ngừng hoạt động (active=false).`;
+          driftItems.push({
+            id: `DRIFT-CLS-INACTIVE-TEA-${cls.id}`,
+            driftCode: 'A10_CLASS_ASSIGNED_TO_INACTIVE_TEACHER',
+            severity: 'manual_review',
+            entityType: 'class',
+            entityKey: cls.id,
+            title: `Lớp ${cls.id} · GV ${assignedTeacher.name || tem}`,
+            detail: reason,
+            reason,
+            retryable: false
           });
         }
       }
@@ -4829,19 +5082,22 @@ export default {
         const syncMeta = hw.workbook_answers?._syncMeta || {};
         const st = hw.sync_status || syncMeta.syncStatus || '';
         if (st === 'sync_failed' || st === 'mapping_required') {
+          const reason = syncMeta.lastError || `Bài nộp ${hw.id} chưa đồng bộ được sang izTeach (${st}).`;
           driftItems.push({
             id: `DRIFT-HW-${hw.id}`,
             driftCode: st === 'mapping_required' ? 'A12_HOMEWORK_UNIT_MAPPING_REQUIRED' : 'A11_HOMEWORK_MIRROR_FAILED',
             severity: st === 'mapping_required' ? 'manual_review' : 'needs_resync',
             entityType: 'homework',
             entityKey: hw.id,
+            title: `Bài tập ${hw.id} · ${hw.student_name || hw.student_email}`,
+            detail: reason,
             studentName: hw.student_name,
             studentEmail: hw.student_email,
             homeworkId: hw.id,
             courseId: hw.course_id,
             lessonNum: hw.lesson_num,
             syncStatus: st,
-            reason: syncMeta.lastError || `Bài nộp ${hw.id} chưa đồng bộ được sang izTeach (${st}).`,
+            reason,
             retryable: st !== 'mapping_required',
             retryAction: { type: 'homework_sync', homeworkId: hw.id }
           });
@@ -4856,15 +5112,18 @@ export default {
         if (j.status === 'partial_failure' || j.status === 'failed') {
           const alreadyListed = driftItems.some(d => d.entityKey === j.target_email || d.orderId === j.request_payload?.orderId);
           if (!alreadyListed) {
+            const reason = j.error_message || `Tác vụ ${j.operation_id} dừng ở bước ${j.failed_step || 'unknown'}.`;
             driftItems.push({
               id: `DRIFT-JOB-${j.operation_id}`,
               driftCode: 'B10_PROVISIONING_JOB_INCOMPLETE',
               severity: 'needs_resync',
               entityType: j.target_role || 'student',
               entityKey: j.target_email || j.operation_id,
+              title: `Tác vụ ${j.operation_id} (${j.target_email || 'system'})`,
+              detail: reason,
               operationId: j.operation_id,
               syncStatus: j.sync_status || 'partial_failure',
-              reason: j.error_message || `Tác vụ ${j.operation_id} dừng ở bước ${j.failed_step || 'unknown'}.`,
+              reason,
               retryable: Boolean(j.retryable !== false),
               retryAction: {
                 type: j.job_type === 'order_approve' ? 'order_approve' : 'student_sync',
@@ -4877,8 +5136,8 @@ export default {
         }
       }
 
-      const needsResyncCount = driftItems.filter(d => d.severity === 'needs_resync').length;
-      const manualReviewCount = driftItems.filter(d => d.severity === 'manual_review').length;
+      const needsResyncCount = driftItems.filter(d => d.severity === 'needs_resync' || d.severity === 'error').length;
+      const manualReviewCount = driftItems.filter(d => d.severity === 'manual_review' || d.severity === 'warning').length;
 
       return jsonResponse({
         ok: true,
@@ -4890,6 +5149,7 @@ export default {
           totalStudents: students.length,
           totalTeachers: teachers.length,
           totalOrders: orders.length,
+          driftTotal: driftItems.length,
           totalDriftItems: driftItems.length
         },
         lastBulkSync: globalThis.__ktnLastSyncState || null,
@@ -4947,6 +5207,48 @@ export default {
           mirrorResult: mirrorRes,
           message: mirrorRes.ok ? 'Đã đồng bộ lại bài tập sang izTeach thành công!' : 'Chưa đồng bộ được bài tập sang izTeach.'
         }, mirrorRes.ok ? 200 : 502);
+      }
+
+      if (retryType === 'teacher_provision' && targetEmail) {
+        const teaLookup = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(targetEmail)}&limit=1`);
+        const existingTea = (teaLookup.ok && Array.isArray(teaLookup.data) && teaLookup.data[0]) ? teaLookup.data[0] : null;
+        const prov = await provisionStudentOnIzTeach(env, {
+          student_email: targetEmail,
+          student_name: existingTea?.name || body.name || targetEmail.split('@')[0],
+          phone: existingTea?.phone || '',
+          courseIds: [],
+          skipCourses: true,
+          cognito_user_id: existingTea?.cognito_user_id || null
+        });
+        if (!prov.ok) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            syncStatus: 'sync_failed',
+            error: prov.error || 'IZTEACH_TEACHER_RETRY_FAILED',
+            message: 'Chưa thể kích hoạt tài khoản giáo viên trên izTeach: ' + (prov.error || '')
+          }, 502);
+        }
+        if (existingTea) {
+          await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(existingTea.code)}`, {
+            method: 'PATCH',
+            body: {
+              cognito_user_id: prov.cognitoUserId,
+              provisioning_status: 'ready_to_login',
+              sync_status: 'synced',
+              updated_at: new Date().toISOString()
+            }
+          });
+        }
+        return jsonResponse({
+          ok: true,
+          syncStatus: 'synced',
+          provisioningStatus: 'ready_to_login',
+          accountCreated: Boolean(prov.accountCreated),
+          existingAccount: Boolean(prov.existingAccount),
+          initialPassword: prov.initialPassword,
+          message: `Đã đồng bộ lại tài khoản giáo viên ${targetEmail} thành công!`
+        });
       }
 
       if (targetEmail) {
@@ -5021,6 +5323,22 @@ export default {
         return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
       }
 
+      const buildAttendanceSummary = (list) => {
+        const present = list.filter(r => r.status === 'present').length;
+        const late = list.filter(r => r.status === 'late').length;
+        const absentExcused = list.filter(r => r.status === 'excused' || r.status === 'absent_excused').length;
+        const absentUnexcused = list.filter(r => r.status === 'absent' || r.status === 'absent_unexcused').length;
+        return {
+          present,
+          late,
+          absent: absentUnexcused,
+          excused: absentExcused,
+          absentExcused,
+          absentUnexcused,
+          total: list.length
+        };
+      };
+
       if (request.method === 'GET') {
         const reqClass = String(url.searchParams.get('classCode') || '').trim().toUpperCase();
         const reqSessionNum = url.searchParams.get('sessionNum') ? Number(url.searchParams.get('sessionNum')) : null;
@@ -5041,7 +5359,14 @@ export default {
             query = `ktn_attendance?class_code=eq.${encodeURIComponent(reqClass)}&order=date.desc&limit=500`;
           } else {
             if (assignedClasses.length === 0) {
-              return jsonResponse({ ok: true, attendance: [], summary: { present: 0, absent: 0, late: 0, excused: 0, total: 0 } });
+              return jsonResponse({
+                ok: true,
+                classCode: reqClass || '',
+                sessionNum: reqSessionNum,
+                records: [],
+                attendance: [],
+                summary: buildAttendanceSummary([])
+              });
             }
             query = `ktn_attendance?class_code=in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')})&order=date.desc&limit=500`;
           }
@@ -5066,16 +5391,13 @@ export default {
           records = records.filter(r => normalizeEmail(r.student_email) === reqStudentEmail);
         }
 
-        const summary = {
-          present: records.filter(r => r.status === 'present').length,
-          absent: records.filter(r => r.status === 'absent').length,
-          late: records.filter(r => r.status === 'late').length,
-          excused: records.filter(r => r.status === 'excused').length,
-          total: records.length
-        };
+        const summary = buildAttendanceSummary(records);
 
         return jsonResponse({
           ok: true,
+          classCode: reqClass || '',
+          sessionNum: reqSessionNum,
+          records,
           attendance: records,
           summary
         });
@@ -5102,7 +5424,7 @@ export default {
         }
 
         const sessionNum = Math.max(1, Number(body.sessionNum || 1));
-        const attDate = String(body.date || new Date().toISOString().slice(0, 10)).trim();
+        const attDate = String(body.date || body.sessionDate || new Date().toISOString().slice(0, 10)).trim();
         const rawEntries = Array.isArray(body.records)
           ? body.records
           : (body.studentEmail ? [body] : []);
@@ -5111,14 +5433,21 @@ export default {
           return jsonResponse({ ok: false, message: 'Danh sách điểm danh trống.' }, 400);
         }
 
-        const VALID_ATT_STATUS = new Set(['present', 'absent', 'late', 'excused']);
+        const VALID_ATT_STATUS = new Set([
+          'present',
+          'absent',
+          'late',
+          'excused',
+          'absent_excused',
+          'absent_unexcused'
+        ]);
         const savedRecords = [];
         for (const entry of rawEntries) {
           const stuEmail = normalizeEmail(entry.studentEmail || entry.student_email || '');
           if (!stuEmail) continue;
-          const status = VALID_ATT_STATUS.has(String(entry.status || '').toLowerCase())
-            ? String(entry.status).toLowerCase()
-            : 'present';
+          const stuName = String(entry.studentName || entry.student_name || stuEmail.split('@')[0]).trim();
+          const rawStatus = String(entry.status || '').trim().toLowerCase();
+          const status = VALID_ATT_STATUS.has(rawStatus) ? rawStatus : 'present';
           const note = String(entry.note || '').trim();
           const attId = entry.id || `ATT-${classCode}-S${sessionNum}-${stuEmail}`;
 
@@ -5133,7 +5462,10 @@ export default {
           };
           const extAttRow = {
             ...baseAttRow,
+            student_name: stuName,
             session_num: sessionNum,
+            lesson_num: sessionNum,
+            updated_by: session.email,
             updated_at: new Date().toISOString()
           };
 
@@ -5160,13 +5492,16 @@ export default {
           savedRecords.push(wRes.data[0]);
         }
 
+        const summary = buildAttendanceSummary(savedRecords);
         return jsonResponse({
           ok: true,
           classCode,
           sessionNum,
           date: attDate,
           savedCount: savedRecords.length,
+          records: savedRecords,
           attendance: savedRecords,
+          summary,
           message: `Đã lưu điểm danh Buổi ${sessionNum} lớp ${classCode} (${savedRecords.length} học sinh)!`
         });
       }

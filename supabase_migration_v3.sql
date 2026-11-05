@@ -163,10 +163,21 @@ ALTER TABLE public.ktn_homeworks
   ADD COLUMN IF NOT EXISTS last_sync_error TEXT;
 
 ALTER TABLE public.ktn_attendance
+  ALTER COLUMN id TYPE TEXT USING id::text,
+  ALTER COLUMN id SET DEFAULT gen_random_uuid()::text,
+  ALTER COLUMN student_code DROP NOT NULL,
+  ALTER COLUMN lesson_num SET DEFAULT 1,
   ADD COLUMN IF NOT EXISTS student_email TEXT,
-  ADD COLUMN IF NOT EXISTS session_num INTEGER,
+  ADD COLUMN IF NOT EXISTS student_name TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS session_num INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS date TEXT DEFAULT CURRENT_DATE::text,
+  ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '',
   ADD COLUMN IF NOT EXISTS updated_by TEXT,
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.ktn_attendance DROP CONSTRAINT IF EXISTS ktn_attendance_status_check;
+ALTER TABLE public.ktn_attendance ADD CONSTRAINT ktn_attendance_status_check
+  CHECK (status IN ('present', 'late', 'excused', 'absent', 'absent_excused', 'absent_unexcused'));
 
 -- 7. Bảng lưu dấu vết điều phối & Idempotency bền vững (ktn_provisioning_jobs)
 CREATE TABLE IF NOT EXISTS public.ktn_provisioning_jobs (

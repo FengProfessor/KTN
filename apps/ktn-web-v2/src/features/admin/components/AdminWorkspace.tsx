@@ -296,7 +296,7 @@ export const AdminWorkspace: React.FC = () => {
           initialPassword: null,
         };
       }
-      return ktnApi.approveOrder(orderId, 'YCT2-04');
+      return ktnApi.approveOrder(orderId);
     },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
@@ -508,7 +508,7 @@ export const AdminWorkspace: React.FC = () => {
 
   const retrySyncMutation = useMutation({
     mutationFn: async (payload: {
-      type: 'student_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
+      type: 'student_provision' | 'student_sync' | 'teacher_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
       email?: string;
       orderId?: string;
       homeworkId?: string;
@@ -1135,8 +1135,12 @@ export const AdminWorkspace: React.FC = () => {
                           className="flex items-center justify-between gap-2 rounded-lg bg-white p-2 text-[11px]"
                         >
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-bold text-stone-900">{item.title}</p>
-                            <p className="truncate text-stone-500">{item.detail}</p>
+                            <p className="truncate font-bold text-stone-900">
+                              {item.title || item.studentName || item.entityKey}
+                            </p>
+                            <p className="truncate text-stone-500">
+                              {item.detail || item.reason || item.driftCode}
+                            </p>
                           </div>
                           {item.retryAction && (
                             <button

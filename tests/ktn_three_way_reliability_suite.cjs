@@ -2158,6 +2158,225 @@ async function runSuite() {
         oversizedChatRes.data?.error === 'ATTACHMENT_TOO_LARGE_FOR_INLINE',
       `attSaveOwn=${saveAttAllowed.status}, attSaveOther=${saveAttForbidden.status}, stuPresent=${getAttStudentA.data?.summary?.present}, oversizedChat=${oversizedChatRes.status}`
     );
+
+    // D6: Attendance preserves absent_excused & absent_unexcused and returns records + summary
+    const saveAttStatuses = await callApi('/api/ktn/attendance', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        classCode: 'YCT2-04',
+        sessionNum: 2,
+        date: '2026-11-06',
+        records: [
+          {
+            studentEmail: 'e2e.hs.a@khongtunhi.com',
+            studentName: 'Bé Hoàng Ngân (E2E)',
+            status: 'absent_excused',
+            note: 'Xin nghỉ ốm'
+          },
+          {
+            studentEmail: 'minhkhang@khongtunhi.com',
+            studentName: 'Bé Trần Minh Khang',
+            status: 'absent_unexcused',
+            note: 'Vắng không báo'
+          }
+        ]
+      }
+    });
+    const getAttSession2 = await callApi('/api/ktn/attendance?classCode=YCT2-04&sessionNum=2', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const migSql = fs.readFileSync(path.join(__dirname, '..', 'supabase_migration_v3.sql'), 'utf8');
+    const migAddsDateBeforeIndex =
+      migSql.indexOf('ADD COLUMN IF NOT EXISTS date') > 0 &&
+      migSql.indexOf('ADD COLUMN IF NOT EXISTS date') < migSql.indexOf('idx_ktn_attendance_class_date');
+
+    record(
+      'D6-ATTENDANCE-ABSENT-STATUS-AND-MIGRATION-SCHEMA',
+      'GROUP_V3',
+      'Attendance API preserves absent_excused and absent_unexcused (never defaulting to present), returns records[] + summary, and migration V3 adds date column before index',
+      saveAttStatuses.status === 200 &&
+        saveAttStatuses.data?.summary?.absentExcused === 1 &&
+        saveAttStatuses.data?.summary?.absentUnexcused === 1 &&
+        getAttSession2.status === 200 &&
+        Array.isArray(getAttSession2.data?.records) &&
+        getAttSession2.data.records.length === 2 &&
+        getAttSession2.data.summary?.absentExcused === 1 &&
+        getAttSession2.data.summary?.absentUnexcused === 1 &&
+        migAddsDateBeforeIndex,
+      `absentExcused=${getAttSession2.data?.summary?.absentExcused}, absentUnexcused=${getAttSession2.data?.summary?.absentUnexcused}, migDateCol=${migAddsDateBeforeIndex}`
+    );
+
+    // D7: Manual Order Approval separates payment_status from approval_status / provisioning_status & never forces YCT2-04
+    const manualUnpaidOrdId = 'ORD-990707';
+    const manualApproveRes = await callApi('/api/ktn/orders/approve', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        orderId: manualUnpaidOrdId,
+        order: {
+          order_id: manualUnpaidOrdId,
+          student_name: 'Bé Lê Bảo Châu',
+          student_email: 'baochau.v3@khongtunhi.com',
+          phone: '0919888777',
+          course_id: '6adadba969897b0002482ca5',
+          amount: 890000
+        }
+      }
+    });
+    const savedUnpaidOrd = state.tables.ktn_orders.find(o => o.order_id === manualUnpaidOrdId);
+    const savedUnpaidStu = state.tables.ktn_students.find(s => s.email === 'baochau.v3@khongtunhi.com');
+
+    record(
+      'D7-MANUAL-ORDER-APPROVAL-PAYMENT-SEPARATION',
+      'GROUP_V3',
+      'Manual order approval without paymentStatusOverride keeps payment_status="pending_verification" while setting approval_status="approved", provisioning_status="synced", and class_code=null',
+      manualApproveRes.status === 200 &&
+        savedUnpaidOrd?.payment_status === 'pending_verification' &&
+        savedUnpaidOrd?.approval_status === 'approved' &&
+        savedUnpaidOrd?.provisioning_status === 'synced' &&
+        savedUnpaidStu?.class_code === null,
+      `payment_status=${savedUnpaidOrd?.payment_status}, approval_status=${savedUnpaidOrd?.approval_status}, class_code=${savedUnpaidStu?.class_code}`
+    );
+
+    // D8: Teacher class unassignment revokes old class RBAC & teacher deactivation blocks login
+    await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        code: 'GV-KTN-98',
+        name: 'Cô Trần Thanh Tâm',
+        email: 'thanhtam.gv@khongtunhi.com',
+        phone: '0909555666',
+        assignedClasses: ['YCT1-01', 'YCT2-04']
+      }
+    });
+    // Now reassign Cô Tâm to ONLY ['YCT1-01'] (unassigning YCT2-04)
+    await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        email: 'thanhtam.gv@khongtunhi.com',
+        assignedClasses: ['YCT1-01']
+      }
+    });
+    // Restore YCT2-04 to Cô Lâm Mỹ Linh
+    await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        code: 'GV-KTN-08',
+        name: 'Cô Lâm Mỹ Linh',
+        email: 'linh.lam@khongtunhi.com',
+        assignedClasses: ['YCT2-04']
+      }
+    });
+
+    const tamLoginActive = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: { email: 'thanhtam.gv@khongtunhi.com', password: 'TestStrongPassword!2026' }
+    });
+    const tamToken = tamLoginActive.data?.token;
+    const tamAccessYct204AfterUnassign = await callApi('/api/ktn/students?classCode=YCT2-04', {
+      headers: { Authorization: `Bearer ${tamToken}` }
+    });
+    const tamAccessYct101 = await callApi('/api/ktn/students?classCode=YCT1-01', {
+      headers: { Authorization: `Bearer ${tamToken}` }
+    });
+
+    // Deactivate Cô Tâm (active: false) and verify login is blocked with 403 TEACHER_INACTIVE
+    await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        email: 'thanhtam.gv@khongtunhi.com',
+        active: false
+      }
+    });
+    const tamLoginInactive = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: { email: 'thanhtam.gv@khongtunhi.com', password: 'TestStrongPassword!2026' }
+    });
+    // Restore YCT1-01 to Cô Lâm Mỹ Linh
+    await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        code: 'GV-KTN-08',
+        name: 'Cô Lâm Mỹ Linh',
+        email: 'linh.lam@khongtunhi.com',
+        assignedClasses: ['YCT2-04', 'YCT1-01']
+      }
+    });
+
+    record(
+      'D8-TEACHER-CLASS-UNASSIGN-RBAC-AND-INACTIVE-BLOCK',
+      'GROUP_V3',
+      'Unassigning a class from a teacher immediately revokes RBAC access (403), and deactivating a teacher blocks login with 403 TEACHER_INACTIVE',
+      tamLoginActive.status === 200 &&
+        tamAccessYct204AfterUnassign.status === 403 &&
+        tamAccessYct101.status === 200 &&
+        tamLoginInactive.status === 403 &&
+        tamLoginInactive.data?.error === 'TEACHER_INACTIVE',
+      `unassignedClassStatus=${tamAccessYct204AfterUnassign.status}, assignedClassStatus=${tamAccessYct101.status}, inactiveLoginStatus=${tamLoginInactive.status}`
+    );
+
+    // D9: Concurrent duplicate provisioning serialization & 3-way sync-check upstream drift detection
+    const concIdemKey = 'IDEM-CONCURRENT-V3-001';
+    const concEmail = 'concurrent.v3@khongtunhi.com';
+    const [concRes1, concRes2] = await Promise.all([
+      callApi('/api/ktn/admin/students/provision', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${adminToken}`, 'Idempotency-Key': concIdemKey },
+        body: {
+          name: 'Bé Song Song',
+          email: concEmail,
+          courseIds: ['6adadba969897b0002482ca5']
+        }
+      }),
+      callApi('/api/ktn/admin/students/provision', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${adminToken}`, 'Idempotency-Key': concIdemKey },
+        body: {
+          name: 'Bé Song Song',
+          email: concEmail,
+          courseIds: ['6adadba969897b0002482ca5']
+        }
+      })
+    ]);
+    const oneReplayed = Boolean(concRes1.data?.idempotentReplay || concRes2.data?.idempotentReplay);
+    const concRowsInSupabase = state.tables.ktn_students.filter(s => s.email === concEmail).length;
+
+    // Inject an izTeach-only student to verify POST /api/ktn/admin/sync-check detects A02_IZTEACH_WITHOUT_SUPABASE with title/detail
+    state.izteach.studentList = [
+      {
+        _id: 'iz-stu-orphan-999',
+        dynamoId: '99999999-aaaa-4bbb-8ccc-999999999999',
+        email: 'orphan.izteach@khongtunhi.com',
+        name: 'Bé Lệch IzTeach'
+      }
+    ];
+    const syncCheckRes = await callApi('/api/ktn/admin/sync-check', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    state.izteach.studentList = null;
+    const orphanDrift = (syncCheckRes.data?.driftItems || []).find(
+      d => d.driftCode === 'A02_IZTEACH_WITHOUT_SUPABASE' && d.entityKey === 'orphan.izteach@khongtunhi.com'
+    );
+
+    record(
+      'D9-CONCURRENT-IDEMPOTENCY-LOCK-AND-SYNC-CHECK',
+      'GROUP_V3',
+      'Concurrent provisioning requests with same Idempotency-Key serialize cleanly (1 created, 1 replayed), and POST /api/ktn/admin/sync-check detects izTeach-only accounts with non-empty title & detail',
+      concRes1.status === 200 &&
+        concRes2.status === 200 &&
+        oneReplayed &&
+        concRowsInSupabase === 1 &&
+        Boolean(orphanDrift && orphanDrift.title && orphanDrift.detail) &&
+        typeof syncCheckRes.data?.summary?.driftTotal === 'number',
+      `concRows=${concRowsInSupabase}, oneReplayed=${oneReplayed}, orphanDriftTitle="${orphanDrift?.title || ''}"`
+    );
   }
 
   console.log('\n================================================================================');

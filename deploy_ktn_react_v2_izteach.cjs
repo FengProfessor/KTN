@@ -548,6 +548,15 @@ async function main() {
     rollbackCommand: `node deploy_ktn_react_v2_izteach.cjs --rollback reports/ktn-three-way-reliability/v3-release-manifest.json`,
   };
 
+  if (!args.dryRun) {
+    assertCustomPageWriteAllowed(args.pageId, args.allowProdOverwrite);
+    if (!process.env.IZTEACH_ADMIN_TOKEN) {
+      throw new Error(
+        'Missing IZTEACH_ADMIN_TOKEN in environment. Refusing to run `--live` deployment.'
+      );
+    }
+  }
+
   const embedArtifacts = buildEmbedArtifacts(manifest);
   const distManifestPath = path.join(DIST_DIR, 'release-manifest.json');
   const distEmbedPath = path.join(DIST_DIR, 'izteach-custom-page-embed.html');
@@ -556,13 +565,12 @@ async function main() {
 
   fs.mkdirSync(REPORT_DIR, { recursive: true });
   const reportManifestPath = path.join(REPORT_DIR, 'v3-release-manifest.json');
-  fs.writeFileSync(reportManifestPath, JSON.stringify(manifest, null, 2), 'utf8');
-
-  console.log(`\n[KTN-DEPLOY-V3] Wrote release manifest: ${distManifestPath}`);
-  console.log(`[KTN-DEPLOY-V3] Wrote report manifest:  ${reportManifestPath}`);
-  console.log(`[KTN-DEPLOY-V3] Wrote embed preview:    ${distEmbedPath}`);
 
   if (args.dryRun) {
+    fs.writeFileSync(reportManifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+    console.log(`\n[KTN-DEPLOY-V3] Wrote release manifest: ${distManifestPath}`);
+    console.log(`[KTN-DEPLOY-V3] Wrote report manifest:  ${reportManifestPath}`);
+    console.log(`[KTN-DEPLOY-V3] Wrote embed preview:    ${distEmbedPath}`);
     console.log(
       '\n[KTN-DEPLOY-V3] ✅ DRY-RUN COMPLETED SUCCESSFULLY. Zero live izTeach pages or S3 objects were modified.'
     );
@@ -572,14 +580,7 @@ async function main() {
     return;
   }
 
-  assertCustomPageWriteAllowed(args.pageId, args.allowProdOverwrite);
-
   const adminToken = process.env.IZTEACH_ADMIN_TOKEN;
-  if (!adminToken) {
-    throw new Error(
-      'Missing IZTEACH_ADMIN_TOKEN in environment. Refusing to run `--live` deployment.'
-    );
-  }
 
   console.log('\n[KTN-DEPLOY-V3] Step 1/3: Uploading assets to izTeach S3/CloudFront...');
   const cdnVerifications = [];

@@ -175,8 +175,35 @@ async function run() {
     GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
   `);
 
-  const baseSchemaSql = fs.readFileSync(path.join(ROOT_DIR, 'supabase_schema.sql'), 'utf8');
+  const fullSchemaSql = fs.readFileSync(path.join(ROOT_DIR, 'supabase_schema.sql'), 'utf8');
+  const section11Marker = '-- 11. NÂNG CẤP V3';
+  const markerIdx = fullSchemaSql.indexOf(section11Marker);
+  const baseSchemaSql = markerIdx > 0 ? fullSchemaSql.slice(0, markerIdx) : fullSchemaSql;
   await db.exec(baseSchemaSql);
+
+  // Set ktn_attendance to exact live V2 production schema (id UUID, no V3 columns) before running Migration V3
+  await db.exec(`
+    ALTER TABLE public.ktn_attendance
+      ALTER COLUMN id DROP DEFAULT,
+      ALTER COLUMN id TYPE UUID USING gen_random_uuid(),
+      ALTER COLUMN id SET DEFAULT gen_random_uuid(),
+      DROP COLUMN IF EXISTS student_email,
+      DROP COLUMN IF EXISTS student_name,
+      DROP COLUMN IF EXISTS session_num,
+      DROP COLUMN IF EXISTS date,
+      DROP COLUMN IF EXISTS note,
+      DROP COLUMN IF EXISTS updated_by,
+      DROP COLUMN IF EXISTS updated_at;
+  `);
+
+  // Verify pre-V3 state: ktn_attendance.id is uuid and ktn_provisioning_jobs does not exist yet
+  const preV3ColCheck = await db.query(`
+    SELECT data_type FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ktn_attendance' AND column_name = 'id'
+  `);
+  const preV3JobTableCheck = await db.query(`
+    SELECT to_regclass('public.ktn_provisioning_jobs') AS reg
+  `);
 
   // Seed historical pre-V3 attendance records & students to verify 0 data loss during migration
   await db.exec(`
@@ -201,9 +228,12 @@ async function run() {
   const preMigrationStu = await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_students`);
   record(
     'PG-01-PRE-MIGRATION-BASELINE',
-    'Base schema loaded with historical students and attendance records before V3 migration',
-    preMigrationAtt.rows[0].cnt === 3 && preMigrationStu.rows[0].cnt >= 5,
-    `students=${preMigrationStu.rows[0].cnt}, attendance=${preMigrationAtt.rows[0].cnt}`
+    'True pre-V3 schema (ktn_attendance.id=uuid, no V3 tables) loaded with historical students and attendance records before V3 migration',
+    preV3ColCheck.rows[0]?.data_type === 'uuid' &&
+      preV3JobTableCheck.rows[0]?.reg === null &&
+      preMigrationAtt.rows[0].cnt === 3 &&
+      preMigrationStu.rows[0].cnt >= 5,
+    `attendanceIdType=${preV3ColCheck.rows[0]?.data_type}, jobsTableBefore=${preV3JobTableCheck.rows[0]?.reg}, students=${preMigrationStu.rows[0].cnt}, attendance=${preMigrationAtt.rows[0].cnt}`
   );
 
   // 2. Run Migration V3 (Run #1)
@@ -402,6 +432,8 @@ async function run() {
   `);
 
   const adminSearchRbac = await callWorker('/api/ktn/admin/students/search?q=hoang+ngan', adminToken);
+  const adminUnassignedClass = await callWorker('/api/ktn/admin/students/search?classCode=NONE&limit=20&offset=0', adminToken);
+  const adminOnlineOnlyCase = await callWorker('/api/ktn/admin/students/search?studentCase=online_only&limit=20&offset=0', adminToken);
   const teacherOwnClass = await callWorker('/api/ktn/admin/students/search?q=hoang+ngan&classCode=YCT2-04', teacherToken);
   const teacherOtherClass = await callWorker('/api/ktn/admin/students/search?classCode=YCT3-02', teacherToken);
   const studentForbidden = await callWorker('/api/ktn/admin/students/search?q=ngan', studentToken);
@@ -409,16 +441,22 @@ async function run() {
   const teacherFirstItem = teacherOwnClass.data?.items?.[0] || {};
   record(
     'PG-08-RBAC-AND-PII-STRIPPING-ON-POSTGRES',
-    'Admin sees all students + internal_note; Teacher only sees assigned class (YCT2-04) with internal_note/last_sync_error stripped and gets 403 on YCT3-02; Student gets 403',
+    'Admin sees all students + internal_note + classCode=NONE unassigned filter + studentCase=online_only; Teacher only sees assigned class (YCT2-04) with internal_note/last_sync_error stripped and gets 403 on YCT3-02; Student gets 403',
     adminSearchRbac.status === 200 &&
       adminSearchRbac.data?.items?.[0]?.internal_note === 'Ghi chú nội bộ nhạy cảm chỉ Admin thấy' &&
+      adminUnassignedClass.status === 200 &&
+      adminUnassignedClass.data?.items?.length >= 2 &&
+      adminUnassignedClass.data.items.every((s) => !s.class_code) &&
+      adminOnlineOnlyCase.status === 200 &&
+      adminOnlineOnlyCase.data?.items?.length >= 1 &&
+      adminOnlineOnlyCase.data.items.every((s) => s.studentCase === 'online_only') &&
       teacherOwnClass.status === 200 &&
       teacherOwnClass.data?.items?.length >= 1 &&
       teacherFirstItem.internal_note === undefined &&
       teacherFirstItem.last_sync_error === undefined &&
       teacherOtherClass.status === 403 &&
       studentForbidden.status === 403,
-    `admin=${adminSearchRbac.status}, teacherOwn=${teacherOwnClass.status} (internal_note=${teacherFirstItem.internal_note}), teacherOther=${teacherOtherClass.status}, student=${studentForbidden.status}`
+    `admin=${adminSearchRbac.status}, unassignedCount=${adminUnassignedClass.data?.totalCount}, onlineOnlyCount=${adminOnlineOnlyCase.data?.totalCount}, teacherOwn=${teacherOwnClass.status} (internal_note=${teacherFirstItem.internal_note}), teacherOther=${teacherOtherClass.status}, student=${studentForbidden.status}`
   );
 
   // 10. Real PostgreSQL 1,000 / 10,000 / 50,000 Benchmark with EXPLAIN (ANALYZE, BUFFERS)

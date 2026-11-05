@@ -57,45 +57,52 @@ export const AdminHome: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
   });
 
-  const studentsQuery = useQuery<KtnStudentRecord[]>({
+  const studentsQuery = useQuery<{ items: KtnStudentRecord[]; totalCount: number }>({
     queryKey: ['ktn-admin-students', 'home-unassigned', user?.email, isDemoMode],
     queryFn: async ({ signal }) => {
       if (isDemoMode) {
-        return [
-          {
-            code: 'KTN-2026-089',
-            email: 'hoangngan@khongtunhi.com',
-            name: 'Bé Nguyễn Hoàng Ngân',
-            class_code: 'YCT2-04',
-            has_live_class: true,
-            has_online_courses: true,
-            online_courses: [
-              {
-                id: '6adadba969897b0002482ca5',
-                code: 'HSK1-30',
-                title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
-                shortTitle: 'HSK1 3.0',
-              },
-            ],
-            studentCase: 'both',
-          },
-          {
-            code: 'KTN-2026-VIP',
-            email: 'taphong2002vip@gmail.com',
-            name: 'Tạ Phong (Chưa cấp khóa)',
-            class_code: null,
-            has_live_class: false,
-            has_online_courses: false,
-            online_courses: [],
-            studentCase: 'unassigned',
-          },
-        ];
+        return {
+          items: [
+            {
+              code: 'KTN-2026-089',
+              email: 'hoangngan@khongtunhi.com',
+              name: 'Bé Nguyễn Hoàng Ngân',
+              class_code: 'YCT2-04',
+              has_live_class: true,
+              has_online_courses: true,
+              online_courses: [
+                {
+                  id: '6adadba969897b0002482ca5',
+                  code: 'HSK1-30',
+                  title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+                  shortTitle: 'HSK1 3.0',
+                },
+              ],
+              studentCase: 'both',
+            },
+            {
+              code: 'KTN-2026-VIP',
+              email: 'taphong2002vip@gmail.com',
+              name: 'Tạ Phong (Chưa cấp khóa)',
+              class_code: null,
+              has_live_class: false,
+              has_online_courses: false,
+              online_courses: [],
+              studentCase: 'unassigned',
+            },
+          ],
+          totalCount: 1,
+        };
       }
       const res = await ktnApi.searchStudents(
         { classCode: 'NONE', limit: 20, offset: 0 },
         signal
       );
-      return res.items || res.students || [];
+      const items = res.items || res.students || [];
+      return {
+        items,
+        totalCount: Number.isFinite(res.totalCount) ? res.totalCount : items.length,
+      };
     },
     enabled: Boolean(user) || isDemoMode,
   });
@@ -128,11 +135,12 @@ export const AdminHome: React.FC = () => {
   });
 
   const ordersList = ordersQuery.data || [];
-  const studentsList = studentsQuery.data || [];
+  const studentsList = studentsQuery.data?.items || [];
   const classesList = isDemoMode ? DEMO_CLASSES : classesQuery.data || [];
 
   const pendingOrders = ordersList.filter((o) => o.approval_status === 'pending');
   const unassignedStudents = studentsList.filter((s) => !s.class_code);
+  const unassignedTotalCount = studentsQuery.data?.totalCount ?? unassignedStudents.length;
   const activeClasses = classesList.filter((c) => c.active !== false);
 
   const hasApiError =
@@ -178,7 +186,7 @@ export const AdminHome: React.FC = () => {
             data-testid="admin-kpi-unassigned-students"
             className="mt-0.5 font-display text-lg font-extrabold text-amber-700 sm:text-xl"
           >
-            {studentsQuery.isLoading ? '...' : unassignedStudents.length}
+            {studentsQuery.isLoading ? '...' : unassignedTotalCount}
           </p>
         </button>
 
@@ -231,7 +239,7 @@ export const AdminHome: React.FC = () => {
         <QuickActionTile
           icon={Users}
           label="Học viên"
-          status={`${studentsList.length} hồ sơ`}
+          status={`${unassignedTotalCount} chưa xếp lớp`}
           accent="red"
           testId="admin-quick-students"
           onClick={() => navigate('/admin/students')}
@@ -274,7 +282,7 @@ export const AdminHome: React.FC = () => {
       <section className="space-y-2">
         <SectionHeading
           title="Việc cần xử lý"
-          count={pendingOrders.length + unassignedStudents.length}
+          count={pendingOrders.length + unassignedTotalCount}
           actionLabel="Mở đơn hàng →"
           onAction={() => navigate('/admin/orders')}
         />

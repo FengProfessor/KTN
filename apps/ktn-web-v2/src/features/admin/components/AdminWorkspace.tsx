@@ -1353,6 +1353,24 @@ export const AdminWorkspace: React.FC = () => {
               </select>
 
               <select
+                aria-label="Lọc theo khóa học"
+                data-testid="admin-filter-course"
+                value={courseFilter}
+                onChange={(e) => {
+                  setCourseFilter(e.target.value);
+                  setPageOffset(0);
+                }}
+                className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
+              >
+                <option value="ALL">Tất cả khóa học</option>
+                {coursesList.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.shortTitle || course.title}
+                  </option>
+                ))}
+              </select>
+
+              <select
                 aria-label="Lọc theo trạng thái đồng bộ"
                 data-testid="admin-filter-sync-status"
                 value={statusFilter}

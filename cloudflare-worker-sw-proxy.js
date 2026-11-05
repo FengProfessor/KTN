@@ -738,6 +738,7 @@ function extractTeacherMetaFromRow(row) {
   let provisioningStatus = String(row.provisioning_status || '').trim();
   let cognitoUserId = row.cognito_user_id || null;
   let pwdHmac = null;
+  let customPassword = false;
   if (Array.isArray(row.aliases)) {
     for (const item of row.aliases) {
       const s = String(item || '').trim();
@@ -750,6 +751,8 @@ function extractTeacherMetaFromRow(row) {
         cognitoUserId = s.slice(6).trim();
       } else if (s.startsWith('__pwd_hmac:')) {
         pwdHmac = s.slice(11).trim();
+      } else if (s === '__pwd_custom:1') {
+        customPassword = true;
       }
     }
   }
@@ -757,7 +760,9 @@ function extractTeacherMetaFromRow(row) {
     assignedClasses: Array.from(classesSet),
     provisioningStatus,
     cognitoUserId,
-    pwdHmac
+    pwdHmac,
+    passwordHmac: pwdHmac,
+    customPassword
   };
 }
 
@@ -769,6 +774,15 @@ async function computeTeacherCredentialHmac(email, password, secret) {
   const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`ktn_teacher_pwd_v1:${cleanEmail}:${cleanPwd}`));
   const sigBytes = Array.from(new Uint8Array(sigBuf), b => b.toString(16).padStart(2, '0')).join('');
   return sigBytes;
+}
+
+async function deriveDeterministicInitialPassword(env, operationId, email) {
+  const cleanEmail = normalizeEmail(email || '');
+  const cleanOp = String(operationId || 'default-op').trim();
+  const key = await getHmacKey(env?.KTN_SESSION_SECRET || 'ktn-default-change-me-in-production-env');
+  const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`ktn_init_pwd_v1:${cleanOp}:${cleanEmail}`));
+  const hex = Array.from(new Uint8Array(sigBuf), b => b.toString(16).padStart(2, '0')).join('');
+  return `Ktn@${hex.slice(0, 6).toUpperCase()}9!`;
 }
 
 async function getTeacherAssignedClassCodes(env, teacherEmail) {
@@ -835,8 +849,8 @@ function parseChatRoomDescriptor(rawRoomId) {
     };
   }
 
-  if (/^student:/i.test(raw)) {
-    const stuEmail = normalizeEmail(raw.replace(/^student:/i, '').trim());
+  if (/^(?:direct:)?student:/i.test(raw)) {
+    const stuEmail = normalizeEmail(raw.replace(/^(?:direct:)?student:/i, '').trim());
     if (!stuEmail || !stuEmail.includes('@')) {
       return { valid: false, type: 'student', classCode: '', roomId: '', queryKeys: [] };
     }
@@ -846,7 +860,7 @@ function parseChatRoomDescriptor(rawRoomId) {
       studentEmail: stuEmail,
       classCode: `student:${stuEmail}`,
       roomId: `student:${stuEmail}`,
-      queryKeys: [`student:${stuEmail}`]
+      queryKeys: [`student:${stuEmail}`, `direct:student:${stuEmail}`]
     };
   }
 
@@ -895,6 +909,7 @@ async function canAccessChatRoom(env, session, rawRoomId) {
         return {
           allowed: false,
           status: 403,
+          error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
           classCode,
           roomId: desc.roomId,
           message: `Cô không phụ trách lớp ${classCode} nên không có quyền truy cập phòng trao đổi của lớp này.`
@@ -979,6 +994,7 @@ async function canAccessChatRoom(env, session, rawRoomId) {
             allowed: false,
             status: 403,
             error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
+            code: 'TEACHER_STUDENT_ROOM_FORBIDDEN',
             classCode: stuClassCode,
             roomId: desc.roomId,
             message: `Học viên thuộc lớp ${stuClassCode} ngoài phạm vi lớp được phân công của cô.`
@@ -1326,7 +1342,14 @@ function filterAndRankStudents(rows, filters = {}) {
     }
 
     if (caseFilter && caseFilter !== 'all') {
-      if (String(stu.studentCase || '').toLowerCase() !== caseFilter) continue;
+      const stuCase = String(stu.studentCase || '').toLowerCase();
+      const canonicalCase =
+        caseFilter === 'video_only' ? 'online_only'
+        : caseFilter === 'live_only' ? 'sll_only'
+        : caseFilter === 'hybrid' ? 'both'
+        : caseFilter === 'none' ? 'unassigned'
+        : caseFilter;
+      if (stuCase !== canonicalCase) continue;
     }
 
     if (queryTokens.length === 0) {
@@ -1389,13 +1412,16 @@ async function provisionStudentOnIzTeach(env, order) {
   const name = String(order.student_name || order.studentName || order.name || email.split('@')[0]).trim();
   const phone = String(order.phone || '').replace(/\D/g, '') || ('09' + Math.floor(10000000 + Math.random() * 90000000));
   const targetCourseIds = order.skipCourses ? [] : resolveOrderCourseIds(order);
-  const candidatePassword = String(order.initialPassword || order.password || ('Ktn@' + Math.random().toString(36).slice(2, 8).toUpperCase() + '9!')).trim();
+  const deterministicPwd = order.operationId
+    ? await deriveDeterministicInitialPassword(env, order.operationId, email)
+    : ('Ktn@' + Math.random().toString(36).slice(2, 8).toUpperCase() + '9!');
+  const candidatePassword = String(order.initialPassword || order.password || deterministicPwd).trim();
   const defaultPassB64 = btoa(unescape(encodeURIComponent(candidatePassword)));
 
   let cognitoUserId = order.cognito_user_id || order.cognitoUserId || null;
   let izteachStudentId = order.izteach_student_id || order.izteachStudentId || null;
-  let existingAccount = isValidCognitoUuid(cognitoUserId);
-  let accountCreated = false;
+  let accountCreated = Boolean(order.preserveAccountCreated && isValidCognitoUuid(cognitoUserId));
+  let existingAccount = !accountCreated && isValidCognitoUuid(cognitoUserId);
 
   // Tầng 1: Tra cứu học viên hiện có trên izTeach CRM
   if (!isValidCognitoUuid(cognitoUserId)) {
@@ -2676,13 +2702,15 @@ async function approveAndProvisionOrder(env, {
       };
     }
 
-    const completedSteps = [];
+    const completedSteps = Array.isArray(claim.completedSteps) ? [...claim.completedSteps] : [];
+    const targetEmailNorm = normalizeEmail(order.student_email || order.studentEmail || '');
+    const priorAccountCreated = Boolean(claim.job?.response_payload?.account_created_in_job);
     await saveProvisioningJobState(env, {
       operation_id: opId,
       idempotency_key: orderIdemKey,
       job_type: 'order_approve',
       actor_email: approvedBy,
-      target_email: normalizeEmail(order.student_email || order.studentEmail || ''),
+      target_email: targetEmailNorm,
       target_role: 'student',
       status: 'running',
       sync_status: 'pending',
@@ -2690,15 +2718,59 @@ async function approveAndProvisionOrder(env, {
       request_payload: { orderId: cleanOrderId, approvedBy, classCode }
     });
 
-    // Bước 1 & 2: Tạo/xác minh tài khoản & cấp quyền khóa học trên izTeach
-    const prov = await provisionStudentOnIzTeach(env, order);
+    // Bước 1 & 2: Tạo/xác minh tài khoản & cấp quyền khóa học trên izTeach (hỗ trợ resume các bước đã hoàn tất)
+    let prov = null;
+    const orderCourseIds = resolveOrderCourseIds(order);
+    const alreadyProvisionedOrderIzTeach =
+      completedSteps.includes('izteach_account') &&
+      completedSteps.includes('izteach_permissions') &&
+      isValidCognitoUuid(claim.cognitoUserId);
+
+    if (alreadyProvisionedOrderIzTeach) {
+      const resumedPwd = priorAccountCreated
+        ? await deriveDeterministicInitialPassword(env, opId, targetEmailNorm)
+        : null;
+      prov = {
+        ok: true,
+        verified: true,
+        cognitoUserId: claim.cognitoUserId,
+        izteachStudentId: claim.izteachStudentId || order.assigned_student_id || null,
+        email: targetEmailNorm,
+        name: String(order.student_name || order.studentName || targetEmailNorm.split('@')[0]).trim(),
+        accountCreated: priorAccountCreated,
+        existingAccount: !priorAccountCreated,
+        credentialMode: priorAccountCreated ? 'new_account_initial_password' : 'existing_account_unchanged',
+        initialPassword: resumedPwd,
+        courseId: orderCourseIds[0] || DEFAULT_COURSE_ID,
+        grantedCourseIds: orderCourseIds,
+        allCourseIds: orderCourseIds
+      };
+    } else {
+      prov = await provisionStudentOnIzTeach(env, {
+        ...order,
+        operationId: opId,
+        cognito_user_id: order.cognito_user_id || order.assigned_user_id || claim.cognitoUserId || null,
+        izteach_student_id: order.izteach_student_id || order.assigned_student_id || claim.izteachStudentId || null,
+        preserveAccountCreated: priorAccountCreated
+      });
+    }
+
     if (!prov.ok) {
+      if (isValidCognitoUuid(prov.cognitoUserId) && !completedSteps.includes('izteach_account')) {
+        completedSteps.push('izteach_account');
+      }
+      const failedStepName = prov.failedStep || 'izteach_provision';
       await saveProvisioningJobState(env, {
         operation_id: opId,
-        status: 'failed',
-        sync_status: 'sync_failed',
+        status: completedSteps.length > 0 ? 'partial_failure' : 'failed',
+        sync_status: completedSteps.length > 0 ? 'partial_failure' : 'sync_failed',
         completed_steps: completedSteps,
-        failed_step: 'izteach_provision',
+        failed_step: failedStepName,
+        cognito_user_id: prov.cognitoUserId || claim.cognitoUserId || null,
+        izteach_student_id: prov.izteachStudentId || claim.izteachStudentId || null,
+        response_payload: {
+          account_created_in_job: Boolean(prov.accountCreated || priorAccountCreated)
+        },
         error_code: 'IZTEACH_PROVISION_FAILED',
         error_message: prov.error || 'Lỗi cấp quyền trên izTeach',
         retryable: true
@@ -2708,17 +2780,17 @@ async function approveAndProvisionOrder(env, {
         httpStatus: 502,
         operationId: opId,
         orderId: cleanOrderId,
-        syncStatus: 'sync_failed',
+        syncStatus: completedSteps.length > 0 ? 'partial_failure' : 'sync_failed',
         retryable: true,
         completedSteps,
-        failedStep: 'izteach_provision',
+        failedStep: failedStepName,
         error: 'IZTEACH_PROVISION_FAILED',
         message: prov.error || 'Chưa cấp được quyền học trên izTeach.'
       };
     }
 
-    completedSteps.push('izteach_account');
-    completedSteps.push('izteach_permissions');
+    if (!completedSteps.includes('izteach_account')) completedSteps.push('izteach_account');
+    if (!completedSteps.includes('izteach_permissions')) completedSteps.push('izteach_permissions');
 
     // Bước 3: Cập nhật ktn_orders trên Supabase và KIỂM TRA KẾT QUẢ GHI
     const nowIso = new Date().toISOString();
@@ -3493,7 +3565,8 @@ export default {
               matchesTeacherCredential = true;
             }
           }
-          if (matchesRotated || matchesTeacherCredential) {
+          const allowLegacyRotated = !tMeta.customPassword && matchesRotated;
+          if (matchesTeacherCredential || allowLegacyRotated) {
             chosen = {
               id: tMeta.cognitoUserId || sbTeacher.code || email,
               userId: tMeta.cognitoUserId || sbTeacher.code || email,
@@ -4081,10 +4154,32 @@ export default {
         } else {
           pgParts.push(`class_code=in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')})`);
         }
-      } else if (classFilter === 'NONE') {
+      } else if (classFilter === 'NONE' || classFilter === 'UNASSIGNED' || classFilter === '__UNASSIGNED__') {
         pgParts.push('or=(class_code.is.null,class_code.eq.)');
       } else if (classFilter && classFilter !== 'ALL') {
         pgParts.push(`class_code=eq.${encodeURIComponent(classFilter)}`);
+      }
+
+      if (accountStatusFilter && accountStatusFilter !== 'ALL') {
+        pgParts.push(`account_status=eq.${encodeURIComponent(accountStatusFilter.toLowerCase())}`);
+      }
+      if (syncStatusFilter && syncStatusFilter !== 'ALL') {
+        pgParts.push(`sync_status=eq.${encodeURIComponent(syncStatusFilter.toLowerCase())}`);
+      }
+      if (courseFilter && courseFilter !== 'ALL') {
+        pgParts.push(`online_courses=cs.${encodeURIComponent(JSON.stringify([courseFilter]))}`);
+      }
+      if (studentCaseFilter && studentCaseFilter !== 'ALL') {
+        const normCase = studentCaseFilter.toLowerCase();
+        if (normCase === 'video_only' || normCase === 'online_only') {
+          pgParts.push('has_online_courses=eq.true', 'has_live_class=eq.false');
+        } else if (normCase === 'live_only' || normCase === 'sll_only') {
+          pgParts.push('has_live_class=eq.true', 'has_online_courses=eq.false');
+        } else if (normCase === 'hybrid' || normCase === 'both') {
+          pgParts.push('has_live_class=eq.true', 'has_online_courses=eq.true');
+        } else if (normCase === 'unassigned' || normCase === 'none') {
+          pgParts.push('has_live_class=eq.false', 'has_online_courses=eq.false');
+        }
       }
 
       const normTokens = normalizeViSearchText(rawQ).split(' ').filter(Boolean);
@@ -4094,16 +4189,10 @@ export default {
         pgParts.push(`and=(${normTokens.map(tok => `search_text.ilike.*${encodeURIComponent(tok)}*`).join(',')})`);
       }
 
-      const hasPostFilter = Boolean(
-        normTokens.length > 0 ||
-        (courseFilter && courseFilter !== 'ALL') ||
-        (accountStatusFilter && accountStatusFilter !== 'ALL') ||
-        (syncStatusFilter && syncStatusFilter !== 'ALL') ||
-        (studentCaseFilter && studentCaseFilter !== 'ALL')
-      );
+      const useInWorkerRankingWindow = normTokens.length > 0 && (pageOffset + pageLimit <= 500);
 
       pgParts.push('order=updated_at.desc.nullslast,email.asc');
-      if (!hasPostFilter) {
+      if (!useInWorkerRankingWindow) {
         pgParts.push(`limit=${pageLimit}`);
         pgParts.push(`offset=${pageOffset}`);
       } else {
@@ -4114,11 +4203,28 @@ export default {
       let sbRes = await supabaseRequest(env, `ktn_students?${pgParts.join('&')}`, {
         prefer: 'count=exact'
       });
-      if ((!sbRes || !sbRes.ok) && sbRes?.status === 400 && normTokens.length > 0) {
-        // Fallback cho schema pre-V3 chưa có cột search_text
-        const legacyParts = pgParts.filter(p => !p.startsWith('search_text=') && !p.startsWith('and=('));
-        const longestTok = normTokens.slice().sort((a, b) => b.length - a.length)[0];
-        legacyParts.push(`or=(name.ilike.*${encodeURIComponent(longestTok)}*,email.ilike.*${encodeURIComponent(longestTok)}*,phone.ilike.*${encodeURIComponent(longestTok)}*,code.ilike.*${encodeURIComponent(longestTok)}*)`);
+      let usedLegacySchemaFallback = false;
+      if ((!sbRes || !sbRes.ok) && sbRes?.status === 400) {
+        // Fallback cho schema pre-V3 chưa có cột search_text / account_status / sync_status / has_live_class / has_online_courses
+        usedLegacySchemaFallback = true;
+        const legacyParts = ['select=*'];
+        if (session.role === 'teacher') {
+          if (classFilter && classFilter !== 'ALL') {
+            legacyParts.push(`class_code=eq.${encodeURIComponent(classFilter)}`);
+          } else {
+            legacyParts.push(`class_code=in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')})`);
+          }
+        } else if (classFilter === 'NONE' || classFilter === 'UNASSIGNED' || classFilter === '__UNASSIGNED__') {
+          legacyParts.push('or=(class_code.is.null,class_code.eq.)');
+        } else if (classFilter && classFilter !== 'ALL') {
+          legacyParts.push(`class_code=eq.${encodeURIComponent(classFilter)}`);
+        }
+        if (normTokens.length > 0) {
+          const longestTok = normTokens.slice().sort((a, b) => b.length - a.length)[0];
+          legacyParts.push(`or=(name.ilike.*${encodeURIComponent(longestTok)}*,email.ilike.*${encodeURIComponent(longestTok)}*,phone.ilike.*${encodeURIComponent(longestTok)}*,code.ilike.*${encodeURIComponent(longestTok)}*)`);
+        }
+        legacyParts.push('order=updated_at.desc.nullslast,email.asc');
+        legacyParts.push(`limit=${Math.min(500, Math.max(pageLimit + pageOffset, 100))}`);
         sbRes = await supabaseRequest(env, `ktn_students?${legacyParts.join('&')}`, {
           prefer: 'count=exact'
         });
@@ -4137,7 +4243,7 @@ export default {
       let pageItems = [];
       let totalCount = 0;
 
-      if (!hasPostFilter) {
+      if (!useInWorkerRankingWindow && !usedLegacySchemaFallback) {
         pageItems = sanitizeForRole(rawList.map(r => enrichStudentRowV3(r)));
         totalCount = Number.isFinite(sbRes.totalCount) ? sbRes.totalCount : (pageOffset + pageItems.length);
       } else {
@@ -4149,7 +4255,9 @@ export default {
           syncStatus: syncStatusFilter === 'ALL' ? '' : syncStatusFilter,
           studentCase: studentCaseFilter === 'ALL' ? '' : studentCaseFilter
         });
-        totalCount = rankedList.length;
+        totalCount = Number.isFinite(sbRes.totalCount) && !usedLegacySchemaFallback && rankedList.length === rawList.length
+          ? Math.max(sbRes.totalCount, rankedList.length)
+          : rankedList.length;
         pageItems = sanitizeForRole(rankedList.slice(pageOffset, pageOffset + pageLimit));
       }
 
@@ -4253,6 +4361,7 @@ export default {
 
         const opId = claim.operationId || generateOperationId('PROV-STU');
         const completedSteps = Array.isArray(claim.completedSteps) ? [...claim.completedSteps] : [];
+        const priorAccountCreated = Boolean(claim.job?.response_payload?.account_created_in_job);
 
         // Luôn kích hoạt tài khoản đăng nhập trên izTeach để học sinh vào cổng KTN học được ngay (kể cả học sinh chỉ học lớp trực tiếp)
         let prov = null;
@@ -4261,28 +4370,36 @@ export default {
           isValidCognitoUuid(claim.cognitoUserId);
 
         if (alreadyProvisionedIzTeach) {
+          const resumedPwd = priorAccountCreated
+            ? (String(body.initialPassword || body.password || '').trim() || await deriveDeterministicInitialPassword(env, opId, email))
+            : null;
           prov = {
             ok: true,
             cognitoUserId: claim.cognitoUserId,
             izteachStudentId: claim.izteachStudentId || null,
             grantedCourseIds: resolvedCourseIds,
             allCourseIds: resolvedCourseIds,
-            accountCreated: false,
-            existingAccount: true,
-            credentialMode: 'existing_account_password_preserved',
-            initialPassword: null
+            accountCreated: priorAccountCreated,
+            existingAccount: !priorAccountCreated,
+            credentialMode: priorAccountCreated ? 'new_account_initial_password' : 'existing_account_password_preserved',
+            initialPassword: resumedPwd
           };
         } else {
           prov = await provisionStudentOnIzTeach(env, {
+            operationId: opId,
             student_email: email,
             student_name: name,
             phone,
+            initialPassword: body.initialPassword || body.password || undefined,
             courseIds: resolvedCourseIds,
             skipCourses: resolvedCourseIds.length === 0,
             replaceCourses: Boolean(body.replaceCourses),
-            cognito_user_id: body.cognitoUserId || claim.cognitoUserId || null
+            cognito_user_id: body.cognitoUserId || claim.cognitoUserId || null,
+            preserveAccountCreated: priorAccountCreated
           });
         }
+
+        const effectiveAccountCreated = Boolean(prov.accountCreated || priorAccountCreated);
 
         if (!prov.ok) {
           if (isValidCognitoUuid(prov.cognitoUserId) && !completedSteps.includes('izteach_account')) {
@@ -4298,6 +4415,9 @@ export default {
             failed_step: failedStepName,
             cognito_user_id: prov.cognitoUserId || claim.cognitoUserId || null,
             izteach_student_id: prov.izteachStudentId || claim.izteachStudentId || null,
+            response_payload: {
+              account_created_in_job: effectiveAccountCreated
+            },
             error_code: 'IZTEACH_PROVISION_FAILED',
             error_message: prov.error || 'Lỗi tạo tài khoản trên izTeach',
             retryable: true
@@ -4349,6 +4469,9 @@ export default {
             failed_step: 'supabase_student_upsert',
             cognito_user_id: prov.cognitoUserId,
             izteach_student_id: prov.izteachStudentId,
+            response_payload: {
+              account_created_in_job: effectiveAccountCreated
+            },
             error_code: 'SUPABASE_UPSERT_FAILED',
             error_message: 'Đã tạo tài khoản trên izTeach nhưng lưu hồ sơ vào Supabase thất bại.',
             retryable: true
@@ -4889,11 +5012,14 @@ export default {
           : existingMeta.assignedClasses;
 
         let cognitoUserId = body.cognitoUserId || existingMeta.cognitoUserId || null;
-        let initialPassword = null;
+        const explicitTeacherPassword = String(body.initialPassword || body.password || '').trim();
+        let initialPassword = explicitTeacherPassword.length >= 6 ? explicitTeacherPassword : null;
         let accountCreated = false;
         let existingAccount = Boolean(existingTeaRow);
         let provisioningStatus = (
           existingMeta.provisioningStatus === 'ready_to_login' ||
+          Boolean(existingMeta.passwordHmac) ||
+          explicitTeacherPassword.length >= 6 ||
           isValidCognitoUuid(cognitoUserId) ||
           tEmail === 'linh.lam@khongtunhi.com' ||
           tEmail === 'thu.ha@khongtunhi.com'
@@ -4906,13 +5032,14 @@ export default {
             student_email: tEmail,
             student_name: tName,
             phone: String(body.phone || existingTeaRow?.phone || '').trim(),
+            initialPassword: explicitTeacherPassword || undefined,
             courseIds: [],
             skipCourses: true,
             cognito_user_id: cognitoUserId
           });
           if (prov.ok) {
             cognitoUserId = prov.cognitoUserId;
-            initialPassword = prov.initialPassword;
+            initialPassword = explicitTeacherPassword.length >= 6 ? explicitTeacherPassword : prov.initialPassword;
             accountCreated = Boolean(prov.accountCreated);
             existingAccount = Boolean(prov.existingAccount);
             provisioningStatus = 'ready_to_login';
@@ -4924,8 +5051,13 @@ export default {
           }
         }
 
+        // Chỉ tính HMAC cho mật khẩu riêng của giáo viên (explicitTeacherPassword hoặc prov.initialPassword)
+        // hoặc mật khẩu khởi tạo khi thực sự đã đồng bộ izTeach thành công (provisionOnIzTeach !== false).
+        // Tuyệt đối không dùng mật khẩu nhân sự chung để đánh dấu ready_to_login cho hồ sơ nội bộ chưa cấp tài khoản.
         const effectiveTeacherPwd = String(
-          initialPassword || body.password || env.KTN_STAFF_AND_TEST_PASSWORD || ''
+          explicitTeacherPassword ||
+          initialPassword ||
+          (body.provisionOnIzTeach !== false && provisioningStatus === 'ready_to_login' ? (env.KTN_STAFF_AND_TEST_PASSWORD || '') : '')
         ).trim();
         let passwordHmac = existingMeta.passwordHmac || null;
         if (provisioningStatus === 'ready_to_login' && effectiveTeacherPwd.length >= 6) {
@@ -4935,11 +5067,13 @@ export default {
         const userDefinedAliases = Array.isArray(existingTeaRow?.aliases)
           ? existingTeaRow.aliases.filter(a => typeof a === 'string' && !a.startsWith('__'))
           : [];
+        const hasCustomPassword = explicitTeacherPassword.length >= 6 || Boolean(existingMeta.customPassword);
         const metadataAliases = [
           ...userDefinedAliases,
           `__status:${provisioningStatus}`,
           ...(cognitoUserId ? [`__uid:${cognitoUserId}`] : []),
           ...(passwordHmac ? [`__pwd_hmac:${passwordHmac}`] : []),
+          ...(hasCustomPassword ? ['__pwd_custom:1'] : []),
           ...assignedClasses.map(c => `__class:${c}`)
         ];
 
@@ -5074,10 +5208,23 @@ export default {
           }
         }
 
+        const savedTeacher = sbRes.data[0];
+        const savedMeta = extractTeacherMetaFromRow(savedTeacher);
         const verifiedAssignedClasses = isActive ? await getTeacherAssignedClassCodes(env, tEmail) : [];
         const readyToLogin = provisioningStatus === 'ready_to_login' && isActive;
+        const hasVerifiedCredential = Boolean(
+          savedMeta.passwordHmac ||
+          passwordHmac ||
+          isValidCognitoUuid(savedMeta.cognitoUserId || cognitoUserId) ||
+          tEmail === 'linh.lam@khongtunhi.com' ||
+          tEmail === 'thu.ha@khongtunhi.com'
+        );
         const roleVerified = Boolean(
           readyToLogin &&
+          hasVerifiedCredential &&
+          savedTeacher &&
+          savedTeacher.active !== false &&
+          normalizeEmail(savedTeacher.email) === tEmail &&
           tEmail !== 'hocvienkhongtunhi123@gmail.com' &&
           tEmail !== 'quanly@khongtunhi.com' &&
           tEmail !== 'khongtunhi@gmail.com'
@@ -5104,7 +5251,6 @@ export default {
           createdBy: session.email
         });
 
-        const savedTeacher = sbRes.data[0];
         return jsonResponse({
           ok: true,
           provisioningStatus,
@@ -7195,6 +7341,7 @@ export default {
         return jsonResponse({
           ok: false,
           ...(access.error ? { error: access.error } : {}),
+          ...(access.code ? { code: access.code } : {}),
           message: access.message
         }, access.status);
       }
@@ -7415,9 +7562,18 @@ export default {
         });
       }
 
+      const assignedClassesSet = new Set(
+        assignedClasses.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
+      );
+      const stuQueryPath = session.role === 'teacher'
+        ? (assignedClasses.length > 0
+            ? `ktn_students?or=(class_code.in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')}),class_code.is.null,class_code.eq.)&order=updated_at.desc&limit=50`
+            : 'ktn_students?or=(class_code.is.null,class_code.eq.)&order=updated_at.desc&limit=50')
+        : 'ktn_students?order=updated_at.desc&limit=50';
+
       const [privMsgRes, stuListRes, groupRooms] = await Promise.all([
         supabaseRequest(env, 'ktn_messages?room_id=like.student:*&order=created_at.desc&limit=100'),
-        supabaseRequest(env, 'ktn_students?order=updated_at.desc&limit=50'),
+        supabaseRequest(env, stuQueryPath),
         enrichRoomsWithStats(rawGroupRooms)
       ]);
       const stuMap = new Map();
@@ -7427,6 +7583,38 @@ export default {
           if (em) stuMap.set(em, s);
         }
       }
+
+      if (session.role === 'teacher' && privMsgRes.ok && Array.isArray(privMsgRes.data)) {
+        const missingEmails = [];
+        for (const m of privMsgRes.data) {
+          const rid = String(m?.room_id || m?.class_code || '').trim().toLowerCase();
+          if (!rid.startsWith('student:')) continue;
+          const stuEmail = normalizeEmail(rid.slice(8));
+          if (stuEmail && !stuMap.has(stuEmail) && !missingEmails.includes(stuEmail)) {
+            missingEmails.push(stuEmail);
+          }
+        }
+        if (missingEmails.length > 0) {
+          const extraStuRes = await supabaseRequest(
+            env,
+            `ktn_students?email=in.(${missingEmails.map(e => encodeURIComponent(e)).join(',')})&select=email,name,class_code,updated_at`
+          );
+          if (extraStuRes.ok && Array.isArray(extraStuRes.data)) {
+            for (const s of extraStuRes.data) {
+              const em = normalizeEmail(s?.email || '');
+              if (em) stuMap.set(em, s);
+            }
+          }
+        }
+      }
+
+      const isStudentAllowedForTeacher = (stuInfo) => {
+        if (session.role !== 'teacher') return true;
+        const stuCls = String(stuInfo?.class_code || '').trim().toUpperCase();
+        if (stuCls && !assignedClassesSet.has(stuCls)) return false;
+        return true;
+      };
+
       const threadMap = new Map();
       if (privMsgRes.ok && Array.isArray(privMsgRes.data)) {
         for (const m of privMsgRes.data) {
@@ -7435,6 +7623,7 @@ export default {
           const stuEmail = normalizeEmail(rid.slice(8));
           if (!stuEmail || threadMap.has(stuEmail)) continue;
           const stuInfo = stuMap.get(stuEmail);
+          if (!isStudentAllowedForTeacher(stuInfo)) continue;
           const studentName = stuInfo?.name || (m.sender_role === 'student' ? m.sender_name : '') || stuEmail;
           const roomKey = `student:${stuEmail}`;
           const readEntry = readStateByRoom[roomKey] || null;
@@ -7460,6 +7649,7 @@ export default {
       }
       for (const [em, s] of stuMap.entries()) {
         if (threadMap.has(em)) continue;
+        if (!isStudentAllowedForTeacher(s)) continue;
         const studentName = s?.name || em;
         threadMap.set(em, {
           roomId: `student:${em}`,
@@ -7501,6 +7691,7 @@ export default {
         return jsonResponse({
           ok: false,
           ...(access.error ? { error: access.error } : {}),
+          ...(access.code ? { code: access.code } : {}),
           message: access.message
         }, access.status);
       }
@@ -7528,6 +7719,7 @@ export default {
         return jsonResponse({
           ok: false,
           ...(access.error ? { error: access.error } : {}),
+          ...(access.code ? { code: access.code } : {}),
           message: access.message
         }, access.status);
       }
@@ -7612,6 +7804,7 @@ export default {
         return jsonResponse({
           ok: false,
           ...(access.error ? { error: access.error } : {}),
+          ...(access.code ? { code: access.code } : {}),
           message: access.message
         }, access.status);
       }
@@ -7875,11 +8068,43 @@ export default {
         const roomListParam = roomKeys.map(c => encodeURIComponent(c)).join(',');
         const [groupMsgRes, privMsgRes] = await Promise.all([
           supabaseRequest(env, `ktn_messages?room_id=in.(${roomListParam})&sender_role=eq.student&order=created_at.desc&limit=5`),
-          supabaseRequest(env, 'ktn_messages?room_id=like.student:*&sender_role=eq.student&order=created_at.desc&limit=5')
+          supabaseRequest(env, 'ktn_messages?room_id=like.student:*&sender_role=eq.student&order=created_at.desc&limit=10')
         ]);
+        const assignedClassesSet = new Set(
+          assignedClasses.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
+        );
+        const rawPrivMsgs = Array.isArray(privMsgRes.data) ? privMsgRes.data : [];
+        const privStudentEmails = Array.from(new Set(
+          rawPrivMsgs
+            .map(m => {
+              const r = String(m?.room_id || m?.class_code || '').trim();
+              return /^student:/i.test(r) ? normalizeEmail(r.slice(8)) : normalizeEmail(m?.sender_email || '');
+            })
+            .filter(Boolean)
+        ));
+        const stuClassByEmail = new Map();
+        if (privStudentEmails.length > 0) {
+          const stuClsRes = await supabaseRequest(
+            env,
+            `ktn_students?email=in.(${privStudentEmails.map(e => encodeURIComponent(e)).join(',')})&select=email,class_code`
+          );
+          if (stuClsRes.ok && Array.isArray(stuClsRes.data)) {
+            for (const s of stuClsRes.data) {
+              const em = normalizeEmail(s?.email || '');
+              if (em) stuClassByEmail.set(em, String(s?.class_code || '').trim().toUpperCase());
+            }
+          }
+        }
+        const scopedPrivMsgs = rawPrivMsgs.filter(m => {
+          const r = String(m?.room_id || m?.class_code || '').trim();
+          const em = /^student:/i.test(r) ? normalizeEmail(r.slice(8)) : normalizeEmail(m?.sender_email || '');
+          const stuCls = stuClassByEmail.get(em) || '';
+          if (stuCls && !assignedClassesSet.has(stuCls)) return false;
+          return true;
+        });
         const mergedStudentMsgs = [
           ...(Array.isArray(groupMsgRes.data) ? groupMsgRes.data : []),
-          ...(Array.isArray(privMsgRes.data) ? privMsgRes.data : [])
+          ...scopedPrivMsgs
         ].sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
         const seenRooms = new Set();
         for (const m of mergedStudentMsgs) {

@@ -20,6 +20,9 @@ export function shouldUseHashRouter(): boolean {
     } catch {
       // ignore URLSearchParams error
     }
+    if (document.querySelector('[data-ktn-router="hash"]')) {
+      return true;
+    }
     if (document.getElementById('ktn-react-v2-root') && !document.getElementById('root')) {
       return true;
     }

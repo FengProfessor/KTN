@@ -2812,6 +2812,157 @@ async function runSuite() {
         embedHtmlContent.includes('data-ktn-router="hash"'),
       `prodGuardExit=${prodGuardRun.status}, rollbackDryRunExit=${rollbackDryRunCheck.status}, embedExcludesHls=${!embedHtmlContent.includes('vendor-hls')}`
     );
+
+    // D14: Teacher provisioned with custom initialPassword verifies HMAC login & rejects shared staff password bypass
+    const customTeacherEmail = 'gv.hmac.custom@khongtunhi.com';
+    const customTeacherCreateRes = await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        code: 'GV-HMAC-01',
+        name: 'Cô Giáo Mật Khẩu Riêng',
+        email: customTeacherEmail,
+        assignedClasses: ['YCT3-02'],
+        provisionOnIzTeach: false,
+        initialPassword: 'TeacherCustomPass!2026'
+      }
+    });
+    const customTeacherSharedPwdLogin = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: {
+        email: customTeacherEmail,
+        password: 'TestStrongPassword!2026'
+      }
+    });
+    const customTeacherOwnPwdLogin = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: {
+        email: customTeacherEmail,
+        password: 'TeacherCustomPass!2026'
+      }
+    });
+
+    record(
+      'D14-TEACHER-CUSTOM-PASSWORD-HMAC-AND-SHARED-PWD-ISOLATION',
+      'GROUP_V3',
+      'Teacher provisioned with custom initialPassword authenticates via HMAC with own password (200), reports roleVerified=true, and rejects shared staff password bypass (401)',
+      customTeacherCreateRes.status === 200 &&
+        customTeacherCreateRes.data?.readyToLogin === true &&
+        customTeacherCreateRes.data?.roleVerified === true &&
+        customTeacherSharedPwdLogin.status === 401 &&
+        customTeacherOwnPwdLogin.status === 200 &&
+        customTeacherOwnPwdLogin.data?.user?.role === 'teacher',
+      `readyToLogin=${customTeacherCreateRes.data?.readyToLogin}, roleVerified=${customTeacherCreateRes.data?.roleVerified}, sharedPwdStatus=${customTeacherSharedPwdLogin.status}, ownPwdStatus=${customTeacherOwnPwdLogin.status}`
+    );
+
+    // D15: Cross-class private thread & notification isolation + direct:student:<email> room descriptor
+    await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        roomId: 'student:e2e.hs.a@khongtunhi.com',
+        content: 'Cô Linh ơi cho con hỏi bài tập lớp YCT2-04 ạ!'
+      }
+    });
+    const yct3TeacherToken = customTeacherOwnPwdLogin.data?.token;
+    const yct3RoomsRes = await callApi('/api/ktn/messages/rooms', {
+      headers: { Authorization: `Bearer ${yct3TeacherToken}` }
+    });
+    const leakedYct2PrivateThread = (yct3RoomsRes.data?.privateThreads || []).some(
+      t => t.studentEmail === 'e2e.hs.a@khongtunhi.com'
+    );
+    const yct3NotifsRes = await callApi('/api/ktn/notifications', {
+      headers: { Authorization: `Bearer ${yct3TeacherToken}` }
+    });
+    const leakedYct2PrivateNotif = (yct3NotifsRes.data?.notifications || []).some(
+      n => String(n.roomId || '').includes('e2e.hs.a@khongtunhi.com')
+    );
+    const directStudentForbiddenRes = await callApi(
+      '/api/ktn/messages?roomId=' + encodeURIComponent('direct:student:e2e.hs.a@khongtunhi.com'),
+      { headers: { Authorization: `Bearer ${yct3TeacherToken}` } }
+    );
+    const directStudentAllowedRes = await callApi(
+      '/api/ktn/messages?roomId=' + encodeURIComponent('direct:student:e2e.hs.a@khongtunhi.com'),
+      { headers: { Authorization: `Bearer ${teacherAToken}` } }
+    );
+
+    record(
+      'D15-CROSS-CLASS-PRIVATE-THREAD-AND-NOTIFICATION-ISOLATION',
+      'GROUP_V3',
+      'Teacher assigned to YCT3-02 never sees private 1-1 threads or notifications of YCT2-04 students, and direct:student:<email> enforces 403 TEACHER_CLASS_SCOPE_FORBIDDEN / TEACHER_STUDENT_ROOM_FORBIDDEN',
+      yct3RoomsRes.status === 200 &&
+        leakedYct2PrivateThread === false &&
+        yct3NotifsRes.status === 200 &&
+        leakedYct2PrivateNotif === false &&
+        directStudentForbiddenRes.status === 403 &&
+        directStudentForbiddenRes.data?.error === 'TEACHER_CLASS_SCOPE_FORBIDDEN' &&
+        directStudentForbiddenRes.data?.code === 'TEACHER_STUDENT_ROOM_FORBIDDEN' &&
+        directStudentAllowedRes.status === 200,
+      `leakedThread=${leakedYct2PrivateThread}, leakedNotif=${leakedYct2PrivateNotif}, directRoomStatus=${directStudentForbiddenRes.status}, directRoomError=${directStudentForbiddenRes.data?.error}, allowedTeacherStatus=${directStudentAllowedRes.status}`
+    );
+
+    // D16: Step-resumed provisioning preserves accountCreated=true and one-time initialPassword without storing plaintext in DB
+    const resumePwdEmail = 'resume.initpwd.v3@khongtunhi.com';
+    const resumePwdIdemKey = 'idem-resume-initpwd-v3-001';
+    state.faults.supabaseFailOnTable = 'ktn_students';
+    state.faults.supabaseFailMethod = 'POST';
+    const resumeAttempt1 = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Idempotency-Key': resumePwdIdemKey
+      },
+      body: {
+        name: 'Bé Khôi Phục Mật Khẩu',
+        email: resumePwdEmail,
+        phone: '0988777666',
+        courseIds: ['6adadba969897b0002482ca5']
+      }
+    });
+    state.faults.supabaseFailOnTable = null;
+    state.faults.supabaseFailMethod = null;
+    const resumeAttempt2 = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Idempotency-Key': resumePwdIdemKey
+      },
+      body: {
+        name: 'Bé Khôi Phục Mật Khẩu',
+        email: resumePwdEmail,
+        phone: '0988777666',
+        courseIds: ['6adadba969897b0002482ca5']
+      }
+    });
+    const resumeAttempt3Replay = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Idempotency-Key': resumePwdIdemKey
+      },
+      body: {
+        name: 'Bé Khôi Phục Mật Khẩu',
+        email: resumePwdEmail,
+        phone: '0988777666',
+        courseIds: ['6adadba969897b0002482ca5']
+      }
+    });
+
+    record(
+      'D16-STEP-RESUMED-INITIAL-PASSWORD-HANDOFF-PRESERVATION',
+      'GROUP_V3',
+      'When Step 1 (izteach_account) creates a new account and Step 3 (supabase_student_upsert) fails, retrying with the same Idempotency-Key resumes without recreating Cognito user, preserves accountCreated=true + one-time initialPassword, and scrubs initialPassword on subsequent completed replay',
+      resumeAttempt1.status === 502 &&
+        resumeAttempt1.data?.partialFailure === true &&
+        resumeAttempt2.status === 200 &&
+        resumeAttempt2.data?.accountCreated === true &&
+        typeof resumeAttempt2.data?.initialPassword === 'string' &&
+        resumeAttempt2.data.initialPassword.startsWith('Ktn@') &&
+        resumeAttempt3Replay.status === 200 &&
+        resumeAttempt3Replay.data?.idempotentReplay === true &&
+        !resumeAttempt3Replay.data?.initialPassword,
+      `attempt1=${resumeAttempt1.status}, attempt2AccountCreated=${resumeAttempt2.data?.accountCreated}, attempt2HasPwd=${Boolean(resumeAttempt2.data?.initialPassword)}, replay3HasPwd=${Boolean(resumeAttempt3Replay.data?.initialPassword)}`
+    );
   }
 
   console.log('\n================================================================================');

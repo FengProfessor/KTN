@@ -412,7 +412,7 @@ export function createLocalWorkerHarness() {
           if (allowedClasses !== null) {
             if (allowedClasses.length === 0 || !allowedClasses.includes(rowClass)) continue;
           }
-          if (classFilter === 'NONE') {
+          if (classFilter === 'NONE' || classFilter === 'UNASSIGNED' || classFilter === '__UNASSIGNED__') {
             if (rowClass !== '') continue;
           } else if (classFilter && classFilter !== 'ALL') {
             if (rowClass !== classFilter) continue;
@@ -425,10 +425,22 @@ export function createLocalWorkerHarness() {
           const hasCog = Boolean(r.cognito_user_id);
           const accSt = r.account_status || (hasCog ? 'active' : 'pending_activation');
           const synSt = r.sync_status || (hasCog ? 'synced' : 'pending_activation');
-          const stuCase = r.student_case || (rowClass && courses.length > 0 ? 'both' : rowClass ? 'live_only' : courses.length > 0 ? 'video_only' : 'unassigned');
+          const rawCase = String(r.student_case || (rowClass && courses.length > 0 ? 'both' : rowClass ? 'live_only' : courses.length > 0 ? 'video_only' : 'unassigned')).toLowerCase();
+          const normStuCase =
+            rawCase === 'online_only' ? 'video_only'
+            : rawCase === 'sll_only' ? 'live_only'
+            : rawCase === 'hybrid' ? 'both'
+            : rawCase === 'none' ? 'unassigned'
+            : rawCase;
+          const normCaseFilter =
+            caseFilter.toLowerCase() === 'online_only' ? 'video_only'
+            : caseFilter.toLowerCase() === 'sll_only' ? 'live_only'
+            : caseFilter.toLowerCase() === 'hybrid' ? 'both'
+            : caseFilter.toLowerCase() === 'none' ? 'unassigned'
+            : caseFilter.toLowerCase();
           if (accountFilter && accountFilter !== 'ALL' && accSt !== accountFilter) continue;
           if (syncFilter && syncFilter !== 'ALL' && synSt !== syncFilter) continue;
-          if (caseFilter && caseFilter !== 'ALL' && stuCase !== caseFilter) continue;
+          if (caseFilter && caseFilter !== 'ALL' && normStuCase !== normCaseFilter) continue;
 
           const hay = r.search_text || normalizeViMock([r.code, r.name, r.email, r.phone, r.parent_name, r.class_code].join(' '));
           if (qTokens.length > 0 && !qTokens.every(t => hay.includes(t))) continue;

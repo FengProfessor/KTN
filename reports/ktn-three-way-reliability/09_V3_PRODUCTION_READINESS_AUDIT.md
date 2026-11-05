@@ -66,11 +66,12 @@
 ## C. Bằng chứng Migration Supabase V3
 
 1. **Đối chiếu trực tiếp (Read-Only) với Supabase Production (`lcwprikrnhpvpkkpqmmj.supabase.co`):**
-   - Bảng đang tồn tại: `ktn_students` (1.046 dòng), `ktn_teachers` (1 dòng), `ktn_classes` (1 dòng), `ktn_homeworks`, `ktn_messages`, `ktn_notifications`, `ktn_attendance`, `ktn_audit_logs`.
-   - Schema drift phát hiện: Production hiện đang ở schema V2 (chưa có cột `search_text`, `account_status`, `sync_status` trên `ktn_students`; chưa có bảng `ktn_provisioning_jobs`, `ktn_sync_events`; chưa có hàm RPC `ktn_search_students`).
+   - Bảng đang tồn tại (đếm trực tiếp qua REST `Prefer: count=exact`): `ktn_students` (1.046 dòng), `ktn_courses` (20 dòng), `ktn_classes` (3 dòng), `ktn_teachers` (2 dòng), `ktn_messages` (15 dòng), `ktn_notifications` (10 dòng), `ktn_homeworks` (7 dòng), `ktn_dlp_alerts` (7 dòng), `ktn_orders` (4 dòng), `ktn_attendance` (3 dòng), `ktn_class_sessions` (1 dòng), `ktn_payment_config` (1 dòng), `ktn_push_subscriptions` (0 dòng).
+   - Schema drift phát hiện: Production hiện đang ở schema V2 (chưa có cột `search_text`, `account_status`, `sync_status` trên `ktn_students`; `ktn_attendance.id` đang là `uuid` và chưa có `session_num`/`date`/`note`; chưa có bảng `ktn_provisioning_jobs`, `ktn_sync_events`; chưa có hàm RPC `ktn_search_students`).
 2. **Những lỗi trong `supabase_migration_v3.sql` đã được phát hiện và sửa triệt để:**
    - **Hàm `ktn_normalize_vi()`:** Bản cũ gọi `lower()` trước nhưng không xử lý các chữ hoa tiếng Việt có dấu hoặc chuỗi tổ hợp NFD (`\u0300-\u036f`). Đã sửa để chuẩn hóa cả chữ hoa/thường và xóa toàn bộ dấu tổ hợp Unicode.
-   - **Bảo toàn điểm danh lịch sử (`ktn_attendance`):** Bổ sung bước backfill tự động `session_num` từ `session_id` (ví dụ `'2'` -> `2`) trước khi tạo unique index `(class_code, session_num, student_email)`, đảm bảo không mất dữ liệu cũ và không lỗi khi chạy lại migration.
+   - **Hàm RPC `ktn_search_students()`:** Đã bổ sung nhánh lọc học viên chưa xếp lớp khi `p_class_code IN ('NONE', 'UNASSIGNED', '__UNASSIGNED__')` (`s.class_code IS NULL OR TRIM(s.class_code) = ''`), đồng thời hỗ trợ đầy đủ các bí danh `p_student_case` (`video_only`/`online_only`, `live_only`/`sll_only`, `hybrid`/`both`, `unassigned`/`none`).
+   - **Bảo toàn điểm danh lịch sử (`ktn_attendance`):** Bổ sung bước đổi `id` từ `UUID` sang `TEXT` an toàn (`USING id::text`) và backfill tự động `session_num` từ `session_id` hoặc `lesson_num` (trích xuất chuỗi chữ số `substring(session_id from '[0-9]+')::integer`, fallback `COALESCE(lesson_num, 1)`) trước khi tạo unique index `(class_code, session_num, student_email)`, đảm bảo không mất dữ liệu cũ và không lỗi khi chạy lại migration.
    - **Khóa chặt RLS (`ktn_provisioning_jobs`, `ktn_sync_events`):** Sửa policy từ `FOR ALL USING (true)` (vốn cho phép cả `anon` và `authenticated` đọc/ghi!) sang `FOR ALL TO service_role USING (true) WITH CHECK (true)` và thêm `REVOKE ALL ON TABLE ... FROM anon, authenticated`.
    - **Đồng bộ tên cột với Worker:** Đảm bảo cả `supabase_migration_v3.sql` và `supabase_schema.sql` có đầy đủ các cột Worker sử dụng (`operation_id`, `action`, `actor_email`, `target_email`, `cognito_user_id`, `izteach_student_id`, `completed_steps`, `entity_type`, `entity_id`, `upstream_status`).
    - **Dọn dẹp index dư thừa:** Thêm `DROP INDEX IF EXISTS idx_ktn_students_email, idx_ktn_teachers_email` (trùng với unique constraint index).
@@ -79,16 +80,16 @@
 
 ## D. Bằng chứng Tạo tài khoản & Cấp quyền
 
-Đã xác minh tự động trong `tests/ktn_three_way_reliability_suite.cjs` (`D1`–`D12`) và Playwright E2E (`J1`–`J4`):
+Đã xác minh tự động trong `tests/ktn_three_way_reliability_suite.cjs` (**54/54 PASS**, bao gồm `D1`–`D16`) và Playwright E2E (`J1`–`J4`):
 - **Học viên chỉ học video (`classCode: null`):** Tạo tài khoản thành công, **không bị gán mặc định `YCT2-04`**, nhận quyền khóa học video và hiển thị thông tin bàn giao một lần.
 - **Học viên đã tồn tại cấp thêm khóa:** Không tạo tài khoản mới, không mất khóa cũ, hợp nhất danh sách `enrolled_course_ids` và xác minh Read-After-Write với izTeach.
-- **Chống đúp nguyên tử & Phục hồi lỗi giữa chừng (`D10`):**
-  - Hai request chạy song song cùng `idempotencyKey` -> 1 request xử lý, request còn lại nhận `409 PROVISIONING_IN_PROGRESS`.
-  - Khi bước 1 (`izteach_account`) thành công nhưng bước 2 (`izteach_permissions`) lỗi `502`, Worker lưu `cognito_user_id` và `completed_steps: ['izteach_account']`. Khi bấm thử lại, Worker bỏ qua bước tạo Cognito (số lần gọi `/user` vẫn bằng `1`) và hoàn tất bước cấp quyền.
-- **Trạng thái thật của Giáo viên (`D11`):**
-  - Tạo giáo viên không truyền mật khẩu -> `provisioningStatus: 'pending_external_provisioning'`, `readyToLogin: false`; thử đăng nhập bị chặn với `403 TEACHER_PROVISIONING_PENDING`.
-  - Tạo giáo viên có `initialPassword` hợp lệ -> lưu HMAC verifier (`__pwd_hmac:`), trả về `provisioningStatus: 'ready_to_login'`, `readyToLogin: true`; giáo viên đăng nhập thành công ngay lập tức.
-- **Không lưu dữ liệu nhạy cảm (`D10`):** Đã kiểm chứng toàn bộ bản ghi trong `ktn_provisioning_jobs` và `ktn_sync_events` không chứa `initialPassword`, `password`, hay token.
+- **Chống đúp nguyên tử, Phục hồi lỗi giữa chừng & Bảo toàn mật khẩu bàn giao (`D10`, `D16`):**
+   - Hai request chạy song song cùng `idempotencyKey` -> 1 request xử lý, request còn lại nhận `409 PROVISIONING_IN_PROGRESS`.
+   - Khi bước 1 (`izteach_account`) tạo tài khoản mới thành công nhưng bước 2 (`izteach_permissions`) hoặc bước 3 (`supabase_student_upsert`) lỗi `502`, Worker lưu `cognito_user_id`, `completed_steps` và cờ `account_created_in_job: true` (tuyệt đối không lưu mật khẩu plaintext vào DB). Khi bấm thử lại với cùng `Idempotency-Key`, Worker bỏ qua bước tạo Cognito và khôi phục chính xác `accountCreated: true` cùng mật khẩu khởi tạo một lần (`deriveDeterministicInitialPassword`) để Admin bàn giao cho học viên; các lần replay sau khi job đã `completed` tự động ẩn `initialPassword`.
+- **Trạng thái thật của Giáo viên & Xác thực HMAC (`D11`, `D14`):**
+   - Tạo giáo viên không truyền mật khẩu (`provisionOnIzTeach: false`) -> `provisioningStatus: 'pending_external_provisioning'`, `readyToLogin: false`; thử đăng nhập bị chặn với `403 TEACHER_PROVISIONING_PENDING` (không cho phép dùng mật khẩu nhân sự chung để vượt rào).
+   - Tạo giáo viên có `initialPassword` riêng hợp lệ -> lưu HMAC verifier (`__pwd_hmac:` + `__pwd_custom:1`), trả về `provisioningStatus: 'ready_to_login'`, `readyToLogin: true`, `roleVerified: true`; giáo viên đăng nhập bằng mật khẩu riêng thành công (`200`) và từ chối mật khẩu nhân sự chung (`401`).
+- **Không lưu dữ liệu nhạy cảm (`D11`):** Đã kiểm chứng toàn bộ bản ghi trong `ktn_provisioning_jobs` và `ktn_sync_events` không chứa `initialPassword`, `password`, hay token.
 
 ---
 
@@ -96,13 +97,13 @@
 
 Đã kiểm chứng trên trình duyệt thật qua `apps/ktn-web-v2/tests/e2e/verify-ui-v2.mjs` (**88/88 PASS**) và `tests/ktn_browser_e2e_local.cjs` (**8/8 PASS**):
 - **Phát video HLS thực tế (`K3`):**
-  - Luồng HLS thật của izTeach (`https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adadc45f8c3c60002a2b3c1/playlist.m3u8`) tải manifest + segment `.ts`, giải mã khung hình `858x480`, `duration=815s`, `readyState=4`, và phát thực tế (`currentTime=0.18s > 0`).
+  - Luồng HLS thật của izTeach (`https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adadc45f8c3c60002a2b3c1/playlist.m3u8`) tải manifest + segment `.ts`, giải mã khung hình `858x480`, `duration=815s`, `readyState=4`, và phát thực tế (`currentTime > 0`).
 - **Tách riêng bài tập khóa video và lớp trực tiếp (`E1`–`E4`):**
   - Bài nộp khóa video đẩy sang izTeach với đúng `unitId` 24-hex trong 346 bài học.
   - Bài nộp lớp trực tiếp (`CLASS_YCT2-04`) gắn cờ `not_applicable_live_class`, lưu S3 + Supabase, giáo viên chấm điểm / yêu cầu nộp lại, học viên nhận thông báo sâu (`deep-link`) tới đúng bài học.
-- **Chat 2 thiết bị & Cô lập 1-1 (`C1`–`C7`, `C15`):**
+- **Chat 2 thiết bị & Cô lập 1-1 (`C1`–`C7`, `C15`, `D15`):**
   - Hai context trình duyệt độc lập (Student & Teacher) gửi tin nhắn văn bản + thu âm giọng nói (`data:audio/wav;base64,...`), nhận thông báo, đánh dấu đã đọc bền vững sau khi F5.
-  - Giáo viên không dạy lớp của học viên bị chặn `403 TEACHER_STUDENT_ROOM_FORBIDDEN` khi cố đọc hoặc gửi tin vào phòng 1-1 `direct:student:<email>`.
+  - Giáo viên không dạy lớp của học viên bị ẩn hoàn toàn hội thoại 1-1 (`privateThreads`) và thông báo (`notifications`) của học viên lớp khác, đồng thời bị chặn `403 TEACHER_CLASS_SCOPE_FORBIDDEN` (`code: TEACHER_STUDENT_ROOM_FORBIDDEN`) khi cố đọc hoặc gửi tin vào phòng `student:<email>` hoặc `direct:student:<email>`.
 
 ---
 

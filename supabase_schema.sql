@@ -423,6 +423,16 @@ CREATE INDEX IF NOT EXISTS idx_ktn_attendance_student_date ON public.ktn_attenda
 ALTER TABLE public.ktn_provisioning_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ktn_sync_events ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.ktn_provisioning_jobs, public.ktn_sync_events FROM PUBLIC;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    BEGIN
+      CREATE ROLE service_role NOLOGIN;
+    EXCEPTION WHEN insufficient_privilege OR duplicate_object THEN
+      NULL;
+    END;
+  END IF;
+END $$;
 DROP POLICY IF EXISTS "Allow all for service role" ON public.ktn_provisioning_jobs;
 DROP POLICY IF EXISTS "service_role_only_ktn_provisioning_jobs" ON public.ktn_provisioning_jobs;
 CREATE POLICY "service_role_only_ktn_provisioning_jobs"

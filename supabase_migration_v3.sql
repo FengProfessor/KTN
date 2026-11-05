@@ -405,10 +405,17 @@ BEGIN
   END IF;
 
   IF p_class_code IS NOT NULL AND TRIM(p_class_code) <> '' AND LOWER(TRIM(p_class_code)) <> 'all' THEN
-    v_where_clauses := ARRAY_APPEND(
-      v_where_clauses,
-      FORMAT('LOWER(COALESCE(s.class_code, '''')) = LOWER(%L)', TRIM(p_class_code))
-    );
+    IF LOWER(TRIM(p_class_code)) IN ('none', 'unassigned', '__unassigned__') THEN
+      v_where_clauses := ARRAY_APPEND(
+        v_where_clauses,
+        '(s.class_code IS NULL OR TRIM(s.class_code) = '''')'
+      );
+    ELSE
+      v_where_clauses := ARRAY_APPEND(
+        v_where_clauses,
+        FORMAT('LOWER(COALESCE(s.class_code, '''')) = LOWER(%L)', TRIM(p_class_code))
+      );
+    END IF;
   END IF;
 
   IF p_course_id IS NOT NULL AND TRIM(p_course_id) <> '' AND LOWER(TRIM(p_course_id)) <> 'all' THEN
@@ -438,13 +445,13 @@ BEGIN
 
   IF p_student_case IS NOT NULL AND TRIM(p_student_case) <> '' AND LOWER(TRIM(p_student_case)) <> 'all' THEN
     CASE LOWER(TRIM(p_student_case))
-      WHEN 'video_only' THEN
+      WHEN 'video_only', 'online_only' THEN
         v_where_clauses := ARRAY_APPEND(v_where_clauses, '(COALESCE(s.has_online_courses, false) = true AND COALESCE(s.has_live_class, false) = false)');
-      WHEN 'live_only' THEN
+      WHEN 'live_only', 'sll_only' THEN
         v_where_clauses := ARRAY_APPEND(v_where_clauses, '(COALESCE(s.has_live_class, false) = true AND COALESCE(s.has_online_courses, false) = false)');
-      WHEN 'hybrid' THEN
+      WHEN 'hybrid', 'both' THEN
         v_where_clauses := ARRAY_APPEND(v_where_clauses, '(COALESCE(s.has_live_class, false) = true AND COALESCE(s.has_online_courses, false) = true)');
-      WHEN 'unassigned' THEN
+      WHEN 'unassigned', 'none' THEN
         v_where_clauses := ARRAY_APPEND(v_where_clauses, '(COALESCE(s.has_live_class, false) = false AND COALESCE(s.has_online_courses, false) = false)');
       ELSE
         NULL;
@@ -589,6 +596,13 @@ REVOKE ALL ON TABLE public.ktn_provisioning_jobs FROM PUBLIC;
 REVOKE ALL ON TABLE public.ktn_sync_events FROM PUBLIC;
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    BEGIN
+      CREATE ROLE service_role NOLOGIN;
+    EXCEPTION WHEN insufficient_privilege OR duplicate_object THEN
+      NULL;
+    END;
+  END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
     EXECUTE 'REVOKE ALL ON TABLE public.ktn_provisioning_jobs, public.ktn_sync_events FROM anon';
   END IF;

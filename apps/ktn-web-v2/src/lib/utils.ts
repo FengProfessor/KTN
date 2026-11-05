@@ -157,7 +157,11 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
     }
     if (!room && notif.classCode) {
       const rawCls = String(notif.classCode).trim();
-      room = /^(?:class:|course:|student:)/i.test(rawCls) ? rawCls : `class:${rawCls.toUpperCase()}`;
+      room = /^(?:class:|course:|(?:direct:)?student:)/i.test(rawCls)
+        ? rawCls.replace(/^direct:student:/i, 'student:')
+        : `class:${rawCls.toUpperCase()}`;
+    } else if (room && /^direct:student:/i.test(room)) {
+      room = room.replace(/^direct:student:/i, 'student:');
     } else if (room && !/^(?:class:|course:|student:)/i.test(room)) {
       room = `class:${room.toUpperCase()}`;
     }

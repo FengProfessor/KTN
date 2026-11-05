@@ -2769,26 +2769,48 @@ async function runSuite() {
         encoding: 'utf8'
       }
     );
-    const dryRunCheck = spawnSync(
+    const manifestPath = path.join(
+      __dirname,
+      '..',
+      'reports',
+      'ktn-three-way-reliability',
+      'v3-release-manifest.json'
+    );
+    const rollbackDryRunCheck = spawnSync(
       process.execPath,
-      [path.join(__dirname, '..', 'deploy_ktn_react_v2_izteach.cjs'), '--dry-run'],
+      [
+        path.join(__dirname, '..', 'deploy_ktn_react_v2_izteach.cjs'),
+        '--dry-run',
+        '--rollback',
+        manifestPath
+      ],
       { encoding: 'utf8' }
     );
-    const embedHtmlContent = fs.readFileSync(
-      path.join(__dirname, '..', 'apps', 'ktn-web-v2', 'dist', 'izteach-custom-page-embed.html'),
-      'utf8'
+    const rollbackVerification = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          __dirname,
+          '..',
+          'reports',
+          'ktn-three-way-reliability',
+          'v3-rollback-verification.json'
+        ),
+        'utf8'
+      )
     );
+    const embedHtmlContent = String(rollbackVerification.embedHtml || '');
 
     record(
       'D13-IZTEACH-DEPLOY-GUARD-AND-LAZY-HLS-EMBED',
       'GROUP_V3',
-      'deploy_ktn_react_v2_izteach.cjs refuses to overwrite protected production Custom Page IDs without explicit override, passes dry-run, and excludes vendor-hls from initial modulepreload in embed HTML',
+      'deploy_ktn_react_v2_izteach.cjs refuses to overwrite protected production Custom Page IDs without explicit override, passes dry-run rollback verification, and excludes vendor-hls from initial modulepreload in embed HTML',
       prodGuardRun.status !== 0 &&
         (prodGuardRun.stderr || '').includes('SAFETY GUARD BLOCKED') &&
-        dryRunCheck.status === 0 &&
+        rollbackDryRunCheck.status === 0 &&
+        embedHtmlContent.length > 0 &&
         !embedHtmlContent.includes('vendor-hls') &&
         embedHtmlContent.includes('data-ktn-router="hash"'),
-      `prodGuardExit=${prodGuardRun.status}, dryRunExit=${dryRunCheck.status}, embedExcludesHls=${!embedHtmlContent.includes('vendor-hls')}`
+      `prodGuardExit=${prodGuardRun.status}, rollbackDryRunExit=${rollbackDryRunCheck.status}, embedExcludesHls=${!embedHtmlContent.includes('vendor-hls')}`
     );
   }
 

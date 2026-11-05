@@ -403,6 +403,7 @@ async function main() {
             embedHtmlBytes: embed.embedHtml.length,
             embedCssBytes: embed.embedCss.length,
             embedJsBytes: embed.embedJs.length,
+            embedHtml: embed.embedHtml,
             verifiedAt: new Date().toISOString(),
           },
           null,

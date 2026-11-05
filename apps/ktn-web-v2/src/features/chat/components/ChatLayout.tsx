@@ -37,16 +37,27 @@ export const ChatLayout: React.FC = () => {
       const matched = rooms.find(
         (r) => r.roomId === roomParam || r.classCode === roomParam
       );
-      if (matched && activeRoomId !== matched.roomId) {
-        setActiveRoomId(matched.roomId);
-        setMobileChatConversationOpen(true);
+      if (matched) {
+        if (activeRoomId !== matched.roomId) {
+          setActiveRoomId(matched.roomId);
+        }
+        if (!mobileChatConversationOpen) {
+          setMobileChatConversationOpen(true);
+        }
         return;
       }
     }
     if (rooms.length > 0 && (!activeRoomId || !rooms.some((r) => r.roomId === activeRoomId))) {
       setActiveRoomId(rooms[0].roomId);
     }
-  }, [rooms, searchParams, activeRoomId, setActiveRoomId, setMobileChatConversationOpen]);
+  }, [
+    rooms,
+    searchParams,
+    activeRoomId,
+    mobileChatConversationOpen,
+    setActiveRoomId,
+    setMobileChatConversationOpen,
+  ]);
 
   const activeRoom = useMemo(
     () => rooms.find((r) => r.roomId === activeRoomId) || rooms[0] || null,
@@ -94,7 +105,7 @@ export const ChatLayout: React.FC = () => {
   return (
     <div
       data-testid="zalo-chat-workspace"
-      className="flex h-[calc(100vh-8.5rem)] lg:h-[calc(100vh-5rem)] w-full flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm"
+      className="flex h-[calc(100vh-8rem)] lg:h-[calc(100vh-5rem)] w-full flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xs"
     >
       {/* Demo Mode Interactive State Switcher Bar */}
       {isDemoMode && (
@@ -161,7 +172,10 @@ export const ChatLayout: React.FC = () => {
                 searchQuery={searchQuery}
                 onToggleSearch={() => setSearchOpen((prev) => !prev)}
                 onSearchChange={setSearchQuery}
-                onMobileBack={() => setMobileChatConversationOpen(false)}
+                onMobileBack={() => {
+                  setMobileChatConversationOpen(false);
+                  setSearchParams({}, { replace: true });
+                }}
                 onRefresh={refreshNow}
               />
 

@@ -1,30 +1,37 @@
 # ĐÁNH GIÁ GIAO DIỆN & TRẢI NGHIỆM NGƯỜI DÙNG (`UI_REVIEW.md`)
 
-> Đối chiếu trực quan từ bộ ảnh chụp màn hình trình duyệt thực tế tại `docs/ui-v2/screenshots/` trên 3 kích thước chuẩn: Điện thoại (`390px`), Máy tính bảng (`768px`) và Máy tính bàn (`1440px`).
+> Đối chiếu trực quan từ bộ ảnh chụp màn hình trình duyệt thực tế tại `docs/ui-v2/screenshots/role-audit/` và `docs/ui-v2/screenshots/` trên các kích thước chuẩn: Điện thoại (`360x780`, `390x844`), Máy tính bảng (`768x1024`) và Máy tính bàn (`1440x900`).
 
 ---
 
-## 1. Danh mục Ảnh chụp Nghiệm thu (`docs/ui-v2/screenshots/`)
+## 1. Bộ Ảnh Nghiệm Thu Phân Tách 3 Vai Trò & Mobile Compact (`docs/ui-v2/screenshots/role-audit/`)
 
-| Phân hệ | Mobile (`390x844`) | Tablet (`768x1024`) | Desktop (`1440x900`) |
+| Vai trò / Màn hình | Mobile (`390x844`) | Mobile nhỏ (`360x780`) | Desktop (`1440x900`) |
 |---|---|---|---|
-| **1. Tổng quan Học sinh** | `01-student-dashboard-390px.png` | `01-student-dashboard-768px.png` | `01-student-dashboard-1440px.png` |
-| **2. Phòng học Video HLS & Bài tập** | `02-video-learning-390px.png` | `02-video-learning-768px.png` | `02-video-learning-1440px.png` |
-| **3. Phòng Chat Lớp học kiểu Zalo** | `03-zalo-classroom-chat-390px.png` | `03-zalo-classroom-chat-768px.png` | `03-zalo-classroom-chat-1440px.png` |
-| **4. Trung tâm Thông báo** | `04-notification-center-390px.png` | `04-notification-center-768px.png` | `04-notification-center-1440px.png` |
-| **5. Cổng Giáo viên Chủ nhiệm** | `05-teacher-workspace-390px.png` | `05-teacher-workspace-768px.png` | `05-teacher-workspace-1440px.png` |
+| **1. Học sinh (`StudentHome`)** | `student-mobile-390.png` | `student-mobile-360.png` | `student-desktop-1440.png` |
+| **2. Giáo viên (`TeacherHome`)** | `teacher-mobile-390.png` | `teacher-mobile-360.png` | `teacher-desktop-1440.png` |
+| **3. Quản lý Học vụ (`AdminHome`)** | `admin-mobile-390.png` | `admin-mobile-360.png` | `admin-desktop-1440.png` |
+| **4. Phòng Chat Zalo Lớp học** | `chat-mobile-390.png` | — | `../03-zalo-classroom-chat-1440px.png` |
+| **5. Phòng học Video HLS & Bài tập** | `learning-mobile-390.png` | — | `../02-video-learning-1440px.png` |
+| **6. Trung tâm Thông báo** | `notifications-mobile-390.png` | — | `../04-notification-center-1440px.png` |
 
 ---
 
-## 2. Nhận xét Chi tiết theo 5 Câu hỏi Trọng tâm của Phụ huynh & Học sinh
+## 2. Kiến Trúc Tách Biệt 3 Vai Trò (`Student` / `Teacher` / `Admin`)
 
-1. **"Hôm nay con học gì?"**
-   - Ngay đầu trang Tổng quan (`01-student-dashboard`), banner Crimson–Gold hiển thị rõ mã lớp (`YCT2-04`), lịch học cố định (`Thứ 3 & Thứ 6 19:30`), và nút hành động lớn **"Vào phòng học Video HLS"**.
-2. **"Video bài giảng xem ở đâu?"**
-   - Màn hình `/learning` (`02-video-learning`) đặt trình phát HLS 16:9 ở vị trí trung tâm, kèm bộ điều khiển tốc độ (`0.75x` – `1.5x`), danh sách bài học có thanh tiến độ xanh lá và tab nghe file MP3 chuẩn giọng Bắc Kinh.
-3. **"Bài tập nào cần làm và cô đã chấm chưa?"**
-   - Khung **Bài tập thực hành** nằm ngay dưới trình phát video, tích hợp bộ thu âm trực tiếp trên trình duyệt, đính kèm tệp và thẻ điểm số/nhận xét nổi bật của Lão sư (`Điểm: 9.5 / 10` và `10 / 10`).
-4. **"Giáo viên vừa nhắn gì trong lớp?"**
-   - Màn hình `/chat` (`03-zalo-classroom-chat`) mang lại trải nghiệm quen thuộc như Zalo: thông báo ghim ở đầu phòng, phân biệt rõ bong bóng tin nhắn của Giáo viên (huy hiệu `Giáo viên` màu đỏ son) và Học sinh, hỗ trợ thả cảm xúc (`👍 ❤️ 👏 🎉`), trả lời trích dẫn và gửi thu âm giọng đọc.
-5. **"Có thông báo mới không?"**
-   - Chuông thông báo trên thanh Header và trang `/notifications` (`04-notification-center`) hiển thị số lượng tin chưa đọc theo thời gian thực, cho phép bấm vào từng thông báo để nhảy thẳng tới bài tập vừa chấm hoặc phòng chat lớp.
+| Tiêu chí | Học sinh (`student`) | Giáo viên (`teacher`) | Quản lý Học vụ (`admin`) |
+|---|---|---|---|
+| **Component Trang chủ (`/`)** | `StudentHome.tsx` | `TeacherHome.tsx` | `AdminHome.tsx` |
+| **Tiêu đề Header (`48px`)** | `Chào Hoàng Ngân 👋` | `Chào Cô Lâm Mỹ Linh` | `Quản lý học vụ` |
+| **Hành động ưu tiên số 1** | Nút **Học tiếp** + tiến độ khóa học (`PrimaryActionCard`) | Nút **Chấm bài** + số bài chờ chấm & bộ lọc lớp phụ trách | 3 KPI nhỏ gọn (`Đơn chờ duyệt`, `Chưa xếp lớp`, `Lớp hoạt động`) + danh sách việc cần xử lý |
+| **Bottom Navigation (Mobile)** | `Trang chủ \| Học \| Lớp \| Tin nhắn \| Thông báo` | `Tổng quan \| Lớp \| Chấm bài \| Tin nhắn \| Thông báo` | `Tổng quan \| Học viên \| Lớp \| Đơn hàng \| Thêm` |
+| **Quick Actions (`2x2` Mobile)** | `Khóa học`, `Bài tập`, `Tin nhắn`, `Lớp học` | `Lớp của tôi`, `Chấm bài`, `Giao bài`, `Tin nhắn` | `Học viên`, `Lớp học`, `Đơn hàng`, `Phân quyền` |
+
+---
+
+## 3. Tối Ưu Mobile Compact (`390x844` & `360x780`)
+
+1. **Header đỉnh cao chuẩn `48px` (`<= 56px`):** Gồm biểu tượng KTN (về trang chủ theo đúng role), tiêu đề động ngắn gọn 1 dòng + phụ đề lớp/vai trò, chuông thông báo và nút Đăng xuất truy cập 1 chạm.
+2. **Loại bỏ Hero Banner cao & câu giới thiệu dài:** Thay bằng 1 dải thông tin lớp học/bộ lọc lớp siêu gọn + 1 thẻ `PrimaryActionCard` có CTA chính nổi bật ngay trong nửa trên màn hình đầu tiên (`above the fold`).
+3. **Lưới tác vụ nhanh `2x2` (`QuickActionTile`) & Danh sách 1 dòng (`CompactListItem`):** Hiển thị đầy đủ 4 lối tắt trọng tâm và danh sách hoạt động gần đây trên cùng một màn hình `390x844` mà không bị tràn ngang (`0px overflow`).
+4. **Phòng Chat & Phòng học Video gọn nhẹ:** Thanh ghim thông báo 1 dòng (mở rộng khi chạm), bong bóng thu âm vừa khít khung di động, bộ chọn bài học dạng ngăn kéo thu gọn (`Chọn bài`), và khung nhập tin nhắn luôn nằm trọn vẹn phía trên thanh điều hướng đáy (`composerBottom: 757px < bottomNavTop: 788px`).

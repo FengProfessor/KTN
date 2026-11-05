@@ -324,18 +324,18 @@ export const LearningPage: React.FC = () => {
         </div>
       )}
 
-      {/* Course Selector Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-2xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-md bg-red-800 px-2 py-0.5 text-[11px] font-bold text-white">
-              KHÓA HỌC VIDEO BẢN QUYỀN
+      {/* Course Selector Header (Compact on mobile) */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-stone-200 bg-white p-3 sm:p-4 shadow-2xs">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="rounded bg-red-800 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
+              Video HLS
             </span>
-            <span className="text-xs font-medium text-stone-500">
-              • Học mọi lúc trên Điện thoại & Máy tính
+            <span className="text-[11px] font-semibold text-stone-500">
+              Hoàn thành {completedCount}/{lessons.length} bài
             </span>
           </div>
-          <h1 className="mt-1 font-display text-lg font-bold text-stone-900 sm:text-xl">
+          <h1 className="mt-0.5 truncate font-display text-sm font-bold text-stone-900 sm:text-lg">
             {activeCourse.title}
           </h1>
         </div>
@@ -358,9 +358,9 @@ export const LearningPage: React.FC = () => {
                   setSelectedCourseId(course.id);
                   setSelectedLessonNum(1);
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                className={`inline-flex min-h-[34px] items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition-all ${
                   activeCourse.id === course.id
-                    ? 'bg-red-800 text-white shadow-sm'
+                    ? 'bg-red-800 text-white shadow-2xs'
                     : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
                 }`}
               >
@@ -377,9 +377,9 @@ export const LearningPage: React.FC = () => {
       </div>
 
       {/* Main Responsive Grid: Video + Tabs on Left (8 cols), Lesson List Sidebar on Right (4 cols) */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
         {/* Left Column: Video Player & Lesson Content Tabs */}
-        <div className="space-y-4 lg:col-span-8">
+        <div className="space-y-3 sm:space-y-4 lg:col-span-8">
           <HlsVideoPlayer
             lessonTitle={activeLesson?.title || 'Bài giảng tiếng Trung KTN'}
             courseName={activeCourse.title}
@@ -399,10 +399,10 @@ export const LearningPage: React.FC = () => {
           />
 
           {/* Mobile Lesson Drawer Trigger */}
-          <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 lg:hidden">
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 lg:hidden">
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase text-red-800">
-                Đang học bài {activeLesson?.num || 1}/{lessons.length}
+              <p className="text-[10.5px] font-bold uppercase text-red-800">
+                Bài {activeLesson?.num || 1}/{lessons.length}
               </p>
               <p className="truncate text-xs font-semibold text-stone-900">
                 {activeLesson?.title}
@@ -411,16 +411,16 @@ export const LearningPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setMobileLessonDrawerOpen((prev) => !prev)}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-1.5 text-xs font-bold text-stone-800"
+              className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg bg-stone-100 px-2.5 py-1.5 text-xs font-bold text-stone-800"
             >
-              <ListVideo className="h-4 w-4 text-red-800" />
-              <span>Danh sách bài ({lessons.length})</span>
+              <ListVideo className="h-3.5 w-3.5 text-red-800" />
+              <span>Chọn bài ({lessons.length})</span>
             </button>
           </div>
 
           {mobileLessonDrawerOpen && (
-            <div className="rounded-2xl border border-stone-200 bg-white p-3 lg:hidden">
-              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            <div className="rounded-2xl border border-stone-200 bg-white p-2.5 lg:hidden">
+              <div className="max-h-56 space-y-1 overflow-y-auto">
                 {lessons.map((lesson) => {
                   const isSelected = Number(lesson.num) === Number(activeLesson?.num);
                   const done = Boolean(completedLessons[`${activeCourse.id}:${lesson.num}`]);
@@ -435,7 +435,7 @@ export const LearningPage: React.FC = () => {
                       className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs ${
                         isSelected
                           ? 'bg-red-50 font-bold text-red-900'
-                          : 'hover:bg-stone-50 text-stone-700'
+                          : 'text-stone-700 hover:bg-stone-50'
                       }`}
                     >
                       <span className="truncate">{lesson.title}</span>
@@ -448,49 +448,49 @@ export const LearningPage: React.FC = () => {
           )}
 
           {/* Lesson Navigation Tabs: Tổng quan / Nghe MP3 / Nộp Bài tập */}
-          <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-2xs">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-3">
+          <div className="rounded-2xl border border-stone-200 bg-white p-3 sm:p-4 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   data-testid="tab-lesson-overview"
                   onClick={() => setActiveTab('overview')}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${
+                  className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${
                     activeTab === 'overview'
                       ? 'bg-red-800 text-white'
                       : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                   }`}
                 >
                   <BookOpen className="h-3.5 w-3.5" />
-                  <span>Nội dung bài học</span>
+                  <span>Nội dung</span>
                 </button>
 
                 <button
                   type="button"
                   data-testid="tab-lesson-audio"
                   onClick={() => setActiveTab('audio')}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${
+                  className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${
                     activeTab === 'audio'
                       ? 'bg-red-800 text-white'
                       : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                   }`}
                 >
                   <Headphones className="h-3.5 w-3.5" />
-                  <span>File nghe MP3 ({activeLesson?.audioTracks?.length || 0})</span>
+                  <span>MP3 ({activeLesson?.audioTracks?.length || 0})</span>
                 </button>
 
                 <button
                   type="button"
                   data-testid="tab-lesson-homework"
                   onClick={() => setActiveTab('homework')}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${
+                  className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${
                     activeTab === 'homework'
                       ? 'bg-red-800 text-white'
                       : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                   }`}
                 >
                   <FileCheck2 className="h-3.5 w-3.5" />
-                  <span>Bài tập về nhà</span>
+                  <span>Bài tập</span>
                   {currentLessonHomework?.status === 'graded' && (
                     <span className="rounded-full bg-emerald-600 px-1.5 py-0.2 text-[10px] text-white">
                       {currentLessonHomework.score}đ
@@ -508,52 +508,52 @@ export const LearningPage: React.FC = () => {
                       : `/chat?room=course:${activeCourse.id}`
                   )
                 }
-                className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
               >
                 <MessageSquare className="h-3.5 w-3.5" />
-                <span>Hỏi Lão sư bài này</span>
+                <span>Hỏi giáo viên</span>
               </button>
             </div>
 
             {/* Tab 1: Overview */}
             {activeTab === 'overview' && (
-              <div className="mt-4 space-y-4">
+              <div className="mt-3 space-y-3">
                 <div>
                   <h2
                     data-testid="active-lesson-title"
-                    className="font-display text-base font-bold text-stone-900 sm:text-lg"
+                    className="font-display text-sm font-bold text-stone-900 sm:text-base"
                   >
                     {activeLesson?.title}
                   </h2>
-                  <p className="mt-1.5 text-xs leading-relaxed text-stone-600 sm:text-sm">
+                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-stone-600">
                     {activeLesson?.grammar ||
-                      'Bài giảng chính thức theo chuẩn khung năng lực Hán ngữ Quốc tế. Học viên xem kỹ video bài giảng, nghe lại các file phát âm chuẩn bản xứ và hoàn thành bài tập thu âm.'}
+                      'Xem video bài giảng, luyện nghe phát âm chuẩn và gửi bản thu âm bài tập bên dưới.'}
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
-                    <span className="text-[11px] font-bold uppercase text-stone-500">
-                      Sách giáo khoa • Trang {activeLesson?.sgkPage || 1}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-2">
+                    <span className="block text-[10px] font-bold uppercase text-stone-500">
+                      SGK • Tr.{activeLesson?.sgkPage || 1}
                     </span>
-                    <p className="mt-1 text-xs font-semibold text-stone-800">
-                      Xem hết video bài giảng và đọc to theo Lão sư 3 lần.
+                    <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
+                      Đọc theo bài
                     </p>
                   </div>
-                  <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
-                    <span className="text-[11px] font-bold uppercase text-stone-500">
-                      Sách bài tập • Trang {activeLesson?.sbtPage || 1}
+                  <div className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-2">
+                    <span className="block text-[10px] font-bold uppercase text-stone-500">
+                      SBT • Tr.{activeLesson?.sbtPage || 1}
                     </span>
-                    <p className="mt-1 text-xs font-semibold text-stone-800">
-                      Mở tab File nghe MP3 để luyện phản xạ thanh điệu chuẩn.
+                    <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
+                      Nghe MP3
                     </p>
                   </div>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
-                    <span className="text-[11px] font-bold uppercase text-amber-900">
-                      Vở tập viết • Trang {activeLesson?.voVietPage || 1}
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-2.5 py-2">
+                    <span className="block text-[10px] font-bold uppercase text-amber-900">
+                      Viết • Tr.{activeLesson?.voVietPage || 1}
                     </span>
-                    <p className="mt-1 text-xs font-semibold text-stone-800">
-                      Thu âm giọng đọc gửi cô chấm điểm ngay bên dưới.
+                    <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
+                      Thu âm nộp
                     </p>
                   </div>
                 </div>
@@ -562,29 +562,24 @@ export const LearningPage: React.FC = () => {
 
             {/* Tab 2: Audio Tracks */}
             {activeTab === 'audio' && (
-              <div className="mt-4 space-y-2.5">
+              <div className="mt-3 space-y-2">
                 {!activeLesson?.audioTracks || activeLesson.audioTracks.length === 0 ? (
-                  <p className="py-4 text-center text-xs text-stone-500">
-                    Bài học này đã tích hợp toàn bộ âm thanh trực tiếp trong video bài giảng.
+                  <p className="py-3 text-center text-xs text-stone-500">
+                    Âm thanh đã tích hợp trực tiếp trong video bài giảng.
                   </p>
                 ) : (
                   activeLesson.audioTracks.map((audio, idx) => (
                     <div
                       key={idx}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 p-3"
+                      className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-stone-50 p-2.5"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-800 text-white">
-                          <Volume2 className="h-4 w-4" />
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-800 text-white">
+                          <Volume2 className="h-3.5 w-3.5" />
                         </span>
-                        <div>
-                          <p className="text-xs font-bold text-stone-900">{audio.name}</p>
-                          <p className="text-[11px] text-stone-500">
-                            File luyện nghe chuẩn giọng Bắc Kinh
-                          </p>
-                        </div>
+                        <p className="text-xs font-bold text-stone-900">{audio.name}</p>
                       </div>
-                      <audio controls preload="none" src={audio.url} className="h-9 max-w-xs" />
+                      <audio controls preload="none" src={audio.url} className="h-8 max-w-xs" />
                     </div>
                   ))
                 )}
@@ -593,7 +588,7 @@ export const LearningPage: React.FC = () => {
 
             {/* Tab 3: Homework */}
             {activeTab === 'homework' && activeLesson && (
-              <div className="mt-4">
+              <div className="mt-3">
                 <HomeworkPanel
                   key={`${activeCourse.id}:${activeLesson.num}`}
                   courseId={activeCourse.id}

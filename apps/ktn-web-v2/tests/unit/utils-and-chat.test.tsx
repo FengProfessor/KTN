@@ -12,6 +12,12 @@ import {
   normalizeServerMessage,
 } from '../../src/features/chat/services/chatApi';
 import { useUiStore } from '../../src/stores/useUiStore';
+import { useAuthStore, DEMO_USERS } from '../../src/stores/useAuthStore';
+import { roleNavigation } from '../../src/app/navigation/navigationConfig';
+import {
+  formatShortPersonName,
+  resolveHeaderTitle,
+} from '../../src/app/navigation/roleRoutes';
 import type { ChatMessage } from '../../src/features/chat/types/chat.types';
 
 describe('KTN UI V2 — Unit & State Machine Tests', () => {
@@ -181,5 +187,48 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       ).toBe('/admin');
     });
   });
+
+  describe('5. Role-Based Navigation & Compact Header Resolution (P0-01/P0-02/P0-03)', () => {
+    it('defines purposeful 5-item mobile navigation per role without sharing student items', () => {
+      const studentMobile = roleNavigation.student.mobile.map((i) => i.label);
+      const teacherMobile = roleNavigation.teacher.mobile.map((i) => i.label);
+      const adminMobile = roleNavigation.admin.mobile.map((i) => i.label);
+
+      expect(studentMobile).toEqual(['Trang chủ', 'Học', 'Lớp', 'Tin nhắn', 'Thông báo']);
+      expect(teacherMobile).toEqual(['Tổng quan', 'Lớp', 'Chấm bài', 'Tin nhắn', 'Thông báo']);
+      expect(adminMobile).toEqual(['Tổng quan', 'Học viên', 'Lớp', 'Đơn hàng', 'Thêm']);
+    });
+
+    it('formats short greeting names and route-aware compact header titles', () => {
+      const studentUser = DEMO_USERS.student_both;
+      const teacherUser = DEMO_USERS.teacher;
+      const adminUser = DEMO_USERS.admin;
+
+      expect(formatShortPersonName('Bé Nguyễn Hoàng Ngân')).toBe('Hoàng Ngân');
+
+      expect(resolveHeaderTitle('/', 'student', studentUser).title).toBe('Chào Hoàng Ngân 👋');
+      expect(resolveHeaderTitle('/', 'teacher', teacherUser).title).toBe('Chào Cô Lâm Mỹ Linh');
+      expect(resolveHeaderTitle('/', 'admin', adminUser).title).toBe('Quản lý học vụ');
+      expect(resolveHeaderTitle('/learning', 'student', studentUser).title).toBe('Học tiếp');
+      expect(resolveHeaderTitle('/chat', 'student', studentUser).title).toBe('Tin nhắn');
+      expect(resolveHeaderTitle('/teacher/classes', 'teacher', teacherUser).title).toBe('Lớp của tôi');
+      expect(resolveHeaderTitle('/admin/orders', 'admin', adminUser).title).toBe('Đơn hàng');
+    });
+  });
+
+  describe('6. Demo vs Live Identity Isolation (P0-05)', () => {
+    it('keeps demoUser in memory only and never persists DEMO-MODE-ONLY token to localStorage', () => {
+      const auth = useAuthStore.getState();
+      auth.setDemoUser(DEMO_USERS.teacher);
+
+      expect(useAuthStore.getState().demoUser?.role).toBe('teacher');
+      expect(localStorage.getItem('ktn_v2_auth_session')).toBeNull();
+
+      // Switching back to live mode without a live authUser clears active user
+      auth.syncModeUser(false);
+      expect(useAuthStore.getState().user).toBeNull();
+    });
+  });
 });
+
 

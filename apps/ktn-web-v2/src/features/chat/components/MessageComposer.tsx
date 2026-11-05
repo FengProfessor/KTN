@@ -248,7 +248,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           )}
 
           {/* Composer Row */}
-          <form onSubmit={handleSubmit} className="flex items-end gap-2">
+          <form onSubmit={handleSubmit} className="flex items-end gap-1.5 sm:gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -257,7 +257,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               className="hidden"
             />
 
-            <div className="flex shrink-0 items-center gap-1 pb-0.5">
+            <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -311,8 +311,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 value={draft}
                 onChange={(e) => setRoomDraft(roomId, e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={`Nhập tin nhắn tới ${classCode || roomId}... (Nhấn Enter để gửi)`}
-                className="max-h-28 min-h-[40px] w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-red-800 focus:bg-white focus:outline-none"
+                placeholder={`Nhắn tới ${classCode || roomId}...`}
+                className="max-h-24 min-h-[38px] w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:border-red-800 focus:bg-white focus:outline-none"
               />
             </div>
 
@@ -320,12 +320,12 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               type="submit"
               data-testid="chat-send-btn"
               disabled={(!draft.trim() && !stagedAttachment) || dlpCheck.blocked}
-              className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-2xl bg-red-800 px-4 text-xs font-bold text-white shadow-sm transition-all hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-45"
+              className="inline-flex h-[38px] shrink-0 items-center justify-center gap-1 rounded-2xl bg-red-800 px-3.5 text-xs font-bold text-white shadow-2xs transition-all hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-45"
             >
               {isSending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Send className="h-4 w-4" />
+                <Send className="h-3.5 w-3.5" />
               )}
               <span className="hidden sm:inline">Gửi</span>
             </button>

@@ -1,109 +1,121 @@
-import React from 'react';
-import { FlaskConical, Wifi, WifiOff, UserCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { FlaskConical, Wifi, WifiOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { cn } from '@/lib/utils';
 
 export const DemoControlBar: React.FC = () => {
+  const queryClient = useQueryClient();
   const {
     isDemoMode,
     setDemoMode,
     isOfflineSimulated,
-    setOfflineSimulated
+    setOfflineSimulated,
+    resetSessionUiState,
   } = useUiStore();
-  const { user, login, setDemoUser } = useAuthStore();
+  const { user, setDemoUser, syncModeUser } = useAuthStore();
+  const [expanded, setExpanded] = useState(false);
 
-  const handleQuickRoleSwitch = async (roleKey: keyof typeof DEMO_USERS) => {
+  // Never show DemoControlBar in Live mode or Production builds unless Demo Mode is explicitly active
+  if (!isDemoMode) {
+    return null;
+  }
+
+  const handleDemoRoleSwitch = (roleKey: keyof typeof DEMO_USERS) => {
+    if (!isDemoMode) return;
     const target = DEMO_USERS[roleKey];
     if (!target) return;
-    if (isDemoMode) {
-      setDemoUser(target);
-      return;
-    }
-    try {
-      await login(target.email, 'Ktn@2026!');
-    } catch {
-      setDemoUser(target);
-    }
+    resetSessionUiState();
+    setDemoUser(target);
+    queryClient.clear();
+  };
+
+  const handleExitDemoMode = () => {
+    resetSessionUiState();
+    setDemoMode(false);
+    syncModeUser(false);
+    queryClient.clear();
   };
 
   return (
     <div
       data-testid="mode-indicator-bar"
-      className={cn(
-        'border-b px-3 py-1.5 text-xs transition-colors',
-        isDemoMode
-          ? 'bg-amber-50 border-amber-200 text-amber-950'
-          : 'bg-zinc-900 border-zinc-800 text-zinc-200'
-      )}
+      className="border-b border-amber-200 bg-amber-50/95 px-3 py-1 text-[11px] text-amber-950"
     >
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span
             data-testid="data-mode-badge"
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-semibold',
-              isDemoMode
-                ? 'bg-amber-200/80 text-amber-950'
-                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-            )}
+            className="inline-flex items-center gap-1 rounded-full bg-amber-200/80 px-2 py-0.5 font-bold text-amber-950"
           >
-            <FlaskConical className="h-3.5 w-3.5" />
-            {isDemoMode ? 'CHẾ ĐỘ DEMO (MOCK DATA)' : 'DỮ LIỆU THẬT (/api/ktn/* BFF)'}
+            <FlaskConical className="h-3 w-3" />
+            <span>DEMO</span>
           </span>
+          <span className="font-semibold text-amber-900">
+            Vai trò: <strong>{user?.role || 'student'}</strong>
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="toggle-demo-panel-btn"
+            onClick={() => setExpanded((prev) => !prev)}
+            className="inline-flex items-center gap-1 rounded bg-amber-200/70 px-2 py-0.5 font-bold text-amber-950 hover:bg-amber-200"
+          >
+            <span>Đổi vai trò Demo</span>
+            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </button>
+
           <button
             type="button"
             data-testid="toggle-demo-mode-btn"
-            onClick={() => setDemoMode(!isDemoMode)}
-            className={cn(
-              'rounded-md px-2 py-0.5 font-medium underline-offset-2 hover:underline',
-              isDemoMode ? 'text-amber-900' : 'text-zinc-300'
-            )}
+            onClick={handleExitDemoMode}
+            className="rounded px-2 py-0.5 font-semibold text-amber-900 underline hover:text-red-800"
           >
-            {isDemoMode ? 'Chuyển sang API Thật' : 'Bật Demo States'}
+            Thoát Demo
           </button>
         </div>
+      </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="hidden sm:inline text-[11px] opacity-75 mr-1">
-            <UserCheck className="inline h-3.5 w-3.5 mr-1" />
-            Đổi nhanh vai trò:
-          </span>
+      {expanded && (
+        <div className="mx-auto mt-1.5 flex max-w-7xl flex-wrap items-center gap-1.5 border-t border-amber-200/70 pt-1.5">
           <button
             type="button"
             data-testid="switch-role-student"
-            onClick={() => handleQuickRoleSwitch('student_both')}
+            onClick={() => handleDemoRoleSwitch('student_both')}
             className={cn(
-              'rounded px-2 py-0.5 font-medium transition-colors',
-              user?.email === 'hoangngan@khongtunhi.com'
-                ? 'bg-ktn-primary text-white'
-                : 'bg-white/10 hover:bg-white/20 text-current border border-current/20'
+              'rounded px-2 py-0.5 font-bold transition-colors',
+              user?.role === 'student'
+                ? 'bg-red-800 text-white'
+                : 'bg-white text-stone-800 border border-amber-300'
             )}
           >
-            HS Hoàng Ngân (YCT2-04 + HSK1)
+            Học sinh
           </button>
           <button
             type="button"
             data-testid="switch-role-teacher"
-            onClick={() => handleQuickRoleSwitch('teacher')}
+            onClick={() => handleDemoRoleSwitch('teacher')}
             className={cn(
-              'rounded px-2 py-0.5 font-medium transition-colors',
+              'rounded px-2 py-0.5 font-bold transition-colors',
               user?.role === 'teacher'
-                ? 'bg-ktn-primary text-white'
-                : 'bg-white/10 hover:bg-white/20 text-current border border-current/20'
+                ? 'bg-red-800 text-white'
+                : 'bg-white text-stone-800 border border-amber-300'
             )}
           >
-            GV Cô Mỹ Linh
+            Giáo viên
           </button>
           <button
             type="button"
             data-testid="switch-role-admin"
-            onClick={() => handleQuickRoleSwitch('admin')}
+            onClick={() => handleDemoRoleSwitch('admin')}
             className={cn(
-              'rounded px-2 py-0.5 font-medium transition-colors',
+              'rounded px-2 py-0.5 font-bold transition-colors',
               user?.role === 'admin'
-                ? 'bg-ktn-primary text-white'
-                : 'bg-white/10 hover:bg-white/20 text-current border border-current/20'
+                ? 'bg-red-800 text-white'
+                : 'bg-white text-stone-800 border border-amber-300'
             )}
           >
             Quản lý
@@ -114,16 +126,15 @@ export const DemoControlBar: React.FC = () => {
             data-testid="toggle-offline-btn"
             onClick={() => setOfflineSimulated(!isOfflineSimulated)}
             className={cn(
-              'ml-1 inline-flex items-center gap-1 rounded px-2 py-0.5 font-medium transition-colors',
+              'ml-auto inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold transition-colors',
               isOfflineSimulated
                 ? 'bg-red-600 text-white'
-                : 'bg-white/10 hover:bg-white/20 text-current border border-current/20'
+                : 'bg-white text-stone-700 border border-amber-300'
             )}
-            title="Mô phỏng mất kết nối mạng để kiểm thử trạng thái Offline & giữ bản nháp"
           >
             {isOfflineSimulated ? (
               <>
-                <WifiOff className="h-3 w-3" /> Mất mạng (Đang bật)
+                <WifiOff className="h-3 w-3" /> Mất mạng
               </>
             ) : (
               <>
@@ -132,7 +143,7 @@ export const DemoControlBar: React.FC = () => {
             )}
           </button>
         </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  GraduationCap,
   Users,
   FileCheck2,
   CalendarPlus,
@@ -29,13 +28,16 @@ import { formatChatTimestamp } from '@/lib/utils';
 
 export const TeacherWorkspace: React.FC = () => {
   const navigate = useNavigate();
+  const { section } = useParams<{ section?: string }>();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const addToast = useUiStore((s) => s.addToast);
 
-  const [selectedClassId, setSelectedClassId] = useState<string>('YCT2-04');
+  const [selectedClassId, setSelectedClassId] = useState<string>(
+    () => searchParams.get('class') || user?.classCode || ''
+  );
   const [activeSubTab, setActiveSubTab] = useState<'grading' | 'sessions' | 'students'>('grading');
   const [gradingFilter, setGradingFilter] = useState<'all' | 'pending' | 'graded'>('all');
 
@@ -55,13 +57,26 @@ export const TeacherWorkspace: React.FC = () => {
     'Con hãy cầm bức ảnh gia đình và giới thiệu bằng tiếng Trung gửi vào mục Bài tập nhé!'
   );
 
+  // Sync sub-tab with route param (:section) or query param (?hwId / ?class)
   useEffect(() => {
     const hwIdParam = searchParams.get('hwId');
+    const clsParam = searchParams.get('class');
+    if (clsParam) {
+      setSelectedClassId(clsParam);
+    }
     if (hwIdParam) {
       setActiveSubTab('grading');
       setActiveHomeworkId(hwIdParam);
+      return;
     }
-  }, [searchParams]);
+    if (section === 'classes') {
+      setActiveSubTab('students');
+    } else if (section === 'assign') {
+      setActiveSubTab('sessions');
+    } else if (section === 'grading') {
+      setActiveSubTab('grading');
+    }
+  }, [section, searchParams]);
 
   // 1. Fetch Classes
   const classesQuery = useQuery<KtnClassItem[]>({
@@ -73,12 +88,32 @@ export const TeacherWorkspace: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
   });
 
+  const classesList = useMemo(() => {
+    const raw = isDemoMode ? DEMO_CLASSES : classesQuery.data || [];
+    if (!user?.email) return raw;
+    const owned = raw.filter(
+      (c) =>
+        !c.teacher_email ||
+        c.teacher_email.toLowerCase() === user.email.toLowerCase() ||
+        c.teacher_code === user.code
+    );
+    return owned.length > 0 ? owned : raw;
+  }, [isDemoMode, classesQuery.data, user?.email, user?.code]);
+
+  useEffect(() => {
+    if (!selectedClassId && classesList.length > 0) {
+      setSelectedClassId(classesList[0].id);
+    }
+  }, [selectedClassId, classesList]);
+
+  const effectiveClassId = selectedClassId || classesList[0]?.id || '';
+
   // 2. Fetch Homeworks for Class
   const homeworksQuery = useQuery<KtnHomework[]>({
-    queryKey: ['ktn-homeworks', selectedClassId, user?.email, isDemoMode],
+    queryKey: ['ktn-homeworks', effectiveClassId, user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) return DEMO_HOMEWORKS;
-      return ktnApi.getHomeworks(selectedClassId);
+      return ktnApi.getHomeworks(effectiveClassId || undefined);
     },
     enabled: Boolean(user) || isDemoMode,
     refetchInterval: isDemoMode ? false : 3500,
@@ -86,17 +121,18 @@ export const TeacherWorkspace: React.FC = () => {
 
   // 3. Fetch Sessions for Class
   const sessionsQuery = useQuery<KtnClassSession[]>({
-    queryKey: ['ktn-class-sessions', selectedClassId, user?.email, isDemoMode],
+    queryKey: ['ktn-class-sessions', effectiveClassId, user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) return DEMO_CLASS_SESSIONS;
-      return ktnApi.getClassSessions(selectedClassId);
+      if (!effectiveClassId) return [];
+      return ktnApi.getClassSessions(effectiveClassId);
     },
-    enabled: Boolean(user) || isDemoMode,
+    enabled: Boolean(effectiveClassId) && (Boolean(user) || isDemoMode),
   });
 
   // 4. Fetch Students in Class
   const studentsQuery = useQuery<KtnStudentRecord[]>({
-    queryKey: ['ktn-class-students', selectedClassId, user?.email, isDemoMode],
+    queryKey: ['ktn-class-students', effectiveClassId, user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) {
         return [
@@ -118,7 +154,7 @@ export const TeacherWorkspace: React.FC = () => {
           },
         ];
       }
-      return ktnApi.getStudents(selectedClassId);
+      return ktnApi.getStudents(effectiveClassId || undefined);
     },
     enabled: Boolean(user) || isDemoMode,
   });
@@ -154,9 +190,8 @@ export const TeacherWorkspace: React.FC = () => {
       addToast({
         title:
           vars.status === 'revision_requested'
-            ? 'Đã gửi yêu cầu học viên nộp lại bài'
-            : `Đã chấm điểm (${vars.score}/10) thành công!`,
-        description: 'Hệ thống đã tự động gửi thông báo tới Sổ liên lạc của học viên.',
+            ? 'Đã gửi yêu cầu nộp lại bài'
+            : `Đã chấm ${vars.score}/10 điểm!`,
         variant: 'success',
       });
     },
@@ -166,12 +201,12 @@ export const TeacherWorkspace: React.FC = () => {
   const saveSessionMutation = useMutation({
     mutationFn: async () => {
       const payload = {
-        classCode: selectedClassId,
+        classCode: effectiveClassId,
         sessionNum: Number(sessionNum),
         title: sessionTitle,
         exercises: [
           {
-            id: `ex_${selectedClassId}_${sessionNum}_1`,
+            id: `ex_${effectiveClassId}_${sessionNum}_1`,
             num: 1,
             title: exerciseTitle,
             prompt: exercisePrompt,
@@ -187,10 +222,9 @@ export const TeacherWorkspace: React.FC = () => {
       return ktnApi.saveClassSession(payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ktn-class-sessions', selectedClassId] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-class-sessions', effectiveClassId] });
       addToast({
-        title: 'Đã lưu buổi học & giao bài tập cho lớp!',
-        description: `Học viên lớp ${selectedClassId} đã nhận được thông báo bài tập mới.`,
+        title: 'Đã giao bài tập cho lớp!',
         variant: 'success',
       });
     },
@@ -199,9 +233,7 @@ export const TeacherWorkspace: React.FC = () => {
   const homeworks = homeworksQuery.data || [];
   const filteredHomeworks = useMemo(() => {
     return homeworks.filter((hw) => {
-      if (gradingFilter === 'pending') {
-        return hw.status === 'pending';
-      }
+      if (gradingFilter === 'pending') return hw.status === 'pending';
       if (gradingFilter === 'graded') {
         return hw.status === 'graded' || hw.status === 'revision_requested';
       }
@@ -221,73 +253,66 @@ export const TeacherWorkspace: React.FC = () => {
     setGradeStatusInput(hw.status === 'revision_requested' ? 'revision_requested' : 'graded');
   };
 
-  const classesList = isDemoMode
-    ? DEMO_CLASSES
-    : classesQuery.data || [];
   const sessionsList = sessionsQuery.data || [];
   const studentsList = studentsQuery.data || [];
 
   return (
-    <div data-testid="teacher-workspace-page" className="space-y-5">
-      {/* Top Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs">
-        <div className="flex items-center gap-3.5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-800 text-white shadow-sm">
-            <GraduationCap className="h-6 w-6" />
-          </div>
-          <div>
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900">
-              Cổng Giáo Viên Chủ Nhiệm • KTN LMS
-            </span>
-            <h1 className="mt-0.5 font-display text-lg font-bold text-stone-900 sm:text-xl">
-              Quản lý Lớp học, Giao bài & Chấm bài tập
-            </h1>
-          </div>
+    <div data-testid="teacher-workspace-page" className="space-y-3 sm:space-y-4">
+      {/* Compact Header & Class Selector */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 shadow-2xs">
+        <div className="min-w-0">
+          <h1 className="font-display text-base font-bold text-stone-900 sm:text-lg">
+            Lớp của tôi
+          </h1>
         </div>
 
-        {/* Class Selector & Quick Chat Jump */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <select
-            aria-label="Chọn lớp phụ trách"
-            value={selectedClassId}
-            onChange={(e) => setSelectedClassId(e.target.value)}
-            className="rounded-xl border border-stone-300 bg-stone-50 px-3.5 py-2 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
-          >
-            {classesList.map((cls) => (
-              <option key={cls.id} value={cls.id}>
-                {cls.name} ({cls.id})
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-center gap-2">
+          {classesList.length > 0 && (
+            <select
+              aria-label="Chọn lớp phụ trách"
+              data-testid="teacher-class-select"
+              value={effectiveClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              className="min-h-[36px] rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
+            >
+              {classesList.map((cls) => (
+                <option key={cls.id} value={cls.id}>
+                  {cls.id} · {cls.name}
+                </option>
+              ))}
+            </select>
+          )}
 
-          <button
-            type="button"
-            onClick={() => navigate(`/chat?room=class:${selectedClassId}`)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
-          >
-            <MessageSquare className="h-4 w-4" />
-            <span>Mở Chat Zalo lớp {selectedClassId}</span>
-          </button>
+          {effectiveClassId && (
+            <button
+              type="button"
+              onClick={() => navigate(`/chat?room=class:${effectiveClassId}`)}
+              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span>Tin nhắn {effectiveClassId}</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Compact Sub-Navigation Tabs */}
+      <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:items-center">
         <button
           type="button"
           data-testid="teacher-tab-grading"
           onClick={() => setActiveSubTab('grading')}
-          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+          className={`inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
             activeSubTab === 'grading'
-              ? 'bg-red-800 text-white shadow-sm'
+              ? 'bg-red-800 text-white shadow-2xs'
               : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
           }`}
         >
-          <FileCheck2 className="h-4 w-4" />
-          <span>Chấm bài nộp của học sinh ({homeworks.length})</span>
+          <FileCheck2 className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Chấm bài ({homeworks.length})</span>
           {pendingCount > 0 && (
-            <span className="rounded-full bg-amber-400 px-2 py-0.2 text-[10px] font-extrabold text-stone-950">
-              {pendingCount} chờ chấm
+            <span className="rounded-full bg-amber-400 px-1.5 py-0.2 text-[10px] font-extrabold text-stone-950">
+              {pendingCount}
             </span>
           )}
         </button>
@@ -296,37 +321,37 @@ export const TeacherWorkspace: React.FC = () => {
           type="button"
           data-testid="teacher-tab-sessions"
           onClick={() => setActiveSubTab('sessions')}
-          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+          className={`inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
             activeSubTab === 'sessions'
-              ? 'bg-red-800 text-white shadow-sm'
+              ? 'bg-red-800 text-white shadow-2xs'
               : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
           }`}
         >
-          <CalendarPlus className="h-4 w-4" />
-          <span>Cập nhật buổi học & Giao bài tập</span>
+          <CalendarPlus className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Giao bài</span>
         </button>
 
         <button
           type="button"
           data-testid="teacher-tab-students"
           onClick={() => setActiveSubTab('students')}
-          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+          className={`inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
             activeSubTab === 'students'
-              ? 'bg-red-800 text-white shadow-sm'
+              ? 'bg-red-800 text-white shadow-2xs'
               : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
           }`}
         >
-          <Users className="h-4 w-4" />
-          <span>Danh sách học viên ({studentsList.length})</span>
+          <Users className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Học viên ({studentsList.length})</span>
         </button>
       </div>
 
       {/* SubTab 1: Homework Grading Queue */}
       {activeSubTab === 'grading' && (
-        <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-3">
-            <h2 className="font-display text-base font-bold text-stone-900">
-              Danh sách bài tập học viên đã nộp • Lớp {selectedClassId}
+        <div className="rounded-xl border border-stone-200 bg-white p-3.5 sm:p-4 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
+            <h2 className="font-display text-sm font-bold text-stone-900">
+              Bài nộp · Lớp {effectiveClassId || 'Tất cả'}
             </h2>
 
             <div className="flex items-center gap-1 rounded-xl bg-stone-100 p-1">
@@ -341,7 +366,7 @@ export const TeacherWorkspace: React.FC = () => {
                   key={f.id}
                   type="button"
                   onClick={() => setGradingFilter(f.id)}
-                  className={`rounded-lg px-3 py-1 text-xs font-bold ${
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${
                     gradingFilter === f.id
                       ? 'bg-white text-red-900 shadow-2xs'
                       : 'text-stone-600 hover:text-stone-900'
@@ -353,10 +378,10 @@ export const TeacherWorkspace: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-4 space-y-3.5">
+          <div className="mt-3 space-y-2.5">
             {filteredHomeworks.length === 0 ? (
-              <p className="py-8 text-center text-xs text-stone-500">
-                Không có bài nộp nào trong danh mục này.
+              <p className="py-6 text-center text-xs text-stone-500">
+                Chưa có bài nộp trong mục này.
               </p>
             ) : (
               filteredHomeworks.map((hw) => {
@@ -365,60 +390,58 @@ export const TeacherWorkspace: React.FC = () => {
                   <div
                     key={hw.id}
                     data-testid={`teacher-homework-item-${hw.id}`}
-                    className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4 transition-all"
+                    className="rounded-xl border border-stone-200 bg-stone-50/70 p-3 transition-all"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-md bg-red-800 px-2 py-0.5 text-[11px] font-bold text-white">
+                    <div className="flex flex-wrap items-start justify-between gap-2.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="rounded bg-red-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
                             Bài {hw.lesson_num}
                           </span>
-                          <span className="font-display text-sm font-bold text-stone-900">
+                          <span className="truncate font-display text-xs font-bold text-stone-900 sm:text-sm">
                             {hw.student_name || hw.student_email}
                           </span>
-                          <span className="text-xs text-stone-500">
-                            • Nộp lúc {formatChatTimestamp(hw.submitted_at)}
+                          <span className="text-[11px] text-stone-400">
+                            · {formatChatTimestamp(hw.submitted_at)}
                           </span>
                         </div>
 
                         {hw.student_note && (
-                          <p className="mt-1.5 text-xs text-stone-700">
-                            <strong>Lời nhắn của học viên:</strong> {hw.student_note}
+                          <p className="mt-1 line-clamp-2 text-xs text-stone-600">
+                            {hw.student_note}
                           </p>
                         )}
 
                         {hw.file_url && (
-                          <div className="mt-2 flex items-center gap-2">
+                          <div className="mt-1.5 flex items-center gap-2">
                             <a
                               href={hw.file_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-red-800 hover:bg-red-50"
+                              className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-800 hover:bg-red-50"
                             >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              <span>
-                                Mở tệp bài làm ({hw.attachments?.[0]?.title || 'Audio/Ảnh'})
-                              </span>
+                              <ExternalLink className="h-3 w-3" />
+                              <span>Tệp bài làm</span>
                             </a>
                           </div>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-1.5">
                         {hw.status === 'graded' ? (
-                          <span className="inline-flex items-center gap-1 rounded-xl bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-900">
-                            <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                            Đã chấm: {hw.score}/10
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-900">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
+                            {hw.score}/10
                           </span>
                         ) : hw.status === 'revision_requested' ? (
-                          <span className="inline-flex items-center gap-1 rounded-xl bg-red-100 px-3 py-1 text-xs font-bold text-red-900">
-                            <RotateCcw className="h-3.5 w-3.5" />
-                            Yêu cầu nộp lại
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-red-100 px-2.5 py-1 text-xs font-bold text-red-900">
+                            <RotateCcw className="h-3 w-3" />
+                            Nộp lại
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-xl bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">
-                            <Clock className="h-3.5 w-3.5" />
-                            Chờ chấm điểm
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900">
+                            <Clock className="h-3 w-3" />
+                            Chờ chấm
                           </span>
                         )}
 
@@ -428,9 +451,9 @@ export const TeacherWorkspace: React.FC = () => {
                           onClick={() =>
                             isEditing ? setActiveHomeworkId(null) : openGradingForm(hw)
                           }
-                          className="rounded-xl bg-red-800 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                          className="min-h-[36px] rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                         >
-                          {isEditing ? 'Đóng' : hw.status === 'graded' ? 'Sửa điểm' : 'Chấm bài ngay'}
+                          {isEditing ? 'Đóng' : hw.status === 'graded' ? 'Sửa điểm' : 'Chấm bài'}
                         </button>
                       </div>
                     </div>
@@ -450,15 +473,15 @@ export const TeacherWorkspace: React.FC = () => {
                             score: numericScore,
                             teacherFeedback: feedbackInput.trim(),
                             status: gradeStatusInput,
-                            classCode: hw.class_code || selectedClassId,
+                            classCode: hw.class_code || effectiveClassId,
                           });
                         }}
-                        className="mt-4 space-y-3 rounded-xl border border-red-200 bg-white p-4 shadow-sm"
+                        className="mt-3 space-y-2.5 rounded-xl border border-red-200 bg-white p-3 shadow-2xs"
                       >
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                           <div>
                             <label className="block text-xs font-bold text-stone-800">
-                              Điểm số (Thang 0 – 10, bước 0.5):
+                              Điểm (0 – 10):
                             </label>
                             <input
                               type="number"
@@ -468,13 +491,13 @@ export const TeacherWorkspace: React.FC = () => {
                               data-testid="teacher-score-input"
                               value={scoreInput}
                               onChange={(e) => setScoreInput(e.target.value)}
-                              className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-900 focus:border-red-800 focus:outline-none"
+                              className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-sm font-bold text-stone-900 focus:border-red-800 focus:outline-none"
                             />
                           </div>
 
                           <div>
                             <label className="block text-xs font-bold text-stone-800">
-                              Kết luận đánh giá:
+                              Đánh giá:
                             </label>
                             <select
                               data-testid="teacher-status-select"
@@ -484,26 +507,24 @@ export const TeacherWorkspace: React.FC = () => {
                                   e.target.value as 'graded' | 'revision_requested'
                                 )
                               }
-                              className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
+                              className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
                             >
-                              <option value="graded">Đạt yêu cầu • Công bố điểm</option>
-                              <option value="revision_requested">
-                                Cần sửa lại • Yêu cầu học sinh nộp lại
-                              </option>
+                              <option value="graded">Đạt • Công bố điểm</option>
+                              <option value="revision_requested">Cần sửa • Nộp lại</option>
                             </select>
                           </div>
                         </div>
 
                         <div>
                           <label className="block text-xs font-bold text-stone-800">
-                            Nhận xét chi tiết của Lão sư (Gửi tới Sổ liên lạc Phụ huynh):
+                            Nhận xét:
                           </label>
                           <textarea
                             rows={2}
                             data-testid="teacher-feedback-input"
                             value={feedbackInput}
                             onChange={(e) => setFeedbackInput(e.target.value)}
-                            className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                            className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                           />
                         </div>
 
@@ -511,7 +532,7 @@ export const TeacherWorkspace: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setActiveHomeworkId(null)}
-                            className="rounded-xl border border-stone-300 px-3.5 py-2 text-xs font-semibold text-stone-700"
+                            className="min-h-[36px] rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700"
                           >
                             Hủy
                           </button>
@@ -519,14 +540,14 @@ export const TeacherWorkspace: React.FC = () => {
                             type="submit"
                             data-testid="teacher-submit-grade-btn"
                             disabled={gradeMutation.isPending}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
                           >
                             {gradeMutation.isPending ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <Award className="h-4 w-4" />
                             )}
-                            <span>Lưu điểm & Gửi thông báo</span>
+                            <span>Lưu điểm</span>
                           </button>
                         </div>
                       </form>
@@ -541,44 +562,42 @@ export const TeacherWorkspace: React.FC = () => {
 
       {/* SubTab 2: Assign Session & Homework */}
       {activeSubTab === 'sessions' && (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+        <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               saveSessionMutation.mutate();
             }}
-            className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs lg:col-span-7"
+            className="space-y-3 rounded-xl border border-stone-200 bg-white p-4 shadow-2xs lg:col-span-7"
           >
-            <h2 className="font-display text-base font-bold text-stone-900">
-              Cập nhật nội dung buổi học & Giao bài tập về nhà
+            <h2 className="font-display text-sm font-bold text-stone-900">
+              Giao bài tập buổi học ({effectiveClassId})
             </h2>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <div>
-                <label className="block text-xs font-bold text-stone-700">Buổi học số:</label>
+                <label className="block text-xs font-bold text-stone-700">Buổi số:</label>
                 <input
                   type="number"
                   min={1}
                   value={sessionNum}
                   onChange={(e) => setSessionNum(Number(e.target.value))}
-                  className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold"
+                  className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-stone-700">Tiêu đề buổi học:</label>
+                <label className="block text-xs font-bold text-stone-700">Tiêu đề buổi:</label>
                 <input
                   type="text"
                   value={sessionTitle}
                   onChange={(e) => setSessionTitle(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs"
+                  className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs"
                 />
               </div>
             </div>
 
-            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 space-y-2.5">
-              <p className="text-xs font-bold text-amber-950">
-                Bài tập giao về nhà cho học viên:
-              </p>
+            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+              <p className="text-xs font-bold text-amber-950">Bài tập về nhà:</p>
               <input
                 type="text"
                 value={exerciseTitle}
@@ -590,7 +609,7 @@ export const TeacherWorkspace: React.FC = () => {
                 rows={2}
                 value={exercisePrompt}
                 onChange={(e) => setExercisePrompt(e.target.value)}
-                placeholder="Hướng dẫn làm bài chi tiết..."
+                placeholder="Hướng dẫn ngắn..."
                 className="w-full rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs"
               />
             </div>
@@ -599,26 +618,26 @@ export const TeacherWorkspace: React.FC = () => {
               type="submit"
               data-testid="teacher-save-session-btn"
               disabled={saveSessionMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-xl bg-red-800 px-5 py-2.5 text-xs font-bold text-white hover:bg-red-900"
+              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
             >
-              <Send className="h-4 w-4" />
-              <span>Lưu buổi học & Thông báo cho cả lớp</span>
+              <Send className="h-3.5 w-3.5" />
+              <span>Giao bài</span>
             </button>
           </form>
 
-          <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs lg:col-span-5">
+          <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs lg:col-span-5">
             <h3 className="font-display text-sm font-bold text-stone-900">
-              Các buổi học đã lưu ({sessionsList.length})
+              Buổi học đã lưu ({sessionsList.length})
             </h3>
-            <div className="mt-3 space-y-2.5">
+            <div className="mt-2.5 space-y-2">
               {sessionsList.map((s) => (
                 <div
                   key={s.id || s.sessionNum}
-                  className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs"
+                  className="rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs"
                 >
                   <p className="font-bold text-stone-900">{s.title || s.session_title}</p>
-                  <p className="mt-0.5 text-stone-600">
-                    {s.exercises?.length || 0} bài tập thực hành
+                  <p className="mt-0.5 text-[11px] text-stone-500">
+                    {s.exercises?.length || 0} bài tập
                   </p>
                 </div>
               ))}
@@ -629,30 +648,28 @@ export const TeacherWorkspace: React.FC = () => {
 
       {/* SubTab 3: Student Roster */}
       {activeSubTab === 'students' && (
-        <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs">
-          <h2 className="font-display text-base font-bold text-stone-900">
-            Danh sách học viên lớp {selectedClassId}
+        <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs">
+          <h2 className="font-display text-sm font-bold text-stone-900">
+            Học viên lớp {effectiveClassId} ({studentsList.length})
           </h2>
-          <div className="mt-4 divide-y divide-stone-100">
+          <div className="mt-2.5 divide-y divide-stone-100">
             {studentsList.map((st) => (
               <div
                 key={st.code || st.email}
-                className="flex flex-wrap items-center justify-between gap-3 py-3"
+                className="flex flex-wrap items-center justify-between gap-2 py-2.5"
               >
-                <div>
-                  <p className="text-sm font-bold text-stone-900">{st.name}</p>
-                  <p className="text-xs text-stone-500">
-                    Email: {st.email} • Khóa học:{' '}
-                    {(st.online_courses || []).map((c) => c.shortTitle || c.title).join(', ') ||
-                      'Lớp trực tiếp'}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold text-stone-900 sm:text-sm">
+                    {st.name}
                   </p>
+                  <p className="truncate text-[11px] text-stone-500">{st.email}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => navigate(`/chat?room=student:${st.email}`)}
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
+                  className="min-h-[36px] rounded-xl border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-900 hover:bg-red-100"
                 >
-                  Nhắn tin phụ huynh 1-1
+                  Nhắn tin
                 </button>
               </div>
             ))}

@@ -91,17 +91,19 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     return (
       <div
         data-testid="chat-audio-attachment"
-        className={`mt-1.5 flex flex-col gap-1.5 rounded-xl border p-2.5 ${
+        className={`mt-1.5 flex min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-xl border p-2 ${
           isOwn
             ? 'border-red-300/60 bg-white/80 text-stone-900'
             : 'border-stone-200 bg-stone-50 text-stone-900'
         }`}
       >
-        <div className="flex items-center gap-2 text-xs font-semibold text-red-900">
-          <Volume2 className="h-4 w-4 shrink-0 text-red-700" />
-          <span className="truncate">{attachment.name || 'Bản thu âm luyện nói tiếng Trung'}</span>
+        <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-red-900">
+          <Volume2 className="h-3.5 w-3.5 shrink-0 text-red-700" />
+          <span className="min-w-0 flex-1 truncate">
+            {attachment.name || 'Bản thu âm luyện nói tiếng Trung'}
+          </span>
           {attachment.durationSec ? (
-            <span className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-800">
+            <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-800">
               {attachment.durationSec}s
             </span>
           ) : null}
@@ -111,7 +113,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           controls
           preload="metadata"
           src={attachment.url}
-          className="h-9 w-full max-w-[260px]"
+          className="h-8 w-full max-w-[210px] sm:max-w-[260px]"
         />
       </div>
     );

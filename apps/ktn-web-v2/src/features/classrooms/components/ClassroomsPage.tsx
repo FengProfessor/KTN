@@ -154,62 +154,62 @@ export const ClassroomsPage: React.FC = () => {
     : [];
 
   return (
-    <div data-testid="classrooms-page" className="space-y-6">
+    <div data-testid="classrooms-page" className="space-y-4">
       {/* Section 1: Clear Separation Between Live Classroom & Video Courses */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
         {/* Live Classroom Card (7 cols) */}
         <div
           data-testid="live-classroom-card"
-          className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs lg:col-span-7"
+          className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-white p-4 shadow-2xs lg:col-span-7"
         >
           {assignedClass ? (
             <>
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-900">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-900">
                     <Users className="h-3.5 w-3.5 text-red-800" />
-                    LỚP HỌC TRỰC TIẾP CÙNG GIÁO VIÊN
+                    LỚP TRỰC TIẾP
                   </span>
-                  <span className="rounded-lg bg-stone-100 px-2.5 py-1 font-mono text-xs font-bold text-stone-700">
+                  <span className="rounded-lg bg-stone-100 px-2 py-0.5 font-mono text-xs font-bold text-stone-700">
                     Mã lớp: {assignedClass.id}
                   </span>
                 </div>
 
-                <h1 className="mt-3 font-display text-xl font-bold text-stone-900">
+                <h1 className="mt-2 font-display text-base font-bold text-stone-900 sm:text-lg">
                   {assignedClass.name}
                 </h1>
 
-                <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                  <div className="flex items-center gap-2.5 rounded-xl border border-stone-200 bg-stone-50 p-3">
-                    <GraduationCap className="h-5 w-5 shrink-0 text-red-800" />
-                    <div>
-                      <p className="text-[11px] text-stone-500">Giáo viên chủ nhiệm</p>
-                      <p className="text-xs font-bold text-stone-900">
+                <div className="mt-2.5 grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
+                    <GraduationCap className="h-4 w-4 shrink-0 text-red-800" />
+                    <div className="min-w-0">
+                      <p className="text-[10.5px] text-stone-500">Giáo viên</p>
+                      <p className="truncate text-xs font-bold text-stone-900">
                         {assignedClass.teacher_name || 'Cô Lâm Mỹ Linh'}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2.5 rounded-xl border border-stone-200 bg-stone-50 p-3">
-                    <Calendar className="h-5 w-5 shrink-0 text-amber-700" />
-                    <div>
-                      <p className="text-[11px] text-stone-500">Lịch học cố định</p>
-                      <p className="text-xs font-bold text-stone-900">
-                        {assignedClass.schedule || '19:30 Thứ 3 & Thứ 6'}
+                  <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
+                    <Calendar className="h-4 w-4 shrink-0 text-amber-700" />
+                    <div className="min-w-0">
+                      <p className="text-[10.5px] text-stone-500">Lịch học</p>
+                      <p className="truncate text-xs font-bold text-stone-900">
+                        {assignedClass.schedule || '19:30 T3 & T6'}
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2.5 border-t border-stone-100 pt-4">
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
                 <button
                   type="button"
                   onClick={() => navigate(`/chat?room=class:${assignedClass.id}`)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-red-800 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-red-900"
+                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
                 >
-                  <MessageSquare className="h-4 w-4" />
-                  Vào phòng Chat Zalo lớp {assignedClass.id}
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Chat lớp {assignedClass.id}
                 </button>
               </div>
             </>
@@ -217,24 +217,24 @@ export const ClassroomsPage: React.FC = () => {
             /* Honest Empty State when student is NOT assigned to any live class */
             <div
               data-testid="unassigned-class-empty-state"
-              className="flex flex-col items-start justify-center py-4"
+              className="flex flex-col items-start justify-center py-2"
             >
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
                 <AlertCircle className="h-3.5 w-3.5" />
                 CHƯA XẾP LỚP TRỰC TIẾP
               </span>
-              <h2 className="mt-2 font-display text-lg font-bold text-stone-900">
-                Tài khoản hiện chưa được phân vào lớp trực tiếp
+              <h2 className="mt-1.5 font-display text-sm font-bold text-stone-900 sm:text-base">
+                Chưa xếp lớp trực tiếp
               </h2>
-              <p className="mt-1 text-xs leading-relaxed text-stone-600">
-                Con vẫn có thể tự học các khóa học Video đã mở khóa hoặc nhắn tin cho bộ phận Học vụ để được xếp lịch học cùng Lão sư.
+              <p className="mt-0.5 text-xs text-stone-600">
+                Tự học khóa Video đã mở hoặc nhắn Học vụ để xếp lịch học cùng giáo viên.
               </p>
               <button
                 type="button"
                 onClick={() => navigate('/chat')}
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
+                className="mt-3 inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900"
               >
-                <MessageSquare className="h-4 w-4" />
+                <MessageSquare className="h-3.5 w-3.5" />
                 Nhắn Học vụ xếp lớp
               </button>
             </div>
@@ -244,41 +244,36 @@ export const ClassroomsPage: React.FC = () => {
         {/* Self-Paced Video Courses Card (5 cols) */}
         <div
           data-testid="video-courses-summary-card"
-          className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-gradient-to-br from-stone-900 via-red-950 to-stone-900 p-5 text-white shadow-sm lg:col-span-5"
+          className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-gradient-to-br from-stone-900 via-red-950 to-stone-900 p-4 text-white shadow-2xs lg:col-span-5"
         >
           <div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/20 px-3 py-1 text-xs font-bold text-amber-300">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-bold text-amber-300">
               <PlayCircle className="h-3.5 w-3.5" />
-              KHÓA HỌC VIDEO TỰ HỌC (HLS)
+              KHÓA VIDEO TỰ HỌC
             </span>
-            <h2 className="mt-3 font-display text-lg font-bold">
-              Giáo trình Video đã mở khóa ({entitledCourses.length})
+            <h2 className="mt-2 font-display text-sm font-bold sm:text-base">
+              Khóa học đã mở ({entitledCourses.length})
             </h2>
-            <p className="mt-1 text-xs text-stone-300">
-              Xem lại bài giảng chuẩn HD và nghe file MP3 bất cứ lúc nào để ôn bài trước và sau giờ học trên lớp.
-            </p>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-2.5 space-y-2">
               {entitledCourses.length === 0 ? (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-stone-300">
-                  Chưa có học phần Video nào được kích hoạt trên tài khoản này.
+                <div className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-xs text-stone-300">
+                  Chưa có học phần Video nào được kích hoạt.
                 </div>
               ) : (
                 entitledCourses.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between rounded-xl border border-white/15 bg-white/10 px-3.5 py-2.5"
+                    className="flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2"
                   >
-                    <div>
-                      <p className="text-xs font-bold text-amber-200">{c.title}</p>
-                      <p className="text-[11px] text-stone-300">
-                        Đầy đủ video bài giảng + file nghe MP3
-                      </p>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-bold text-amber-200">{c.title}</p>
+                      <p className="text-[11px] text-stone-300">Video + MP3</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => navigate(`/learning?courseId=${encodeURIComponent(c.id)}`)}
-                      className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-bold text-stone-950 hover:bg-amber-300"
+                      className="min-h-[34px] shrink-0 rounded-lg bg-amber-400 px-3 py-1 text-xs font-bold text-stone-950 hover:bg-amber-300"
                     >
                       Vào học
                     </button>
@@ -287,36 +282,27 @@ export const ClassroomsPage: React.FC = () => {
               )}
             </div>
           </div>
-
-          <div className="mt-4 border-t border-white/10 pt-3 text-[11px] text-stone-300">
-            Mẹo học tốt: Xem video trước buổi học 15 phút giúp con nhớ ngay 80% từ vựng trên lớp!
-          </div>
         </div>
       </div>
 
       {/* Section 2: Classroom Sessions & Assigned Exercises */}
       {assignedClass && (
-        <div className="rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-4">
-            <div>
-              <h2 className="font-display text-base font-bold text-stone-900 sm:text-lg">
-                Lộ trình các buổi học & Bài tập lớp {assignedClass.id}
-              </h2>
-              <p className="text-xs text-stone-500">
-                Chọn từng buổi học để xem tóm tắt kiến thức trên lớp và các bài tập Lão sư đã giao.
-              </p>
-            </div>
-            <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-700">
-              Tổng số: {sessions.length} buổi đã cập nhật
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-3">
+            <h2 className="font-display text-sm font-bold text-stone-900 sm:text-base">
+              Buổi học & Bài tập lớp {assignedClass.id}
+            </h2>
+            <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-[11px] font-bold text-stone-700">
+              {sessions.length} buổi
             </span>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-12">
+          <div className="mt-3 grid grid-cols-1 gap-3.5 lg:grid-cols-12">
             {/* Session Timeline Selector (4 cols) */}
-            <div className="space-y-2 lg:col-span-4">
+            <div className="space-y-1.5 lg:col-span-4">
               {sessions.length === 0 ? (
-                <p className="rounded-xl bg-stone-50 p-4 text-xs text-stone-500">
-                  Giáo viên đang cập nhật lịch trình buổi học cho lớp.
+                <p className="rounded-xl bg-stone-50 p-3 text-xs text-stone-500">
+                  Chưa có buổi học nào được cập nhật.
                 </p>
               ) : (
                 sessions.map((session) => {
@@ -332,14 +318,14 @@ export const ClassroomsPage: React.FC = () => {
                         setSelectedSessionNum(sNum);
                         setActiveExerciseLessonNum(null);
                       }}
-                      className={`flex w-full items-start gap-3 rounded-xl border p-3.5 text-left transition-all ${
+                      className={`flex w-full items-center gap-2.5 rounded-xl border p-2.5 text-left transition-all ${
                         isSelected
                           ? 'border-red-300 bg-red-50/90 shadow-2xs'
                           : 'border-stone-200 bg-white hover:bg-stone-50'
                       }`}
                     >
                       <div
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-display text-xs font-bold ${
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-display text-xs font-bold ${
                           isSelected
                             ? 'bg-red-800 text-white'
                             : 'bg-stone-100 text-stone-700'
@@ -348,11 +334,11 @@ export const ClassroomsPage: React.FC = () => {
                         B{sNum}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-stone-900">
+                        <p className="truncate text-xs font-bold text-stone-900">
                           {session.title || session.session_title}
                         </p>
-                        <p className="mt-0.5 text-[11px] text-stone-500">
-                          {session.exercises?.length || 0} bài tập được giao
+                        <p className="text-[11px] text-stone-500">
+                          {session.exercises?.length || 0} bài tập
                         </p>
                       </div>
                     </button>
@@ -364,11 +350,11 @@ export const ClassroomsPage: React.FC = () => {
             {/* Active Session Details & Exercises (8 cols) */}
             <div className="lg:col-span-8">
               {activeSession ? (
-                <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4 sm:p-5">
+                <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3.5 sm:p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span
                       data-testid="active-session-badge"
-                      className="rounded-md bg-red-800 px-2.5 py-0.5 text-[11px] font-bold text-white"
+                      className="rounded-md bg-red-800 px-2 py-0.5 text-[10.5px] font-bold text-white"
                     >
                       BUỔI {activeSession.sessionNum || activeSession.session_num}
                     </span>
@@ -377,20 +363,20 @@ export const ClassroomsPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <h3 className="mt-2 font-display text-base font-bold text-stone-900">
+                  <h3 className="mt-1.5 font-display text-sm font-bold text-stone-900 sm:text-base">
                     {activeSession.title || activeSession.session_title}
                   </h3>
                   {activeSession.summary && (
-                    <p className="mt-1 text-xs leading-relaxed text-stone-700">
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-stone-700">
                       {activeSession.summary}
                     </p>
                   )}
 
                   {/* Exercises List */}
-                  <div className="mt-4 space-y-3">
-                    <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-stone-700">
-                      <FileCheck2 className="h-4 w-4 text-red-800" />
-                      Danh sách bài tập được giao ({activeSession.exercises?.length || 0})
+                  <div className="mt-3 space-y-2.5">
+                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-700">
+                      <FileCheck2 className="h-3.5 w-3.5 text-red-800" />
+                      Bài tập được giao ({activeSession.exercises?.length || 0})
                     </h4>
 
                     {(activeSession.exercises || []).map((ex, idx) => {
@@ -417,13 +403,13 @@ export const ClassroomsPage: React.FC = () => {
                       const isDrawerOpen = activeExerciseLessonNum === liveLessonNum;
 
                       return (
-                        <div key={ex.id || exNum} className="space-y-3">
+                        <div key={ex.id || exNum} className="space-y-2.5">
                           <div
                             data-testid={`classroom-exercise-${liveLessonNum}`}
-                            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white p-3.5 shadow-2xs"
+                            className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-white p-3 shadow-2xs"
                           >
                             <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <p className="text-xs font-bold text-stone-900">{ex.title}</p>
                                 {matchedHw?.status === 'graded' ? (
                                   <span
@@ -451,7 +437,7 @@ export const ClassroomsPage: React.FC = () => {
                                   </span>
                                 )}
                               </div>
-                              <p className="mt-1 text-xs text-stone-600">
+                              <p className="mt-0.5 line-clamp-2 text-xs text-stone-600">
                                 {ex.prompt || ex.instruction}
                               </p>
                             </div>
@@ -462,15 +448,15 @@ export const ClassroomsPage: React.FC = () => {
                               onClick={() =>
                                 setActiveExerciseLessonNum(isDrawerOpen ? null : liveLessonNum)
                               }
-                              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900"
+                              className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                             >
                               <BookOpen className="h-3.5 w-3.5" />
                               <span>
                                 {isDrawerOpen
-                                  ? 'Đóng khung nộp bài'
+                                  ? 'Đóng'
                                   : matchedHw
-                                  ? 'Xem bài nộp / Điểm'
-                                  : 'Làm bài & Nộp ngay'}
+                                  ? 'Xem bài nộp'
+                                  : 'Nộp bài'}
                               </span>
                             </button>
                           </div>

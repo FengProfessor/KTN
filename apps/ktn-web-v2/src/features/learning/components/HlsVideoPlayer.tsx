@@ -255,14 +255,14 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
       </div>
 
       {/* Bottom Control & Status Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-800 bg-stone-900 px-4 py-2.5 text-xs text-stone-200">
-        <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-800 bg-stone-900 px-3 py-2 text-xs text-stone-200">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             data-testid="toggle-video-play-btn"
             onClick={togglePlay}
             disabled={effectiveStatus === 'unentitled' || effectiveStatus === 'error'}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-40"
+            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-40"
           >
             {effectiveStatus === 'playing' ? (
               <>
@@ -272,29 +272,26 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             ) : (
               <>
                 <Play className="h-3.5 w-3.5 fill-white" />
-                <span>Phát bài giảng</span>
+                <span>Phát</span>
               </>
             )}
           </button>
 
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-stone-800 px-2.5 py-1 text-[11px] font-medium text-stone-300">
-            <Volume2 className="h-3.5 w-3.5 text-amber-400" />
-            <span>
-              Trạng thái:{' '}
-              <strong className="text-amber-300">
-                {effectiveStatus === 'playing'
-                  ? 'Đang phát'
-                  : effectiveStatus === 'paused'
-                  ? 'Đang tạm dừng'
-                  : effectiveStatus === 'loading'
-                  ? 'Đang tải...'
-                  : effectiveStatus === 'unentitled'
-                  ? 'Chưa mở khóa'
-                  : effectiveStatus === 'error'
-                  ? 'Lỗi luồng phát'
-                  : 'Sẵn sàng phát'}
-              </strong>
-            </span>
+          <span className="inline-flex items-center gap-1 rounded-md bg-stone-800 px-2 py-1 text-[11px] font-medium text-stone-300">
+            <Volume2 className="h-3 w-3 text-amber-400" />
+            <strong className="text-amber-300">
+              {effectiveStatus === 'playing'
+                ? 'Đang phát'
+                : effectiveStatus === 'paused'
+                ? 'Tạm dừng'
+                : effectiveStatus === 'loading'
+                ? 'Đang tải...'
+                : effectiveStatus === 'unentitled'
+                ? 'Chưa mở khóa'
+                : effectiveStatus === 'error'
+                ? 'Lỗi luồng phát'
+                : 'Sẵn sàng'}
+            </strong>
           </span>
 
           {duration > 0 && (
@@ -305,14 +302,14 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
         </div>
 
         {/* Speed & Completion Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg bg-stone-800 p-0.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-0.5 rounded-lg bg-stone-800 p-0.5">
             {[0.75, 1, 1.25, 1.5].map((rate) => (
               <button
                 key={rate}
                 type="button"
                 onClick={() => handleSpeedChange(rate)}
-                className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition-colors ${
+                className={`rounded-md px-1.5 py-0.5 text-[10.5px] font-bold transition-colors ${
                   playbackRate === rate
                     ? 'bg-amber-500 text-stone-950'
                     : 'text-stone-400 hover:text-white'
@@ -328,14 +325,14 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             data-testid="mark-lesson-complete-btn"
             onClick={onMarkCompleted}
             disabled={effectiveStatus === 'unentitled'}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+            className={`inline-flex min-h-[34px] items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-colors ${
               isCompleted
                 ? 'bg-emerald-700 text-white'
                 : 'border border-stone-700 bg-stone-800 text-stone-200 hover:bg-stone-700'
             }`}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>{isCompleted ? 'Đã hoàn thành bài học' : 'Đánh dấu hoàn thành'}</span>
+            <span>{isCompleted ? 'Đã hoàn thành' : 'Hoàn thành'}</span>
           </button>
         </div>
       </div>

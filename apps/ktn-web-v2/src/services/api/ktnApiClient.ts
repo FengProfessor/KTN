@@ -39,17 +39,23 @@ export function getStoredSession(): KtnUserSession | null {
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as KtnUserSession;
-    if (parsed && parsed.email) return parsed;
-    return null;
+    if (!parsed || !parsed.email || parsed.token === 'DEMO-MODE-ONLY') {
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 
 export function saveStoredSession(session: KtnUserSession, token?: string): KtnUserSession {
+  const effectiveToken = token || session.token || '';
+  if (effectiveToken === 'DEMO-MODE-ONLY') {
+    return session;
+  }
   const merged: KtnUserSession = {
     ...session,
-    token: token || session.token || ''
+    token: effectiveToken
   };
   try {
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(merged));
@@ -85,7 +91,11 @@ export async function ktnRequest<T>(
   if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
     headers.set('Content-Type', 'application/json');
   }
-  if (session?.token && !session.token.startsWith('KTN-')) {
+  if (
+    session?.token &&
+    session.token !== 'DEMO-MODE-ONLY' &&
+    !session.token.startsWith('KTN-')
+  ) {
     headers.set('Authorization', `Bearer ${session.token}`);
   }
 

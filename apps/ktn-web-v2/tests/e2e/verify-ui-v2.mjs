@@ -10,9 +10,11 @@ const __dirname = path.dirname(__filename);
 const APP_ROOT = path.resolve(__dirname, '../..');
 const REPO_ROOT = path.resolve(APP_ROOT, '../..');
 const SCREENSHOT_DIR = path.join(REPO_ROOT, 'docs/ui-v2/screenshots');
+const ROLE_AUDIT_DIR = path.join(SCREENSHOT_DIR, 'role-audit');
 const REPORT_PATH = path.join(REPO_ROOT, 'docs/ui-v2/e2e-verification-report.json');
 
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+fs.mkdirSync(ROLE_AUDIT_DIR, { recursive: true });
 
 const require = createRequire(import.meta.url);
 
@@ -73,7 +75,7 @@ async function runSuite() {
     const studentPage = await studentContext.newPage();
 
     // A1: Invalid password displays clear error with role="alert"
-    await studentPage.goto(`${baseUrl}/login`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
     await studentPage.fill('[data-testid="login-email-input"]', 'hoangngan@khongtunhi.com');
     await studentPage.fill('[data-testid="login-password-input"]', 'wrong-password');
     await studentPage.click('[data-testid="login-submit-btn"]');
@@ -101,14 +103,14 @@ async function runSuite() {
     );
 
     // A3: Reload preserves authenticated session
-    await studentPage.reload({ waitUntil: 'networkidle' });
+    await studentPage.reload({ waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 8000 });
     recordTest('TEST A', 'A3', 'Browser reload preserves authenticated session', true);
 
     // A4: RBAC Route Guard blocks Student from /teacher and /admin
-    await studentPage.goto(`${baseUrl}/teacher`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/teacher`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="role-forbidden-guard"]', { timeout: 8000 });
-    await studentPage.goto(`${baseUrl}/admin`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/admin`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="role-forbidden-guard"]', { timeout: 8000 });
     recordTest(
       'TEST A',
@@ -118,7 +120,7 @@ async function runSuite() {
     );
 
     // A5: Logout clears session AND room drafts/session UI state
-    await studentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="chat-composer-input"]', { timeout: 8000 });
     await studentPage.fill('[data-testid="chat-composer-input"]', 'Bản nháp riêng của Hoàng Ngân');
     await studentPage.click('[data-testid="logout-btn"]');
@@ -135,16 +137,18 @@ async function runSuite() {
       Object.keys(draftAfterLogout).length === 0
     );
 
-    // A6: Admin login loads Admin Workspace
+    // A6: Admin login loads Admin Home (/) and Admin Workspace (/admin)
     const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const adminPage = await adminContext.newPage();
-    await adminPage.goto(`${baseUrl}/login`, { waitUntil: 'networkidle' });
+    await adminPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
     await adminPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await adminPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 10000 });
+    await adminPage.goto(`${baseUrl}/admin`, { waitUntil: 'domcontentloaded' });
     await adminPage.waitForSelector('[data-testid="admin-workspace-page"]', { timeout: 10000 });
     recordTest(
       'TEST A',
       'A6',
-      'Admin login succeeds and loads Admin Workspace (/admin)',
+      'Admin login succeeds and loads Admin Home (/) and Admin Workspace (/admin)',
       true
     );
     await adminContext.close();
@@ -188,7 +192,7 @@ async function runSuite() {
     // Unentitled & unassigned student context (taphong2002vip@gmail.com)
     const unentitledContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const unentitledPage = await unentitledContext.newPage();
-    await unentitledPage.goto(`${baseUrl}/login`, { waitUntil: 'networkidle' });
+    await unentitledPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
     await unentitledPage.click('[data-testid="quick-login-taphong2002vip@gmail.com"]');
     await unentitledPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 10000 });
     const unassignedSubtitle = await unentitledPage.textContent(
@@ -236,13 +240,13 @@ async function runSuite() {
     // =========================================================================
     const teacherContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const teacherPage = await teacherContext.newPage();
-    await teacherPage.goto(`${baseUrl}/login`, { waitUntil: 'networkidle' });
+    await teacherPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
     await teacherPage.click('[data-testid="quick-login-linh.lam@khongtunhi.com"]');
-    await teacherPage.waitForSelector('[data-testid="teacher-workspace-page"]', { timeout: 10000 });
+    await teacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 10000 });
 
     // Both Student and Teacher open /chat?room=class:YCT2-04
-    await studentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'networkidle' });
-    await teacherPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
+    await teacherPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="zalo-chat-workspace"]', { timeout: 8000 });
     await teacherPage.waitForSelector('[data-testid="zalo-chat-workspace"]', { timeout: 8000 });
 
@@ -276,7 +280,7 @@ async function runSuite() {
       uniqueMsg,
       { timeout: 10000 }
     );
-    await studentPage.reload({ waitUntil: 'networkidle' });
+    await studentPage.reload({ waitUntil: 'domcontentloaded' });
     await studentPage.waitForFunction(
       (txt) => document.body.innerText.includes(txt),
       uniqueMsg,
@@ -348,7 +352,7 @@ async function runSuite() {
     await studentPage.click('[data-testid="send-voice-recording-btn"]');
 
     await studentPage.waitForSelector('[data-testid="chat-audio-player"]', { timeout: 8000 });
-    await studentPage.reload({ waitUntil: 'networkidle' });
+    await studentPage.reload({ waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="chat-audio-player"]', { timeout: 8000 });
     await teacherPage.waitForSelector('[data-testid="chat-audio-player"]', { timeout: 10000 });
     const teacherAudioSrc = await teacherPage.evaluate(() => {
@@ -409,7 +413,7 @@ async function runSuite() {
       });
     });
 
-    await studentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="notification-center-page"]', { timeout: 8000 });
     const assignedNotifSelector = '[data-testid^="open-notif-target-NOTIF-ASSIGN-YCT2-04-S2"]';
     await studentPage.waitForSelector(assignedNotifSelector, { timeout: 8000 });
@@ -433,7 +437,7 @@ async function runSuite() {
     );
 
     // D3: Mark all notifications read persists across reload
-    await studentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="notification-center-page"]', { timeout: 8000 });
     const markAllDisabledBefore = await studentPage.isDisabled(
       '[data-testid="mark-all-notifications-read-btn"]'
@@ -442,7 +446,7 @@ async function runSuite() {
       await studentPage.click('[data-testid="mark-all-notifications-read-btn"]');
       await studentPage.waitForTimeout(500);
     }
-    await studentPage.reload({ waitUntil: 'networkidle' });
+    await studentPage.reload({ waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="notification-center-page"]', { timeout: 8000 });
     const unreadBadgeExists = await studentPage.isVisible(
       '[data-testid="notifications-unread-count-pill"]'
@@ -459,7 +463,7 @@ async function runSuite() {
     // =========================================================================
     // E1: Live classroom homework isolation on /classrooms (Session 1 Exercise 1 -> lessonNum 101)
     await studentPage.goto(`${baseUrl}/classrooms?class=YCT2-04&session=1`, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
     });
     await studentPage.waitForSelector('[data-testid="classrooms-page"]', { timeout: 8000 });
     const classHwStatusBefore = await studentPage.textContent(
@@ -490,7 +494,7 @@ async function runSuite() {
     );
 
     // E2: Student uploads Video Course homework on /learning Lesson 2
-    await studentPage.goto(`${baseUrl}/learning`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/learning`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 8000 });
     await studentPage.click('[data-testid="lesson-sidebar-item-2"]');
     await studentPage.waitForTimeout(300);
@@ -509,7 +513,7 @@ async function runSuite() {
     );
 
     // E3: Teacher requests revision (revision_requested) -> Student sees status and resubmits
-    await teacherPage.goto(`${baseUrl}/teacher`, { waitUntil: 'networkidle' });
+    await teacherPage.goto(`${baseUrl}/teacher`, { waitUntil: 'domcontentloaded' });
     await teacherPage.waitForSelector('[data-testid="teacher-workspace-page"]', { timeout: 8000 });
     const hwIdL2 = 'HW-hoangngan@khongtunhi.com-6adadba969897b0002482ca5-L2';
     await teacherPage.waitForSelector(`[data-testid="open-grade-form-btn-${hwIdL2}"]`, {
@@ -524,7 +528,7 @@ async function runSuite() {
     await teacherPage.click('[data-testid="teacher-submit-grade-btn"]');
     await teacherPage.waitForTimeout(600);
 
-    await studentPage.reload({ waitUntil: 'networkidle' });
+    await studentPage.reload({ waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 8000 });
     await studentPage.click('[data-testid="lesson-sidebar-item-2"]');
     await studentPage.waitForSelector('[data-testid="homework-status-revision"]', {
@@ -546,7 +550,7 @@ async function runSuite() {
     );
 
     // E4: Teacher grades resubmitted Lesson 2 homework 10/10 -> Student deep-links from notification to Lesson 2 score
-    await teacherPage.goto(`${baseUrl}/teacher`, { waitUntil: 'networkidle' });
+    await teacherPage.goto(`${baseUrl}/teacher`, { waitUntil: 'domcontentloaded' });
     await teacherPage.waitForSelector(`[data-testid="open-grade-form-btn-${hwIdL2}"]`, {
       timeout: 8000,
     });
@@ -560,7 +564,7 @@ async function runSuite() {
     await teacherPage.click('[data-testid="teacher-submit-grade-btn"]');
     await teacherPage.waitForTimeout(600);
 
-    await studentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded' });
     const gradedNotifSelector = `[data-testid^="open-notif-target-NOTIF-GRADED-${hwIdL2}"]`;
     await studentPage.waitForSelector(gradedNotifSelector, { timeout: 8000 });
     await studentPage.click(gradedNotifSelector);
@@ -603,7 +607,7 @@ async function runSuite() {
     for (const vp of viewports) {
       await studentPage.setViewportSize({ width: vp.width, height: vp.height });
       for (const route of routesToAudit) {
-        await studentPage.goto(`${baseUrl}${route.path}`, { waitUntil: 'networkidle' });
+        await studentPage.goto(`${baseUrl}${route.path}`, { waitUntil: 'domcontentloaded' });
         await studentPage.waitForTimeout(250);
 
         const overflow = await studentPage.evaluate(() => {
@@ -628,7 +632,7 @@ async function runSuite() {
     // TEST G — ACCESSIBILITY & SCREENSHOT ARTIFACTS
     // =========================================================================
     await studentPage.setViewportSize({ width: 1440, height: 900 });
-    await studentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'networkidle' });
+    await studentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
     await studentPage.keyboard.press('Tab');
     const a11yAudit = await studentPage.evaluate(() => {
       const activeTag = document.activeElement?.tagName || '';
@@ -675,7 +679,7 @@ async function runSuite() {
         width: vpWidth,
         height: vpWidth === 390 ? 844 : vpWidth === 768 ? 1024 : 900,
       });
-      await teacherPage.goto(`${baseUrl}/teacher`, { waitUntil: 'networkidle' });
+      await teacherPage.goto(`${baseUrl}/teacher`, { waitUntil: 'domcontentloaded' });
       await teacherPage.waitForTimeout(350);
       const shotPath = path.join(SCREENSHOT_DIR, `05-teacher-workspace-${vpWidth}px.png`);
       await teacherPage.screenshot({ path: shotPath, fullPage: false });
@@ -687,6 +691,371 @@ async function runSuite() {
       true
     );
 
+    // =========================================================================
+    // TEST H — ROLE-AWARE UX (H1..H9)
+    // =========================================================================
+    const adminAuditContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const adminAuditPage = await adminAuditContext.newPage();
+    await adminAuditPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await adminAuditPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await adminAuditPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 10000 });
+
+    // H1: Student home at / (390x844)
+    await studentPage.setViewportSize({ width: 390, height: 844 });
+    await studentPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await studentPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 8000 });
+    const studentHeaderTitle = await studentPage.textContent('[data-testid="header-page-title"]');
+    const studentHasContinueCta = await studentPage.isVisible(
+      '[data-testid="dashboard-continue-learning-btn"]'
+    );
+    const studentSeesTeacherOrAdminHome =
+      (await studentPage.isVisible('[data-testid="teacher-home-page"]')) ||
+      (await studentPage.isVisible('[data-testid="admin-home-page"]'));
+    recordTest(
+      'TEST H',
+      'H1',
+      'Student opening / renders StudentHome with Continue Learning CTA and compact greeting',
+      Boolean(
+        studentHeaderTitle?.includes('Chào Hoàng Ngân') &&
+          studentHasContinueCta &&
+          !studentSeesTeacherOrAdminHome
+      ),
+      `header="${studentHeaderTitle?.trim()}"`
+    );
+
+    // H2: Teacher home at / (390x844)
+    await teacherPage.setViewportSize({ width: 390, height: 844 });
+    await teacherPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await teacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+    const teacherHeaderTitle = await teacherPage.textContent('[data-testid="header-page-title"]');
+    const teacherHasGradeCta = await teacherPage.isVisible(
+      '[data-testid="teacher-home-grade-btn"]'
+    );
+    const teacherSeesStudentOrAdminHome =
+      (await teacherPage.isVisible('[data-testid="student-dashboard-page"]')) ||
+      (await teacherPage.isVisible('[data-testid="admin-home-page"]'));
+    recordTest(
+      'TEST H',
+      'H2',
+      'Teacher opening / renders TeacherHome with grading priority card and assigned classes (never StudentDashboard)',
+      Boolean(
+        teacherHeaderTitle?.includes('Chào Cô Lâm Mỹ Linh') &&
+          teacherHasGradeCta &&
+          !teacherSeesStudentOrAdminHome
+      ),
+      `header="${teacherHeaderTitle?.trim()}"`
+    );
+
+    // H3: Admin home at / (390x844)
+    await adminAuditPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await adminAuditPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 8000 });
+    const adminHeaderTitle = await adminAuditPage.textContent('[data-testid="header-page-title"]');
+    const adminHasKpiGrid = await adminAuditPage.isVisible('[data-testid="admin-compact-summary"]');
+    const adminSeesStudentOrTeacherHome =
+      (await adminAuditPage.isVisible('[data-testid="student-dashboard-page"]')) ||
+      (await adminAuditPage.isVisible('[data-testid="teacher-home-page"]'));
+    recordTest(
+      'TEST H',
+      'H3',
+      'Admin opening / renders AdminHome with 3 compact KPIs and actionable queue (never StudentDashboard)',
+      Boolean(
+        adminHeaderTitle?.includes('Quản lý học vụ') &&
+          adminHasKpiGrid &&
+          !adminSeesStudentOrTeacherHome
+      ),
+      `header="${adminHeaderTitle?.trim()}"`
+    );
+
+    // H4: Mobile Bottom Navigation — 5 distinct items per role & clicking each button opens the right screen
+    const studentNavLabels = await studentPage.evaluate(() =>
+      Array.from(
+        document.querySelectorAll(
+          '[data-testid="mobile-bottom-nav"][data-role-nav="student"] a span:first-of-type'
+        )
+      ).map((el) => el.textContent?.trim() || '')
+    );
+    await studentPage.click('[data-testid="mobile-nav-learning"]');
+    await studentPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 8000 });
+    await studentPage.click('[data-testid="mobile-nav-classrooms"]');
+    await studentPage.waitForSelector('[data-testid="classrooms-page"]', { timeout: 8000 });
+    await studentPage.click('[data-testid="mobile-nav-chat"]');
+    await studentPage.waitForSelector('[data-testid="zalo-chat-workspace"]', { timeout: 8000 });
+    await studentPage.click('[data-testid="mobile-nav-notifications"]');
+    await studentPage.waitForSelector('[data-testid="notification-center-page"]', { timeout: 8000 });
+    await studentPage.click('[data-testid="mobile-nav-home"]');
+    await studentPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 8000 });
+
+    const teacherNavLabels = await teacherPage.evaluate(() =>
+      Array.from(
+        document.querySelectorAll(
+          '[data-testid="mobile-bottom-nav"][data-role-nav="teacher"] a span:first-of-type'
+        )
+      ).map((el) => el.textContent?.trim() || '')
+    );
+    await teacherPage.click('[data-testid="mobile-nav-classes"]');
+    await teacherPage.waitForSelector('[data-testid="teacher-workspace-page"]', { timeout: 8000 });
+    await teacherPage.click('[data-testid="mobile-nav-grading"]');
+    await teacherPage.waitForSelector('[data-testid="teacher-workspace-page"]', { timeout: 8000 });
+    await teacherPage.click('[data-testid="mobile-nav-chat"]');
+    await teacherPage.waitForSelector('[data-testid="zalo-chat-workspace"]', { timeout: 8000 });
+    await teacherPage.click('[data-testid="mobile-nav-notifications"]');
+    await teacherPage.waitForSelector('[data-testid="notification-center-page"]', { timeout: 8000 });
+    await teacherPage.click('[data-testid="mobile-nav-home"]');
+    await teacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+
+    const adminNavLabels = await adminAuditPage.evaluate(() =>
+      Array.from(
+        document.querySelectorAll(
+          '[data-testid="mobile-bottom-nav"][data-role-nav="admin"] a span:first-of-type'
+        )
+      ).map((el) => el.textContent?.trim() || '')
+    );
+    await adminAuditPage.click('[data-testid="mobile-nav-students"]');
+    await adminAuditPage.waitForSelector('[data-testid="admin-workspace-page"]', { timeout: 8000 });
+    await adminAuditPage.click('[data-testid="mobile-nav-classes"]');
+    await adminAuditPage.waitForSelector('[data-testid="admin-workspace-page"]', { timeout: 8000 });
+    await adminAuditPage.click('[data-testid="mobile-nav-orders"]');
+    await adminAuditPage.waitForSelector('[data-testid="admin-workspace-page"]', { timeout: 8000 });
+    await adminAuditPage.click('[data-testid="mobile-nav-more"]');
+    await adminAuditPage.waitForSelector('[data-testid="admin-workspace-page"]', { timeout: 8000 });
+    await adminAuditPage.click('[data-testid="mobile-nav-home"]');
+    await adminAuditPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 8000 });
+
+    recordTest(
+      'TEST H',
+      'H4',
+      'Mobile bottom navigation renders 5 purposeful role-specific items and navigates accurately across all 15 buttons',
+      JSON.stringify(studentNavLabels) ===
+        JSON.stringify(['Trang chủ', 'Học', 'Lớp', 'Tin nhắn', 'Thông báo']) &&
+        JSON.stringify(teacherNavLabels) ===
+          JSON.stringify(['Tổng quan', 'Lớp', 'Chấm bài', 'Tin nhắn', 'Thông báo']) &&
+        JSON.stringify(adminNavLabels) ===
+          JSON.stringify(['Tổng quan', 'Học viên', 'Lớp', 'Đơn hàng', 'Thêm']),
+      `S=${studentNavLabels.join('|')} / T=${teacherNavLabels.join('|')} / A=${adminNavLabels.join('|')}`
+    );
+
+    // H5: Home button in header returns each role to its own Home dashboard
+    await studentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded' });
+    await studentPage.click('[data-testid="header-home-btn"]');
+    await studentPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 8000 });
+
+    await teacherPage.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded' });
+    await teacherPage.click('[data-testid="header-home-btn"]');
+    await teacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+
+    await adminAuditPage.goto(`${baseUrl}/admin/orders`, { waitUntil: 'domcontentloaded' });
+    await adminAuditPage.click('[data-testid="header-home-btn"]');
+    await adminAuditPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 8000 });
+
+    recordTest(
+      'TEST H',
+      'H5',
+      'Clicking header Home button returns Student -> StudentHome, Teacher -> TeacherHome, Admin -> AdminHome',
+      true
+    );
+
+    // H6: Refresh on / for each role preserves role without flashing StudentHome on Teacher/Admin
+    await teacherPage.reload({ waitUntil: 'domcontentloaded' });
+    await teacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+    const teacherFlashedStudent = await teacherPage.isVisible(
+      '[data-testid="student-dashboard-page"]'
+    );
+
+    await adminAuditPage.reload({ waitUntil: 'domcontentloaded' });
+    await adminAuditPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 8000 });
+    const adminFlashedStudent = await adminAuditPage.isVisible(
+      '[data-testid="student-dashboard-page"]'
+    );
+    recordTest(
+      'TEST H',
+      'H6',
+      'Reloading / on Teacher and Admin preserves role session and never renders StudentHome',
+      !teacherFlashedStudent && !adminFlashedStudent
+    );
+
+    // H7: Sequential role switching on a single browser context (Teacher -> Student -> Admin -> Teacher)
+    const switchContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const switchPage = await switchContext.newPage();
+    await switchPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+
+    // 1. Login Teacher
+    await switchPage.click('[data-testid="quick-login-linh.lam@khongtunhi.com"]');
+    await switchPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+    await switchPage.click('[data-testid="logout-btn"]');
+    await switchPage.waitForSelector('[data-testid="login-page"]', { timeout: 8000 });
+
+    // 2. Login Student
+    await switchPage.click('[data-testid="quick-login-hoangngan@khongtunhi.com"]');
+    await switchPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 8000 });
+    const seesTeacherNav = await switchPage.isVisible(
+      '[data-testid="mobile-bottom-nav"][data-role-nav="teacher"]'
+    );
+    await switchPage.click('[data-testid="logout-btn"]');
+    await switchPage.waitForSelector('[data-testid="login-page"]', { timeout: 8000 });
+
+    // 3. Login Admin
+    await switchPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await switchPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 8000 });
+    const adminSeesStudentNav = await switchPage.isVisible(
+      '[data-testid="mobile-bottom-nav"][data-role-nav="student"]'
+    );
+    await switchPage.click('[data-testid="logout-btn"]');
+    await switchPage.waitForSelector('[data-testid="login-page"]', { timeout: 8000 });
+
+    // 4. Login Teacher again
+    await switchPage.click('[data-testid="quick-login-linh.lam@khongtunhi.com"]');
+    await switchPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+    const teacherSeesAdminNav = await switchPage.isVisible(
+      '[data-testid="mobile-bottom-nav"][data-role-nav="admin"]'
+    );
+    await switchContext.close();
+
+    recordTest(
+      'TEST H',
+      'H7',
+      'Sequential logout/login across Teacher -> Student -> Admin -> Teacher leaves zero stale menus or state',
+      !seesTeacherNav && !adminSeesStudentNav && !teacherSeesAdminNav
+    );
+
+    // H8: Role protection via URL & API (Teacher blocked from /admin)
+    await teacherPage.goto(`${baseUrl}/admin`, { waitUntil: 'domcontentloaded' });
+    await teacherPage.waitForSelector('[data-testid="role-forbidden-guard"]', { timeout: 8000 });
+    await teacherPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await teacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+    recordTest(
+      'TEST H',
+      'H8',
+      'Role protection blocks Teacher from /admin and Student from /teacher and /admin',
+      true
+    );
+
+    // H9: Demo / Live isolation (DemoControlBar hidden in Live mode; failed live login never falls back to demoUser)
+    const demoBarVisibleInLive = await studentPage.isVisible('[data-testid="demo-control-bar"]');
+    const liveAuthCheckContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const liveAuthCheckPage = await liveAuthCheckContext.newPage();
+    await liveAuthCheckPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await liveAuthCheckPage.fill('[data-testid="login-email-input"]', 'linh.lam@khongtunhi.com');
+    await liveAuthCheckPage.fill('[data-testid="login-password-input"]', 'wrong-password');
+    await liveAuthCheckPage.click('[data-testid="login-submit-btn"]');
+    await liveAuthCheckPage.waitForSelector('[data-testid="login-error-alert"]', { timeout: 8000 });
+    const stayedOnLogin = await liveAuthCheckPage.isVisible('[data-testid="login-page"]');
+    await liveAuthCheckContext.close();
+    recordTest(
+      'TEST H',
+      'H9',
+      'DemoControlBar is hidden in Live mode and failed live login never falls back to demoUser',
+      !demoBarVisibleInLive && stayedOnLogin
+    );
+
+    // =========================================================================
+    // TEST I — MOBILE COMPACT UI & ROLE-AUDIT SCREENSHOTS (360px, 375px, 390px, 430px, 1440px)
+    // =========================================================================
+    const mobileWidths = [
+      { width: 360, height: 780 },
+      { width: 375, height: 812 },
+      { width: 390, height: 844 },
+      { width: 430, height: 932 },
+    ];
+
+    const rolePages = [
+      { role: 'student', page: studentPage, selector: '[data-testid="student-dashboard-page"]' },
+      { role: 'teacher', page: teacherPage, selector: '[data-testid="teacher-home-page"]' },
+      { role: 'admin', page: adminAuditPage, selector: '[data-testid="admin-home-page"]' },
+    ];
+
+    for (const rp of rolePages) {
+      for (const mw of mobileWidths) {
+        await rp.page.setViewportSize({ width: mw.width, height: mw.height });
+        await rp.page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await rp.page.waitForSelector(rp.selector, { timeout: 8000 });
+        await rp.page.waitForTimeout(200);
+
+        const metrics = await rp.page.evaluate(() => {
+          const header = document.querySelector('[data-testid="compact-top-header"]');
+          const headerHeight = header ? Math.round(header.getBoundingClientRect().height) : 999;
+          const overflow = document.documentElement.scrollWidth - window.innerWidth;
+          const bodyText = document.body.innerText || '';
+          const hasLeakedTokens =
+            bodyText.includes('DEMO-MODE-ONLY') || bodyText.includes('undefined');
+          return { headerHeight, overflow, hasLeakedTokens };
+        });
+
+        recordTest(
+          'TEST I',
+          `I-${rp.role}-${mw.width}px`,
+          `Compact mobile layout for ${rp.role} at ${mw.width}px (header=${metrics.headerHeight}px <= 56px, overflow=${metrics.overflow}px)`,
+          metrics.headerHeight <= 56 && metrics.overflow <= 2 && !metrics.hasLeakedTokens,
+          JSON.stringify(metrics)
+        );
+
+        if (mw.width === 390 || mw.width === 360) {
+          await rp.page.screenshot({
+            path: path.join(ROLE_AUDIT_DIR, `${rp.role}-mobile-${mw.width}.png`),
+            fullPage: false,
+          });
+        }
+      }
+
+      // Desktop 1440x900 screenshot for each role home
+      await rp.page.setViewportSize({ width: 1440, height: 900 });
+      await rp.page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+      await rp.page.waitForSelector(rp.selector, { timeout: 8000 });
+      await rp.page.waitForTimeout(250);
+      await rp.page.screenshot({
+        path: path.join(ROLE_AUDIT_DIR, `${rp.role}-desktop-1440.png`),
+        fullPage: false,
+      });
+    }
+
+    // Capture chat-mobile-390.png, learning-mobile-390.png, notifications-mobile-390.png & verify composer above bottom nav
+    await studentPage.setViewportSize({ width: 390, height: 844 });
+
+    await studentPage.goto(`${baseUrl}/learning`, { waitUntil: 'domcontentloaded' });
+    await studentPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 8000 });
+    await studentPage.waitForTimeout(250);
+    await studentPage.screenshot({
+      path: path.join(ROLE_AUDIT_DIR, 'learning-mobile-390.png'),
+      fullPage: false,
+    });
+
+    await studentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded' });
+    await studentPage.waitForSelector('[data-testid="notification-center-page"]', { timeout: 8000 });
+    await studentPage.waitForTimeout(250);
+    await studentPage.screenshot({
+      path: path.join(ROLE_AUDIT_DIR, 'notifications-mobile-390.png'),
+      fullPage: false,
+    });
+
+    await studentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
+    await studentPage.waitForSelector('[data-testid="zalo-chat-workspace"]', { timeout: 8000 });
+    await studentPage.waitForSelector('[data-testid="chat-composer-input"]', { timeout: 8000 });
+    await studentPage.waitForTimeout(250);
+    await studentPage.screenshot({
+      path: path.join(ROLE_AUDIT_DIR, 'chat-mobile-390.png'),
+      fullPage: false,
+    });
+
+    const chatLayoutCheck = await studentPage.evaluate(() => {
+      const composer = document.querySelector('[data-testid="chat-composer-input"]');
+      const bottomNav = document.querySelector('[data-testid="mobile-bottom-nav"]');
+      if (!composer || !bottomNav) return { ok: false, reason: 'Missing composer or bottom nav' };
+      const cRect = composer.getBoundingClientRect();
+      const nRect = bottomNav.getBoundingClientRect();
+      return {
+        ok: cRect.bottom <= nRect.top + 2,
+        composerBottom: Math.round(cRect.bottom),
+        bottomNavTop: Math.round(nRect.top),
+      };
+    });
+    recordTest(
+      'TEST I',
+      'I-chat-composer-390px',
+      'Mobile chat composer at 390x844 is completely visible above the bottom navigation bar',
+      chatLayoutCheck.ok,
+      JSON.stringify(chatLayoutCheck)
+    );
+
+    await adminAuditContext.close();
     await studentContext.close();
     await teacherContext.close();
   } finally {

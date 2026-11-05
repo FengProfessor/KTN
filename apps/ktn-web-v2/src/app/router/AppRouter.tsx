@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
-import { ShieldAlert, ArrowLeft } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Loader2 } from 'lucide-react';
 import { AppShell } from '../layouts/AppShell';
-import { StudentDashboard } from '@/features/dashboard/components/StudentDashboard';
+import { RoleHome } from '../navigation/RoleHome';
 import { LearningPage } from '@/features/learning/components/LearningPage';
 import { ClassroomsPage } from '@/features/classrooms/components/ClassroomsPage';
 import { ChatLayout } from '@/features/chat/components/ChatLayout';
@@ -16,10 +16,21 @@ import type { UserRole } from '@/types/ktn.types';
 
 const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> = ({
   allowed,
-  children
+  children,
 }) => {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const isRestoring = useAuthStore((s) => s.isRestoring);
+  const isDemoMode = useUiStore((s) => s.isDemoMode);
+
+  if (isRestoring && !isDemoMode) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center p-6">
+        <Loader2 className="h-6 w-6 animate-spin text-red-800" />
+      </div>
+    );
+  }
+
   const role: UserRole = user?.role || 'student';
 
   if (!allowed.includes(role)) {
@@ -27,25 +38,25 @@ const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> 
       <div
         data-testid="role-forbidden-guard"
         role="alert"
-        className="mx-auto my-8 max-w-lg rounded-2xl border border-red-200 bg-white p-6 text-center shadow-card"
+        className="mx-auto my-6 max-w-md rounded-2xl border border-red-200 bg-white p-5 text-center shadow-2xs"
       >
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-700">
-          <ShieldAlert className="h-6 w-6" />
+        <div className="mx-auto mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-700">
+          <ShieldAlert className="h-5 w-5" />
         </div>
-        <h2 className="text-base font-bold text-slate-900">
-          Tài khoản không có quyền truy cập khu vực này
+        <h2 className="text-sm font-bold text-slate-900">
+          Không có quyền truy cập khu vực này
         </h2>
-        <p className="mt-1.5 text-xs text-slate-600">
-          Khu vực này chỉ dành cho vai trò được phân quyền ({allowed.join(', ')}). Vui lòng quay lại trang học tập hoặc đăng nhập đúng tài khoản phụ trách.
+        <p className="mt-1 text-xs text-slate-600">
+          Khu vực này dành cho vai trò ({allowed.join(', ')}).
         </p>
-        <div className="mt-4 flex justify-center">
+        <div className="mt-3 flex justify-center">
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-ktn-jade px-4 py-2 text-xs font-bold text-white hover:bg-ktn-jade-dark"
+            className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Quay về Trang chủ
+            Về Trang chủ
           </button>
         </div>
       </div>
@@ -58,8 +69,10 @@ const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> 
 export const AppRouter: React.FC = () => {
   const [searchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
+  const isRestoring = useAuthStore((s) => s.isRestoring);
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const setDemoUser = useAuthStore((s) => s.setDemoUser);
+  const syncModeUser = useAuthStore((s) => s.syncModeUser);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const setDemoMode = useUiStore((s) => s.setDemoMode);
 
@@ -69,18 +82,23 @@ export const AppRouter: React.FC = () => {
     const modeParam = searchParams.get('mode');
     if (demoParam === '1' || modeParam === 'demo') {
       setDemoMode(true);
+      syncModeUser(true);
     } else if (demoParam === '0' || modeParam === 'live') {
       setDemoMode(false);
+      syncModeUser(false);
     }
-  }, [searchParams, setDemoMode]);
+  }, [searchParams, setDemoMode, syncModeUser]);
 
   // Hydrate real session or populate demo persona
   useEffect(() => {
     if (isDemoMode) {
       if (!user) {
         setDemoUser(DEMO_USERS.student_both);
+      } else {
+        syncModeUser(true);
       }
     } else {
+      syncModeUser(false);
       restoreSession();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,16 +110,28 @@ export const AppRouter: React.FC = () => {
       <Route
         path="/"
         element={
-          !user && !isDemoMode ? <Navigate to="/login" replace /> : <AppShell />
+          !user && !isRestoring && !isDemoMode ? (
+            <Navigate to="/login" replace />
+          ) : (
+            <AppShell />
+          )
         }
       >
-        <Route index element={<StudentDashboard />} />
+        <Route index element={<RoleHome />} />
         <Route path="learning" element={<LearningPage />} />
         <Route path="classrooms" element={<ClassroomsPage />} />
         <Route path="chat" element={<ChatLayout />} />
         <Route path="notifications" element={<NotificationCenter />} />
         <Route
           path="teacher"
+          element={
+            <RequireRole allowed={['teacher', 'admin']}>
+              <TeacherWorkspace />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="teacher/:section"
           element={
             <RequireRole allowed={['teacher', 'admin']}>
               <TeacherWorkspace />
@@ -116,10 +146,17 @@ export const AppRouter: React.FC = () => {
             </RequireRole>
           }
         />
-        <Route path="demo" element={<StudentDashboard />} />
+        <Route
+          path="admin/:section"
+          element={
+            <RequireRole allowed={['admin']}>
+              <AdminWorkspace />
+            </RequireRole>
+          }
+        />
+        <Route path="demo" element={<RoleHome />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 };
-

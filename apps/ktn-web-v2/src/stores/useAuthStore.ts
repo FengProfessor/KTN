@@ -9,12 +9,16 @@ import {
 
 interface AuthState {
   user: KtnUserSession | null;
+  authUser: KtnUserSession | null;
+  demoUser: KtnUserSession;
   isLoading: boolean;
+  isRestoring: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<KtnUserSession>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<KtnUserSession | null>;
   setDemoUser: (user: KtnUserSession) => void;
+  syncModeUser: (isDemoMode: boolean) => void;
 }
 
 export const DEMO_USERS: Record<string, KtnUserSession> = {
@@ -91,20 +95,32 @@ export const DEMO_USERS: Record<string, KtnUserSession> = {
   }
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user: getStoredSession(),
+const initialAuthUser = getStoredSession();
+const initialIsDemo = typeof window !== 'undefined' && window.location.search.includes('demo=1');
+
+export const useAuthStore = create<AuthState>((set, get) => ({
+  user: initialIsDemo ? DEMO_USERS.student_both : initialAuthUser,
+  authUser: initialAuthUser,
+  demoUser: DEMO_USERS.student_both,
   isLoading: false,
+  isRestoring: Boolean(initialAuthUser) && !initialIsDemo,
   error: null,
 
   async login(email: string, password: string) {
     set({ isLoading: true, error: null });
     try {
       const { session } = await ktnApi.login(email, password);
-      set({ user: session, isLoading: false, error: null });
+      set({
+        user: session,
+        authUser: session,
+        isLoading: false,
+        isRestoring: false,
+        error: null
+      });
       return session;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Đăng nhập không thành công.';
-      set({ isLoading: false, error: msg });
+      set({ isLoading: false, isRestoring: false, error: msg });
       throw err;
     }
   },
@@ -113,22 +129,48 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
     await ktnApi.logout();
     clearStoredSession();
-    set({ user: null, isLoading: false, error: null });
+    set({
+      user: null,
+      authUser: null,
+      isLoading: false,
+      isRestoring: false,
+      error: null
+    });
   },
 
   async restoreSession() {
     const existing = getStoredSession();
     if (!existing) {
-      set({ user: null });
+      set({ user: null, authUser: null, isRestoring: false });
       return null;
     }
+    set({ isRestoring: true });
     const verified = await ktnApi.verifySession();
-    set({ user: verified });
+    set({
+      user: verified,
+      authUser: verified,
+      isRestoring: false
+    });
     return verified;
   },
 
-  setDemoUser(user: KtnUserSession) {
-    saveStoredSession(user, user.token || 'DEMO-MODE-ONLY');
-    set({ user, error: null });
+  setDemoUser(demoPersona: KtnUserSession) {
+    const cleanDemo: KtnUserSession = {
+      ...demoPersona,
+      token: 'DEMO-MODE-ONLY'
+    };
+    set({
+      demoUser: cleanDemo,
+      user: cleanDemo,
+      error: null
+    });
+  },
+
+  syncModeUser(isDemoMode: boolean) {
+    const { demoUser, authUser } = get();
+    set({
+      user: isDemoMode ? demoUser : authUser,
+      error: null
+    });
   }
 }));

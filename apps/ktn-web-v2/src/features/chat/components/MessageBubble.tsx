@@ -169,7 +169,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       </div>
 
       {/* Bubble Container */}
-      <div className={`flex max-w-[82%] sm:max-w-[72%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+      <div className={`flex min-w-0 max-w-[82%] sm:max-w-[72%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
         {/* Sender header */}
         <div className="mb-1 flex flex-wrap items-center gap-1.5 px-1">
           <span className="text-xs font-semibold text-stone-700">
@@ -180,7 +180,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         {/* Message Bubble */}
         <div
-          className={`relative rounded-2xl px-3.5 py-2.5 shadow-sm transition-all ${
+          className={`relative max-w-full overflow-hidden rounded-2xl px-3.5 py-2.5 shadow-sm transition-all ${
             status === 'failed'
               ? 'border-2 border-red-300 bg-red-50/90 text-stone-900'
               : isOwn

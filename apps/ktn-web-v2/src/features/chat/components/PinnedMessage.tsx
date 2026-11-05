@@ -20,9 +20,9 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
   return (
     <div
       data-testid="pinned-announcement-banner"
-      className="border-b border-amber-200/80 bg-gradient-to-r from-amber-50/95 via-orange-50/80 to-amber-50/95 px-3.5 py-2.5 transition-all"
+      className="border-b border-amber-200/80 bg-gradient-to-r from-amber-50/95 via-orange-50/80 to-amber-50/95 px-3 py-1.5 transition-all"
     >
-      <div className="flex items-start justify-between gap-2.5">
+      <div className="flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => {
@@ -32,31 +32,31 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
               setExpanded((prev) => !prev);
             }
           }}
-          className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-800">
-            <Pin className="h-3.5 w-3.5 rotate-45 fill-amber-600 text-amber-700" />
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-800">
+            <Pin className="h-3 w-3 rotate-45 fill-amber-600 text-amber-700" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 rounded bg-amber-600/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900">
+              <span className="inline-flex items-center gap-0.5 rounded bg-amber-600/15 px-1.5 py-0.2 text-[9.5px] font-bold uppercase tracking-wider text-amber-900">
                 <Sparkles className="h-2.5 w-2.5" />
-                Thông báo ghim lớp học
+                Ghim
               </span>
               {pinnedMessage.pinnedBy && (
-                <span className="text-[11px] font-medium text-amber-800/80">
+                <span className="hidden text-[10.5px] font-medium text-amber-800/80 sm:inline">
                   • {pinnedMessage.pinnedBy}{' '}
                   {pinnedMessage.updatedAt ? `(${formatChatTimestamp(pinnedMessage.updatedAt)})` : ''}
                 </span>
               )}
+              <p
+                className={`text-xs font-medium text-stone-800 ${
+                  expanded ? 'whitespace-pre-wrap' : 'truncate'
+                }`}
+              >
+                {pinnedMessage.content}
+              </p>
             </div>
-            <p
-              className={`mt-0.5 text-xs font-medium text-stone-800 ${
-                expanded ? 'whitespace-pre-wrap' : 'line-clamp-1'
-              }`}
-            >
-              {pinnedMessage.content}
-            </p>
           </div>
         </button>
 

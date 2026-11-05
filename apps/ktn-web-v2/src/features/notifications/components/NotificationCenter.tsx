@@ -149,46 +149,46 @@ export const NotificationCenter: React.FC = () => {
   const renderIcon = (type: string) => {
     if (type === 'homework_graded' || type === 'homework_submitted') {
       return (
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
-          <Award className="h-5 w-5" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
+          <Award className="h-4 w-4" />
         </div>
       );
     }
     if (type === 'chat_message') {
       return (
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-800">
-          <MessageSquare className="h-5 w-5" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-800">
+          <MessageSquare className="h-4 w-4" />
         </div>
       );
     }
     if (type === 'homework_assigned') {
       return (
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
-          <Calendar className="h-5 w-5" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+          <Calendar className="h-4 w-4" />
         </div>
       );
     }
     return (
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-800">
-        <BookOpen className="h-5 w-5" />
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-800">
+        <BookOpen className="h-4 w-4" />
       </div>
     );
   };
 
   return (
-    <div data-testid="notification-center-page" className="space-y-4">
+    <div data-testid="notification-center-page" className="space-y-3">
       {/* Demo Mode State Switcher */}
       {isDemoMode && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-2 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-1.5 text-xs">
           <span className="font-semibold text-amber-950">
-            Trạng thái kiểm thử Trung tâm Thông báo (Demo):
+            Trạng thái Thông báo (Demo):
           </span>
           <div className="flex items-center gap-1">
             {(
               [
-                { id: 'unread', label: 'Có thông báo mới chưa đọc' },
-                { id: 'all_read', label: 'Đã đọc tất cả' },
-                { id: 'empty', label: 'Trống (Chưa có thông báo)' },
+                { id: 'unread', label: 'Chưa đọc' },
+                { id: 'all_read', label: 'Đã đọc hết' },
+                { id: 'empty', label: 'Trống' },
               ] as const
             ).map((st) => (
               <button
@@ -198,7 +198,7 @@ export const NotificationCenter: React.FC = () => {
                   setDemoLocalReadIds({});
                   setDemoState(st.id);
                 }}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition-colors ${
                   demoState === st.id
                     ? 'bg-red-800 text-white'
                     : 'border border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
@@ -211,45 +211,45 @@ export const NotificationCenter: React.FC = () => {
         </div>
       )}
 
-      {/* Header Card */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-5 shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-800 text-white shadow-sm">
-            <Bell className="h-6 w-6" />
+      {/* Compact Header Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-stone-200 bg-white p-3.5 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-800 text-white shadow-2xs">
+            <Bell className="h-4 w-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-display text-lg font-bold text-stone-900">
-                Trung tâm Thông báo & Sổ liên lạc
+              <h1 className="font-display text-sm font-bold text-stone-900 sm:text-base">
+                Thông báo
               </h1>
               {unreadCount > 0 && (
                 <span
                   data-testid="notifications-unread-count-pill"
-                  className="rounded-full bg-red-600 px-2.5 py-0.5 text-xs font-bold text-white"
+                  className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white"
                 >
                   {unreadCount} chưa đọc
                 </span>
               )}
             </div>
-            <p className="text-xs text-stone-500">
-              Cập nhật tức thì điểm chấm bài tập, tin nhắn của Lão sư và lịch học lớp trực tiếp.
+            <p className="text-[11px] text-stone-500">
+              Điểm bài tập, tin nhắn lớp và lịch học mới nhất
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             data-testid="enable-web-push-btn"
             onClick={handleEnableWebPush}
-            className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition-colors ${
+            className={`inline-flex min-h-[36px] items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors ${
               pushEnabled
                 ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
                 : 'border-stone-300 bg-stone-50 text-stone-700 hover:bg-stone-100'
             }`}
           >
             <BellRing className="h-3.5 w-3.5" />
-            <span>{pushEnabled ? 'Đã bật thông báo đẩy PWA' : 'Bật thông báo trên thiết bị'}</span>
+            <span>{pushEnabled ? 'Đã bật thông báo' : 'Bật thông báo'}</span>
           </button>
 
           <button
@@ -257,23 +257,23 @@ export const NotificationCenter: React.FC = () => {
             data-testid="mark-all-notifications-read-btn"
             disabled={unreadCount === 0 || markReadMutation.isPending}
             onClick={handleMarkAllRead}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900 disabled:opacity-40"
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900 disabled:opacity-40"
           >
-            <CheckCheck className="h-4 w-4" />
-            <span>Đánh dấu đã đọc tất cả</span>
+            <CheckCheck className="h-3.5 w-3.5" />
+            <span>Đọc tất cả</span>
           </button>
         </div>
       </div>
 
       {/* Filter Tabs & List */}
-      <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5 shadow-2xs">
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-stone-200 pb-3">
+      <div className="rounded-2xl border border-stone-200 bg-white p-3.5 sm:p-4 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-stone-200 pb-2.5">
           {(
             [
               { id: 'all', label: `Tất cả (${notifications.length})` },
               { id: 'unread', label: `Chưa đọc (${unreadCount})` },
-              { id: 'homework', label: 'Chấm bài & Điểm số' },
-              { id: 'chat', label: 'Tin nhắn & Lịch học' },
+              { id: 'homework', label: 'Chấm bài' },
+              { id: 'chat', label: 'Tin nhắn' },
             ] as const
           ).map((tab) => (
             <button
@@ -281,7 +281,7 @@ export const NotificationCenter: React.FC = () => {
               type="button"
               data-testid={`notif-filter-${tab.id}`}
               onClick={() => setFilterTab(tab.id)}
-              className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition-colors ${
+              className={`min-h-[34px] rounded-xl px-3 py-1 text-xs font-bold transition-colors ${
                 filterTab === tab.id
                   ? 'bg-red-800 text-white'
                   : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
@@ -293,18 +293,18 @@ export const NotificationCenter: React.FC = () => {
         </div>
 
         {/* Items */}
-        <div className="mt-4 space-y-2.5">
+        <div className="mt-3 space-y-2">
           {filteredList.length === 0 ? (
             <div
               data-testid="notifications-empty-state"
-              className="flex flex-col items-center justify-center py-12 text-center"
+              className="flex flex-col items-center justify-center py-8 text-center"
             >
-              <Bell className="h-10 w-10 text-stone-300" />
-              <h3 className="mt-3 font-display text-sm font-bold text-stone-800">
-                Không có thông báo nào trong mục này
+              <Bell className="h-8 w-8 text-stone-300" />
+              <h3 className="mt-2 font-display text-sm font-bold text-stone-800">
+                Chưa có thông báo mới
               </h3>
-              <p className="mt-1 text-xs text-stone-500">
-                Khi Lão sư chấm điểm hoặc gửi thông báo lớp học mới, tin sẽ hiển thị ngay tại đây.
+              <p className="mt-0.5 text-xs text-stone-500">
+                Điểm bài tập hoặc tin nhắn lớp mới sẽ hiển thị tại đây.
               </p>
             </div>
           ) : (
@@ -313,7 +313,7 @@ export const NotificationCenter: React.FC = () => {
                 key={item.id}
                 data-testid={`notification-item-${item.id}`}
                 data-read={item.read ? 'true' : 'false'}
-                className={`flex flex-wrap items-start justify-between gap-3 rounded-2xl border p-4 transition-all ${
+                className={`flex flex-wrap items-start justify-between gap-2.5 rounded-2xl border p-3 transition-all ${
                   !item.read
                     ? 'border-red-200 bg-red-50/50 shadow-2xs'
                     : 'border-stone-200 bg-white hover:bg-stone-50'
@@ -321,14 +321,14 @@ export const NotificationCenter: React.FC = () => {
               >
                 <div
                   onClick={() => handleOpenNotification(item)}
-                  className="flex min-w-0 flex-1 cursor-pointer items-start gap-3.5"
+                  className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5"
                 >
                   {renderIcon(item.type)}
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <h3
-                        className={`text-sm ${
+                        className={`text-xs sm:text-sm ${
                           !item.read
                             ? 'font-bold text-stone-950'
                             : 'font-semibold text-stone-800'
@@ -337,7 +337,7 @@ export const NotificationCenter: React.FC = () => {
                         {item.title}
                       </h3>
                       {!item.read && (
-                        <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                        <span className="rounded-full bg-red-600 px-1.5 py-0.2 text-[9.5px] font-bold text-white">
                           MỚI
                         </span>
                       )}
@@ -346,19 +346,19 @@ export const NotificationCenter: React.FC = () => {
                       </span>
                     </div>
 
-                    <p className="mt-1 text-xs leading-relaxed text-stone-600">
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-stone-600">
                       {item.body}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 items-center gap-1.5">
                   {!item.read && (
                     <button
                       type="button"
                       data-testid={`mark-single-notif-read-${item.id}`}
                       onClick={() => markReadMutation.mutate([item.id])}
-                      className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-100"
+                      className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100"
                     >
                       <Check className="h-3.5 w-3.5 text-emerald-700" />
                       <span>Đã đọc</span>
@@ -370,9 +370,9 @@ export const NotificationCenter: React.FC = () => {
                       type="button"
                       data-testid={`open-notif-target-${item.id}`}
                       onClick={() => handleOpenNotification(item)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                      className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-900"
                     >
-                      <span>Xem chi tiết</span>
+                      <span>Mở</span>
                       <ExternalLink className="h-3 w-3" />
                     </button>
                   )}

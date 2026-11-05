@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,39 +24,35 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-const QUICK_TEST_ACCOUNTS = [
+const DEV_TEST_ACCOUNTS = [
   {
-    label: 'Học sinh Đã mở khóa (Hoàng Ngân)',
-    sub: 'Có lớp YCT2-04, xem được Video HLS & Chat Zalo',
+    label: 'Học sinh (Hoàng Ngân)',
+    sub: 'Lớp YCT2-04 + Khóa HSK1',
     email: 'hoangngan@khongtunhi.com',
-    password: 'Ktn@2026!',
     role: 'student' as const,
     icon: UserCheck,
     badgeColor: 'bg-emerald-100 text-emerald-900',
   },
   {
-    label: 'Học sinh Chưa mở khóa (Test 403)',
-    sub: 'Kiểm thử màn hình chặn quyền khóa học & chưa xếp lớp',
+    label: 'Học sinh (Chưa mở khóa)',
+    sub: 'Kiểm thử trạng thái chưa xếp lớp',
     email: 'taphong2002vip@gmail.com',
-    password: 'Ktn@2026!',
     role: 'student' as const,
     icon: Eye,
     badgeColor: 'bg-amber-100 text-amber-900',
   },
   {
-    label: 'Giáo viên Chủ nhiệm (Cô Mỹ Linh)',
-    sub: 'Giao bài tập, chấm điểm 0–10, ghim thông báo lớp',
+    label: 'Giáo viên (Cô Mỹ Linh)',
+    sub: 'Chấm bài, giao bài & lớp phụ trách',
     email: 'linh.lam@khongtunhi.com',
-    password: 'Ktn@2026!',
     role: 'teacher' as const,
     icon: GraduationCap,
     badgeColor: 'bg-red-100 text-red-900',
   },
   {
-    label: 'Quản lý / Học vụ KTN',
-    sub: 'Duyệt đơn đăng ký, cấp quyền học phần & xếp lớp',
+    label: 'Quản lý / Học vụ',
+    sub: 'Duyệt đơn, học viên & phân quyền',
     email: 'quanly@khongtunhi.com',
-    password: 'Ktn@2026!',
     role: 'admin' as const,
     icon: ShieldCheck,
     badgeColor: 'bg-stone-200 text-stone-900',
@@ -64,13 +61,24 @@ const QUICK_TEST_ACCOUNTS = [
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
   const login = useAuthStore((s) => s.login);
   const setDemoUser = useAuthStore((s) => s.setDemoUser);
+  const syncModeUser = useAuthStore((s) => s.syncModeUser);
   const authError = useAuthStore((s) => s.error);
   const setDemoMode = useUiStore((s) => s.setDemoMode);
+  const resetSessionUiState = useUiStore((s) => s.resetSessionUiState);
   const addToast = useUiStore((s) => s.addToast);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const showDevTools =
+    import.meta.env.DEV ||
+    searchParams.get('demo') === '1' ||
+    searchParams.get('qa') === '1';
+
+  const devHarnessToken = import.meta.env.VITE_QA_PASS || 'ktn-session-verify';
 
   const {
     register,
@@ -80,42 +88,40 @@ export const LoginPage: React.FC = () => {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'hoangngan@khongtunhi.com',
-      password: 'Ktn@2026!',
+      email: '',
+      password: '',
     },
   });
 
   const onSubmit = async (values: LoginFormValues) => {
     setIsSubmitting(true);
     try {
+      resetSessionUiState();
+      queryClient.clear();
       setDemoMode(false);
       const user = await login(values.email, values.password);
+      syncModeUser(false);
       addToast({
-        title: `Chào mừng ${user.name}!`,
-        description: 'Đã kết nối thành công với máy chủ Học Viện Khổng Tử Nhí.',
+        title: `Chào ${user.name}!`,
         variant: 'success',
       });
-      if (user.role === 'teacher') {
-        navigate('/teacher');
-      } else if (user.role === 'admin') {
-        navigate('/admin');
-      } else {
-        navigate('/');
-      }
+      navigate('/');
     } catch {
-      // Error is displayed via authError
+      // Error is displayed via authError; never fallback to demo identity
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleQuickLogin = async (acc: (typeof QUICK_TEST_ACCOUNTS)[number]) => {
+  const handleQuickLogin = async (acc: (typeof DEV_TEST_ACCOUNTS)[number]) => {
     setValue('email', acc.email);
-    setValue('password', acc.password);
-    await onSubmit({ email: acc.email, password: acc.password });
+    setValue('password', devHarnessToken);
+    await onSubmit({ email: acc.email, password: devHarnessToken });
   };
 
   const handleEnterInteractiveDemo = () => {
+    resetSessionUiState();
+    queryClient.clear();
     setDemoMode(true);
     setDemoUser(DEMO_USERS.student_both);
     navigate('/');
@@ -124,61 +130,58 @@ export const LoginPage: React.FC = () => {
   return (
     <div
       data-testid="login-page"
-      className="flex min-h-screen flex-col justify-center bg-[#FAF8F5] px-4 py-8 sm:px-6 lg:px-8"
+      className="flex min-h-screen flex-col justify-center bg-[#FAF8F5] px-3 py-4 sm:px-6 lg:px-8"
     >
-      <div className="mx-auto grid w-full max-w-5xl grid-cols-1 overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-xl lg:grid-cols-12">
-        {/* Left Brand Story Column (5 cols) */}
-        <div className="flex flex-col justify-between bg-gradient-to-br from-red-900 via-red-800 to-stone-950 p-6 text-white sm:p-8 lg:col-span-5">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-amber-400/20 px-3 py-1 text-xs font-bold text-amber-200 ring-1 ring-amber-300/30">
-              <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-              <span>HỌC VIỆN KHỔNG TỬ NHÍ • KTN V2</span>
+      <div className="mx-auto w-full max-w-md overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-md lg:max-w-4xl lg:grid lg:grid-cols-12">
+        {/* Compact Brand Header on Mobile / Left Column on Desktop */}
+        <div className="flex flex-col justify-between bg-gradient-to-br from-red-900 to-red-800 px-4 py-3.5 text-white sm:p-6 lg:col-span-5">
+          <div className="flex items-center gap-2.5 lg:flex-col lg:items-start">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400 font-display text-xs font-extrabold text-stone-950">
+              KTN
             </div>
-
-            <h1 className="mt-4 font-display text-2xl font-extrabold leading-tight sm:text-3xl">
-              Cổng Học Tập Video, Bài Tập & Sổ Liên Lạc Zalo Lớp Học
-            </h1>
-
-            <p className="mt-3 text-xs leading-relaxed text-red-100 sm:text-sm">
-              Nền tảng học tiếng Trung chuẩn YCT dành cho thiếu nhi, kết nối trực tiếp Học sinh — Phụ huynh — Giáo viên chủ nhiệm trong một không gian duy nhất.
-            </p>
+            <div>
+              <h1 className="font-display text-base font-extrabold leading-tight sm:text-xl">
+                Học Viện Khổng Tử Nhí
+              </h1>
+              <p className="text-[11px] text-red-100 sm:mt-1 sm:text-xs">
+                Học tập, Lớp học & Sổ liên lạc
+              </p>
+            </div>
           </div>
 
-          <div className="mt-8 space-y-3 border-t border-white/15 pt-5 text-xs text-stone-200">
-            <p className="font-bold text-amber-300">Chế độ xem thử giao diện nhanh:</p>
-            <button
-              type="button"
-              data-testid="enter-demo-mode-btn"
-              onClick={handleEnterInteractiveDemo}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-extrabold text-stone-950 shadow-md transition-transform hover:scale-[1.01] hover:bg-amber-300"
-            >
-              <Sparkles className="h-4 w-4" />
-              Mở Interactive Demo (Đầy đủ trạng thái mẫu)
-            </button>
-          </div>
+          {showDevTools && (
+            <div className="mt-3 border-t border-white/15 pt-2.5 lg:mt-6">
+              <button
+                type="button"
+                data-testid="enter-demo-mode-btn"
+                onClick={handleEnterInteractiveDemo}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-400 px-3 py-2 text-xs font-extrabold text-stone-950 shadow-2xs hover:bg-amber-300"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Xem giao diện Demo</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Right Form & Quick Role Switcher Column (7 cols) */}
-        <div className="p-6 sm:p-8 lg:col-span-7">
-          <h2 className="font-display text-xl font-bold text-stone-900">
-            Đăng nhập tài khoản KTN
+        {/* Login Form Column */}
+        <div className="p-4 sm:p-6 lg:col-span-7">
+          <h2 className="font-display text-base font-bold text-stone-900 sm:text-lg">
+            Đăng nhập
           </h2>
-          <p className="mt-1 text-xs text-stone-500">
-            Sử dụng tài khoản học viên, giáo viên hoặc chọn nhanh một tài khoản kiểm thử thực tế bên dưới.
-          </p>
 
           {authError && (
             <div
               role="alert"
               data-testid="login-error-alert"
-              className="mt-4 flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-xs font-semibold text-red-900"
+              className="mt-2.5 flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-900"
             >
               <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
               <span>{authError}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-5 space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="mt-3 space-y-3">
             <div>
               <label
                 htmlFor="login-email"
@@ -190,8 +193,9 @@ export const LoginPage: React.FC = () => {
                 id="login-email"
                 type="text"
                 data-testid="login-email-input"
+                placeholder="nhap-email@khongtunhi.com"
                 {...register('email')}
-                className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
               />
               {errors.email && (
                 <p className="mt-1 text-xs font-medium text-red-600">
@@ -211,8 +215,9 @@ export const LoginPage: React.FC = () => {
                 id="login-password"
                 type="password"
                 data-testid="login-password-input"
+                placeholder="••••••••"
                 {...register('password')}
-                className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
               />
               {errors.password && (
                 <p className="mt-1 text-xs font-medium text-red-600">
@@ -225,49 +230,51 @@ export const LoginPage: React.FC = () => {
               type="submit"
               data-testid="login-submit-btn"
               disabled={isSubmitting}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-5 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-red-900 disabled:opacity-50"
+              className="inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-2.5 text-xs font-bold text-white shadow-2xs transition-all hover:bg-red-900 disabled:opacity-50 sm:text-sm"
             >
               {isSubmitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <LogIn className="h-4 w-4" />
               )}
-              <span>Đăng nhập vào hệ thống thật (/api/ktn/*)</span>
+              <span>Đăng nhập</span>
             </button>
           </form>
 
-          {/* Quick 1-Click Real BFF Test Accounts */}
-          <div className="mt-6 border-t border-stone-200 pt-5">
-            <p className="text-xs font-bold uppercase tracking-wider text-stone-500">
-              Đăng nhập nhanh 1 chạm (Dữ liệu thật qua Worker BFF):
-            </p>
-            <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {QUICK_TEST_ACCOUNTS.map((acc) => {
-                const Icon = acc.icon;
-                return (
-                  <button
-                    key={acc.email}
-                    type="button"
-                    data-testid={`quick-login-${acc.email}`}
-                    onClick={() => handleQuickLogin(acc)}
-                    className="flex items-start gap-2.5 rounded-xl border border-stone-200 bg-stone-50/80 p-3 text-left transition-all hover:border-red-300 hover:bg-red-50/50"
-                  >
-                    <span className={`mt-0.5 rounded-lg p-1.5 ${acc.badgeColor}`}>
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-bold text-stone-900">
-                        {acc.label}
-                      </p>
-                      <p className="mt-0.5 line-clamp-2 text-[11px] text-stone-500">
-                        {acc.sub}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
+          {showDevTools && (
+            <div
+              data-testid="dev-quick-login-section"
+              className="mt-4 border-t border-stone-200 pt-3"
+            >
+              <p className="text-[11px] font-bold text-stone-500">
+                Chọn nhanh vai trò kiểm thử (Dev/QA):
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                {DEV_TEST_ACCOUNTS.map((acc) => {
+                  const Icon = acc.icon;
+                  return (
+                    <button
+                      key={acc.email}
+                      type="button"
+                      data-testid={`quick-login-${acc.email}`}
+                      onClick={() => handleQuickLogin(acc)}
+                      className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50/80 p-2 text-left transition-all hover:border-red-300 hover:bg-red-50/50"
+                    >
+                      <span className={`shrink-0 rounded-lg p-1.5 ${acc.badgeColor}`}>
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[11px] font-bold text-stone-900">
+                          {acc.label}
+                        </p>
+                        <p className="truncate text-[10px] text-stone-500">{acc.sub}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

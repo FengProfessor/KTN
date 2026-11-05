@@ -288,6 +288,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       draftByRoom: {},
       sendingMessagesByRoom: {},
       failedMessagesByRoom: {},
+      completedLessons: {},
       isOfflineSimulated: false
     });
   }

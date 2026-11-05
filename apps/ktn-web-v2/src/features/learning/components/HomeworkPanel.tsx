@@ -158,19 +158,19 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
   return (
     <div
       data-testid="homework-submission-panel"
-      className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5 shadow-2xs"
+      className="rounded-2xl border border-stone-200 bg-white p-3.5 sm:p-4 shadow-2xs"
     >
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stone-100 pb-4">
-        <div>
-          <span className="text-[11px] font-bold uppercase tracking-wider text-red-800">
-            Bài tập thực hành • Lớp {classCode}
+      <div className="flex flex-wrap items-start justify-between gap-2.5 border-b border-stone-100 pb-3">
+        <div className="min-w-0 flex-1">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-red-800">
+            Bài tập • {classCode || 'Tự học'}
           </span>
-          <h3 className="mt-0.5 font-display text-base font-bold text-stone-900">
-            Luyện phát âm & viết chữ Hán: {lessonTitle}
+          <h3 className="mt-0.5 truncate font-display text-sm font-bold text-stone-900 sm:text-base">
+            {lessonTitle}
           </h3>
-          <p className="mt-1 text-xs text-stone-600">
-            Yêu cầu: Con hãy thu âm đọc to từ vựng/mẫu câu trong bài (30–45 giây) hoặc chụp ảnh vở tập viết chữ Hán gửi cho Lão sư nhé!
+          <p className="mt-0.5 text-[11px] text-stone-500">
+            Thu âm đọc câu (30–45s) hoặc đính kèm ảnh vở viết gửi giáo viên.
           </p>
         </div>
         {renderStatusBadge()}
@@ -178,13 +178,11 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
 
       {/* Existing Graded / Feedback Card */}
       {existingSubmission && (
-        <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-4">
+        <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs font-semibold text-stone-800">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-800">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <span>
-                Bài nộp lúc: {formatChatTimestamp(existingSubmission.submitted_at)}
-              </span>
+              <span>Đã nộp: {formatChatTimestamp(existingSubmission.submitted_at)}</span>
             </div>
             {existingSubmission.file_url && (
               <a
@@ -193,14 +191,14 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 rel="noreferrer"
                 className="text-xs font-bold text-red-800 underline hover:text-red-950"
               >
-                Xem tệp đã nộp ({existingSubmission.attachments?.[0]?.title || 'Bài làm'})
+                Xem tệp ({existingSubmission.attachments?.[0]?.title || 'Bài làm'})
               </a>
             )}
           </div>
 
           {existingSubmission.student_note && (
-            <p className="mt-2 rounded-lg bg-white p-2.5 text-xs text-stone-700 border border-stone-200/80">
-              <strong>Lời nhắn của học viên:</strong> {existingSubmission.student_note}
+            <p className="mt-2 rounded-lg border border-stone-200/80 bg-white p-2 text-xs text-stone-700">
+              <strong>Ghi chú:</strong> {existingSubmission.student_note}
             </p>
           )}
 
@@ -210,20 +208,20 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
             existingSubmission.teacher_feedback) && (
             <div
               data-testid="teacher-grading-result-card"
-              className={`mt-3 rounded-xl border p-3.5 ${
+              className={`mt-2.5 rounded-xl border p-3 ${
                 existingSubmission.status === 'revision_requested'
                   ? 'border-red-200 bg-red-50/80'
                   : 'border-emerald-200 bg-emerald-50/80'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-stone-800">
-                  Nhận xét của Giáo viên chủ nhiệm
+                <span className="text-[11px] font-bold uppercase tracking-wider text-stone-800">
+                  Nhận xét giáo viên
                 </span>
                 {existingSubmission.score !== null && existingSubmission.score !== undefined && (
                   <span
                     data-testid="homework-score-badge"
-                    className="rounded-lg bg-emerald-700 px-2.5 py-1 font-display text-sm font-bold text-white shadow-2xs"
+                    className="rounded-lg bg-emerald-700 px-2.5 py-0.5 font-display text-xs font-bold text-white shadow-2xs"
                   >
                     Điểm: {existingSubmission.score} / 10
                   </span>
@@ -231,23 +229,23 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               </div>
               <p
                 data-testid="homework-feedback-text"
-                className="mt-1.5 text-xs leading-relaxed font-medium text-stone-800"
+                className="mt-1 text-xs leading-relaxed font-medium text-stone-800"
               >
-                {existingSubmission.teacher_feedback || 'Giáo viên đã chấm bài của con.'}
+                {existingSubmission.teacher_feedback || 'Giáo viên đã chấm bài.'}
               </p>
             </div>
           )}
 
           {!showSubmissionForm && (
-            <div className="mt-3 flex justify-end">
+            <div className="mt-2.5 flex justify-end">
               <button
                 type="button"
                 data-testid="resubmit-homework-toggle-btn"
                 onClick={() => setIsRevising(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-100"
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-100"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Nộp bổ sung / Nộp lại bản mới
+                Nộp lại
               </button>
             </div>
           )}
@@ -256,12 +254,12 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
 
       {/* Submission Form */}
       {showSubmissionForm && (
-        <form onSubmit={handleFormSubmit} className="mt-4 space-y-4">
+        <form onSubmit={handleFormSubmit} className="mt-3 space-y-3">
           {submitError && (
             <div
               data-testid="homework-submit-error"
               role="alert"
-              className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-medium text-red-900"
+              className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-2.5 text-xs font-medium text-red-900"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
               <span>{submitError}</span>
@@ -270,10 +268,6 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
 
           {/* Voice Recording or File Picker */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold text-stone-800">
-              1. Thu âm giọng đọc hoặc đính kèm ảnh/tệp bài làm:
-            </label>
-
             {showRecorder ? (
               <VoiceRecorder
                 onCancel={() => setShowRecorder(false)}
@@ -289,15 +283,15 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 }}
               />
             ) : (
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
                 <button
                   type="button"
                   data-testid="homework-start-record-btn"
                   onClick={() => setShowRecorder(true)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-bold text-red-900 transition-colors hover:bg-red-100"
+                  className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-900 transition-colors hover:bg-red-100"
                 >
-                  <Mic className="h-4 w-4 text-red-700" />
-                  Thu âm trực tiếp trên ứng dụng
+                  <Mic className="h-4 w-4 shrink-0 text-red-700" />
+                  <span>Thu âm</span>
                 </button>
 
                 <input
@@ -312,10 +306,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                   type="button"
                   data-testid="homework-pick-file-btn"
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-50"
+                  className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-50"
                 >
-                  <Upload className="h-4 w-4 text-stone-600" />
-                  Chọn tệp âm thanh / ảnh vở viết
+                  <Upload className="h-4 w-4 shrink-0 text-stone-600" />
+                  <span>Chọn tệp / ảnh</span>
                 </button>
               </div>
             )}
@@ -324,19 +318,19 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
             {selectedFile && (
               <div
                 data-testid="homework-selected-file-card"
-                className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3"
+                className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5"
               >
-                <div className="flex items-center gap-2.5">
-                  <FileAudio className="h-5 w-5 text-emerald-700" />
-                  <div>
-                    <p className="text-xs font-bold text-stone-900">{selectedFile.name}</p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <FileAudio className="h-4 w-4 shrink-0 text-emerald-700" />
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold text-stone-900">{selectedFile.name}</p>
                     <p className="text-[11px] text-stone-600">
-                      {formatFileSize(selectedFile.size)} • Đã lưu sẵn sàng nộp
+                      {formatFileSize(selectedFile.size)} • Sẵn sàng nộp
                     </p>
                   </div>
                 </div>
                 {selectedFile.previewUrl && (
-                  <audio controls src={selectedFile.previewUrl} className="h-8 max-w-[200px]" />
+                  <audio controls src={selectedFile.previewUrl} className="h-8 max-w-[180px]" />
                 )}
               </div>
             )}
@@ -348,7 +342,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               htmlFor="homework-student-note"
               className="block text-xs font-bold text-stone-800"
             >
-              2. Lời nhắn gửi Lão sư (Ghi chú câu con muốn cô sửa kỹ hơn):
+              Ghi chú gửi giáo viên:
             </label>
             <textarea
               id="homework-student-note"
@@ -356,8 +350,8 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Ví dụ: Con gửi Lão sư bài thu âm đọc bài khóa và ảnh viết chữ Hán bài này ạ..."
-              className="mt-1.5 w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-xs text-stone-900 placeholder:text-stone-400 focus:border-red-800 focus:bg-white focus:outline-none"
+              placeholder="Ghi chú bài thu âm hoặc câu cần cô sửa..."
+              className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:border-red-800 focus:bg-white focus:outline-none"
             />
           </div>
 
@@ -367,7 +361,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setIsRevising(false)}
-                className="rounded-xl border border-stone-300 px-3.5 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100"
+                className="min-h-[40px] rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100"
               >
                 Hủy
               </button>
@@ -376,17 +370,17 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               type="submit"
               data-testid="homework-submit-btn"
               disabled={isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-red-800 px-5 py-2.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-red-900 disabled:opacity-50"
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-2xs transition-all hover:bg-red-900 disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Đang tải tệp & lưu bài nộp...</span>
+                  <span>Đang nộp...</span>
                 </>
               ) : (
                 <>
-                  <Send className="h-4 w-4" />
-                  <span>Nộp bài tập ngay</span>
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Nộp bài tập</span>
                 </>
               )}
             </button>

@@ -14,6 +14,12 @@ export function shouldUseHashRouter(): boolean {
   if (typeof window !== 'undefined') {
     if (window.__KTN_EMBED_MODE__ === true) return true;
     if (window.location.pathname.includes('/custom-page/')) return true;
+    if (window.location.hash.startsWith('#/')) return true;
+    try {
+      if (new URLSearchParams(window.location.search).get('router') === 'hash') return true;
+    } catch {
+      // ignore URLSearchParams error
+    }
     if (document.getElementById('ktn-react-v2-root') && !document.getElementById('root')) {
       return true;
     }
@@ -34,7 +40,8 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children
       })
   );
 
-  const RouterComponent = shouldUseHashRouter() ? HashRouter : BrowserRouter;
+  const [useHash] = useState(() => shouldUseHashRouter());
+  const RouterComponent = useHash ? HashRouter : BrowserRouter;
 
   return (
     <QueryClientProvider client={queryClient}>

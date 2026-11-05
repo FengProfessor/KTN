@@ -4,7 +4,13 @@
 -- Phối hợp: File nặng (Video HLS, PDF, MP3, File bài tập S3) vẫn lưu trên izTeach.
 -- ============================================================================
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgcrypto extension not required on PostgreSQL 13+ (gen_random_uuid is built-in).';
+END $$;
+
 
 -- 1. BẢNG CẤU HÌNH BẢNG GIÁ & THANH TOÁN VIETQR (HỖ TRỢ DUYỆT TAY + BẬT TỰ ĐỘNG)
 CREATE TABLE IF NOT EXISTS public.ktn_payment_config (
@@ -165,7 +171,7 @@ CREATE TABLE IF NOT EXISTS public.ktn_attendance (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   class_code TEXT NOT NULL REFERENCES public.ktn_classes(id) ON DELETE CASCADE,
   student_code TEXT REFERENCES public.ktn_students(code) ON DELETE CASCADE,
-  student_email TEXT NOT NULL,
+  student_email TEXT,
   student_name TEXT DEFAULT '',
   lesson_num INTEGER NOT NULL DEFAULT 1,
   session_num INTEGER DEFAULT 1,
@@ -363,13 +369,18 @@ CREATE TABLE IF NOT EXISTS public.ktn_provisioning_jobs (
   idempotency_key TEXT UNIQUE,
   job_type TEXT NOT NULL,
   target_email TEXT NOT NULL,
+  target_role TEXT DEFAULT 'student',
   actor_email TEXT,
   status TEXT NOT NULL DEFAULT 'in_progress',
+  sync_status TEXT DEFAULT 'pending',
   retryable BOOLEAN DEFAULT true,
   completed_steps JSONB DEFAULT '[]'::jsonb,
   failed_step TEXT,
+  cognito_user_id TEXT,
+  izteach_student_id TEXT,
   request_payload JSONB DEFAULT '{}'::jsonb,
   response_payload JSONB DEFAULT '{}'::jsonb,
+  result_summary JSONB DEFAULT '{}'::jsonb,
   error_code TEXT,
   error_message TEXT,
   retry_count INTEGER DEFAULT 0,
@@ -378,25 +389,57 @@ CREATE TABLE IF NOT EXISTS public.ktn_provisioning_jobs (
 );
 
 CREATE TABLE IF NOT EXISTS public.ktn_sync_events (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   operation_id TEXT,
   event_type TEXT NOT NULL,
-  entity_type TEXT NOT NULL,
-  entity_id TEXT,
+  target_system TEXT DEFAULT 'three_way',
   source_system TEXT DEFAULT 'worker_bff',
-  sync_status TEXT NOT NULL,
+  entity_type TEXT NOT NULL DEFAULT 'student',
+  entity_id TEXT,
+  entity_key TEXT,
+  status TEXT DEFAULT 'info',
+  sync_status TEXT NOT NULL DEFAULT 'info',
+  error_code TEXT,
   drift_code TEXT,
   details JSONB DEFAULT '{}'::jsonb,
   error_message TEXT,
+  created_by TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+DROP INDEX IF EXISTS public.idx_ktn_students_class;
+DROP INDEX IF EXISTS public.idx_ktn_students_class_code;
+DROP INDEX IF EXISTS public.idx_ktn_students_email;
+DROP INDEX IF EXISTS public.idx_ktn_students_name_trgm;
 CREATE INDEX IF NOT EXISTS idx_ktn_students_email_lower ON public.ktn_students (LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_ktn_students_code_lower ON public.ktn_students (LOWER(code));
-CREATE INDEX IF NOT EXISTS idx_ktn_students_class_code ON public.ktn_students (class_code);
 CREATE INDEX IF NOT EXISTS idx_ktn_students_phone ON public.ktn_students (phone);
-CREATE INDEX IF NOT EXISTS idx_ktn_students_name_trgm ON public.ktn_students USING GIN (name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_ktn_students_search_text_trgm ON public.ktn_students USING GIN (search_text gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_updated_email ON public.ktn_students (updated_at DESC NULLS LAST, email ASC);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_class_updated ON public.ktn_students (class_code, updated_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_search_text_trgm ON public.ktn_students USING GIN (search_text gin_trgm_ops) WITH (fastupdate = off);
 CREATE INDEX IF NOT EXISTS idx_ktn_attendance_class_date ON public.ktn_attendance (class_code, date DESC);
 CREATE INDEX IF NOT EXISTS idx_ktn_attendance_student_date ON public.ktn_attendance (student_code, date DESC);
+
+ALTER TABLE public.ktn_provisioning_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ktn_sync_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.ktn_provisioning_jobs, public.ktn_sync_events FROM PUBLIC;
+DROP POLICY IF EXISTS "Allow all for service role" ON public.ktn_provisioning_jobs;
+DROP POLICY IF EXISTS "service_role_only_ktn_provisioning_jobs" ON public.ktn_provisioning_jobs;
+CREATE POLICY "service_role_only_ktn_provisioning_jobs"
+  ON public.ktn_provisioning_jobs
+  AS PERMISSIVE
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON public.ktn_sync_events;
+DROP POLICY IF EXISTS "service_role_only_ktn_sync_events" ON public.ktn_sync_events;
+CREATE POLICY "service_role_only_ktn_sync_events"
+  ON public.ktn_sync_events
+  AS PERMISSIVE
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
 

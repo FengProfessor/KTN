@@ -1,18 +1,31 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { ShieldAlert, ArrowLeft, Loader2 } from 'lucide-react';
 import { AppShell } from '../layouts/AppShell';
 import { RoleHome } from '../navigation/RoleHome';
-import { LearningPage } from '@/features/learning/components/LearningPage';
 import { ClassroomsPage } from '@/features/classrooms/components/ClassroomsPage';
 import { ChatLayout } from '@/features/chat/components/ChatLayout';
 import { NotificationCenter } from '@/features/notifications/components/NotificationCenter';
-import { TeacherWorkspace } from '@/features/teacher/components/TeacherWorkspace';
-import { AdminWorkspace } from '@/features/admin/components/AdminWorkspace';
 import { LoginPage } from '@/features/auth/components/LoginPage';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
 import type { UserRole } from '@/types/ktn.types';
+
+const LearningPage = lazy(() =>
+  import('@/features/learning/components/LearningPage').then((m) => ({ default: m.LearningPage }))
+);
+const TeacherWorkspace = lazy(() =>
+  import('@/features/teacher/components/TeacherWorkspace').then((m) => ({ default: m.TeacherWorkspace }))
+);
+const AdminWorkspace = lazy(() =>
+  import('@/features/admin/components/AdminWorkspace').then((m) => ({ default: m.AdminWorkspace }))
+);
+
+const RouteLoadingFallback: React.FC = () => (
+  <div className="flex min-h-[200px] items-center justify-center p-6">
+    <Loader2 className="h-6 w-6 animate-spin text-red-800" />
+  </div>
+);
 
 const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> = ({
   allowed,
@@ -24,11 +37,7 @@ const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> 
   const isDemoMode = useUiStore((s) => s.isDemoMode);
 
   if (isRestoring && !isDemoMode) {
-    return (
-      <div className="flex min-h-[200px] items-center justify-center p-6">
-        <Loader2 className="h-6 w-6 animate-spin text-red-800" />
-      </div>
-    );
+    return <RouteLoadingFallback />;
   }
 
   if (!user && !isDemoMode) {
@@ -109,72 +118,74 @@ export const AppRouter: React.FC = () => {
   }, [isDemoMode]);
 
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route
-        path="/"
-        element={
-          !user && !isRestoring && !isDemoMode ? (
-            <Navigate to="/login" replace />
-          ) : (
-            <AppShell />
-          )
-        }
-      >
-        <Route index element={<RoleHome />} />
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
         <Route
-          path="learning"
+          path="/"
           element={
-            <RequireRole allowed={['student']}>
-              <LearningPage />
-            </RequireRole>
+            !user && !isRestoring && !isDemoMode ? (
+              <Navigate to="/login" replace />
+            ) : (
+              <AppShell />
+            )
           }
-        />
-        <Route
-          path="classrooms"
-          element={
-            <RequireRole allowed={['student']}>
-              <ClassroomsPage />
-            </RequireRole>
-          }
-        />
-        <Route path="chat" element={<ChatLayout />} />
-        <Route path="notifications" element={<NotificationCenter />} />
-        <Route
-          path="teacher"
-          element={
-            <RequireRole allowed={['teacher', 'admin']}>
-              <TeacherWorkspace />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="teacher/:section"
-          element={
-            <RequireRole allowed={['teacher', 'admin']}>
-              <TeacherWorkspace />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="admin"
-          element={
-            <RequireRole allowed={['admin']}>
-              <AdminWorkspace />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="admin/:section"
-          element={
-            <RequireRole allowed={['admin']}>
-              <AdminWorkspace />
-            </RequireRole>
-          }
-        />
-        <Route path="demo" element={<RoleHome />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        >
+          <Route index element={<RoleHome />} />
+          <Route
+            path="learning"
+            element={
+              <RequireRole allowed={['student']}>
+                <LearningPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="classrooms"
+            element={
+              <RequireRole allowed={['student']}>
+                <ClassroomsPage />
+              </RequireRole>
+            }
+          />
+          <Route path="chat" element={<ChatLayout />} />
+          <Route path="notifications" element={<NotificationCenter />} />
+          <Route
+            path="teacher"
+            element={
+              <RequireRole allowed={['teacher', 'admin']}>
+                <TeacherWorkspace />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="teacher/:section"
+            element={
+              <RequireRole allowed={['teacher', 'admin']}>
+                <TeacherWorkspace />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="admin"
+            element={
+              <RequireRole allowed={['admin']}>
+                <AdminWorkspace />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="admin/:section"
+            element={
+              <RequireRole allowed={['admin']}>
+                <AdminWorkspace />
+              </RequireRole>
+            }
+          />
+          <Route path="demo" element={<RoleHome />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 };

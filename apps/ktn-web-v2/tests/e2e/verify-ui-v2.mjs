@@ -30,6 +30,8 @@ function resolveBrowserExecutable() {
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
@@ -1219,6 +1221,114 @@ async function runSuite() {
     await adminAuditContext.close();
     await studentContext.close();
     await teacherContext.close();
+
+    // =========================================================================
+    // TEST K — PRODUCTION READINESS V3: LAZY HLS, SERVER PAGINATION, REAL VIDEO PLAYBACK & HASH ROUTER
+    // =========================================================================
+    const perfContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const perfPage = await perfContext.newPage();
+    const adminSessionRequests = [];
+    perfPage.on('request', (req) => {
+      adminSessionRequests.push(req.url());
+    });
+
+    await perfPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await perfPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await perfPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 10000 });
+    await perfPage.goto(`${baseUrl}/admin`, { waitUntil: 'domcontentloaded' });
+    await perfPage.waitForSelector('[data-testid="admin-workspace-page"]', { timeout: 10000 });
+    await perfPage.waitForTimeout(400);
+
+    const hlsRequestsOnNonVideoPages = adminSessionRequests.filter((u) =>
+      /hls\.js|vendor-hls|node_modules\/hls/i.test(u)
+    );
+    const searchRequestsOnAdmin = adminSessionRequests.filter((u) =>
+      u.includes('/api/ktn/admin/students/search')
+    );
+    const hasSmallPageLimit = searchRequestsOnAdmin.some((u) => u.includes('limit=20'));
+    const hasBloatedPageLimit = searchRequestsOnAdmin.some((u) =>
+      /limit=(100|150|2000)\b/.test(u)
+    );
+
+    recordTest(
+      'TEST K',
+      'K1',
+      'Non-video pages (/login, /, /admin) make 0 HLS chunk requests and paginate student search with limit=20',
+      hlsRequestsOnNonVideoPages.length === 0 && hasSmallPageLimit && !hasBloatedPageLimit,
+      `hlsReqs=${hlsRequestsOnNonVideoPages.length}, searchReqs=${searchRequestsOnAdmin.length}, limit20=${hasSmallPageLimit}`
+    );
+
+    // K2 & K3: HashRouter embed mode + Real HLS stream decoding & playback (currentTime > 0)
+    const embedContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const embedPage = await embedContext.newPage();
+    await embedPage.goto(`${baseUrl}/?router=hash#/login`, { waitUntil: 'domcontentloaded' });
+    await embedPage.click('[data-testid="quick-login-hoangngan@khongtunhi.com"]');
+    await embedPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 10000 });
+    await embedPage.click('[data-testid="nav-learning"]');
+    await embedPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 10000 });
+    await embedPage.waitForSelector('[data-testid="hls-video-element"]', { timeout: 10000 });
+
+    const hashBeforeReload = new URL(embedPage.url()).hash;
+    await embedPage.reload({ waitUntil: 'domcontentloaded' });
+    await embedPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 10000 });
+    const hashAfterReload = new URL(embedPage.url()).hash;
+
+    recordTest(
+      'TEST K',
+      'K2',
+      'Custom Page HashRouter embed mode (?router=hash#/...) navigates and survives reload without 404',
+      hashBeforeReload.startsWith('#/learning') && hashAfterReload.startsWith('#/learning'),
+      `hash=${hashAfterReload}`
+    );
+
+    const playbackStats = await embedPage.evaluate(async () => {
+      const video = document.querySelector('[data-testid="hls-video-element"]');
+      if (!video) return { ok: false, reason: 'no_video_element' };
+      video.muted = true;
+      const deadline = Date.now() + 12000;
+      while (Date.now() < deadline && video.readyState < 2) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      try {
+        await video.play();
+      } catch {
+        // ignore initial play interruption if stream is still buffering
+      }
+      const playDeadline = Date.now() + 8000;
+      while (Date.now() < playDeadline && video.currentTime <= 0.05) {
+        if (video.paused) {
+          try {
+            await video.play();
+          } catch {
+            // ignore
+          }
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      const stats = {
+        readyState: video.readyState,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        duration: Number.isFinite(video.duration) ? Math.round(video.duration) : 0,
+        currentTime: Number(video.currentTime.toFixed(2)),
+      };
+      video.pause();
+      return {
+        ok: stats.readyState >= 2 && stats.videoWidth > 0 && stats.currentTime > 0,
+        ...stats,
+      };
+    });
+
+    recordTest(
+      'TEST K',
+      'K3',
+      'Real HLS stream on /learning decodes video frames and advances playback currentTime > 0',
+      Boolean(playbackStats.ok),
+      `readyState=${playbackStats.readyState}, res=${playbackStats.videoWidth}x${playbackStats.videoHeight}, duration=${playbackStats.duration}s, currentTime=${playbackStats.currentTime}s`
+    );
+
+    await perfContext.close();
+    await embedContext.close();
   } finally {
     await browser.close();
     await viteServer.close();

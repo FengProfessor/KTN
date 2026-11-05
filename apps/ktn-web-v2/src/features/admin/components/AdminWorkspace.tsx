@@ -60,7 +60,7 @@ export const AdminWorkspace: React.FC = () => {
   const [courseFilter, setCourseFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [pageOffset, setPageOffset] = useState(0);
-  const pageLimit = 25;
+  const pageLimit = 20;
 
   // One-click Student Provisioning modal state
   const [showCreateStudentModal, setShowCreateStudentModal] = useState(false);

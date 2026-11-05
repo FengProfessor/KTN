@@ -37,7 +37,9 @@ export const NotificationCenter: React.FC = () => {
     notifications: KtnNotification[];
     readIds: string[];
   }>({
-    queryKey: ['ktn-notifications', user?.email, isDemoMode, demoState],
+    queryKey: isDemoMode
+      ? ['ktn-notifications', user?.email, isDemoMode, demoState]
+      : ['ktn-notifications', user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) {
         if (demoState === 'empty') {
@@ -55,7 +57,9 @@ export const NotificationCenter: React.FC = () => {
       return ktnApi.getNotifications();
     },
     enabled: Boolean(user) || isDemoMode,
+    staleTime: 2000,
     refetchInterval: isDemoMode ? false : 4000,
+    refetchIntervalInBackground: false,
   });
 
   const notifications = notificationsQuery.data?.notifications || [];

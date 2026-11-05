@@ -58,7 +58,9 @@ export const AppShell: React.FC = () => {
       return ktnApi.getNotifications();
     },
     enabled: Boolean(user) || isDemoMode,
+    staleTime: 2000,
     refetchInterval: isDemoMode ? false : 4000,
+    refetchIntervalInBackground: false,
   });
 
   const teacherHomeworksQuery = useQuery<KtnHomework[]>({

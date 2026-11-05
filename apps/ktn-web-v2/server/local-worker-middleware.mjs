@@ -319,25 +319,57 @@ export function createLocalWorkerHarness() {
     autoId: 1000
   };
 
+  function normalizeViMock(str) {
+    return String(str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .toLowerCase()
+      .replace(/[^a-z0-9@._\s-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function evalSingleClause(row, clause) {
+    const m = clause.match(/^([a-zA-Z0-9_]+)\.(eq|ilike|like|is)\.(.+)$/);
+    if (!m) return true;
+    const [, col, op, v] = m;
+    const rawCell = row[col];
+    if (op === 'is') {
+      if (v === 'null') return rawCell === null || rawCell === undefined || rawCell === '';
+      return true;
+    }
+    const cell = String(rawCell ?? '');
+    if (op === 'eq') return cell === v;
+    const isCaseInsensitive = op === 'ilike';
+    const regexStr = '^' + v.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/[*%]/g, '.*') + '$';
+    const re = new RegExp(regexStr, isCaseInsensitive ? 'i' : '');
+    return re.test(cell);
+  }
+
   function matchQueryFilters(row, searchParams) {
     for (const [k, rawVal] of searchParams.entries()) {
       if (k === 'select' || k === 'order' || k === 'limit' || k === 'offset' || k === 'on_conflict') continue;
       if (k === 'or') {
         const inner = rawVal.replace(/^\(/, '').replace(/\)$/, '');
         const clauses = inner.split(',');
-        const anyMatch = clauses.some(c => {
-          const m = c.match(/^([a-zA-Z0-9_]+)\.(eq|ilike)\.(.+)$/);
-          if (!m) return true;
-          const [, col, op, v] = m;
-          const cell = String(row[col] ?? '');
-          return op === 'ilike' ? cell.toLowerCase() === v.toLowerCase() : cell === v;
-        });
+        const anyMatch = clauses.some(c => evalSingleClause(row, c));
         if (!anyMatch) return false;
+        continue;
+      }
+      if (k === 'and') {
+        const inner = rawVal.replace(/^\(/, '').replace(/\)$/, '');
+        const clauses = inner.split(',');
+        const allMatch = clauses.every(c => evalSingleClause(row, c));
+        if (!allMatch) return false;
         continue;
       }
       if (rawVal.startsWith('eq.')) {
         const target = rawVal.slice(3);
         if (String(row[k] ?? '') !== target) return false;
+      } else if (rawVal.startsWith('is.')) {
+        const target = rawVal.slice(3).toLowerCase();
+        if (target === 'null' && row[k] !== null && row[k] !== undefined && row[k] !== '') return false;
       } else if (rawVal.startsWith('ilike.') || rawVal.startsWith('like.')) {
         const isCaseInsensitive = rawVal.startsWith('ilike.');
         const pattern = rawVal.slice(isCaseInsensitive ? 6 : 5);
@@ -359,6 +391,82 @@ export function createLocalWorkerHarness() {
 
     if (u.hostname === 'mock-supabase.local') {
       const table = u.pathname.replace(/^\/rest\/v1\//, '');
+      if (table === 'rpc/ktn_search_students' && method === 'POST') {
+        const body = init.body ? JSON.parse(init.body) : {};
+        const qNorm = normalizeViMock(body.p_query || '');
+        const qTokens = qNorm ? qNorm.split(' ').filter(Boolean) : [];
+        const classFilter = String(body.p_class_code || '').trim().toUpperCase();
+        const courseFilter = String(body.p_course_id || '').trim();
+        const accountFilter = String(body.p_account_status || '').trim();
+        const syncFilter = String(body.p_sync_status || '').trim();
+        const caseFilter = String(body.p_student_case || '').trim();
+        const allowedClasses = Array.isArray(body.p_allowed_classes)
+          ? body.p_allowed_classes.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
+          : null;
+        const limit = Math.min(200, Math.max(1, Number(body.p_limit || 50)));
+        const offset = Math.max(0, Number(body.p_offset || 0));
+
+        const matched = [];
+        for (const r of state.tables.ktn_students) {
+          const rowClass = String(r.class_code || '').trim().toUpperCase();
+          if (allowedClasses !== null) {
+            if (allowedClasses.length === 0 || !allowedClasses.includes(rowClass)) continue;
+          }
+          if (classFilter === 'NONE') {
+            if (rowClass !== '') continue;
+          } else if (classFilter && classFilter !== 'ALL') {
+            if (rowClass !== classFilter) continue;
+          }
+          const courses = Array.isArray(r.online_courses) ? r.online_courses : [];
+          if (courseFilter && courseFilter !== 'ALL') {
+            const hasC = courses.some(c => String(c?.id || c || '') === courseFilter);
+            if (!hasC) continue;
+          }
+          const hasCog = Boolean(r.cognito_user_id);
+          const accSt = r.account_status || (hasCog ? 'active' : 'pending_activation');
+          const synSt = r.sync_status || (hasCog ? 'synced' : 'pending_activation');
+          const stuCase = r.student_case || (rowClass && courses.length > 0 ? 'both' : rowClass ? 'live_only' : courses.length > 0 ? 'video_only' : 'unassigned');
+          if (accountFilter && accountFilter !== 'ALL' && accSt !== accountFilter) continue;
+          if (syncFilter && syncFilter !== 'ALL' && synSt !== syncFilter) continue;
+          if (caseFilter && caseFilter !== 'ALL' && stuCase !== caseFilter) continue;
+
+          const hay = r.search_text || normalizeViMock([r.code, r.name, r.email, r.phone, r.parent_name, r.class_code].join(' '));
+          if (qTokens.length > 0 && !qTokens.every(t => hay.includes(t))) continue;
+
+          let score = 1;
+          const emLower = String(r.email || '').toLowerCase();
+          const codeNorm = normalizeViMock(r.code || '');
+          const nameNorm = normalizeViMock(r.name || '');
+          const phoneClean = String(r.phone || '').replace(/\D/g, '');
+          const qDigits = qNorm.replace(/\D/g, '');
+          if (!qNorm) score = 1;
+          else if (emLower === qNorm || codeNorm === qNorm) score = 120;
+          else if (qDigits.length >= 6 && phoneClean.includes(qDigits)) score = 110;
+          else if (nameNorm === qNorm) score = 100;
+          else if (emLower.startsWith(qNorm) || codeNorm.startsWith(qNorm)) score = 90;
+          else if (nameNorm.startsWith(qNorm) || nameNorm.endsWith(' ' + qNorm)) score = 85;
+          else if (nameNorm.includes(qNorm)) score = 75;
+          else if (hay.includes(qNorm)) score = 60;
+          else score = 45;
+
+          matched.push({ row: r, score });
+        }
+        matched.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return String(a.row.email || '').localeCompare(String(b.row.email || ''));
+        });
+        const totalCount = matched.length;
+        const page = matched.slice(offset, offset + limit).map(m => ({
+          ...m.row,
+          match_score: m.score,
+          total_count: totalCount
+        }));
+        return new Response(JSON.stringify(page), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       if (table === 'ktn_messages' && method === 'POST' && state.faults.failMessagesPost) {
         return new Response(JSON.stringify({ message: 'Simulated database error' }), {
           status: 503,
@@ -381,12 +489,17 @@ export function createLocalWorkerHarness() {
       const rows = state.tables[table] || (state.tables[table] = []);
 
       if (method === 'GET') {
-        let matched = rows.filter(r => matchQueryFilters(r, u.searchParams));
+        const matched = rows.filter(r => matchQueryFilters(r, u.searchParams));
+        const totalMatched = matched.length;
+        const offset = Math.max(0, Number(u.searchParams.get('offset') || 0));
         const limit = Number(u.searchParams.get('limit') || 0);
-        if (limit > 0) matched = matched.slice(0, limit);
-        return new Response(JSON.stringify(matched), {
+        const paged = limit > 0 ? matched.slice(offset, offset + limit) : matched.slice(offset);
+        return new Response(JSON.stringify(paged), {
           status: 200,
-          headers: { 'Content-Type': 'application/json' }
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Range': `${offset}-${Math.max(offset, offset + paged.length - 1)}/${totalMatched}`
+          }
         });
       }
 
@@ -408,6 +521,17 @@ export function createLocalWorkerHarness() {
         const defaultPk = pkByTable[table] || 'id';
         const out = [];
         for (const item of items) {
+          if (table === 'ktn_provisioning_jobs' && item.idempotency_key && !isUpsert) {
+            const dupIdem = rows.find(
+              r => r.idempotency_key && String(r.idempotency_key) === String(item.idempotency_key)
+            );
+            if (dupIdem) {
+              return new Response(
+                JSON.stringify({ code: '23505', message: 'duplicate key value violates unique constraint' }),
+                { status: 409, headers: { 'Content-Type': 'application/json' } }
+              );
+            }
+          }
           let existingIdx = -1;
           if (onConflict) {
             const keys = onConflict.split(',').map(s => s.trim());

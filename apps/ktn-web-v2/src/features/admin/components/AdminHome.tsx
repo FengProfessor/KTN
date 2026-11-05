@@ -58,8 +58,8 @@ export const AdminHome: React.FC = () => {
   });
 
   const studentsQuery = useQuery<KtnStudentRecord[]>({
-    queryKey: ['ktn-admin-students', user?.email, isDemoMode],
-    queryFn: async () => {
+    queryKey: ['ktn-admin-students', 'home-unassigned', user?.email, isDemoMode],
+    queryFn: async ({ signal }) => {
       if (isDemoMode) {
         return [
           {
@@ -91,7 +91,11 @@ export const AdminHome: React.FC = () => {
           },
         ];
       }
-      return ktnApi.getStudents();
+      const res = await ktnApi.searchStudents(
+        { classCode: 'NONE', limit: 20, offset: 0 },
+        signal
+      );
+      return res.items || res.students || [];
     },
     enabled: Boolean(user) || isDemoMode,
   });

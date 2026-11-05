@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MessageSquareOff } from 'lucide-react';
 import { ConversationList } from './ConversationList';
@@ -84,11 +84,16 @@ export const ChatLayout: React.FC = () => {
   const { sendMessage, isSending, retryFailedMessage, toggleReaction, pinAnnouncement } =
     useSendMessage(broadcastChatEvent);
 
+  const lastMarkedReadKeyRef = useRef<string>('');
   useEffect(() => {
     if (!resolvedRoomId || messages.length === 0) return;
     if ((Number(activeRoom?.unreadCount) || 0) > 0) {
       const lastMsg = messages[messages.length - 1];
-      markRoomRead({ roomId: resolvedRoomId, lastReadMessageId: lastMsg?.id });
+      const markKey = `${resolvedRoomId}:${lastMsg?.id || 'latest'}`;
+      if (lastMarkedReadKeyRef.current !== markKey) {
+        lastMarkedReadKeyRef.current = markKey;
+        markRoomRead({ roomId: resolvedRoomId, lastReadMessageId: lastMsg?.id });
+      }
     }
   }, [resolvedRoomId, activeRoom?.unreadCount, messages, markRoomRead]);
 

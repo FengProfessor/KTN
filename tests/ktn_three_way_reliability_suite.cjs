@@ -13,11 +13,22 @@ const crypto = require('crypto');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 
-function loadWorkerInstance() {
+function normalizeMockViText(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9@._\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function loadWorkerInstance(sharedState = null) {
   const code = fs.readFileSync(path.join(ROOT_DIR, 'cloudflare-worker-sw-proxy.js'), 'utf8');
   const transformed = code.replace(/export\s+default\s+\{/, 'module.exports = {');
 
-  const state = {
+  const state = sharedState || {
     tables: {
       ktn_students: [
         {
@@ -150,9 +161,26 @@ function loadWorkerInstance() {
       izteachPermissionMutateFail: false,
       izteachPermissionSkipVerifyMutation: false,
       supabaseFailOnTable: null,
-      supabaseFailMethod: null
+      supabaseFailMethod: null,
+      disableSearchRpc: false
     }
   };
+
+  function evalSinglePostgrestClause(row, c) {
+    if (c.endsWith('.is.null')) {
+      const col = c.slice(0, -8);
+      return row[col] === null || row[col] === undefined;
+    }
+    const m = c.match(/^([a-zA-Z0-9_]+)\.(eq|ilike|like)\.(.*)$/);
+    if (!m) return true;
+    const [, col, op, v] = m;
+    const cell = String(row[col] ?? '');
+    if (op === 'eq') return cell === v;
+    const isCaseInsensitive = op === 'ilike';
+    const regexStr = '^' + v.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/[*%]/g, '.*') + '$';
+    const re = new RegExp(regexStr, isCaseInsensitive ? 'i' : '');
+    return re.test(cell);
+  }
 
   function matchQueryFilters(row, searchParams) {
     for (const [k, rawVal] of searchParams.entries()) {
@@ -160,17 +188,18 @@ function loadWorkerInstance() {
       if (k === 'or') {
         const inner = rawVal.replace(/^\(/, '').replace(/\)$/, '');
         const clauses = inner.split(',');
-        const anyMatch = clauses.some(c => {
-          const m = c.match(/^([a-zA-Z0-9_]+)\.(eq|ilike)\.(.+)$/);
-          if (!m) return true;
-          const [, col, op, v] = m;
-          const cell = String(row[col] ?? '');
-          return op === 'ilike' ? cell.toLowerCase() === v.toLowerCase() : cell === v;
-        });
-        if (!anyMatch) return false;
+        if (!clauses.some(c => evalSinglePostgrestClause(row, c))) return false;
         continue;
       }
-      if (rawVal.startsWith('eq.')) {
+      if (k === 'and') {
+        const inner = rawVal.replace(/^\(/, '').replace(/\)$/, '');
+        const clauses = inner.split(',');
+        if (!clauses.every(c => evalSinglePostgrestClause(row, c))) return false;
+        continue;
+      }
+      if (rawVal === 'is.null') {
+        if (row[k] !== null && row[k] !== undefined) return false;
+      } else if (rawVal.startsWith('eq.')) {
         const target = rawVal.slice(3);
         if (String(row[k] ?? '') !== target) return false;
       } else if (rawVal.startsWith('ilike.') || rawVal.startsWith('like.')) {
@@ -196,7 +225,8 @@ function loadWorkerInstance() {
     if (u.hostname === 'mock-supabase.local') {
       const table = u.pathname.replace(/^\/rest\/v1\//, '');
       if (
-        state.faults.supabaseFailOnTable === table &&
+        (state.faults.supabaseFailOnTable === table ||
+          (state.faults.supabaseFailOnTable === 'ktn_students' && table === 'rpc/ktn_search_students')) &&
         (!state.faults.supabaseFailMethod || state.faults.supabaseFailMethod === method)
       ) {
         return new Response(JSON.stringify({ message: 'Simulated Supabase outage' }), {
@@ -204,15 +234,101 @@ function loadWorkerInstance() {
           headers: { 'Content-Type': 'application/json' }
         });
       }
+
+      if (table === 'rpc/ktn_search_students' && method === 'POST') {
+        if (state.faults.disableSearchRpc) {
+          return new Response(JSON.stringify({ message: 'RPC not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        const p = init.body ? JSON.parse(init.body) : {};
+        const rawQ = String(p.p_query || '').trim().toLowerCase();
+        const normQ = normalizeMockViText(p.p_query || '');
+        const digitsQ = String(p.p_query || '').replace(/\D+/g, '');
+        const tokens = normQ ? normQ.split(' ').filter(Boolean) : [];
+        const allowedClasses = Array.isArray(p.p_allowed_classes) ? p.p_allowed_classes : null;
+        const classCode = String(p.p_class_code || '').trim().toUpperCase();
+        const courseId = String(p.p_course_id || '').trim();
+        const accountStatus = String(p.p_account_status || '').trim();
+        const syncStatus = String(p.p_sync_status || '').trim();
+        const limit = Math.max(1, Math.min(500, Number(p.p_limit) || 25));
+        const offset = Math.max(0, Number(p.p_offset) || 0);
+
+        const matched = [];
+        const srcRows = state.tables.ktn_students || [];
+        for (let i = 0; i < srcRows.length; i++) {
+          const s = srcRows[i];
+          const sClass = String(s.class_code || '').trim().toUpperCase();
+          if (allowedClasses) {
+            if (allowedClasses.length === 0 || !allowedClasses.includes(sClass)) continue;
+          }
+          if (classCode === 'NONE') {
+            if (sClass) continue;
+          } else if (classCode && classCode !== 'ALL') {
+            if (sClass !== classCode) continue;
+          }
+          if (courseId && courseId !== 'ALL') {
+            const cArr = Array.isArray(s.online_courses) ? s.online_courses : [];
+            const hasC = cArr.some(c => String(c?.id || c || '') === courseId);
+            if (!hasC) continue;
+          }
+          if (accountStatus && accountStatus !== 'ALL') {
+            const stAcc = s.account_status || (s.cognito_user_id ? 'ready_to_login' : 'pending_activation');
+            if (stAcc !== accountStatus && !(accountStatus === 'ready_to_login' && stAcc === 'active')) continue;
+          }
+          if (syncStatus && syncStatus !== 'ALL') {
+            const stSync = s.sync_status || (s.cognito_user_id ? 'synced' : 'pending_activation');
+            if (stSync !== syncStatus) continue;
+          }
+          let score = 0;
+          if (tokens.length > 0) {
+            const hay = s.search_text || normalizeMockViText([s.code, s.name, s.email, s.phone, s.parent_name, s.class_code].join(' '));
+            let allMatch = true;
+            for (let t = 0; t < tokens.length; t++) {
+              if (!hay.includes(tokens[t])) {
+                allMatch = false;
+                break;
+              }
+            }
+            if (!allMatch) continue;
+            const em = String(s.email || '').toLowerCase();
+            const nm = normalizeMockViText(s.name || '');
+            const ph = String(s.phone || '').replace(/\D+/g, '');
+            if (em === rawQ) score += 1200;
+            else if (em.startsWith(rawQ)) score += 760;
+            if (digitsQ.length >= 4 && ph.includes(digitsQ)) score += 600;
+            if (nm === normQ) score += 950;
+            else if (nm.includes(normQ)) score += 520;
+          }
+          matched.push({ ...s, match_score: score });
+        }
+
+        if (tokens.length > 0) {
+          matched.sort((a, b) => (b.match_score - a.match_score) || String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+        }
+        const totalCount = matched.length;
+        const page = matched.slice(offset, offset + limit).map(r => ({ ...r, total_count: totalCount }));
+        return new Response(JSON.stringify(page), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       const rows = state.tables[table] || (state.tables[table] = []);
 
       if (method === 'GET') {
-        let matched = rows.filter(r => matchQueryFilters(r, u.searchParams));
+        const matched = rows.filter(r => matchQueryFilters(r, u.searchParams));
+        const totalMatched = matched.length;
+        const offset = Math.max(0, Number(u.searchParams.get('offset') || 0));
         const limit = Number(u.searchParams.get('limit') || 0);
-        if (limit > 0) matched = matched.slice(0, limit);
-        return new Response(JSON.stringify(matched), {
+        const paged = limit > 0 ? matched.slice(offset, offset + limit) : matched.slice(offset);
+        return new Response(JSON.stringify(paged), {
           status: 200,
-          headers: { 'Content-Type': 'application/json' }
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Range': `${offset}-${Math.max(offset, offset + paged.length - 1)}/${totalMatched}`
+          }
         });
       }
 
@@ -220,6 +336,8 @@ function loadWorkerInstance() {
         const body = init.body ? JSON.parse(init.body) : {};
         const items = Array.isArray(body) ? body : [body];
         const onConflict = u.searchParams.get('on_conflict');
+        const preferHeader = String((init.headers && (init.headers.Prefer || init.headers.prefer)) || '');
+        const allowMergeDuplicates = preferHeader.includes('resolution=merge-duplicates');
         const pkByTable = {
           ktn_students: 'email',
           ktn_orders: 'order_id',
@@ -232,6 +350,20 @@ function loadWorkerInstance() {
         const defaultPk = pkByTable[table] || 'id';
         const out = [];
         for (const item of items) {
+          if (table === 'ktn_provisioning_jobs' && item.idempotency_key && !allowMergeDuplicates) {
+            const dupIdem = rows.find(
+              r => r.idempotency_key && String(r.idempotency_key) === String(item.idempotency_key)
+            );
+            if (dupIdem) {
+              return new Response(
+                JSON.stringify({
+                  code: '23505',
+                  message: 'duplicate key value violates unique constraint "idx_ktn_prov_jobs_idem"'
+                }),
+                { status: 409, headers: { 'Content-Type': 'application/json' } }
+              );
+            }
+          }
           let existingIdx = -1;
           if (onConflict) {
             const keys = onConflict.split(',').map(s => s.trim());
@@ -242,6 +374,12 @@ function loadWorkerInstance() {
             existingIdx = rows.findIndex(r => r.id === item.id);
           }
           if (existingIdx >= 0) {
+            if (!allowMergeDuplicates && table === 'ktn_provisioning_jobs') {
+              return new Response(
+                JSON.stringify({ code: '23505', message: 'duplicate key value violates unique constraint' }),
+                { status: 409, headers: { 'Content-Type': 'application/json' } }
+              );
+            }
             rows[existingIdx] = { ...rows[existingIdx], ...item };
             out.push(rows[existingIdx]);
           } else {
@@ -361,6 +499,12 @@ function loadWorkerInstance() {
       }
 
       if (u.pathname.endsWith('/prod/user-permission')) {
+        if (state.faults.izteachPermissionInvalidPayload) {
+          return new Response(JSON.stringify({ message: 'unexpected non-array object without onlineCourses' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
         const uid = u.searchParams.get('userId') || '';
         const pids = state.izteach.permissionsByUid[uid] || [];
         return new Response(JSON.stringify([
@@ -416,6 +560,18 @@ function loadWorkerInstance() {
           return new Response(JSON.stringify(stuObj), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         const email = (u.searchParams.get('email') || '').toLowerCase();
+        if (!email && Array.isArray(state.izteach.studentListPages)) {
+          const pageIdx = Math.max(1, Number(u.searchParams.get('page') || 1)) - 1;
+          const pageRows = state.izteach.studentListPages[pageIdx] || [];
+          return new Response(
+            JSON.stringify({
+              data: pageRows,
+              totalPages: state.izteach.studentListPages.length,
+              hasMore: pageIdx + 1 < state.izteach.studentListPages.length
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
         if (!email && Array.isArray(state.izteach.studentList)) {
           return new Response(JSON.stringify(state.izteach.studentList), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
@@ -2376,6 +2532,263 @@ async function runSuite() {
         Boolean(orphanDrift && orphanDrift.title && orphanDrift.detail) &&
         typeof syncCheckRes.data?.summary?.driftTotal === 'number',
       `concRows=${concRowsInSupabase}, oneReplayed=${oneReplayed}, orphanDriftTitle="${orphanDrift?.title || ''}"`
+    );
+
+    // C15: Deep pagination beyond 2,000 rows, PostgREST server-side fallback, and Teacher PII stripping
+    const savedStudentsForDeepTest = state.tables.ktn_students.slice();
+    for (let i = 1; i <= 2500; i++) {
+      const idxStr = String(i).padStart(4, '0');
+      state.tables.ktn_students.push({
+        id: `deep-stu-${idxStr}`,
+        code: `KTN-DEEP-${idxStr}`,
+        name: i === 2450 ? 'Nguyễn Hoàng Ngân Deep2450' : `Học Viên Mở Rộng ${idxStr}`,
+        normalized_name: i === 2450 ? 'nguyen hoang ngan deep2450' : `hoc vien mo rong ${idxStr}`,
+        email: i === 2450 ? 'ngan.deep2450@khongtunhi.com' : `deep.${idxStr}@khongtunhi.com`,
+        phone: `0977${String(i).padStart(6, '0')}`,
+        class_code: i === 2450 ? 'YCT2-04' : 'YCT3-02',
+        course_ids: ['6adadba969897b0002482ca5'],
+        account_status: 'active',
+        sync_status: 'synced',
+        student_case: 'CASE_3_HYBRID',
+        internal_note: 'Ghi chú nội bộ mật của Admin không lộ cho GV',
+        last_sync_error: 'Internal sync error stacktrace secret',
+        search_text:
+          i === 2450
+            ? `nguyen hoang ngan deep2450 ktn-deep-${idxStr} ngan.deep2450@khongtunhi.com 0977002450 yct2-04`
+            : `hoc vien mo rong ${idxStr} ktn-deep-${idxStr} deep.${idxStr}@khongtunhi.com 0977${String(i).padStart(6, '0')} yct3-02`,
+        updated_at: new Date(Date.UTC(2026, 0, 1) - i * 1000).toISOString()
+      });
+    }
+
+    // 1) Deep pagination at offset=2400, limit=50 via RPC
+    const deepPageRpcRes = await callApi('/api/ktn/admin/students/search?limit=50&offset=2400', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+
+    // 2) Force PostgREST fallback (simulate missing RPC) and search for student #2450 beyond 2,000 rows
+    state.faults.disableSearchRpc = true;
+    const deepFallbackSearchRes = await callApi('/api/ktn/admin/students/search?q=hoang%20ngan%20deep2450&limit=20&offset=0', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const deepFallbackPageRes = await callApi('/api/ktn/admin/students/search?limit=50&offset=2400', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    state.faults.disableSearchRpc = false;
+
+    // 3) Teacher search PII check: Teacher must NOT see internal_note or last_sync_error
+    const teacherPiiCheckRes = await callApi('/api/ktn/admin/students/search?q=deep2450', {
+      headers: { Authorization: `Bearer ${teacherAToken}` }
+    });
+    const teacherTargetRow = (teacherPiiCheckRes.data?.students || [])[0] || {};
+    const adminTargetRow = (deepFallbackSearchRes.data?.students || [])[0] || {};
+
+    state.tables.ktn_students = savedStudentsForDeepTest;
+
+    record(
+      'C15-DEEP-PAGINATION-BEYOND-2000-POSTGREST-FALLBACK-AND-TEACHER-PII',
+      'GROUP_V3',
+      'Search & pagination work accurately beyond 2,000 students in both RPC and PostgREST server-side fallback modes, and Teacher role strips internal_note & last_sync_error',
+      deepPageRpcRes.status === 200 &&
+        deepPageRpcRes.data?.totalCount > 2500 &&
+        deepPageRpcRes.data?.students?.length === 50 &&
+        deepFallbackSearchRes.status === 200 &&
+        deepFallbackSearchRes.data?.searchEngine === 'postgrest_server_side' &&
+        adminTargetRow.email === 'ngan.deep2450@khongtunhi.com' &&
+        Boolean(adminTargetRow.internal_note) &&
+        deepFallbackPageRes.status === 200 &&
+        deepFallbackPageRes.data?.students?.length === 50 &&
+        teacherPiiCheckRes.status === 200 &&
+        teacherTargetRow.email === 'ngan.deep2450@khongtunhi.com' &&
+        teacherTargetRow.internal_note === undefined &&
+        teacherTargetRow.last_sync_error === undefined,
+      `total=${deepPageRpcRes.data?.totalCount}, fallbackEngine=${deepFallbackSearchRes.data?.searchEngine}, teacherInternalNote=${String(teacherTargetRow.internal_note)}`
+    );
+
+    // D10: Cross-instance durable idempotency (in-progress 409 lock + partial failure step resume without duplicating Cognito/CRM)
+    const stuckJobIdemKey = 'IDEM-MULTI-INSTANCE-IN-PROGRESS-001';
+    state.tables.ktn_provisioning_jobs.push({
+      id: 'job-in-progress-001',
+      operation_id: 'PROV-IN-PROGRESS-001',
+      idempotency_key: stuckJobIdemKey,
+      target_email: 'inprogress.v3@khongtunhi.com',
+      job_type: 'student_create',
+      request_payload: { email: 'inprogress.v3@khongtunhi.com' },
+      status: 'in_progress',
+      completed_steps: ['izteach_account'],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+    const inProgressConflictRes = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}`, 'Idempotency-Key': stuckJobIdemKey },
+      body: {
+        name: 'Bé Đang Xử Lý Ở Instance Khác',
+        email: 'inprogress.v3@khongtunhi.com',
+        courseIds: ['6adadba969897b0002482ca5']
+      }
+    });
+
+    // Now test partial failure (step 1 izteach_account succeeded, step 2 izteach_permissions failed) followed by retry with same Idempotency-Key:
+    const partialIdemKey = 'IDEM-PARTIAL-RESUME-002';
+    const partialEmail = 'partial.resume.v3@khongtunhi.com';
+    state.faults.izteachPermissionMutateFail = true;
+    const partialFailRes = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}`, 'Idempotency-Key': partialIdemKey },
+      body: {
+        name: 'Bé Phục Hồi Từng Bước',
+        email: partialEmail,
+        courseIds: ['6adadba969897b0002482ca5']
+      }
+    });
+    const firstAttemptUid = partialFailRes.data?.cognitoUserId;
+    state.faults.izteachPermissionMutateFail = false;
+    // Block user creation on retry to prove step 1 (izteach_account) is skipped on resume because cognito_user_id was persisted in ktn_provisioning_jobs
+    state.faults.izteachUserCreateFail = true;
+    const partialResumeRes = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}`, 'Idempotency-Key': partialIdemKey },
+      body: {
+        name: 'Bé Phục Hồi Từng Bước',
+        email: partialEmail,
+        courseIds: ['6adadba969897b0002482ca5']
+      }
+    });
+    state.faults.izteachUserCreateFail = false;
+
+    record(
+      'D10-CROSS-INSTANCE-DURABLE-IDEMPOTENCY-AND-STEP-RESUME',
+      'GROUP_V3',
+      'Cross-instance in_progress job returns 409 PROVISIONING_IN_PROGRESS, and retrying a failed job resumes from the failed step without re-running completed izTeach user creation',
+      inProgressConflictRes.status === 409 &&
+        inProgressConflictRes.data?.error === 'PROVISIONING_IN_PROGRESS' &&
+        partialFailRes.status === 502 &&
+        partialFailRes.data?.partialFailure === true &&
+        Boolean(firstAttemptUid) &&
+        partialResumeRes.status === 200 &&
+        partialResumeRes.data?.syncStatus === 'synced' &&
+        partialResumeRes.data?.cognitoUserId === firstAttemptUid &&
+        partialResumeRes.data?.student?.cognito_user_id === firstAttemptUid,
+      `inProgressStatus=${inProgressConflictRes.status}, partialStatus=${partialFailRes.status}, resumedStatus=${partialResumeRes.status}, sameUid=${partialResumeRes.data?.cognitoUserId === firstAttemptUid}`
+    );
+
+    // D11: Teacher provisioning truth (pending_external_provisioning when no password/upstream) & audit log secret scrubbing
+    const teacherPendingRes = await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        code: 'GV-KTN-99',
+        name: 'Cô Chưa Cấp Mật Khẩu',
+        email: 'nopassword.gv@khongtunhi.com',
+        provisionOnIzTeach: false,
+        assignedClasses: []
+      }
+    });
+    const teacherPendingLoginAttempt = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: { email: 'nopassword.gv@khongtunhi.com', password: 'AnyPassword123!' }
+    });
+    const auditPayloadsJson = JSON.stringify(state.tables.ktn_sync_events.concat(state.tables.ktn_provisioning_jobs));
+    const hasPlaintextPasswordInAudit =
+      auditPayloadsJson.includes('TestStrongPassword!2026') || auditPayloadsJson.includes('"initialPassword":"Ktn@');
+
+    record(
+      'D11-TEACHER-PROVISIONING-TRUTH-AND-AUDIT-SECRET-SCRUBBING',
+      'GROUP_V3',
+      'Teacher created without initialPassword or upstream izTeach account reports provisioningStatus=pending_external_provisioning (readyToLogin=false), blocks login with 403 TEACHER_PROVISIONING_PENDING, and audit/job tables never store plaintext passwords',
+      teacherPendingRes.status === 200 &&
+        teacherPendingRes.data?.readyToLogin === false &&
+        teacherPendingRes.data?.provisioningStatus === 'pending_external_provisioning' &&
+        teacherPendingLoginAttempt.status === 403 &&
+        teacherPendingLoginAttempt.data?.error === 'TEACHER_PROVISIONING_PENDING' &&
+        !hasPlaintextPasswordInAudit,
+      `readyToLogin=${teacherPendingRes.data?.readyToLogin}, provStatus=${teacherPendingRes.data?.provisioningStatus}, loginStatus=${teacherPendingLoginAttempt.status}, hasPlaintextPwdInAudit=${hasPlaintextPasswordInAudit}`
+    );
+
+    // D12: Multi-page CRM bulk sync & malformed upstream user-permission resilience
+    state.izteach.studentListPages = [
+      Array.from({ length: 100 }, (_, i) => ({
+        _id: `iz-bulk-p1-${i}`,
+        dynamoId: `11112222-3333-4444-5555-${String(i).padStart(12, '0')}`,
+        email: `bulkp1.${i}@khongtunhi.com`,
+        name: `Học Viên Bulk Trang 1 ${i}`
+      })),
+      [
+        {
+          _id: 'iz-bulk-p2-0',
+          dynamoId: '11112222-3333-4444-5555-999999999999',
+          email: 'bulkp2.last@khongtunhi.com',
+          name: 'Học Viên Bulk Trang 2 Cuối'
+        }
+      ]
+    ];
+    const multiPageSyncRes = await callApi('/api/ktn/students/sync-all', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { maxPages: 5, reconcilePermissions: false }
+    });
+    state.izteach.studentListPages = null;
+
+    // Also test malformed user-permission payload during student login entitlement sync: must NOT wipe existing online_courses on Supabase
+    state.faults.izteachPermissionInvalidPayload = true;
+    const malformedPermLoginRes = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: { email: 'taphong2002@gmail.com', password: 'TestStrongPassword!2026' }
+    });
+    state.faults.izteachPermissionInvalidPayload = false;
+    const taphongAfterMalformedPerm = state.tables.ktn_students.find(s => s.email === 'taphong2002@gmail.com');
+    const preservedCoursesCount = Array.isArray(taphongAfterMalformedPerm?.online_courses)
+      ? taphongAfterMalformedPerm.online_courses.length
+      : 0;
+
+    record(
+      'D12-MULTIPAGE-CRM-BULK-SYNC-AND-MALFORMED-PERMISSION-GUARD',
+      'GROUP_V3',
+      'Bulk CRM sync iterates across multiple upstream pages until exhausted, and malformed upstream user-permission payload preserves existing student courses instead of wiping them',
+      multiPageSyncRes.status === 200 &&
+        multiPageSyncRes.data?.pagesFetched === 2 &&
+        multiPageSyncRes.data?.izteachTotal === 101 &&
+        state.tables.ktn_students.some(s => s.email === 'bulkp2.last@khongtunhi.com') &&
+        malformedPermLoginRes.status === 200 &&
+        preservedCoursesCount >= 1,
+      `pagesFetched=${multiPageSyncRes.data?.pagesFetched}, izteachTotal=${multiPageSyncRes.data?.izteachTotal}, loginStatus=${malformedPermLoginRes.status}, preservedCoursesCount=${preservedCoursesCount}`
+    );
+
+    // D13: Verify deploy_ktn_react_v2_izteach.cjs production page protection guard and rollback safety
+    const { spawnSync } = require('child_process');
+    const prodGuardRun = spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, '..', 'deploy_ktn_react_v2_izteach.cjs'),
+        '--live',
+        '--page-id',
+        '6adff7ba36309b0002b6e659'
+      ],
+      {
+        env: { ...process.env, IZTEACH_ADMIN_BEARER: 'mock-bearer-token' },
+        encoding: 'utf8'
+      }
+    );
+    const dryRunCheck = spawnSync(
+      process.execPath,
+      [path.join(__dirname, '..', 'deploy_ktn_react_v2_izteach.cjs'), '--dry-run'],
+      { encoding: 'utf8' }
+    );
+    const embedHtmlContent = fs.readFileSync(
+      path.join(__dirname, '..', 'apps', 'ktn-web-v2', 'dist', 'izteach-custom-page-embed.html'),
+      'utf8'
+    );
+
+    record(
+      'D13-IZTEACH-DEPLOY-GUARD-AND-LAZY-HLS-EMBED',
+      'GROUP_V3',
+      'deploy_ktn_react_v2_izteach.cjs refuses to overwrite protected production Custom Page IDs without explicit override, passes dry-run, and excludes vendor-hls from initial modulepreload in embed HTML',
+      prodGuardRun.status !== 0 &&
+        (prodGuardRun.stderr || '').includes('SAFETY GUARD BLOCKED') &&
+        dryRunCheck.status === 0 &&
+        !embedHtmlContent.includes('vendor-hls') &&
+        embedHtmlContent.includes('data-ktn-router="hash"'),
+      `prodGuardExit=${prodGuardRun.status}, dryRunExit=${dryRunCheck.status}, embedExcludesHls=${!embedHtmlContent.includes('vendor-hls')}`
     );
   }
 

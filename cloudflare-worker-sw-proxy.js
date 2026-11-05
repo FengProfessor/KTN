@@ -724,6 +724,53 @@ async function extractSessionFromRequest(request, env) {
   return null;
 }
 
+function extractTeacherMetaFromRow(row) {
+  if (!row || typeof row !== 'object') {
+    return { assignedClasses: [], provisioningStatus: '', cognitoUserId: null, pwdHmac: null };
+  }
+  const classesSet = new Set();
+  if (Array.isArray(row.assigned_classes)) {
+    for (const c of row.assigned_classes) {
+      const clean = String(c || '').trim().toUpperCase();
+      if (clean) classesSet.add(clean);
+    }
+  }
+  let provisioningStatus = String(row.provisioning_status || '').trim();
+  let cognitoUserId = row.cognito_user_id || null;
+  let pwdHmac = null;
+  if (Array.isArray(row.aliases)) {
+    for (const item of row.aliases) {
+      const s = String(item || '').trim();
+      if (s.startsWith('__class:')) {
+        const cls = s.slice(8).trim().toUpperCase();
+        if (cls) classesSet.add(cls);
+      } else if (s.startsWith('__status:') && !provisioningStatus) {
+        provisioningStatus = s.slice(9).trim();
+      } else if (s.startsWith('__uid:') && !cognitoUserId) {
+        cognitoUserId = s.slice(6).trim();
+      } else if (s.startsWith('__pwd_hmac:')) {
+        pwdHmac = s.slice(11).trim();
+      }
+    }
+  }
+  return {
+    assignedClasses: Array.from(classesSet),
+    provisioningStatus,
+    cognitoUserId,
+    pwdHmac
+  };
+}
+
+async function computeTeacherCredentialHmac(email, password, secret) {
+  const cleanEmail = normalizeEmail(email || '');
+  const cleanPwd = String(password || '');
+  if (!cleanEmail || !cleanPwd) return '';
+  const key = await getHmacKey(secret || 'ktn-default-change-me-in-production-env');
+  const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`ktn_teacher_pwd_v1:${cleanEmail}:${cleanPwd}`));
+  const sigBytes = Array.from(new Uint8Array(sigBuf), b => b.toString(16).padStart(2, '0')).join('');
+  return sigBytes;
+}
+
 async function getTeacherAssignedClassCodes(env, teacherEmail) {
   const email = normalizeEmail(teacherEmail || '');
   if (!email) return [];
@@ -731,18 +778,25 @@ async function getTeacherAssignedClassCodes(env, teacherEmail) {
     env,
     `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`
   );
-  if (tRes.ok && Array.isArray(tRes.data) && tRes.data[0] && tRes.data[0].active === false) {
+  const tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
+  if (tRow && tRow.active === false) {
     return [];
   }
+  const meta = extractTeacherMetaFromRow(tRow);
+  const classSet = new Set(meta.assignedClasses);
   const res = await supabaseRequest(
     env,
     `ktn_classes?teacher_email=eq.${encodeURIComponent(email)}&active=eq.true&select=id`
   );
-  if (!res.ok || !Array.isArray(res.data)) return [];
-  return res.data
-    .map(c => String(c?.id || '').trim().toUpperCase())
-    .filter(Boolean);
+  if (res.ok && Array.isArray(res.data)) {
+    for (const c of res.data) {
+      const cid = String(c?.id || '').trim().toUpperCase();
+      if (cid) classSet.add(cid);
+    }
+  }
+  return Array.from(classSet);
 }
+
 
 function normalizeRoomClassCode(rawRoomId) {
   const s = String(rawRoomId || '').trim().replace(/^class:/i, '').trim().toUpperCase();
@@ -915,6 +969,22 @@ async function canAccessChatRoom(env, session, rawRoomId) {
       if (!(await isActiveTeacherSession(env, session))) {
         return { allowed: false, status: 403, classCode: desc.classCode, roomId: desc.roomId, message: 'Tài khoản giáo viên chưa được kích hoạt.' };
       }
+      const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(desc.studentEmail)}&select=class_code&limit=1`);
+      const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+      const stuClassCode = String(stuRow?.class_code || '').trim().toUpperCase();
+      if (stuClassCode) {
+        const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+        if (!assignedClasses.includes(stuClassCode)) {
+          return {
+            allowed: false,
+            status: 403,
+            error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
+            classCode: stuClassCode,
+            roomId: desc.roomId,
+            message: `Học viên thuộc lớp ${stuClassCode} ngoài phạm vi lớp được phân công của cô.`
+          };
+        }
+      }
       return { allowed: true, status: 200, ...desc };
     }
     const myEmail = normalizeEmail(session.email || '');
@@ -1056,8 +1126,16 @@ async function supabaseRequest(env, tableAndQuery, options = {}) {
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
+  const contentRange = (res.headers && typeof res.headers.get === 'function')
+    ? (res.headers.get('content-range') || res.headers.get('Content-Range') || '')
+    : '';
+  let totalCount = null;
+  if (contentRange) {
+    const m = String(contentRange).match(/\/(\d+)\s*$/);
+    if (m) totalCount = Number(m[1]);
+  }
   const data = await res.json().catch(() => null);
-  return { ok: res.ok, status: res.status, data };
+  return { ok: res.ok, status: res.status, data, totalCount, contentRange };
 }
 
 // ============================================================================
@@ -1118,8 +1196,21 @@ function isValidCognitoUuid(id) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id || '').trim());
 }
 
+function isValidIzTeachPermissionPayload(permData) {
+  if (!permData || typeof permData !== 'object') return false;
+  if (permData.error || (typeof permData.statusCode === 'number' && permData.statusCode >= 400)) return false;
+  if (Array.isArray(permData)) {
+    return permData.some(item => item && typeof item === 'object' && Array.isArray(item.onlineCourses));
+  }
+  return Array.isArray(permData.onlineCourses) || Boolean(permData.data && Array.isArray(permData.data.onlineCourses));
+}
+
 function extractIzTeachOnlineCourseIds(permData) {
-  const list = Array.isArray(permData) ? permData : (permData && typeof permData === 'object' ? [permData] : []);
+  const list = Array.isArray(permData)
+    ? permData
+    : (permData && typeof permData === 'object'
+      ? (permData.data && typeof permData.data === 'object' ? [permData.data] : [permData])
+      : []);
   const ids = [];
   const seen = new Set();
   for (const item of list) {
@@ -1415,7 +1506,15 @@ async function provisionStudentOnIzTeach(env, order) {
     if (!grantRes.ok) {
       const errTxt = await grantRes.text().catch(() => '');
       if (!/is existed/i.test(errTxt)) {
-        return { ok: false, error: 'Lỗi cấp quyền khóa học izTeach: ' + errTxt, cognitoUserId, accountCreated, existingAccount };
+        return {
+          ok: false,
+          failedStep: 'izteach_permissions',
+          error: 'Lỗi cấp quyền khóa học izTeach: ' + errTxt,
+          cognitoUserId,
+          izteachStudentId,
+          accountCreated,
+          existingAccount
+        };
       }
     }
   }
@@ -2213,6 +2312,26 @@ async function runWithProvisioningLock(lockKey, taskFn) {
   }
 }
 
+const SENSITIVE_AUDIT_KEYS_REGEX = /^(password|initialPassword|defaultPassword|adminPassword|accessToken|refreshToken|idToken|izteachAccessToken|token|secret|authorization|cookie|serviceRoleKey)$/i;
+
+function sanitizeAuditPayload(value) {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map(item => sanitizeAuditPayload(item));
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (SENSITIVE_AUDIT_KEYS_REGEX.test(k)) {
+        continue;
+      }
+      out[k] = sanitizeAuditPayload(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 async function saveProvisioningJobState(env, jobRecord) {
   if (!jobRecord || !jobRecord.operation_id) return null;
   if (!globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap = new Map();
@@ -2220,6 +2339,9 @@ async function saveProvisioningJobState(env, jobRecord) {
   const merged = {
     ...prev,
     ...jobRecord,
+    request_payload: sanitizeAuditPayload(jobRecord.request_payload ?? prev.request_payload ?? {}),
+    response_payload: sanitizeAuditPayload(jobRecord.response_payload ?? prev.response_payload ?? {}),
+    result_summary: sanitizeAuditPayload(jobRecord.result_summary ?? prev.result_summary ?? {}),
     updated_at: new Date().toISOString()
   };
   globalThis.__ktnProvisioningJobsMap.set(jobRecord.operation_id, merged);
@@ -2240,20 +2362,203 @@ async function saveProvisioningJobState(env, jobRecord) {
 async function getCompletedJobByIdempotencyKey(env, idempotencyKey) {
   const key = String(idempotencyKey || '').trim();
   if (!key) return null;
-  if (globalThis.__ktnIdempotencyJobMap && globalThis.__ktnIdempotencyJobMap.has(key)) {
-    const cached = globalThis.__ktnIdempotencyJobMap.get(key);
-    if (cached && cached.status === 'completed') return cached;
-  }
   try {
     const sbRes = await supabaseRequest(env, `ktn_provisioning_jobs?idempotency_key=eq.${encodeURIComponent(key)}&status=eq.completed&limit=1`);
     if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
       return sbRes.data[0];
     }
   } catch {}
+  if (globalThis.__ktnIdempotencyJobMap && globalThis.__ktnIdempotencyJobMap.has(key)) {
+    const cached = globalThis.__ktnIdempotencyJobMap.get(key);
+    if (cached && cached.status === 'completed') return cached;
+  }
   return null;
 }
 
+/**
+ * Atomic multi-Worker-instance idempotency claim backed by PostgreSQL UNIQUE constraint on ktn_provisioning_jobs.idempotency_key.
+ * Ensures two separate Worker instances (without shared globalThis memory) cannot execute duplicate provisioning for the same Idempotency-Key.
+ */
+async function claimProvisioningJobAtomically(env, {
+  operationId,
+  idempotencyKey,
+  jobType,
+  actorEmail,
+  targetEmail,
+  targetRole = 'student',
+  requestPayload = {}
+}) {
+  const resolvedOpId = operationId || generateOperationId('PROV');
+  const key = String(idempotencyKey || '').trim();
+  if (!key) {
+    return {
+      claimed: true,
+      operationId: resolvedOpId,
+      completedSteps: [],
+      cognitoUserId: null,
+      izteachStudentId: null,
+      job: null
+    };
+  }
+
+  const buildResumedReturn = (row) => ({
+    claimed: true,
+    resumed: true,
+    operationId: row.operation_id || resolvedOpId,
+    completedSteps: Array.isArray(row.completed_steps) ? row.completed_steps : [],
+    cognitoUserId: row.cognito_user_id || null,
+    izteachStudentId: row.izteach_student_id || null,
+    job: row
+  });
+
+  const pollExistingJob = async (attempts = 3, delayMs = 30) => {
+    for (let i = 0; i < attempts; i++) {
+      const checkRes = await supabaseRequest(env, `ktn_provisioning_jobs?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`);
+      if (checkRes.ok && Array.isArray(checkRes.data) && checkRes.data[0]) {
+        const row = checkRes.data[0];
+        if (row.status === 'completed') {
+          return { state: 'completed', job: row };
+        }
+        if (row.status === 'partial_failure' || row.status === 'failed') {
+          return { state: 'resumable', job: row };
+        }
+        if (i === attempts - 1) {
+          return { state: 'in_progress', job: row };
+        }
+      }
+      if (i < attempts - 1) {
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+    return { state: 'none', job: null };
+  };
+
+  try {
+    const initialCheck = await supabaseRequest(env, `ktn_provisioning_jobs?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`);
+    if (initialCheck.ok && Array.isArray(initialCheck.data) && initialCheck.data[0]) {
+      const existing = initialCheck.data[0];
+      if (existing.status === 'completed') {
+        return {
+          claimed: false,
+          replayed: true,
+          alreadyCompleted: true,
+          operationId: existing.operation_id || resolvedOpId,
+          job: existing
+        };
+      }
+      if (existing.status === 'running' || existing.status === 'in_progress') {
+        const waited = await pollExistingJob(3, 35);
+        if (waited.state === 'completed' && waited.job) {
+          return {
+            claimed: false,
+            replayed: true,
+            alreadyCompleted: true,
+            operationId: waited.job.operation_id || resolvedOpId,
+            job: waited.job
+          };
+        }
+        if (waited.state === 'resumable' && waited.job) {
+          return buildResumedReturn(waited.job);
+        }
+        if (waited.state === 'in_progress') {
+          return {
+            claimed: false,
+            inProgress: true,
+            inProgressConflict: true,
+            operationId: waited.job?.operation_id || resolvedOpId,
+            job: waited.job || existing
+          };
+        }
+      }
+      if (existing.status === 'partial_failure' || existing.status === 'failed') {
+        const resumedOpId = existing.operation_id || resolvedOpId;
+        await supabaseRequest(env, `ktn_provisioning_jobs?operation_id=eq.${encodeURIComponent(resumedOpId)}`, {
+          method: 'PATCH',
+          body: {
+            status: 'running',
+            retry_count: Number(existing.retry_count || 0) + 1,
+            updated_at: new Date().toISOString()
+          }
+        });
+        return buildResumedReturn({ ...existing, operation_id: resumedOpId });
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const initialRow = {
+      operation_id: resolvedOpId,
+      idempotency_key: key,
+      job_type: jobType || 'student_create',
+      actor_email: actorEmail || 'admin',
+      target_email: targetEmail,
+      target_role: targetRole,
+      status: 'running',
+      sync_status: 'pending',
+      completed_steps: [],
+      request_payload: sanitizeAuditPayload(requestPayload),
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+
+    // Strict INSERT without resolution=merge-duplicates so PostgreSQL UNIQUE constraint detects cross-instance races
+    const insRes = await supabaseRequest(env, 'ktn_provisioning_jobs', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: initialRow
+    });
+
+    if (insRes.status === 409) {
+      const raced = await pollExistingJob(4, 35);
+      if (raced.state === 'completed' && raced.job) {
+        return {
+          claimed: false,
+          replayed: true,
+          alreadyCompleted: true,
+          operationId: raced.job.operation_id || resolvedOpId,
+          job: raced.job
+        };
+      }
+      if (raced.state === 'resumable' && raced.job) {
+        return buildResumedReturn(raced.job);
+      }
+      return {
+        claimed: false,
+        inProgress: true,
+        inProgressConflict: true,
+        operationId: raced.job?.operation_id || resolvedOpId,
+        job: raced.job || initialRow
+      };
+    }
+
+    if (insRes.ok && Array.isArray(insRes.data) && insRes.data[0]) {
+      if (!globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap = new Map();
+      globalThis.__ktnProvisioningJobsMap.set(resolvedOpId, insRes.data[0]);
+      if (!globalThis.__ktnIdempotencyJobMap) globalThis.__ktnIdempotencyJobMap = new Map();
+      globalThis.__ktnIdempotencyJobMap.set(key, insRes.data[0]);
+      return {
+        claimed: true,
+        operationId: resolvedOpId,
+        completedSteps: [],
+        cognitoUserId: null,
+        izteachStudentId: null,
+        job: insRes.data[0]
+      };
+    }
+  } catch {}
+
+  return {
+    claimed: true,
+    operationId: resolvedOpId,
+    completedSteps: [],
+    cognitoUserId: null,
+    izteachStudentId: null,
+    job: null
+  };
+}
+
 async function logSyncEvent(env, evt) {
+  const safeStatus = evt.status || evt.syncStatus || 'synced';
+  const safeEntityKey = String(evt.entityKey || evt.entityId || '').trim();
   const record = {
     id: evt.id || generateOperationId('SYNC'),
     operation_id: evt.operationId || null,
@@ -2261,12 +2566,14 @@ async function logSyncEvent(env, evt) {
     source_system: evt.sourceSystem || 'worker',
     target_system: evt.targetSystem || 'both',
     entity_type: evt.entityType || 'student',
-    entity_key: String(evt.entityKey || '').trim(),
-    status: evt.status || 'synced',
+    entity_id: safeEntityKey || null,
+    entity_key: safeEntityKey,
+    status: safeStatus,
+    sync_status: safeStatus,
     drift_code: evt.driftCode || null,
     error_code: evt.errorCode || null,
     error_message: evt.errorMessage || null,
-    details: evt.details || {},
+    details: sanitizeAuditPayload(evt.details || {}),
     created_by: evt.createdBy || 'system',
     created_at: new Date().toISOString()
   };
@@ -2299,7 +2606,7 @@ async function approveAndProvisionOrder(env, {
   classCode = undefined,
   operationId = undefined
 }) {
-  const opId = operationId || generateOperationId('PROV-ORD');
+  let opId = operationId || generateOperationId('PROV-ORD');
   const cleanOrderId = String(orderId || orderInput?.order_id || orderInput?.orderId || '').trim();
   if (!cleanOrderId) {
     return {
@@ -2333,10 +2640,46 @@ async function approveAndProvisionOrder(env, {
       };
     }
 
+    const orderIdemKey = `order_approve:${cleanOrderId}`;
+    const claim = await claimProvisioningJobAtomically(env, {
+      operationId: opId,
+      idempotencyKey: orderIdemKey,
+      jobType: 'order_approve',
+      actorEmail: approvedBy,
+      targetEmail: normalizeEmail(order.student_email || order.studentEmail || ''),
+      targetRole: 'student',
+      requestPayload: { orderId: cleanOrderId, approvedBy, classCode }
+    });
+    if (claim.operationId) opId = claim.operationId;
+    if (!claim.claimed && claim.alreadyCompleted && claim.job) {
+      return {
+        ok: true,
+        httpStatus: 200,
+        idempotentReplay: true,
+        operationId: claim.job.operation_id || opId,
+        orderId: cleanOrderId,
+        syncStatus: 'synced',
+        ...(claim.job.result_summary || {}),
+        message: `Đơn hàng ${cleanOrderId} đã được duyệt và kích hoạt trước đó (Idempotent Replay).`
+      };
+    }
+    if (!claim.claimed && claim.inProgressConflict) {
+      return {
+        ok: false,
+        httpStatus: 409,
+        idempotentConflict: true,
+        retryable: true,
+        operationId: claim.operationId || opId,
+        orderId: cleanOrderId,
+        syncStatus: 'in_progress',
+        message: `Đơn hàng ${cleanOrderId} đang được xử lý bởi một tiến trình khác. Vui lòng đợi trong giây lát.`
+      };
+    }
+
     const completedSteps = [];
     await saveProvisioningJobState(env, {
       operation_id: opId,
-      idempotency_key: `order_approve:${cleanOrderId}`,
+      idempotency_key: orderIdemKey,
       job_type: 'order_approve',
       actor_email: approvedBy,
       target_email: normalizeEmail(order.student_email || order.studentEmail || ''),
@@ -2603,7 +2946,7 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, cogn
         });
         if (pRes.ok) {
           const pData = await pRes.json().catch(() => null);
-          if (pData && typeof pData === 'object') {
+          if (isValidIzTeachPermissionPayload(pData)) {
             fetchedIzPermOk = true;
             for (const cid of extractIzTeachOnlineCourseIds(pData)) {
               izCourseIds.push(cid);
@@ -2614,7 +2957,7 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, cogn
     }
   }
 
-  // Nếu API user-permission của izTeach trả về danh sách hợp lệ (200 OK), đối soát 2 chiều (cả cấp thêm lẫn thu hồi khóa học)
+  // Chỉ đối soát thu hồi (replaceCourseIds) khi user-permission trả về cấu trúc onlineCourses hợp lệ (isValidIzTeachPermissionPayload)
   return mergeAndUpsertStudentCourses(env, {
     email: cleanEmail,
     name: resolvedName,
@@ -2630,7 +2973,7 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, cogn
 
 /**
  * Đồng bộ hàng loạt toàn bộ học viên từ izTeach về bảng ktn_students trên Supabase (Phân trang đầy đủ & tính toán Idempotent thực tế)
- * Đã sửa BUG BE-01: Khai báo đầy đủ tham số options = {} và bổ sung bảo vệ khi upstream rỗng, trùng lặp, rate-limit, retry.
+ * Đã sửa BUG BE-01: Khai báo đầy đủ tham số options = {} và bổ sung bảo vệ khi upstream rỗng, trùng lặp, rate-limit, retry, và phân trang nhiều trang.
  */
 async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
   const safeOptions = (options && typeof options === 'object') ? options : {};
@@ -2661,7 +3004,8 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
   };
 
   try {
-    // Lưu ý: Không truyền ?limit=500 vì API Strapi/Mongo của izTeach coi limit là trường lọc và trả về mảng rỗng []
+    // Lưu ý: Không truyền ?limit=500 ở trang 1 vì API Strapi/Mongo của izTeach coi limit là trường lọc.
+    // Tuy nhiên nếu response từ studentCrm có metadata phân trang (totalPages / nextPage / hasMore), vòng lặp sẽ tải đầy đủ các trang tiếp theo.
     const searchRes = await fetchWithRetry(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}`, {
       headers: { Authorization: adminToken }
     });
@@ -2669,7 +3013,32 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
       return { ok: false, syncedCount: 0, error: 'studentCrm status ' + (searchRes?.status || 'NETWORK_ERROR') };
     }
     const searchData = await searchRes.json().catch(() => null);
-    const izList = Array.isArray(searchData?.data) ? searchData.data : (Array.isArray(searchData) ? searchData : []);
+    const firstPageItems = Array.isArray(searchData?.data) ? searchData.data : (Array.isArray(searchData) ? searchData : []);
+    const izList = [...firstPageItems];
+    let pagesFetched = 1;
+    const maxCrmPages = Math.min(25, Math.max(1, Number(safeOptions.maxPages || 20)));
+    const declaredTotalPages = Number(
+      searchData?.totalPages ||
+      searchData?.pagination?.totalPages ||
+      searchData?.meta?.totalPages ||
+      (searchData?.total && firstPageItems.length > 0 ? Math.ceil(Number(searchData.total) / firstPageItems.length) : 1)
+    ) || 1;
+
+    if (declaredTotalPages > 1 || searchData?.hasMore === true || searchData?.nextPage) {
+      for (let pageNum = 2; pageNum <= Math.min(maxCrmPages, Math.max(declaredTotalPages, 2)); pageNum++) {
+        const nextRes = await fetchWithRetry(
+          `${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&page=${pageNum}`,
+          { headers: { Authorization: adminToken } }
+        );
+        if (!nextRes || !nextRes.ok) break;
+        const nextData = await nextRes.json().catch(() => null);
+        const nextItems = Array.isArray(nextData?.data) ? nextData.data : (Array.isArray(nextData) ? nextData : []);
+        if (nextItems.length === 0) break;
+        izList.push(...nextItems);
+        pagesFetched++;
+        if (nextData?.hasMore === false && pageNum >= declaredTotalPages) break;
+      }
+    }
 
     // Lấy toàn bộ hồ sơ hiện có trong ktn_students bằng vòng lặp phân trang động (không giới hạn 2000 dòng)
     const dbList = [];
@@ -2826,6 +3195,10 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
           }, 2);
           if (pRes && pRes.ok) {
             const pData = await pRes.json().catch(() => null);
+            if (!isValidIzTeachPermissionPayload(pData)) {
+              permissionErrorCount++;
+              return;
+            }
             const cIds = extractIzTeachOnlineCourseIds(pData);
             if (cIds.length > 0 || !byEmail.has(stuRow.email) || safeOptions.reconcileAllPermissions) {
               stuRow.online_courses = normalizeOnlineCourseEntries(
@@ -2907,6 +3280,7 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
     const withLiveClassCount = allRows.filter(r => r.has_live_class && r.class_code).length;
     const summary = {
       ok: failedCount === 0,
+      pagesFetched,
       izteachTotal: izList.length,
       supabaseBefore,
       syncedCount,
@@ -3088,7 +3462,7 @@ export default {
         };
       }
 
-      // Cho phép giáo viên mới được tạo trong ktn_teachers (active = true) đăng nhập bằng mật khẩu nhân sự chính thức (matchesRotated) hoặc tài khoản izTeach đã cấp; chặn giáo viên đã bị vô hiệu hóa (active = false)
+      // Cho phép giáo viên mới được tạo trong ktn_teachers (active = true, ready_to_login) đăng nhập bằng mật khẩu được cấp (passwordHmac / matchesRotated) hoặc tài khoản izTeach; chặn giáo viên inactive hoặc pending_external_provisioning
       let sbTeacher = null;
       const tRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&limit=1`);
       if (tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0) {
@@ -3102,15 +3476,34 @@ export default {
         }
         sbTeacher = teacherRow;
       }
-      if (!chosen && sbTeacher && matchesRotated) {
-        chosen = {
-          id: sbTeacher.cognito_user_id || sbTeacher.code || email,
-          userId: sbTeacher.cognito_user_id || sbTeacher.code || email,
-          email,
-          name: sbTeacher.name,
-          roles: ['teacher'],
-          type: 'teacher'
-        };
+      if (sbTeacher) {
+        const tMeta = extractTeacherMetaFromRow(sbTeacher);
+        if (tMeta.provisioningStatus === 'pending_external_provisioning') {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_PROVISIONING_PENDING',
+            message: 'Tài khoản giáo viên này đang chờ kích hoạt đồng bộ (pending_external_provisioning). Vui lòng liên hệ Quản lý học vụ.'
+          }, 403);
+        }
+        if (!chosen) {
+          let matchesTeacherCredential = false;
+          if (tMeta.passwordHmac && password.length >= 6) {
+            const candidateHmac = await computeTeacherCredentialHmac(email, password, env.KTN_SESSION_SECRET);
+            if (candidateHmac === tMeta.passwordHmac) {
+              matchesTeacherCredential = true;
+            }
+          }
+          if (matchesRotated || matchesTeacherCredential) {
+            chosen = {
+              id: tMeta.cognitoUserId || sbTeacher.code || email,
+              userId: tMeta.cognitoUserId || sbTeacher.code || email,
+              email,
+              name: sbTeacher.name,
+              roles: ['teacher'],
+              type: 'teacher'
+            };
+          }
+        }
       }
 
       if (!chosen) {
@@ -3586,65 +3979,152 @@ export default {
       const syncStatusFilter = String(url.searchParams.get('syncStatus') || '').trim();
       const studentCaseFilter = String(url.searchParams.get('studentCase') || '').trim();
       const isDedicatedSearchEndpoint = path === '/api/ktn/admin/students/search';
-      const hasPaginationParams = url.searchParams.has('limit') || url.searchParams.has('offset') || url.searchParams.has('cursor');
       const requestedLimit = Number(url.searchParams.get('limit'));
       const pageLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
-        ? Math.min(2000, Math.floor(requestedLimit))
-        : (isDedicatedSearchEndpoint ? 25 : 2000);
+        ? Math.min(500, Math.floor(requestedLimit))
+        : (isDedicatedSearchEndpoint ? 25 : 250);
       const rawOffset = Number(url.searchParams.get('offset') || url.searchParams.get('cursor') || 0);
       const pageOffset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
 
-      let query = 'ktn_students?select=*&order=updated_at.desc&limit=2000';
+      let assignedClasses = null;
       if (session.role === 'teacher') {
-        const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
-        if (classFilter && classFilter !== 'NONE') {
+        assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+        if (classFilter && classFilter !== 'NONE' && classFilter !== 'ALL') {
           if (!assignedClasses.includes(classFilter)) {
             return jsonResponse({ ok: false, message: 'Cô không phụ trách lớp ' + classFilter + ' nên không có quyền xem danh sách học viên của lớp này.' }, 403);
           }
-          query = `ktn_students?class_code=eq.${encodeURIComponent(classFilter)}&order=updated_at.desc`;
-        } else {
-          if (assignedClasses.length === 0) {
-            return jsonResponse({
-              ok: true,
-              students: [],
-              items: [],
-              totalCount: 0,
-              hasMore: false,
-              nextCursor: null,
-              queryMs: Date.now() - startedMs
-            });
-          }
-          query = `ktn_students?class_code=in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')})&order=updated_at.desc`;
         }
-      } else if (classFilter && classFilter !== 'NONE' && classFilter !== 'ALL') {
-        query = `ktn_students?class_code=eq.${encodeURIComponent(classFilter)}&order=updated_at.desc`;
+        if (classFilter === 'NONE' || assignedClasses.length === 0) {
+          return jsonResponse({
+            ok: true,
+            students: [],
+            items: [],
+            totalCount: 0,
+            limit: pageLimit,
+            offset: pageOffset,
+            hasMore: false,
+            nextCursor: null,
+            query: rawQ,
+            sqlMs: 0,
+            workerMs: Date.now() - startedMs,
+            queryMs: Date.now() - startedMs
+          });
+        }
+      }
+
+      const sanitizeForRole = (rows) => {
+        if (session.role !== 'teacher') return rows;
+        return rows.map(({ internal_note, last_sync_error, ...safeRow }) => safeRow);
+      };
+
+      const sqlStartMs = Date.now();
+      const rpcRes = await supabaseRequest(env, 'rpc/ktn_search_students', {
+        method: 'POST',
+        body: {
+          p_query: rawQ || null,
+          p_class_code: classFilter && classFilter !== 'ALL' ? classFilter : null,
+          p_allowed_classes: session.role === 'teacher' ? assignedClasses : null,
+          p_course_id: courseFilter && courseFilter !== 'ALL' ? courseFilter : null,
+          p_account_status: accountStatusFilter && accountStatusFilter !== 'ALL' ? accountStatusFilter : null,
+          p_sync_status: syncStatusFilter && syncStatusFilter !== 'ALL' ? syncStatusFilter : null,
+          p_student_case: studentCaseFilter && studentCaseFilter !== 'ALL' ? studentCaseFilter : null,
+          p_limit: pageLimit,
+          p_offset: pageOffset
+        }
+      });
+
+      if (rpcRes && rpcRes.ok && Array.isArray(rpcRes.data)) {
+        const sqlMs = Date.now() - sqlStartMs;
+        const rpcRows = rpcRes.data;
+        const totalCount = rpcRows.length > 0 && Number.isFinite(Number(rpcRows[0].total_count))
+          ? Number(rpcRows[0].total_count)
+          : 0;
+        const enrichedPage = sanitizeForRole(rpcRows.map(r => {
+          const { total_count, match_score, ...baseRow } = r;
+          const enriched = enrichStudentRowV3(baseRow);
+          if (match_score !== undefined) enriched.matchScore = Number(match_score) || 0;
+          return enriched;
+        }));
+        const hasMore = pageOffset + enrichedPage.length < totalCount;
+        const nextCursor = hasMore ? String(pageOffset + enrichedPage.length) : null;
+        const totalElapsedMs = Date.now() - startedMs;
+
+        return jsonResponse({
+          ok: true,
+          students: enrichedPage,
+          items: enrichedPage,
+          totalCount,
+          total: totalCount,
+          limit: pageLimit,
+          offset: pageOffset,
+          hasMore,
+          nextCursor,
+          searchEngine: 'postgres_rpc',
+          query: rawQ,
+          filters: {
+            classCode: classFilter || null,
+            courseId: courseFilter || null,
+            accountStatus: accountStatusFilter || null,
+            syncStatus: syncStatusFilter || null
+          },
+          sqlMs,
+          workerMs: Math.max(0, totalElapsedMs - sqlMs),
+          queryMs: totalElapsedMs
+        });
+      }
+
+      // Fallback chuẩn PostgREST server-side filter & pagination (khi DB chưa chạy RPC ktn_search_students)
+      const pgParts = ['select=*'];
+      if (session.role === 'teacher') {
+        if (classFilter && classFilter !== 'ALL') {
+          pgParts.push(`class_code=eq.${encodeURIComponent(classFilter)}`);
+        } else {
+          pgParts.push(`class_code=in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')})`);
+        }
+      } else if (classFilter === 'NONE') {
+        pgParts.push('or=(class_code.is.null,class_code.eq.)');
+      } else if (classFilter && classFilter !== 'ALL') {
+        pgParts.push(`class_code=eq.${encodeURIComponent(classFilter)}`);
       }
 
       const normTokens = normalizeViSearchText(rawQ).split(' ').filter(Boolean);
-      const longestToken = normTokens.slice().sort((a, b) => b.length - a.length)[0] || '';
-      let sbRes = null;
-      let fastRows = [];
-      if (longestToken.length >= 2) {
-        const fastQuery = `${query}&search_text=ilike.*${encodeURIComponent(longestToken)}*`;
-        const fastRes = await supabaseRequest(env, fastQuery);
-        if (fastRes && fastRes.ok && Array.isArray(fastRes.data) && fastRes.data.length > 0) {
-          fastRows = fastRes.data;
-          if (fastRows.length >= pageLimit) {
-            sbRes = fastRes;
-          }
-        }
+      if (normTokens.length === 1) {
+        pgParts.push(`search_text=ilike.*${encodeURIComponent(normTokens[0])}*`);
+      } else if (normTokens.length > 1) {
+        pgParts.push(`and=(${normTokens.map(tok => `search_text.ilike.*${encodeURIComponent(tok)}*`).join(',')})`);
       }
-      if (!sbRes) {
-        sbRes = await supabaseRequest(env, query);
-        if (sbRes && sbRes.ok && Array.isArray(sbRes.data) && fastRows.length > 0) {
-          const mergedByEmail = new Map();
-          for (const r of [...fastRows, ...sbRes.data]) {
-            const key = normalizeEmail(r.email) || r.code || Math.random().toString();
-            if (!mergedByEmail.has(key)) mergedByEmail.set(key, r);
-          }
-          sbRes = { ...sbRes, data: Array.from(mergedByEmail.values()) };
-        }
+
+      const hasPostFilter = Boolean(
+        normTokens.length > 0 ||
+        (courseFilter && courseFilter !== 'ALL') ||
+        (accountStatusFilter && accountStatusFilter !== 'ALL') ||
+        (syncStatusFilter && syncStatusFilter !== 'ALL') ||
+        (studentCaseFilter && studentCaseFilter !== 'ALL')
+      );
+
+      pgParts.push('order=updated_at.desc.nullslast,email.asc');
+      if (!hasPostFilter) {
+        pgParts.push(`limit=${pageLimit}`);
+        pgParts.push(`offset=${pageOffset}`);
+      } else {
+        pgParts.push(`limit=${Math.min(500, Math.max(pageLimit + pageOffset, 100))}`);
       }
+
+      const fallbackSqlStartMs = Date.now();
+      let sbRes = await supabaseRequest(env, `ktn_students?${pgParts.join('&')}`, {
+        prefer: 'count=exact'
+      });
+      if ((!sbRes || !sbRes.ok) && sbRes?.status === 400 && normTokens.length > 0) {
+        // Fallback cho schema pre-V3 chưa có cột search_text
+        const legacyParts = pgParts.filter(p => !p.startsWith('search_text=') && !p.startsWith('and=('));
+        const longestTok = normTokens.slice().sort((a, b) => b.length - a.length)[0];
+        legacyParts.push(`or=(name.ilike.*${encodeURIComponent(longestTok)}*,email.ilike.*${encodeURIComponent(longestTok)}*,phone.ilike.*${encodeURIComponent(longestTok)}*,code.ilike.*${encodeURIComponent(longestTok)}*)`);
+        sbRes = await supabaseRequest(env, `ktn_students?${legacyParts.join('&')}`, {
+          prefer: 'count=exact'
+        });
+      }
+      const sqlMs = Date.now() - fallbackSqlStartMs;
+
       if (!sbRes || !sbRes.ok) {
         return jsonResponse({
           ok: false,
@@ -3654,31 +4134,40 @@ export default {
       }
 
       const rawList = Array.isArray(sbRes.data) ? sbRes.data : [];
-      const rankedList = filterAndRankStudents(rawList, {
-        q: rawQ,
-        classCode: classFilter === 'ALL' ? '' : classFilter,
-        courseId: courseFilter === 'ALL' ? '' : courseFilter,
-        accountStatus: accountStatusFilter === 'ALL' ? '' : accountStatusFilter,
-        syncStatus: syncStatusFilter === 'ALL' ? '' : syncStatusFilter,
-        studentCase: studentCaseFilter === 'ALL' ? '' : studentCaseFilter
-      });
+      let pageItems = [];
+      let totalCount = 0;
 
-      const totalCount = rankedList.length;
-      const sliced = (isDedicatedSearchEndpoint || hasPaginationParams)
-        ? rankedList.slice(pageOffset, pageOffset + pageLimit)
-        : rankedList;
-      const hasMore = pageOffset + sliced.length < totalCount;
-      const nextCursor = hasMore ? String(pageOffset + sliced.length) : null;
+      if (!hasPostFilter) {
+        pageItems = sanitizeForRole(rawList.map(r => enrichStudentRowV3(r)));
+        totalCount = Number.isFinite(sbRes.totalCount) ? sbRes.totalCount : (pageOffset + pageItems.length);
+      } else {
+        const rankedList = filterAndRankStudents(rawList, {
+          q: rawQ,
+          classCode: classFilter === 'ALL' ? '' : classFilter,
+          courseId: courseFilter === 'ALL' ? '' : courseFilter,
+          accountStatus: accountStatusFilter === 'ALL' ? '' : accountStatusFilter,
+          syncStatus: syncStatusFilter === 'ALL' ? '' : syncStatusFilter,
+          studentCase: studentCaseFilter === 'ALL' ? '' : studentCaseFilter
+        });
+        totalCount = rankedList.length;
+        pageItems = sanitizeForRole(rankedList.slice(pageOffset, pageOffset + pageLimit));
+      }
+
+      const hasMore = pageOffset + pageItems.length < totalCount;
+      const nextCursor = hasMore ? String(pageOffset + pageItems.length) : null;
+      const totalElapsedMs = Date.now() - startedMs;
 
       return jsonResponse({
         ok: true,
-        students: sliced,
-        items: sliced,
+        students: pageItems,
+        items: pageItems,
         totalCount,
+        total: totalCount,
         limit: pageLimit,
         offset: pageOffset,
         hasMore,
         nextCursor,
+        searchEngine: 'postgrest_server_side',
         query: rawQ,
         filters: {
           classCode: classFilter || null,
@@ -3686,7 +4175,9 @@ export default {
           accountStatus: accountStatusFilter || null,
           syncStatus: syncStatusFilter || null
         },
-        queryMs: Date.now() - startedMs
+        sqlMs,
+        workerMs: Math.max(0, totalElapsedMs - sqlMs),
+        queryMs: totalElapsedMs
       });
     }
 
@@ -3725,31 +4216,13 @@ export default {
 
       const lockKey = idempotencyKey ? `idem:${idempotencyKey}` : `student_provision:${email}`;
       return runWithProvisioningLock(lockKey, async () => {
-        if (idempotencyKey) {
-          const completedJob = await getCompletedJobByIdempotencyKey(env, idempotencyKey);
-          if (completedJob && completedJob.result_summary) {
-            return jsonResponse({
-              ok: true,
-              idempotentReplay: true,
-              operationId: completedJob.operation_id,
-              ...completedJob.result_summary
-            });
-          }
-        }
-
-        const opId = generateOperationId('PROV-STU');
-        const completedSteps = [];
-        await saveProvisioningJobState(env, {
-          operation_id: opId,
-          idempotency_key: idempotencyKey || null,
-          job_type: 'student_create',
-          actor_email: session.email,
-          target_email: email,
-          target_role: 'student',
-          status: 'running',
-          sync_status: 'pending',
-          completed_steps: completedSteps,
-          request_payload: {
+        const claim = await claimProvisioningJobAtomically(env, {
+          idempotencyKey: idempotencyKey || null,
+          jobType: 'student_create',
+          actorEmail: session.email,
+          targetEmail: email,
+          targetRole: 'student',
+          requestPayload: {
             email,
             name,
             phone,
@@ -3759,24 +4232,72 @@ export default {
           }
         });
 
+        if (claim.replayed && claim.job?.result_summary) {
+          return jsonResponse({
+            ok: true,
+            idempotentReplay: true,
+            operationId: claim.job.operation_id,
+            ...claim.job.result_summary
+          });
+        }
+        if (claim.inProgress) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            inProgress: true,
+            operationId: claim.job?.operation_id || null,
+            error: 'PROVISIONING_IN_PROGRESS',
+            message: 'Yêu cầu khởi tạo học viên này đang được xử lý ở một tiến trình khác. Vui lòng đợi trong giây lát.'
+          }, 409);
+        }
+
+        const opId = claim.operationId || generateOperationId('PROV-STU');
+        const completedSteps = Array.isArray(claim.completedSteps) ? [...claim.completedSteps] : [];
+
         // Luôn kích hoạt tài khoản đăng nhập trên izTeach để học sinh vào cổng KTN học được ngay (kể cả học sinh chỉ học lớp trực tiếp)
-        const prov = await provisionStudentOnIzTeach(env, {
-          student_email: email,
-          student_name: name,
-          phone,
-          courseIds: resolvedCourseIds,
-          skipCourses: resolvedCourseIds.length === 0,
-          replaceCourses: Boolean(body.replaceCourses),
-          cognito_user_id: body.cognitoUserId || null
-        });
+        let prov = null;
+        const alreadyProvisionedIzTeach = completedSteps.includes('izteach_account') &&
+          (resolvedCourseIds.length === 0 || completedSteps.includes('izteach_permissions')) &&
+          isValidCognitoUuid(claim.cognitoUserId);
+
+        if (alreadyProvisionedIzTeach) {
+          prov = {
+            ok: true,
+            cognitoUserId: claim.cognitoUserId,
+            izteachStudentId: claim.izteachStudentId || null,
+            grantedCourseIds: resolvedCourseIds,
+            allCourseIds: resolvedCourseIds,
+            accountCreated: false,
+            existingAccount: true,
+            credentialMode: 'existing_account_password_preserved',
+            initialPassword: null
+          };
+        } else {
+          prov = await provisionStudentOnIzTeach(env, {
+            student_email: email,
+            student_name: name,
+            phone,
+            courseIds: resolvedCourseIds,
+            skipCourses: resolvedCourseIds.length === 0,
+            replaceCourses: Boolean(body.replaceCourses),
+            cognito_user_id: body.cognitoUserId || claim.cognitoUserId || null
+          });
+        }
 
         if (!prov.ok) {
+          if (isValidCognitoUuid(prov.cognitoUserId) && !completedSteps.includes('izteach_account')) {
+            completedSteps.push('izteach_account');
+          }
+          const failedStepName = prov.failedStep || 'izteach_account_provision';
+          const jobStatus = completedSteps.length > 0 ? 'partial_failure' : 'failed';
           await saveProvisioningJobState(env, {
             operation_id: opId,
-            status: 'failed',
-            sync_status: 'sync_failed',
+            status: jobStatus,
+            sync_status: completedSteps.length > 0 ? 'partial_failure' : 'sync_failed',
             completed_steps: completedSteps,
-            failed_step: 'izteach_account_provision',
+            failed_step: failedStepName,
+            cognito_user_id: prov.cognitoUserId || claim.cognitoUserId || null,
+            izteach_student_id: prov.izteachStudentId || claim.izteachStudentId || null,
             error_code: 'IZTEACH_PROVISION_FAILED',
             error_message: prov.error || 'Lỗi tạo tài khoản trên izTeach',
             retryable: true
@@ -3784,18 +4305,21 @@ export default {
           return jsonResponse({
             ok: false,
             operationId: opId,
+            partialFailure: completedSteps.length > 0,
             retryable: true,
-            syncStatus: 'sync_failed',
+            syncStatus: completedSteps.length > 0 ? 'partial_failure' : 'sync_failed',
             accountStatus: 'sync_error',
             completedSteps,
-            failedStep: 'izteach_account_provision',
+            failedStep: failedStepName,
+            cognitoUserId: prov.cognitoUserId || claim.cognitoUserId || null,
+            izteachStudentId: prov.izteachStudentId || claim.izteachStudentId || null,
             error: 'IZTEACH_PROVISION_FAILED',
             message: `Chưa khởi tạo được tài khoản học viên trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Vui lòng bấm Thử lại.`
           }, 502);
         }
 
-        completedSteps.push('izteach_account');
-        if (resolvedCourseIds.length > 0) {
+        if (!completedSteps.includes('izteach_account')) completedSteps.push('izteach_account');
+        if (resolvedCourseIds.length > 0 && !completedSteps.includes('izteach_permissions')) {
           completedSteps.push('izteach_permissions');
         }
 
@@ -3863,8 +4387,8 @@ export default {
           }, 502);
         }
 
-        completedSteps.push('supabase_student_upsert');
-        if (classCode) completedSteps.push('class_assignment');
+        if (!completedSteps.includes('supabase_student_upsert')) completedSteps.push('supabase_student_upsert');
+        if (classCode && !completedSteps.includes('class_assignment')) completedSteps.push('class_assignment');
 
         const responseSummary = {
           operationId: opId,
@@ -3898,6 +4422,27 @@ export default {
           cognito_user_id: prov.cognitoUserId,
           izteach_student_id: prov.izteachStudentId,
           result_summary: responseSummary
+        });
+
+        await logSyncEvent(env, {
+          operationId: opId,
+          eventType: 'student_create',
+          sourceSystem: 'ktn_admin',
+          targetSystem: 'izteach+supabase',
+          entityType: 'student',
+          entityKey: email,
+          status: 'synced',
+          details: {
+            email,
+            name,
+            classCode,
+            courseIds: resolvedCourseIds,
+            cognitoUserId: prov.cognitoUserId,
+            izteachStudentId: prov.izteachStudentId,
+            accountCreated: Boolean(prov.accountCreated),
+            completedSteps
+          },
+          createdBy: session.email
         });
 
         return jsonResponse({
@@ -4271,7 +4816,7 @@ export default {
       }
     }
 
-    if (path === '/api/ktn/teachers') {
+    if (path === '/api/ktn/teachers' || path === '/api/ktn/admin/teachers/provision') {
       if (request.method === 'GET') {
         const session = await extractSessionFromRequest(request, env);
         if (!session || (session.role !== 'admin' && session.role !== 'teacher')) {
@@ -4286,11 +4831,24 @@ export default {
             message: 'Không thể tải danh sách giáo viên từ cơ sở dữ liệu Supabase.'
           }, sbRes?.status || 503);
         }
-        let teachers = (Array.isArray(sbRes.data) ? sbRes.data : []).map(t => ({
-          ...t,
-          provisioningStatus: t.provisioning_status || (isValidCognitoUuid(t.cognito_user_id) || t.email === 'linh.lam@khongtunhi.com' || t.email === 'thu.ha@khongtunhi.com' || Boolean(env.KTN_STAFF_AND_TEST_PASSWORD) ? 'ready_to_login' : 'pending_external_provisioning'),
-          syncStatus: t.sync_status || 'synced'
-        }));
+        let teachers = (Array.isArray(sbRes.data) ? sbRes.data : []).map(t => {
+          const tMeta = extractTeacherMetaFromRow(t);
+          const pStatus = tMeta.provisioningStatus || (
+            isValidCognitoUuid(tMeta.cognitoUserId) ||
+            t.email === 'linh.lam@khongtunhi.com' ||
+            t.email === 'thu.ha@khongtunhi.com'
+              ? 'ready_to_login'
+              : 'pending_external_provisioning'
+          );
+          return {
+            ...t,
+            assigned_classes: tMeta.assignedClasses,
+            cognito_user_id: tMeta.cognitoUserId || t.cognito_user_id || null,
+            provisioningStatus: pStatus,
+            readyToLogin: pStatus === 'ready_to_login' && t.active !== false,
+            syncStatus: t.sync_status || (pStatus === 'ready_to_login' ? 'synced' : 'pending_activation')
+          };
+        });
         if (q) {
           const tokens = q.split(' ').filter(Boolean);
           teachers = teachers.filter(t => {
@@ -4304,7 +4862,7 @@ export default {
         // Giải quyết triệt để BUG BE-06 & BUG BE-07:
         // - Kiểm tra lỗi ghi Supabase (trả 502 nếu lỗi, không trả object giả)
         // - Cấp/xác minh tài khoản đăng nhập cho giáo viên và đồng bộ 2 chiều với ktn_classes (bao gồm thu hồi lớp cũ khi chuyển phân công)
-        // - Phân biệt rõ ready_to_login vs pending_external_provisioning
+        // - Phân biệt trung thực ready_to_login vs pending_external_provisioning (không gắn giả ready_to_login khi chưa cấp tài khoản)
         const session = await extractSessionFromRequest(request, env);
         if (!session || session.role !== 'admin') {
           return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới được tạo/cập nhật giáo viên.' }, 403);
@@ -4317,6 +4875,7 @@ export default {
 
         const existingTeaLookup = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(tEmail)}&limit=1`);
         const existingTeaRow = (existingTeaLookup.ok && Array.isArray(existingTeaLookup.data) && existingTeaLookup.data[0]) || null;
+        const existingMeta = extractTeacherMetaFromRow(existingTeaRow);
 
         const tCode = String(body.code || existingTeaRow?.code || ('GV-KTN-' + Date.now().toString().slice(-4))).trim().toUpperCase();
         const tName = String(body.name || existingTeaRow?.name || tEmail.split('@')[0]).trim();
@@ -4327,13 +4886,19 @@ export default {
                 .map(c => String(c || '').trim().toUpperCase())
                 .filter(Boolean)
             ))
-          : (Array.isArray(existingTeaRow?.assigned_classes) ? existingTeaRow.assigned_classes.map(c => String(c || '').trim().toUpperCase()).filter(Boolean) : []);
+          : existingMeta.assignedClasses;
 
-        let cognitoUserId = body.cognitoUserId || existingTeaRow?.cognito_user_id || null;
+        let cognitoUserId = body.cognitoUserId || existingMeta.cognitoUserId || null;
         let initialPassword = null;
         let accountCreated = false;
         let existingAccount = Boolean(existingTeaRow);
-        let provisioningStatus = 'ready_to_login';
+        let provisioningStatus = (
+          existingMeta.provisioningStatus === 'ready_to_login' ||
+          isValidCognitoUuid(cognitoUserId) ||
+          tEmail === 'linh.lam@khongtunhi.com' ||
+          tEmail === 'thu.ha@khongtunhi.com'
+        ) ? 'ready_to_login' : 'pending_external_provisioning';
+        let syncError = null;
 
         // Nếu yêu cầu đồng bộ tài khoản đăng nhập lên izTeach (mặc định bật khi tạo giáo viên mới)
         if (body.provisionOnIzTeach !== false) {
@@ -4352,21 +4917,45 @@ export default {
             existingAccount = Boolean(prov.existingAccount);
             provisioningStatus = 'ready_to_login';
           } else {
-            // Nếu izTeach chưa tạo được tài khoản ngoài, giáo viên vẫn có thể đăng nhập bằng mật khẩu nhân sự nội bộ (KTN_STAFF_AND_TEST_PASSWORD)
-            // hoặc chờ cấp quyền ngoài (pending_external_provisioning)
-            provisioningStatus = env.KTN_STAFF_AND_TEST_PASSWORD ? 'ready_to_login' : 'pending_external_provisioning';
+            syncError = prov.error || 'IZTEACH_TEACHER_PROVISION_FAILED';
+            if (provisioningStatus !== 'ready_to_login') {
+              provisioningStatus = 'pending_external_provisioning';
+            }
           }
         }
 
+        const effectiveTeacherPwd = String(
+          initialPassword || body.password || env.KTN_STAFF_AND_TEST_PASSWORD || ''
+        ).trim();
+        let passwordHmac = existingMeta.passwordHmac || null;
+        if (provisioningStatus === 'ready_to_login' && effectiveTeacherPwd.length >= 6) {
+          passwordHmac = await computeTeacherCredentialHmac(tEmail, effectiveTeacherPwd, env.KTN_SESSION_SECRET);
+        }
+
+        const userDefinedAliases = Array.isArray(existingTeaRow?.aliases)
+          ? existingTeaRow.aliases.filter(a => typeof a === 'string' && !a.startsWith('__'))
+          : [];
+        const metadataAliases = [
+          ...userDefinedAliases,
+          `__status:${provisioningStatus}`,
+          ...(cognitoUserId ? [`__uid:${cognitoUserId}`] : []),
+          ...(passwordHmac ? [`__pwd_hmac:${passwordHmac}`] : []),
+          ...assignedClasses.map(c => `__class:${c}`)
+        ];
+
         const isActive = body.active !== undefined ? Boolean(body.active) : (existingTeaRow?.active !== undefined ? Boolean(existingTeaRow.active) : true);
-        const baseTeacherRow = {
+        const preV3TeacherRow = {
           code: tCode,
           name: tName,
           email: tEmail,
           phone: String(body.phone ?? existingTeaRow?.phone ?? '').trim(),
           specialty: String(body.specialty || existingTeaRow?.specialty || 'Giáo viên Tiếng Trung Thiếu Nhi').trim(),
-          assigned_classes: assignedClasses,
+          aliases: metadataAliases,
           active: isActive
+        };
+        const baseTeacherRow = {
+          ...preV3TeacherRow,
+          assigned_classes: assignedClasses
         };
 
         const extendedTeacherRow = {
@@ -4387,6 +4976,13 @@ export default {
             method: 'POST',
             prefer: 'resolution=merge-duplicates,return=representation',
             body: baseTeacherRow
+          });
+        }
+        if ((!sbRes || !sbRes.ok) && sbRes?.status === 400) {
+          sbRes = await supabaseRequest(env, 'ktn_teachers', {
+            method: 'POST',
+            prefer: 'resolution=merge-duplicates,return=representation',
+            body: preV3TeacherRow
           });
         }
         if (!sbRes || !sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
@@ -4431,14 +5027,23 @@ export default {
             if (oldOwnerEmail && oldOwnerEmail !== tEmail) {
               const oldOwnerRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(oldOwnerEmail)}&limit=1`);
               const oldOwner = (oldOwnerRes.ok && Array.isArray(oldOwnerRes.data) && oldOwnerRes.data[0]) || null;
-              if (oldOwner && Array.isArray(oldOwner.assigned_classes)) {
-                const nextOldOwnerClasses = oldOwner.assigned_classes
-                  .map(c => String(c || '').trim().toUpperCase())
-                  .filter(c => c && c !== clsId);
-                await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(oldOwner.code)}`, {
+              if (oldOwner) {
+                const oldOwnerMeta = extractTeacherMetaFromRow(oldOwner);
+                const nextOldOwnerClasses = oldOwnerMeta.assignedClasses.filter(c => c && c !== clsId);
+                const oldOwnerUserAliases = Array.isArray(oldOwner.aliases)
+                  ? oldOwner.aliases.filter(a => typeof a === 'string' && !a.startsWith('__class:'))
+                  : [];
+                const nextOldAliases = [...oldOwnerUserAliases, ...nextOldOwnerClasses.map(c => `__class:${c}`)];
+                const patchOldRes = await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(oldOwner.code)}`, {
                   method: 'PATCH',
-                  body: { assigned_classes: nextOldOwnerClasses, updated_at: new Date().toISOString() }
+                  body: { assigned_classes: nextOldOwnerClasses, aliases: nextOldAliases, updated_at: new Date().toISOString() }
                 });
+                if ((!patchOldRes || !patchOldRes.ok) && patchOldRes?.status === 400) {
+                  await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(oldOwner.code)}`, {
+                    method: 'PATCH',
+                    body: { aliases: nextOldAliases }
+                  });
+                }
               }
             }
 
@@ -4469,22 +5074,61 @@ export default {
           }
         }
 
+        const verifiedAssignedClasses = isActive ? await getTeacherAssignedClassCodes(env, tEmail) : [];
+        const readyToLogin = provisioningStatus === 'ready_to_login' && isActive;
+        const roleVerified = Boolean(
+          readyToLogin &&
+          tEmail !== 'hocvienkhongtunhi123@gmail.com' &&
+          tEmail !== 'quanly@khongtunhi.com' &&
+          tEmail !== 'khongtunhi@gmail.com'
+        );
+
+        await logSyncEvent(env, {
+          eventType: 'teacher_provision',
+          sourceSystem: 'ktn_admin',
+          targetSystem: body.provisionOnIzTeach !== false ? 'izteach+supabase' : 'supabase',
+          entityType: 'teacher',
+          entityKey: tEmail,
+          status: readyToLogin ? 'synced' : 'pending_activation',
+          errorCode: syncError,
+          details: {
+            code: tCode,
+            email: tEmail,
+            name: tName,
+            assignedClasses: verifiedAssignedClasses,
+            provisioningStatus,
+            readyToLogin,
+            roleVerified,
+            cognitoUserId
+          },
+          createdBy: session.email
+        });
+
         const savedTeacher = sbRes.data[0];
         return jsonResponse({
           ok: true,
           provisioningStatus,
-          readyToLogin: provisioningStatus === 'ready_to_login',
+          syncStatus: readyToLogin ? 'synced' : 'pending_activation',
+          readyToLogin,
+          roleVerified,
+          resolvedRole: 'teacher',
+          assignedClasses: verifiedAssignedClasses,
           accountCreated,
           existingAccount,
           initialPassword,
           teacher: {
             ...savedTeacher,
+            assigned_classes: verifiedAssignedClasses,
+            cognito_user_id: cognitoUserId,
             provisioningStatus,
-            readyToLogin: provisioningStatus === 'ready_to_login'
+            readyToLogin,
+            roleVerified
           },
-          message: accountCreated
-            ? `Đã tạo giáo viên ${tName} (${tEmail}) và cấp tài khoản đăng nhập thành công!`
-            : `Đã lưu hồ sơ giáo viên ${tName} (${tEmail}) và phân công ${assignedClasses.length} lớp học!`
+          message: readyToLogin
+            ? (accountCreated
+                ? `Đã tạo giáo viên ${tName} (${tEmail}) và cấp tài khoản đăng nhập thành công!`
+                : `Đã lưu hồ sơ giáo viên ${tName} (${tEmail}) và phân công ${verifiedAssignedClasses.length} lớp học!`)
+            : `Đã lưu hồ sơ giáo viên ${tName} (${tEmail}) ở trạng thái chờ cấp tài khoản đăng nhập (${provisioningStatus}).`
         });
       }
     }

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import Hls from 'hls.js';
+import type Hls from 'hls.js';
 import {
   Play,
   Pause,
@@ -80,59 +80,74 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
     cleanupHls();
     setInternalStatus('loading');
 
+    let cancelled = false;
     const isM3u8 = /\.m3u8(\?|$)/i.test(activeUrl);
 
-    if (isM3u8 && Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: false,
-      });
-      hlsRef.current = hls;
+    if (isM3u8) {
+      import('hls.js')
+        .then(({ default: HlsLib }) => {
+          if (cancelled) return;
+          if (HlsLib.isSupported()) {
+            const hls = new HlsLib({
+              enableWorker: true,
+              lowLatencyMode: false,
+            });
+            hlsRef.current = hls;
 
-      hls.loadSource(activeUrl);
-      hls.attachMedia(videoEl);
+            hls.loadSource(activeUrl);
+            hls.attachMedia(videoEl);
 
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setInternalStatus('ready');
-      });
+            hls.on(HlsLib.Events.MANIFEST_PARSED, () => {
+              if (!cancelled) setInternalStatus('ready');
+            });
 
-      let mediaRecoveredOnce = false;
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              if (fallbackVideoUrl && fallbackVideoUrl !== activeUrl) {
-                cleanupHls();
-                videoEl.src = fallbackVideoUrl;
-              } else {
-                cleanupHls();
-                setInternalStatus('error');
+            let mediaRecoveredOnce = false;
+            hls.on(HlsLib.Events.ERROR, (_event, data) => {
+              if (cancelled) return;
+              if (data.fatal) {
+                switch (data.type) {
+                  case HlsLib.ErrorTypes.NETWORK_ERROR:
+                    if (fallbackVideoUrl && fallbackVideoUrl !== activeUrl) {
+                      cleanupHls();
+                      videoEl.src = fallbackVideoUrl;
+                    } else {
+                      cleanupHls();
+                      setInternalStatus('error');
+                    }
+                    break;
+                  case HlsLib.ErrorTypes.MEDIA_ERROR:
+                    if (!mediaRecoveredOnce) {
+                      mediaRecoveredOnce = true;
+                      hls.recoverMediaError();
+                    } else {
+                      cleanupHls();
+                      setInternalStatus('error');
+                    }
+                    break;
+                  default:
+                    cleanupHls();
+                    setInternalStatus('error');
+                    break;
+                }
               }
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              if (!mediaRecoveredOnce) {
-                mediaRecoveredOnce = true;
-                hls.recoverMediaError();
-              } else {
-                cleanupHls();
-                setInternalStatus('error');
-              }
-              break;
-            default:
-              cleanupHls();
-              setInternalStatus('error');
-              break;
+            });
+          } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+            videoEl.src = activeUrl;
+            setInternalStatus('ready');
+          } else {
+            setInternalStatus('error');
           }
-        }
-      });
-    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl') || !isM3u8) {
+        })
+        .catch(() => {
+          if (!cancelled) setInternalStatus('error');
+        });
+    } else {
       videoEl.src = activeUrl;
       setInternalStatus('ready');
-    } else {
-      setInternalStatus('error');
     }
 
     return () => {
+      cancelled = true;
       cleanupHls();
     };
   }, [streamUrl, fallbackVideoUrl, statusOverride, cleanupHls]);

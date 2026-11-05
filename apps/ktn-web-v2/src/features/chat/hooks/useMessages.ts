@@ -46,6 +46,7 @@ export function useChatRooms() {
     },
     enabled: Boolean(user) || isDemoMode,
     refetchInterval: isDemoMode ? false : 3500,
+    refetchIntervalInBackground: false,
     staleTime: 1000,
   });
 
@@ -131,6 +132,7 @@ export function useRoomMessages(roomId: string | null) {
     },
     enabled: Boolean(roomId) && (Boolean(user) || isDemoMode),
     refetchInterval: isDemoMode ? false : 3000,
+    refetchIntervalInBackground: false,
     staleTime: 1000,
   });
 

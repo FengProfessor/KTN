@@ -48,7 +48,7 @@ export const NotificationCenter: React.FC = () => {
   const [demoState, setDemoState] = useState<'unread' | 'all_read' | 'empty'>('unread');
   const [demoLocalReadIds, setDemoLocalReadIds] = useState<Record<string, boolean>>({});
 
-  // Verify real browser PushSubscription on mount — never assume enabled just from permission
+  // Verify real browser PushSubscription on mount and bind to current authenticated user — never assume enabled just from permission
   useEffect(() => {
     let cancelled = false;
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -58,23 +58,50 @@ export const NotificationCenter: React.FC = () => {
     navigator.serviceWorker
       .getRegistration('/')
       .then((reg) => reg?.pushManager?.getSubscription())
-      .then((sub) => {
+      .then(async (sub) => {
         if (cancelled) return;
         const subJson = sub ? sub.toJSON() : null;
+        const endpoint = String(subJson?.endpoint || '').trim();
+        const p256dh = String(subJson?.keys?.p256dh || '').trim();
+        const auth = String(subJson?.keys?.auth || '').trim();
         const hasRealSub = Boolean(
-          subJson?.endpoint &&
-            !subJson.endpoint.includes('push.khongtunhi.com/v2/') &&
-            subJson.keys?.p256dh &&
-            subJson.keys?.auth &&
-            subJson.keys.p256dh !== 'ktn-mobile-web-p256dh'
+          endpoint &&
+            !endpoint.includes('push.khongtunhi.com/v2/') &&
+            p256dh &&
+            auth &&
+            p256dh !== 'ktn-mobile-web-p256dh'
         );
-        setPushEnabled(hasRealSub);
-        try {
-          if (hasRealSub) {
-            localStorage.setItem('ktn_push_enabled_v2', '1');
-          } else {
+        if (!hasRealSub) {
+          setPushEnabled(false);
+          try {
             localStorage.removeItem('ktn_push_enabled_v2');
+          } catch {
+            // ignore
           }
+          return;
+        }
+        if (!isDemoMode && user?.email) {
+          try {
+            const syncRes = await ktnApi.subscribePush({
+              endpoint,
+              expirationTime: subJson?.expirationTime ?? null,
+              keys: { p256dh, auth },
+              userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
+            });
+            if (cancelled) return;
+            if (!syncRes.ok) {
+              setPushEnabled(false);
+              return;
+            }
+          } catch {
+            if (!cancelled) setPushEnabled(false);
+            return;
+          }
+        }
+        if (cancelled) return;
+        setPushEnabled(true);
+        try {
+          localStorage.setItem('ktn_push_enabled_v2', '1');
         } catch {
           // ignore
         }
@@ -85,7 +112,7 @@ export const NotificationCenter: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [user?.email]);
+  }, [user?.email, isDemoMode]);
 
   const notificationsQuery = useQuery<{
     notifications: KtnNotification[];
@@ -260,17 +287,41 @@ export const NotificationCenter: React.FC = () => {
       const appServerKey = urlBase64ToUint8Array(vapidPublicKey);
       const existingSub = await readyReg.pushManager.getSubscription();
       if (existingSub) {
-        try {
-          await existingSub.unsubscribe();
-        } catch {
-          // ignore unsubscribe error before re-subscribing
+        const existingJson = existingSub.toJSON();
+        const isFakeOrCorrupt =
+          !existingJson.endpoint ||
+          existingJson.endpoint.includes('push.khongtunhi.com/v2/') ||
+          !existingJson.keys?.p256dh ||
+          !existingJson.keys?.auth ||
+          existingJson.keys.p256dh === 'ktn-mobile-web-p256dh';
+        if (isFakeOrCorrupt) {
+          try {
+            await existingSub.unsubscribe();
+          } catch {
+            // ignore unsubscribe error on corrupt subscription
+          }
         }
       }
 
-      const sub = await readyReg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: appServerKey as unknown as BufferSource,
-      });
+      let sub: PushSubscription;
+      try {
+        sub = await readyReg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appServerKey as unknown as BufferSource,
+        });
+      } catch {
+        if (existingSub) {
+          try {
+            await existingSub.unsubscribe();
+          } catch {
+            // ignore unsubscribe error before re-subscribing with new VAPID key
+          }
+        }
+        sub = await readyReg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appServerKey as unknown as BufferSource,
+        });
+      }
 
       const subJson = sub.toJSON();
       const endpoint = String(subJson.endpoint || '').trim();

@@ -8,6 +8,8 @@ import type {
   PinnedAnnouncement
 } from '@/features/chat/types/chat.types';
 
+import { formatFileSize } from '@/lib/utils';
+
 function dataUrlToBlob(dataUrl: string): Blob {
   const hashIdx = dataUrl.indexOf('#');
   const cleanUrl = hashIdx >= 0 ? dataUrl.slice(0, hashIdx) : dataUrl;
@@ -69,8 +71,9 @@ async function ensureRemoteAttachment(att: ChatAttachment): Promise<ChatAttachme
   return {
     ...att,
     url: uploaded.fileUrl,
-    mimeType: uploaded.fileType,
-    sizeBytes: uploaded.size
+    mimeType: uploaded.fileType || att.mimeType,
+    sizeBytes: uploaded.size || att.sizeBytes,
+    sizeLabel: att.sizeLabel || (uploaded.size ? formatFileSize(uploaded.size) : undefined)
   };
 }
 
@@ -80,6 +83,8 @@ export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment |
   let kind: AttachmentKind = 'file';
   let name = 'Tệp đính kèm';
   let sizeLabel = '';
+  let sizeBytes: number | undefined;
+  let mimeType: string | undefined;
   let durationSec: number | undefined;
 
   try {
@@ -90,6 +95,8 @@ export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment |
       if (pKind && ['image', 'pdf', 'audio', 'video', 'file'].includes(pKind)) kind = pKind;
       if (params.get('name')) name = params.get('name') || name;
       if (params.get('size')) sizeLabel = params.get('size') || '';
+      if (params.get('bytes')) sizeBytes = Number(params.get('bytes')) || undefined;
+      if (params.get('mime')) mimeType = params.get('mime') || undefined;
       if (params.get('dur')) durationSec = Number(params.get('dur')) || undefined;
     } else if (/^data:image\/|\.(png|jpg|jpeg|webp|gif)(\?|$)/i.test(s)) {
       kind = 'image';
@@ -112,18 +119,24 @@ export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment |
     kind,
     url: s.split('#')[0],
     name,
-    sizeLabel: sizeLabel || undefined,
+    sizeLabel: sizeLabel || (sizeBytes ? formatFileSize(sizeBytes) : undefined),
+    sizeBytes,
+    mimeType,
     durationSec
   };
 }
 
 export function encodeAttachmentUrl(att: ChatAttachment): string {
+  const baseUrl = String(att.url || '').split('#')[0];
   const params = new URLSearchParams();
   params.set('kind', att.kind);
   params.set('name', att.name);
-  if (att.sizeLabel) params.set('size', att.sizeLabel);
+  const resolvedSizeLabel = att.sizeLabel || (att.sizeBytes ? formatFileSize(att.sizeBytes) : '');
+  if (resolvedSizeLabel) params.set('size', resolvedSizeLabel);
+  if (att.sizeBytes && att.sizeBytes > 0) params.set('bytes', String(att.sizeBytes));
+  if (att.mimeType) params.set('mime', att.mimeType);
   if (att.durationSec) params.set('dur', String(att.durationSec));
-  return `${att.url}#${params.toString()}`;
+  return `${baseUrl}#${params.toString()}`;
 }
 
 export function normalizeServerMessage(raw: Record<string, unknown>): ChatMessage {

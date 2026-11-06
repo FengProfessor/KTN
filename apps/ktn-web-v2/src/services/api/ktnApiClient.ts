@@ -407,18 +407,27 @@ export const ktnApi = {
       jpeg: 'image/jpeg',
       webp: 'image/webp',
       gif: 'image/gif',
+      bmp: 'image/bmp',
+      heic: 'image/heic',
       pdf: 'application/pdf',
       mp3: 'audio/mpeg',
       wav: 'audio/wav',
       m4a: 'audio/mp4',
+      aac: 'audio/aac',
       ogg: 'audio/ogg',
       mp4: 'video/mp4',
       mov: 'video/quicktime',
+      m4v: 'video/x-m4v',
       webm: 'video/webm',
       zip: 'application/zip',
+      rar: 'application/vnd.rar',
       txt: 'text/plain',
       doc: 'application/msword',
-      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xls: 'application/vnd.ms-excel',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ppt: 'application/vnd.ms-powerpoint',
+      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     };
     const fileType = file.type || extMimeMap[ext] || 'application/octet-stream';
     const fileSize = file.size || 2048;

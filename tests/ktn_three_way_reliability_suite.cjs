@@ -2348,6 +2348,16 @@ async function runSuite() {
         attachmentUrl: oversizedDataUrl
       }
     });
+    const oversizedNonProbeUrl = 'data:image/png;base64,' + 'iVBORw0KGgo'.repeat(26 * 1024);
+    const oversizedNonProbeRes = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        roomId: 'class:YCT2-04',
+        content: 'Em nộp ảnh bài tập lớn ạ',
+        attachmentUrl: oversizedNonProbeUrl
+      }
+    });
 
     record(
       'D5-ATTENDANCE-RBAC-AND-CHAT-INLINE-SIZE-GUARD',
@@ -2358,8 +2368,10 @@ async function runSuite() {
         getAttStudentA.status === 200 &&
         getAttStudentA.data?.summary?.present === 1 &&
         oversizedChatRes.status === 413 &&
-        oversizedChatRes.data?.error === 'ATTACHMENT_TOO_LARGE_FOR_INLINE',
-      `attSaveOwn=${saveAttAllowed.status}, attSaveOther=${saveAttForbidden.status}, stuPresent=${getAttStudentA.data?.summary?.present}, oversizedChat=${oversizedChatRes.status}`
+        oversizedChatRes.data?.error === 'ATTACHMENT_TOO_LARGE_FOR_INLINE' &&
+        oversizedNonProbeRes.status === 413 &&
+        oversizedNonProbeRes.data?.error === 'ATTACHMENT_TOO_LARGE_FOR_INLINE',
+      `attSaveOwn=${saveAttAllowed.status}, attSaveOther=${saveAttForbidden.status}, stuPresent=${getAttStudentA.data?.summary?.present}, oversizedChat=${oversizedChatRes.status}, nonProbeOversized=${oversizedNonProbeRes.status}`
     );
 
     // D6: Attendance preserves absent_excused & absent_unexcused and returns records + summary

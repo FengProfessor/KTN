@@ -277,17 +277,21 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       ).rejects.toThrow(/100MB/);
     });
 
-    it('encodes and parses video attachments cleanly', () => {
+    it('encodes and parses video and large file attachments with mimeType and sizeBytes cleanly', () => {
       const encoded = encodeAttachmentUrl({
         kind: 'video',
-        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/lesson_clip.mp4',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/lesson_clip.mp4#stale=1',
         name: 'lesson_clip.mp4',
-        sizeLabel: '75.0 MB',
+        sizeBytes: 75 * 1024 * 1024,
+        mimeType: 'video/mp4',
       });
       const parsed = parseAttachmentFromUrl(encoded);
       expect(parsed?.kind).toBe('video');
+      expect(parsed?.url).toBe('https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/lesson_clip.mp4');
       expect(parsed?.name).toBe('lesson_clip.mp4');
       expect(parsed?.sizeLabel).toBe('75.0 MB');
+      expect(parsed?.sizeBytes).toBe(75 * 1024 * 1024);
+      expect(parsed?.mimeType).toBe('video/mp4');
     });
   });
 });

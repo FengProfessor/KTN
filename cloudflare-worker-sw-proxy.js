@@ -356,12 +356,15 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = (event.notification.data && event.notification.data.url) || '/custom-page/so-lien-lac-test#/notifications';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (const client of windowClients) {
-        if ('focus' in client) {
-          client.focus();
-          client.postMessage({ type: 'KTN_NOTIFICATION_CLICKED', data: event.notification.data });
-          return;
-        }
+      const portalClient = windowClients.find((c) => c && typeof c.url === 'string' && c.url.includes('/custom-page/so-lien-lac'));
+      if (portalClient) {
+        if ('focus' in portalClient) portalClient.focus();
+        portalClient.postMessage({ type: 'KTN_NOTIFICATION_CLICKED', data: event.notification.data });
+        return;
+      }
+      const anyClient = windowClients[0];
+      if (anyClient && typeof anyClient.navigate === 'function') {
+        return anyClient.navigate(targetUrl).then((c) => (c && 'focus' in c ? c.focus() : null));
       }
       if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
     })
@@ -481,7 +484,10 @@ async function sendWebPushToSubscription(env, subRow, payloadObj) {
 
     const header = new Uint8Array(16 + 4 + 1 + asPublicBytes.length);
     header.set(salt, 0);
-    new DataView(header.buffer).setUint32(16, 4096, false);
+    header[16] = 0;
+    header[17] = 0;
+    header[18] = 16;
+    header[19] = 0;
     header[20] = asPublicBytes.length;
     header.set(asPublicBytes, 21);
 
@@ -535,7 +541,7 @@ const MANIFEST_JSON = JSON.stringify({
   name: 'Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí',
   short_name: 'Khổng Tử Nhí',
   description: 'Sổ liên lạc điện tử & Cổng học tập trực tuyến Học Viện Khổng Tử Nhí',
-  start_url: '/?source=pwa',
+  start_url: '/custom-page/so-lien-lac-test',
   scope: '/',
   display: 'standalone',
   background_color: '#F8FAFC',
@@ -3773,7 +3779,7 @@ export default {
       const adminSecret = String(env.IZTEACH_ADMIN_PASSWORD || '').trim();
       const isRotAdmin = email === 'hocvienkhongtunhi123@gmail.com' || email === 'quanly@khongtunhi.com' || email === 'khongtunhi@gmail.com';
       const matchesRotated = rotatedSecret.length >= 8 && password === rotatedSecret;
-      const matchesAdminSecret = isRotAdmin && Boolean(adminSecret) && password === adminSecret;
+      const matchesAdminSecret = isRotAdmin && adminSecret.length >= 8 && adminSecret !== '123456' && password === adminSecret;
 
       if (ROTATED_ACCOUNTS_SET.has(email) && password.length < 8 && !matchesAdminSecret) {
         return jsonResponse({ ok: false, message: 'Mật khẩu cũ đã được thu hồi để bảo mật. Vui lòng đăng nhập bằng mật khẩu mới.' }, 401);
@@ -6951,10 +6957,19 @@ export default {
         'audio/ogg': '.ogg',
         'audio/aac': '.aac',
         'video/mp4': '.mp4',
+        'video/x-m4v': '.m4v',
         'video/quicktime': '.mov',
         'video/webm': '.webm',
         'application/pdf': '.pdf',
+        'application/msword': '.doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+        'application/vnd.ms-excel': '.xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+        'application/vnd.ms-powerpoint': '.ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
         'application/zip': '.zip',
+        'application/vnd.rar': '.rar',
+        'application/x-rar-compressed': '.rar',
         'text/plain': '.txt'
       };
       const rawName = String(body.fileName || `chat_${Date.now()}${extByMime[fileType.toLowerCase()] || '.bin'}`);
@@ -7720,6 +7735,11 @@ export default {
         }
 
         if (env.VAPID_PRIVATE_KEY && savedHw?.student_email) {
+          const rawNum = Number(savedHw.lesson_num || 1) || 1;
+          const sessionNum = rawNum >= 100 ? Math.floor(rawNum / 100) : rawNum;
+          const gradedActionUrl = unitResolution.isLiveClass
+            ? `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(String(savedHw.class_code || '').toUpperCase())}&session=${sessionNum}`
+            : `/custom-page/so-lien-lac-test#/learning?courseId=${encodeURIComponent(String(savedHw.course_id || ''))}&lesson=${rawNum}&tab=homework`;
           const pushTask = dispatchWebPushForQuery(
             env,
             `user_email=eq.${encodeURIComponent(normalizeEmail(savedHw.student_email))}`,
@@ -7727,7 +7747,7 @@ export default {
               id: `NOTIF-GRADED-${savedHw.id}-${savedHw.status}`,
               title: 'Cô giáo vừa chấm bài tập!',
               body: `${savedHw.lesson_title || ('Bài ' + (savedHw.lesson_num || 1))}: ${savedHw.score ?? ''}/10 — ${String(savedHw.teacher_feedback || '').slice(0, 60)}`,
-              action_url: unitResolution.isLiveClass ? '/custom-page/so-lien-lac-test#/classrooms' : '/custom-page/so-lien-lac-test#/learning'
+              action_url: gradedActionUrl
             }
           ).catch(() => null);
           if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushTask);
@@ -8358,7 +8378,7 @@ export default {
         }, access.status);
       }
       const content = String(body.content || body.text || '').trim();
-      let attachmentUrl = String(body.attachmentUrl || '').trim();
+      const attachmentUrl = String(body.attachmentUrl || '').trim();
       if (!content && !attachmentUrl) return jsonResponse({ ok: false, message: 'Nội dung tin nhắn trống.' }, 400);
       if (attachmentUrl.startsWith('blob:')) {
         return jsonResponse({
@@ -8367,72 +8387,13 @@ export default {
           message: 'Tệp đính kèm chưa tải xong lên kho lưu trữ. Vui lòng bấm Thử lại.'
         }, 400);
       }
-      // Chặn probe kiểm thử синтеtic Base64 (>256KB toàn ký tự 'A') nhưng tự động đẩy tệp thật (ảnh/âm thanh/tài liệu) lên S3
-      const isSyntheticOversizedProbe =
-        attachmentUrl.startsWith('data:') &&
-        attachmentUrl.length > 256 * 1024 &&
-        (content === 'Tệp đính kèm quá lớn' || /^data:audio\/webm;base64,A{1000,}/.test(attachmentUrl));
-      if (isSyntheticOversizedProbe) {
+      // Chặn nhúng trực tiếp chuỗi Base64 lớn (>256KB) vào cột attachment_url của bảng ktn_messages (Phần 10)
+      if (attachmentUrl.startsWith('data:') && attachmentUrl.length > 256 * 1024) {
         return jsonResponse({
           ok: false,
           error: 'ATTACHMENT_TOO_LARGE_FOR_INLINE',
           message: 'Tệp đính kèm có dung lượng lớn cần tải lên kho lưu trữ S3 qua /api/ktn/upload-url trước khi gửi tin nhắn.'
         }, 413);
-      }
-      if (attachmentUrl.startsWith('data:') && attachmentUrl.length > 240 * 1024) {
-        try {
-          const hashIdx = attachmentUrl.indexOf('#');
-          const dataPart = hashIdx >= 0 ? attachmentUrl.slice(0, hashIdx) : attachmentUrl;
-          const hashSuffix = hashIdx >= 0 ? attachmentUrl.slice(hashIdx) : '';
-          const commaIdx = dataPart.indexOf(',');
-          if (commaIdx > 0) {
-            const meta = dataPart.slice(5, commaIdx);
-            const b64 = dataPart.slice(commaIdx + 1);
-            const mimeMatch = meta.match(/^([^;]+)/);
-            const mimeType = (mimeMatch && mimeMatch[1]) || 'application/octet-stream';
-            const extMap = {
-              'image/png': 'png',
-              'image/jpeg': 'jpg',
-              'image/webp': 'webp',
-              'image/gif': 'gif',
-              'audio/wav': 'wav',
-              'audio/mpeg': 'mp3',
-              'audio/mp4': 'm4a',
-              'audio/webm': 'webm',
-              'video/mp4': 'mp4',
-              'application/pdf': 'pdf'
-            };
-            const ext = extMap[mimeType.toLowerCase()] || 'bin';
-            const binStr = atob(b64);
-            const bytes = new Uint8Array(binStr.length);
-            for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
-            const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
-            const userFolder = normalizeEmail(session.email).replace(/[^a-z0-9]/g, '_');
-            const s3Key = `resource/chat/${vendorId}/${userFolder}/${Date.now()}-inline.${ext}`;
-            const adminToken = await getIzTeachAdminToken(env);
-            if (adminToken) {
-              const s3Res = await fetch(
-                `${IZTEACH_ENDPOINTS.s3SignedUrl}?key=${encodeURIComponent(s3Key)}&contentType=${encodeURIComponent(mimeType)}`,
-                { headers: { Authorization: adminToken } }
-              );
-              const s3Data = await s3Res.json().catch(() => null);
-              const signedUrl = typeof s3Data === 'string' ? s3Data : (s3Data?.url || s3Data?.signedUrl || s3Data?.data || null);
-              if (s3Res.ok && signedUrl) {
-                const targetPutUrl = signedUrl.startsWith('http') ? signedUrl : new URL(signedUrl, request.url).toString();
-                const putRes = await fetch(targetPutUrl, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': mimeType },
-                  body: bytes
-                });
-                if (putRes.ok) {
-                  attachmentUrl = `https://d21acfi38wn3iy.cloudfront.net/${s3Key}${hashSuffix}`;
-                }
-              }
-            }
-          }
-        } catch (err) {
-          // Fallback: keep attachmentUrl if S3 auto-upload is unreachable
-        }
       }
       const clientMessageId = String(body.clientMessageId || body.idempotencyKey || '').trim();
       const targetRoomKey = access.type === 'class' ? access.classCode : access.roomId;
@@ -8550,7 +8511,7 @@ export default {
                 ? 'user_role=in.(teacher,admin)'
                 : `user_email=eq.${encodeURIComponent(targetStu)}`;
           } else if (access.type === 'class' && access.classCode) {
-            pushFilter = `class_code=eq.${encodeURIComponent(access.classCode)}&user_email=neq.${encodeURIComponent(session.email)}`;
+            pushFilter = `or=(class_code.eq.${encodeURIComponent(access.classCode)},user_role.in.(teacher,admin))&user_email=neq.${encodeURIComponent(session.email)}`;
           }
           const pushTask = dispatchWebPushForQuery(env, pushFilter, {
             id: `NOTIF-MSG-${savedRow.id}`,
@@ -9037,7 +8998,10 @@ export default {
       const cType = String(originRes.headers.get('content-type') || '').toLowerCase();
       if (cType.includes('text/html')) {
         let html = await originRes.text();
-        const portalInitScript = `<script>(function(){window.__KTN_EMBED_MODE__=true;try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}})();</script>`;
+        const pwaHeadTags = html.includes('rel="manifest"')
+          ? ''
+          : `<link rel="manifest" href="/manifest.json"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Khổng Tử Nhí">`;
+        const portalInitScript = `${pwaHeadTags}<script>(function(){window.__KTN_EMBED_MODE__=true;try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}})();</script>`;
         html = html.replace(/<head[^>]*>/i, '$&' + portalInitScript);
         const newHeaders = new Headers(originRes.headers);
         newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate');

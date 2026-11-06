@@ -2381,11 +2381,28 @@ async function saveProvisioningJobState(env, jobRecord) {
     globalThis.__ktnIdempotencyJobMap.set(merged.idempotency_key, merged);
   }
   try {
-    await supabaseRequest(env, 'ktn_provisioning_jobs', {
+    const sbRes = await supabaseRequest(env, 'ktn_provisioning_jobs', {
       method: 'POST',
       prefer: 'resolution=merge-duplicates,return=representation',
       body: merged
     });
+    if ((!sbRes || !sbRes.ok) && sbRes?.status === 404 && merged.idempotency_key) {
+      const idemSafeId = 'PJOB-' + String(merged.idempotency_key).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+      await supabaseRequest(env, 'ktn_dlp_alerts', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates,return=representation',
+        body: {
+          id: idemSafeId,
+          room_id: 'PROVISIONING_JOB',
+          sender_email: merged.actor_email || 'admin',
+          sender_name: merged.target_email || 'system',
+          sender_role: merged.target_role || 'admin',
+          blocked_content: JSON.stringify(merged),
+          reason: 'IDEM:' + merged.idempotency_key,
+          created_at: merged.updated_at
+        }
+      });
+    }
   } catch {}
   return merged;
 }
@@ -2397,6 +2414,16 @@ async function getCompletedJobByIdempotencyKey(env, idempotencyKey) {
     const sbRes = await supabaseRequest(env, `ktn_provisioning_jobs?idempotency_key=eq.${encodeURIComponent(key)}&status=eq.completed&limit=1`);
     if (sbRes.ok && Array.isArray(sbRes.data) && sbRes.data[0]) {
       return sbRes.data[0];
+    }
+    if (sbRes?.status === 404) {
+      const fbRes = await supabaseRequest(
+        env,
+        `ktn_dlp_alerts?room_id=eq.PROVISIONING_JOB&reason=eq.${encodeURIComponent('IDEM:' + key)}&order=created_at.desc&limit=1`
+      );
+      if (fbRes.ok && Array.isArray(fbRes.data) && fbRes.data[0]?.blocked_content) {
+        const parsed = JSON.parse(fbRes.data[0].blocked_content);
+        if (parsed && parsed.status === 'completed') return parsed;
+      }
     }
   } catch {}
   if (globalThis.__ktnIdempotencyJobMap && globalThis.__ktnIdempotencyJobMap.has(key)) {
@@ -2444,9 +2471,26 @@ async function claimProvisioningJobAtomically(env, {
 
   const pollExistingJob = async (attempts = 3, delayMs = 30) => {
     for (let i = 0; i < attempts; i++) {
+      let row = null;
       const checkRes = await supabaseRequest(env, `ktn_provisioning_jobs?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`);
       if (checkRes.ok && Array.isArray(checkRes.data) && checkRes.data[0]) {
-        const row = checkRes.data[0];
+        row = checkRes.data[0];
+      } else if (checkRes?.status === 404) {
+        if (globalThis.__ktnIdempotencyJobMap && globalThis.__ktnIdempotencyJobMap.has(key)) {
+          row = globalThis.__ktnIdempotencyJobMap.get(key);
+        } else {
+          const fbRes = await supabaseRequest(
+            env,
+            `ktn_dlp_alerts?room_id=eq.PROVISIONING_JOB&reason=eq.${encodeURIComponent('IDEM:' + key)}&order=created_at.desc&limit=1`
+          );
+          if (fbRes.ok && Array.isArray(fbRes.data) && fbRes.data[0]?.blocked_content) {
+            try {
+              row = JSON.parse(fbRes.data[0].blocked_content);
+            } catch {}
+          }
+        }
+      }
+      if (row) {
         if (row.status === 'completed') {
           return { state: 'completed', job: row };
         }
@@ -2465,9 +2509,26 @@ async function claimProvisioningJobAtomically(env, {
   };
 
   try {
+    let existing = null;
     const initialCheck = await supabaseRequest(env, `ktn_provisioning_jobs?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`);
     if (initialCheck.ok && Array.isArray(initialCheck.data) && initialCheck.data[0]) {
-      const existing = initialCheck.data[0];
+      existing = initialCheck.data[0];
+    } else if (initialCheck?.status === 404) {
+      if (globalThis.__ktnIdempotencyJobMap && globalThis.__ktnIdempotencyJobMap.has(key)) {
+        existing = globalThis.__ktnIdempotencyJobMap.get(key);
+      } else {
+        const fbRes = await supabaseRequest(
+          env,
+          `ktn_dlp_alerts?room_id=eq.PROVISIONING_JOB&reason=eq.${encodeURIComponent('IDEM:' + key)}&order=created_at.desc&limit=1`
+        );
+        if (fbRes.ok && Array.isArray(fbRes.data) && fbRes.data[0]?.blocked_content) {
+          try {
+            existing = JSON.parse(fbRes.data[0].blocked_content);
+          } catch {}
+        }
+      }
+    }
+    if (existing) {
       if (existing.status === 'completed') {
         return {
           claimed: false,
@@ -2503,15 +2564,26 @@ async function claimProvisioningJobAtomically(env, {
       }
       if (existing.status === 'partial_failure' || existing.status === 'failed') {
         const resumedOpId = existing.operation_id || resolvedOpId;
+        const resumedJob = {
+          ...existing,
+          operation_id: resumedOpId,
+          status: 'running',
+          retry_count: Number(existing.retry_count || 0) + 1,
+          updated_at: new Date().toISOString()
+        };
+        if (!globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap = new Map();
+        globalThis.__ktnProvisioningJobsMap.set(resumedOpId, resumedJob);
+        if (!globalThis.__ktnIdempotencyJobMap) globalThis.__ktnIdempotencyJobMap = new Map();
+        globalThis.__ktnIdempotencyJobMap.set(key, resumedJob);
         await supabaseRequest(env, `ktn_provisioning_jobs?operation_id=eq.${encodeURIComponent(resumedOpId)}`, {
           method: 'PATCH',
           body: {
             status: 'running',
-            retry_count: Number(existing.retry_count || 0) + 1,
-            updated_at: new Date().toISOString()
+            retry_count: resumedJob.retry_count,
+            updated_at: resumedJob.updated_at
           }
         });
-        return buildResumedReturn({ ...existing, operation_id: resumedOpId });
+        return buildResumedReturn(resumedJob);
       }
     }
 
@@ -2561,20 +2633,19 @@ async function claimProvisioningJobAtomically(env, {
       };
     }
 
-    if (insRes.ok && Array.isArray(insRes.data) && insRes.data[0]) {
-      if (!globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap = new Map();
-      globalThis.__ktnProvisioningJobsMap.set(resolvedOpId, insRes.data[0]);
-      if (!globalThis.__ktnIdempotencyJobMap) globalThis.__ktnIdempotencyJobMap = new Map();
-      globalThis.__ktnIdempotencyJobMap.set(key, insRes.data[0]);
-      return {
-        claimed: true,
-        operationId: resolvedOpId,
-        completedSteps: [],
-        cognitoUserId: null,
-        izteachStudentId: null,
-        job: insRes.data[0]
-      };
-    }
+    const claimedRow = (insRes.ok && Array.isArray(insRes.data) && insRes.data[0]) ? insRes.data[0] : initialRow;
+    if (!globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap = new Map();
+    globalThis.__ktnProvisioningJobsMap.set(resolvedOpId, claimedRow);
+    if (!globalThis.__ktnIdempotencyJobMap) globalThis.__ktnIdempotencyJobMap = new Map();
+    globalThis.__ktnIdempotencyJobMap.set(key, claimedRow);
+    return {
+      claimed: true,
+      operationId: resolvedOpId,
+      completedSteps: [],
+      cognitoUserId: null,
+      izteachStudentId: null,
+      job: claimedRow
+    };
   } catch {}
 
   return {
@@ -5166,6 +5237,11 @@ export default {
             accountCreated = Boolean(prov.accountCreated);
             existingAccount = Boolean(prov.existingAccount);
             provisioningStatus = 'ready_to_login';
+            if (!existingTeaRow && !initialPassword) {
+              initialPassword = await deriveDeterministicInitialPassword(env, 'TEA-' + tCode, tEmail);
+              accountCreated = true;
+              existingAccount = false;
+            }
           } else {
             syncError = prov.error || 'IZTEACH_TEACHER_PROVISION_FAILED';
             if (provisioningStatus !== 'ready_to_login') {

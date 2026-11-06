@@ -341,6 +341,13 @@ function loadWorkerInstance(sharedState = null) {
         });
       }
 
+      if (table === 'ktn_provisioning_jobs' && state.faults.simulateLegacyV2StudentSchema) {
+        return new Response(
+          JSON.stringify({ code: 'PGRST205', message: "Could not find the table 'public.ktn_provisioning_jobs' in the schema cache" }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
       const rows = state.tables[table] || (state.tables[table] = []);
 
       if (method === 'GET') {
@@ -3031,6 +3038,36 @@ async function runSuite() {
     const legacyObjectCourseSearch = await callApi('/api/ktn/admin/students/search?courseId=6adadba969897b0002482ca5&limit=500', {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
+    const schemaV2IdemKey = 'IDEM-SCHEMA-V2-001';
+    const schemaV2Prov1 = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Idempotency-Key': schemaV2IdemKey
+      },
+      body: {
+        name: 'Bé Schema V2 Idempotency',
+        email: 'schemav2.idem@khongtunhi.com',
+        phone: '0977888999',
+        courseIds: ['6adadba969897b0002482ca5']
+      }
+    });
+    // Simulate a fresh Worker isolate by clearing in-memory idempotency cache so it must read from ktn_dlp_alerts fallback
+    if (globalThis.__ktnIdempotencyJobMap) globalThis.__ktnIdempotencyJobMap.clear();
+    if (globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap.clear();
+    const schemaV2Prov2Replay = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Idempotency-Key': schemaV2IdemKey
+      },
+      body: {
+        name: 'Bé Schema V2 Idempotency',
+        email: 'schemav2.idem@khongtunhi.com',
+        phone: '0977888999',
+        courseIds: ['6adadba969897b0002482ca5']
+      }
+    });
     state.faults.disableSearchRpc = false;
     state.faults.simulateLegacyV2StudentSchema = false;
 
@@ -3038,11 +3075,12 @@ async function runSuite() {
     const foundConcatenated = (legacyConcatenatedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com');
     const foundAccented = (legacyAccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com');
     const foundObjectCourse = (legacyObjectCourseSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com');
+    const schemaV2IdemReplayed = schemaV2Prov1.status === 200 && schemaV2Prov2Replay.status === 200 && schemaV2Prov2Replay.data?.idempotentReplay === true;
 
     record(
       'D17-LEGACY-V2-SCHEMA-VIETNAMESE-SEARCH-FALLBACK',
       'GROUP_V3',
-      'When Supabase is on Schema V2 (missing ktn_search_students RPC and search_text column, with 1,000-row PostgREST page cap), search fallback paginates and accurately finds Vietnamese accented student names (spaced, concatenated, and accented) and JSONB object online_courses',
+      'When Supabase is on Schema V2 (missing ktn_search_students RPC, search_text column, and ktn_provisioning_jobs table, with 1,000-row PostgREST page cap), search fallback paginates and accurately finds Vietnamese accented student names and idempotency replay persists via Schema V2 fallback',
       legacyUnaccentedSearch.status === 200 &&
         foundUnaccented &&
         legacyConcatenatedSearch.status === 200 &&
@@ -3050,8 +3088,9 @@ async function runSuite() {
         legacyAccentedSearch.status === 200 &&
         foundAccented &&
         legacyObjectCourseSearch.status === 200 &&
-        foundObjectCourse,
-      `unaccentedFound=${foundUnaccented}, concatenatedFound=${foundConcatenated}, accentedFound=${foundAccented}, objectCourseFound=${foundObjectCourse}`
+        foundObjectCourse &&
+        schemaV2IdemReplayed,
+      `unaccentedFound=${foundUnaccented}, concatenatedFound=${foundConcatenated}, accentedFound=${foundAccented}, objectCourseFound=${foundObjectCourse}, schemaV2IdemReplayed=${schemaV2IdemReplayed}`
     );
   }
 

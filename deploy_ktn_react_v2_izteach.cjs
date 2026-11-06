@@ -78,11 +78,16 @@ function parseArgs(argv) {
       args.build = true;
     } else if (a === '--allow-prod-page-overwrite') {
       args.allowProdOverwrite = true;
-    } else if (a === '--rollback' && argv[i + 1]) {
+    } else if (a === '--rollback' && argv[i + 1] === '--backup' && argv[i + 2]) {
+      args.rollbackManifest = argv[i + 2];
+      i += 2;
+    } else if ((a === '--rollback' || a === '--backup') && argv[i + 1] && !argv[i + 1].startsWith('--')) {
       args.rollbackManifest = argv[i + 1];
       i += 1;
     } else if (a.startsWith('--rollback=')) {
       args.rollbackManifest = a.slice('--rollback='.length);
+    } else if (a.startsWith('--backup=')) {
+      args.rollbackManifest = a.slice('--backup='.length);
     } else if (a === '--tag' && argv[i + 1]) {
       args.releaseTag = argv[i + 1];
       i += 1;
@@ -543,6 +548,89 @@ async function main() {
       throw new Error(`Rollback manifest not found at: ${rbPath}`);
     }
     const rbManifest = JSON.parse(fs.readFileSync(rbPath, 'utf8'));
+    fs.mkdirSync(REPORT_DIR, { recursive: true });
+    const rollbackReportPath = path.join(REPORT_DIR, 'v3-rollback-verification.json');
+
+    if (Array.isArray(rbManifest)) {
+      const targetPageId = args.pageId || rbManifest[0]?.customPage || DEFAULT_PAGE_ID;
+      const targetVendorId = rbManifest[0]?.vendorId || VENDOR_ID;
+      const combinedBackupHtml = extractCustomPageCombinedHtml(rbManifest);
+      console.log(
+        `[KTN-DEPLOY-V3] Loaded raw Custom Page viewData backup: sections=${rbManifest.length}, htmlBytes=${combinedBackupHtml.length}, pageId=${targetPageId}`
+      );
+      if (args.dryRun) {
+        fs.writeFileSync(
+          rollbackReportPath,
+          JSON.stringify(
+            {
+              ok: true,
+              mode: 'dry-run',
+              backupType: 'raw-custom-page-viewData',
+              customPageId: targetPageId,
+              sectionsCount: rbManifest.length,
+              combinedHtmlBytes: combinedBackupHtml.length,
+              verifiedAt: new Date().toISOString(),
+            },
+            null,
+            2
+          ),
+          'utf8'
+        );
+        console.log(
+          '[KTN-DEPLOY-V3] [DRY-RUN] Raw Custom Page backup verified and ready for rollback without touching live server.'
+        );
+        return;
+      }
+
+      assertCustomPageWriteAllowed(targetPageId, args.allowProdOverwrite);
+      const adminToken = await resolveIzTeachAdminToken();
+      const putUrl = `${IZTEACH_API_ORIGIN}/v3/vendor-setting/${targetVendorId}`;
+      const putRes = await fetch(putUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: adminToken,
+          'ol-client-id': CLIENT_ID,
+          'ol-vendor-id': targetVendorId,
+        },
+        body: JSON.stringify({
+          vendorSettingId: targetVendorId,
+          viewData: rbManifest,
+          isAddition: true,
+          url: args.slug || DEFAULT_SLUG,
+          title: 'Sổ Liên Lạc Điện Tử — Khổng Tử Nhí',
+          pageId: targetPageId,
+        }),
+      });
+      if (!putRes.ok) {
+        const errText = await putRes.text().catch(() => '');
+        throw new Error(`Raw Custom Page rollback PUT failed: HTTP ${putRes.status} ${errText}`);
+      }
+      const readback = await fetchCustomPageData(adminToken, targetPageId, targetVendorId);
+      const readbackHtml = extractCustomPageCombinedHtml(readback);
+      fs.writeFileSync(
+        rollbackReportPath,
+        JSON.stringify(
+          {
+            ok: true,
+            mode: 'live',
+            backupType: 'raw-custom-page-viewData',
+            customPageId: targetPageId,
+            restoredHtmlBytes: readbackHtml.length,
+            readAfterWriteVerified: readbackHtml.length > 0,
+            verifiedAt: new Date().toISOString(),
+          },
+          null,
+          2
+        ),
+        'utf8'
+      );
+      console.log(
+        `[KTN-DEPLOY-V3] ✅ LIVE RAW CUSTOM PAGE ROLLBACK COMPLETED & VERIFIED (${readbackHtml.length} bytes restored).`
+      );
+      return;
+    }
+
     const targetPageId = args.pageId || rbManifest.customPageId || DEFAULT_PAGE_ID;
     const targetVendorId = rbManifest.vendorId || VENDOR_ID;
     console.log(
@@ -553,9 +641,6 @@ async function main() {
       customPageId: targetPageId,
       vendorId: targetVendorId,
     });
-
-    fs.mkdirSync(REPORT_DIR, { recursive: true });
-    const rollbackReportPath = path.join(REPORT_DIR, 'v3-rollback-verification.json');
 
     if (args.dryRun) {
       fs.writeFileSync(
@@ -754,9 +839,14 @@ async function main() {
   if (existingPage) {
     const backupDir = path.join(__dirname, 'backups', 'cutover-2026-11-06');
     fs.mkdirSync(backupDir, { recursive: true });
-    const backupPath = path.join(backupDir, `custom-page-backup-${args.pageId}.json`);
-    fs.writeFileSync(backupPath, JSON.stringify(existingPage, null, 2), 'utf8');
-    console.log(`  [BACKUP SAVED] ${backupPath}`);
+    const existingCombinedHtml = extractCustomPageCombinedHtml(existingPage);
+    const primaryBackupPath = path.join(backupDir, `custom-page-backup-${args.pageId}.json`);
+    const targetBackupPath =
+      fs.existsSync(primaryBackupPath) && existingCombinedHtml.includes('ktn-react-v2-root')
+        ? path.join(backupDir, `custom-page-prev-react-${args.pageId}.json`)
+        : primaryBackupPath;
+    fs.writeFileSync(targetBackupPath, JSON.stringify(existingPage, null, 2), 'utf8');
+    console.log(`  [BACKUP SAVED] ${targetBackupPath}`);
   }
 
   console.log('\n[KTN-DEPLOY-V3] Step 3/3: Updating Custom Page SectionHtml & verifying read-after-write...');

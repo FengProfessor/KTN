@@ -24,7 +24,7 @@ import { KtnCourse, KtnHomework, KtnLessonUnit } from '@/types/ktn.types';
 
 export const LearningPage: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
@@ -46,6 +46,21 @@ export const LearningPage: React.FC = () => {
     return t === 'homework' || t === 'audio' ? t : 'overview';
   });
   const [mobileLessonDrawerOpen, setMobileLessonDrawerOpen] = useState(false);
+
+  const syncUrlParams = (
+    nextCourseId: string,
+    nextLessonNum: number,
+    nextTab?: 'overview' | 'audio' | 'homework'
+  ) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('courseId', nextCourseId);
+    next.set('lesson', String(nextLessonNum));
+    if (nextTab) {
+      if (nextTab === 'overview') next.delete('tab');
+      else next.set('tab', nextTab);
+    }
+    setSearchParams(next, { replace: true });
+  };
 
   // Sync deep-link query params (?courseId=...&lesson=...&tab=homework)
   useEffect(() => {
@@ -387,6 +402,7 @@ export const LearningPage: React.FC = () => {
                   onClick={() => {
                     setSelectedCourseId(course.id);
                     setSelectedLessonNum(1);
+                    syncUrlParams(course.id, 1, activeTab);
                   }}
                   className={`inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
                     activeCourse.id === course.id
@@ -465,6 +481,7 @@ export const LearningPage: React.FC = () => {
                           type="button"
                           onClick={() => {
                             setSelectedLessonNum(lesson.num);
+                            syncUrlParams(activeCourse.id, lesson.num, activeTab);
                             setMobileLessonDrawerOpen(false);
                           }}
                           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs ${
@@ -491,7 +508,10 @@ export const LearningPage: React.FC = () => {
                     <button
                       type="button"
                       data-testid="tab-lesson-overview"
-                      onClick={() => setActiveTab('overview')}
+                      onClick={() => {
+                        setActiveTab('overview');
+                        syncUrlParams(activeCourse.id, activeLesson.num, 'overview');
+                      }}
                       className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
                         activeTab === 'overview'
                           ? 'bg-red-800 text-white'
@@ -505,7 +525,10 @@ export const LearningPage: React.FC = () => {
                     <button
                       type="button"
                       data-testid="tab-lesson-audio"
-                      onClick={() => setActiveTab('audio')}
+                      onClick={() => {
+                        setActiveTab('audio');
+                        syncUrlParams(activeCourse.id, activeLesson.num, 'audio');
+                      }}
                       className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
                         activeTab === 'audio'
                           ? 'bg-red-800 text-white'
@@ -519,7 +542,10 @@ export const LearningPage: React.FC = () => {
                     <button
                       type="button"
                       data-testid="tab-lesson-homework"
-                      onClick={() => setActiveTab('homework')}
+                      onClick={() => {
+                        setActiveTab('homework');
+                        syncUrlParams(activeCourse.id, activeLesson.num, 'homework');
+                      }}
                       className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
                         activeTab === 'homework'
                           ? 'bg-red-800 text-white'
@@ -706,7 +732,10 @@ export const LearningPage: React.FC = () => {
                     key={lesson._id || lesson.num}
                     type="button"
                     data-testid={`lesson-sidebar-item-${lesson.num}`}
-                    onClick={() => setSelectedLessonNum(lesson.num)}
+                    onClick={() => {
+                      setSelectedLessonNum(lesson.num);
+                      syncUrlParams(activeCourse.id, lesson.num, activeTab);
+                    }}
                     className={`flex w-full items-start gap-3 rounded-xl p-3 text-left transition-all ${
                       isSelected
                         ? 'bg-red-50/95 ring-1 ring-red-200'

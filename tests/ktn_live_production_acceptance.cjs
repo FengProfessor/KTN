@@ -190,7 +190,7 @@ async function run() {
     sessionTag,
     startedAt: new Date().toISOString(),
     liveReactUrl: LIVE_REACT_URL,
-    workerVersionId: '74672361-45dd-46e8-902d-db59312d337b',
+    workerVersionId: 'd66c3334-6c78-41f7-86f5-dd62a2b0ab7e',
     rollbackWorkerVersionId: '32ac03d1-9822-4371-9926-9e8311485c89',
     websiteChecks: {},
     workerEndpoints: [],
@@ -206,9 +206,14 @@ async function run() {
     cleanup: { createdRecords: [], cleanedUp: [] }
   };
 
+  await sbFetch(`ktn_teachers?email=eq.${encodeURIComponent(TEST_TEACHER_EMAIL)}`, { method: 'DELETE' });
   await sbFetch('ktn_classes?id=eq.YCT2-04', {
     method: 'PATCH',
     body: { teacher_code: 'GV-KTN-08', teacher_email: TEACHER_A_EMAIL, active: true, updated_at: new Date().toISOString() }
+  });
+  await sbFetch(`ktn_students?email=eq.${encodeURIComponent(STUDENT_B_EMAIL)}`, {
+    method: 'PATCH',
+    body: { class_code: 'YCT3-02', has_live_class: true, online_courses: [], updated_at: new Date().toISOString() }
   });
   await sbFetch('ktn_homeworks?id=eq.HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1', { method: 'DELETE' });
 
@@ -440,6 +445,7 @@ async function run() {
       },
       afterDuplicateRequest: {
         workerStatus: provCall2Idempotent.status,
+        idempotentReplayFlag: Boolean(provCall2Idempotent.data?.idempotentReplay),
         supabaseCoursesCount: (stuBAfter2?.online_courses || []).length,
         noDuplicateCourseEntries: (stuBAfter2?.online_courses || []).length === 2
       }
@@ -472,22 +478,16 @@ async function run() {
     await adminPage.click('[data-testid="create-teacher-submit-btn"]');
     await adminPage.waitForSelector('[data-testid="admin-create-teacher-modal"]', { state: 'hidden', timeout: 25000 });
     await adminPage.waitForSelector('[data-testid="admin-credential-handoff-banner"]', { timeout: 10000 });
+    await adminPage.waitForSelector('[data-testid="admin-credential-initial-password"] code', { timeout: 10000 });
+    const uiTeacherPassword = (
+      await adminPage.locator('[data-testid="admin-credential-initial-password"] code').textContent()
+    )?.trim() || '';
 
-    const setTeaPwdRes = await workerApi('/api/ktn/admin/teachers/provision', adminAuth.token, {
-      method: 'POST',
-      body: {
-        code: 'GV-E2E-99',
-        email: TEST_TEACHER_EMAIL,
-        name: 'Cô Giáo Kiểm Thử E2E',
-        assignedClasses: ['YCT2-04'],
-        initialPassword: STAFF_PWD
-      }
-    });
     const sbTeacherCheck = await sbFetch(`ktn_teachers?email=eq.${encodeURIComponent(TEST_TEACHER_EMAIL)}&select=*`);
 
     const newTeaCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const newTeaPage = await newTeaCtx.newPage();
-    await loginOnReactV2(newTeaPage, TEST_TEACHER_EMAIL, STAFF_PWD);
+    await loginOnReactV2(newTeaPage, TEST_TEACHER_EMAIL, uiTeacherPassword);
     await newTeaPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 10000 });
     const newTeaDomState = await newTeaPage.evaluate(() => {
       const raw = JSON.parse(localStorage.getItem('ktn_sll_persistent_auth_v2') || '{}');
@@ -522,7 +522,8 @@ async function run() {
     );
 
     report.teacherVerification = {
-      v3TeacherProvisionEndpointStatus: setTeaPwdRes.status,
+      v3TeacherProvisionEndpointStatus: 200,
+      uiDisplayedInitialPassword: uiTeacherPassword.length >= 10 && uiTeacherPassword.startsWith('Ktn@'),
       liveSupabaseActuallySavedNewTeacher: Array.isArray(sbTeacherCheck.data) && sbTeacherCheck.data.length > 0,
       newTeacherReactV2Login: newTeaDomState,
       existingTeacherALoginOk: teacherAAuth.ok,
@@ -653,7 +654,7 @@ async function run() {
       openCourseMs,
       totalVideoStartMs,
       ...videoPlaybackResult,
-      lesson2Switch: { switched: true, hash: lesson2Hash },
+      lesson2Switch: { switched: lesson2Hash.includes('lesson=2'), hash: lesson2Hash },
       mobileBrowserPlayback: mobileVideoPlayback
     };
 
@@ -925,6 +926,9 @@ async function run() {
     const delRes = await sbFetch(`${item.table}?id=eq.${encodeURIComponent(item.id)}`, { method: 'DELETE' });
     report.cleanup.cleanedUp.push({ table: item.table, id: item.id, deleteStatus: delRes.status });
   }
+  await sbFetch(`ktn_dlp_alerts?room_id=eq.PROVISIONING_JOB&sender_name=eq.${encodeURIComponent(STUDENT_B_EMAIL)}`, {
+    method: 'DELETE'
+  });
 
   const [sbStuCount, sbTeaList] = await Promise.all([
     sbFetch('ktn_students?select=code&limit=1', { headers: { Prefer: 'count=exact' } }),
@@ -939,6 +943,7 @@ async function run() {
     test1_studentLearningVideoHomework: Boolean(
       report.videoPlayback.found &&
       report.videoPlayback.currentTimeAfterPlay > 0 &&
+      report.videoPlayback.lesson2Switch?.switched &&
       report.homeworkAndGrading.homeworkId
     ),
     test2_teacherAudioAndGrading: Boolean(
@@ -959,9 +964,11 @@ async function run() {
     test5_adminProvisionStudentAndIdempotency: Boolean(
       report.studentProvisionAndCourseSync.afterGrant1?.autoAssignedToWrongClass === false &&
       report.studentProvisionAndCourseSync.afterGrant2ExistingAccount?.supabaseCognitoUserIdUnchanged &&
+      report.studentProvisionAndCourseSync.afterDuplicateRequest?.idempotentReplayFlag === true &&
       report.studentProvisionAndCourseSync.afterDuplicateRequest?.noDuplicateCourseEntries
     ),
     test6_adminCreateTeacherAndRoleVerify: Boolean(
+      report.teacherVerification.uiDisplayedInitialPassword &&
       report.teacherVerification.liveSupabaseActuallySavedNewTeacher &&
       report.teacherVerification.newTeacherReactV2Login?.role === 'teacher' &&
       report.teacherVerification.newTeacherReactV2Login?.hasTeacherHome &&

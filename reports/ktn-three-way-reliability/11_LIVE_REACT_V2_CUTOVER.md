@@ -1,7 +1,7 @@
 # 11. BÁO CÁO NGHIỆM THU CHUYỂN ĐỔI LIVE PRODUCTION REACT V2 & BACKEND V3 (LIVE CUTOVER)
 
 - **Ngày thực hiện**: `06/11/2026`
-- **Phiên kiểm thử nghiệm thu**: `LIVE-CUTOVER-1793941293312`
+- **Phiên kiểm thử nghiệm thu**: `LIVE-CUTOVER-1793941938951`
 - **Môi trường đích**: Production (`https://khongtunhi.com`)
 - **Trạng thái cuối**: **HOÀN TẤT CHUYỂN ĐỔI LIVE & NGHIỆM THU 8/8 GOLDEN PATHS (`LIVE PASS`)**
 
@@ -63,13 +63,13 @@ Toàn bộ **8/8 kịch bản Golden Path** trên trình duyệt Chromium thực
 |---|---|---|
 | **Giao diện React V2 trên URL live** | **LIVE PASS** | `https://khongtunhi.com/custom-page/so-lien-lac-test` hiển thị `#ktn-react-v2-root`, ẩn hoàn toàn khung HTML cũ (`hasLegacyDom=false`), tải đầy đủ 8 gói bundle từ CloudFront (`200 OK`). |
 | **Student / Teacher / Admin đăng nhập** | **LIVE PASS** | Đăng nhập thành công cả 3 vai trò trên giao diện React V2, lưu phiên `ktn_sll_persistent_auth_v2`, F5 giữ nguyên phiên, không bị script ngoài tự đẩy về `/?login=1`. |
-| **Video phát thật** | **LIVE PASS** | Phát luồng HLS thật (`.m3u8` `200`, `.ts` `200`, `0` lỗi `403/404`), `readyState=4`, `858×480`, TTFF Desktop `889,6 ms` / Mobile `1.368,1 ms`, chuyển bài 1↔2 cập nhật đúng hash `#/learning?courseId=6adadba969897b0002482ca5&lesson=2`. |
-| **Nộp bài, Teacher nghe bài & chấm bài qua UI, Student xem điểm** | **LIVE PASS** | Học viên tải tệp `.wav` lên S3 (`200 OK`) & nộp bài (`HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1`); Giáo viên nghe `<audio controls>` ngay trên `#/teacher/grading` (`audioPlayerPresent=true`), chấm `9.5/10` + nhận xét; Học viên thấy điểm `9.5 / 10` sau khi tải lại. |
-| **Chat & Thông báo deep-link** | **LIVE PASS** | Chat 2 chiều thời gian thực (`~2,1–2,3s`) gồm văn bản + tin nhắn thoại `.wav`; bấm thông báo chấm bài điều hướng đúng `#/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework`; đánh dấu đã đọc bền vững sau F5; chặn RBAC chéo lớp `403 Forbidden`. |
+| **Video phát thật** | **LIVE PASS** | Phát luồng HLS thật (`.m3u8` `200`, `.ts` `200`, `0` lỗi `403/404`), `readyState=4`, `858×480`, TTFF Desktop `959,8 ms` / Mobile `1.065,1 ms`, chuyển bài 1↔2 cập nhật đúng hash `#/learning?courseId=6adadba969897b0002482ca5&lesson=2`. |
+| **Nộp bài, Teacher nghe bài & chấm bài qua UI, Student xem điểm** | **LIVE PASS** | Học viên tải tệp `.wav` lên S3 (`200 OK`) & nộp bài (`HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1`); Giáo viên nghe `<audio controls>` ngay trên `#/teacher/grading` (`audioPlayerPresent=true`), chấm `9.5/10` + nhận xét; Học viên thấy điểm `9.5 / 10` và thẻ `NHẬN XÉT GIÁO VIÊN` sau khi tải lại. |
+| **Chat & Thông báo deep-link** | **LIVE PASS** | Chat 2 chiều thời gian thực (`~2,0–2,3s`) gồm văn bản + tin nhắn thoại `.wav`; bấm thông báo chấm bài điều hướng đúng `#/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework`; đánh dấu đã đọc bền vững sau F5; chặn RBAC chéo lớp `403 Forbidden`. |
 | **Admin tạo học viên & izTeach đồng bộ** | **LIVE PASS** | Tạo/cấp khóa trên `#/admin/students` giữ `class_code=null` (`autoAssignedToWrongClass=false`), hiển thị đúng thông báo tài khoản hiện có, đồng bộ khóa `HSK1 3.0` + `CFK` cả 3 nơi, gọi lặp cùng `Idempotency-Key` trả `idempotentReplayFlag=true` và không nhân đôi khóa học (`supabaseCoursesCount=2`). |
 | **Admin tạo giáo viên** | **LIVE PASS** | Tạo giáo viên trên `#/admin/classes` hiển thị mật khẩu khởi tạo 1 lần (`uiDisplayedInitialPassword=true`), lưu thật vào `ktn_teachers`, đăng nhập ngay vào React V2 với đúng `role="teacher"`, `hasTeacherHome=true`, `hasAdminHome=false`. |
 | **Admin tìm học viên (> 1.000 dòng)** | **LIVE PASS** | Tìm `"Hoàng Ngân"` (`9` kết quả) = `"hoang ngan"` (`9` kết quả), tìm email `1` kết quả; phân trang `offset=1000&limit=50` trả về `46` dòng cuối (`totalCount=1046`), `GET /api/ktn/students` trả đủ `1.046` dòng. |
-| **Mobile viewport** | **LIVE PASS** | Kiểm thử thực tế trên `390×844` và `360×800`: tràn ngang `0px` (`horizontalOverflowPx=0`), phát video HLS mượt (`readyState=4`, TTFF `1.368,1 ms`), ngăn kéo bài giảng và thanh điều hướng dưới hoạt động tốt. |
+| **Mobile viewport** | **LIVE PASS** | Kiểm thử thực tế trên `390×844` và `360×800`: tràn ngang `0px` (`horizontalOverflowPx=0`), phát video HLS mượt (`readyState=4`, TTFF `1.065,1 ms`), ngăn kéo bài giảng và thanh điều hướng dưới hoạt động tốt. |
 
 ---
 
@@ -84,7 +84,7 @@ Toàn bộ **8/8 kịch bản Golden Path** trên trình duyệt Chromium thực
 - **Branch**: `origin/feat/ktn-react-ui-v2`
 - **Static Bundle Release Prefix (CDN & `#ktn-react-v2-root[data-ktn-commit]`)**: `v3.0.0-b1cb988` (`b1cb988b0720a10ab097d2b92bad5e69119660fa`)
 - **Worker V3 & Cutover Implementation Commit SHA**: `bfe6e8f` (`bfe6e8f0b6fabe0b78de21912c90621ae239e853`)
-- **Live E2E Acceptance & Screenshot PII Redaction Commit SHA**: `a148ba3` (`a148ba3b57c709c3078323589e77111477446b3f`)
+- **Live E2E Acceptance & Screenshot PII Redaction Commit SHAs**: `a148ba3` (`a148ba3b57c709c3078323589e77111477446b3f`), `9fe93ea`, `b266b09` (`b266b095c250e82ffed4533a320b779d7b646349`)
 
 ### 3. Worker deployment ID mới và cũ
 - **Cloudflare Worker Name**: `ktn-sw-proxy` (`https://khongtunhi.com/api/ktn/*` & `https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev`)
@@ -116,10 +116,10 @@ Toàn bộ **8/8 kịch bản Golden Path** trên trình duyệt Chromium thực
 
 | # | Kịch bản kiểm thử (Live React V2) | Vai trò | Bằng chứng & Chỉ số thực tế | Kết quả |
 |---|---|---|---|---|
-| **Test 1** | Đăng nhập Học viên, mở khóa `HSK1 3.0`, phát video HLS thật (`.m3u8` / `.ts`), chuyển bài 1↔2 cập nhật hash URL, tải tệp `.wav` lên S3 & nộp bài tập | Student (`e2e.hs.a@khongtunhi.com`) | Manifest `.m3u8` `200`, Segment `.ts` `200`, `readyState=4`, `858×480`, TTFF Desktop `889,6 ms` / Mobile `1.368,1 ms`, `lesson2Switch.hash="#/learning?courseId=6adadba969897b0002482ca5&lesson=2"`, nộp bài `.wav` thành công (`HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1`). | **PASS** |
+| **Test 1** | Đăng nhập Học viên, mở khóa `HSK1 3.0`, phát video HLS thật (`.m3u8` / `.ts`), chuyển bài 1↔2 cập nhật hash URL, tải tệp `.wav` lên S3 & nộp bài tập | Student (`e2e.hs.a@khongtunhi.com`) | Manifest `.m3u8` `200`, Segment `.ts` `200`, `readyState=4`, `858×480`, TTFF Desktop `959,8 ms` / Mobile `1.065,1 ms`, `lesson2Switch.hash="#/learning?courseId=6adadba969897b0002482ca5&lesson=2"`, nộp bài `.wav` thành công (`HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1`). | **PASS** |
 | **Test 2** | Giáo viên đăng nhập, mở `#/teacher/grading`, nghe trình phát `<audio controls>` ngay trên màn hình, chấm `9.5/10` + nhận xét | Teacher (`linh.lam@khongtunhi.com`) | `[data-testid^="teacher-homework-audio-"]` hiển thị (`audioPlayerPresent=true`), chấm `9.5/10` đồng bộ Supabase (`status="graded"`, `score=9.5`). | **PASS** |
-| **Test 3** | Học viên nhận điểm `9.5/10` & nhận xét của giáo viên, nhận thông báo chấm bài, bấm thông báo mở đúng bài tập (`deep-link`), F5 giữ nguyên | Student (`e2e.hs.a@khongtunhi.com`) | Hiển thị `Điểm: 9.5 / 10` (`feedbackBoxVisible=true`), bấm thông báo điều hướng chính xác tới `#/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework`. | **PASS** |
-| **Test 4** | Chat 2 chiều thời gian thực (văn bản + thu âm giọng nói `.wav`), đồng bộ đã đọc thông báo & kiểm tra chặn RBAC chéo lớp | Student A ↔ Teacher A / Teacher B / Student B | Tin nhắn văn bản (`~2,1–2,3s`) & tin nhắn thoại (`data:audio/wav`) hiển thị kèm trình phát âm thanh (`[data-testid="chat-message-bubble"]`); Giáo viên lớp khác (`thu.ha`) và Học viên lớp khác (`e2e.hs.b`) bị chặn `403 Forbidden`. | **PASS** |
+| **Test 3** | Học viên nhận điểm `9.5/10` & nhận xét của giáo viên, nhận thông báo chấm bài, bấm thông báo mở đúng bài tập (`deep-link`), F5 giữ nguyên | Student (`e2e.hs.a@khongtunhi.com`) | Hiển thị thẻ `NHẬN XÉT GIÁO VIÊN` & `Điểm: 9.5 / 10` (`feedbackBoxVisible=true`), bấm thông báo điều hướng chính xác tới `#/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework`. | **PASS** |
+| **Test 4** | Chat 2 chiều thời gian thực (văn bản + thu âm giọng nói `.wav`), đồng bộ đã đọc thông báo & kiểm tra chặn RBAC chéo lớp | Student A ↔ Teacher A / Teacher B / Student B | Tin nhắn văn bản (`~2,0–2,3s`) & tin nhắn thoại (`data:audio/wav`) hiển thị kèm trình phát âm thanh (`[data-testid="chat-message-bubble"]`); Giáo viên lớp khác (`thu.ha`) và Học viên lớp khác (`e2e.hs.b`) bị chặn `403 Forbidden`. | **PASS** |
 | **Test 5** | Admin cấp quyền học viên mới / hiện có trên `#/admin/students`, không tự gán nhầm vào lớp `YCT2-04`, bàn giao thông tin đăng nhập & chống trùng lặp (`Idempotency-Key`) | Admin (`quanly@khongtunhi.com`) | Modal tạo học viên hoạt động trên React V2, `class_code=null` (`autoAssignedToWrongClass=false`), mở khóa `HSK1 3.0` + `CFK` đồng bộ cả 3 nơi, gọi lặp trả `idempotentReplayFlag=true` và không nhân đôi khóa học (`supabaseCoursesCount=2`). | **PASS** |
 | **Test 6** | Admin tạo giáo viên mới trên `#/admin/classes`, hiển thị mật khẩu khởi tạo 1 lần, lưu thật vào `ktn_teachers`, đăng nhập đúng vai trò `teacher` | Admin & New Teacher (`e2e.gv.test@khongtunhi.com`) | Hiển thị mật khẩu khởi tạo 1 lần (`uiDisplayedInitialPassword=true`), lưu thật vào `ktn_teachers` (`liveSupabaseActuallySavedNewTeacher=true`), đăng nhập vào React V2 bằng mật khẩu trên giao diện nhận đúng `role="teacher"`, `hasTeacherHome=true`, `hasAdminHome=false`. | **PASS** |
 | **Test 7** | Tìm kiếm học viên tiếng Việt có dấu / không dấu / email & phân trang vượt mốc `1.000` dòng | Admin (`quanly@khongtunhi.com`) | Tìm `"Hoàng Ngân"` (`9` kết quả) = `"hoang ngan"` (`9` kết quả), tìm email `1` kết quả; phân trang `offset=1000&limit=50` trả về `46` dòng cuối (`totalCount=1046`), `GET /api/ktn/students` trả đủ `1.046` dòng. | **PASS** |
@@ -137,7 +137,7 @@ Toàn bộ ảnh chụp màn hình thực tế từ phiên nghiệm thu (đã �
 - `10-live-react-video-playing.png` (Học viên phát video bài giảng HLS thật trên Desktop `858×480`, `readyState=4`)
 - `11-live-react-homework-submitted.png` (Học viên tải tệp `.wav` lên S3 và nộp bài tập thành công)
 - `12-live-react-teacher-grading.png` (Giáo viên nghe `<audio controls>` trực tiếp và chấm `9.5/10`)
-- `13-live-react-student-graded.png` (Học viên xem điểm `9.5/10` và lời phê của giáo viên sau khi tải lại)
+- `13-live-react-student-graded.png` (Học viên xem thẻ `NHẬN XÉT GIÁO VIÊN`, điểm `9.5/10` và lời phê của giáo viên sau khi tải lại)
 - `14-live-react-two-account-chat.png` (Phòng chat lớp `YCT2-04` 2 chiều hiển thị đầy đủ bong bóng tin nhắn `[data-testid="chat-message-bubble"]` + tin nhắn thoại `.wav`, không có khung xương loading và đã ẩn phòng 1-1 ngoài tập test)
 - `15-live-react-notifications.png` (Trung tâm thông báo & điều hướng deep-link của Học viên)
 - `16-live-react-search-results.png` (Tìm kiếm học viên `e2e.hs.` trực tiếp trên giao diện Admin React V2)
@@ -145,7 +145,7 @@ Toàn bộ ảnh chụp màn hình thực tế từ phiên nghiệm thu (đã �
 ### 8. Danh sách dữ liệu test đã tạo và đã dọn
 - **Bản ghi đã tạo trong phiên E2E và đã xóa hoàn toàn (`HTTP 204`)**:
   - `ktn_homeworks`: `HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1` (`DELETE 204`)
-  - `ktn_messages`: `MSG-1793941376367-tpwc`, `MSG-1793941378647-j9ac`, `MSG-1793941381855-bx57` (`DELETE 204`)
+  - `ktn_messages`: `MSG-1793942028510-hkto`, `MSG-1793942030785-zi5i`, `MSG-1793942033907-1ck9` (`DELETE 204`)
   - `ktn_teachers`: `e2e.gv.test@khongtunhi.com` (`GV-E2E-99`, `DELETE 204`, khôi phục lớp `YCT2-04` về `GV-KTN-08`)
   - `ktn_dlp_alerts`: Bản ghi `room_id=PROVISIONING_JOB` của `e2e.hs.b@khongtunhi.com` (`DELETE 204`)
 - **Tài khoản kiểm thử đã khôi phục trạng thái gốc**:

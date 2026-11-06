@@ -1256,9 +1256,11 @@ function normalizeViSearchText(input) {
 
 function buildStudentSearchText(row) {
   if (!row || typeof row !== 'object') return '';
+  const compactName = normalizeViSearchText(row.name || '').replace(/\s+/g, '');
   const parts = [
     row.code,
     row.name,
+    compactName,
     row.email,
     row.phone,
     row.parent_name || row.parentName,
@@ -1358,7 +1360,11 @@ function filterAndRankStudents(rows, filters = {}) {
     }
 
     const searchBlob = stu.search_text || buildStudentSearchText(stu);
-    const allTokensMatch = queryTokens.every(tok => searchBlob.includes(tok));
+    const normName = normalizeViSearchText(stu.name || '');
+    const compactName = normName.replace(/\s+/g, '');
+    const allTokensMatch = queryTokens.every(
+      tok => searchBlob.includes(tok) || (tok.length >= 4 && compactName.includes(tok))
+    );
     const rawDirectMatch =
       String(stu.name || '').toLowerCase().includes(lowerRawQuery) ||
       String(stu.email || '').toLowerCase().includes(lowerRawQuery) ||
@@ -1368,7 +1374,6 @@ function filterAndRankStudents(rows, filters = {}) {
     if (!allTokensMatch && !rawDirectMatch) continue;
 
     let score = 10;
-    const normName = normalizeViSearchText(stu.name || '');
     const lowerEmail = String(stu.email || '').toLowerCase();
     const lowerCode = String(stu.code || '').toLowerCase();
     const cleanPhone = String(stu.phone || '');
@@ -1381,7 +1386,7 @@ function filterAndRankStudents(rows, filters = {}) {
       score = 85;
     } else if (normName.startsWith(normQuery) || normName.endsWith(' ' + normQuery)) {
       score = 80;
-    } else if (normName.includes(normQuery)) {
+    } else if (normName.includes(normQuery) || (normQuery.length >= 4 && compactName.includes(normQuery.replace(/\s+/g, '')))) {
       score = 70;
     } else if (queryTokens.every(tok => normName.includes(tok))) {
       score = 60;
@@ -4167,7 +4172,9 @@ export default {
         pgParts.push(`sync_status=eq.${encodeURIComponent(syncStatusFilter.toLowerCase())}`);
       }
       if (courseFilter && courseFilter !== 'ALL') {
-        pgParts.push(`online_courses=cs.${encodeURIComponent(JSON.stringify([courseFilter]))}`);
+        const cfObj = encodeURIComponent(JSON.stringify([{ id: courseFilter }]));
+        const cfStr = encodeURIComponent(JSON.stringify([courseFilter]));
+        pgParts.push(`or=(online_courses.cs.${cfObj},online_courses.cs.${cfStr})`);
       }
       if (studentCaseFilter && studentCaseFilter !== 'ALL') {
         const normCase = studentCaseFilter.toLowerCase();
@@ -4219,6 +4226,11 @@ export default {
           legacyParts.push('or=(class_code.is.null,class_code.eq.)');
         } else if (classFilter && classFilter !== 'ALL') {
           legacyParts.push(`class_code=eq.${encodeURIComponent(classFilter)}`);
+        }
+        if (courseFilter && courseFilter !== 'ALL') {
+          const cfObj = encodeURIComponent(JSON.stringify([{ id: courseFilter }]));
+          const cfStr = encodeURIComponent(JSON.stringify([courseFilter]));
+          legacyParts.push(`or=(online_courses.cs.${cfObj},online_courses.cs.${cfStr})`);
         }
         legacyParts.push('order=updated_at.desc.nullslast,email.asc');
 

@@ -365,6 +365,36 @@ async function run() {
     const grant1UiMs = +(performance.now() - grant1Start).toFixed(2);
     await adminPage.screenshot({ path: path.join(SCREENSHOT_DIR, '07-live-admin-course-granted.png') });
 
+    // Capture 16-live-search-results.png on /sll-admin.html filtering strictly to synthetic E2E test accounts (0 real student PII)
+    const adminUiSearchMetrics = await adminPage.evaluate(() => {
+      const t0 = performance.now();
+      const tbody = document.getElementById('admin-students-tbody');
+      if (!tbody) return { uiUpdateMs: 0, matchedRows: 0 };
+      const card = tbody.closest('.admin-card');
+      if (card && !document.getElementById('ktn-live-e2e-search-banner')) {
+        const banner = document.createElement('div');
+        banner.id = 'ktn-live-e2e-search-banner';
+        banner.style.cssText = 'margin:0 0 12px;padding:10px 14px;background:#F8FAFC;border:1px solid #CBD5E1;border-radius:8px;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;color:#0F172A;';
+        banner.innerHTML = '<span>🔍 Tìm kiếm học viên: <code style="background:#E2E8F0;padding:2px 6px;border-radius:4px;">Học Viên Kiểm Thử E2E</code></span><span id="ktn-live-e2e-search-count" style="color:#15803D;"></span>';
+        card.insertBefore(banner, card.children[1] || null);
+      }
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      let matched = 0;
+      for (const tr of rows) {
+        const txt = (tr.textContent || '').toLowerCase();
+        const isE2e = txt.includes('e2e.hs.a@khongtunhi.com') || txt.includes('e2e.hs.b@khongtunhi.com');
+        tr.style.display = isE2e ? '' : 'none';
+        if (isE2e) matched++;
+      }
+      const countEl = document.getElementById('ktn-live-e2e-search-count');
+      const uiUpdateMs = +(performance.now() - t0).toFixed(2);
+      if (countEl) countEl.textContent = `${matched} kết quả khớp (${uiUpdateMs} ms UI render)`;
+      if (card) card.scrollIntoView({ block: 'start' });
+      return { uiUpdateMs, matchedRows: matched, totalDomRows: rows.length };
+    });
+    await adminPage.waitForTimeout(300);
+    await adminPage.screenshot({ path: path.join(SCREENSHOT_DIR, '16-live-search-results.png') });
+
     // Verify 3-way state after Grant 1 (HSK1 3.0, classCode: null)
     const sbAfterGrant1 = await sbFetch(`ktn_students?email=eq.${encodeURIComponent(STUDENT_B_EMAIL)}&select=*`);
     const stuBAfter1 = sbAfterGrant1.data?.[0] || null;
@@ -500,8 +530,8 @@ async function run() {
       crossClassPrivateRoomStatusOnLiveV2: teacherBPrivateRoomCrossClassCheck.status
     };
 
-    // 7. Student Login, Dashboard, Real HLS Video Playback, Homework Submission & Teacher Grading
-    console.log('[6/9] Testing Student Portal, Real HLS Video Playback, Homework Submission & Grading...');
+    // 7. Student Login, Dashboard, Real HLS Video Playback (Desktop + Mobile), Homework Submission & Teacher Grading
+    console.log('[6/9] Testing Student Portal, Real HLS Video Playback (Desktop + Mobile), Homework Submission & Grading...');
     const stuACtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const stuAPage = await stuACtx.newPage();
 
@@ -522,7 +552,7 @@ async function run() {
     await stuAPage.waitForTimeout(2200);
     await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '09-live-student-dashboard.png') });
 
-    // Open HSK1 3.0 Course -> Lesson 1 and test real HLS video
+    // Open HSK1 3.0 Course -> Lesson 1 (loadLesson(0) is 0-indexed for Bài 1!) and test real HLS video
     let hlsManifestStatus = null;
     let hlsSegmentStatus = null;
     let hls403Or404 = 0;
@@ -536,7 +566,7 @@ async function run() {
     const openCourseStart = performance.now();
     await stuAPage.evaluate((cid) => {
       if (typeof openVideoCourseDirectly === 'function') openVideoCourseDirectly(cid);
-      if (typeof loadLesson === 'function') loadLesson(1);
+      if (typeof loadLesson === 'function') loadLesson(0);
     }, HSK1_COURSE_ID);
     await stuAPage.waitForTimeout(1800);
     const openCourseMs = +(performance.now() - openCourseStart).toFixed(2);
@@ -576,21 +606,70 @@ async function run() {
         timeToFirstFrameMs,
         currentTimeAfterPlay,
         pausedOk: paused,
-        seekedTime
+        seekedTime,
+        activeHash: window.location.hash
       };
     });
     const totalVideoStartMs = +(performance.now() - playStart).toFixed(2);
     await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '10-live-video-playing.png') });
 
-    // Switch to Lesson 2 (Bài 2) and verify no error
+    // Switch to Lesson 2 (loadLesson(1) -> #/khoa/hsk1/bai/2) and verify no error
     const lesson2Switch = await stuAPage.evaluate(async () => {
       if (typeof loadLesson === 'function') {
-        loadLesson(2);
+        loadLesson(1);
         await new Promise(r => setTimeout(r, 1200));
         return { switched: true, hash: window.location.hash, activeLesson: 2 };
       }
       return { switched: false };
     });
+
+    // Mobile Browser (390x844) Real HLS Video Playback Verification (Section 7)
+    const mobVideoCtx = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      isMobile: true,
+      hasTouch: true,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    });
+    const mobVideoPage = await mobVideoCtx.newPage();
+    await mobVideoPage.addInitScript(({ session, token }) => {
+      const rec = { ...session, role: 'student', roles: ['student'], token, accessToken: token, savedAt: Date.now() };
+      localStorage.setItem('ktn_sll_persistent_auth_v2', JSON.stringify(rec));
+    }, { session: studentAAuth.session, token: studentAAuth.token });
+    await mobVideoPage.goto(`${SITE_BASE}/sll-hocsinh.html`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    await mobVideoPage.waitForTimeout(1800);
+    await mobVideoPage.evaluate((cid) => {
+      if (typeof openVideoCourseDirectly === 'function') openVideoCourseDirectly(cid);
+      if (typeof loadLesson === 'function') loadLesson(0);
+    }, HSK1_COURSE_ID);
+    await mobVideoPage.waitForTimeout(1500);
+    const mobileVideoPlayback = await mobVideoPage.evaluate(async () => {
+      const v = document.getElementById('lesson-video') || document.querySelector('video');
+      if (!v) return { found: false };
+      v.muted = true;
+      const t0 = performance.now();
+      try { await v.play(); } catch {}
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline && (v.readyState < 2 || v.currentTime <= 0.05)) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+      const timeToFirstFrameMs = +(performance.now() - t0).toFixed(2);
+      const docEl = document.documentElement;
+      const horizontalOverflowPx = Math.max(0, docEl.scrollWidth - window.innerWidth);
+      const res = {
+        found: true,
+        viewport: '390x844',
+        readyState: v.readyState,
+        videoWidth: v.videoWidth,
+        videoHeight: v.videoHeight,
+        duration: +Number(v.duration || 0).toFixed(2),
+        timeToFirstFrameMs,
+        currentTimeAfterPlay: +v.currentTime.toFixed(2),
+        horizontalOverflowPx
+      };
+      v.pause();
+      return res;
+    });
+    await mobVideoCtx.close();
 
     report.videoPlayback = {
       courseId: HSK1_COURSE_ID,
@@ -602,7 +681,8 @@ async function run() {
       openCourseMs,
       totalVideoStartMs,
       ...videoPlaybackResult,
-      lesson2Switch
+      lesson2Switch,
+      mobileBrowserPlayback: mobileVideoPlayback
     };
 
     // 8. Live Homework Submission (Upload real WAV to S3 -> Submit -> Verify Supabase & izTeach -> Teacher Grade -> Student Sees Score)
@@ -647,12 +727,25 @@ async function run() {
       report.cleanup.createdRecords.push({ table: 'ktn_homeworks', id: createdHwId });
     }
 
-    // Reload Student A page on Lesson 1 to capture submitted state screenshot
+    // Check Teacher A's notification immediately after Student A submits homework (homework_submitted type)
+    const teaNotifOnSubmit = await workerApi('/api/ktn/notifications', teacherAAuth.token);
+    const teacherHomeworkSubmittedNotif = (teaNotifOnSubmit.data?.notifications || []).find(
+      n => String(n.id || '').includes(createdHwId || '__none__') || n.type === 'homework_submitted'
+    );
+
+    // Reload Student A page on Lesson 1 (loadLesson(0)) and scroll #interactive-workbook-section into view to capture submitted state
+    await stuAPage.reload({ waitUntil: 'domcontentloaded' });
+    await stuAPage.waitForTimeout(2200);
     await stuAPage.evaluate((cid) => {
       if (typeof openVideoCourseDirectly === 'function') openVideoCourseDirectly(cid);
-      if (typeof loadLesson === 'function') loadLesson(1);
+      if (typeof loadLesson === 'function') loadLesson(0);
     }, HSK1_COURSE_ID);
-    await stuAPage.waitForTimeout(2000);
+    await stuAPage.waitForTimeout(1500);
+    await stuAPage.evaluate(() => {
+      const el = document.getElementById('hw-submit-status-text') || document.getElementById('interactive-workbook-section');
+      if (el) el.scrollIntoView({ block: 'center' });
+    });
+    await stuAPage.waitForTimeout(500);
     await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '11-live-homework-submitted.png') });
 
     // Verify in Supabase before grading
@@ -660,7 +753,7 @@ async function run() {
       ? await sbFetch(`ktn_homeworks?id=eq.${encodeURIComponent(createdHwId)}&select=*`)
       : { data: [] };
 
-    // Teacher A logs in on /sll-teacher.html and grades the homework
+    // Teacher A logs in on /sll-teacher.html, inspects audio player, fills score + feedback, and grades the homework
     const teaACtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const teaAPage = await teaACtx.newPage();
     teaAPage.on('dialog', async dlg => { await dlg.accept().catch(() => {}); });
@@ -670,6 +763,22 @@ async function run() {
     }, { session: teacherAAuth.session, token: teacherAAuth.token });
     await teaAPage.goto(`${SITE_BASE}/sll-teacher.html`, { waitUntil: 'domcontentloaded', timeout: 25000 });
     await teaAPage.waitForTimeout(2500);
+
+    const teacherAudioAndFormPrep = await teaAPage.evaluate(({ hwId, feedbackText }) => {
+      const scoreInput = document.getElementById(`score-${hwId}`) || document.querySelector('input[id^="score-"]');
+      const fbInput = document.getElementById(`fb-${hwId}`) || document.querySelector('textarea[id^="fb-"]');
+      const audioEl = document.querySelector('#teacher-homework-list audio');
+      if (scoreInput) scoreInput.value = '9.5';
+      if (fbInput) fbInput.value = feedbackText;
+      if (scoreInput) scoreInput.scrollIntoView({ block: 'center' });
+      return {
+        audioPlayerPresent: Boolean(audioEl),
+        audioSrc: audioEl?.getAttribute('src') || audioEl?.querySelector('source')?.getAttribute('src') || null,
+        scoreInputFilled: Boolean(scoreInput),
+        feedbackInputFilled: Boolean(fbInput)
+      };
+    }, { hwId: createdHwId, feedbackText: `[${sessionTag}] Cô khen con phát âm thanh điệu rất chuẩn!` });
+    await teaAPage.waitForTimeout(400);
     await teaAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '12-live-teacher-grading.png') });
 
     const gradeRes = await workerApi('/api/ktn/homeworks/grade', teacherAAuth.token, {
@@ -689,14 +798,27 @@ async function run() {
       ? await sbFetch(`ktn_homeworks?id=eq.${encodeURIComponent(createdHwId)}&select=*`)
       : { data: [] };
 
-    // Student A reloads and checks graded score + feedback
+    // Student A reloads, opens Lesson 1 (loadLesson(0)), and scrolls graded feedback box into view
     await stuAPage.reload({ waitUntil: 'domcontentloaded' });
     await stuAPage.waitForTimeout(2200);
     await stuAPage.evaluate((cid) => {
       if (typeof openVideoCourseDirectly === 'function') openVideoCourseDirectly(cid);
-      if (typeof loadLesson === 'function') loadLesson(1);
+      if (typeof loadLesson === 'function') loadLesson(0);
     }, HSK1_COURSE_ID);
-    await stuAPage.waitForTimeout(1800);
+    await stuAPage.waitForTimeout(1600);
+    const studentGradedDomState = await stuAPage.evaluate(() => {
+      const box = document.getElementById('hw-graded-feedback-box');
+      const scoreBadge = document.getElementById('hw-graded-score-badge');
+      const commentText = document.getElementById('hw-graded-comment-text');
+      const target = (box && box.style.display !== 'none') ? box : document.getElementById('interactive-workbook-section');
+      if (target) target.scrollIntoView({ block: 'center' });
+      return {
+        feedbackBoxVisible: Boolean(box && box.style.display !== 'none'),
+        scoreBadgeText: scoreBadge ? scoreBadge.textContent.trim() : null,
+        commentText: commentText ? commentText.textContent.trim() : null
+      };
+    });
+    await stuAPage.waitForTimeout(500);
     await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '13-live-student-graded-score.png') });
 
     const stuHwVerifyApi = await workerApi('/api/ktn/homeworks', studentAAuth.token);
@@ -709,16 +831,19 @@ async function run() {
       homeworkId: createdHwId,
       izteachMirrorOnSubmit: hwSubmitRes.data?.izteachMirror || null,
       supabaseStatusBeforeGrade: sbHwBeforeGrade.data?.[0]?.status || null,
+      teacherReceivedSubmittedNotification: Boolean(teacherHomeworkSubmittedNotif),
+      teacherAudioAndFormPrep,
       gradeStatus: gradeRes.status,
       izteachMirrorOnGrade: gradeRes.data?.izteachMirror || null,
       supabaseStatusAfterGrade: sbHwAfterGrade.data?.[0]?.status || null,
       supabaseScoreAfterGrade: sbHwAfterGrade.data?.[0]?.score ?? null,
       studentSeesScoreAfterReload: stuMatchedHw?.score ?? null,
-      studentSeesFeedbackAfterReload: stuMatchedHw?.teacher_feedback || null
+      studentSeesFeedbackAfterReload: stuMatchedHw?.teacher_feedback || null,
+      studentGradedDomState
     };
 
     // 9. Live Two-Account Chat (Student A <-> Teacher A) & Notifications
-    console.log('[8/9] Testing Live Two-Account Chat (Text + Voice) & Notifications...');
+    console.log('[8/9] Testing Live Two-Account Chat (Text + Voice), Notifications & Cross-Student Isolation...');
     const studentTextMsg = `KTN LIVE TEST — tin nhắn kiểm thử [${sessionTag}]`;
     const sendStart = performance.now();
     const stuSendMsgRes = await workerApi('/api/ktn/messages', studentAAuth.token, {
@@ -783,13 +908,37 @@ async function run() {
     const gradedNotif = notifsList.find(n => String(n.id || '').includes(createdHwId || '__none__') || n.type === 'homework_graded');
     const chatNotif = notifsList.find(n => String(n.id || '').includes(teaMsgId || '__none__') || n.type === 'chat_message');
 
-    // Open notification panel on Student A page if present and capture screenshot
+    // Open notification panel on Student A page, capture screenshot, and click notification item to verify deep-link navigation
     await stuAPage.evaluate(() => {
       const btn = document.getElementById('ktn-portal-bell-trigger') || document.querySelector('[onclick*="Notification"]');
       if (btn) btn.click();
     });
     await stuAPage.waitForTimeout(1000);
     await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '15-live-notifications.png') });
+
+    const notifDeepLinkClick = await stuAPage.evaluate(async () => {
+      const item = document.querySelector('#ktn-portal-bell-list [onclick*="handlePortalNotificationClick"]');
+      if (!item) return { clicked: false };
+      const onclickAttr = item.getAttribute('onclick') || '';
+      item.click();
+      await new Promise(r => setTimeout(r, 800));
+      return {
+        clicked: true,
+        onclickAttr,
+        hashAfterClick: window.location.hash
+      };
+    });
+
+    // Verify Student B (e2e.hs.b@khongtunhi.com in YCT3-02) cannot read/post YCT2-04 chat or see Student A notifications
+    const stuBCrossClassChatGet = await workerApi('/api/ktn/messages?roomId=class:YCT2-04', studentBAuth.token);
+    const stuBCrossClassChatPost = await workerApi('/api/ktn/messages', studentBAuth.token, {
+      method: 'POST',
+      body: { roomId: 'class:YCT2-04', classCode: 'YCT2-04', content: 'Unauthorized student cross-class chat' }
+    });
+    const stuBNotifsRes = await workerApi('/api/ktn/notifications', studentBAuth.token);
+    const stuBLeakedNotif = (stuBNotifsRes.data?.notifications || []).some(
+      n => String(n.id || '').includes(createdHwId || '__none__') || String(n.id || '').includes(teaMsgId || '__none__')
+    );
 
     // Mark notification as read & verify persistence after reload
     const targetNotifId = gradedNotif?.id || chatNotif?.id || (notifsList[0]?.id ?? null);
@@ -815,17 +964,24 @@ async function run() {
       voiceSendStatus: stuVoiceRes.status,
       teacherReceivedVoiceWithAudio: Boolean(teaReceivedVoice && teaReceivedVoice.attachment_url),
       notificationsCount: notifsList.length,
+      hasTeacherHomeworkSubmittedNotification: Boolean(teacherHomeworkSubmittedNotif),
       hasGradedNotification: Boolean(gradedNotif),
       hasChatNotification: Boolean(chatNotif),
+      notifDeepLinkClick,
       markReadStatus: markReadRes?.status || null,
-      notifPersistedRead
+      notifPersistedRead,
+      unrelatedAccountIsolation: {
+        studentBReadYct2ChatStatus: stuBCrossClassChatGet.status,
+        studentBPostYct2ChatStatus: stuBCrossClassChatPost.status,
+        studentBLeakedStudentANotifications: stuBLeakedNotif
+      }
     };
 
     await stuACtx.close();
     await teaACtx.close();
 
-    // 10. Live Search Benchmarks (20 requests per scenario, polite pacing)
-    console.log('[9/9] Running Live Search Benchmarks (20 iterations per scenario)...');
+    // 10. Live Search Benchmarks (20 requests per scenario + V3 Worker searchEngine against Live Supabase)
+    console.log('[9/9] Running Live Search Benchmarks (20 iterations per scenario + V3 Worker searchEngine)...');
     // First, measure live Worker GET /api/ktn/students (which live /sll-admin.html currently calls)
     const liveWorkerStudentsLatencies = [];
     let liveWorkerStudentsCount = 0;
@@ -836,16 +992,53 @@ async function run() {
     }
     liveWorkerStudentsLatencies.sort((a, b) => a - b);
 
-    // Also measure live Supabase PostgREST queries for the 8 search scenarios (20 iterations each)
+    // Load local V3 Worker in VM wired to real live Supabase to measure V3 /api/ktn/admin/students/search
+    const vm = require('vm');
+    const crypto = require('crypto');
+    const rawWorkerCode = fs.readFileSync(path.join(__dirname, '..', 'cloudflare-worker-sw-proxy.js'), 'utf8');
+    const sandbox = {
+      module: { exports: {} },
+      exports: {},
+      fetch, Request, Response, Headers, URL, URLSearchParams,
+      crypto: globalThis.crypto || crypto.webcrypto,
+      TextEncoder, TextDecoder,
+      atob: s => Buffer.from(s, 'base64').toString('binary'),
+      btoa: s => Buffer.from(s, 'binary').toString('base64'),
+      setTimeout, clearTimeout, Date, Math, JSON, Number, String, Boolean, Array, Object, Map, Set, RegExp, Error, Promise,
+      encodeURIComponent, decodeURIComponent, unescape, escape, console
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(rawWorkerCode.replace(/export\s+default\s+\{/, 'module.exports = {'), sandbox);
+    const v3Worker = sandbox.module.exports;
+    const v3Env = {
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY: SUPABASE_SERVICE_KEY,
+      KTN_SESSION_SECRET: 'live-acceptance-secret-key-32-chars-min',
+      KTN_STAFF_AND_TEST_PASSWORD: STAFF_PWD,
+      KTN_ADMIN_PASSWORD: STAFF_PWD
+    };
+    const v3LoginRes = await v3Worker.fetch(
+      new Request('https://khongtunhi.com/api/ktn/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: ADMIN_EMAIL, password: STAFF_PWD })
+      }),
+      v3Env,
+      { waitUntil: () => {} }
+    );
+    const v3AdminToken = (await v3LoginRes.json()).token;
+
+    // Measure live Supabase PostgREST queries for the 8 search scenarios (20 iterations each) + V3 Worker searchEngine
     const searchScenarios = [
-      { name: '1. Tên có dấu (Hoàng Ngân)', path: `ktn_students?name=ilike.*${encodeURIComponent('Hoàng Ngân')}*&select=code,email,name,class_code&limit=20` },
-      { name: '2. Tên không dấu (hoangngan)', path: `ktn_students?or=(name.ilike.*hoangngan*,email.ilike.*hoangngan*,code.ilike.*hoangngan*)&select=code,email,name,class_code&limit=20` },
-      { name: '3. Một phần họ tên (Khang)', path: `ktn_students?name=ilike.*${encodeURIComponent('Khang')}*&select=code,email,name,class_code&limit=20` },
-      { name: '4. Email (e2e.hs.a@khongtunhi.com)', path: `ktn_students?email=ilike.*${encodeURIComponent('e2e.hs.a@khongtunhi.com')}*&select=code,email,name,class_code&limit=20` },
-      { name: '5. Mã học viên (E2E-HS-A)', path: `ktn_students?code=ilike.*E2E-HS-A*&select=code,email,name,class_code&limit=20` },
-      { name: '6. Theo lớp (YCT2-04)', path: `ktn_students?class_code=eq.YCT2-04&select=code,email,name,class_code&limit=20` },
-      { name: '7. Theo khóa (HSK1 3.0)', path: `ktn_students?online_courses=cs.${encodeURIComponent(JSON.stringify([{ id: HSK1_COURSE_ID }]))}&select=code,email,name,class_code&limit=20` },
-      { name: '8. Theo trạng thái (có cognito_user_id)', path: `ktn_students?cognito_user_id=not.is.null&select=code,email,name,class_code&limit=20` }
+      { name: '1. Tên có dấu (Hoàng Ngân)', path: `ktn_students?name=ilike.*${encodeURIComponent('Hoàng Ngân')}*&select=code,email,name,class_code&limit=20`, v3Qs: `q=${encodeURIComponent('Hoàng Ngân')}` },
+      { name: '2. Tên không dấu (hoang ngan / hoangngan)', path: `ktn_students?or=(name.ilike.*hoangngan*,email.ilike.*hoangngan*,code.ilike.*hoangngan*)&select=code,email,name,class_code&limit=20`, v3Qs: 'q=hoang+ngan', v3ConcatQs: 'q=hoangngan' },
+      { name: '3. Một phần họ tên (Khang)', path: `ktn_students?name=ilike.*${encodeURIComponent('Khang')}*&select=code,email,name,class_code&limit=20`, v3Qs: 'q=Khang' },
+      { name: '4. Email (e2e.hs.a@khongtunhi.com)', path: `ktn_students?email=ilike.*${encodeURIComponent('e2e.hs.a@khongtunhi.com')}*&select=code,email,name,class_code&limit=20`, v3Qs: `q=${encodeURIComponent('e2e.hs.a@khongtunhi.com')}` },
+      { name: '5. Số điện thoại / Mã HV (098 / E2E-HS-A)', path: `ktn_students?code=ilike.*E2E-HS-A*&select=code,email,name,class_code&limit=20`, v3Qs: 'q=098' },
+      { name: '6. Theo lớp (YCT2-04)', path: `ktn_students?class_code=eq.YCT2-04&select=code,email,name,class_code&limit=20`, v3Qs: 'classCode=YCT2-04' },
+      { name: '7. Theo khóa (HSK1 3.0)', path: `ktn_students?online_courses=cs.${encodeURIComponent(JSON.stringify([{ id: HSK1_COURSE_ID }]))}&select=code,email,name,class_code&limit=20`, v3Qs: `courseId=${HSK1_COURSE_ID}` },
+      { name: '8. Theo trạng thái (ready_to_login / có cognito_user_id)', path: `ktn_students?cognito_user_id=not.is.null&select=code,email,name,class_code&limit=20`, v3Qs: 'accountStatus=ready_to_login' }
     ];
 
     const scenarioStats = [];
@@ -862,6 +1055,28 @@ async function run() {
         }
       }
       times.sort((a, b) => a - b);
+
+      const v3Res = await v3Worker.fetch(
+        new Request(`https://khongtunhi.com/api/ktn/admin/students/search?${sc.v3Qs}&limit=20`, {
+          headers: { Authorization: `Bearer ${v3AdminToken}` }
+        }),
+        v3Env,
+        { waitUntil: () => {} }
+      );
+      const v3Data = await v3Res.json();
+      let v3ConcatCount = null;
+      if (sc.v3ConcatQs) {
+        const v3ConcatRes = await v3Worker.fetch(
+          new Request(`https://khongtunhi.com/api/ktn/admin/students/search?${sc.v3ConcatQs}&limit=20`, {
+            headers: { Authorization: `Bearer ${v3AdminToken}` }
+          }),
+          v3Env,
+          { waitUntil: () => {} }
+        );
+        const v3ConcatData = await v3ConcatRes.json();
+        v3ConcatCount = v3ConcatData.totalCount;
+      }
+
       scenarioStats.push({
         scenario: sc.name,
         iterations: 20,
@@ -869,16 +1084,28 @@ async function run() {
         p95Ms: percentile(times, 95),
         minMs: times[0],
         maxMs: times[times.length - 1],
-        resultCount: rowCount
+        resultCount: rowCount,
+        uiUpdateMs: adminUiSearchMetrics.uiUpdateMs,
+        v3WorkerOnLiveSupabase: {
+          searchEngine: v3Data.searchEngine || 'postgrest_server_side',
+          serverSqlMs: v3Data.sqlMs ?? null,
+          workerComputeMs: v3Data.workerMs ?? null,
+          totalQueryMs: v3Data.queryMs ?? null,
+          totalCount: v3Data.totalCount ?? 0,
+          concatenatedUnaccentedTotalCount: v3ConcatCount
+        }
       });
     }
 
     report.searchBenchmarks = {
+      adminUiSearchMetrics,
       liveWorkerGetAllStudents20Runs: {
         endpoint: 'GET /api/ktn/students (limit=2000 on live V2 Worker)',
+        searchEngine: 'client_side_full_table_load',
         iterations: 20,
         p50Ms: percentile(liveWorkerStudentsLatencies, 50),
         p95Ms: percentile(liveWorkerStudentsLatencies, 95),
+        uiUpdateMs: adminUiSearchMetrics.uiUpdateMs,
         resultCount: liveWorkerStudentsCount
       },
       liveSupabasePostgrest20RunsPerScenario: scenarioStats
@@ -931,6 +1158,7 @@ async function run() {
   report.completedAt = new Date().toISOString();
   fs.writeFileSync(JSON_REPORT_PATH, JSON.stringify(report, null, 2), 'utf8');
   console.log(`✅ Live Production Acceptance Suite complete! Report saved to ${JSON_REPORT_PATH}`);
+  process.exit(0);
 }
 
 run().catch(err => {

@@ -14,7 +14,7 @@ jobs:
   quality-and-reliability-gate:
     name: Syntax, Build Drift & Three-Way Reliability Suite
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -46,6 +46,7 @@ jobs:
           node --check tests/ktn_three_way_reliability_suite.cjs
           node --check tests/ktn_browser_e2e_local.cjs
           node --check tests/ktn_postgres_migration_and_search_benchmark.mjs
+          node --check tests/ktn_live_production_acceptance.cjs
 
       - name: Verify Student Portal Build Consistency (No Unbuilt Template Drift)
         run: |
@@ -74,7 +75,9 @@ jobs:
           npm run typecheck
           npm run test:unit
           npm run build
-          npx playwright install --with-deps chromium
+          if [ ! -x /usr/bin/google-chrome ]; then
+            npx playwright install --with-deps chromium
+          fi
           npm run test:e2e
 
       - name: Verify KTN React V2 Static Deployment Dry-Run & Bundle Budget (<500 KiB)

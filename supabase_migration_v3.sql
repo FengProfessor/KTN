@@ -71,6 +71,7 @@ BEGIN
   NEW.search_text := public.ktn_normalize_vi(
     COALESCE(NEW.code, '') || ' ' ||
     COALESCE(NEW.name, '') || ' ' ||
+    REPLACE(public.ktn_normalize_vi(COALESCE(NEW.name, '')), ' ', '') || ' ' ||
     COALESCE(NEW.email, '') || ' ' ||
     COALESCE(NEW.phone, '') || ' ' ||
     COALESCE(NEW.parent_name, '') || ' ' ||
@@ -98,6 +99,7 @@ SET
   search_text = public.ktn_normalize_vi(
     COALESCE(code, '') || ' ' ||
     COALESCE(name, '') || ' ' ||
+    REPLACE(public.ktn_normalize_vi(COALESCE(name, '')), ' ', '') || ' ' ||
     COALESCE(email, '') || ' ' ||
     COALESCE(phone, '') || ' ' ||
     COALESCE(parent_name, '') || ' ' ||
@@ -108,6 +110,7 @@ WHERE search_text IS NULL
    OR search_text IS DISTINCT FROM public.ktn_normalize_vi(
         COALESCE(code, '') || ' ' ||
         COALESCE(name, '') || ' ' ||
+        REPLACE(public.ktn_normalize_vi(COALESCE(name, '')), ' ', '') || ' ' ||
         COALESCE(email, '') || ' ' ||
         COALESCE(phone, '') || ' ' ||
         COALESCE(parent_name, '') || ' ' ||

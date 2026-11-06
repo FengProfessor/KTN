@@ -166,14 +166,38 @@ function loadWorkerInstance(sharedState = null) {
     }
   };
 
+  function matchesJsonbContains(cellVal, jsonStr) {
+    try {
+      const needles = JSON.parse(jsonStr);
+      const hay = Array.isArray(cellVal) ? cellVal : [];
+      if (!Array.isArray(needles)) return false;
+      return needles.every(needle => {
+        if (needle && typeof needle === 'object') {
+          return hay.some(
+            item =>
+              item &&
+              typeof item === 'object' &&
+              Object.keys(needle).every(k => String(item[k] ?? '') === String(needle[k] ?? ''))
+          );
+        }
+        return hay.some(
+          item => (typeof item === 'string' || typeof item === 'number') && String(item) === String(needle)
+        );
+      });
+    } catch {
+      return false;
+    }
+  }
+
   function evalSinglePostgrestClause(row, c) {
     if (c.endsWith('.is.null')) {
       const col = c.slice(0, -8);
       return row[col] === null || row[col] === undefined;
     }
-    const m = c.match(/^([a-zA-Z0-9_]+)\.(eq|ilike|like)\.(.*)$/);
+    const m = c.match(/^([a-zA-Z0-9_]+)\.(eq|ilike|like|cs)\.(.*)$/);
     if (!m) return true;
     const [, col, op, v] = m;
+    if (op === 'cs') return matchesJsonbContains(row[col], v);
     const cell = String(row[col] ?? '');
     if (op === 'eq') return cell === v;
     const isCaseInsensitive = op === 'ilike';
@@ -202,6 +226,8 @@ function loadWorkerInstance(sharedState = null) {
       } else if (rawVal.startsWith('eq.')) {
         const target = rawVal.slice(3);
         if (String(row[k] ?? '') !== target) return false;
+      } else if (rawVal.startsWith('cs.')) {
+        if (!matchesJsonbContains(row[k], rawVal.slice(3))) return false;
       } else if (rawVal.startsWith('ilike.') || rawVal.startsWith('like.')) {
         const isCaseInsensitive = rawVal.startsWith('ilike.');
         const pattern = rawVal.slice(isCaseInsensitive ? 6 : 5);
@@ -2978,7 +3004,7 @@ async function runSuite() {
       `attempt1=${resumeAttempt1.status}, attempt2AccountCreated=${resumeAttempt2.data?.accountCreated}, attempt2HasPwd=${Boolean(resumeAttempt2.data?.initialPassword)}, replay3HasPwd=${Boolean(resumeAttempt3Replay.data?.initialPassword)}`
     );
 
-    // D17: Pre-V3 Schema V2 search fallback accurately finds Vietnamese students with diacritics and beyond 1,000-row PostgREST page cap
+    // D17: Pre-V3 Schema V2 search fallback accurately finds Vietnamese students with diacritics, concatenated unaccented names, and JSONB object online_courses beyond 1,000-row PostgREST page cap
     state.faults.disableSearchRpc = true;
     state.faults.simulateLegacyV2StudentSchema = true;
     state.tables.ktn_students.push({
@@ -2988,29 +3014,44 @@ async function runSuite() {
       phone: '0911222333',
       class_code: 'YCT2-04',
       has_live_class: true,
-      has_online_courses: false,
-      online_courses: [],
+      has_online_courses: true,
+      online_courses: [{ id: '6adadba969897b0002482ca5', code: 'HSK1-30', title: 'HSK1 3.0' }],
       cognito_user_id: 'aaaa1111-2222-4333-8444-555566667777',
       updated_at: '2026-01-01T00:00:00.000Z'
     });
     const legacyUnaccentedSearch = await callApi('/api/ktn/admin/students/search?q=nguyen+bao+chau+ngan&limit=20', {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
+    const legacyConcatenatedSearch = await callApi('/api/ktn/admin/students/search?q=nguyenbaochaungan&limit=20', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
     const legacyAccentedSearch = await callApi('/api/ktn/admin/students/search?q=' + encodeURIComponent('Nguyễn Bảo Châu Ngân') + '&limit=20', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const legacyObjectCourseSearch = await callApi('/api/ktn/admin/students/search?courseId=6adadba969897b0002482ca5&limit=500', {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     state.faults.disableSearchRpc = false;
     state.faults.simulateLegacyV2StudentSchema = false;
 
+    const foundUnaccented = (legacyUnaccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com');
+    const foundConcatenated = (legacyConcatenatedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com');
+    const foundAccented = (legacyAccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com');
+    const foundObjectCourse = (legacyObjectCourseSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com');
+
     record(
       'D17-LEGACY-V2-SCHEMA-VIETNAMESE-SEARCH-FALLBACK',
       'GROUP_V3',
-      'When Supabase is on Schema V2 (missing ktn_search_students RPC and search_text column, with 1,000-row PostgREST page cap), search fallback paginates and accurately finds Vietnamese accented student names both with and without diacritics',
+      'When Supabase is on Schema V2 (missing ktn_search_students RPC and search_text column, with 1,000-row PostgREST page cap), search fallback paginates and accurately finds Vietnamese accented student names (spaced, concatenated, and accented) and JSONB object online_courses',
       legacyUnaccentedSearch.status === 200 &&
-        (legacyUnaccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com') &&
+        foundUnaccented &&
+        legacyConcatenatedSearch.status === 200 &&
+        foundConcatenated &&
         legacyAccentedSearch.status === 200 &&
-        (legacyAccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com'),
-      `unaccentedStatus=${legacyUnaccentedSearch.status}, unaccentedFound=${(legacyUnaccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com')}, accentedFound=${(legacyAccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com')}`
+        foundAccented &&
+        legacyObjectCourseSearch.status === 200 &&
+        foundObjectCourse,
+      `unaccentedFound=${foundUnaccented}, concatenatedFound=${foundConcatenated}, accentedFound=${foundAccented}, objectCourseFound=${foundObjectCourse}`
     );
   }
 

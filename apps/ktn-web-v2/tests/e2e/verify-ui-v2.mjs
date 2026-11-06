@@ -1349,6 +1349,7 @@ async function runSuite() {
     )
   );
   console.log(`\n[KTN-UI-V2 E2E] ALL ${results.length}/${results.length} TESTS PASSED!`);
+  process.exit(0);
 }
 
 runSuite().catch((err) => {

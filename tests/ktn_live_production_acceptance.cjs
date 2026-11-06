@@ -226,6 +226,18 @@ async function redactNonTestStudentPiiOnPage(page) {
         btn.style.display = 'none';
       }
     });
+    const visibleRoomBtns = Array.from(document.querySelectorAll('[data-testid^="chat-room-item-"]')).filter(
+      (btn) => btn.style.display !== 'none'
+    );
+    const chatWorkspace = document.querySelector('[data-testid="zalo-chat-workspace"]');
+    if (chatWorkspace && visibleRoomBtns.length > 0) {
+      const allTabBtns = Array.from(chatWorkspace.querySelectorAll('button'));
+      allTabBtns.forEach((b) => {
+        if ((b.textContent || '').trim().startsWith('Tất cả (')) {
+          b.textContent = `Tất cả (${visibleRoomBtns.length})`;
+        }
+      });
+    }
 
     // 4. Ensure rendered chat message items also expose data-testid="chat-message-bubble"
     const msgItems = Array.from(document.querySelectorAll('[data-testid="chat-message-item"]'));
@@ -800,6 +812,8 @@ async function run() {
     await stuAPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 15000 });
     await stuAPage.click('[data-testid="tab-lesson-homework"]');
     await stuAPage.waitForSelector('[data-testid="teacher-grading-result-card"]', { timeout: 15000 });
+    await stuAPage.locator('[data-testid="teacher-grading-result-card"]').scrollIntoViewIfNeeded();
+    await stuAPage.waitForTimeout(300);
     const studentGradedDomState = await stuAPage.evaluate(() => {
       const card = document.querySelector('[data-testid="teacher-grading-result-card"]');
       const scoreBadge = document.querySelector('[data-testid="homework-score-badge"]');

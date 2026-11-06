@@ -1,12 +1,12 @@
 {
-  "sessionTag": "LIVE-CUTOVER-1793941293312",
-  "startedAt": "2026-11-06T05:01:33.312Z",
+  "sessionTag": "LIVE-CUTOVER-1793941938951",
+  "startedAt": "2026-11-06T05:12:18.951Z",
   "liveReactUrl": "https://khongtunhi.com/custom-page/so-lien-lac-test",
   "workerVersionId": "d66c3334-6c78-41f7-86f5-dd62a2b0ab7e",
   "rollbackWorkerVersionId": "32ac03d1-9822-4371-9926-9e8311485c89",
   "websiteChecks": {
     "desktop-1440": {
-      "loadMs": 2127.65,
+      "loadMs": 2189.06,
       "hasReactRoot": true,
       "releaseTag": "v3.0.0",
       "commitSha": "b1cb988",
@@ -14,8 +14,8 @@
       "scrollWidth": 1440,
       "innerWidth": 1440,
       "hasHorizontalOverflow": false,
-      "fcpMs": 1524,
-      "requestCount": 76,
+      "fcpMs": 1592,
+      "requestCount": 75,
       "totalJsCssBytes": 189831,
       "consoleErrors": [
         "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
@@ -25,7 +25,7 @@
       "failedStatuses": []
     },
     "mobile-390": {
-      "loadMs": 2260.63,
+      "loadMs": 2178.91,
       "hasReactRoot": true,
       "releaseTag": "v3.0.0",
       "commitSha": "b1cb988",
@@ -33,9 +33,9 @@
       "scrollWidth": 390,
       "innerWidth": 390,
       "hasHorizontalOverflow": false,
-      "fcpMs": 1692,
+      "fcpMs": 1448,
       "requestCount": 76,
-      "totalJsCssBytes": 189842,
+      "totalJsCssBytes": 189836,
       "consoleErrors": [
         "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
         "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch"
@@ -44,7 +44,7 @@
       "failedStatuses": []
     },
     "mobile-360": {
-      "loadMs": 1653.03,
+      "loadMs": 2086.78,
       "hasReactRoot": true,
       "releaseTag": "v3.0.0",
       "commitSha": "b1cb988",
@@ -52,9 +52,9 @@
       "scrollWidth": 360,
       "innerWidth": 360,
       "hasHorizontalOverflow": false,
-      "fcpMs": 1316,
-      "requestCount": 69,
-      "totalJsCssBytes": 186681,
+      "fcpMs": 1356,
+      "requestCount": 76,
+      "totalJsCssBytes": 189830,
       "consoleErrors": [
         "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
         "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch"
@@ -68,7 +68,7 @@
       "endpoint": "/api/ktn/auth/session",
       "label": "auth/session (Admin)",
       "status": 200,
-      "ms": 194.32,
+      "ms": 169.13,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -78,7 +78,7 @@
       "endpoint": "/api/ktn/courses",
       "label": "courses (Public)",
       "status": 200,
-      "ms": 194.67,
+      "ms": 180.32,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -88,7 +88,7 @@
       "endpoint": "/api/ktn/courses/units?courseId=6adadba969897b0002482ca5",
       "label": "courses/units (Student A)",
       "status": 200,
-      "ms": 809.54,
+      "ms": 1037.04,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -98,7 +98,7 @@
       "endpoint": "/api/ktn/students/me",
       "label": "students/me (Student A)",
       "status": 200,
-      "ms": 299.09,
+      "ms": 277.21,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -108,7 +108,7 @@
       "endpoint": "/api/ktn/students",
       "label": "students (Admin)",
       "status": 200,
-      "ms": 877.11,
+      "ms": 1053,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -118,7 +118,7 @@
       "endpoint": "/api/ktn/admin/students/search?q=ngan&limit=20",
       "label": "admin/students/search (V3)",
       "status": 200,
-      "ms": 847.62,
+      "ms": 960.77,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -128,7 +128,7 @@
       "endpoint": "/api/ktn/classes",
       "label": "classes (Admin)",
       "status": 200,
-      "ms": 306.41,
+      "ms": 425.37,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -138,7 +138,7 @@
       "endpoint": "/api/ktn/teachers",
       "label": "teachers (Admin)",
       "status": 200,
-      "ms": 276.69,
+      "ms": 263.69,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -148,7 +148,7 @@
       "endpoint": "/api/ktn/homeworks",
       "label": "homeworks (Teacher A)",
       "status": 200,
-      "ms": 527.77,
+      "ms": 523.36,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -158,7 +158,7 @@
       "endpoint": "/api/ktn/messages?roomId=class:YCT2-04",
       "label": "messages (Student A)",
       "status": 200,
-      "ms": 1026.2,
+      "ms": 1118.27,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -168,7 +168,7 @@
       "endpoint": "/api/ktn/notifications",
       "label": "notifications (Student A)",
       "status": 200,
-      "ms": 875.51,
+      "ms": 739.35,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -178,7 +178,7 @@
       "endpoint": "/api/ktn/admin/sync-status",
       "label": "admin/sync-status (V3)",
       "status": 200,
-      "ms": 624.07,
+      "ms": 666.3,
       "ok": true,
       "cors": "*",
       "cacheControl": "no-store",
@@ -193,28 +193,28 @@
       "email": "quanly@khongtunhi.com",
       "ok": true,
       "status": 200,
-      "ms": 920.74,
+      "ms": 1172.97,
       "role": "admin"
     },
     "teacherALogin": {
       "email": "linh.lam@khongtunhi.com",
       "ok": true,
       "status": 200,
-      "ms": 1212.74,
+      "ms": 809.58,
       "role": "teacher"
     },
     "teacherBLogin": {
       "email": "thu.ha@khongtunhi.com",
       "ok": true,
       "status": 200,
-      "ms": 1017.68,
+      "ms": 593.61,
       "role": "teacher"
     },
     "studentALogin": {
       "email": "e2e.hs.a@khongtunhi.com",
       "ok": true,
       "status": 200,
-      "ms": 1822.52,
+      "ms": 1636.2,
       "role": "student",
       "classCode": "YCT2-04"
     },
@@ -222,7 +222,7 @@
       "email": "e2e.hs.b@khongtunhi.com",
       "ok": true,
       "status": 200,
-      "ms": 1678.38,
+      "ms": 1604.52,
       "role": "student",
       "classCode": "YCT3-02"
     }
@@ -241,9 +241,9 @@
     "v3ProvisionEndpointOnLiveStatus": 200,
     "idempotentReplayStatus": 200,
     "idempotentReplayFlag": true,
-    "adminUiLoginMs": 3149.61,
-    "openStudentsMs": 920.7,
-    "grant1UiMs": 2423.63,
+    "adminUiLoginMs": 3675.97,
+    "openStudentsMs": 893.76,
+    "grant1UiMs": 3455.16,
     "handoffBannerState": {
       "bannerVisible": true,
       "hasExistingNotice": true,
@@ -308,15 +308,15 @@
     "hlsManifestStatus": 200,
     "hlsSegmentStatus": 200,
     "hls403Or404": 0,
-    "studentLoginMs": 4762.41,
-    "openCourseMs": 61.52,
-    "totalVideoStartMs": 1296.86,
+    "studentLoginMs": 4505.36,
+    "openCourseMs": 100.61,
+    "totalVideoStartMs": 1375.54,
     "found": true,
     "readyState": 4,
     "videoWidth": 858,
     "videoHeight": 480,
     "duration": 814.98,
-    "timeToFirstFrameMs": 889.6,
+    "timeToFirstFrameMs": 959.8,
     "currentTimeAfterPlay": 0.18,
     "pausedOk": true,
     "seekedTime": 10,
@@ -332,35 +332,35 @@
       "videoWidth": 858,
       "videoHeight": 480,
       "duration": 814.98,
-      "timeToFirstFrameMs": 1368.1,
-      "currentTimeAfterPlay": 0.19,
+      "timeToFirstFrameMs": 1065.1,
+      "currentTimeAfterPlay": 0.18,
       "horizontalOverflowPx": 0
     }
   },
   "homeworkAndGrading": {
     "s3UploadOk": true,
-    "fileUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793941362019-ktn-react-v2-e2e-1793941362251.wav",
+    "fileUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793942014265-ktn-react-v2-e2e-1793942014523.wav",
     "homeworkId": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1",
     "teacherReceivedSubmittedNotification": true,
     "teacherAudioAndFormPrep": {
       "audioPlayerPresent": true,
-      "audioSrc": "https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793941362019-ktn-react-v2-e2e-1793941362251.wav"
+      "audioSrc": "https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793942014265-ktn-react-v2-e2e-1793942014523.wav"
     },
     "supabaseStatusAfterGrade": "graded",
     "supabaseScoreAfterGrade": 9.5,
     "studentSeesScoreAfterReload": 9.5,
-    "studentSeesFeedbackAfterReload": "[LIVE-CUTOVER-1793941293312] Cô khen con phát âm thanh điệu rất chuẩn trên React V2!",
+    "studentSeesFeedbackAfterReload": "[LIVE-CUTOVER-1793941938951] Cô khen con phát âm thanh điệu rất chuẩn trên React V2!",
     "studentGradedDomState": {
       "feedbackBoxVisible": true,
       "scoreBadgeText": "Điểm: 9.5 / 10",
-      "commentText": "[LIVE-CUTOVER-1793941293312] Cô khen con phát âm thanh điệu rất chuẩn trên React V2!"
+      "commentText": "[LIVE-CUTOVER-1793941938951] Cô khen con phát âm thanh điệu rất chuẩn trên React V2!"
     }
   },
   "chatAndNotifications": {
     "studentTextDeliveredToTeacher": true,
-    "stuToTeaDeliveryMs": 2256.38,
+    "stuToTeaDeliveryMs": 2265.06,
     "teacherReplyDeliveredToStudent": true,
-    "teaToStuDeliveryMs": 2082.58,
+    "teaToStuDeliveryMs": 1999.33,
     "teacherReceivedVoiceWithAudio": true,
     "notificationsCount": 5,
     "hasTeacherHomeworkSubmittedNotification": true,
@@ -379,7 +379,7 @@
     }
   },
   "searchBenchmarks": {
-    "reactUiSearchMs": 1519.84,
+    "reactUiSearchMs": 1533.68,
     "accentedSearchCount": 9,
     "unaccentedSearchCount": 9,
     "emailSearchCount": 1,
@@ -414,15 +414,15 @@
       },
       {
         "table": "ktn_messages",
-        "id": "MSG-1793941376367-tpwc"
+        "id": "MSG-1793942028510-hkto"
       },
       {
         "table": "ktn_messages",
-        "id": "MSG-1793941378647-j9ac"
+        "id": "MSG-1793942030785-zi5i"
       },
       {
         "table": "ktn_messages",
-        "id": "MSG-1793941381855-bx57"
+        "id": "MSG-1793942033907-1ck9"
       }
     ],
     "cleanedUp": [
@@ -438,17 +438,17 @@
       },
       {
         "table": "ktn_messages",
-        "id": "MSG-1793941376367-tpwc",
+        "id": "MSG-1793942028510-hkto",
         "deleteStatus": 204
       },
       {
         "table": "ktn_messages",
-        "id": "MSG-1793941378647-j9ac",
+        "id": "MSG-1793942030785-zi5i",
         "deleteStatus": 204
       },
       {
         "table": "ktn_messages",
-        "id": "MSG-1793941381855-bx57",
+        "id": "MSG-1793942033907-1ck9",
         "deleteStatus": 204
       }
     ],
@@ -468,5 +468,5 @@
       ]
     }
   },
-  "completedAt": "2026-11-06T05:03:19.147Z"
+  "completedAt": "2026-11-06T05:14:12.547Z"
 }

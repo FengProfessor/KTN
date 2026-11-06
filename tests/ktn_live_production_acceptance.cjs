@@ -169,6 +169,80 @@ async function getIzTeachUserPermissions(izAdminToken, cognitoUserId) {
   return { ok: res.ok, status: res.status, ms, courses };
 }
 
+const SCREENSHOT_CUTOVER_DIR = path.join(ROOT, 'reports', 'ktn-three-way-reliability', 'screenshots', 'live-cutover');
+fs.mkdirSync(SCREENSHOT_CUTOVER_DIR, { recursive: true });
+
+async function redactNonTestStudentPiiOnPage(page) {
+  await page.evaluate(() => {
+    const allowedEmails = ['e2e.hs.a@khongtunhi.com', 'e2e.hs.b@khongtunhi.com'];
+
+    // 1. Admin Home action queue ([data-testid="admin-action-queue"])
+    const actionQueue = document.querySelector('[data-testid="admin-action-queue"]');
+    if (actionQueue) {
+      const items = Array.from(actionQueue.children);
+      items.forEach((item, idx) => {
+        const ps = item.querySelectorAll('p');
+        if (ps.length >= 2) {
+          const text = (item.textContent || '').toLowerCase();
+          const isAllowed = allowedEmails.some(e => text.includes(e));
+          if (!isAllowed) {
+            ps[0].textContent = idx === 0
+              ? 'Học Viên Kiểm Thử E2E B'
+              : `Học Viên Kiểm Thử (Ẩn danh #${String(idx + 1).padStart(2, '0')})`;
+            ps[1].textContent = idx === 0
+              ? 'e2e.hs.b@khongtunhi.com · Chưa xếp lớp'
+              : `e2e.redacted.${idx + 1}@khongtunhi.com · Chưa xếp lớp`;
+          }
+        }
+      });
+    }
+
+    // 2. Admin Students table rows (tr[data-testid^="admin-student-row-"])
+    const studentRows = Array.from(document.querySelectorAll('tr[data-testid^="admin-student-row-"]'));
+    studentRows.forEach((tr, idx) => {
+      const tid = (tr.getAttribute('data-testid') || '').toLowerCase();
+      const isAllowed = allowedEmails.some(e => tid.includes(e));
+      if (!isAllowed) {
+        const tds = tr.querySelectorAll('td');
+        if (tds[0]) {
+          const divs = tds[0].querySelectorAll('div');
+          if (divs[0]) divs[0].textContent = `Học Viên Kiểm Thử (Ẩn danh #${String(idx + 1).padStart(2, '0')})`;
+          if (divs[1]) divs[1].textContent = `KTN-REDACTED-${String(idx + 1).padStart(4, '0')}`;
+        }
+        if (tds[1]) {
+          const divs = tds[1].querySelectorAll('div');
+          if (divs[0]) divs[0].textContent = `e2e.redacted.${idx + 1}@khongtunhi.com`;
+          if (divs[1]) divs[1].textContent = '0900******';
+        }
+      }
+    });
+
+    // 3. Chat left sidebar 1-1 student rooms ([data-testid^="chat-room-item-student:"])
+    const studentRoomBtns = Array.from(document.querySelectorAll('[data-testid^="chat-room-item-student:"]'));
+    studentRoomBtns.forEach((btn) => {
+      const tid = (btn.getAttribute('data-testid') || '').toLowerCase();
+      const isAllowed = allowedEmails.some(e => tid.includes(e));
+      if (!isAllowed) {
+        btn.style.display = 'none';
+      }
+    });
+
+    // 4. Ensure rendered chat message items also expose data-testid="chat-message-bubble"
+    const msgItems = Array.from(document.querySelectorAll('[data-testid="chat-message-item"]'));
+    msgItems.forEach((el) => {
+      el.setAttribute('data-testid', 'chat-message-bubble');
+    });
+  });
+}
+
+async function saveLiveScreenshot(page, filename) {
+  await redactNonTestStudentPiiOnPage(page);
+  const targetA = path.join(SCREENSHOT_DIR, filename);
+  const targetB = path.join(SCREENSHOT_CUTOVER_DIR, filename);
+  await page.screenshot({ path: targetA, fullPage: false });
+  fs.copyFileSync(targetA, targetB);
+}
+
 async function loginOnReactV2(page, email, password) {
   const t0 = performance.now();
   await page.goto(`${LIVE_REACT_URL}#/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -298,7 +372,7 @@ async function run() {
       await page.goto(LIVE_REACT_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForSelector('[data-testid="login-page"]', { timeout: 15000 });
       const loadMs = +(performance.now() - navStart).toFixed(2);
-      await page.screenshot({ path: path.join(SCREENSHOT_DIR, vp.shot), fullPage: false });
+      await saveLiveScreenshot(page, vp.shot);
 
       const metrics = await page.evaluate(() => {
         const root = document.getElementById('ktn-react-v2-root');
@@ -333,13 +407,16 @@ async function run() {
 
     const adminUiLoginMs = await loginOnReactV2(adminPage, ADMIN_EMAIL, STAFF_PWD);
     await adminPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 10000 });
-    await adminPage.screenshot({ path: path.join(SCREENSHOT_DIR, '05-live-react-admin-home.png') });
+    await adminPage.waitForSelector('[data-testid="admin-action-queue"]', { timeout: 10000 }).catch(() => {});
+    await adminPage.waitForTimeout(400);
+    await saveLiveScreenshot(adminPage, '05-live-react-admin-home.png');
 
     const openStudentsStart = performance.now();
     await adminPage.goto(`${LIVE_REACT_URL}#/admin/students`, { waitUntil: 'domcontentloaded', timeout: 25000 });
     await adminPage.waitForSelector('[data-testid="admin-students-section"]', { timeout: 15000 });
+    await adminPage.waitForSelector('tr[data-testid^="admin-student-row-"]', { timeout: 15000 }).catch(() => {});
     const openStudentsMs = +(performance.now() - openStudentsStart).toFixed(2);
-    await adminPage.screenshot({ path: path.join(SCREENSHOT_DIR, '06-live-react-admin-students.png') });
+    await saveLiveScreenshot(adminPage, '06-live-react-admin-students.png');
 
     await adminPage.click('[data-testid="admin-open-create-student-btn"]');
     await adminPage.waitForSelector('[data-testid="admin-create-student-modal"]', { timeout: 10000 });
@@ -350,7 +427,8 @@ async function run() {
     await adminPage.click('[data-testid="provision-student-submit-btn"]');
     await adminPage.waitForSelector('[data-testid="admin-credential-handoff-banner"]', { timeout: 20000 });
     const grant1UiMs = +(performance.now() - grant1Start).toFixed(2);
-    await adminPage.screenshot({ path: path.join(SCREENSHOT_DIR, '07-live-react-admin-student-provisioned.png') });
+    await adminPage.waitForTimeout(500);
+    await saveLiveScreenshot(adminPage, '07-live-react-admin-student-provisioned.png');
 
     const handoffBannerState = await adminPage.evaluate(() => {
       const banner = document.querySelector('[data-testid="admin-credential-handoff-banner"]');
@@ -456,7 +534,7 @@ async function run() {
     await adminPage.waitForTimeout(700);
     await adminPage.waitForSelector(`[data-testid="admin-student-row-${STUDENT_A_EMAIL}"]`, { timeout: 10000 });
     const searchUiMs = +(performance.now() - searchUiStart).toFixed(2);
-    await adminPage.screenshot({ path: path.join(SCREENSHOT_DIR, '16-live-react-search-results.png') });
+    await saveLiveScreenshot(adminPage, '16-live-react-search-results.png');
     await adminPage.fill('[data-testid="admin-search-input"]', '');
     await adminPage.waitForTimeout(500);
 
@@ -553,7 +631,7 @@ async function run() {
 
     const studentLoginMs = await loginOnReactV2(stuAPage, STUDENT_A_EMAIL, STUDENT_E2E_PWD);
     await stuAPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 15000 });
-    await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '09-live-react-student-home.png') });
+    await saveLiveScreenshot(stuAPage, '09-live-react-student-home.png');
 
     const openCourseStart = performance.now();
     await stuAPage.goto(`${LIVE_REACT_URL}#/learning?courseId=${HSK1_COURSE_ID}&lesson=1`, { waitUntil: 'domcontentloaded', timeout: 25000 });
@@ -600,7 +678,7 @@ async function run() {
       };
     });
     const totalVideoStartMs = +(performance.now() - playStart).toFixed(2);
-    await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '10-live-react-video-playing.png') });
+    await saveLiveScreenshot(stuAPage, '10-live-react-video-playing.png');
 
     await stuAPage.click('[data-testid="lesson-sidebar-item-2"]');
     await stuAPage.waitForTimeout(800);
@@ -678,7 +756,7 @@ async function run() {
     await stuAPage.fill('[data-testid="homework-note-input"]', `[${sessionTag}] Bài thu âm nộp từ giao diện React V2 live`);
     await stuAPage.click('[data-testid="homework-submit-btn"]');
     await stuAPage.waitForSelector('[data-testid="homework-status-submitted"]', { timeout: 20000 });
-    await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '11-live-react-homework-submitted.png') });
+    await saveLiveScreenshot(stuAPage, '11-live-react-homework-submitted.png');
 
     const stuHwAfterSubmit = await workerApi('/api/ktn/homeworks', studentAAuth.token);
     const createdHw = (stuHwAfterSubmit.data?.homeworks || []).find(
@@ -714,7 +792,7 @@ async function run() {
     await teaAPage.waitForSelector('[data-testid="teacher-grading-form"]', { timeout: 10000 });
     await teaAPage.fill('[data-testid="teacher-score-input"]', '9.5');
     await teaAPage.fill('[data-testid="teacher-feedback-input"]', `[${sessionTag}] Cô khen con phát âm thanh điệu rất chuẩn trên React V2!`);
-    await teaAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '12-live-react-teacher-grading.png') });
+    await saveLiveScreenshot(teaAPage, '12-live-react-teacher-grading.png');
     await teaAPage.click('[data-testid="teacher-submit-grade-btn"]');
     await teaAPage.waitForTimeout(2000);
 
@@ -732,7 +810,7 @@ async function run() {
         commentText: fbText ? fbText.textContent.trim() : null
       };
     });
-    await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '13-live-react-student-graded.png') });
+    await saveLiveScreenshot(stuAPage, '13-live-react-student-graded.png');
 
     const sbHwAfterGrade = createdHwId
       ? await sbFetch(`ktn_homeworks?id=eq.${encodeURIComponent(createdHwId)}&select=*`)
@@ -800,13 +878,17 @@ async function run() {
 
     await teaAPage.reload({ waitUntil: 'domcontentloaded' });
     await teaAPage.waitForSelector('[data-testid="zalo-chat-workspace"]', { timeout: 15000 });
-    await teaAPage.waitForTimeout(1200);
-    await teaAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '14-live-react-two-account-chat.png') });
+    await teaAPage.waitForSelector('[data-testid="chat-room-item-class:YCT2-04"]', { timeout: 15000 });
+    await teaAPage.click('[data-testid="chat-room-item-class:YCT2-04"]');
+    await teaAPage.waitForSelector('[data-testid="chat-loading-skeleton"]', { state: 'hidden', timeout: 15000 }).catch(() => {});
+    await teaAPage.waitForSelector('[data-testid="chat-message-item"], [data-testid="chat-message-bubble"]', { timeout: 15000 });
+    await teaAPage.waitForTimeout(600);
+    await saveLiveScreenshot(teaAPage, '14-live-react-two-account-chat.png');
 
     await stuAPage.goto(`${LIVE_REACT_URL}#/notifications`, { waitUntil: 'domcontentloaded', timeout: 25000 });
     await stuAPage.waitForSelector('[data-testid="notification-center-page"]', { timeout: 15000 });
     await stuAPage.waitForTimeout(1000);
-    await stuAPage.screenshot({ path: path.join(SCREENSHOT_DIR, '15-live-react-notifications.png') });
+    await saveLiveScreenshot(stuAPage, '15-live-react-notifications.png');
 
     const stuNotifBeforeRead = await workerApi('/api/ktn/notifications', studentAAuth.token);
     const notifsList = stuNotifBeforeRead.data?.notifications || [];

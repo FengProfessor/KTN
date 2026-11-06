@@ -1,7 +1,7 @@
 import type { UserRole } from '@/types/ktn.types';
 
 export type MessageDeliveryStatus = 'sending' | 'sent' | 'delivered' | 'seen' | 'failed';
-export type AttachmentKind = 'image' | 'pdf' | 'audio' | 'file';
+export type AttachmentKind = 'image' | 'pdf' | 'audio' | 'video' | 'file';
 export type ChatConnectionState = 'connected' | 'reconnecting' | 'offline';
 
 export interface ChatAttachment {
@@ -10,6 +10,9 @@ export interface ChatAttachment {
   name: string;
   sizeLabel?: string;
   durationSec?: number;
+  file?: File | Blob;
+  mimeType?: string;
+  sizeBytes?: number;
 }
 
 export interface ChatReplyTarget {

@@ -103,6 +103,9 @@ const initialIsDemo =
   typeof window !== 'undefined' &&
   window.location.search.includes('demo=1');
 
+let authEpoch = 0;
+let restoreInFlight: Promise<KtnUserSession | null> | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: initialIsDemo ? DEMO_USERS.student_both : null,
   authUser: null,
@@ -112,9 +115,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   error: null,
 
   async login(email: string, password: string) {
-    set({ isLoading: true, error: null });
+    const loginEpoch = ++authEpoch;
+    restoreInFlight = null;
+    set({ isLoading: true, isRestoring: false, error: null });
     try {
       const { session } = await ktnApi.login(email, password);
+      if (loginEpoch !== authEpoch) {
+        return session;
+      }
       set({
         user: session,
         authUser: session,
@@ -125,48 +133,79 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return session;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Đăng nhập không thành công.';
-      set({ isLoading: false, isRestoring: false, error: msg });
+      if (loginEpoch === authEpoch) {
+        set({ isLoading: false, isRestoring: false, error: msg });
+      }
       throw err;
     }
   },
 
   async logout() {
-    set({ isLoading: true });
-    await ktnApi.logout();
+    ++authEpoch;
+    restoreInFlight = null;
     clearStoredSession();
     set({
       user: null,
       authUser: null,
-      isLoading: false,
+      isLoading: true,
       isRestoring: false,
       error: null
     });
+    try {
+      await ktnApi.logout();
+    } finally {
+      clearStoredSession();
+      set({
+        user: null,
+        authUser: null,
+        isLoading: false,
+        isRestoring: false,
+        error: null
+      });
+    }
   },
 
   async restoreSession() {
     if (get().isLoading) {
       return get().user;
     }
+    if (restoreInFlight) {
+      return restoreInFlight;
+    }
     const existing = getStoredSession();
     if (!existing) {
       set({ user: null, authUser: null, isRestoring: false });
       return null;
     }
+    const epochAtStart = authEpoch;
     set({ isRestoring: true });
-    const verified = await ktnApi.verifySession();
-    if (get().isLoading) {
-      set({ isRestoring: false });
-      return get().user;
-    }
-    set({
-      user: verified,
-      authUser: verified,
-      isRestoring: false
-    });
-    return verified;
+    let currentPromise: Promise<KtnUserSession | null> | null = null;
+    currentPromise = (async () => {
+      try {
+        const verified = await ktnApi.verifySession();
+        if (epochAtStart !== authEpoch || get().isLoading) {
+          set({ isRestoring: false });
+          return get().user;
+        }
+        set({
+          user: verified,
+          authUser: verified,
+          isRestoring: false
+        });
+        return verified;
+      } finally {
+        if (restoreInFlight === currentPromise) {
+          restoreInFlight = null;
+        }
+      }
+    })();
+    restoreInFlight = currentPromise;
+    return currentPromise;
   },
 
   setDemoUser(demoPersona: KtnUserSession) {
+    ++authEpoch;
+    restoreInFlight = null;
     const cleanDemo: KtnUserSession = {
       ...demoPersona,
       token: 'DEMO-MODE-ONLY'
@@ -174,6 +213,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       demoUser: cleanDemo,
       user: cleanDemo,
+      isRestoring: false,
       error: null
     });
   },
@@ -186,3 +226,4 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   }
 }));
+

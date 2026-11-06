@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -21,6 +21,20 @@ import { DEMO_NOTIFICATIONS } from '@/lib/demoData';
 import { KtnNotification } from '@/types/ktn.types';
 import { formatChatTimestamp, resolveNotificationLink } from '@/lib/utils';
 
+const DEFAULT_VAPID_PUBLIC_KEY =
+  'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export const NotificationCenter: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -29,19 +43,49 @@ export const NotificationCenter: React.FC = () => {
   const addToast = useUiStore((s) => s.addToast);
 
   const [filterTab, setFilterTab] = useState<'all' | 'unread' | 'homework' | 'chat'>('all');
-  const [pushEnabled, setPushEnabled] = useState<boolean>(() => {
-    try {
-      if (localStorage.getItem('ktn_push_enabled_v2') === '1') return true;
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-    return false;
-  });
+  const [pushEnabled, setPushEnabled] = useState<boolean>(false);
+  const [isSubscribingPush, setIsSubscribingPush] = useState<boolean>(false);
   const [demoState, setDemoState] = useState<'unread' | 'all_read' | 'empty'>('unread');
   const [demoLocalReadIds, setDemoLocalReadIds] = useState<Record<string, boolean>>({});
+
+  // Verify real browser PushSubscription on mount — never assume enabled just from permission
+  useEffect(() => {
+    let cancelled = false;
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushEnabled(false);
+      return;
+    }
+    navigator.serviceWorker
+      .getRegistration('/')
+      .then((reg) => reg?.pushManager?.getSubscription())
+      .then((sub) => {
+        if (cancelled) return;
+        const subJson = sub ? sub.toJSON() : null;
+        const hasRealSub = Boolean(
+          subJson?.endpoint &&
+            !subJson.endpoint.includes('push.khongtunhi.com/v2/') &&
+            subJson.keys?.p256dh &&
+            subJson.keys?.auth &&
+            subJson.keys.p256dh !== 'ktn-mobile-web-p256dh'
+        );
+        setPushEnabled(hasRealSub);
+        try {
+          if (hasRealSub) {
+            localStorage.setItem('ktn_push_enabled_v2', '1');
+          } else {
+            localStorage.removeItem('ktn_push_enabled_v2');
+          }
+        } catch {
+          // ignore
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPushEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.email]);
 
   const notificationsQuery = useQuery<{
     notifications: KtnNotification[];
@@ -127,56 +171,127 @@ export const NotificationCenter: React.FC = () => {
     markReadMutation.mutate(unreadIds);
   };
 
-  // Explicit user-initiated Web Push opt-in (NEVER auto-prompt on page load)
+  // Explicit user-initiated Web Push opt-in (NEVER fake subscription, NEVER swallow errors)
   const handleEnableWebPush = async () => {
+    if (isSubscribingPush) return;
+
+    if (isDemoMode) {
+      setPushEnabled(true);
+      addToast({
+        title: 'Đã bật thông báo đẩy (Chế độ Demo)',
+        description: 'Trên môi trường thật sẽ yêu cầu PushSubscription và VAPID key từ trình duyệt.',
+        variant: 'success',
+      });
+      return;
+    }
+
+    setIsSubscribingPush(true);
     try {
-      if ('Notification' in window && Notification.permission === 'default') {
-        const perm = await Notification.requestPermission();
-        if (perm === 'denied') {
-          addToast({
-            title: 'Quyền thông báo đang tắt trên trình duyệt',
-            description: 'Bạn vẫn nhận được đầy đủ thông báo trực tiếp trong trung tâm KTN.',
-            variant: 'warning',
-          });
-          return;
-        }
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+      const isIOS =
+        /iPad|iPhone|iPod/.test(ua) ||
+        (typeof navigator !== 'undefined' &&
+          navigator.platform === 'MacIntel' &&
+          navigator.maxTouchPoints > 1);
+      const isStandalone =
+        (typeof window !== 'undefined' &&
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(display-mode: standalone)').matches) ||
+        Boolean((navigator as unknown as { standalone?: boolean }).standalone);
+
+      if (isIOS && !isStandalone) {
+        setPushEnabled(false);
+        addToast({
+          title: 'iPhone/iPad cần Thêm vào Màn hình chính',
+          description:
+            'iOS chỉ hỗ trợ Web Push khi ứng dụng được Thêm vào Màn hình chính (Add to Home Screen). Bạn vẫn nhận thông báo trực tiếp trong Sổ liên lạc.',
+          variant: 'warning',
+        });
+        return;
       }
-      const subPayload: Record<string, unknown> = {
-        endpoint: `https://push.khongtunhi.com/v2/${encodeURIComponent(
-          user?.email || 'student'
-        )}`,
-        keys: {
-          p256dh: 'ktn-mobile-web-p256dh',
-          auth: 'ktn-mobile-web-auth',
-        },
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
-      };
-      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+
+      if (
+        typeof window === 'undefined' ||
+        !('serviceWorker' in navigator) ||
+        !('PushManager' in window) ||
+        !('Notification' in window)
+      ) {
+        setPushEnabled(false);
+        addToast({
+          title: 'Trình duyệt chưa hỗ trợ Web Push',
+          description:
+            'Trình duyệt hiện tại không hỗ trợ PushManager/Service Worker. Bạn vẫn nhận thông báo trực tiếp trong trung tâm KTN.',
+          variant: 'warning',
+        });
+        return;
+      }
+
+      let perm = Notification.permission;
+      if (perm === 'default') {
+        perm = await Notification.requestPermission();
+      }
+      if (perm !== 'granted') {
+        setPushEnabled(false);
+        addToast({
+          title: 'Quyền thông báo đang tắt trên trình duyệt',
+          description:
+            'Vui lòng cho phép quyền thông báo trên trình duyệt để nhận thông báo đẩy. Bạn vẫn nhận thông báo trong trung tâm KTN.',
+          variant: 'warning',
+        });
+        return;
+      }
+
+      await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      const readyReg = await navigator.serviceWorker.ready;
+      if (!readyReg || !readyReg.pushManager) {
+        throw new Error('Service Worker PushManager chưa sẵn sàng trên trình duyệt này.');
+      }
+
+      let vapidPublicKey = DEFAULT_VAPID_PUBLIC_KEY;
+      try {
+        const keyRes = await ktnApi.getVapidPublicKey();
+        if (keyRes.publicKey && keyRes.publicKey.length >= 40) {
+          vapidPublicKey = keyRes.publicKey;
+        }
+      } catch {
+        // Fallback to verified P-256 public key
+      }
+
+      const appServerKey = urlBase64ToUint8Array(vapidPublicKey);
+      const existingSub = await readyReg.pushManager.getSubscription();
+      if (existingSub) {
         try {
-          await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-          const readyReg = await navigator.serviceWorker.ready;
-          if (readyReg && 'Notification' in window && Notification.permission === 'granted') {
-            if (readyReg.active) {
-              readyReg.active.postMessage({
-                type: 'KTN_SHOW_NOTIFICATION',
-                title: 'Học Viện Khổng Tử Nhí',
-                body: 'Đã bật chuông thông báo trên điện thoại! Bạn sẽ nhận tin mới ngay lập tức.',
-                data: { id: `ktn-optin-${Date.now()}`, url: '/custom-page/so-lien-lac-test#/notifications' },
-              });
-            } else if (typeof readyReg.showNotification === 'function') {
-              await readyReg.showNotification('Học Viện Khổng Tử Nhí', {
-                body: 'Đã bật chuông thông báo trên điện thoại! Bạn sẽ nhận tin mới ngay lập tức.',
-                data: { id: `ktn-optin-${Date.now()}`, url: '/custom-page/so-lien-lac-test#/notifications' },
-              });
-            }
-          }
+          await existingSub.unsubscribe();
         } catch {
-          // ignore SW error
+          // ignore unsubscribe error before re-subscribing
         }
       }
-      if (!isDemoMode) {
-        await ktnApi.subscribePush(subPayload).catch(() => null);
+
+      const sub = await readyReg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appServerKey as unknown as BufferSource,
+      });
+
+      const subJson = sub.toJSON();
+      const endpoint = String(subJson.endpoint || '').trim();
+      const p256dh = String(subJson.keys?.p256dh || '').trim();
+      const auth = String(subJson.keys?.auth || '').trim();
+
+      if (!endpoint || !p256dh || !auth) {
+        throw new Error('Trình duyệt không trả về khóa mã hóa PushSubscription hợp lệ (p256dh/auth).');
       }
+
+      const saveRes = await ktnApi.subscribePush({
+        endpoint,
+        expirationTime: subJson.expirationTime ?? null,
+        keys: { p256dh, auth },
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
+      });
+
+      if (!saveRes.ok) {
+        throw new Error('Máy chủ chưa xác nhận lưu đăng ký thông báo đẩy.');
+      }
+
       try {
         localStorage.setItem('ktn_push_enabled_v2', '1');
       } catch {
@@ -185,11 +300,26 @@ export const NotificationCenter: React.FC = () => {
       setPushEnabled(true);
       addToast({
         title: 'Đã bật thông báo đẩy KTN',
-        description: 'Thiết bị sẽ nhận thông báo ngay khi Giáo viên chấm bài hoặc nhắn tin.',
+        description: 'Thiết bị sẽ nhận thông báo đẩy từ máy chủ ngay khi Giáo viên chấm bài hoặc nhắn tin.',
         variant: 'success',
       });
-    } catch {
-      setPushEnabled(true);
+    } catch (err) {
+      setPushEnabled(false);
+      try {
+        localStorage.removeItem('ktn_push_enabled_v2');
+      } catch {
+        // ignore
+      }
+      addToast({
+        title: 'Chưa thể bật thông báo đẩy',
+        description:
+          err instanceof Error
+            ? err.message
+            : 'Đăng ký PushManager không thành công. Bạn vẫn nhận thông báo trong ứng dụng.',
+        variant: 'error',
+      });
+    } finally {
+      setIsSubscribingPush(false);
     }
   };
 

@@ -262,6 +262,32 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       expect(typeof ktnApi.retrySyncItem).toBe('function');
       expect(typeof ktnApi.getAttendance).toBe('function');
       expect(typeof ktnApi.saveAttendance).toBe('function');
+      expect(typeof ktnApi.getVapidPublicKey).toBe('function');
+      expect(typeof ktnApi.uploadChatFile).toBe('function');
+    });
+
+    it('rejects chat files exceeding 100 MB before creating any message', async () => {
+      const over100MbBlob = {
+        size: 101 * 1024 * 1024,
+        type: 'video/mp4',
+      } as unknown as Blob;
+
+      await expect(
+        ktnApi.uploadChatFile(over100MbBlob, 'video_101mb.mp4')
+      ).rejects.toThrow(/100MB/);
+    });
+
+    it('encodes and parses video attachments cleanly', () => {
+      const encoded = encodeAttachmentUrl({
+        kind: 'video',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/lesson_clip.mp4',
+        name: 'lesson_clip.mp4',
+        sizeLabel: '75.0 MB',
+      });
+      const parsed = parseAttachmentFromUrl(encoded);
+      expect(parsed?.kind).toBe('video');
+      expect(parsed?.name).toBe('lesson_clip.mp4');
+      expect(parsed?.sizeLabel).toBe('75.0 MB');
     });
   });
 });

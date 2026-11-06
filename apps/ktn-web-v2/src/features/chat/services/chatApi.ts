@@ -26,43 +26,52 @@ function dataUrlToBlob(dataUrl: string): Blob {
 }
 
 async function ensureRemoteAttachment(att: ChatAttachment): Promise<ChatAttachment> {
-  if (!att || !att.url) return att;
-  if (att.url.startsWith('http://') || att.url.startsWith('https://')) {
+  if (!att || (!att.url && !att.file)) return att;
+  if (!att.file && (att.url.startsWith('http://') || att.url.startsWith('https://'))) {
     return att;
   }
-  if (att.kind === 'audio' && att.url.startsWith('data:audio/') && att.url.length <= 180 * 1024) {
+  if (!att.file && att.kind === 'audio' && att.url.startsWith('data:audio/') && att.url.length <= 180 * 1024) {
     return att;
   }
-  const isLocalBlob = att.url.startsWith('blob:');
-  try {
-    let blob: Blob | null = null;
+
+  let blob: Blob | null = att.file || null;
+  if (!blob) {
     if (att.url.startsWith('data:')) {
       blob = dataUrlToBlob(att.url);
-    } else if (isLocalBlob) {
+    } else if (att.url.startsWith('blob:')) {
       const r = await fetch(att.url);
       blob = await r.blob();
     }
-    if (blob && blob.size > 0) {
-      const uploaded = await ktnApi.uploadChatFile(blob, att.name || `chat_${Date.now()}.bin`);
-      if (uploaded.fileUrl) {
-        return {
-          ...att,
-          url: uploaded.fileUrl
-        };
+  }
+
+  if (!blob || blob.size <= 0) {
+    throw new Error('Không thể đọc dữ liệu tệp đính kèm. Vui lòng chọn lại tệp.');
+  }
+
+  const uploaded = await ktnApi.uploadChatFile(
+    blob,
+    att.name || `chat_${Date.now()}.bin`,
+    (percent) => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('ktn:chat-upload-progress', {
+            detail: { fileName: att.name, percent }
+          })
+        );
       }
     }
-    if (isLocalBlob) {
-      throw new Error('Không thể tải tệp lớn lên đám mây. Vui lòng thử gửi lại.');
-    }
-  } catch (err) {
-    if (isLocalBlob) {
-      throw err instanceof Error
-        ? err
-        : new Error('Không thể tải tệp lớn lên đám mây. Vui lòng thử gửi lại.');
-    }
-    // Fallback to server-side auto-upload in Worker if presigned PUT fails for data: URLs
+  );
+
+  if (!uploaded?.fileUrl || !/^https?:\/\//i.test(uploaded.fileUrl)) {
+    throw new Error('Không nhận được URL lưu trữ hợp lệ sau khi tải tệp lên S3.');
   }
-  return att;
+
+  return {
+    ...att,
+    url: uploaded.fileUrl,
+    mimeType: uploaded.fileType,
+    sizeBytes: uploaded.size
+  };
 }
 
 export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment | null {
@@ -78,13 +87,16 @@ export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment |
     if (hashIdx >= 0) {
       const params = new URLSearchParams(s.slice(hashIdx + 1));
       const pKind = params.get('kind') as AttachmentKind | null;
-      if (pKind && ['image', 'pdf', 'audio', 'file'].includes(pKind)) kind = pKind;
+      if (pKind && ['image', 'pdf', 'audio', 'video', 'file'].includes(pKind)) kind = pKind;
       if (params.get('name')) name = params.get('name') || name;
       if (params.get('size')) sizeLabel = params.get('size') || '';
       if (params.get('dur')) durationSec = Number(params.get('dur')) || undefined;
     } else if (/^data:image\/|\.(png|jpg|jpeg|webp|gif)(\?|$)/i.test(s)) {
       kind = 'image';
       name = 'Hình ảnh lớp học';
+    } else if (/\.(mp4|mov|m4v)(\?|$)/i.test(s)) {
+      kind = 'video';
+      name = 'Video lớp học';
     } else if (/^data:audio\/|\.(wav|mp3|m4a|webm|ogg)(\?|$)/i.test(s)) {
       kind = 'audio';
       name = 'Tin nhắn thoại';

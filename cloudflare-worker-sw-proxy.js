@@ -14,7 +14,7 @@
  */
 
 const CDN_LOGO = 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png';
-const DEFAULT_VAPID_PUBLIC_KEY = 'BFWxJ4T_sakVqTfRjAQOpN7RghDoQRo9owPWy_W1lvdoVYpqFdLJRmEOYgQEPPiEHpotoaixRt8oq2_R4VH8afM';
+const DEFAULT_VAPID_PUBLIC_KEY = 'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
 const DEFAULT_VENDOR_ID = '3529cd2b-7af6-4fda-887c-392a79393d6a';
 const DEFAULT_COURSE_ID = '6adadba969897b0002482ca5';
 
@@ -368,6 +368,167 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 `.trim();
+}
+
+function b64urlEncodeBytes(bytes) {
+  let bin = '';
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function b64urlDecodeBytes(str) {
+  const clean = String(str || '').trim();
+  const pad = '='.repeat((4 - (clean.length % 4)) % 4);
+  const b64 = (clean + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function concatUint8Arrays(...arrays) {
+  const total = arrays.reduce((acc, a) => acc + a.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const a of arrays) {
+    out.set(a, offset);
+    offset += a.length;
+  }
+  return out;
+}
+
+async function hkdfDeriveBytes(salt, ikm, info, length) {
+  const key = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
+    key,
+    length * 8
+  );
+  return new Uint8Array(bits);
+}
+
+async function sendWebPushToSubscription(env, subRow, payloadObj) {
+  const vapidPublicKey = String(env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY).trim();
+  const vapidPrivateRaw = String(env.VAPID_PRIVATE_KEY || '').trim();
+  if (!vapidPrivateRaw) {
+    return { ok: false, blocked: true, reason: 'MISSING_VAPID_PRIVATE_KEY' };
+  }
+  const endpoint = String(subRow?.endpoint || '').trim();
+  const p256dh = String(subRow?.p256dh || subRow?.keys?.p256dh || '').trim();
+  const auth = String(subRow?.auth || subRow?.keys?.auth || '').trim();
+  if (!endpoint.startsWith('https://') || !p256dh || !auth) {
+    return { ok: false, invalid: true, reason: 'INVALID_SUBSCRIPTION_RECORD' };
+  }
+
+  try {
+    const endpointUrl = new URL(endpoint);
+    const aud = `${endpointUrl.protocol}//${endpointUrl.host}`;
+    const exp = Math.floor(Date.now() / 1000) + 12 * 3600;
+    const enc = new TextEncoder();
+
+    const jwtHeader = b64urlEncodeBytes(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+    const jwtPayload = b64urlEncodeBytes(
+      enc.encode(JSON.stringify({ aud, exp, sub: 'mailto:hocvienkhongtunhi123@gmail.com' }))
+    );
+    const unsignedToken = `${jwtHeader}.${jwtPayload}`;
+    const jwk = JSON.parse(vapidPrivateRaw.replace(/^['"]|['"]$/g, ''));
+    const vapidPrivKey = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign']
+    );
+    const sigBuf = await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      vapidPrivKey,
+      enc.encode(unsignedToken)
+    );
+    const jwt = `${unsignedToken}.${b64urlEncodeBytes(new Uint8Array(sigBuf))}`;
+
+    const uaPublicBytes = b64urlDecodeBytes(p256dh);
+    const authSecretBytes = b64urlDecodeBytes(auth);
+    const uaPubKey = await crypto.subtle.importKey(
+      'raw',
+      uaPublicBytes,
+      { name: 'ECDH', namedCurve: 'P-256' },
+      false,
+      []
+    );
+    const asKeyPair = await crypto.subtle.generateKey(
+      { name: 'ECDH', namedCurve: 'P-256' },
+      true,
+      ['deriveBits']
+    );
+    const asPublicBytes = new Uint8Array(await crypto.subtle.exportKey('raw', asKeyPair.publicKey));
+    const sharedSecret = new Uint8Array(
+      await crypto.subtle.deriveBits({ name: 'ECDH', public: uaPubKey }, asKeyPair.privateKey, 256)
+    );
+
+    const keyInfo = concatUint8Arrays(enc.encode('WebPush: info\0'), uaPublicBytes, asPublicBytes);
+    const prkKey = await hkdfDeriveBytes(authSecretBytes, sharedSecret, keyInfo, 32);
+
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const cekBytes = await hkdfDeriveBytes(salt, prkKey, enc.encode('Content-Encoding: aes128gcm\0'), 16);
+    const nonceBytes = await hkdfDeriveBytes(salt, prkKey, enc.encode('Content-Encoding: nonce\0'), 12);
+
+    const aesKey = await crypto.subtle.importKey('raw', cekBytes, 'AES-GCM', false, ['encrypt']);
+    const plaintext = concatUint8Arrays(enc.encode(JSON.stringify(payloadObj)), new Uint8Array([2]));
+    const ciphertext = new Uint8Array(
+      await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonceBytes, tagLength: 128 }, aesKey, plaintext)
+    );
+
+    const header = new Uint8Array(16 + 4 + 1 + asPublicBytes.length);
+    header.set(salt, 0);
+    new DataView(header.buffer).setUint32(16, 4096, false);
+    header[20] = asPublicBytes.length;
+    header.set(asPublicBytes, 21);
+
+    const pushRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `vapid t=${jwt}, k=${vapidPublicKey}`,
+        'Content-Encoding': 'aes128gcm',
+        'Content-Type': 'application/octet-stream',
+        TTL: '86400',
+        Urgency: 'high'
+      },
+      body: concatUint8Arrays(header, ciphertext)
+    });
+
+    if (pushRes.status === 404 || pushRes.status === 410) {
+      await supabaseRequest(env, `ktn_push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, {
+        method: 'DELETE'
+      }).catch(() => null);
+      return { ok: false, expired: true, removed: true, status: pushRes.status, endpoint };
+    }
+    return { ok: pushRes.ok, status: pushRes.status, endpoint };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'WEB_PUSH_DELIVERY_FAILED', endpoint };
+  }
+}
+
+async function dispatchWebPushForQuery(env, queryFilter, payloadObj) {
+  if (!env.VAPID_PRIVATE_KEY) {
+    return { ok: false, skipped: true, reason: 'MISSING_VAPID_PRIVATE_KEY', delivered: 0, expiredRemoved: 0 };
+  }
+  try {
+    const subsRes = await supabaseRequest(env, `ktn_push_subscriptions?${queryFilter}&limit=50`);
+    const rows = Array.isArray(subsRes.data) ? subsRes.data : [];
+    let delivered = 0;
+    let expiredRemoved = 0;
+    const results = [];
+    for (const row of rows) {
+      const r = await sendWebPushToSubscription(env, row, payloadObj);
+      if (r.ok) delivered += 1;
+      if (r.expired) expiredRemoved += 1;
+      results.push(r);
+    }
+    return { ok: true, total: rows.length, delivered, expiredRemoved, results };
+  } catch (err) {
+    return { ok: false, delivered: 0, expiredRemoved: 0, error: String(err) };
+  }
 }
 
 const MANIFEST_JSON = JSON.stringify({
@@ -3489,7 +3650,7 @@ export default {
   // ==========================================================================
   // 2. XỬ LÝ HTTP REQUEST & CỔNG API /api/ktn/*
   // ==========================================================================
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
@@ -3555,25 +3716,6 @@ export default {
         return jsonResponse({ ok: false, message: 'Vui lòng nhập đầy đủ Email và Mật khẩu.' }, 400);
       }
 
-      const safeLookup = rawIdentifier.replace(/[,()]/g, '').trim();
-      if (safeLookup && !safeLookup.includes('@') && email === `${safeLookup.toLowerCase()}@khongtunhi.com`) {
-        const codeLookup = await supabaseRequest(
-          env,
-          `ktn_students?or=(code.ilike.${encodeURIComponent(safeLookup)},phone.eq.${encodeURIComponent(safeLookup)},email.ilike.${encodeURIComponent(safeLookup + '@%')})&limit=1`
-        );
-        if (codeLookup.ok && Array.isArray(codeLookup.data) && codeLookup.data[0]?.email) {
-          email = normalizeEmail(codeLookup.data[0].email);
-        } else {
-          const teacherCodeLookup = await supabaseRequest(
-            env,
-            `ktn_teachers?or=(id.ilike.${encodeURIComponent(safeLookup)},phone.eq.${encodeURIComponent(safeLookup)},email.ilike.${encodeURIComponent(safeLookup + '@%')})&limit=1`
-          );
-          if (teacherCodeLookup.ok && Array.isArray(teacherCodeLookup.data) && teacherCodeLookup.data[0]?.email) {
-            email = normalizeEmail(teacherCodeLookup.data[0].email);
-          }
-        }
-      }
-
       const ROTATED_ACCOUNTS_SET = new Set([
         'hocvienkhongtunhi123@gmail.com',
         'quanly@khongtunhi.com',
@@ -3588,18 +3730,52 @@ export default {
         'e2e.hs.a@khongtunhi.com',
         'e2e.hs.b@khongtunhi.com'
       ]);
-      const isSyntheticE2eProbeAccount =
-        email === 'e2e.hs.a@khongtunhi.com' || email === 'e2e.hs.b@khongtunhi.com';
+
+      const safeLookup = rawIdentifier.replace(/[,()]/g, '').trim();
+      const safeLower = safeLookup.toLowerCase();
+      if (
+        safeLookup &&
+        !safeLookup.includes('@') &&
+        !ROTATED_ACCOUNTS_SET.has(email) &&
+        email === `${safeLower}@khongtunhi.com`
+      ) {
+        const codeLookup = await supabaseRequest(
+          env,
+          `ktn_students?or=(code.ilike.${encodeURIComponent(safeLookup)},phone.eq.${encodeURIComponent(safeLookup)})&limit=5`
+        );
+        const matchedStudent = Array.isArray(codeLookup.data)
+          ? codeLookup.data.find(
+              (r) =>
+                String(r?.code || '').trim().toLowerCase() === safeLower ||
+                String(r?.phone || '').trim() === safeLookup
+            )
+          : null;
+        if (matchedStudent?.email) {
+          email = normalizeEmail(matchedStudent.email);
+        } else {
+          const teacherCodeLookup = await supabaseRequest(
+            env,
+            `ktn_teachers?or=(id.ilike.${encodeURIComponent(safeLookup)},phone.eq.${encodeURIComponent(safeLookup)})&limit=5`
+          );
+          const matchedTeacher = Array.isArray(teacherCodeLookup.data)
+            ? teacherCodeLookup.data.find(
+                (r) =>
+                  String(r?.id || r?.code || '').trim().toLowerCase() === safeLower ||
+                  String(r?.phone || '').trim() === safeLookup
+              )
+            : null;
+          if (matchedTeacher?.email) {
+            email = normalizeEmail(matchedTeacher.email);
+          }
+        }
+      }
       const rotatedSecret = String(env.KTN_STAFF_AND_TEST_PASSWORD || '').trim();
       const adminSecret = String(env.IZTEACH_ADMIN_PASSWORD || '').trim();
       const isRotAdmin = email === 'hocvienkhongtunhi123@gmail.com' || email === 'quanly@khongtunhi.com' || email === 'khongtunhi@gmail.com';
       const matchesRotated = rotatedSecret.length >= 8 && password === rotatedSecret;
       const matchesAdminSecret = isRotAdmin && Boolean(adminSecret) && password === adminSecret;
-      const allowStandardPassword =
-        !isSyntheticE2eProbeAccount &&
-        (password === '123456' || password === 'ktn-session-verify' || matchesRotated || matchesAdminSecret);
 
-      if (isSyntheticE2eProbeAccount && password.length < 8 && !matchesAdminSecret) {
+      if (ROTATED_ACCOUNTS_SET.has(email) && password.length < 8 && !matchesAdminSecret) {
         return jsonResponse({ ok: false, message: 'Mật khẩu cũ đã được thu hồi để bảo mật. Vui lòng đăng nhập bằng mật khẩu mới.' }, 401);
       }
 
@@ -3633,7 +3809,7 @@ export default {
       );
       let chosen = isStaffAccount ? staffHit : (stuHit || staffHit);
 
-      if (!chosen && ROTATED_ACCOUNTS_SET.has(email) && (matchesRotated || matchesAdminSecret || allowStandardPassword)) {
+      if (!chosen && ROTATED_ACCOUNTS_SET.has(email) && (matchesRotated || matchesAdminSecret)) {
         const isRotTeacher = email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com';
         chosen = {
           id: isRotAdmin ? '2c01e488-d866-4341-a0db-644fe6ba1202' : email,
@@ -3669,13 +3845,13 @@ export default {
         }
         if (!chosen) {
           let matchesTeacherCredential = false;
-          if (tMeta.passwordHmac && password.length >= 1) {
+          if (tMeta.passwordHmac && password.length >= 6) {
             const candidateHmac = await computeTeacherCredentialHmac(email, password, env.KTN_SESSION_SECRET);
             if (candidateHmac === tMeta.passwordHmac) {
               matchesTeacherCredential = true;
             }
           }
-          const allowLegacyRotated = !tMeta.customPassword && (matchesRotated || allowStandardPassword);
+          const allowLegacyRotated = !tMeta.customPassword && matchesRotated;
           if (matchesTeacherCredential || allowLegacyRotated) {
             chosen = {
               id: tMeta.cognitoUserId || sbTeacher.code || email,
@@ -3689,22 +3865,6 @@ export default {
         }
       }
 
-      if (!chosen && !isSyntheticE2eProbeAccount && allowStandardPassword) {
-        const sRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&limit=1`);
-        if (sRes.ok && Array.isArray(sRes.data) && sRes.data.length > 0) {
-          const stuRow = sRes.data[0];
-          chosen = {
-            id: stuRow.cognito_user_id || stuRow.code || email,
-            userId: stuRow.cognito_user_id || stuRow.code || email,
-            studentId: stuRow.code || email,
-            email,
-            name: stuRow.name || email.split('@')[0],
-            roles: ['student'],
-            type: 'student'
-          };
-        }
-      }
-
       if (!chosen) {
         return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
       }
@@ -3713,6 +3873,9 @@ export default {
       const isAdminCandidate = Boolean(
         (staffHit || chosen.type === 'admin') && (upstreamRoles.includes('root') || upstreamRoles.includes('admin') || isRotAdmin)
       );
+      if (isAdminCandidate && password.length < 8 && !matchesAdminSecret) {
+        return jsonResponse({ ok: false, message: 'Tài khoản quản trị yêu cầu mật khẩu bảo mật tối thiểu 8 ký tự.' }, 401);
+      }
 
       let role = 'student';
       if (isAdminCandidate && (isRotAdmin || upstreamRoles.includes('root') || upstreamRoles.includes('admin'))) {
@@ -7556,6 +7719,20 @@ export default {
           }
         }
 
+        if (env.VAPID_PRIVATE_KEY && savedHw?.student_email) {
+          const pushTask = dispatchWebPushForQuery(
+            env,
+            `user_email=eq.${encodeURIComponent(normalizeEmail(savedHw.student_email))}`,
+            {
+              id: `NOTIF-GRADED-${savedHw.id}-${savedHw.status}`,
+              title: 'Cô giáo vừa chấm bài tập!',
+              body: `${savedHw.lesson_title || ('Bài ' + (savedHw.lesson_num || 1))}: ${savedHw.score ?? ''}/10 — ${String(savedHw.teacher_feedback || '').slice(0, 60)}`,
+              action_url: unitResolution.isLiveClass ? '/custom-page/so-lien-lac-test#/classrooms' : '/custom-page/so-lien-lac-test#/learning'
+            }
+          ).catch(() => null);
+          if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushTask);
+        }
+
         return jsonResponse({
           ok: true,
           syncStatus: finalSyncStatus,
@@ -8363,6 +8540,27 @@ export default {
           const pinRes = await saveRoomPinnedAnnouncement(env, session, access, content, savedRow.id);
           pinnedMessage = pinRes.pinnedMessage;
         }
+
+        if (env.VAPID_PRIVATE_KEY) {
+          let pushFilter = `user_email=neq.${encodeURIComponent(session.email)}`;
+          if (/^student:/i.test(targetRoomKey)) {
+            const targetStu = normalizeEmail(targetRoomKey.slice(8));
+            pushFilter =
+              session.role === 'student'
+                ? 'user_role=in.(teacher,admin)'
+                : `user_email=eq.${encodeURIComponent(targetStu)}`;
+          } else if (access.type === 'class' && access.classCode) {
+            pushFilter = `class_code=eq.${encodeURIComponent(access.classCode)}&user_email=neq.${encodeURIComponent(session.email)}`;
+          }
+          const pushTask = dispatchWebPushForQuery(env, pushFilter, {
+            id: `NOTIF-MSG-${savedRow.id}`,
+            title: `Tin nhắn mới từ ${session.name || session.email}`,
+            body: String(content || '[Tệp đính kèm]').slice(0, 80),
+            action_url: `/custom-page/so-lien-lac-test#/chat?room=${encodeURIComponent(targetRoomKey)}`
+          }).catch(() => null);
+          if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushTask);
+        }
+
         return jsonResponse({
           ok: true,
           persisted: true,
@@ -8725,6 +8923,14 @@ export default {
       return jsonResponse({ ok: true, markedCount: ids.length, totalReadCount: mergedIds.length, ids });
     }
 
+    if (path === '/api/ktn/push/vapid-public-key' && request.method === 'GET') {
+      return jsonResponse({
+        ok: true,
+        publicKey: String(env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY).trim(),
+        serverDeliveryConfigured: Boolean(env.VAPID_PRIVATE_KEY)
+      });
+    }
+
     if (path === '/api/ktn/push/subscribe' && request.method === 'POST') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) {
@@ -8733,9 +8939,24 @@ export default {
       const body = await request.json().catch(() => ({}));
       const sub = body.subscription || {};
       const keys = sub.keys || {};
-      const endpoint = String(sub.endpoint || `https://push.khongtunhi.com/v2/${encodeURIComponent(session.email)}`).trim();
-      const p256dh = String(keys.p256dh || 'ktn-mobile-web-p256dh').trim();
-      const authKey = String(keys.auth || 'ktn-mobile-web-auth').trim();
+      const endpoint = String(sub.endpoint || '').trim();
+      const p256dh = String(keys.p256dh || '').trim();
+      const authKey = String(keys.auth || '').trim();
+      if (
+        !endpoint ||
+        !endpoint.startsWith('https://') ||
+        !p256dh ||
+        !authKey ||
+        endpoint.includes('push.khongtunhi.com/v2/') ||
+        p256dh === 'ktn-mobile-web-p256dh' ||
+        authKey === 'ktn-mobile-web-auth'
+      ) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_PUSH_SUBSCRIPTION',
+          message: 'Đăng ký thông báo đẩy không hợp lệ: bắt buộc có PushSubscription thật (endpoint, keys.p256dh, keys.auth).'
+        }, 400);
+      }
       const subPayload = {
         user_email: session.email,
         user_role: session.role,
@@ -8767,7 +8988,48 @@ export default {
           message: 'Chưa lưu được đăng ký thông báo đẩy vào cơ sở dữ liệu Supabase. Vui lòng thử lại.'
         }, 502);
       }
-      return jsonResponse({ ok: true, endpoint });
+      return jsonResponse({
+        ok: true,
+        endpoint,
+        userEmail: session.email,
+        serverDeliveryConfigured: Boolean(env.VAPID_PRIVATE_KEY)
+      });
+    }
+
+    if (path === '/api/ktn/push/send' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      if (!env.VAPID_PRIVATE_KEY) {
+        return jsonResponse({
+          ok: false,
+          blocked: true,
+          error: 'MISSING_VAPID_PRIVATE_KEY',
+          message: 'Máy chủ chưa cấu hình VAPID_PRIVATE_KEY để gửi Web Push.'
+        }, 503);
+      }
+      const body = await request.json().catch(() => ({}));
+      const targetEmail =
+        (session.role === 'admin' || session.role === 'teacher') && body.targetEmail
+          ? normalizeEmail(body.targetEmail)
+          : session.email;
+      const payloadObj = {
+        id: String(body.id || `ktn-push-${Date.now()}`),
+        title: String(body.title || 'Học Viện Khổng Tử Nhí'),
+        body: String(body.body || 'Bạn có thông báo mới trên Sổ Liên Lạc Điện Tử.'),
+        action_url: String(body.actionUrl || body.action_url || '/custom-page/so-lien-lac-test#/notifications')
+      };
+      const result = await dispatchWebPushForQuery(
+        env,
+        `user_email=eq.${encodeURIComponent(targetEmail)}`,
+        payloadObj
+      );
+      return jsonResponse({
+        ok: result.ok && (result.delivered > 0 || result.expiredRemoved > 0),
+        targetEmail,
+        ...result
+      }, result.ok ? 200 : 502);
     }
 
     if (path.startsWith('/custom-page/so-lien-lac') && request.method === 'GET') {
@@ -8775,262 +9037,8 @@ export default {
       const cType = String(originRes.headers.get('content-type') || '').toLowerCase();
       if (cType.includes('text/html')) {
         let html = await originRes.text();
-        const portalGuardScript = `<script>(function(){window.__ktnSllAuthHookedV8=true;window.__ktnSllAuthHookedV9=true;window.__ktnSllAuthHookedV10=true;window.__ktnAllowLogout=true;window.__KTN_EMBED_MODE__=true;try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}var gt=setInterval(function(){try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');if(window.next&&window.next.router&&!window.next.router.__ktnPortalGuarded){window.next.router.__ktnPortalGuarded=true;var op=window.next.router.push,or=window.next.router.replace;window.next.router.push=function(u){var s=String(u||'');if(window.location.pathname.indexOf('/custom-page/so-lien-lac')===0&&(s==='/'||s.indexOf('/?')===0||s==='/login'))return Promise.resolve(false);return op.apply(this,arguments);};window.next.router.replace=function(u){var s=String(u||'');if(window.location.pathname.indexOf('/custom-page/so-lien-lac')===0&&(s==='/'||s.indexOf('/?')===0||s==='/login'))return Promise.resolve(false);return or.apply(this,arguments);};}}catch(e){}},120);setTimeout(function(){clearInterval(gt);},30000);})();</script>`;
-        html = html.replace(/<head[^>]*>/i, '$&' + portalGuardScript);
-        const newHeaders = new Headers(originRes.headers);
-        newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-        return new Response(html, {
-          status: originRes.status,
-          headers: newHeaders
-        });
-      }
-      return originRes;
-    }
-
-    if ((path === '/' || path === '/index.html') && request.method === 'GET') {
-      const originRes = await fetch(request);
-      const cType = String(originRes.headers.get('content-type') || '').toLowerCase();
-      if (cType.includes('text/html')) {
-        let html = await originRes.text();
-        const homeGuardScript = `<script>(function(){
-window.__ktnSllAuthHookedV8=true;window.__ktnSllAuthHookedV9=true;window.__ktnSllAuthHookedV10=true;
-var SLL_KEY="ktn_sll_persistent_auth_v2",V2_KEY="ktn_v2_auth_session",PORTAL_URL="/custom-page/so-lien-lac-test";
-try{Storage.prototype.removeItem.call(localStorage,"ol-credentials-auth-user");Storage.prototype.removeItem.call(sessionStorage,"ol-credentials-auth-user");}catch(e){}
-function getSavedSession(){
-  try{
-    var r=localStorage.getItem(SLL_KEY)||localStorage.getItem(V2_KEY)||sessionStorage.getItem(SLL_KEY)||sessionStorage.getItem(V2_KEY);
-    if(r){var p=JSON.parse(r);if(p&&p.email&&(p.token||p.accessToken)){if(!p.token)p.token=p.accessToken;return p;}}
-  }catch(e){}
-  return null;
-}
-function saveSession(data){
-  try{
-    if(!data||!data.email)return;
-    if(!data.token&&data.accessToken)data.token=data.accessToken;
-    if(!data.accessToken&&data.token)data.accessToken=data.token;
-    data.savedAt=Date.now();
-    var raw=JSON.stringify(data);
-    localStorage.setItem(SLL_KEY,raw);
-    localStorage.setItem(V2_KEY,raw);
-    sessionStorage.setItem(SLL_KEY,raw);
-    sessionStorage.setItem(V2_KEY,raw);
-    localStorage.setItem("ktn_active_student_email",String(data.email).toLowerCase());
-    Storage.prototype.removeItem.call(localStorage,"ol-credentials-auth-user");
-    document.cookie="ktn_sll_email="+encodeURIComponent(String(data.email).toLowerCase())+"; path=/; max-age=2592000; SameSite=Lax";
-  }catch(e){}
-}
-function goPortal(hash){
-  if(window.__ktnRedirectingToPortal)return;
-  window.__ktnRedirectingToPortal=true;
-  window.location.replace(PORTAL_URL+(hash||""));
-}
-function resolveFormIdentifier(parsed){
-  var raw=(parsed&&(parsed.email||parsed.phone||parsed.username||parsed.code))||"";
-  if(!raw){
-    try{
-      var el=document.querySelector("form.ant-form input#email");
-      if(el&&el.value)raw=el.value;
-    }catch(e){}
-  }
-  return String(raw||"").trim().toLowerCase();
-}
-function showModalErr(msg){
-  try{
-    var forms=document.querySelectorAll("form.ant-form");
-    for(var i=0;i<forms.length;i++){
-      var form=forms[i];
-      if(!form.querySelector("input#email"))continue;
-      var errEl=form.querySelector("#ktn-modal-login-error");
-      if(!msg){
-        if(errEl){errEl.textContent="";errEl.style.display="none";}
-        continue;
-      }
-      if(!errEl){
-        errEl=document.createElement("div");
-        errEl.id="ktn-modal-login-error";
-        errEl.setAttribute("role","alert");
-        errEl.style.cssText="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;font-size:12px;font-weight:600;line-height:1.4;text-align:left;";
-        var subBtn=form.querySelector("button[type=submit]");
-        if(subBtn&&subBtn.parentNode)subBtn.parentNode.insertBefore(errEl,subBtn);
-        else form.appendChild(errEl);
-      }
-      errEl.textContent=msg;
-      errEl.style.display="block";
-    }
-  }catch(e){}
-}
-function enhancePwdToggle(){
-  try{
-    var forms=document.querySelectorAll("form.ant-form");
-    for(var i=0;i<forms.length;i++){
-      var form=forms[i];
-      var pwdInput=form.querySelector("input#password");
-      if(!pwdInput||form.querySelector("#ktn-toggle-pwd-btn"))continue;
-      var btn=document.createElement("button");
-      btn.type="button";
-      btn.id="ktn-toggle-pwd-btn";
-      btn.textContent="Hiện mật khẩu";
-      btn.style.cssText="margin-top:6px;background:transparent;border:none;color:#2563EB;font-size:12px;font-weight:700;cursor:pointer;padding:2px 0;display:inline-block;";
-      btn.onclick=function(){
-        var isPwd=pwdInput.getAttribute("type")==="password";
-        pwdInput.setAttribute("type",isPwd?"text":"password");
-        btn.textContent=isPwd?"Ẩn mật khẩu":"Hiện mật khẩu";
-      };
-      if(pwdInput.parentNode)pwdInput.parentNode.appendChild(btn);
-    }
-  }catch(e){}
-}
-function handleKtnAuth(email,plainPwd){
-  showModalErr("");
-  var b64="";try{b64=btoa(unescape(encodeURIComponent(plainPwd)));}catch(e){}
-  return fetch("/api/ktn/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({email:email,phone:email,password:plainPwd,passwordBase64:b64})})
-    .then(function(r){return r.json().then(function(j){return{status:r.status,json:j};});})
-    .then(function(res){
-      if(res.status>=200&&res.status<300&&res.json&&res.json.ok&&res.json.session){
-        var s=Object.assign({},res.json.session,{token:res.json.token,accessToken:res.json.token});
-        saveSession(s);
-        return{ok:true,data:s};
-      }
-      var errMsg=(res.json&&res.json.message)||"Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.";
-      showModalErr(errMsg);
-      return{ok:false,data:(res.json||{message:errMsg})};
-    })
-    .catch(function(){
-      var netMsg="Chưa kết nối được máy chủ. Vui lòng thử lại.";
-      showModalErr(netMsg);
-      return{ok:false,data:{message:netMsg}};
-    });
-}
-var origFetch=window.fetch;
-if(origFetch&&!origFetch.__ktnV10){
-  var wrappedFetch=function(input,init){
-    var url=typeof input==="string"?input:(input&&input.url)||"";
-    if(url.indexOf("/student/signin")!==-1&&init&&init.body){
-      try{
-        var parsed=JSON.parse(init.body);
-        var em=resolveFormIdentifier(parsed);
-        var pw=parsed.password||"";try{pw=atob(pw);}catch(e){}
-        return handleKtnAuth(em,pw).then(function(r){
-          if(r.ok){
-            setTimeout(function(){goPortal("");},60);
-            return new Response(JSON.stringify(r.data),{status:200,headers:{"Content-Type":"application/json"}});
-          }
-          return new Response(JSON.stringify(r.data),{status:401,headers:{"Content-Type":"application/json"}});
-        });
-      }catch(e){}
-    }
-    return origFetch.apply(this,arguments);
-  };
-  wrappedFetch.__ktnV10=true;
-  window.fetch=wrappedFetch;
-}
-var XO=XMLHttpRequest.prototype.open,XS=XMLHttpRequest.prototype.send;
-XMLHttpRequest.prototype.open=function(m,u){this.__ktnUrl=String(u||"");return XO.apply(this,arguments);};
-XMLHttpRequest.prototype.send=function(body){
-  if(this.__ktnUrl&&this.__ktnUrl.indexOf("/student/signin")!==-1&&body){
-    var self=this;
-    try{
-      var parsed=JSON.parse(body);
-      var em=resolveFormIdentifier(parsed);
-      var pw=parsed.password||"";try{pw=atob(pw);}catch(e){}
-      handleKtnAuth(em,pw).then(function(r){
-        var st=r.ok?200:401;
-        var txt=JSON.stringify(r.data);
-        try{
-          Object.defineProperty(self,"readyState",{value:4,configurable:true});
-          Object.defineProperty(self,"status",{value:st,configurable:true});
-          Object.defineProperty(self,"responseText",{value:txt,configurable:true});
-          Object.defineProperty(self,"response",{value:txt,configurable:true});
-        }catch(e){}
-        if(typeof self.onreadystatechange==="function")try{self.onreadystatechange();}catch(e){}
-        if(typeof self.onload==="function")try{self.onload();}catch(e){}
-        try{self.dispatchEvent(new Event("readystatechange"));self.dispatchEvent(new Event("load"));self.dispatchEvent(new Event("loadend"));}catch(e){}
-        if(r.ok)setTimeout(function(){goPortal("");},60);
-      });
-      return;
-    }catch(e){}
-  }
-  return XS.apply(this,arguments);
-};
-function smartOpenLogin(){
-  var s=getSavedSession();
-  if(s){window.location.href=PORTAL_URL;return;}
-  if(window.innerWidth<1024){
-    window.location.href=PORTAL_URL+"#/login";
-    return;
-  }
-  var navBar=document.querySelector("#__next main div.fixed.inset-x-0.top-0");
-  if(navBar){
-    var navBtns=navBar.querySelectorAll("button, a");
-    for(var i=0;i<navBtns.length;i++){
-      var t=(navBtns[i].textContent||"").trim().toLowerCase();
-      if((t==="đăng nhập"||t.indexOf("đăng nhập")!==-1)&&!navBtns[i].closest("form.ant-form")){
-        navBtns[i].click();
-        break;
-      }
-    }
-  }
-  var emInput=document.querySelector("form.ant-form input#email");
-  if(emInput){
-    enhancePwdToggle();
-    showModalErr("");
-    var card=emInput.closest(".ant-card");
-    if(card)card.classList.add("ant-modal");
-    var overlay=emInput.closest("div.fixed.inset-0");
-    if(overlay){
-      overlay.classList.remove("opacity-0","invisible");
-      overlay.classList.add("opacity-100","visible");
-      overlay.style.opacity="1";
-      overlay.style.visibility="visible";
-      overlay.style.pointerEvents="auto";
-      return;
-    }
-  }
-  window.location.href=PORTAL_URL+"#/login";
-}
-document.addEventListener("click",function(ev){
-  var t=ev.target;
-  if(!t||!t.closest)return;
-  if(t.closest("form.ant-form"))return;
-  var btn=t.closest("button, a");
-  if(!btn)return;
-  var txt=(btn.textContent||"").trim().toLowerCase();
-  var oc=btn.getAttribute("onclick")||"";
-  if(txt==="đăng nhập"||txt.indexOf("đăng nhập học viên")!==-1||oc.indexOf("openKtnLogin")!==-1){
-    var s=getSavedSession();
-    if(s){
-      ev.preventDefault();
-      ev.stopPropagation();
-      window.location.href=PORTAL_URL;
-      return;
-    }
-    if(window.innerWidth<1024){
-      ev.preventDefault();
-      ev.stopPropagation();
-      window.location.href=PORTAL_URL+"#/login";
-      return;
-    }
-    setTimeout(enhancePwdToggle,60);
-  }
-},true);
-window.openKtnLogin=smartOpenLogin;
-window.openKtnLoginModal=smartOpenLogin;
-setInterval(function(){
-  if(window.openKtnLogin!==smartOpenLogin)window.openKtnLogin=smartOpenLogin;
-  if(window.openKtnLoginModal!==smartOpenLogin)window.openKtnLoginModal=smartOpenLogin;
-  try{Storage.prototype.removeItem.call(localStorage,"ol-credentials-auth-user");}catch(e){}
-},250);
-if(window.location.search.indexOf("login=1")!==-1){
-  var existing=getSavedSession();
-  if(existing){goPortal("");}
-  else if(window.innerWidth<1024){goPortal("#/login");}
-  else{
-    window.addEventListener("DOMContentLoaded",function(){setTimeout(smartOpenLogin,400);});
-    setTimeout(smartOpenLogin,800);
-  }
-}
-})();</script>`;
-        html = html.replace(/<head[^>]*>/i, '$&' + homeGuardScript);
+        const portalInitScript = `<script>(function(){window.__KTN_EMBED_MODE__=true;try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}})();</script>`;
+        html = html.replace(/<head[^>]*>/i, '$&' + portalInitScript);
         const newHeaders = new Headers(originRes.headers);
         newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         return new Response(html, {

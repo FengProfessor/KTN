@@ -39,19 +39,33 @@ export class KtnApiError extends Error {
   }
 }
 
+let inMemorySession: KtnUserSession | null = null;
+
 export function getStoredSession(): KtnUserSession | null {
+  let raw: string | null = null;
   try {
-    const raw =
-      localStorage.getItem(SESSION_STORAGE_KEY) ||
-      sessionStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) return null;
+    raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore localStorage access error (e.g. Safari Private Browsing / restricted WebView)
+  }
+  if (!raw) {
+    try {
+      raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    } catch {
+      // Ignore sessionStorage access error
+    }
+  }
+  if (!raw) {
+    return inMemorySession;
+  }
+  try {
     const parsed = JSON.parse(raw) as KtnUserSession & {
       accessToken?: string;
       roles?: string[];
       type?: string;
     };
     if (!parsed || !parsed.email || parsed.token === 'DEMO-MODE-ONLY') {
-      return null;
+      return inMemorySession;
     }
     if (!parsed.token && parsed.accessToken) {
       parsed.token = parsed.accessToken;
@@ -66,9 +80,10 @@ export function getStoredSession(): KtnUserSession | null {
         parsed.role = 'student';
       }
     }
+    inMemorySession = parsed;
     return parsed;
   } catch {
-    return null;
+    return inMemorySession;
   }
 }
 
@@ -81,23 +96,33 @@ export function saveStoredSession(session: KtnUserSession, token?: string): KtnU
     ...session,
     token: effectiveToken
   };
+  inMemorySession = merged;
+  const serialized = JSON.stringify(merged);
   try {
-    const serialized = JSON.stringify(merged);
     localStorage.setItem(SESSION_STORAGE_KEY, serialized);
-    sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
     localStorage.removeItem('ol-credentials-auth-user');
+  } catch {
+    // Ignore localStorage quota/privacy error
+  }
+  try {
+    sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
     sessionStorage.removeItem('ol-credentials-auth-user');
   } catch {
-    // Ignore storage quota errors
+    // Ignore sessionStorage quota/privacy error
   }
   return merged;
 }
 
 export function clearStoredSession(): void {
+  inMemorySession = null;
   try {
     localStorage.removeItem(SESSION_STORAGE_KEY);
-    sessionStorage.removeItem(SESSION_STORAGE_KEY);
     localStorage.removeItem('ol-credentials-auth-user');
+  } catch {
+    // Ignore
+  }
+  try {
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
     sessionStorage.removeItem('ol-credentials-auth-user');
   } catch {
     // Ignore
@@ -370,9 +395,41 @@ export const ktnApi = {
     };
   },
 
-  async uploadChatFile(file: File | Blob, fileName: string): Promise<{ fileUrl: string; fileType: string; size: number }> {
-    const fileType = file.type || 'application/octet-stream';
+  async uploadChatFile(
+    file: File | Blob,
+    fileName: string,
+    onProgress?: (percent: number) => void
+  ): Promise<{ fileUrl: string; fileType: string; size: number }> {
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    const extMimeMap: Record<string, string> = {
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      pdf: 'application/pdf',
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      m4a: 'audio/mp4',
+      ogg: 'audio/ogg',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime',
+      webm: 'video/webm',
+      zip: 'application/zip',
+      txt: 'text/plain',
+      doc: 'application/msword',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    };
+    const fileType = file.type || extMimeMap[ext] || 'application/octet-stream';
     const fileSize = file.size || 2048;
+
+    if (fileSize > 100 * 1024 * 1024) {
+      throw new KtnApiError({
+        message: 'Tệp đính kèm vượt quá giới hạn 100MB.',
+        status: 400
+      });
+    }
+
     let presign: { ok: boolean; signedUrl: string; fileUrl: string };
     try {
       presign = await ktnRequest<{
@@ -381,30 +438,96 @@ export const ktnApi = {
         fileUrl: string;
       }>('/api/ktn/upload-url', {
         method: 'POST',
-        body: JSON.stringify({ fileName, fileType, fileSize })
+        body: JSON.stringify({ fileName, fileType, fileSize }),
+        timeoutMs: 20000
       });
-    } catch {
-      presign = await ktnRequest<{
-        ok: boolean;
-        signedUrl: string;
-        fileUrl: string;
-      }>('/api/ktn/homeworks/upload-url', {
-        method: 'POST',
-        body: JSON.stringify({ fileName, fileType, fileSize })
+    } catch (err) {
+      if (err instanceof KtnApiError && err.status === 404) {
+        presign = await ktnRequest<{
+          ok: boolean;
+          signedUrl: string;
+          fileUrl: string;
+        }>('/api/ktn/homeworks/upload-url', {
+          method: 'POST',
+          body: JSON.stringify({ fileName, fileType, fileSize }),
+          timeoutMs: 20000
+        });
+      } else {
+        throw err;
+      }
+    }
+
+    if (!presign?.signedUrl || !presign?.fileUrl) {
+      throw new KtnApiError({
+        message: 'Không tạo được đường dẫn tải tệp an toàn (Presigned URL).',
+        status: 502
       });
     }
 
-    const uploadRes = await fetch(presign.signedUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': fileType },
-      body: file
-    });
-    if (!uploadRes.ok) {
-      throw new KtnApiError({
-        message: 'Không thể tải tệp đính kèm lên kho lưu trữ. Vui lòng thử lại.',
-        status: uploadRes.status || 502
+    onProgress?.(5);
+
+    const putOnce = async (): Promise<void> => {
+      if (onProgress && typeof XMLHttpRequest !== 'undefined') {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', presign.signedUrl, true);
+          xhr.setRequestHeader('Content-Type', fileType);
+          xhr.upload.onprogress = (evt) => {
+            if (evt.lengthComputable && evt.total > 0) {
+              const pct = Math.min(99, Math.max(5, Math.round((evt.loaded / evt.total) * 100)));
+              onProgress(pct);
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              onProgress(100);
+              resolve();
+            } else {
+              reject(
+                new KtnApiError({
+                  message: `Không thể tải tệp đính kèm lên kho lưu trữ (HTTP ${xhr.status}).`,
+                  status: xhr.status || 502
+                })
+              );
+            }
+          };
+          xhr.onerror = () => {
+            reject(
+              new KtnApiError({
+                message: 'Lỗi kết nối mạng khi tải tệp lớn lên S3.',
+                status: 0,
+                isNetworkError: true
+              })
+            );
+          };
+          xhr.send(file);
+        });
+        return;
+      }
+
+      const uploadRes = await fetch(presign.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': fileType },
+        body: file
       });
+      if (!uploadRes.ok) {
+        throw new KtnApiError({
+          message: 'Không thể tải tệp đính kèm lên kho lưu trữ. Vui lòng thử lại.',
+          status: uploadRes.status || 502
+        });
+      }
+      onProgress?.(100);
+    };
+
+    try {
+      await putOnce();
+    } catch (err) {
+      const shouldRetry =
+        !(err instanceof KtnApiError) || err.isNetworkError || err.status >= 500 || err.status === 0;
+      if (!shouldRetry) throw err;
+      await putOnce();
     }
+
     return {
       fileUrl: presign.fileUrl,
       fileType,
@@ -476,12 +599,34 @@ export const ktnApi = {
     return { markedCount: res.markedCount || 0 };
   },
 
-  async subscribePush(subscription: Record<string, unknown>): Promise<{ ok: boolean }> {
-    const res = await ktnRequest<{ ok: boolean }>('/api/ktn/push/subscribe', {
+  async getVapidPublicKey(): Promise<{ publicKey: string; serverDeliveryConfigured?: boolean }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      publicKey: string;
+      serverDeliveryConfigured?: boolean;
+    }>('/api/ktn/push/vapid-public-key');
+    return {
+      publicKey: String(res?.publicKey || ''),
+      serverDeliveryConfigured: res?.serverDeliveryConfigured
+    };
+  },
+
+  async subscribePush(
+    subscription: Record<string, unknown>
+  ): Promise<{ ok: boolean; endpoint?: string; serverDeliveryConfigured?: boolean }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      endpoint?: string;
+      serverDeliveryConfigured?: boolean;
+    }>('/api/ktn/push/subscribe', {
       method: 'POST',
       body: JSON.stringify({ subscription })
     });
-    return { ok: Boolean(res?.ok) };
+    return {
+      ok: Boolean(res?.ok),
+      endpoint: res?.endpoint,
+      serverDeliveryConfigured: res?.serverDeliveryConfigured
+    };
   },
 
   async getStudents(classCode?: string): Promise<KtnStudentRecord[]> {

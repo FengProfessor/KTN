@@ -19,18 +19,23 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     attachment.kind === 'image' ||
     /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(attachment.url);
 
-  const isAudio =
-    attachment.kind === 'audio' ||
-    /\.(webm|mp3|wav|ogg|m4a)(\?|$)/i.test(attachment.url);
-
   const isVideo =
+    attachment.kind === 'video' ||
     /\.(mp4|mov|m4v)(\?|$)/i.test(attachment.url) ||
     /\.(mp4|mov|m4v)$/i.test(attachment.name || '');
+
+  const isAudio =
+    !isVideo &&
+    (attachment.kind === 'audio' ||
+      /\.(webm|mp3|wav|ogg|m4a)(\?|$)/i.test(attachment.url));
 
   if (isImage) {
     return (
       <>
-        <div className="mt-1.5 overflow-hidden rounded-xl border border-black/10 bg-stone-100">
+        <div
+          data-testid="chat-image-attachment"
+          className="mt-1.5 overflow-hidden rounded-xl border border-black/10 bg-stone-100"
+        >
           <div className="group relative max-h-60 max-w-xs cursor-pointer overflow-hidden">
             <img
               src={attachment.url}
@@ -46,6 +51,22 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
               <Maximize2 className="h-3 w-3" />
               Phóng to
             </button>
+          </div>
+          <div className="flex items-center justify-between gap-2 border-t border-black/5 bg-white/90 px-2.5 py-1 text-[11px] text-stone-600">
+            <span className="truncate font-medium text-stone-800">
+              {attachment.name || 'Ảnh đính kèm'}
+            </span>
+            <a
+              data-testid="chat-attachment-download"
+              href={attachment.url}
+              download={attachment.name || 'ktn-image.png'}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex shrink-0 items-center gap-1 font-semibold text-red-800 hover:underline"
+            >
+              <Download className="h-3 w-3" />
+              Tải về
+            </a>
           </div>
         </div>
 
@@ -114,6 +135,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             {attachment.name || 'Video đính kèm'}
           </span>
           <a
+            data-testid="chat-attachment-download"
             href={attachment.url}
             target="_blank"
             rel="noreferrer"
@@ -148,6 +170,19 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
               {attachment.durationSec}s
             </span>
           ) : null}
+          {/^https?:\/\//i.test(attachment.url) && (
+            <a
+              data-testid="chat-attachment-download"
+              href={attachment.url}
+              target="_blank"
+              rel="noreferrer"
+              download={attachment.name}
+              className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-red-800 hover:underline"
+            >
+              <Download className="h-3 w-3" />
+              Tải về
+            </a>
+          )}
         </div>
         <audio
           data-testid="chat-audio-player"
@@ -162,6 +197,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
 
   return (
     <a
+      data-testid="chat-attachment-download"
       href={attachment.url}
       target="_blank"
       rel="noreferrer"

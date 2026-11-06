@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
   Paperclip,
@@ -11,7 +11,7 @@ import {
   FileText,
   Loader2,
 } from 'lucide-react';
-import { ChatAttachment, ChatMessage, SendMessageInput } from '../types/chat.types';
+import { AttachmentKind, ChatAttachment, ChatMessage, SendMessageInput } from '../types/chat.types';
 import { VoiceRecorder } from './VoiceRecorder';
 import { detectDlpViolation, formatFileSize } from '@/lib/utils';
 import { useUiStore } from '@/stores/useUiStore';
@@ -42,10 +42,30 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const [showEmojiBar, setShowEmojiBar] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [stagedAttachment, setStagedAttachment] = useState<ChatAttachment | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ fileName: string; percent: number } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const dlpCheck = detectDlpViolation(draft);
+
+  useEffect(() => {
+    const onProgress = (e: Event) => {
+      const detail = (e as CustomEvent<{ fileName: string; percent: number }>).detail;
+      if (detail && typeof detail.percent === 'number') {
+        setUploadProgress({ fileName: detail.fileName || 'Tệp đính kèm', percent: detail.percent });
+      }
+    };
+    window.addEventListener('ktn:chat-upload-progress', onProgress);
+    return () => {
+      window.removeEventListener('ktn:chat-upload-progress', onProgress);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSending) {
+      setUploadProgress(null);
+    }
+  }, [isSending]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -57,37 +77,34 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         description: 'Vui lòng chọn ảnh, âm thanh, video hoặc tài liệu nhỏ hơn 100MB.',
         variant: 'error',
       });
+      e.target.value = '';
       return;
     }
 
     const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|heic)$/i.test(file.name);
     const isAudio = file.type.startsWith('audio/') || /\.(wav|mp3|m4a|ogg|aac)$/i.test(file.name);
+    const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-    const kind = isImage ? 'image' : isAudio ? 'audio' : isPdf ? 'pdf' : 'file';
+    const kind: AttachmentKind = isImage
+      ? 'image'
+      : isAudio
+      ? 'audio'
+      : isVideo
+      ? 'video'
+      : isPdf
+      ? 'pdf'
+      : 'file';
 
-    if (file.size > 2 * 1024 * 1024) {
-      const blobUrl = URL.createObjectURL(file);
-      setStagedAttachment({
-        kind,
-        name: file.name,
-        url: blobUrl,
-        sizeLabel: formatFileSize(file.size),
-      });
-      e.target.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : URL.createObjectURL(file);
-      setStagedAttachment({
-        kind,
-        name: file.name,
-        url: dataUrl,
-        sizeLabel: formatFileSize(file.size),
-      });
-    };
-    reader.readAsDataURL(file);
+    const blobUrl = URL.createObjectURL(file);
+    setStagedAttachment({
+      kind,
+      name: file.name,
+      url: blobUrl,
+      sizeLabel: formatFileSize(file.size),
+      file,
+      mimeType: file.type || undefined,
+      sizeBytes: file.size,
+    });
     e.target.value = '';
   };
 
@@ -110,6 +127,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       trimmed ||
       (stagedAttachment?.kind === 'image'
         ? `[Đã gửi ảnh: ${stagedAttachment.name}]`
+        : stagedAttachment?.kind === 'video'
+        ? `[Đã gửi video: ${stagedAttachment.name}]`
         : `[Đã đính kèm tệp: ${stagedAttachment?.name}]`);
 
     const attachmentToSend = stagedAttachment || null;
@@ -148,6 +167,20 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
   return (
     <div className="border-t border-stone-200 bg-white px-3.5 py-2.5">
+      {/* Upload Progress Banner */}
+      {isSending && uploadProgress && (
+        <div
+          data-testid="chat-upload-progress"
+          className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50/70 px-3 py-1.5 text-xs text-red-900"
+        >
+          <span className="flex min-w-0 items-center gap-1.5 font-semibold truncate">
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-red-700" />
+            <span className="truncate">Đang tải lên S3: {uploadProgress.fileName}</span>
+          </span>
+          <span className="shrink-0 font-bold text-red-800">{uploadProgress.percent}%</span>
+        </div>
+      )}
+
       {/* DLP Warning Banner */}
       {dlpCheck.blocked && (
         <div
@@ -268,6 +301,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             <input
               ref={fileInputRef}
               type="file"
+              data-testid="chat-file-input"
               accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
               onChange={handleFileChange}
               className="hidden"

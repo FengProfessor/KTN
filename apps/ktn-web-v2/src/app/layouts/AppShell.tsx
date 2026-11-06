@@ -89,20 +89,29 @@ export const AppShell: React.FC = () => {
   const unreadNotifications = notificationsList.filter((n) => !n.read).length;
   const recentNotifications = notificationsList.slice(0, 5);
 
-  // Register Service Worker (/sw.js) and handle notification click deep-links
+  // Register Service Worker (/sw.js) and handle notification click deep-links & subscription changes
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => null);
 
     const onSwMessage = (event: MessageEvent) => {
       const payload = event.data || {};
-      if (payload.type === 'KTN_NOTIFICATION_CLICKED' && payload.data?.url) {
-        const rawUrl = String(payload.data.url);
+      if (payload.type === 'KTN_NOTIFICATION_CLICKED') {
+        const rawUrl = String(payload.data?.url || payload.data?.action_url || '');
         const hashIdx = rawUrl.indexOf('#');
         if (hashIdx >= 0) {
-          navigate(rawUrl.slice(hashIdx + 1) || '/notifications');
-        } else if (rawUrl.startsWith('/')) {
+          const targetRoute = rawUrl.slice(hashIdx + 1);
+          navigate(targetRoute.startsWith('/') ? targetRoute : `/${targetRoute}`);
+        } else if (payload.data?.type || payload.data?.roomId || payload.data?.homeworkId) {
+          navigate(resolveNotificationLink(payload.data));
+        } else if (rawUrl.startsWith('/') && !rawUrl.startsWith('/custom-page')) {
           navigate(rawUrl);
+        } else {
+          navigate('/notifications');
+        }
+      } else if (payload.type === 'KTN_PUSH_SUBSCRIPTION_CHANGED' && payload.subscription) {
+        if (!isDemoMode && user?.email) {
+          ktnApi.subscribePush(payload.subscription).catch(() => null);
         }
       }
     };
@@ -110,7 +119,7 @@ export const AppShell: React.FC = () => {
     return () => {
       navigator.serviceWorker.removeEventListener('message', onSwMessage);
     };
-  }, [navigate]);
+  }, [navigate, isDemoMode, user?.email]);
 
   // Alert user via in-app toast & Service Worker notification when unread notifications arrive
   useEffect(() => {

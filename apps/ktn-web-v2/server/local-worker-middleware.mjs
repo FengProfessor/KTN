@@ -387,7 +387,7 @@ export function createLocalWorkerHarness() {
   async function mockFetch(input, init = {}) {
     const urlStr = typeof input === 'string' ? input : input.url;
     const method = String(init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
-    const u = new URL(urlStr);
+    const u = new URL(urlStr, 'http://localhost');
 
     if (u.hostname === 'mock-supabase.local') {
       const table = u.pathname.replace(/^\/rest\/v1\//, '');
@@ -821,6 +821,7 @@ export function createLocalWorkerHarness() {
     Math,
     JSON,
     Array,
+    Uint8Array,
     Object,
     String,
     Number,

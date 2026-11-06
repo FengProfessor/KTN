@@ -18,8 +18,8 @@ import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
 
 const loginSchema = z.object({
-  email: z.string().min(3, 'Vui lòng nhập email hoặc mã học viên hợp lệ'),
-  password: z.string().min(4, 'Mật khẩu cần ít nhất 4 ký tự'),
+  email: z.string().trim().min(1, 'Vui lòng nhập email hoặc mã học viên'),
+  password: z.string().min(1, 'Vui lòng nhập mật khẩu'),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -63,6 +63,8 @@ export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const isRestoring = useAuthStore((s) => s.isRestoring);
   const login = useAuthStore((s) => s.login);
   const setDemoUser = useAuthStore((s) => s.setDemoUser);
   const syncModeUser = useAuthStore((s) => s.syncModeUser);
@@ -72,6 +74,12 @@ export const LoginPage: React.FC = () => {
   const addToast = useUiStore((s) => s.addToast);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  React.useEffect(() => {
+    if (user && !isRestoring && !isSubmitting) {
+      navigate('/', { replace: true });
+    }
+  }, [user, isRestoring, isSubmitting, navigate]);
 
   const showDevTools =
     isDemoAllowedInEnv() &&
@@ -100,13 +108,13 @@ export const LoginPage: React.FC = () => {
       resetSessionUiState();
       queryClient.clear();
       setDemoMode(false);
-      const user = await login(values.email, values.password);
+      const loggedInUser = await login(values.email.trim(), values.password);
       syncModeUser(false);
       addToast({
-        title: `Chào ${user.name}!`,
+        title: `Chào ${loggedInUser.name}!`,
         variant: 'success',
       });
-      navigate('/');
+      navigate('/', { replace: true });
     } catch {
       // Error is displayed via authError; never fallback to demo identity
     } finally {
@@ -193,10 +201,14 @@ export const LoginPage: React.FC = () => {
               <input
                 id="login-email"
                 type="text"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="username"
                 data-testid="login-email-input"
                 placeholder="nhap-email@khongtunhi.com"
                 {...register('email')}
-                className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-base text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none sm:text-sm"
               />
               {errors.email && (
                 <p className="mt-1 text-xs font-medium text-red-600">
@@ -215,10 +227,11 @@ export const LoginPage: React.FC = () => {
               <input
                 id="login-password"
                 type="password"
+                autoComplete="current-password"
                 data-testid="login-password-input"
                 placeholder="••••••••"
                 {...register('password')}
-                className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-base text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none sm:text-sm"
               />
               {errors.password && (
                 <p className="mt-1 text-xs font-medium text-red-600">

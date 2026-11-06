@@ -51,21 +51,37 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 15 * 1024 * 1024) {
+    if (file.size > 100 * 1024 * 1024) {
       addToast({
         title: 'Tệp quá lớn',
-        description: 'Vui lòng chọn ảnh hoặc tài liệu nhỏ hơn 15MB.',
+        description: 'Vui lòng chọn ảnh, âm thanh, video hoặc tài liệu nhỏ hơn 100MB.',
         variant: 'error',
       });
       return;
     }
 
-    const isImage = file.type.startsWith('image/');
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|heic)$/i.test(file.name);
+    const isAudio = file.type.startsWith('audio/') || /\.(wav|mp3|m4a|ogg|aac)$/i.test(file.name);
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const kind = isImage ? 'image' : isAudio ? 'audio' : isPdf ? 'pdf' : 'file';
+
+    if (file.size > 2 * 1024 * 1024) {
+      const blobUrl = URL.createObjectURL(file);
+      setStagedAttachment({
+        kind,
+        name: file.name,
+        url: blobUrl,
+        sizeLabel: formatFileSize(file.size),
+      });
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = typeof reader.result === 'string' ? reader.result : URL.createObjectURL(file);
       setStagedAttachment({
-        kind: isImage ? 'image' : 'pdf',
+        kind,
         name: file.name,
         url: dataUrl,
         sizeLabel: formatFileSize(file.size),
@@ -252,7 +268,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.pdf,.doc,.docx"
+              accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
               onChange={handleFileChange}
               className="hidden"
             />

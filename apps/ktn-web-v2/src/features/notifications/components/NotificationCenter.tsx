@@ -29,7 +29,17 @@ export const NotificationCenter: React.FC = () => {
   const addToast = useUiStore((s) => s.addToast);
 
   const [filterTab, setFilterTab] = useState<'all' | 'unread' | 'homework' | 'chat'>('all');
-  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState<boolean>(() => {
+    try {
+      if (localStorage.getItem('ktn_push_enabled_v2') === '1') return true;
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  });
   const [demoState, setDemoState] = useState<'unread' | 'all_read' | 'empty'>('unread');
   const [demoLocalReadIds, setDemoLocalReadIds] = useState<Record<string, boolean>>({});
 
@@ -131,15 +141,38 @@ export const NotificationCenter: React.FC = () => {
           return;
         }
       }
+      let subPayload: Record<string, unknown> = {
+        endpoint: `https://push.khongtunhi.com/v2/${encodeURIComponent(
+          user?.email || 'student'
+        )}`,
+        keys: {
+          p256dh: 'ktn-mobile-web-p256dh',
+          auth: 'ktn-mobile-web-auth',
+        },
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
+      };
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          if (reg && 'Notification' in window && Notification.permission === 'granted') {
+            reg.active?.postMessage({
+              type: 'KTN_SHOW_NOTIFICATION',
+              title: 'Học Viện Khổng Tử Nhí',
+              body: 'Đã bật chuông thông báo trên điện thoại! Bạn sẽ nhận tin mới ngay lập tức.',
+              data: { id: `ktn-optin-${Date.now()}`, url: '/custom-page/so-lien-lac-test#/notifications' },
+            });
+          }
+        } catch {
+          // ignore SW error
+        }
+      }
       if (!isDemoMode) {
-        await ktnApi
-          .subscribePush({
-            endpoint: `https://push.khongtunhi.com/v2/${encodeURIComponent(
-              user?.email || 'student'
-            )}`,
-            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
-          })
-          .catch(() => null);
+        await ktnApi.subscribePush(subPayload).catch(() => null);
+      }
+      try {
+        localStorage.setItem('ktn_push_enabled_v2', '1');
+      } catch {
+        // ignore
       }
       setPushEnabled(true);
       addToast({

@@ -1,4 +1,4 @@
-import { ktnRequest } from '@/services/api/ktnApiClient';
+import { ktnApi, ktnRequest } from '@/services/api/ktnApiClient';
 import type {
   AttachmentKind,
   ChatAttachment,
@@ -7,6 +7,54 @@ import type {
   ChatRoom,
   PinnedAnnouncement
 } from '@/features/chat/types/chat.types';
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const hashIdx = dataUrl.indexOf('#');
+  const cleanUrl = hashIdx >= 0 ? dataUrl.slice(0, hashIdx) : dataUrl;
+  const commaIdx = cleanUrl.indexOf(',');
+  if (commaIdx < 0) return new Blob([]);
+  const meta = cleanUrl.slice(5, commaIdx);
+  const b64 = cleanUrl.slice(commaIdx + 1);
+  const mimeMatch = meta.match(/^([^;]+)/);
+  const mimeType = (mimeMatch && mimeMatch[1]) || 'application/octet-stream';
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
+async function ensureRemoteAttachment(att: ChatAttachment): Promise<ChatAttachment> {
+  if (!att || !att.url) return att;
+  if (att.url.startsWith('http://') || att.url.startsWith('https://')) {
+    return att;
+  }
+  if (att.kind === 'audio' && att.url.startsWith('data:audio/') && att.url.length <= 180 * 1024) {
+    return att;
+  }
+  try {
+    let blob: Blob | null = null;
+    if (att.url.startsWith('data:')) {
+      blob = dataUrlToBlob(att.url);
+    } else if (att.url.startsWith('blob:')) {
+      const r = await fetch(att.url);
+      blob = await r.blob();
+    }
+    if (blob && blob.size > 0) {
+      const uploaded = await ktnApi.uploadChatFile(blob, att.name || `chat_${Date.now()}.bin`);
+      if (uploaded.fileUrl) {
+        return {
+          ...att,
+          url: uploaded.fileUrl
+        };
+      }
+    }
+  } catch {
+    // Fallback to server-side auto-upload in Worker if presigned PUT fails
+  }
+  return att;
+}
 
 export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment | null {
   if (!rawUrl || !rawUrl.trim()) return null;
@@ -174,7 +222,10 @@ export const chatApi = {
     const finalContent = payload.replyTo
       ? `[Trả lời ${payload.replyTo.senderName}: "${payload.replyTo.content.slice(0, 60)}"]\n${payload.content}`
       : payload.content;
-    const attachmentUrl = payload.attachment ? encodeAttachmentUrl(payload.attachment) : '';
+    const resolvedAttachment = payload.attachment
+      ? await ensureRemoteAttachment(payload.attachment)
+      : null;
+    const attachmentUrl = resolvedAttachment ? encodeAttachmentUrl(resolvedAttachment) : '';
 
     const res = await ktnRequest<{
       ok: boolean;

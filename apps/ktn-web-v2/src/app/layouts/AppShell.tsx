@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -33,6 +33,10 @@ export const AppShell: React.FC = () => {
   const notifDropdownOpen = useUiStore((s) => s.notifDropdownOpen);
   const setNotifDropdownOpen = useUiStore((s) => s.setNotifDropdownOpen);
   const resetSessionUiState = useUiStore((s) => s.resetSessionUiState);
+  const addToast = useUiStore((s) => s.addToast);
+
+  const seenNotifIdsRef = useRef<Set<string>>(new Set());
+  const initializedNotifsForUserRef = useRef<string>('');
 
   const isRestoringLiveSession = isRestoring && !isDemoMode && !user;
   const effectiveRole = user?.role || 'student';
@@ -52,7 +56,7 @@ export const AppShell: React.FC = () => {
       if (isDemoMode) {
         return {
           notifications: DEMO_NOTIFICATIONS,
-          readIds: DEMO_NOTIFICATIONS.filter((n) => n.read).map((n) => n.id),
+          readIds: DEMO_NOTIFICATIONS.filter((n) => n.id && n.read).map((n) => n.id),
         };
       }
       return ktnApi.getNotifications();
@@ -84,6 +88,94 @@ export const AppShell: React.FC = () => {
   const notificationsList = notificationsQuery.data?.notifications || [];
   const unreadNotifications = notificationsList.filter((n) => !n.read).length;
   const recentNotifications = notificationsList.slice(0, 5);
+
+  // Register Service Worker (/sw.js) and handle notification click deep-links
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => null);
+
+    const onSwMessage = (event: MessageEvent) => {
+      const payload = event.data || {};
+      if (payload.type === 'KTN_NOTIFICATION_CLICKED' && payload.data?.url) {
+        const rawUrl = String(payload.data.url);
+        const hashIdx = rawUrl.indexOf('#');
+        if (hashIdx >= 0) {
+          navigate(rawUrl.slice(hashIdx + 1) || '/notifications');
+        } else if (rawUrl.startsWith('/')) {
+          navigate(rawUrl);
+        }
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', onSwMessage);
+    };
+  }, [navigate]);
+
+  // Alert user via in-app toast & Service Worker notification when unread notifications arrive
+  useEffect(() => {
+    const activeEmail = user?.email || (isDemoMode ? 'demo' : '');
+    if (!activeEmail || notificationsList.length === 0) return;
+
+    if (initializedNotifsForUserRef.current !== activeEmail) {
+      initializedNotifsForUserRef.current = activeEmail;
+      seenNotifIdsRef.current = new Set(notificationsList.map((n) => n.id));
+      const unreadItems = notificationsList.filter((n) => !n.read);
+      if (unreadItems.length > 0) {
+        const sessionKey = `ktn_v2_unread_welcomed_${activeEmail}`;
+        let alreadyWelcomed = false;
+        try {
+          alreadyWelcomed = sessionStorage.getItem(sessionKey) === '1';
+          sessionStorage.setItem(sessionKey, '1');
+        } catch {
+          // ignore
+        }
+        if (!alreadyWelcomed) {
+          const latest = unreadItems[0];
+          addToast({
+            title:
+              unreadItems.length === 1
+                ? `🔔 ${latest.title}`
+                : `🔔 Bạn có ${unreadItems.length} thông báo mới`,
+            description: latest.body,
+            variant: 'default',
+          });
+        }
+      }
+      return;
+    }
+
+    const newlyArrivedUnread = notificationsList.filter(
+      (n) => !seenNotifIdsRef.current.has(n.id) && !n.read
+    );
+    for (const n of notificationsList) {
+      seenNotifIdsRef.current.add(n.id);
+    }
+
+    if (newlyArrivedUnread.length > 0) {
+      const topNotif = newlyArrivedUnread[0];
+      addToast({
+        title: `🔔 ${topNotif.title}`,
+        description: topNotif.body,
+        variant: 'default',
+      });
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        const deepLink = `/custom-page/so-lien-lac-test#${resolveNotificationLink(topNotif)}`;
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready
+            .then((reg) => {
+              reg.active?.postMessage({
+                type: 'KTN_SHOW_NOTIFICATION',
+                title: topNotif.title,
+                body: topNotif.body,
+                data: { id: topNotif.id, action_url: deepLink, url: deepLink },
+              });
+            })
+            .catch(() => null);
+        }
+      }
+    }
+  }, [notificationsList, user?.email, isDemoMode, addToast]);
 
   const pendingGradingCount = useMemo(
     () => (teacherHomeworksQuery.data || []).filter((h) => h.status === 'pending').length,
@@ -217,7 +309,7 @@ export const AppShell: React.FC = () => {
                 {notifDropdownOpen && (
                   <div
                     data-testid="header-notification-dropdown"
-                    className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl sm:w-88"
+                    className="fixed left-2.5 right-2.5 top-13 z-50 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-88"
                   >
                     <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50 px-3.5 py-2.5">
                       <div className="flex items-center gap-1.5">

@@ -41,11 +41,30 @@ export class KtnApiError extends Error {
 
 export function getStoredSession(): KtnUserSession | null {
   try {
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    const raw =
+      localStorage.getItem(SESSION_STORAGE_KEY) ||
+      sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as KtnUserSession;
+    const parsed = JSON.parse(raw) as KtnUserSession & {
+      accessToken?: string;
+      roles?: string[];
+      type?: string;
+    };
     if (!parsed || !parsed.email || parsed.token === 'DEMO-MODE-ONLY') {
       return null;
+    }
+    if (!parsed.token && parsed.accessToken) {
+      parsed.token = parsed.accessToken;
+    }
+    if (!parsed.role) {
+      const roles = Array.isArray(parsed.roles) ? parsed.roles : [];
+      if (roles.includes('admin') || roles.includes('root') || parsed.type === 'admin') {
+        parsed.role = 'admin';
+      } else if (roles.includes('teacher') || parsed.type === 'teacher') {
+        parsed.role = 'teacher';
+      } else {
+        parsed.role = 'student';
+      }
     }
     return parsed;
   } catch {
@@ -63,7 +82,11 @@ export function saveStoredSession(session: KtnUserSession, token?: string): KtnU
     token: effectiveToken
   };
   try {
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(merged));
+    const serialized = JSON.stringify(merged);
+    localStorage.setItem(SESSION_STORAGE_KEY, serialized);
+    sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
+    localStorage.removeItem('ol-credentials-auth-user');
+    sessionStorage.removeItem('ol-credentials-auth-user');
   } catch {
     // Ignore storage quota errors
   }
@@ -73,7 +96,9 @@ export function saveStoredSession(session: KtnUserSession, token?: string): KtnU
 export function clearStoredSession(): void {
   try {
     localStorage.removeItem(SESSION_STORAGE_KEY);
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
     localStorage.removeItem('ol-credentials-auth-user');
+    sessionStorage.removeItem('ol-credentials-auth-user');
   } catch {
     // Ignore
   }
@@ -173,6 +198,7 @@ export const ktnApi = {
   async verifySession(): Promise<KtnUserSession | null> {
     const stored = getStoredSession();
     if (!stored?.token) return null;
+    const tokenAtStart = stored.token;
     try {
       const res = await ktnRequest<{
         ok: boolean;
@@ -181,11 +207,19 @@ export const ktnApi = {
         token: string;
       }>('/api/ktn/auth/session');
       if (res.authenticated && res.session) {
-        return saveStoredSession(res.session, res.token);
+        return saveStoredSession(res.session, res.token || tokenAtStart);
+      }
+      const latest = getStoredSession();
+      if (latest?.token && latest.token !== tokenAtStart) {
+        return latest;
       }
       clearStoredSession();
       return null;
     } catch (err) {
+      const latest = getStoredSession();
+      if (latest?.token && latest.token !== tokenAtStart) {
+        return latest;
+      }
       if (err instanceof KtnApiError && (err.status === 401 || err.status === 403)) {
         clearStoredSession();
         return null;
@@ -326,6 +360,48 @@ export const ktnApi = {
     if (!uploadRes.ok) {
       throw new KtnApiError({
         message: 'Không thể tải tệp bài làm lên kho lưu trữ. Em vui lòng thử lại.',
+        status: uploadRes.status || 502
+      });
+    }
+    return {
+      fileUrl: presign.fileUrl,
+      fileType,
+      size: fileSize
+    };
+  },
+
+  async uploadChatFile(file: File | Blob, fileName: string): Promise<{ fileUrl: string; fileType: string; size: number }> {
+    const fileType = file.type || 'application/octet-stream';
+    const fileSize = file.size || 2048;
+    let presign: { ok: boolean; signedUrl: string; fileUrl: string };
+    try {
+      presign = await ktnRequest<{
+        ok: boolean;
+        signedUrl: string;
+        fileUrl: string;
+      }>('/api/ktn/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ fileName, fileType, fileSize })
+      });
+    } catch {
+      presign = await ktnRequest<{
+        ok: boolean;
+        signedUrl: string;
+        fileUrl: string;
+      }>('/api/ktn/homeworks/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ fileName, fileType, fileSize })
+      });
+    }
+
+    const uploadRes = await fetch(presign.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': fileType },
+      body: file
+    });
+    if (!uploadRes.ok) {
+      throw new KtnApiError({
+        message: 'Không thể tải tệp đính kèm lên kho lưu trữ. Vui lòng thử lại.',
         status: uploadRes.status || 502
       });
     }

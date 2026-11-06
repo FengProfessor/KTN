@@ -23,6 +23,10 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     attachment.kind === 'audio' ||
     /\.(webm|mp3|wav|ogg|m4a)(\?|$)/i.test(attachment.url);
 
+  const isVideo =
+    /\.(mp4|mov|m4v)(\?|$)/i.test(attachment.url) ||
+    /\.(mp4|mov|m4v)$/i.test(attachment.name || '');
+
   if (isImage) {
     return (
       <>
@@ -84,6 +88,43 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           </div>
         )}
       </>
+    );
+  }
+
+  if (isVideo) {
+    return (
+      <div
+        data-testid="chat-video-attachment"
+        className={`mt-1.5 flex min-w-0 max-w-xs flex-col gap-1.5 overflow-hidden rounded-xl border p-2 ${
+          isOwn
+            ? 'border-red-300/60 bg-white/90 text-stone-900'
+            : 'border-stone-200 bg-stone-50 text-stone-900'
+        }`}
+      >
+        <video
+          data-testid="chat-video-player"
+          controls
+          playsInline
+          preload="metadata"
+          src={attachment.url}
+          className="max-h-60 w-full rounded-lg bg-black"
+        />
+        <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-stone-600">
+          <span className="truncate font-semibold text-stone-800">
+            {attachment.name || 'Video đính kèm'}
+          </span>
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noreferrer"
+            download={attachment.name}
+            className="inline-flex shrink-0 items-center gap-1 font-semibold text-red-800 hover:underline"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Tải về
+          </a>
+        </div>
+      </div>
     );
   }
 

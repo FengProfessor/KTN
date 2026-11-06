@@ -64,7 +64,7 @@ export const AppShell: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
     staleTime: 2000,
     refetchInterval: isDemoMode ? false : 4000,
-    refetchIntervalInBackground: false,
+    refetchIntervalInBackground: true,
   });
 
   const teacherHomeworksQuery = useQuery<KtnHomework[]>({
@@ -117,6 +117,33 @@ export const AppShell: React.FC = () => {
     const activeEmail = user?.email || (isDemoMode ? 'demo' : '');
     if (!activeEmail || notificationsList.length === 0) return;
 
+    const triggerSwNotification = (notif: KtnNotification) => {
+      if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+        return;
+      }
+      const deepLink = `/custom-page/so-lien-lac-test#${resolveNotificationLink(notif)}`;
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready
+          .then((reg) => {
+            if (reg.active) {
+              reg.active.postMessage({
+                type: 'KTN_SHOW_NOTIFICATION',
+                title: notif.title,
+                body: notif.body,
+                data: { id: notif.id, action_url: deepLink, url: deepLink },
+              });
+            } else if (typeof reg.showNotification === 'function') {
+              reg.showNotification(notif.title, {
+                body: notif.body,
+                tag: notif.id,
+                data: { id: notif.id, action_url: deepLink, url: deepLink },
+              });
+            }
+          })
+          .catch(() => null);
+      }
+    };
+
     if (initializedNotifsForUserRef.current !== activeEmail) {
       initializedNotifsForUserRef.current = activeEmail;
       seenNotifIdsRef.current = new Set(notificationsList.map((n) => n.id));
@@ -140,6 +167,7 @@ export const AppShell: React.FC = () => {
             description: latest.body,
             variant: 'default',
           });
+          triggerSwNotification(latest);
         }
       }
       return;
@@ -159,21 +187,7 @@ export const AppShell: React.FC = () => {
         description: topNotif.body,
         variant: 'default',
       });
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        const deepLink = `/custom-page/so-lien-lac-test#${resolveNotificationLink(topNotif)}`;
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.ready
-            .then((reg) => {
-              reg.active?.postMessage({
-                type: 'KTN_SHOW_NOTIFICATION',
-                title: topNotif.title,
-                body: topNotif.body,
-                data: { id: topNotif.id, action_url: deepLink, url: deepLink },
-              });
-            })
-            .catch(() => null);
-        }
-      }
+      triggerSwNotification(topNotif);
     }
   }, [notificationsList, user?.email, isDemoMode, addToast]);
 

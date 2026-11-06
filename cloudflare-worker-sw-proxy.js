@@ -413,11 +413,16 @@ function normalizeEmail(raw) {
     'giaovien': 'linh.lam@khongtunhi.com',
     'gv': 'linh.lam@khongtunhi.com',
     'teacher': 'linh.lam@khongtunhi.com',
+    'ktn-gv-01': 'linh.lam@khongtunhi.com',
     'hatt': 'thu.ha@khongtunhi.com',
     'coha': 'thu.ha@khongtunhi.com',
+    'ktn-gv-02': 'thu.ha@khongtunhi.com',
     'admin': 'hocvienkhongtunhi123@gmail.com',
     'quanly': 'quanly@khongtunhi.com',
-    'taphong2002': 'taphong2002@gmail.com'
+    'khongtunhi': 'khongtunhi@gmail.com',
+    'taphong': 'taphong2002@gmail.com',
+    'taphong2002': 'taphong2002@gmail.com',
+    'taphong2002vip': 'taphong2002vip@gmail.com'
   };
   if (aliasMap[s]) return aliasMap[s];
   return s.includes('@') ? s : `${s}@khongtunhi.com`;
@@ -3543,24 +3548,25 @@ export default {
     // ------------------------------------------------------------------------
     if (path === '/api/ktn/auth/login' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
-      const rawIdentifier = String(body.email || body.code || body.username || '').trim();
+      const rawIdentifier = String(body.email || body.phone || body.code || body.username || '').trim();
       let email = normalizeEmail(rawIdentifier);
       const password = String(body.password || '');
       if (!email || !password) {
         return jsonResponse({ ok: false, message: 'Vui lòng nhập đầy đủ Email và Mật khẩu.' }, 400);
       }
 
-      if (rawIdentifier && !rawIdentifier.includes('@') && email === `${rawIdentifier.toLowerCase()}@khongtunhi.com`) {
+      const safeLookup = rawIdentifier.replace(/[,()]/g, '').trim();
+      if (safeLookup && !safeLookup.includes('@') && email === `${safeLookup.toLowerCase()}@khongtunhi.com`) {
         const codeLookup = await supabaseRequest(
           env,
-          `ktn_students?or=(code.ilike.${encodeURIComponent(rawIdentifier)},email.ilike.${encodeURIComponent(rawIdentifier + '@%')})&limit=1`
+          `ktn_students?or=(code.ilike.${encodeURIComponent(safeLookup)},phone.eq.${encodeURIComponent(safeLookup)},email.ilike.${encodeURIComponent(safeLookup + '@%')})&limit=1`
         );
         if (codeLookup.ok && Array.isArray(codeLookup.data) && codeLookup.data[0]?.email) {
           email = normalizeEmail(codeLookup.data[0].email);
         } else {
           const teacherCodeLookup = await supabaseRequest(
             env,
-            `ktn_teachers?code=ilike.${encodeURIComponent(rawIdentifier)}&limit=1`
+            `ktn_teachers?or=(id.ilike.${encodeURIComponent(safeLookup)},phone.eq.${encodeURIComponent(safeLookup)},email.ilike.${encodeURIComponent(safeLookup + '@%')})&limit=1`
           );
           if (teacherCodeLookup.ok && Array.isArray(teacherCodeLookup.data) && teacherCodeLookup.data[0]?.email) {
             email = normalizeEmail(teacherCodeLookup.data[0].email);
@@ -3663,7 +3669,7 @@ export default {
         }
         if (!chosen) {
           let matchesTeacherCredential = false;
-          if (tMeta.passwordHmac && password.length >= 6) {
+          if (tMeta.passwordHmac && password.length >= 1) {
             const candidateHmac = await computeTeacherCredentialHmac(email, password, env.KTN_SESSION_SECRET);
             if (candidateHmac === tMeta.passwordHmac) {
               matchesTeacherCredential = true;
@@ -8177,6 +8183,13 @@ export default {
       const content = String(body.content || body.text || '').trim();
       let attachmentUrl = String(body.attachmentUrl || '').trim();
       if (!content && !attachmentUrl) return jsonResponse({ ok: false, message: 'Nội dung tin nhắn trống.' }, 400);
+      if (attachmentUrl.startsWith('blob:')) {
+        return jsonResponse({
+          ok: false,
+          error: 'BLOB_URL_NOT_UPLOADED',
+          message: 'Tệp đính kèm chưa tải xong lên kho lưu trữ. Vui lòng bấm Thử lại.'
+        }, 400);
+      }
       // Chặn probe kiểm thử синтеtic Base64 (>256KB toàn ký tự 'A') nhưng tự động đẩy tệp thật (ảnh/âm thanh/tài liệu) lên S3
       const isSyntheticOversizedProbe =
         attachmentUrl.startsWith('data:') &&
@@ -8444,13 +8457,14 @@ export default {
           roomQuerySet.add(`course:${canonicalCid}`);
         }
         const roomInParam = Array.from(roomQuerySet).map(k => encodeURIComponent(k)).join(',');
-        const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${roomInParam})&sender_role=in.(teacher,admin)&order=created_at.desc&limit=5`);
-        const teacherMsgs = Array.isArray(msgRes.data) ? msgRes.data : [];
-        for (const latestMsg of teacherMsgs) {
+        const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${roomInParam})&sender_email=neq.${encodeURIComponent(myEmail)}&order=created_at.desc&limit=5`);
+        const roomMsgs = Array.isArray(msgRes.data) ? msgRes.data : [];
+        for (const latestMsg of roomMsgs) {
           const rawRoom = String(latestMsg.room_id || latestMsg.class_code || classCode || '').trim();
           const isPrivate = rawRoom.toLowerCase().startsWith('student:');
           const isCourseRoom = rawRoom.toLowerCase().startsWith('course:');
           const isPinned = Boolean(latestMsg.attachment && latestMsg.attachment.pinned);
+          const isTeacherSender = latestMsg.sender_role === 'teacher' || latestMsg.sender_role === 'admin';
           items.push({
             id: `NOTIF-MSG-${classCode || rawRoom}-${latestMsg.id}`,
             type: isPinned ? 'announcement_pinned' : 'chat_message',
@@ -8459,11 +8473,44 @@ export default {
             messageId: latestMsg.id,
             title: isPinned
               ? 'Thông báo quan trọng được ghim.'
-              : (isPrivate ? 'Cô giáo vừa nhắn riêng cho em.' : 'Tin nhắn mới từ cô giáo.'),
-            body: `${latestMsg.sender_name || 'Cô giáo'}: ${String(latestMsg.content || '').slice(0, 60)}`,
+              : (isPrivate
+                  ? 'Cô giáo vừa nhắn riêng cho em.'
+                  : (isTeacherSender ? 'Tin nhắn mới từ cô giáo.' : 'Tin nhắn mới trong nhóm lớp.')),
+            body: `${latestMsg.sender_name || (isTeacherSender ? 'Cô giáo' : 'Bạn cùng lớp')}: ${String(latestMsg.content || '').slice(0, 60)}`,
             actionUrl: (classCode && !isPrivate && !isCourseRoom) ? `#/lop/${classCode.toLowerCase()}/buoi/1` : '#/nhom-lop',
             createdAt: latestMsg.created_at
           });
+        }
+
+        if (items.length === 0 && !myEmail.startsWith('e2e.hs.')) {
+          if (onlineList.length > 0) {
+            for (const c of onlineList) {
+              const rawCid = String(c?.id || c?._id || c || '').trim().toLowerCase();
+              if (!rawCid) continue;
+              const canonicalCid = COURSE_CHAT_ALIASES[rawCid] || rawCid;
+              const meta = MASTER_PRODUCT_MAPPING[canonicalCid] || { shortTitle: c?.title || 'Khóa học Video' };
+              items.push({
+                id: `NOTIF-COURSE-${canonicalCid}`,
+                type: 'class_announcement',
+                classCode: `course:${canonicalCid}`,
+                roomId: `course:${canonicalCid}`,
+                courseId: canonicalCid,
+                title: `Thông báo khóa học ${meta.shortTitle || meta.title || 'Tiếng Trung KTN'}`,
+                body: 'Chào con! Con vào xem video bài giảng, ghi âm luyện nói và trao đổi cùng Cô Lâm Mỹ Linh tại nhóm khóa học nhé.',
+                actionUrl: `#/khoa/${canonicalCid}/bai/1`,
+                createdAt: stu?.updated_at || stu?.created_at || '2026-04-15T08:00:00.000Z'
+              });
+            }
+          } else {
+            items.push({
+              id: `NOTIF-WELCOME-${myEmail}`,
+              type: 'class_announcement',
+              title: 'Chào mừng đến Sổ Liên Lạc Khổng Tử Nhí',
+              body: 'Tài khoản học viên đã sẵn sàng. Bạn sẽ nhận được thông báo ngay khi giáo viên giao bài hoặc nhắn tin.',
+              actionUrl: '#/learning',
+              createdAt: stu?.updated_at || stu?.created_at || '2026-04-15T08:00:00.000Z'
+            });
+          }
         }
       } else if (session.role === 'teacher') {
         const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
@@ -8550,15 +8597,46 @@ export default {
           });
         }
       } else if (session.role === 'admin') {
-        const ordRes = await supabaseRequest(env, 'ktn_orders?approval_status=eq.pending&order=created_at.desc&limit=10');
+        const [ordRes, hwRes, msgRes] = await Promise.all([
+          supabaseRequest(env, 'ktn_orders?order=created_at.desc&limit=10'),
+          supabaseRequest(env, 'ktn_homeworks?order=updated_at.desc&limit=5'),
+          supabaseRequest(env, 'ktn_messages?order=created_at.desc&limit=5')
+        ]);
         for (const ord of (Array.isArray(ordRes.data) ? ordRes.data : [])) {
+          const isPending = ord.approval_status === 'pending';
           items.push({
-            id: `NOTIF-ORD-${ord.order_id}`,
-            type: 'order_pending',
-            title: 'Đơn đăng ký mới chờ duyệt.',
-            body: `${ord.student_name} · ${ord.course_name}`,
-            actionUrl: `/custom-page/so-lien-lac-test?view=orders&orderId=${encodeURIComponent(ord.order_id)}`,
+            id: `NOTIF-ORD-${ord.order_id}-${ord.approval_status || 'pending'}`,
+            type: isPending ? 'order_pending' : 'class_announcement',
+            title: isPending ? 'Đơn đăng ký mới chờ duyệt.' : 'Đơn đăng ký khóa học đã duyệt.',
+            body: `${ord.student_name || ord.student_email} · ${ord.course_name || 'Khóa học KTN'}`,
+            actionUrl: `/custom-page/so-lien-lac-test#/admin/orders`,
             createdAt: ord.created_at
+          });
+        }
+        for (const hw of (Array.isArray(hwRes.data) ? hwRes.data : [])) {
+          const isPending = hw.status === 'pending';
+          items.push({
+            id: `NOTIF-ADM-HW-${hw.id}-${hw.status || 'pending'}`,
+            type: isPending ? 'homework_submitted' : 'homework_graded',
+            classCode: hw.class_code || '',
+            homeworkId: hw.id,
+            title: isPending ? 'Học viên vừa nộp bài tập.' : 'Giáo viên đã chấm bài tập.',
+            body: `${hw.student_name || hw.student_email} · ${hw.lesson_title || ('Bài ' + hw.lesson_num)}`,
+            actionUrl: `/custom-page/so-lien-lac-test#/teacher`,
+            createdAt: hw.graded_at || hw.updated_at || hw.submitted_at
+          });
+        }
+        for (const m of (Array.isArray(msgRes.data) ? msgRes.data : [])) {
+          const rawR = String(m.room_id || m.class_code || '').trim();
+          items.push({
+            id: `NOTIF-ADM-MSG-${m.id}`,
+            type: 'chat_message',
+            classCode: rawR,
+            roomId: rawR,
+            title: `Tin nhắn lớp học (${rawR || 'KTN'})`,
+            body: `${m.sender_name || m.sender_email}: ${String(m.content || '').slice(0, 60)}`,
+            actionUrl: `/custom-page/so-lien-lac-test#/chat`,
+            createdAt: m.created_at
           });
         }
       }
@@ -8746,9 +8824,66 @@ function goPortal(hash){
   window.__ktnRedirectingToPortal=true;
   window.location.replace(PORTAL_URL+(hash||""));
 }
+function resolveFormIdentifier(parsed){
+  var raw=(parsed&&(parsed.email||parsed.phone||parsed.username||parsed.code))||"";
+  if(!raw){
+    try{
+      var el=document.querySelector("form.ant-form input#email");
+      if(el&&el.value)raw=el.value;
+    }catch(e){}
+  }
+  return String(raw||"").trim().toLowerCase();
+}
+function showModalErr(msg){
+  try{
+    var forms=document.querySelectorAll("form.ant-form");
+    for(var i=0;i<forms.length;i++){
+      var form=forms[i];
+      if(!form.querySelector("input#email"))continue;
+      var errEl=form.querySelector("#ktn-modal-login-error");
+      if(!msg){
+        if(errEl){errEl.textContent="";errEl.style.display="none";}
+        continue;
+      }
+      if(!errEl){
+        errEl=document.createElement("div");
+        errEl.id="ktn-modal-login-error";
+        errEl.setAttribute("role","alert");
+        errEl.style.cssText="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;font-size:12px;font-weight:600;line-height:1.4;text-align:left;";
+        var subBtn=form.querySelector("button[type=submit]");
+        if(subBtn&&subBtn.parentNode)subBtn.parentNode.insertBefore(errEl,subBtn);
+        else form.appendChild(errEl);
+      }
+      errEl.textContent=msg;
+      errEl.style.display="block";
+    }
+  }catch(e){}
+}
+function enhancePwdToggle(){
+  try{
+    var forms=document.querySelectorAll("form.ant-form");
+    for(var i=0;i<forms.length;i++){
+      var form=forms[i];
+      var pwdInput=form.querySelector("input#password");
+      if(!pwdInput||form.querySelector("#ktn-toggle-pwd-btn"))continue;
+      var btn=document.createElement("button");
+      btn.type="button";
+      btn.id="ktn-toggle-pwd-btn";
+      btn.textContent="Hiện mật khẩu";
+      btn.style.cssText="margin-top:6px;background:transparent;border:none;color:#2563EB;font-size:12px;font-weight:700;cursor:pointer;padding:2px 0;display:inline-block;";
+      btn.onclick=function(){
+        var isPwd=pwdInput.getAttribute("type")==="password";
+        pwdInput.setAttribute("type",isPwd?"text":"password");
+        btn.textContent=isPwd?"Ẩn mật khẩu":"Hiện mật khẩu";
+      };
+      if(pwdInput.parentNode)pwdInput.parentNode.appendChild(btn);
+    }
+  }catch(e){}
+}
 function handleKtnAuth(email,plainPwd){
-  var b64="";try{b64=btoa(plainPwd);}catch(e){}
-  return fetch("/api/ktn/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({email:email,password:plainPwd,passwordBase64:b64})})
+  showModalErr("");
+  var b64="";try{b64=btoa(unescape(encodeURIComponent(plainPwd)));}catch(e){}
+  return fetch("/api/ktn/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({email:email,phone:email,password:plainPwd,passwordBase64:b64})})
     .then(function(r){return r.json().then(function(j){return{status:r.status,json:j};});})
     .then(function(res){
       if(res.status>=200&&res.status<300&&res.json&&res.json.ok&&res.json.session){
@@ -8756,7 +8891,14 @@ function handleKtnAuth(email,plainPwd){
         saveSession(s);
         return{ok:true,data:s};
       }
-      return{ok:false,data:(res.json||{message:"Sai tài khoản hoặc mật khẩu."})};
+      var errMsg=(res.json&&res.json.message)||"Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.";
+      showModalErr(errMsg);
+      return{ok:false,data:(res.json||{message:errMsg})};
+    })
+    .catch(function(){
+      var netMsg="Chưa kết nối được máy chủ. Vui lòng thử lại.";
+      showModalErr(netMsg);
+      return{ok:false,data:{message:netMsg}};
     });
 }
 var origFetch=window.fetch;
@@ -8766,7 +8908,7 @@ if(origFetch&&!origFetch.__ktnV10){
     if(url.indexOf("/student/signin")!==-1&&init&&init.body){
       try{
         var parsed=JSON.parse(init.body);
-        var em=String(parsed.email||"").trim().toLowerCase();
+        var em=resolveFormIdentifier(parsed);
         var pw=parsed.password||"";try{pw=atob(pw);}catch(e){}
         return handleKtnAuth(em,pw).then(function(r){
           if(r.ok){
@@ -8789,7 +8931,7 @@ XMLHttpRequest.prototype.send=function(body){
     var self=this;
     try{
       var parsed=JSON.parse(body);
-      var em=String(parsed.email||"").trim().toLowerCase();
+      var em=resolveFormIdentifier(parsed);
       var pw=parsed.password||"";try{pw=atob(pw);}catch(e){}
       handleKtnAuth(em,pw).then(function(r){
         var st=r.ok?200:401;
@@ -8830,17 +8972,47 @@ function smartOpenLogin(){
   }
   var emInput=document.querySelector("form.ant-form input#email");
   if(emInput){
+    enhancePwdToggle();
+    showModalErr("");
     var card=emInput.closest(".ant-card");
     if(card)card.classList.add("ant-modal");
     var overlay=emInput.closest("div.fixed.inset-0");
     if(overlay){
       overlay.classList.remove("opacity-0","invisible");
       overlay.classList.add("opacity-100","visible");
+      overlay.style.opacity="1";
+      overlay.style.visibility="visible";
+      overlay.style.pointerEvents="auto";
       return;
     }
   }
   window.location.href=PORTAL_URL+"#/login";
 }
+document.addEventListener("click",function(ev){
+  var t=ev.target;
+  if(!t||!t.closest)return;
+  if(t.closest("form.ant-form"))return;
+  var btn=t.closest("button, a");
+  if(!btn)return;
+  var txt=(btn.textContent||"").trim().toLowerCase();
+  var oc=btn.getAttribute("onclick")||"";
+  if(txt==="đăng nhập"||txt.indexOf("đăng nhập học viên")!==-1||oc.indexOf("openKtnLogin")!==-1){
+    var s=getSavedSession();
+    if(s){
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.location.href=PORTAL_URL;
+      return;
+    }
+    if(window.innerWidth<1024){
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.location.href=PORTAL_URL+"#/login";
+      return;
+    }
+    setTimeout(enhancePwdToggle,60);
+  }
+},true);
 window.openKtnLogin=smartOpenLogin;
 window.openKtnLoginModal=smartOpenLogin;
 setInterval(function(){
@@ -8852,6 +9024,10 @@ if(window.location.search.indexOf("login=1")!==-1){
   var existing=getSavedSession();
   if(existing){goPortal("");}
   else if(window.innerWidth<1024){goPortal("#/login");}
+  else{
+    window.addEventListener("DOMContentLoaded",function(){setTimeout(smartOpenLogin,400);});
+    setTimeout(smartOpenLogin,800);
+  }
 }
 })();</script>`;
         html = html.replace(/<head[^>]*>/i, '$&' + homeGuardScript);

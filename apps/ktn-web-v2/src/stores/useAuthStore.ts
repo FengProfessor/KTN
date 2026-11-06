@@ -144,6 +144,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   async restoreSession() {
+    if (get().isLoading) {
+      return get().user;
+    }
     const existing = getStoredSession();
     if (!existing) {
       set({ user: null, authUser: null, isRestoring: false });
@@ -151,6 +154,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     set({ isRestoring: true });
     const verified = await ktnApi.verifySession();
+    if (get().isLoading) {
+      set({ isRestoring: false });
+      return get().user;
+    }
     set({
       user: verified,
       authUser: verified,

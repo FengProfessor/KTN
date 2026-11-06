@@ -206,12 +206,12 @@ export const ktnApi = {
         session: KtnUserSession;
         token: string;
       }>('/api/ktn/auth/session');
-      if (res.authenticated && res.session) {
-        return saveStoredSession(res.session, res.token || tokenAtStart);
-      }
       const latest = getStoredSession();
       if (latest?.token && latest.token !== tokenAtStart) {
         return latest;
+      }
+      if (res.authenticated && res.session) {
+        return saveStoredSession(res.session, res.token || tokenAtStart);
       }
       clearStoredSession();
       return null;

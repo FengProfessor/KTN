@@ -69,7 +69,7 @@ export const NotificationCenter: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
     staleTime: 2000,
     refetchInterval: isDemoMode ? false : 4000,
-    refetchIntervalInBackground: false,
+    refetchIntervalInBackground: true,
   });
 
   const notifications = notificationsQuery.data?.notifications || [];
@@ -141,7 +141,7 @@ export const NotificationCenter: React.FC = () => {
           return;
         }
       }
-      let subPayload: Record<string, unknown> = {
+      const subPayload: Record<string, unknown> = {
         endpoint: `https://push.khongtunhi.com/v2/${encodeURIComponent(
           user?.email || 'student'
         )}`,
@@ -153,14 +153,22 @@ export const NotificationCenter: React.FC = () => {
       };
       if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
         try {
-          const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-          if (reg && 'Notification' in window && Notification.permission === 'granted') {
-            reg.active?.postMessage({
-              type: 'KTN_SHOW_NOTIFICATION',
-              title: 'Học Viện Khổng Tử Nhí',
-              body: 'Đã bật chuông thông báo trên điện thoại! Bạn sẽ nhận tin mới ngay lập tức.',
-              data: { id: `ktn-optin-${Date.now()}`, url: '/custom-page/so-lien-lac-test#/notifications' },
-            });
+          await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          const readyReg = await navigator.serviceWorker.ready;
+          if (readyReg && 'Notification' in window && Notification.permission === 'granted') {
+            if (readyReg.active) {
+              readyReg.active.postMessage({
+                type: 'KTN_SHOW_NOTIFICATION',
+                title: 'Học Viện Khổng Tử Nhí',
+                body: 'Đã bật chuông thông báo trên điện thoại! Bạn sẽ nhận tin mới ngay lập tức.',
+                data: { id: `ktn-optin-${Date.now()}`, url: '/custom-page/so-lien-lac-test#/notifications' },
+              });
+            } else if (typeof readyReg.showNotification === 'function') {
+              await readyReg.showNotification('Học Viện Khổng Tử Nhí', {
+                body: 'Đã bật chuông thông báo trên điện thoại! Bạn sẽ nhận tin mới ngay lập tức.',
+                data: { id: `ktn-optin-${Date.now()}`, url: '/custom-page/so-lien-lac-test#/notifications' },
+              });
+            }
           }
         } catch {
           // ignore SW error

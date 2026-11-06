@@ -33,11 +33,12 @@ async function ensureRemoteAttachment(att: ChatAttachment): Promise<ChatAttachme
   if (att.kind === 'audio' && att.url.startsWith('data:audio/') && att.url.length <= 180 * 1024) {
     return att;
   }
+  const isLocalBlob = att.url.startsWith('blob:');
   try {
     let blob: Blob | null = null;
     if (att.url.startsWith('data:')) {
       blob = dataUrlToBlob(att.url);
-    } else if (att.url.startsWith('blob:')) {
+    } else if (isLocalBlob) {
       const r = await fetch(att.url);
       blob = await r.blob();
     }
@@ -50,8 +51,16 @@ async function ensureRemoteAttachment(att: ChatAttachment): Promise<ChatAttachme
         };
       }
     }
-  } catch {
-    // Fallback to server-side auto-upload in Worker if presigned PUT fails
+    if (isLocalBlob) {
+      throw new Error('Không thể tải tệp lớn lên đám mây. Vui lòng thử gửi lại.');
+    }
+  } catch (err) {
+    if (isLocalBlob) {
+      throw err instanceof Error
+        ? err
+        : new Error('Không thể tải tệp lớn lên đám mây. Vui lòng thử gửi lại.');
+    }
+    // Fallback to server-side auto-upload in Worker if presigned PUT fails for data: URLs
   }
   return att;
 }

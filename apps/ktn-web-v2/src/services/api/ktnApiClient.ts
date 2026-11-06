@@ -217,10 +217,57 @@ export const ktnApi = {
   },
 
   async getCourseUnits(courseId: string): Promise<KtnLessonUnit[]> {
-    const res = await ktnRequest<{ ok: boolean; units: KtnLessonUnit[] }>(
+    const res = await ktnRequest<{ ok: boolean; units: Array<Record<string, unknown>> }>(
       `/api/ktn/courses/units?courseId=${encodeURIComponent(courseId)}`
     );
-    return Array.isArray(res.units) ? res.units : [];
+    const rawUnits = Array.isArray(res.units) ? res.units : [];
+    const vendorId = '3529cd2b-7af6-4fda-887c-392a79393d6a';
+    const sorted = [...rawUnits].sort(
+      (a, b) => Number(a?.index ?? a?.num ?? 0) - Number(b?.index ?? b?.num ?? 0)
+    );
+    return sorted.map((u, idx) => {
+      const unitId = String(u._id || u.id || `unit-${idx + 1}`).trim();
+      const resources = Array.isArray(u.resources) ? (u.resources as Array<Record<string, unknown>>) : [];
+      const rawVid = String(
+        u.videoId ||
+          (typeof u.video === 'string' ? u.video : '') ||
+          resources[0]?._id ||
+          resources[0]?.id ||
+          ''
+      ).trim();
+      const isHexVid = /^[0-9a-f]{24}$/i.test(rawVid);
+      const streamUrl = String(
+        u.streamUrl ||
+          (rawVid.startsWith('http')
+            ? rawVid
+            : isHexVid
+            ? `https://media.izteach.vn/${vendorId}/${rawVid}/playlist.m3u8`
+            : '')
+      );
+      const posterUrl = String(
+        u.posterUrl ||
+          (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/thumbnail.jpg` : '')
+      );
+      const durMs = Number(resources[0]?.duration || 0);
+      const duration = String(
+        u.duration ||
+          (durMs > 0
+            ? `${Math.floor(durMs / 60000)}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}`
+            : '15:00')
+      );
+      const num = Number(u.num) > 0 ? Number(u.num) : idx + 1;
+      return {
+        ...(u as unknown as KtnLessonUnit),
+        id: unitId,
+        _id: unitId,
+        num,
+        title: String(u.title || `Bài ${num}`),
+        videoId: rawVid || undefined,
+        streamUrl,
+        posterUrl,
+        duration
+      };
+    });
   },
 
   async getClasses(): Promise<KtnClassItem[]> {

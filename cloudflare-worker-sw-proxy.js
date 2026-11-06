@@ -3815,18 +3815,53 @@ export default {
       }
 
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
-      const tokenToUse = session.izteachAccessToken || session.accessToken || (await getIzTeachAdminToken(env));
+      let tokenToUse = session.izteachAccessToken || session.accessToken || (await getIzTeachAdminToken(env));
       if (!tokenToUse) {
         return jsonResponse({ ok: false, message: 'Chưa có token truy cập bài giảng izTeach.' }, 503);
       }
-      const unitRes = await fetch(`${IZTEACH_ENDPOINTS.courseUnits}?course=${encodeURIComponent(courseId)}&vendorId=${encodeURIComponent(vendorId)}`, {
+      let unitRes = await fetch(`${IZTEACH_ENDPOINTS.courseUnits}?course=${encodeURIComponent(courseId)}&vendorId=${encodeURIComponent(vendorId)}`, {
         headers: { Authorization: tokenToUse }
       });
-      const units = await unitRes.json().catch(() => []);
+      let rawUnits = await unitRes.json().catch(() => []);
+      if ((!unitRes.ok || !Array.isArray(rawUnits) || rawUnits.length === 0) && (session.izteachAccessToken || session.accessToken)) {
+        const adminTok = await getIzTeachAdminToken(env);
+        if (adminTok && adminTok !== tokenToUse) {
+          const retryRes = await fetch(`${IZTEACH_ENDPOINTS.courseUnits}?course=${encodeURIComponent(courseId)}&vendorId=${encodeURIComponent(vendorId)}`, {
+            headers: { Authorization: adminTok }
+          });
+          if (retryRes.ok) {
+            unitRes = retryRes;
+            rawUnits = await retryRes.json().catch(() => []);
+          }
+        }
+      }
+      const rawList = Array.isArray(rawUnits) ? rawUnits : (Array.isArray(rawUnits?.data) ? rawUnits.data : []);
+      const sortedList = [...rawList].sort((a, b) => (Number(a?.index ?? a?.num ?? 0) - Number(b?.index ?? b?.num ?? 0)));
+      const units = sortedList.map((u, idx) => {
+        if (!u || typeof u !== 'object') return u;
+        const unitId = String(u._id || u.id || '').trim();
+        const rawVid = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || '').trim();
+        const isHexVid = /^[0-9a-f]{24}$/i.test(rawVid);
+        const streamUrl = u.streamUrl || (rawVid.startsWith('http') ? rawVid : (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/playlist.m3u8` : ''));
+        const posterUrl = u.posterUrl || (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/thumbnail.jpg` : '');
+        const durMs = Number(u.resources?.[0]?.duration || 0);
+        const duration = u.duration || (durMs > 0 ? `${Math.floor(durMs / 60000)}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}` : '15:00');
+        const num = Number(u.num) > 0 ? Number(u.num) : idx + 1;
+        return {
+          ...u,
+          id: u.id || unitId,
+          _id: u._id || unitId,
+          num,
+          videoId: rawVid || u.videoId || '',
+          streamUrl,
+          posterUrl,
+          duration
+        };
+      });
       return jsonResponse({
         ok: unitRes.ok,
         courseId,
-        units: Array.isArray(units) ? units : []
+        units
       }, unitRes.ok ? 200 : unitRes.status);
     }
 
@@ -4058,9 +4093,10 @@ export default {
       const studentCaseFilter = String(url.searchParams.get('studentCase') || '').trim();
       const isDedicatedSearchEndpoint = path === '/api/ktn/admin/students/search';
       const requestedLimit = Number(url.searchParams.get('limit'));
+      const maxPageLimit = isDedicatedSearchEndpoint ? 500 : 2000;
       const pageLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
-        ? Math.min(500, Math.floor(requestedLimit))
-        : (isDedicatedSearchEndpoint ? 25 : 250);
+        ? Math.min(maxPageLimit, Math.floor(requestedLimit))
+        : (isDedicatedSearchEndpoint ? 25 : 2000);
       const rawOffset = Number(url.searchParams.get('offset') || url.searchParams.get('cursor') || 0);
       const pageOffset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
 
@@ -4210,6 +4246,23 @@ export default {
       let sbRes = await supabaseRequest(env, `ktn_students?${pgParts.join('&')}`, {
         prefer: 'count=exact'
       });
+      if (
+        sbRes &&
+        sbRes.ok &&
+        Array.isArray(sbRes.data) &&
+        sbRes.data.length === 1000 &&
+        pageLimit > 1000 &&
+        Number.isFinite(sbRes.totalCount) &&
+        sbRes.totalCount > pageOffset + 1000
+      ) {
+        const extraPgParts = pgParts
+          .filter(p => !p.startsWith('limit=') && !p.startsWith('offset='))
+          .concat([`limit=${pageLimit - 1000}`, `offset=${pageOffset + 1000}`]);
+        const extraRes = await supabaseRequest(env, `ktn_students?${extraPgParts.join('&')}`);
+        if (extraRes && extraRes.ok && Array.isArray(extraRes.data)) {
+          sbRes = { ...sbRes, data: sbRes.data.concat(extraRes.data) };
+        }
+      }
       let usedLegacySchemaFallback = false;
       let legacyTotalRows = 0;
       if ((!sbRes || !sbRes.ok) && sbRes?.status === 400) {
@@ -4247,6 +4300,21 @@ export default {
           sbRes = await supabaseRequest(env, `ktn_students?${directParts.join('&')}`, {
             prefer: 'count=exact'
           });
+          if (
+            sbRes &&
+            sbRes.ok &&
+            Array.isArray(sbRes.data) &&
+            sbRes.data.length === 1000 &&
+            pageLimit > 1000 &&
+            Number.isFinite(sbRes.totalCount) &&
+            sbRes.totalCount > pageOffset + 1000
+          ) {
+            const extraParts = [...legacyParts, `limit=${pageLimit - 1000}`, `offset=${pageOffset + 1000}`];
+            const extraRes = await supabaseRequest(env, `ktn_students?${extraParts.join('&')}`);
+            if (extraRes && extraRes.ok && Array.isArray(extraRes.data)) {
+              sbRes = { ...sbRes, data: sbRes.data.concat(extraRes.data) };
+            }
+          }
           legacyTotalRows = Number.isFinite(sbRes?.totalCount)
             ? sbRes.totalCount
             : (pageOffset + (Array.isArray(sbRes?.data) ? sbRes.data.length : 0));
@@ -5055,7 +5123,7 @@ export default {
         const existingTeaRow = (existingTeaLookup.ok && Array.isArray(existingTeaLookup.data) && existingTeaLookup.data[0]) || null;
         const existingMeta = extractTeacherMetaFromRow(existingTeaRow);
 
-        const tCode = String(body.code || existingTeaRow?.code || ('GV-KTN-' + Date.now().toString().slice(-4))).trim().toUpperCase();
+        const tCode = String(existingTeaRow?.code || body.code || ('GV-KTN-' + Date.now().toString().slice(-4))).trim().toUpperCase();
         const tName = String(body.name || existingTeaRow?.name || tEmail.split('@')[0]).trim();
         const hasExplicitAssignedClasses = Array.isArray(body.assignedClasses) || body.classCode !== undefined;
         const assignedClasses = hasExplicitAssignedClasses
@@ -5690,16 +5758,24 @@ export default {
 
     // ------------------------------------------------------------------------
     // D2. TRUNG TÂM ĐỐI SOÁT 3 HỆ THỐNG (WEB KTN <-> SUPABASE <-> IZTEACH)
-    // GET /api/ktn/admin/sync-status | POST /api/ktn/admin/sync-check | POST /api/ktn/admin/sync-retry
+    // GET /api/ktn/admin/sync-status | POST /api/ktn/admin/sync-check | POST /api/ktn/sync/reconcile | POST /api/ktn/admin/sync-retry
     // ------------------------------------------------------------------------
-    if ((path === '/api/ktn/admin/sync-status' && request.method === 'GET') || (path === '/api/ktn/admin/sync-check' && request.method === 'POST')) {
+    if (
+      (path === '/api/ktn/admin/sync-status' && request.method === 'GET') ||
+      ((path === '/api/ktn/admin/sync-check' || path === '/api/ktn/sync/reconcile') && request.method === 'POST')
+    ) {
       const session = await extractSessionFromRequest(request, env);
       if (!session || session.role !== 'admin') {
         return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới được xem trạng thái đối soát đồng bộ 3 hệ thống.' }, 403);
       }
 
-      const [stuRes, teaRes, clsRes, ordRes, hwRes, jobRes] = await Promise.all([
-        supabaseRequest(env, 'ktn_students?select=*&order=updated_at.desc&limit=2000'),
+      const reqBody = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
+      const dryRun = reqBody.dryRun !== false;
+      const repairMode = Boolean(reqBody.repairMode) && !dryRun;
+
+      const [stuPage1, stuPage2, teaRes, clsRes, ordRes, hwRes, jobRes] = await Promise.all([
+        supabaseRequest(env, 'ktn_students?select=*&order=updated_at.desc&limit=1000&offset=0'),
+        supabaseRequest(env, 'ktn_students?select=*&order=updated_at.desc&limit=1000&offset=1000').catch(() => ({ ok: false, data: [] })),
         supabaseRequest(env, 'ktn_teachers?select=*&order=code.asc'),
         supabaseRequest(env, 'ktn_classes?select=*&order=id.asc'),
         supabaseRequest(env, 'ktn_orders?select=*&order=created_at.desc&limit=300'),
@@ -5707,7 +5783,10 @@ export default {
         supabaseRequest(env, 'ktn_provisioning_jobs?select=*&order=updated_at.desc&limit=100').catch(() => ({ ok: false, data: [] }))
       ]);
 
-      const students = Array.isArray(stuRes.data) ? stuRes.data : [];
+      const students = [
+        ...(Array.isArray(stuPage1?.data) ? stuPage1.data : []),
+        ...(Array.isArray(stuPage2?.data) ? stuPage2.data : [])
+      ];
       const teachers = Array.isArray(teaRes.data) ? teaRes.data : [];
       const classes = Array.isArray(clsRes.data) ? clsRes.data : [];
       const orders = Array.isArray(ordRes.data) ? ordRes.data : [];
@@ -5793,8 +5872,8 @@ export default {
         }
       }
 
-      // 1b. Khi gọi POST /api/ktn/admin/sync-check: đối chiếu trực tiếp với danh sách học viên trên izTeach (phát hiện tài khoản có trên izTeach nhưng thiếu trên Supabase)
-      if (path === '/api/ktn/admin/sync-check' && request.method === 'POST') {
+      // 1b. Khi gọi POST /api/ktn/admin/sync-check hoặc /api/ktn/sync/reconcile: đối chiếu trực tiếp với danh sách học viên trên izTeach
+      if ((path === '/api/ktn/admin/sync-check' || path === '/api/ktn/sync/reconcile') && request.method === 'POST') {
         try {
           const adminToken = await getIzTeachAdminToken(env);
           if (adminToken) {
@@ -5986,6 +6065,8 @@ export default {
 
       return jsonResponse({
         ok: true,
+        dryRun,
+        repairMode,
         checkedAt: new Date().toISOString(),
         summary: {
           healthyCount: healthyStudentsCount,
@@ -6219,7 +6300,10 @@ export default {
           query = `ktn_attendance?class_code=eq.${encodeURIComponent(reqClass)}&order=date.desc&limit=500`;
         }
 
-        const sbRes = await supabaseRequest(env, query);
+        let sbRes = await supabaseRequest(env, query);
+        if ((!sbRes || !sbRes.ok) && sbRes?.status === 400 && query.includes('order=date.desc')) {
+          sbRes = await supabaseRequest(env, query.replace('order=date.desc', 'order=recorded_at.desc'));
+        }
         if (!sbRes || !sbRes.ok) {
           return jsonResponse({
             ok: false,
@@ -6228,7 +6312,13 @@ export default {
           }, sbRes?.status || 503);
         }
 
-        let records = Array.isArray(sbRes.data) ? sbRes.data : [];
+        let records = (Array.isArray(sbRes.data) ? sbRes.data : []).map(r => ({
+          ...r,
+          session_num: r.session_num ?? r.lesson_num ?? 1,
+          lesson_num: r.lesson_num ?? r.session_num ?? 1,
+          date: r.date || (r.recorded_at ? String(r.recorded_at).slice(0, 10) : ''),
+          note: r.note ?? r.teacher_note ?? ''
+        }));
         if (reqSessionNum !== null && Number.isFinite(reqSessionNum)) {
           records = records.filter(r => Number(r.session_num || 1) === reqSessionNum);
         }
@@ -6326,6 +6416,23 @@ export default {
               body: baseAttRow
             });
           }
+          if ((!wRes || !wRes.ok) && wRes?.status === 400) {
+            const v2AttRow = {
+              class_code: classCode,
+              student_code: String(entry.studentCode || entry.student_code || stuEmail).trim(),
+              student_email: stuEmail,
+              lesson_num: sessionNum,
+              status: status === 'absent_excused' ? 'excused' : (status === 'absent_unexcused' ? 'absent' : status),
+              teacher_note: note,
+              recorded_by: session.email,
+              recorded_at: new Date().toISOString()
+            };
+            wRes = await supabaseRequest(env, 'ktn_attendance?on_conflict=class_code,student_code,lesson_num', {
+              method: 'POST',
+              prefer: 'resolution=merge-duplicates,return=representation',
+              body: v2AttRow
+            });
+          }
           if (!wRes || !wRes.ok || !Array.isArray(wRes.data) || wRes.data.length === 0) {
             return jsonResponse({
               ok: false,
@@ -6334,7 +6441,15 @@ export default {
               message: 'Chưa lưu được dữ liệu điểm danh vào cơ sở dữ liệu Supabase. Vui lòng thử lại.'
             }, 502);
           }
-          savedRecords.push(wRes.data[0]);
+          const savedRow = wRes.data[0];
+          savedRecords.push({
+            ...savedRow,
+            student_name: savedRow.student_name || stuName,
+            session_num: savedRow.session_num ?? savedRow.lesson_num ?? sessionNum,
+            lesson_num: savedRow.lesson_num ?? savedRow.session_num ?? sessionNum,
+            date: savedRow.date || attDate,
+            note: savedRow.note ?? savedRow.teacher_note ?? note
+          });
         }
 
         const summary = buildAttendanceSummary(savedRecords);
@@ -8312,6 +8427,25 @@ export default {
         }, 502);
       }
       return jsonResponse({ ok: true });
+    }
+
+    if (path.startsWith('/custom-page/so-lien-lac') && request.method === 'GET') {
+      const originRes = await fetch(request);
+      const cType = String(originRes.headers.get('content-type') || '').toLowerCase();
+      if (cType.includes('text/html')) {
+        let html = await originRes.text();
+        html = html.replace(
+          /<head[^>]*>/i,
+          '$&<script>window.__ktnSllAuthHookedV8=true;window.__ktnAllowLogout=true;window.__KTN_EMBED_MODE__=true;</script>'
+        );
+        const newHeaders = new Headers(originRes.headers);
+        newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return new Response(html, {
+          status: originRes.status,
+          headers: newHeaders
+        });
+      }
+      return originRes;
     }
 
     return fetch(request);

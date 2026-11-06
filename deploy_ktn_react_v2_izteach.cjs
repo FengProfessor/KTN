@@ -185,7 +185,9 @@ function buildEmbedArtifacts(manifest) {
   const embedCss = `
 /* KTN React V2 — izTeach Custom Page Host Isolation (${manifest.releaseTag} @ ${manifest.gitCommit}) */
 #__next > main > div.mx-auto.max-w-screen-3xl > div.fixed.inset-x-0.top-0,
-#__next > main > div.mx-auto.max-w-screen-3xl > div.border-t.border-slate-200 {
+#__next > main > div.mx-auto.max-w-screen-3xl > div.border-t.border-slate-200,
+.ant-message,
+.ant-notification {
   display: none !important;
 }
 #__next > main > div.mx-auto.max-w-screen-3xl > div.pt-16 {
@@ -195,6 +197,18 @@ function buildEmbedArtifacts(manifest) {
   max-width: 100% !important;
   padding: 0 !important;
 }
+div.flex-1.justify-center > div[data-aos] {
+  opacity: 1 !important;
+  transform: none !important;
+}
+div.flex-1.justify-center > div:nth-child(n+2):not(:has(#ktn-react-v2-root)) {
+  display: none !important;
+}
+div.flex-1.justify-center > div:has(#ktn-react-v2-root) {
+  display: block !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
 #ktn-react-v2-root {
   width: 100%;
   min-height: 100vh;
@@ -203,11 +217,15 @@ function buildEmbedArtifacts(manifest) {
 }
 `.trim();
 
+  const entryUrlsJsonAttr = JSON.stringify(entryJsAssets.map((a) => a.cdnUrl)).replace(/"/g, '&quot;');
+  const onloadBootstrap = `(function(){window.__KTN_EMBED_MODE__=true;window.__KTN_RELEASE_VERSION__='${manifest.releaseTag}';window.__KTN_RELEASE_COMMIT__='${manifest.gitCommit}';var urls=${entryUrlsJsonAttr};urls.forEach(function(u){if(document.querySelector('script[src=&quot;'+u+'&quot;]'))return;var s=document.createElement('script');s.type='module';s.crossOrigin='anonymous';s.src=u;document.head.appendChild(s);});})();`;
+
   const embedHtml = `
 <!-- KTN React V2 Custom Page Mount (${manifest.releaseTag} / ${manifest.gitCommit}) -->
 ${cssLinks}
 ${modulePreloads}
 <div id="ktn-react-v2-root" data-ktn-router="hash" data-ktn-release="${manifest.releaseTag}" data-ktn-commit="${manifest.gitCommit}"></div>
+<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" style="display:none" onload="${onloadBootstrap}" />
 `.trim();
 
   const embedJs = `
@@ -250,6 +268,9 @@ ${modulePreloads}
     slug: manifest.customPageSlug || DEFAULT_SLUG,
     title: `Sổ Liên Lạc Điện Tử — Khổng Tử Nhí (${manifest.releaseTag})`,
     active: true,
+    embedHtml,
+    embedCss,
+    embedJs,
     sections: [
       {
         type: 'SectionHtml',
@@ -369,24 +390,131 @@ async function resolveIzTeachAdminToken() {
   return token;
 }
 
+const CLIENT_ID = 'fa3421bc-ba67-4fa7-b935-b2a8fb6ce1a9';
+
+function extractCustomPageCombinedHtml(pageData) {
+  if (!pageData) return '';
+  if (Array.isArray(pageData)) {
+    return pageData
+      .map((s) => s?.props?.html || s?.data?.html || '')
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (Array.isArray(pageData.data)) {
+    return pageData.data
+      .map((s) => s?.props?.html || s?.data?.html || '')
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (Array.isArray(pageData.sections)) {
+    return pageData.sections
+      .map((s) => s?.props?.html || s?.data?.html || '')
+      .filter(Boolean)
+      .join('\n');
+  }
+  return pageData?.sections?.[0]?.data?.html || pageData?.data?.sections?.[0]?.data?.html || '';
+}
+
 async function fetchCustomPageData(token, pageIdOrSlug, vendorId) {
   const url = `${IZTEACH_CUSTOM_PAGE_API_BASE}/custom-page-data?customPage=${encodeURIComponent(pageIdOrSlug)}&vendorId=${encodeURIComponent(vendorId)}`;
-  const res = await fetch(url, {
-    headers: token ? { Authorization: token } : {},
-  });
+  const headers = {
+    'ol-client-id': CLIENT_ID,
+    'ol-vendor-id': vendorId,
+  };
+  if (token) headers.Authorization = token;
+  const res = await fetch(url, { headers });
   if (!res.ok) return null;
   return res.json().catch(() => null);
 }
 
-async function updateCustomPageVendorSetting(token, payload) {
+async function updateCustomPageVendorSetting(token, payload, existingPage = null) {
   const url = `${IZTEACH_CUSTOM_PAGE_API_BASE}/custom-page-vendor-setting`;
+  const vendorId = payload.vendorId || VENDOR_ID;
+  const pageId = payload._id || DEFAULT_PAGE_ID;
+  const pageSlug = payload.slug || DEFAULT_SLUG;
+  const pageTitle = payload.title || 'Sổ Liên Lạc Điện Tử — Khổng Tử Nhí';
+
+  const existingSections = Array.isArray(existingPage)
+    ? existingPage
+    : Array.isArray(existingPage?.data)
+    ? existingPage.data
+    : [];
+
+  let viewData;
+  if (existingSections.length > 0) {
+    let primaryAssigned = false;
+    const primaryIdx = existingSections.findIndex(
+      (s) =>
+        s._id === '6adffce796c3ff0002b2c8d5' ||
+        s.name === 'html-section:so-lien-lac-prod' ||
+        s.index === 0
+    );
+    const targetPrimaryIndex = primaryIdx >= 0 ? primaryIdx : 0;
+
+    viewData = existingSections.map((sec, idx) => {
+      if (sec.element === 'SectionHtml' || sec.type === 'SectionHtml') {
+        if (!primaryAssigned && idx === targetPrimaryIndex) {
+          primaryAssigned = true;
+          return {
+            ...sec,
+            index: 0,
+            props: {
+              'heading-text': 'Sổ Liên Lạc Điện Tử — Khổng Tử Nhí',
+              'sub-text': pageTitle,
+              html: payload.embedHtml,
+              css: payload.embedCss,
+              js: payload.embedJs,
+            },
+          };
+        }
+        return {
+          ...sec,
+          props: {
+            ...(sec.props && 'heading-text' in sec.props ? { 'heading-text': '', 'sub-text': '' } : {}),
+            html: '<!-- empty -->',
+            css: '',
+            js: '',
+          },
+        };
+      }
+      return sec;
+    });
+  } else {
+    viewData = [
+      {
+        element: 'SectionHtml',
+        name: 'html-section:so-lien-lac-prod',
+        index: 0,
+        props: {
+          'heading-text': 'Sổ Liên Lạc Điện Tử — Khổng Tử Nhí',
+          'sub-text': pageTitle,
+          html: payload.embedHtml,
+          css: payload.embedCss,
+          js: payload.embedJs,
+        },
+      },
+    ];
+  }
+
+  const bodyObj = {
+    vendorSettingId: vendorId,
+    viewData,
+    isAddition: true,
+    url: pageSlug,
+    title: pageTitle,
+    pageId,
+    sections: payload.sections,
+  };
+
   const res = await fetch(url, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       Authorization: token,
+      'ol-client-id': CLIENT_ID,
+      'ol-vendor-id': vendorId,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(bodyObj),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -464,10 +592,10 @@ async function main() {
       await verifyAssetOnCdn(a);
     }
 
-    await updateCustomPageVendorSetting(adminToken, embed.customPagePayload);
+    const existingForRb = await fetchCustomPageData(adminToken, targetPageId, targetVendorId);
+    await updateCustomPageVendorSetting(adminToken, embed.customPagePayload, existingForRb);
     const readback = await fetchCustomPageData(adminToken, targetPageId, targetVendorId);
-    const readbackHtml =
-      readback?.sections?.[0]?.data?.html || readback?.data?.sections?.[0]?.data?.html || '';
+    const readbackHtml = extractCustomPageCombinedHtml(readback);
     if (!readbackHtml.includes(rbManifest.releaseTag)) {
       throw new Error(
         `Rollback read-after-write verification failed: expected releaseTag ${rbManifest.releaseTag} in Custom Page HTML.`
@@ -624,16 +752,17 @@ async function main() {
   console.log('\n[KTN-DEPLOY-V3] Step 2/3: Backing up existing Custom Page before update...');
   const existingPage = await fetchCustomPageData(adminToken, args.pageId, VENDOR_ID);
   if (existingPage) {
-    const backupPath = path.join(REPORT_DIR, `custom-page-backup-${args.pageId}.json`);
+    const backupDir = path.join(__dirname, 'backups', 'cutover-2026-11-06');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const backupPath = path.join(backupDir, `custom-page-backup-${args.pageId}.json`);
     fs.writeFileSync(backupPath, JSON.stringify(existingPage, null, 2), 'utf8');
     console.log(`  [BACKUP SAVED] ${backupPath}`);
   }
 
   console.log('\n[KTN-DEPLOY-V3] Step 3/3: Updating Custom Page SectionHtml & verifying read-after-write...');
-  await updateCustomPageVendorSetting(adminToken, embedArtifacts.customPagePayload);
+  await updateCustomPageVendorSetting(adminToken, embedArtifacts.customPagePayload, existingPage);
   const updatedPage = await fetchCustomPageData(adminToken, args.pageId, VENDOR_ID);
-  const updatedHtml =
-    updatedPage?.sections?.[0]?.data?.html || updatedPage?.data?.sections?.[0]?.data?.html || '';
+  const updatedHtml = extractCustomPageCombinedHtml(updatedPage);
   if (!updatedHtml.includes(args.releaseTag)) {
     throw new Error(
       `Custom Page read-after-write verification failed: expected releaseTag ${args.releaseTag} in Custom Page HTML.`

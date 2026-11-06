@@ -518,11 +518,19 @@ export const TeacherWorkspace: React.FC = () => {
                         )}
 
                         {hw.file_url && (
-                          <div className="mt-1.5 flex items-center gap-2">
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <audio
+                              controls
+                              preload="metadata"
+                              src={hw.file_url}
+                              data-testid={`teacher-homework-audio-${hw.id}`}
+                              className="h-8 max-w-full sm:max-w-[240px]"
+                            />
                             <a
                               href={hw.file_url}
                               target="_blank"
                               rel="noreferrer"
+                              data-testid={`teacher-homework-file-link-${hw.id}`}
                               className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-800 hover:bg-red-50"
                             >
                               <ExternalLink className="h-3 w-3" />

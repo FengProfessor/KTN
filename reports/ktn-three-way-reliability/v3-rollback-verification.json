@@ -2,11 +2,11 @@
   "ok": true,
   "mode": "dry-run",
   "restoredReleaseTag": "v3.0.0",
-  "restoredCommit": "0732669",
+  "restoredCommit": "aa1225d",
   "customPageId": "6adff7ba36309b0002b6e659",
-  "embedHtmlBytes": 759,
-  "embedCssBytes": 559,
+  "embedHtmlBytes": 1400,
+  "embedCssBytes": 946,
   "embedJsBytes": 585,
-  "embedHtml": "<!-- KTN React V2 Custom Page Mount (v3.0.0 / 0732669) -->\n<link rel=\"stylesheet\" crossorigin href=\"https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-0732669/assets/index-g0Qx9nNV.css\">\n<link rel=\"modulepreload\" crossorigin href=\"https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-0732669/assets/vendor-icons-D9EkkmGI.js\">\n<link rel=\"modulepreload\" crossorigin href=\"https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-0732669/assets/vendor-react-zGRsKWYw.js\">\n<div id=\"ktn-react-v2-root\" data-ktn-router=\"hash\" data-ktn-release=\"v3.0.0\" data-ktn-commit=\"0732669\"></div>",
-  "verifiedAt": "2026-11-06T01:01:40.454Z"
+  "embedHtml": "<!-- KTN React V2 Custom Page Mount (v3.0.0 / aa1225d) -->\n<link rel=\"stylesheet\" crossorigin href=\"https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-aa1225d/assets/index-Ds3XXIwL.css\">\n<link rel=\"modulepreload\" crossorigin href=\"https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-aa1225d/assets/vendor-icons-D9EkkmGI.js\">\n<link rel=\"modulepreload\" crossorigin href=\"https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-aa1225d/assets/vendor-react-zGRsKWYw.js\">\n<div id=\"ktn-react-v2-root\" data-ktn-router=\"hash\" data-ktn-release=\"v3.0.0\" data-ktn-commit=\"aa1225d\"></div>\n<img src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\" alt=\"\" style=\"display:none\" onload=\"(function(){window.__KTN_EMBED_MODE__=true;window.__KTN_RELEASE_VERSION__='v3.0.0';window.__KTN_RELEASE_COMMIT__='aa1225d';var urls=[&quot;https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-aa1225d/assets/index-BtnyHpFK.js&quot;];urls.forEach(function(u){if(document.querySelector('script[src=&quot;'+u+'&quot;]'))return;var s=document.createElement('script');s.type='module';s.crossOrigin='anonymous';s.src=u;document.head.appendChild(s);});})();\" />",
+  "verifiedAt": "2026-11-06T04:10:53.684Z"
 }

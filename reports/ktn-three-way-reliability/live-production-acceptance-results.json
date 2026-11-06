@@ -1,0 +1,576 @@
+{
+  "sessionTag": "LIVE-E2E-1793925068455",
+  "startedAt": "2026-11-06T00:31:08.455Z",
+  "websiteChecks": {
+    "desktop-1440": {
+      "loadMs": 3525.37,
+      "scrollWidth": 1440,
+      "innerWidth": 1440,
+      "hasHorizontalOverflow": false,
+      "fcpMs": 1516,
+      "totalImages": 70,
+      "loadedImages": 45,
+      "stylesheets": 51,
+      "requestCount": 229,
+      "totalJsCssBytes": 550546,
+      "consoleErrors": [
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch"
+      ],
+      "pageErrors": [],
+      "failedStatuses": []
+    },
+    "mobile-390": {
+      "loadMs": 3230.7,
+      "scrollWidth": 390,
+      "innerWidth": 390,
+      "hasHorizontalOverflow": false,
+      "fcpMs": 1440,
+      "totalImages": 70,
+      "loadedImages": 34,
+      "stylesheets": 51,
+      "requestCount": 117,
+      "totalJsCssBytes": 360644,
+      "consoleErrors": [
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch"
+      ],
+      "pageErrors": [],
+      "failedStatuses": []
+    },
+    "mobile-360": {
+      "loadMs": 3314.04,
+      "scrollWidth": 360,
+      "innerWidth": 360,
+      "hasHorizontalOverflow": false,
+      "fcpMs": 1296,
+      "totalImages": 70,
+      "loadedImages": 34,
+      "stylesheets": 51,
+      "requestCount": 117,
+      "totalJsCssBytes": 360631,
+      "consoleErrors": [
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch"
+      ],
+      "pageErrors": [],
+      "failedStatuses": []
+    }
+  },
+  "workerEndpoints": [
+    {
+      "endpoint": "/api/ktn/auth/session",
+      "label": "auth/session (Admin)",
+      "status": 200,
+      "ms": 210.79,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/courses",
+      "label": "courses (Public)",
+      "status": 200,
+      "ms": 217,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/students/me",
+      "label": "students/me (Student A)",
+      "status": 200,
+      "ms": 389.32,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/students",
+      "label": "students (Admin)",
+      "status": 200,
+      "ms": 634.75,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/classes",
+      "label": "classes (Admin)",
+      "status": 200,
+      "ms": 376.43,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/teachers",
+      "label": "teachers (Admin)",
+      "status": 200,
+      "ms": 331.13,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/homeworks",
+      "label": "homeworks (Teacher A)",
+      "status": 200,
+      "ms": 693.83,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/messages?roomId=class:YCT2-04",
+      "label": "messages (Student A)",
+      "status": 200,
+      "ms": 693.53,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/notifications",
+      "label": "notifications (Student A)",
+      "status": 200,
+      "ms": 799.91,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/admin/students/search?q=ngan&limit=20",
+      "label": "admin/students/search (V3 endpoint check)",
+      "status": 404,
+      "ms": 81.34,
+      "ok": false,
+      "cors": null,
+      "cacheControl": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+      "isJson": false
+    },
+    {
+      "endpoint": "/api/ktn/sync/reconcile",
+      "label": "sync/reconcile (V3 endpoint check)",
+      "status": 404,
+      "ms": 67.35,
+      "ok": false,
+      "cors": null,
+      "cacheControl": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+      "isJson": false
+    }
+  ],
+  "authChecks": {
+    "izTeachRootAdminSignin": {
+      "ok": true
+    },
+    "adminLogin": {
+      "email": "quanly@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 1359.05,
+      "role": "admin"
+    },
+    "teacherALogin": {
+      "email": "linh.lam@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 594.95,
+      "role": "teacher"
+    },
+    "teacherBLogin": {
+      "email": "thu.ha@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 401.09,
+      "role": "teacher"
+    },
+    "studentALogin": {
+      "email": "e2e.hs.a@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 1397.56,
+      "role": "student",
+      "classCode": "YCT2-04"
+    },
+    "studentBLogin": {
+      "email": "e2e.hs.b@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 1292.31,
+      "role": "student",
+      "classCode": "YCT3-02"
+    }
+  },
+  "studentProvisionAndCourseSync": {
+    "v3ProvisionEndpointOnLiveStatus": 404,
+    "adminUiLoginMs": 3795.42,
+    "openStudentsMs": 1107.1,
+    "grant1UiMs": 3550.71,
+    "afterGrant1": {
+      "supabaseClassCode": null,
+      "supabaseHasLiveClass": false,
+      "supabaseOnlineCourses": [
+        "6adadba969897b0002482ca5"
+      ],
+      "izTeachOnlineCourses": [
+        "6adadba969897b0002482ca5"
+      ],
+      "autoAssignedToWrongClass": false
+    },
+    "afterGrant2ExistingAccount": {
+      "workerStatus": 200,
+      "workerMs": 1510.99,
+      "supabaseCognitoUserIdUnchanged": true,
+      "supabaseOnlineCourses": [
+        "6adadba969897b0002482ca5",
+        "65e7704a9ea90c00080d5195"
+      ],
+      "izTeachOnlineCourses": [
+        "6adadba969897b0002482ca5",
+        "65e7704a9ea90c00080d5195"
+      ],
+      "webBeforeReload": {
+        "email": "e2e.hs.b@khongtunhi.com",
+        "classCode": null,
+        "coursesCount": 2,
+        "courseIds": [
+          "6adadba969897b0002482ca5",
+          "65e7704a9ea90c00080d5195"
+        ]
+      },
+      "webAfterReload": {
+        "email": "e2e.hs.b@khongtunhi.com",
+        "classCode": null,
+        "coursesCount": 2,
+        "courseIds": [
+          "6adadba969897b0002482ca5",
+          "65e7704a9ea90c00080d5195"
+        ]
+      }
+    },
+    "afterDuplicateRequest": {
+      "workerStatus": 200,
+      "supabaseCoursesCount": 2,
+      "noDuplicateCourseEntries": true
+    }
+  },
+  "teacherVerification": {
+    "v3TeacherProvisionEndpointStatus": 404,
+    "liveV2PostTeachersResponse": {
+      "status": 200,
+      "ok": true
+    },
+    "liveSupabaseActuallySavedNewTeacher": false,
+    "newTeacherLoginStatus": 401,
+    "existingTeacherALoginOk": true,
+    "existingTeacherARole": "teacher",
+    "ownClassYCT204Status": 200,
+    "ownClassStudentsCount": 7,
+    "otherClassYCT302Status": 403,
+    "grantCourseAsTeacherStatus": 403,
+    "crossClassPrivateRoomStatusOnLiveV2": 200
+  },
+  "videoPlayback": {
+    "courseId": "6adadba969897b0002482ca5",
+    "lesson1UnitId": "6adadbcaf75fe5000247ca71",
+    "lesson2UnitId": "6adadc3b69897b0002482d22",
+    "hlsManifestStatus": 200,
+    "hlsSegmentStatus": 200,
+    "hls403Or404": 0,
+    "openCourseMs": 1812.69,
+    "totalVideoStartMs": 611.38,
+    "found": true,
+    "readyState": 4,
+    "videoWidth": 1280,
+    "videoHeight": 720,
+    "duration": 721.05,
+    "timeToFirstFrameMs": 201.6,
+    "currentTimeAfterPlay": 0.13,
+    "pausedOk": true,
+    "seekedTime": 12,
+    "lesson2Switch": {
+      "switched": true,
+      "hash": "#/khoa/hsk1/bai/3",
+      "activeLesson": 2
+    }
+  },
+  "homeworkAndGrading": {
+    "s3UploadOk": true,
+    "cdnHeadStatus": 200,
+    "submitStatus": 200,
+    "homeworkId": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1",
+    "izteachMirrorOnSubmit": {
+      "ok": true,
+      "syncStatus": "synced",
+      "remoteId": "6aed2005ca7fb00002d53f2b",
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adadbcaf75fe5000247ca71",
+      "lessonNum": 1,
+      "signature": "{\"courseId\":\"6adadba969897b0002482ca5\",\"unitId\":\"6adadbcaf75fe5000247ca71\",\"lessonNum\":1,\"fileUrl\":\"https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793925123043-ktn-live-e2e-1793925123484.wav\",\"status\":\"pending\",\"state\":\"submitted\",\"score\":null,\"feedback\":\"\",\"note\":\"[LIVE-E2E-1793925068455] Bài nộp thu âm kiểm thử nghiệm thu vận hành live\"}",
+      "data": {
+        "topics": [],
+        "title": "Bài 1: Chào hỏi (你好)",
+        "CorrectionLink": [],
+        "_id": "6aed2005ca7fb00002d53f2b",
+        "notes": "[LIVE-E2E-1793925068455] Bài nộp thu âm kiểm thử nghiệm thu vận hành live",
+        "vendorId": "3529cd2b-7af6-4fda-887c-392a79393d6a",
+        "course": "6adadba969897b0002482ca5",
+        "unit": "6adadbcaf75fe5000247ca71",
+        "userId": "aa10f29d-a6ee-47f1-9323-8c0fba61ffb5",
+        "name": "Học Viên Kiểm Thử E2E A",
+        "email": "e2e.hs.a@khongtunhi.com",
+        "state": "submitted",
+        "type": "multiple-files",
+        "resources": [
+          {
+            "_id": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1-0",
+            "title": "Bài nộp của học sinh",
+            "size": 0,
+            "dataType": "resource",
+            "link": "resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793925123043-ktn-live-e2e-1793925123484.wav",
+            "provider": "S3",
+            "type": "homework",
+            "subType": "file",
+            "vendorId": "3529cd2b-7af6-4fda-887c-392a79393d6a",
+            "origin": {
+              "link": "resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793925123043-ktn-live-e2e-1793925123484.wav",
+              "size": 0,
+              "type": "homework",
+              "mimeType": "audio/mpeg",
+              "bucket": "https://online-learning-izteach-6-aws-source-bucket.s3-ap-southeast-1.amazonaws.com"
+            }
+          }
+        ],
+        "updatedAt": "2026-11-06T00:32:05.263Z",
+        "createdAt": "2026-11-06T00:32:05.263Z",
+        "__v": 0,
+        "id": "6aed2005ca7fb00002d53f2b"
+      }
+    },
+    "supabaseStatusBeforeGrade": "pending",
+    "gradeStatus": 200,
+    "izteachMirrorOnGrade": {
+      "ok": true,
+      "syncStatus": "synced",
+      "remoteId": "6aed200cca7fb00002d53f30",
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adadbcaf75fe5000247ca71",
+      "lessonNum": 1,
+      "signature": "{\"courseId\":\"6adadba969897b0002482ca5\",\"unitId\":\"6adadbcaf75fe5000247ca71\",\"lessonNum\":1,\"fileUrl\":\"https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793925123043-ktn-live-e2e-1793925123484.wav\",\"status\":\"graded\",\"state\":\"approved\",\"score\":9.5,\"feedback\":\"[LIVE-E2E-1793925068455] Cô khen con phát âm thanh điệu rất chuẩn!\",\"note\":\"[LIVE-E2E-1793925068455] Bài nộp thu âm kiểm thử nghiệm thu vận hành live\"}",
+      "data": {
+        "topics": [],
+        "title": "Bài 1: Chào hỏi (你好)",
+        "CorrectionLink": [],
+        "_id": "6aed200cca7fb00002d53f30",
+        "notes": "[LIVE-E2E-1793925068455] Bài nộp thu âm kiểm thử nghiệm thu vận hành live\n[Nhận xét Giáo viên]: [LIVE-E2E-1793925068455] Cô khen con phát âm thanh điệu rất chuẩn!",
+        "vendorId": "3529cd2b-7af6-4fda-887c-392a79393d6a",
+        "course": "6adadba969897b0002482ca5",
+        "unit": "6adadbcaf75fe5000247ca71",
+        "userId": "aa10f29d-a6ee-47f1-9323-8c0fba61ffb5",
+        "name": "Học Viên Kiểm Thử E2E A",
+        "email": "e2e.hs.a@khongtunhi.com",
+        "state": "approved",
+        "mark": 9.5,
+        "type": "multiple-files",
+        "resources": [
+          {
+            "_id": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1-0",
+            "title": "Bài nộp của học sinh",
+            "size": 0,
+            "dataType": "resource",
+            "link": "resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793925123043-ktn-live-e2e-1793925123484.wav",
+            "provider": "S3",
+            "type": "homework",
+            "subType": "file",
+            "vendorId": "3529cd2b-7af6-4fda-887c-392a79393d6a",
+            "origin": {
+              "link": "resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793925123043-ktn-live-e2e-1793925123484.wav",
+              "size": 0,
+              "type": "homework",
+              "mimeType": "audio/mpeg",
+              "bucket": "https://online-learning-izteach-6-aws-source-bucket.s3-ap-southeast-1.amazonaws.com"
+            }
+          }
+        ],
+        "updatedAt": "2026-11-06T00:32:12.886Z",
+        "createdAt": "2026-11-06T00:32:12.886Z",
+        "__v": 0,
+        "id": "6aed200cca7fb00002d53f30"
+      }
+    },
+    "supabaseStatusAfterGrade": "graded",
+    "supabaseScoreAfterGrade": 9.5,
+    "studentSeesScoreAfterReload": 9.5,
+    "studentSeesFeedbackAfterReload": "[LIVE-E2E-1793925068455] Cô khen con phát âm thanh điệu rất chuẩn!"
+  },
+  "chatAndNotifications": {
+    "studentSendStatus": 200,
+    "teacherReceivedText": true,
+    "stuToTeaDeliveryMs": 1221.46,
+    "teacherReplyStatus": 200,
+    "studentReceivedReply": true,
+    "teaToStuDeliveryMs": 1246.75,
+    "voiceSendStatus": 200,
+    "teacherReceivedVoiceWithAudio": true,
+    "notificationsCount": 2,
+    "hasGradedNotification": true,
+    "hasChatNotification": true,
+    "markReadStatus": 200,
+    "notifPersistedRead": true
+  },
+  "searchBenchmarks": {
+    "liveWorkerGetAllStudents20Runs": {
+      "endpoint": "GET /api/ktn/students (limit=2000 on live V2 Worker)",
+      "iterations": 20,
+      "p50Ms": 494.75,
+      "p95Ms": 579.81,
+      "resultCount": 1000
+    },
+    "liveSupabasePostgrest20RunsPerScenario": [
+      {
+        "scenario": "1. Tên có dấu (Hoàng Ngân)",
+        "iterations": 20,
+        "p50Ms": 153.88,
+        "p95Ms": 256.75,
+        "minMs": 138.95,
+        "maxMs": 288.06,
+        "resultCount": 4
+      },
+      {
+        "scenario": "2. Tên không dấu (hoangngan)",
+        "iterations": 20,
+        "p50Ms": 159.48,
+        "p95Ms": 195.21,
+        "minMs": 144.4,
+        "maxMs": 238.92,
+        "resultCount": 3
+      },
+      {
+        "scenario": "3. Một phần họ tên (Khang)",
+        "iterations": 20,
+        "p50Ms": 144.18,
+        "p95Ms": 289.89,
+        "minMs": 133.4,
+        "maxMs": 307.93,
+        "resultCount": 9
+      },
+      {
+        "scenario": "4. Email (e2e.hs.a@khongtunhi.com)",
+        "iterations": 20,
+        "p50Ms": 142.85,
+        "p95Ms": 162.82,
+        "minMs": 132.68,
+        "maxMs": 168.12,
+        "resultCount": 1
+      },
+      {
+        "scenario": "5. Mã học viên (E2E-HS-A)",
+        "iterations": 20,
+        "p50Ms": 143.46,
+        "p95Ms": 201.75,
+        "minMs": 134.57,
+        "maxMs": 226.17,
+        "resultCount": 1
+      },
+      {
+        "scenario": "6. Theo lớp (YCT2-04)",
+        "iterations": 20,
+        "p50Ms": 144.99,
+        "p95Ms": 182.89,
+        "minMs": 134.73,
+        "maxMs": 219.37,
+        "resultCount": 7
+      },
+      {
+        "scenario": "7. Theo khóa (HSK1 3.0)",
+        "iterations": 20,
+        "p50Ms": 143.3,
+        "p95Ms": 179.04,
+        "minMs": 131.51,
+        "maxMs": 200.08,
+        "resultCount": 9
+      },
+      {
+        "scenario": "8. Theo trạng thái (có cognito_user_id)",
+        "iterations": 20,
+        "p50Ms": 145.81,
+        "p95Ms": 161.43,
+        "minMs": 131.86,
+        "maxMs": 165.97,
+        "resultCount": 1046
+      }
+    ]
+  },
+  "performanceMetrics": {},
+  "cleanup": {
+    "createdRecords": [
+      {
+        "table": "ktn_homeworks",
+        "id": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1"
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793925139014-zutp"
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793925140251-ygc2"
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793925141495-tajx"
+      }
+    ],
+    "cleanedUp": [
+      {
+        "entity": "e2e.hs.b@khongtunhi.com",
+        "revokeStatus": 200,
+        "restoreClassStatus": 200
+      },
+      {
+        "table": "ktn_homeworks",
+        "id": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1",
+        "deleteStatus": 204
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793925139014-zutp",
+        "deleteStatus": 204
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793925140251-ygc2",
+        "deleteStatus": 204
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793925141495-tajx",
+        "deleteStatus": 204
+      }
+    ],
+    "finalStudentBVerification": {
+      "supabase": {
+        "email": "e2e.hs.b@khongtunhi.com",
+        "class_code": "YCT3-02",
+        "has_live_class": true,
+        "has_online_courses": false,
+        "online_courses": [],
+        "cognito_user_id": "ff72de75-0284-4d81-8124-4bc6ea4bdd07"
+      },
+      "izTeachCourses": []
+    }
+  },
+  "completedAt": "2026-11-06T00:33:08.096Z"
+}

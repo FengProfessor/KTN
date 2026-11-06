@@ -568,7 +568,12 @@
         alert(res.data?.message || 'Lỗi cập nhật khóa học cho học viên.');
         return;
       }
-      alert(res.data?.message || '✅ Đã cập nhật khóa học & xếp lớp thành công!');
+      if (res.data?.accountCreated && res.data?.initialPassword) {
+        ephemeralInitialPasswords.set(String(email || '').trim().toLowerCase(), String(res.data.initialPassword));
+        copyApprovedAccount(email, name || email, res.data.credentialMode || 'new_account_initial_password');
+      } else {
+        alert(res.data?.message || '✅ Đã cập nhật khóa học & xếp lớp thành công!');
+      }
       await loadAdminStudents();
     }
 

@@ -4204,8 +4204,9 @@ export default {
         prefer: 'count=exact'
       });
       let usedLegacySchemaFallback = false;
+      let legacyTotalRows = 0;
       if ((!sbRes || !sbRes.ok) && sbRes?.status === 400) {
-        // Fallback cho schema pre-V3 chưa có cột search_text / account_status / sync_status / has_live_class / has_online_courses
+        // Fallback cho schema pre-V3 chưa có cột search_text / account_status / sync_status
         usedLegacySchemaFallback = true;
         const legacyParts = ['select=*'];
         if (session.role === 'teacher') {
@@ -4219,15 +4220,46 @@ export default {
         } else if (classFilter && classFilter !== 'ALL') {
           legacyParts.push(`class_code=eq.${encodeURIComponent(classFilter)}`);
         }
-        if (normTokens.length > 0) {
-          const longestTok = normTokens.slice().sort((a, b) => b.length - a.length)[0];
-          legacyParts.push(`or=(name.ilike.*${encodeURIComponent(longestTok)}*,email.ilike.*${encodeURIComponent(longestTok)}*,phone.ilike.*${encodeURIComponent(longestTok)}*,code.ilike.*${encodeURIComponent(longestTok)}*)`);
-        }
         legacyParts.push('order=updated_at.desc.nullslast,email.asc');
-        legacyParts.push(`limit=${Math.min(500, Math.max(pageLimit + pageOffset, 100))}`);
-        sbRes = await supabaseRequest(env, `ktn_students?${legacyParts.join('&')}`, {
-          prefer: 'count=exact'
-        });
+
+        const needsInMemoryLegacyFilter = Boolean(
+          rawQ ||
+          (courseFilter && courseFilter !== 'ALL') ||
+          (accountStatusFilter && accountStatusFilter !== 'ALL') ||
+          (syncStatusFilter && syncStatusFilter !== 'ALL') ||
+          (studentCaseFilter && studentCaseFilter !== 'ALL')
+        );
+
+        if (!needsInMemoryLegacyFilter) {
+          const directParts = [...legacyParts, `limit=${pageLimit}`, `offset=${pageOffset}`];
+          sbRes = await supabaseRequest(env, `ktn_students?${directParts.join('&')}`, {
+            prefer: 'count=exact'
+          });
+          legacyTotalRows = Number.isFinite(sbRes?.totalCount)
+            ? sbRes.totalCount
+            : (pageOffset + (Array.isArray(sbRes?.data) ? sbRes.data.length : 0));
+        } else {
+          // Không dùng name.ilike.*longestTok* với chuỗi đã bỏ dấu vì PostgreSQL ILIKE phân biệt dấu tiếng Việt
+          // (vd: 'Ngân' ILIKE '%ngan%' -> false) và làm sót học viên có dấu. Tải các trang 1000 bản ghi rồi lọc chính xác bằng filterAndRankStudents.
+          const firstPageParts = [...legacyParts, 'limit=1000', 'offset=0'];
+          const firstRes = await supabaseRequest(env, `ktn_students?${firstPageParts.join('&')}`, {
+            prefer: 'count=exact'
+          });
+          if (firstRes && firstRes.ok && Array.isArray(firstRes.data)) {
+            let combinedRows = firstRes.data;
+            const totalAvail = Number.isFinite(firstRes.totalCount) ? firstRes.totalCount : combinedRows.length;
+            if (combinedRows.length === 1000 && totalAvail > 1000) {
+              const secondPageParts = [...legacyParts, 'limit=1000', 'offset=1000'];
+              const secondRes = await supabaseRequest(env, `ktn_students?${secondPageParts.join('&')}`);
+              if (secondRes && secondRes.ok && Array.isArray(secondRes.data)) {
+                combinedRows = combinedRows.concat(secondRes.data);
+              }
+            }
+            sbRes = { ...firstRes, data: combinedRows };
+          } else {
+            sbRes = firstRes;
+          }
+        }
       }
       const sqlMs = Date.now() - fallbackSqlStartMs;
 
@@ -4243,9 +4275,19 @@ export default {
       let pageItems = [];
       let totalCount = 0;
 
-      if (!useInWorkerRankingWindow && !usedLegacySchemaFallback) {
+      const needsInMemoryLegacyRanking = usedLegacySchemaFallback && Boolean(
+        rawQ ||
+        (courseFilter && courseFilter !== 'ALL') ||
+        (accountStatusFilter && accountStatusFilter !== 'ALL') ||
+        (syncStatusFilter && syncStatusFilter !== 'ALL') ||
+        (studentCaseFilter && studentCaseFilter !== 'ALL')
+      );
+
+      if (!useInWorkerRankingWindow && !needsInMemoryLegacyRanking) {
         pageItems = sanitizeForRole(rawList.map(r => enrichStudentRowV3(r)));
-        totalCount = Number.isFinite(sbRes.totalCount) ? sbRes.totalCount : (pageOffset + pageItems.length);
+        totalCount = usedLegacySchemaFallback
+          ? legacyTotalRows
+          : (Number.isFinite(sbRes.totalCount) ? sbRes.totalCount : (pageOffset + pageItems.length));
       } else {
         const rankedList = filterAndRankStudents(rawList, {
           q: rawQ,
@@ -4631,6 +4673,7 @@ export default {
           student_email: email,
           student_name: body.name || existingStu?.name || email.split('@')[0],
           phone: body.phone || existingStu?.phone || '',
+          initialPassword: body.initialPassword || body.password || undefined,
           courseIds: resolvedIds,
           skipCourses: resolvedIds.length === 0,
           replaceCourses: action === 'set',

@@ -36,6 +36,7 @@ tests/*
 !tests/ktn_three_way_reliability_suite.cjs
 !tests/ktn_browser_e2e_local.cjs
 !tests/ktn_postgres_migration_and_search_benchmark.mjs
+!tests/ktn_live_production_acceptance.cjs
 ebook-bulk-rollout/
 ebook-detail-prototype/
 free-library-redesign/

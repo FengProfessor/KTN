@@ -318,10 +318,24 @@ function loadWorkerInstance(sharedState = null) {
       const rows = state.tables[table] || (state.tables[table] = []);
 
       if (method === 'GET') {
+        if (
+          table === 'ktn_students' &&
+          state.faults.simulateLegacyV2StudentSchema &&
+          (u.searchParams.has('search_text') ||
+            u.searchParams.has('account_status') ||
+            u.searchParams.has('sync_status') ||
+            String(u.searchParams.get('and') || '').includes('search_text'))
+        ) {
+          return new Response(
+            JSON.stringify({ code: '42703', message: 'column ktn_students.search_text does not exist' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
         const matched = rows.filter(r => matchQueryFilters(r, u.searchParams));
         const totalMatched = matched.length;
         const offset = Math.max(0, Number(u.searchParams.get('offset') || 0));
-        const limit = Number(u.searchParams.get('limit') || 0);
+        const rawLimit = Number(u.searchParams.get('limit') || 0);
+        const limit = state.faults.simulateLegacyV2StudentSchema && rawLimit > 1000 ? 1000 : rawLimit;
         const paged = limit > 0 ? matched.slice(offset, offset + limit) : matched.slice(offset);
         return new Response(JSON.stringify(paged), {
           status: 200,
@@ -2962,6 +2976,41 @@ async function runSuite() {
         resumeAttempt3Replay.data?.idempotentReplay === true &&
         !resumeAttempt3Replay.data?.initialPassword,
       `attempt1=${resumeAttempt1.status}, attempt2AccountCreated=${resumeAttempt2.data?.accountCreated}, attempt2HasPwd=${Boolean(resumeAttempt2.data?.initialPassword)}, replay3HasPwd=${Boolean(resumeAttempt3Replay.data?.initialPassword)}`
+    );
+
+    // D17: Pre-V3 Schema V2 search fallback accurately finds Vietnamese students with diacritics and beyond 1,000-row PostgREST page cap
+    state.faults.disableSearchRpc = true;
+    state.faults.simulateLegacyV2StudentSchema = true;
+    state.tables.ktn_students.push({
+      code: 'KTN-IZ-FF9999',
+      email: 'tail.accented.student@khongtunhi.com',
+      name: 'Nguyễn Bảo Châu Ngân',
+      phone: '0911222333',
+      class_code: 'YCT2-04',
+      has_live_class: true,
+      has_online_courses: false,
+      online_courses: [],
+      cognito_user_id: 'aaaa1111-2222-4333-8444-555566667777',
+      updated_at: '2026-01-01T00:00:00.000Z'
+    });
+    const legacyUnaccentedSearch = await callApi('/api/ktn/admin/students/search?q=nguyen+bao+chau+ngan&limit=20', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const legacyAccentedSearch = await callApi('/api/ktn/admin/students/search?q=' + encodeURIComponent('Nguyễn Bảo Châu Ngân') + '&limit=20', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    state.faults.disableSearchRpc = false;
+    state.faults.simulateLegacyV2StudentSchema = false;
+
+    record(
+      'D17-LEGACY-V2-SCHEMA-VIETNAMESE-SEARCH-FALLBACK',
+      'GROUP_V3',
+      'When Supabase is on Schema V2 (missing ktn_search_students RPC and search_text column, with 1,000-row PostgREST page cap), search fallback paginates and accurately finds Vietnamese accented student names both with and without diacritics',
+      legacyUnaccentedSearch.status === 200 &&
+        (legacyUnaccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com') &&
+        legacyAccentedSearch.status === 200 &&
+        (legacyAccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com'),
+      `unaccentedStatus=${legacyUnaccentedSearch.status}, unaccentedFound=${(legacyUnaccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com')}, accentedFound=${(legacyAccentedSearch.data?.students || []).some(s => s.email === 'tail.accented.student@khongtunhi.com')}`
     );
   }
 

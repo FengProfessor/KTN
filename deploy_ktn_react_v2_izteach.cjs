@@ -39,6 +39,8 @@ const DEFAULT_PAGE_ID = process.env.IZTEACH_CUSTOM_PAGE_ID || '6adff7ba36309b000
 const DEFAULT_SLUG = process.env.IZTEACH_CUSTOM_PAGE_SLUG || 'so-lien-lac-test';
 const CLOUDFRONT_ORIGIN = (process.env.IZTEACH_CLOUDFRONT_ORIGIN || 'https://d21acfi38wn3iy.cloudfront.net').replace(/\/+$/, '');
 const IZTEACH_API_BASE = (process.env.IZTEACH_API_BASE || 'https://xx7swzlhyl.execute-api.ap-southeast-1.amazonaws.com/prod').replace(/\/+$/, '');
+const IZTEACH_CUSTOM_PAGE_API_BASE = (process.env.IZTEACH_CUSTOM_PAGE_API_BASE || 'https://k90adfn1jk.execute-api.ap-southeast-1.amazonaws.com/prod').replace(/\/+$/, '');
+const IZTEACH_AUTH_API_BASE = (process.env.IZTEACH_AUTH_API_BASE || 'https://gcnj5paf1j.execute-api.ap-southeast-1.amazonaws.com/prod').replace(/\/+$/, '');
 const MAX_CHUNK_BYTES = 500 * 1024; // 500 KiB
 
 const PROTECTED_PRODUCTION_PAGE_IDS = new Set([
@@ -334,8 +336,41 @@ async function verifyAssetOnCdn(asset) {
   };
 }
 
-async function fetchCustomPageData(token, pageId, vendorId) {
-  const url = `${IZTEACH_API_BASE}/custom-page-data?id=${encodeURIComponent(pageId)}&vendorId=${encodeURIComponent(vendorId)}`;
+async function resolveIzTeachAdminToken() {
+  const existing = String(process.env.IZTEACH_ADMIN_TOKEN || '').trim();
+  if (existing && existing.split('.').length === 3) {
+    try {
+      const payload = JSON.parse(Buffer.from(existing.split('.')[1], 'base64url').toString('utf8'));
+      if (!payload.exp || payload.exp * 1000 > Date.now() + 60000) {
+        return existing;
+      }
+    } catch (_) {}
+  }
+  const email = String(process.env.IZTEACH_ADMIN_EMAIL || 'hocvienkhongtunhi123@gmail.com').trim();
+  const password = String(process.env.IZTEACH_ADMIN_PASSWORD || '').trim();
+  if (!password) {
+    if (existing) return existing;
+    throw new Error('Missing IZTEACH_ADMIN_TOKEN and IZTEACH_ADMIN_PASSWORD in environment.');
+  }
+  const res = await fetch(`${IZTEACH_AUTH_API_BASE}/signin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email,
+      password: Buffer.from(password).toString('base64'),
+      vendorId: VENDOR_ID,
+    }),
+  });
+  const data = await res.json().catch(() => null);
+  const token = data?.accessToken || data?.token || '';
+  if (!res.ok || !token) {
+    throw new Error(`Failed to mint izTeach Admin token via /signin (HTTP ${res.status}).`);
+  }
+  return token;
+}
+
+async function fetchCustomPageData(token, pageIdOrSlug, vendorId) {
+  const url = `${IZTEACH_CUSTOM_PAGE_API_BASE}/custom-page-data?customPage=${encodeURIComponent(pageIdOrSlug)}&vendorId=${encodeURIComponent(vendorId)}`;
   const res = await fetch(url, {
     headers: token ? { Authorization: token } : {},
   });
@@ -344,7 +379,7 @@ async function fetchCustomPageData(token, pageId, vendorId) {
 }
 
 async function updateCustomPageVendorSetting(token, payload) {
-  const url = `${IZTEACH_API_BASE}/custom-page-vendor-setting`;
+  const url = `${IZTEACH_CUSTOM_PAGE_API_BASE}/custom-page-vendor-setting`;
   const res = await fetch(url, {
     method: 'PUT',
     headers: {
@@ -422,10 +457,7 @@ async function main() {
     }
 
     assertCustomPageWriteAllowed(targetPageId, args.allowProdOverwrite);
-    const adminToken = process.env.IZTEACH_ADMIN_TOKEN;
-    if (!adminToken) {
-      throw new Error('Missing IZTEACH_ADMIN_TOKEN in environment. Refusing to run `--live --rollback`.');
-    }
+    const adminToken = await resolveIzTeachAdminToken();
 
     // Verify all assets in rollback manifest are still reachable on CDN before switching Custom Page
     for (const a of rbManifest.assets || []) {
@@ -550,11 +582,6 @@ async function main() {
 
   if (!args.dryRun) {
     assertCustomPageWriteAllowed(args.pageId, args.allowProdOverwrite);
-    if (!process.env.IZTEACH_ADMIN_TOKEN) {
-      throw new Error(
-        'Missing IZTEACH_ADMIN_TOKEN in environment. Refusing to run `--live` deployment.'
-      );
-    }
   }
 
   const embedArtifacts = buildEmbedArtifacts(manifest);
@@ -575,12 +602,12 @@ async function main() {
       '\n[KTN-DEPLOY-V3] ✅ DRY-RUN COMPLETED SUCCESSFULLY. Zero live izTeach pages or S3 objects were modified.'
     );
     console.log(
-      '[KTN-DEPLOY-V3] To deploy to live after owner approval, pass `--live` with valid IZTEACH_ADMIN_TOKEN in .env.'
+      '[KTN-DEPLOY-V3] To deploy to live after owner approval, pass `--live` with valid IZTEACH_ADMIN_TOKEN or IZTEACH_ADMIN_PASSWORD in .env.'
     );
     return;
   }
 
-  const adminToken = process.env.IZTEACH_ADMIN_TOKEN;
+  const adminToken = await resolveIzTeachAdminToken();
 
   console.log('\n[KTN-DEPLOY-V3] Step 1/3: Uploading assets to izTeach S3/CloudFront...');
   const cdnVerifications = [];

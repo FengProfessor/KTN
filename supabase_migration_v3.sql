@@ -638,9 +638,55 @@ CREATE POLICY "service_role_only_ktn_sync_events"
   USING (true)
   WITH CHECK (true);
 
+-- 12. Bảng quản lý lịch học chính thức & ngoại lệ theo buổi (ktn_class_schedules)
+CREATE TABLE IF NOT EXISTS public.ktn_class_schedules (
+  class_code TEXT PRIMARY KEY,
+  day_of_week TEXT DEFAULT '',
+  days_of_week JSONB DEFAULT '[]'::jsonb,
+  start_time TEXT NOT NULL DEFAULT '19:30',
+  end_time TEXT NOT NULL DEFAULT '20:30',
+  timezone TEXT NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
+  effective_from TEXT DEFAULT CURRENT_DATE::text,
+  effective_until TEXT,
+  mode TEXT NOT NULL DEFAULT 'weekly',
+  meeting_url TEXT DEFAULT '',
+  custom_sessions JSONB DEFAULT '[]'::jsonb,
+  exceptions JSONB DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT 'unconfirmed',
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ktn_class_schedules_status ON public.ktn_class_schedules (status, updated_at DESC);
+
+ALTER TABLE public.ktn_class_schedules ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.ktn_class_schedules FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.ktn_class_schedules FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.ktn_class_schedules FROM authenticated';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    EXECUTE 'GRANT ALL ON TABLE public.ktn_class_schedules TO service_role';
+  END IF;
+END $$;
+
+DROP POLICY IF EXISTS "service_role_only_ktn_class_schedules" ON public.ktn_class_schedules;
+CREATE POLICY "service_role_only_ktn_class_schedules"
+  ON public.ktn_class_schedules
+  AS PERMISSIVE
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
 -- =================================================================================
 -- KẾ HOẠCH ROLLBACK AN TOÀN (Chỉ chạy khi cần hoàn tác Migration V3)
 -- =================================================================================
+-- DROP TABLE IF EXISTS public.ktn_class_schedules;
 -- DROP FUNCTION IF EXISTS public.ktn_search_students(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT[], INTEGER, INTEGER);
 -- DROP TRIGGER IF EXISTS trg_ktn_students_search_fields ON public.ktn_students;
 -- DROP TRIGGER IF EXISTS trg_ktn_teachers_search_fields ON public.ktn_teachers;
@@ -650,4 +696,5 @@ CREATE POLICY "service_role_only_ktn_sync_events"
 -- DROP INDEX IF EXISTS public.idx_ktn_students_updated_email;
 -- DROP TABLE IF EXISTS public.ktn_sync_events;
 -- DROP TABLE IF EXISTS public.ktn_provisioning_jobs;
+
 

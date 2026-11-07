@@ -1,4 +1,7 @@
 import type {
+  ClassScheduleConfig,
+  ClassScheduleException,
+  CustomClassSession,
   KtnAttendanceResponse,
   KtnClassItem,
   KtnClassSession,
@@ -12,7 +15,9 @@ import type {
   KtnStudentSearchResult,
   KtnSyncStatusResponse,
   KtnTeacherRecord,
-  KtnUserSession
+  KtnUserSession,
+  UpcomingClassSession,
+  UserNotificationSettings
 } from '@/types/ktn.types';
 
 const SESSION_STORAGE_KEY = 'ktn_sll_persistent_auth_v2';
@@ -349,6 +354,107 @@ export const ktnApi = {
     return Array.isArray(res.classes) ? res.classes : [];
   },
 
+  async saveClass(payload: {
+    id: string;
+    name: string;
+    teacher_code?: string;
+    teacher_email?: string;
+    schedule?: string;
+    total_lessons?: number;
+    current_lesson?: number;
+    active?: boolean;
+    scheduleConfig?: Partial<ClassScheduleConfig> & {
+      daysOfWeek?: number[];
+      startTime?: string;
+      endTime?: string;
+      timezone?: string;
+      effectiveFrom?: string;
+      effectiveUntil?: string | null;
+      mode?: 'weekly' | 'custom_sessions';
+      customSessions?: CustomClassSession[];
+      exceptions?: ClassScheduleException[];
+      meetingUrl?: string;
+      status?: 'confirmed' | 'unconfirmed' | 'paused';
+    };
+  }): Promise<{ ok: boolean; classItem: KtnClassItem; scheduleConfig?: ClassScheduleConfig | null }> {
+    return ktnRequest('/api/ktn/classes', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getClassSchedule(classCode: string): Promise<{
+    ok: boolean;
+    classCode: string;
+    className: string;
+    scheduleStatus: 'confirmed' | 'legacy_unconfirmed' | 'unconfirmed' | 'paused';
+    officialScheduleText: string;
+    legacyScheduleText: string;
+    scheduleConfig: ClassScheduleConfig | null;
+    suggestedFromLegacyText?: {
+      daysOfWeek?: number[];
+      startTime?: string;
+      endTime?: string;
+      legacyText?: string;
+    } | null;
+    upcomingSessions: UpcomingClassSession[];
+    nextSession: UpcomingClassSession | null;
+  }> {
+    return ktnRequest(
+      `/api/ktn/classes/schedule?classCode=${encodeURIComponent(classCode)}`
+    );
+  },
+
+  async saveClassSchedule(payload: {
+    classCode: string;
+    daysOfWeek?: number[];
+    dayOfWeek?: string | number | number[];
+    startTime: string;
+    endTime: string;
+    timezone?: string;
+    effectiveFrom?: string;
+    effectiveUntil?: string | null;
+    mode?: 'weekly' | 'custom_sessions';
+    customSessions?: CustomClassSession[];
+    exceptions?: ClassScheduleException[];
+    meetingUrl?: string;
+    status?: 'confirmed' | 'unconfirmed' | 'paused';
+    notifyMembers?: boolean;
+  }): Promise<{
+    ok: boolean;
+    classCode: string;
+    scheduleStatus: 'confirmed' | 'unconfirmed' | 'paused';
+    officialScheduleText: string;
+    scheduleConfig: ClassScheduleConfig;
+    upcomingSessions: UpcomingClassSession[];
+    nextSession: UpcomingClassSession | null;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/classes/schedule', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async runScheduleReminders(payload?: {
+    nowMs?: number;
+    dryRun?: boolean;
+    classCode?: string;
+  }): Promise<{
+    ok: boolean;
+    checkedAt: string;
+    vnNow: string;
+    remindedSessionsCount: number;
+    dispatchedCount: number;
+    skippedDuplicatesCount: number;
+    details: Array<Record<string, unknown>>;
+  }> {
+    return ktnRequest('/api/ktn/schedule/run-reminders', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  },
+
   async getClassSessions(classCode: string): Promise<KtnClassSession[]> {
     const res = await ktnRequest<{ ok: boolean; sessions: KtnClassSession[] }>(
       `/api/ktn/class-sessions?classCode=${encodeURIComponent(classCode)}`
@@ -600,16 +706,50 @@ export const ktnApi = {
     return res;
   },
 
-  async getNotifications(): Promise<{ notifications: KtnNotification[]; readIds: string[] }> {
+  async getNotifications(): Promise<{
+    notifications: KtnNotification[];
+    readIds: string[];
+    settings?: UserNotificationSettings;
+  }> {
     const res = await ktnRequest<{
       ok: boolean;
       notifications: KtnNotification[];
       readIds: string[];
+      settings?: UserNotificationSettings;
     }>('/api/ktn/notifications');
     return {
       notifications: Array.isArray(res.notifications) ? res.notifications : [],
-      readIds: Array.isArray(res.readIds) ? res.readIds : []
+      readIds: Array.isArray(res.readIds) ? res.readIds : [],
+      settings: res.settings
     };
+  },
+
+  async getNotificationSettings(): Promise<UserNotificationSettings> {
+    const res = await ktnRequest<{ ok: boolean; settings: UserNotificationSettings }>(
+      '/api/ktn/notifications/settings'
+    );
+    return (
+      res.settings || {
+        chat: true,
+        homework: true,
+        schedule: true,
+        important: true,
+        reminder10Min: false
+      }
+    );
+  },
+
+  async updateNotificationSettings(
+    settings: Partial<UserNotificationSettings>
+  ): Promise<UserNotificationSettings> {
+    const res = await ktnRequest<{ ok: boolean; settings: UserNotificationSettings }>(
+      '/api/ktn/notifications/settings',
+      {
+        method: 'PUT',
+        body: JSON.stringify(settings)
+      }
+    );
+    return res.settings;
   },
 
   async markNotificationsRead(ids: string[]): Promise<{ markedCount: number }> {

@@ -921,6 +921,322 @@ async function sendWebPushToSubscription(env, subRow, payloadObj) {
   }
 }
 
+const VN_DAY_LABELS = {
+  0: 'Chủ Nhật',
+  1: 'Thứ 2',
+  2: 'Thứ 3',
+  3: 'Thứ 4',
+  4: 'Thứ 5',
+  5: 'Thứ 6',
+  6: 'Thứ 7'
+};
+
+const VN_DAY_SHORT_LABELS = {
+  0: 'CN',
+  1: 'T2',
+  2: 'T3',
+  3: 'T4',
+  4: 'T5',
+  5: 'T6',
+  6: 'T7'
+};
+
+const VN_WEEKDAY_SORT_ORDER = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 0: 7 };
+
+function getVnDateTimeParts(epochMs = Date.now()) {
+  const vnMs = Number(epochMs) + 7 * 3600 * 1000;
+  const d = new Date(vnMs);
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + 1;
+  const day = d.getUTCDate();
+  const dayOfWeek = d.getUTCDay();
+  const hours = d.getUTCHours();
+  const minutes = d.getUTCMinutes();
+  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  return { year, month, day, dayOfWeek, hours, minutes, dateStr, timeStr };
+}
+
+function vnDateTimeToEpochMs(dateStr, timeStr = '19:30') {
+  const dm = String(dateStr || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const tm = String(timeStr || '19:30').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!dm || !tm) return NaN;
+  const year = Number(dm[1]);
+  const month = Number(dm[2]);
+  const day = Number(dm[3]);
+  const hour = Number(tm[1]);
+  const minute = Number(tm[2]);
+  return Date.UTC(year, month - 1, day, hour - 7, minute, 0, 0);
+}
+
+function normalizeTimeHHMM(raw, fallback = '') {
+  const m = String(raw || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallback;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return fallback;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function addOneHourHHMM(timeStr) {
+  const m = String(timeStr || '').match(/^(\d{2}):(\d{2})$/);
+  if (!m) return '20:30';
+  const nextH = (Number(m[1]) + 1) % 24;
+  return `${String(nextH).padStart(2, '0')}:${m[2]}`;
+}
+
+function formatOfficialScheduleDisplay(cfg) {
+  if (!cfg || typeof cfg !== 'object' || cfg.status !== 'confirmed') {
+    return 'Chưa có lịch học chính thức';
+  }
+  const start = normalizeTimeHHMM(cfg.startTime, '');
+  const end = normalizeTimeHHMM(cfg.endTime, '');
+  const timeRange = start ? (end ? `${start}–${end}` : start) : '';
+  if (cfg.scheduleMode === 'custom_sessions') {
+    const customList = Array.isArray(cfg.customSessions) ? cfg.customSessions : [];
+    if (customList.length === 0) return 'Chưa có lịch học chính thức';
+    return `Lịch theo buổi (${customList.length} buổi)${timeRange ? ` — ${timeRange}` : ''}`;
+  }
+  const days = Array.isArray(cfg.daysOfWeek)
+    ? Array.from(new Set(cfg.daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)))
+    : [];
+  if (days.length === 0 || !start) {
+    return 'Chưa có lịch học chính thức';
+  }
+  days.sort((a, b) => (VN_WEEKDAY_SORT_ORDER[a] || 9) - (VN_WEEKDAY_SORT_ORDER[b] || 9));
+  const dayNames = days.map((d) => VN_DAY_LABELS[d] || `Thứ ${d + 1}`);
+  const dayPart = dayNames.length <= 2 ? dayNames.join(' & ') : dayNames.join(', ');
+  return `${dayPart} — ${timeRange}`;
+}
+
+function parseLegacyScheduleSuggestion(rawText) {
+  const text = String(rawText || '').trim();
+  if (!text || text === 'Chưa có lịch học chính thức') return null;
+  const timeMatch = text.match(/\b(\d{1,2}:\d{2})(?:\s*[-–~]\s*(\d{1,2}:\d{2}))?/);
+  const startTime = timeMatch ? normalizeTimeHHMM(timeMatch[1], '19:30') : '19:30';
+  const endTime = timeMatch && timeMatch[2] ? normalizeTimeHHMM(timeMatch[2], addOneHourHHMM(startTime)) : addOneHourHHMM(startTime);
+  const days = new Set();
+  const tMatches = text.matchAll(/(?:thứ|thu|\bt)\s*([2-7])/gi);
+  for (const m of tMatches) {
+    const num = Number(m[1]);
+    if (num >= 2 && num <= 7) days.add(num - 1);
+  }
+  if (/chủ\s*nhật|chu\s*nhat|\bcn\b/i.test(text)) {
+    days.add(0);
+  }
+  const daysOfWeek = Array.from(days).sort((a, b) => (VN_WEEKDAY_SORT_ORDER[a] || 9) - (VN_WEEKDAY_SORT_ORDER[b] || 9));
+  if (daysOfWeek.length === 0) return null;
+  return {
+    daysOfWeek,
+    startTime,
+    endTime,
+    timezone: 'Asia/Ho_Chi_Minh',
+    scheduleMode: 'weekly',
+    legacySourceText: text
+  };
+}
+
+function computeUpcomingClassSessions(cfg, nowMs = Date.now(), limit = 6) {
+  if (!cfg || typeof cfg !== 'object' || cfg.status !== 'confirmed') {
+    return [];
+  }
+  const startDefault = normalizeTimeHHMM(cfg.startTime, '19:30');
+  const endDefault = normalizeTimeHHMM(cfg.endTime, addOneHourHHMM(startDefault));
+  const effectiveFrom = String(cfg.effectiveFrom || '').trim();
+  const effectiveUntil = String(cfg.effectiveUntil || '').trim();
+  const scheduleMode = cfg.scheduleMode === 'custom_sessions' ? 'custom_sessions' : 'weekly';
+  const daysSet = new Set(
+    (Array.isArray(cfg.daysOfWeek) ? cfg.daysOfWeek : [])
+      .map(Number)
+      .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+  );
+  const customMap = new Map();
+  if (Array.isArray(cfg.customSessions)) {
+    for (const cs of cfg.customSessions) {
+      const dt = String(cs?.date || '').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
+        customMap.set(dt, cs);
+      }
+    }
+  }
+  const exceptionsMap = new Map();
+  if (Array.isArray(cfg.exceptions)) {
+    for (const ex of cfg.exceptions) {
+      const dt = String(ex?.date || '').trim();
+      const exStatus = String(ex?.status || ex?.type || '').trim().toLowerCase();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dt) && exStatus) {
+        exceptionsMap.set(dt, { ...ex, status: exStatus, type: exStatus });
+      }
+    }
+  }
+
+  const results = [];
+  const baseCheckMs = Number(nowMs);
+  for (let dayOffset = 0; dayOffset <= 42; dayOffset++) {
+    const probeMs = baseCheckMs + dayOffset * 86400 * 1000;
+    const vn = getVnDateTimeParts(probeMs);
+    const dateStr = vn.dateStr;
+
+    if (effectiveFrom && /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) && dateStr < effectiveFrom) {
+      continue;
+    }
+    if (effectiveUntil && /^\d{4}-\d{2}-\d{2}$/.test(effectiveUntil) && dateStr > effectiveUntil) {
+      continue;
+    }
+
+    const ex = exceptionsMap.get(dateStr) || null;
+    const customSession = customMap.get(dateStr) || null;
+    const isScheduledDay =
+      scheduleMode === 'custom_sessions'
+        ? Boolean(customSession)
+        : daysSet.has(vn.dayOfWeek);
+    const isExtraRescheduledDay = Boolean(ex && ex.status === 'rescheduled');
+
+    if (!isScheduledDay && !isExtraRescheduledDay) {
+      continue;
+    }
+
+    const sessionStart = normalizeTimeHHMM(
+      ex?.startTime || customSession?.startTime || startDefault,
+      startDefault
+    );
+    const sessionEnd = normalizeTimeHHMM(
+      ex?.endTime || customSession?.endTime || endDefault,
+      addOneHourHHMM(sessionStart)
+    );
+    const startEpochMs = vnDateTimeToEpochMs(dateStr, sessionStart);
+    const endEpochMs = vnDateTimeToEpochMs(dateStr, sessionEnd);
+    if (!Number.isFinite(startEpochMs)) continue;
+
+    // Bỏ qua buổi học đã kết thúc hoàn toàn từ trước
+    if (endEpochMs < baseCheckMs - 15 * 60 * 1000) {
+      continue;
+    }
+
+    const rawExStatus = String(ex?.status || ex?.type || '').toLowerCase();
+    const isCancelled =
+      rawExStatus === 'cancelled' ||
+      rawExStatus === 'postponed' ||
+      rawExStatus === 'holiday';
+    const sessionStatus = isCancelled
+      ? rawExStatus
+      : rawExStatus === 'rescheduled'
+        ? 'rescheduled'
+        : 'scheduled';
+
+    results.push({
+      classCode: cfg.classCode,
+      date: dateStr,
+      sessionDate: dateStr,
+      dayOfWeek: vn.dayOfWeek,
+      dayLabel: VN_DAY_LABELS[vn.dayOfWeek] || '',
+      dayShortLabel: VN_DAY_SHORT_LABELS[vn.dayOfWeek] || '',
+      startTime: sessionStart,
+      endTime: sessionEnd,
+      timezone: 'Asia/Ho_Chi_Minh',
+      startEpochMs,
+      endEpochMs,
+      status: sessionStatus,
+      isCancelled,
+      note: ex?.note || customSession?.title || '',
+      meetingUrl: cfg.meetingUrl || ''
+    });
+
+    if (results.length >= limit) break;
+  }
+
+  return results;
+}
+
+async function loadAllClassScheduleConfigs(env) {
+  const map = new Map();
+  const res = await supabaseRequest(
+    env,
+    'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_CONFIG&order=created_at.desc&limit=200'
+  );
+  if (res.ok && Array.isArray(res.data)) {
+    for (const row of res.data) {
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        const cls = String(parsed?.classCode || String(row.id || '').replace(/^SCHED_CFG_/, '')).trim().toUpperCase();
+        if (cls && !map.has(cls)) {
+          map.set(cls, parsed);
+        }
+      } catch {}
+    }
+  }
+  return map;
+}
+
+const DEFAULT_USER_NOTIFICATION_PREFS = {
+  chat: true,
+  homework: true,
+  schedule: true,
+  important: true,
+  reminder10Min: false
+};
+
+function sanitizeUserNotificationPrefs(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  return {
+    chat: src.chat !== false,
+    homework: src.homework !== false,
+    schedule: src.schedule !== false,
+    // Thông báo quan trọng từ quản lý luôn được bật, không bao giờ bị tắt khi tắt tin nhắn thông thường
+    important: true,
+    reminder10Min: Boolean(src.reminder10Min)
+  };
+}
+
+function isEventTypeAllowedByUserPrefs(eventType, rawPrefs) {
+  const prefs = sanitizeUserNotificationPrefs(rawPrefs);
+  const t = String(eventType || '').toLowerCase();
+  if (
+    t === 'announcement_pinned' ||
+    t === 'important_announcement' ||
+    t === 'order_pending' ||
+    t === 'direct_push' ||
+    t === 'web_push'
+  ) {
+    return true;
+  }
+  if (t.startsWith('chat_') || t === 'chat_message') {
+    return prefs.chat !== false;
+  }
+  if (t.startsWith('homework_')) {
+    return prefs.homework !== false;
+  }
+  if (t === 'class_reminder' || t === 'schedule_changed' || t === 'session_cancelled') {
+    return prefs.schedule !== false;
+  }
+  return true;
+}
+
+async function getUserNotificationPreferencesMap(env, emails = []) {
+  const cleanEmails = Array.from(new Set(emails.map((e) => normalizeEmail(e)).filter(Boolean)));
+  const out = new Map();
+  for (const em of cleanEmails) {
+    out.set(em, { ...DEFAULT_USER_NOTIFICATION_PREFS });
+  }
+  if (cleanEmails.length === 0) return out;
+  const ids = cleanEmails.map((em) => `NPREF_${em}`);
+  const res = await supabaseRequest(
+    env,
+    `ktn_dlp_alerts?room_id=eq.NOTIF_PREFS&id=in.(${ids.map((id) => encodeURIComponent(id)).join(',')})&limit=200`
+  );
+  if (res.ok && Array.isArray(res.data)) {
+    for (const row of res.data) {
+      const em = normalizeEmail(row?.sender_email || String(row?.id || '').replace(/^NPREF_/, ''));
+      if (!em) continue;
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        out.set(em, sanitizeUserNotificationPrefs(parsed));
+      } catch {}
+    }
+  }
+  return out;
+}
+
 async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) {
   const eventId = String(meta.eventId || payloadObj?.eventId || payloadObj?.id || `EVT-${Date.now()}`).trim();
   const eventType = String(meta.eventType || payloadObj?.eventType || 'web_push').trim();
@@ -936,6 +1252,18 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
         )
       )
     : [];
+
+  if (!globalThis.__ktnPushEventIdCache) {
+    globalThis.__ktnPushEventIdCache = new Map();
+  }
+  if (eventId && !meta.allowEventIdRetry && globalThis.__ktnPushEventIdCache.has(eventId)) {
+    const cachedResult = globalThis.__ktnPushEventIdCache.get(eventId);
+    return {
+      ...cachedResult,
+      idempotent: true,
+      idempotentReplay: true
+    };
+  }
 
   if (!env.VAPID_PRIVATE_KEY) {
     const recipientCount = hasExplicitRecipients ? cleanRecipients.length : 0;
@@ -1007,14 +1335,28 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
     const rawRows = Array.isArray(subsRes.data) ? subsRes.data : [];
     const recipientSet = hasExplicitRecipients ? new Set(cleanRecipients) : null;
 
+    const candidateEmails = Array.from(
+      new Set([
+        ...cleanRecipients,
+        ...rawRows.map((r) => normalizeEmail(r?.user_email || '')).filter(Boolean)
+      ])
+    );
+    const userPrefsMap = await getUserNotificationPreferencesMap(env, candidateEmails);
+
     const seenEndpoints = new Set();
     const matchedRows = [];
     let expiredRemoved = 0;
+    let mutedByPreferenceCount = 0;
 
     for (const row of rawRows) {
       const rowEmail = normalizeEmail(row?.user_email || '');
       if (senderEmail && rowEmail === senderEmail) continue;
       if (recipientSet && !recipientSet.has(rowEmail)) continue;
+      const mergedPrefs = userPrefsMap.get(rowEmail) || row?.notify_settings || DEFAULT_USER_NOTIFICATION_PREFS;
+      if (!isEventTypeAllowedByUserPrefs(eventType, mergedPrefs)) {
+        mutedByPreferenceCount += 1;
+        continue;
+      }
       const ep = String(row?.endpoint || '').trim();
       const p256dh = String(row?.p256dh || row?.keys?.p256dh || '').trim();
       const auth = String(row?.auth || row?.keys?.auth || '').trim();
@@ -1049,7 +1391,12 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
     const subscriptionCount = matchedRows.length;
 
     if (subscriptionCount === 0) {
-      const reason = expiredRemoved > 0 ? 'CORRUPT_SUBSCRIPTION_REMOVED_NO_VALID_SUB' : 'NO_ACTIVE_PUSH_SUBSCRIPTION';
+      const reason =
+        mutedByPreferenceCount > 0
+          ? 'MUTED_BY_USER_PREFERENCES'
+          : expiredRemoved > 0
+            ? 'CORRUPT_SUBSCRIPTION_REMOVED_NO_VALID_SUB'
+            : 'NO_ACTIVE_PUSH_SUBSCRIPTION';
       const logLine = recordPushDiagnosticLog({
         eventId,
         eventType,
@@ -1059,7 +1406,7 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
         pushFailed: 0,
         reason
       });
-      return {
+      const zeroOut = {
         ok: true,
         eventId,
         eventType,
@@ -1067,6 +1414,7 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
         subscriptionCount: 0,
         pushAccepted: 0,
         pushFailed: 0,
+        mutedByPreferenceCount,
         reason,
         logLine,
         pushServiceAccepted: false,
@@ -1076,6 +1424,8 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
         expiredRemoved,
         results: []
       };
+      if (eventId) globalThis.__ktnPushEventIdCache.set(eventId, zeroOut);
+      return zeroOut;
     }
 
     const enrichedPayload = {
@@ -1123,7 +1473,7 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
       reason
     });
 
-    return {
+    const finalResult = {
       ok: true,
       eventId,
       eventType,
@@ -1131,6 +1481,7 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
       subscriptionCount,
       pushAccepted,
       pushFailed,
+      mutedByPreferenceCount,
       reason,
       logLine,
       pushServiceAccepted: pushAccepted > 0,
@@ -1140,6 +1491,14 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
       expiredRemoved,
       results
     };
+    if (eventId) {
+      globalThis.__ktnPushEventIdCache.set(eventId, finalResult);
+      if (globalThis.__ktnPushEventIdCache.size > 500) {
+        const oldestKey = globalThis.__ktnPushEventIdCache.keys().next().value;
+        if (oldestKey) globalThis.__ktnPushEventIdCache.delete(oldestKey);
+      }
+    }
+    return finalResult;
   } catch (err) {
     const recipientCount = hasExplicitRecipients ? cleanRecipients.length : 0;
     const reason = `DISPATCH_EXCEPTION:${err?.name || 'Error'}`;
@@ -1170,6 +1529,471 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
       error: reason
     };
   }
+}
+
+async function saveClassScheduleConfig(env, session, rawClassCode, rawInput = {}) {
+  const classCode = String(rawClassCode || rawInput?.classCode || '').trim().toUpperCase();
+  if (!classCode) {
+    return { ok: false, status: 400, message: 'Vui lòng chọn mã lớp học hợp lệ.' };
+  }
+  const existingMap = await loadAllClassScheduleConfigs(env);
+  const prevCfg = existingMap.get(classCode) || {};
+
+  const scheduleMode =
+    rawInput.scheduleMode === 'custom_sessions'
+      ? 'custom_sessions'
+      : prevCfg.scheduleMode === 'custom_sessions' && !rawInput.scheduleMode
+        ? 'custom_sessions'
+        : 'weekly';
+
+  const rawDays = Array.isArray(rawInput.daysOfWeek)
+    ? rawInput.daysOfWeek
+    : Array.isArray(rawInput.day_of_week)
+      ? rawInput.day_of_week
+      : Array.isArray(prevCfg.daysOfWeek)
+        ? prevCfg.daysOfWeek
+        : [];
+  const daysOfWeek = Array.from(
+    new Set(rawDays.map((d) => Number(d)).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))
+  ).sort((a, b) => (VN_WEEKDAY_SORT_ORDER[a] || 9) - (VN_WEEKDAY_SORT_ORDER[b] || 9));
+
+  const startTime = normalizeTimeHHMM(
+    rawInput.startTime ?? rawInput.start_time ?? prevCfg.startTime ?? '',
+    ''
+  );
+  const endTime = normalizeTimeHHMM(
+    rawInput.endTime ?? rawInput.end_time ?? prevCfg.endTime ?? '',
+    startTime ? addOneHourHHMM(startTime) : ''
+  );
+  const timezone = 'Asia/Ho_Chi_Minh';
+  const todayVn = getVnDateTimeParts(Date.now()).dateStr;
+  const effectiveFrom = String(
+    rawInput.effectiveFrom ?? rawInput.effective_from ?? prevCfg.effectiveFrom ?? todayVn
+  ).trim();
+  const rawUntil = rawInput.effectiveUntil ?? rawInput.effective_until ?? prevCfg.effectiveUntil ?? null;
+  const effectiveUntil = rawUntil && /^\d{4}-\d{2}-\d{2}$/.test(String(rawUntil).trim())
+    ? String(rawUntil).trim()
+    : null;
+
+  const customSessions = Array.isArray(rawInput.customSessions)
+    ? rawInput.customSessions
+        .map((cs) => ({
+          date: String(cs?.date || '').trim(),
+          startTime: normalizeTimeHHMM(cs?.startTime || startTime || '19:30', '19:30'),
+          endTime: normalizeTimeHHMM(cs?.endTime || endTime || '20:30', '20:30'),
+          title: String(cs?.title || '').trim()
+        }))
+        .filter((cs) => /^\d{4}-\d{2}-\d{2}$/.test(cs.date))
+    : Array.isArray(prevCfg.customSessions)
+      ? prevCfg.customSessions
+      : [];
+
+  const rawExceptions = Array.isArray(rawInput.exceptions)
+    ? rawInput.exceptions
+    : Array.isArray(prevCfg.exceptions)
+      ? prevCfg.exceptions
+      : [];
+  const nowIso = new Date().toISOString();
+  const exceptions = rawExceptions
+    .map((ex) => {
+      const dt = String(ex?.date || '').trim();
+      const st = String(ex?.status || ex?.type || '').trim().toLowerCase();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return null;
+      if (!['rescheduled', 'postponed', 'cancelled', 'holiday'].includes(st)) return null;
+      return {
+        date: dt,
+        status: st,
+        type: st,
+        startTime: ex?.startTime ? normalizeTimeHHMM(ex.startTime, startTime || '19:30') : undefined,
+        endTime: ex?.endTime ? normalizeTimeHHMM(ex.endTime, endTime || '20:30') : undefined,
+        note: String(ex?.note || '').trim(),
+        updatedBy: ex?.updatedBy || session.email,
+        updatedAt: ex?.updatedAt || nowIso
+      };
+    })
+    .filter(Boolean);
+
+  const rawMeetingUrl = String(rawInput.meetingUrl ?? rawInput.meeting_url ?? prevCfg.meetingUrl ?? '').trim();
+  const meetingUrl = /^https:\/\//i.test(rawMeetingUrl) ? rawMeetingUrl : '';
+
+  const requestedStatus = String(rawInput.status || 'confirmed').trim().toLowerCase();
+  const hasValidRule =
+    scheduleMode === 'custom_sessions'
+      ? customSessions.length > 0
+      : daysOfWeek.length > 0 && Boolean(startTime);
+  if (requestedStatus === 'confirmed' && !hasValidRule) {
+    return {
+      ok: false,
+      status: 400,
+      message: 'Vui lòng chọn ít nhất một thứ trong tuần và giờ bắt đầu hợp lệ để xác nhận lịch học chính thức.'
+    };
+  }
+  const finalStatus =
+    requestedStatus === 'paused' || requestedStatus === 'unconfirmed'
+      ? requestedStatus
+      : hasValidRule
+        ? 'confirmed'
+        : 'unconfirmed';
+
+  const prevHistory = Array.isArray(prevCfg.history) ? prevCfg.history : [];
+  const summaryText = formatOfficialScheduleDisplay({
+    classCode,
+    daysOfWeek,
+    startTime,
+    endTime,
+    scheduleMode,
+    customSessions,
+    status: finalStatus
+  });
+  const nextHistory = [
+    {
+      updatedBy: session.email,
+      updatedByName: session.name || session.email,
+      updatedByRole: session.role,
+      updatedAt: nowIso,
+      summary: summaryText,
+      exceptionCount: exceptions.length
+    },
+    ...prevHistory
+  ].slice(0, 15);
+
+  const nextConfig = {
+    classCode,
+    daysOfWeek,
+    day_of_week: daysOfWeek,
+    startTime,
+    start_time: startTime,
+    endTime,
+    end_time: endTime,
+    timezone,
+    effectiveFrom,
+    effective_from: effectiveFrom,
+    effectiveUntil,
+    effective_until: effectiveUntil,
+    scheduleMode,
+    customSessions,
+    exceptions,
+    meetingUrl,
+    status: finalStatus,
+    updatedBy: session.email,
+    updated_by: session.email,
+    updatedByName: session.name || session.email,
+    updatedByRole: session.role,
+    updatedAt: nowIso,
+    updated_at: nowIso,
+    history: nextHistory
+  };
+
+  const cfgId = `SCHED_CFG_${classCode}`;
+  let saveRes = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=representation',
+    body: {
+      id: cfgId,
+      room_id: 'CLASS_SCHEDULE_CONFIG',
+      sender_email: session.email,
+      sender_name: session.name || session.email,
+      sender_role: session.role,
+      blocked_content: JSON.stringify(nextConfig),
+      reason: 'OFFICIAL_CLASS_SCHEDULE',
+      resolved: true,
+      created_at: nowIso
+    }
+  });
+  if (!saveRes || !saveRes.ok) {
+    saveRes = await supabaseRequest(env, `ktn_dlp_alerts?id=eq.${encodeURIComponent(cfgId)}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        sender_email: session.email,
+        sender_name: session.name || session.email,
+        sender_role: session.role,
+        blocked_content: JSON.stringify(nextConfig),
+        created_at: nowIso
+      }
+    });
+  }
+  if (!saveRes || !saveRes.ok) {
+    return {
+      ok: false,
+      status: 502,
+      message: 'Không thể lưu cấu hình lịch học chính thức vào cơ sở dữ liệu Supabase.'
+    };
+  }
+
+  // Cập nhật chuỗi hiển thị vào bảng ktn_classes khi đã xác nhận lịch chính thức
+  await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(classCode)}`, {
+    method: 'PATCH',
+    prefer: 'return=minimal',
+    body: {
+      schedule: finalStatus === 'confirmed' ? summaryText : '',
+      updated_at: nowIso
+    }
+  }).catch(() => null);
+
+  return {
+    ok: true,
+    status: 200,
+    scheduleConfig: nextConfig,
+    officialScheduleText: summaryText,
+    upcomingSessions: computeUpcomingClassSessions(nextConfig, Date.now(), 6)
+  };
+}
+
+async function runClassScheduleReminders(env, options = {}) {
+  const nowMs = options.nowMs && Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now();
+  const filterClassCode = String(options.classCode || '').trim().toUpperCase();
+  const vnNow = getVnDateTimeParts(nowMs);
+
+  const [clsRes, scheduleMap] = await Promise.all([
+    supabaseRequest(
+      env,
+      filterClassCode
+        ? `ktn_classes?id=eq.${encodeURIComponent(filterClassCode)}&active=eq.true`
+        : 'ktn_classes?active=eq.true&order=id.asc'
+    ),
+    loadAllClassScheduleConfigs(env)
+  ]);
+
+  const activeClasses = Array.isArray(clsRes.data) ? clsRes.data : [];
+  const dispatchedReminders = [];
+  const skippedSessions = [];
+
+  if (!globalThis.__ktnReminderSentKeys) {
+    globalThis.__ktnReminderSentKeys = new Set();
+  }
+
+  for (const clsRow of activeClasses) {
+    const classCode = String(clsRow?.id || '').trim().toUpperCase();
+    if (!classCode) continue;
+    if (filterClassCode && classCode !== filterClassCode) continue;
+
+    const cfg = scheduleMap.get(classCode);
+    // Tuyệt đối chỉ phát nhắc giờ cho lớp đã xác nhận lịch chính thức (status === 'confirmed')
+    if (!cfg || cfg.status !== 'confirmed') {
+      skippedSessions.push({
+        classCode,
+        reason: 'UNCONFIRMED_OR_NO_OFFICIAL_SCHEDULE'
+      });
+      continue;
+    }
+
+    const upcoming = computeUpcomingClassSessions(cfg, nowMs, 3);
+    for (const sess of upcoming) {
+      if (sess.isCancelled) {
+        skippedSessions.push({
+          classCode,
+          sessionDate: sess.date,
+          status: sess.status,
+          reason: `SESSION_${String(sess.status).toUpperCase()}_SKIPPED`
+        });
+        continue;
+      }
+
+      const minutesUntilStart = (sess.startEpochMs - nowMs) / 60000;
+      // Không gửi thông báo cũ khi buổi học đã bắt đầu hoặc đã qua (minutesUntilStart <= 0)
+      if (minutesUntilStart <= 0) {
+        skippedSessions.push({
+          classCode,
+          sessionDate: sess.date,
+          minutesUntilStart: Math.round(minutesUntilStart),
+          reason: 'SESSION_ALREADY_STARTED_OR_PAST'
+        });
+        continue;
+      }
+
+      let reminderOffset = null;
+      if (minutesUntilStart >= 15 && minutesUntilStart <= 35) {
+        reminderOffset = 30;
+      } else if (minutesUntilStart >= 2 && minutesUntilStart < 15) {
+        reminderOffset = 10;
+      } else {
+        continue;
+      }
+
+      // Nếu lịch mới vừa được tạo/cập nhật sau thời điểm cửa sổ nhắc (ví dụ vừa cài lịch cho buổi sát giờ hoặc đã qua), kiểm tra an toàn
+      const clsResolved = await resolveClassRecipientEmails(env, classCode, {
+        includeTeacher: true,
+        excludeEmail: ''
+      });
+      const currentRecipients = clsResolved.recipientEmails;
+      if (currentRecipients.length === 0) {
+        skippedSessions.push({
+          classCode,
+          sessionDate: sess.date,
+          reminderOffset,
+          reason: 'NO_ACTIVE_CLASS_MEMBERS'
+        });
+        continue;
+      }
+
+      const prefsMap = await getUserNotificationPreferencesMap(env, currentRecipients);
+      const offsetEligibleRecipients = currentRecipients.filter((em) => {
+        const p = prefsMap.get(em) || DEFAULT_USER_NOTIFICATION_PREFS;
+        if (p.schedule === false) return false;
+        if (reminderOffset === 10 && !p.reminder10Min) return false;
+        return true;
+      });
+
+      if (offsetEligibleRecipients.length === 0) {
+        skippedSessions.push({
+          classCode,
+          sessionDate: sess.date,
+          reminderOffset,
+          reason: reminderOffset === 10 ? 'NO_RECIPIENT_OPTED_IN_10MIN' : 'ALL_RECIPIENTS_MUTED_SCHEDULE'
+        });
+        continue;
+      }
+
+      const candidateKeys = offsetEligibleRecipients.map(
+        (em) => `REMIND_${classCode}_${sess.date}_${reminderOffset}_${em}`
+      );
+      const existingLogRes = await supabaseRequest(
+        env,
+        `ktn_dlp_alerts?room_id=eq.CLASS_REMINDER_LOG&id=in.(${candidateKeys.map((k) => encodeURIComponent(k)).join(',')})&select=id&limit=500`
+      );
+      const alreadySentIds = new Set(
+        (Array.isArray(existingLogRes.data) ? existingLogRes.data : []).map((r) => String(r?.id || '').trim())
+      );
+
+      const newRecipients = [];
+      const skippedDuplicateRecipients = [];
+      for (const em of offsetEligibleRecipients) {
+        const key = `REMIND_${classCode}_${sess.date}_${reminderOffset}_${em}`;
+        if (alreadySentIds.has(key) || globalThis.__ktnReminderSentKeys.has(key)) {
+          skippedDuplicateRecipients.push(em);
+        } else {
+          newRecipients.push(em);
+        }
+      }
+
+      if (newRecipients.length === 0) {
+        skippedSessions.push({
+          classCode,
+          sessionDate: sess.date,
+          reminderOffset,
+          skippedDuplicateCount: skippedDuplicateRecipients.length,
+          reason: 'ALREADY_SENT_IDEMPOTENT_SKIP'
+        });
+        continue;
+      }
+
+      const validMeetingUrl = /^https:\/\//i.test(String(cfg.meetingUrl || '').trim())
+        ? String(cfg.meetingUrl).trim()
+        : '';
+      const actionUrl = validMeetingUrl || `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(classCode)}`;
+      const title = 'Sắp đến giờ học tiếng Trung!';
+      const body = `Lớp ${classCode} bắt đầu lúc ${sess.startTime}. Chuẩn bị vào lớp nhé!`;
+      const createdAtIso = new Date(nowMs).toISOString();
+
+      const logRows = newRecipients.map((em) => {
+        const key = `REMIND_${classCode}_${sess.date}_${reminderOffset}_${em}`;
+        return {
+          id: key,
+          room_id: 'CLASS_REMINDER_LOG',
+          sender_email: em,
+          sender_name: classCode,
+          sender_role: 'system',
+          blocked_content: JSON.stringify({
+            id: key,
+            type: 'class_reminder',
+            classCode,
+            sessionDate: sess.date,
+            startTime: sess.startTime,
+            endTime: sess.endTime,
+            reminderOffset,
+            recipientEmail: em,
+            title,
+            body,
+            actionLabel: 'Xem buổi học',
+            actionUrl,
+            meetingUrl: validMeetingUrl || null,
+            createdAt: createdAtIso
+          }),
+          reason: 'CLASS_SCHEDULE_REMINDER',
+          resolved: true,
+          created_at: createdAtIso
+        };
+      });
+
+      const writeLogRes = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates,return=minimal',
+        body: logRows
+      });
+      if (!writeLogRes || !writeLogRes.ok) {
+        skippedSessions.push({
+          classCode,
+          sessionDate: sess.date,
+          reminderOffset,
+          reason: 'REMINDER_LOG_PERSIST_FAILED'
+        });
+        continue;
+      }
+
+      for (const em of newRecipients) {
+        globalThis.__ktnReminderSentKeys.add(`REMIND_${classCode}_${sess.date}_${reminderOffset}_${em}`);
+      }
+
+      const eventId = `REMIND-${classCode}-${sess.date}-${reminderOffset}`;
+      const pushResult = await dispatchWebPushForQuery(
+        env,
+        '',
+        {
+          id: eventId,
+          eventId,
+          eventType: 'class_reminder',
+          title,
+          body,
+          actionLabel: 'Xem buổi học',
+          action_url: actionUrl
+        },
+        {
+          eventId,
+          eventType: 'class_reminder',
+          recipientEmails: newRecipients,
+          senderEmail: '',
+          classCode,
+          allowEventIdRetry: true
+        }
+      );
+
+      dispatchedReminders.push({
+        classCode,
+        sessionDate: sess.date,
+        startTime: sess.startTime,
+        endTime: sess.endTime,
+        reminderOffset,
+        minutesUntilStart: Math.round(minutesUntilStart),
+        recipientEmails: newRecipients,
+        skippedDuplicateCount: skippedDuplicateRecipients.length,
+        actionUrl,
+        hasMeetingUrl: Boolean(validMeetingUrl),
+        pushResult
+      });
+    }
+  }
+
+  const totalRecipientsReminded = dispatchedReminders.reduce(
+    (acc, r) => acc + (Array.isArray(r.recipientEmails) ? r.recipientEmails.length : 0),
+    0
+  );
+  const totalSkippedDuplicates =
+    dispatchedReminders.reduce((acc, r) => acc + (Number(r.skippedDuplicateCount) || 0), 0) +
+    skippedSessions.reduce((acc, s) => acc + (Number(s.skippedDuplicateCount) || 0), 0);
+
+  return {
+    ok: true,
+    evaluatedAt: new Date(nowMs).toISOString(),
+    vnDate: vnNow.dateStr,
+    vnTime: vnNow.timeStr,
+    timezone: 'Asia/Ho_Chi_Minh',
+    remindedSessionsCount: dispatchedReminders.length,
+    dispatchedCount: totalRecipientsReminded,
+    skippedDuplicatesCount: totalSkippedDuplicates,
+    dispatchedReminders,
+    skippedSessions
+  };
 }
 
 const MANIFEST_JSON = JSON.stringify({
@@ -4268,23 +5092,38 @@ export default {
   // ==========================================================================
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
-      await supabaseRequest(env, 'ktn_payment_config?select=id&limit=1');
-      const syncResult = await syncAllIzTeachStudentsToSupabase(env, {
-        source: 'cron',
-        reconcilePermissions: true,
-        batchSize: 10
-      });
-      await logSyncEvent(env, {
-        eventType: 'cron_sync',
-        sourceSystem: 'izteach',
-        targetSystem: 'supabase',
-        entityType: 'student',
-        entityKey: 'ALL_STUDENTS',
-        status: syncResult.ok ? 'synced' : 'sync_failed',
-        errorMessage: syncResult.error || null,
-        details: syncResult,
-        createdBy: 'cron:scheduled'
-      });
+      const cronExpr = String(event?.cron || '').trim();
+      const scheduledMs = event?.scheduledTime && Number.isFinite(Number(event.scheduledTime))
+        ? Number(event.scheduledTime)
+        : Date.now();
+
+      // 1. Luôn kiểm tra và gửi nhắc giờ học tự động (trước 30 phút / 10 phút) cho các lớp đã xác nhận lịch chính thức
+      const reminderResult = await runClassScheduleReminders(env, { nowMs: scheduledMs }).catch((err) => ({
+        ok: false,
+        error: err?.message || 'REMINDER_CRON_ERROR'
+      }));
+      globalThis.__ktnLastReminderCronState = reminderResult;
+
+      // 2. Đồng bộ học viên định kỳ mỗi ngày (0 3 * * *) hoặc khi kích hoạt không chỉ định cron cụ thể
+      if (!cronExpr || cronExpr === '0 3 * * *') {
+        await supabaseRequest(env, 'ktn_payment_config?select=id&limit=1');
+        const syncResult = await syncAllIzTeachStudentsToSupabase(env, {
+          source: 'cron',
+          reconcilePermissions: true,
+          batchSize: 10
+        });
+        await logSyncEvent(env, {
+          eventType: 'cron_sync',
+          sourceSystem: 'izteach',
+          targetSystem: 'supabase',
+          entityType: 'student',
+          entityKey: 'ALL_STUDENTS',
+          status: syncResult.ok ? 'synced' : 'sync_failed',
+          errorMessage: syncResult.error || null,
+          details: syncResult,
+          createdBy: 'cron:scheduled'
+        });
+      }
     })());
   },
 
@@ -5824,9 +6663,10 @@ export default {
     if (path === '/api/ktn/classes') {
       if (request.method === 'GET') {
         const session = await extractSessionFromRequest(request, env);
-        const [sbRes, tRes] = await Promise.all([
+        const [sbRes, tRes, scheduleMap] = await Promise.all([
           supabaseRequest(env, 'ktn_classes?active=eq.true&order=id.asc'),
-          supabaseRequest(env, 'ktn_teachers?active=eq.true')
+          supabaseRequest(env, 'ktn_teachers?active=eq.true'),
+          loadAllClassScheduleConfigs(env)
         ]);
         const rawClasses = Array.isArray(sbRes.data) ? sbRes.data : [];
         const rawTeachers = Array.isArray(tRes.data) ? tRes.data : [];
@@ -5835,11 +6675,42 @@ export default {
           if (t?.code) teacherMap.set(String(t.code).trim(), t);
           if (t?.email) teacherMap.set(normalizeEmail(t.email), t);
         }
+        const nowMs = Date.now();
         const classes = rawClasses.map(c => {
+          const classCode = String(c.id || '').trim().toUpperCase();
           const matchedT = teacherMap.get(String(c.teacher_code || '').trim()) || teacherMap.get(normalizeEmail(c.teacher_email || ''));
+          const cfg = scheduleMap.get(classCode) || null;
+          const isConfirmed = Boolean(cfg && cfg.status === 'confirmed');
+          const rawLegacyText = String(c.schedule || '').trim();
+          const officialScheduleText = isConfirmed
+            ? formatOfficialScheduleDisplay(cfg)
+            : 'Chưa có lịch học chính thức';
+          const scheduleStatus = isConfirmed
+            ? 'confirmed'
+            : cfg?.status === 'paused'
+              ? 'paused'
+              : rawLegacyText && rawLegacyText !== 'Chưa có lịch học chính thức'
+                ? 'legacy_unconfirmed'
+                : 'unconfirmed';
+          const upcomingSessions = isConfirmed ? computeUpcomingClassSessions(cfg, nowMs, 6) : [];
+          const suggestedFromLegacyText =
+            !isConfirmed && rawLegacyText && rawLegacyText !== 'Chưa có lịch học chính thức'
+              ? parseLegacyScheduleSuggestion(rawLegacyText)
+              : null;
+
           const copy = {
             ...c,
-            teacher_name: c.teacher_name || matchedT?.name || 'Cô Lâm Mỹ Linh'
+            teacher_name: c.teacher_name || matchedT?.name || 'Cô Lâm Mỹ Linh',
+            schedule: isConfirmed
+              ? officialScheduleText
+              : rawLegacyText || 'Chưa có lịch học chính thức',
+            officialScheduleText,
+            legacyScheduleText: !isConfirmed ? rawLegacyText : '',
+            scheduleStatus,
+            scheduleConfig: cfg,
+            upcomingSessions,
+            nextSession: upcomingSessions.find(s => !s.isCancelled) || null,
+            suggestedFromLegacyText
           };
           if (!session) delete copy.teacher_email;
           return copy;
@@ -5863,6 +6734,7 @@ export default {
           if (!existingRow || !assignedClasses.includes(classId)) {
             return jsonResponse({
               ok: false,
+              error: !existingRow ? 'TEACHER_CREATE_CLASS_FORBIDDEN' : 'TEACHER_CLASS_SCOPE_FORBIDDEN',
               message: !existingRow
                 ? 'Chỉ Quản lý (Admin) mới được phép mở thêm lớp học mới.'
                 : ('Cô không phụ trách lớp ' + classId + ' nên không có quyền chỉnh sửa.')
@@ -5871,23 +6743,30 @@ export default {
           if (body.teacherEmail && normalizeEmail(body.teacherEmail) !== normalizeEmail(existingRow.teacher_email || session.email)) {
             return jsonResponse({
               ok: false,
+              error: 'TEACHER_CHANGE_OWNER_FORBIDDEN',
               message: 'Giáo viên không được tự ý chuyển quyền chủ nhiệm lớp cho tài khoản khác.'
             }, 403);
           }
         }
 
+        const incomingTeacherEmail = body.teacherEmail || body.teacher_email || '';
+        const incomingTeacherCode = body.teacherCode || body.teacher_code || '';
         const tEmail = session.role === 'teacher'
           ? normalizeEmail(existingRow?.teacher_email || session.email)
-          : normalizeEmail(body.teacherEmail || existingRow?.teacher_email || 'linh.lam@khongtunhi.com');
+          : normalizeEmail(incomingTeacherEmail || existingRow?.teacher_email || 'linh.lam@khongtunhi.com');
         const tCode = session.role === 'teacher'
           ? String(existingRow?.teacher_code || session.code || 'GV-KTN-08').trim()
-          : String(body.teacherCode || existingRow?.teacher_code || 'GV-KTN-08').trim();
+          : String(incomingTeacherCode || existingRow?.teacher_code || 'GV-KTN-08').trim();
+        // Tuyệt đối KHÔNG tự điền '19:30 Thứ 3 & Thứ 6' làm lịch mặc định khi tạo lớp mới
+        const explicitScheduleText = body.schedule !== undefined
+          ? String(body.schedule || '').trim()
+          : String(existingRow?.schedule || '').trim();
         const row = {
           id: classId,
           name: body.name || existingRow?.name || ('Lớp ' + classId),
           teacher_code: tCode,
           teacher_email: tEmail,
-          schedule: body.schedule || existingRow?.schedule || '19:30 Thứ 3 & Thứ 6',
+          schedule: explicitScheduleText,
           total_lessons: Number(body.totalLessons || body.total_lessons || existingRow?.total_lessons) || 25,
           current_lesson: Number(body.currentLesson || body.current_lesson || existingRow?.current_lesson) || 1,
           active: true,
@@ -5906,6 +6785,20 @@ export default {
             error: 'SUPABASE_CLASS_UPSERT_FAILED',
             message: 'Không thể lưu thông tin lớp học vào cơ sở dữ liệu Supabase. Vui lòng thử lại.'
           }, 502);
+        }
+
+        // Nếu gửi kèm cấu hình lịch có cấu trúc (scheduleConfig hoặc daysOfWeek + startTime), lưu luôn cấu hình lịch chính thức
+        let savedScheduleResult = null;
+        if (
+          (body.scheduleConfig && typeof body.scheduleConfig === 'object') ||
+          (Array.isArray(body.daysOfWeek) && body.daysOfWeek.length > 0 && body.startTime)
+        ) {
+          savedScheduleResult = await saveClassScheduleConfig(
+            env,
+            session,
+            classId,
+            body.scheduleConfig || body
+          );
         }
 
         // Đồng bộ danh sách lớp phụ trách vào bảng ktn_teachers (gỡ lớp khỏi giáo viên cũ nếu đổi chủ nhiệm)
@@ -5948,7 +6841,21 @@ export default {
           }
         }
 
-        return jsonResponse({ ok: true, classItem: sbRes.data[0] });
+        return jsonResponse({
+          ok: true,
+          classItem: {
+            ...sbRes.data[0],
+            ...(savedScheduleResult?.ok
+              ? {
+                  schedule: savedScheduleResult.officialScheduleText,
+                  officialScheduleText: savedScheduleResult.officialScheduleText,
+                  scheduleStatus: savedScheduleResult.scheduleConfig.status,
+                  scheduleConfig: savedScheduleResult.scheduleConfig,
+                  upcomingSessions: savedScheduleResult.upcomingSessions
+                }
+              : {})
+          }
+        });
       }
       if (request.method === 'DELETE') {
         const session = await extractSessionFromRequest(request, env);
@@ -5986,6 +6893,246 @@ export default {
         }
         return jsonResponse({ ok: true, deletedClassId: classId });
       }
+    }
+
+    if (path === '/api/ktn/classes/schedule') {
+      if (request.method === 'GET') {
+        const session = await extractSessionFromRequest(request, env);
+        if (!session) {
+          return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+        }
+        const classCode = String(url.searchParams.get('classCode') || url.searchParams.get('id') || '').trim().toUpperCase();
+        const scheduleMap = await loadAllClassScheduleConfigs(env);
+        if (classCode) {
+          const clsRes = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(classCode)}&limit=1`);
+          const clsRow = (clsRes.ok && Array.isArray(clsRes.data) && clsRes.data[0]) || null;
+          const cfg = scheduleMap.get(classCode) || null;
+          const isConfirmed = Boolean(cfg && cfg.status === 'confirmed');
+          const rawLegacyText = String(clsRow?.schedule || '').trim();
+          const officialScheduleText = isConfirmed
+            ? formatOfficialScheduleDisplay(cfg)
+            : 'Chưa có lịch học chính thức';
+          const scheduleStatus = isConfirmed
+            ? 'confirmed'
+            : cfg?.status === 'paused'
+              ? 'paused'
+              : rawLegacyText && rawLegacyText !== 'Chưa có lịch học chính thức'
+                ? 'legacy_unconfirmed'
+                : 'unconfirmed';
+          const upcomingSessions = isConfirmed ? computeUpcomingClassSessions(cfg, Date.now(), 8) : [];
+          return jsonResponse({
+            ok: true,
+            classCode,
+            scheduleStatus,
+            officialScheduleText,
+            legacyScheduleText: !isConfirmed ? rawLegacyText : '',
+            scheduleConfig: cfg,
+            upcomingSessions,
+            nextSession: upcomingSessions.find((s) => !s.isCancelled) || null,
+            suggestedFromLegacyText:
+              !isConfirmed && rawLegacyText ? parseLegacyScheduleSuggestion(rawLegacyText) : null
+          });
+        }
+        const schedules = Array.from(scheduleMap.values()).map((cfg) => ({
+          ...cfg,
+          officialScheduleText: formatOfficialScheduleDisplay(cfg),
+          upcomingSessions: computeUpcomingClassSessions(cfg, Date.now(), 6)
+        }));
+        return jsonResponse({ ok: true, schedules });
+      }
+
+      if (request.method === 'POST' || request.method === 'PUT') {
+        const session = await extractSessionFromRequest(request, env);
+        if (!session) {
+          return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+        }
+        if (session.role === 'student') {
+          return jsonResponse({
+            ok: false,
+            error: 'STUDENT_SCHEDULE_EDIT_FORBIDDEN',
+            message: 'Học viên chỉ có quyền xem lịch học và nhận nhắc giờ, không được chỉnh sửa lịch.'
+          }, 403);
+        }
+        if (session.role !== 'admin' && session.role !== 'teacher') {
+          return jsonResponse({ ok: false, message: 'Không có quyền cài đặt lịch học.' }, 403);
+        }
+
+        const body = await request.json().catch(() => ({}));
+        const classCode = String(body.classCode || body.id || '').trim().toUpperCase();
+        if (!classCode) {
+          return jsonResponse({ ok: false, message: 'Vui lòng chọn mã lớp học.' }, 400);
+        }
+
+        const clsLookup = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(classCode)}&select=*&limit=1`);
+        const existingCls = (clsLookup.ok && Array.isArray(clsLookup.data) && clsLookup.data[0]) || null;
+
+        if (session.role === 'teacher') {
+          const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+          if (!existingCls || !assignedClasses.includes(classCode)) {
+            return jsonResponse({
+              ok: false,
+              error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
+              message: !existingCls
+                ? 'Giáo viên không có quyền tạo lớp mới.'
+                : `Cô không phụ trách lớp ${classCode} nên không có quyền chỉnh lịch học của lớp này.`
+            }, 403);
+          }
+          if (body.teacherEmail && normalizeEmail(body.teacherEmail) !== normalizeEmail(existingCls.teacher_email || session.email)) {
+            return jsonResponse({
+              ok: false,
+              error: 'TEACHER_CHANGE_OWNER_FORBIDDEN',
+              message: 'Giáo viên không được tự ý thay đổi giáo viên phụ trách lớp.'
+            }, 403);
+          }
+        } else if (!existingCls && session.role === 'admin') {
+          // Admin có thể vừa tạo lớp mới vừa cài lịch
+          await supabaseRequest(env, 'ktn_classes', {
+            method: 'POST',
+            prefer: 'resolution=merge-duplicates',
+            body: {
+              id: classCode,
+              name: body.className || body.name || `Lớp ${classCode}`,
+              teacher_code: body.teacherCode || 'GV-KTN-08',
+              teacher_email: normalizeEmail(body.teacherEmail || 'linh.lam@khongtunhi.com'),
+              schedule: '',
+              total_lessons: Number(body.totalLessons) || 25,
+              current_lesson: Number(body.currentLesson) || 1,
+              active: true,
+              updated_at: new Date().toISOString()
+            }
+          });
+        }
+
+        const saveResult = await saveClassScheduleConfig(env, session, classCode, body);
+        if (!saveResult.ok) {
+          return jsonResponse({
+            ok: false,
+            message: saveResult.message || 'Không thể lưu lịch học.'
+          }, saveResult.status || 400);
+        }
+
+        const cfg = saveResult.scheduleConfig;
+        const latestEx = Array.isArray(cfg.exceptions) && cfg.exceptions.length > 0
+          ? cfg.exceptions[cfg.exceptions.length - 1]
+          : null;
+        const isCancelOrPostpone = Boolean(
+          latestEx && ['cancelled', 'postponed', 'holiday'].includes(String(latestEx.status || '').toLowerCase())
+        );
+
+        let pushDispatch = null;
+        if (body.notifyMembers !== false && cfg.status === 'confirmed') {
+          const nowIso = new Date().toISOString();
+          const eventType = isCancelOrPostpone ? 'session_cancelled' : 'schedule_changed';
+          const eventId = `SCHED-EVT-${classCode}-${Date.now()}`;
+          const evtTitle = isCancelOrPostpone
+            ? `Thông báo hoãn/hủy buổi học Lớp ${classCode}`
+            : `Cập nhật lịch học chính thức Lớp ${classCode}`;
+          const evtBody = isCancelOrPostpone
+            ? `Buổi học ngày ${latestEx.date} tạm nghỉ/hoãn${latestEx.note ? ` (${latestEx.note})` : ''}.`
+            : `Lịch học: ${saveResult.officialScheduleText}.`;
+
+          await supabaseRequest(env, 'ktn_dlp_alerts', {
+            method: 'POST',
+            prefer: 'return=minimal',
+            body: {
+              id: eventId,
+              room_id: 'CLASS_SCHEDULE_EVENT',
+              sender_email: session.email,
+              sender_name: session.name || session.email,
+              sender_role: session.role,
+              blocked_content: JSON.stringify({
+                id: eventId,
+                type: eventType,
+                classCode,
+                title: evtTitle,
+                body: evtBody,
+                actionUrl: `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(classCode)}`,
+                updatedBy: session.email,
+                updatedByName: session.name || session.email,
+                createdAt: nowIso
+              }),
+              reason: eventType.toUpperCase(),
+              resolved: true,
+              created_at: nowIso
+            }
+          }).catch(() => null);
+
+          if (body.sendPush !== false) {
+            const clsResolved = await resolveClassRecipientEmails(env, classCode, {
+              includeTeacher: true,
+              excludeEmail: session.email
+            });
+            if (clsResolved.recipientEmails.length > 0) {
+              const pushPromise = dispatchWebPushForQuery(
+                env,
+                '',
+                {
+                  id: eventId,
+                  eventId,
+                  eventType,
+                  title: evtTitle,
+                  body: evtBody,
+                  action_url: `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(classCode)}`
+                },
+                {
+                  eventId,
+                  eventType,
+                  recipientEmails: clsResolved.recipientEmails,
+                  senderEmail: session.email,
+                  classCode
+                }
+              );
+              if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushPromise);
+              pushDispatch = await pushPromise;
+            }
+          }
+        }
+
+        return jsonResponse({
+          ok: true,
+          classCode,
+          scheduleStatus: cfg.status,
+          officialScheduleText: saveResult.officialScheduleText,
+          scheduleConfig: cfg,
+          upcomingSessions: saveResult.upcomingSessions,
+          nextSession: saveResult.upcomingSessions.find((s) => !s.isCancelled) || null,
+          ...(pushDispatch ? { pushDispatch } : {})
+        });
+      }
+    }
+
+    if (path === '/api/ktn/schedule/run-reminders' && request.method === 'POST') {
+      const cronSecret = request.headers.get('X-KTN-Cron-Secret') || '';
+      const isCronAuthorized = Boolean(
+        cronSecret && env.KTN_SESSION_SECRET && cronSecret === env.KTN_SESSION_SECRET
+      );
+      const session = isCronAuthorized ? { role: 'admin', email: 'cron@khongtunhi.com' } : await extractSessionFromRequest(request, env);
+      if (!session || (session.role !== 'admin' && session.role !== 'teacher')) {
+        return jsonResponse({ ok: false, message: 'Chỉ Quản lý hoặc Giáo viên mới được phép kích hoạt kiểm tra nhắc lịch học.' }, 403);
+      }
+      const body = await request.json().catch(() => ({}));
+      const targetClassCode = String(body.classCode || '').trim().toUpperCase();
+      if (session.role === 'teacher') {
+        const assigned = await getTeacherAssignedClassCodes(env, session.email);
+        if (!targetClassCode || !assigned.includes(targetClassCode)) {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
+            message: 'Giáo viên chỉ được kiểm tra nhắc lịch cho lớp mình phụ trách.'
+          }, 403);
+        }
+      }
+      const parsedIso = body.nowIso ? Date.parse(String(body.nowIso)) : NaN;
+      const resolvedNowMs = Number.isFinite(Number(body.nowMs))
+        ? Number(body.nowMs)
+        : Number.isFinite(parsedIso)
+          ? parsedIso
+          : Date.now();
+      const reminderReport = await runClassScheduleReminders(env, {
+        classCode: targetClassCode || '',
+        nowMs: resolvedNowMs
+      });
+      return jsonResponse(reminderReport);
     }
 
     if (path === '/api/ktn/teachers' || path === '/api/ktn/admin/teachers/provision') {
@@ -9327,17 +10474,88 @@ export default {
       });
     }
 
+    if (path === '/api/ktn/notifications/settings') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      const myEmail = normalizeEmail(session.email);
+      if (request.method === 'GET') {
+        const prefsMap = await getUserNotificationPreferencesMap(env, [myEmail]);
+        return jsonResponse({
+          ok: true,
+          settings: prefsMap.get(myEmail) || DEFAULT_USER_NOTIFICATION_PREFS
+        });
+      }
+      if (request.method === 'PUT' || request.method === 'POST' || request.method === 'PATCH') {
+        const body = await request.json().catch(() => ({}));
+        const nextPrefs = sanitizeUserNotificationPrefs(body.settings || body);
+        const prefId = `NPREF_${myEmail}`;
+        const nowIso = new Date().toISOString();
+        let saveRes = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=representation',
+          body: {
+            id: prefId,
+            room_id: 'NOTIF_PREFS',
+            sender_email: myEmail,
+            sender_name: session.name || myEmail,
+            sender_role: session.role || 'student',
+            blocked_content: JSON.stringify(nextPrefs),
+            reason: 'USER_NOTIFICATION_PREFERENCES',
+            resolved: true,
+            created_at: nowIso
+          }
+        });
+        if (!saveRes || !saveRes.ok) {
+          saveRes = await supabaseRequest(env, `ktn_dlp_alerts?id=eq.${encodeURIComponent(prefId)}`, {
+            method: 'PATCH',
+            prefer: 'return=representation',
+            body: {
+              blocked_content: JSON.stringify(nextPrefs),
+              created_at: nowIso
+            }
+          });
+        }
+        // Đồng bộ notify_settings sang các thiết bị Push của tài khoản
+        await supabaseRequest(
+          env,
+          `ktn_push_subscriptions?user_email=eq.${encodeURIComponent(myEmail)}`,
+          {
+            method: 'PATCH',
+            prefer: 'return=minimal',
+            body: {
+              notify_settings: nextPrefs,
+              updated_at: nowIso
+            }
+          }
+        ).catch(() => null);
+
+        return jsonResponse({
+          ok: true,
+          settings: nextPrefs
+        });
+      }
+    }
+
     if (path === '/api/ktn/notifications' && request.method === 'GET') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) {
         return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
       }
 
+      const myEmail = normalizeEmail(session.email);
+      const prefsMap = await getUserNotificationPreferencesMap(env, [myEmail]);
+      const userPrefs = prefsMap.get(myEmail) || DEFAULT_USER_NOTIFICATION_PREFS;
+
       const items = [];
+      let scopedClassesForScheduleEvents = new Set();
+
       if (session.role === 'student') {
         const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
         const stu = (Array.isArray(stuRes.data) && stuRes.data[0]) || null;
         const classCode = String(stu?.class_code || session.classCode || '').trim().toUpperCase() || null;
+        if (classCode) scopedClassesForScheduleEvents.add(classCode);
 
         const hwRes = await supabaseRequest(env, `ktn_homeworks?student_email=eq.${encodeURIComponent(session.email)}&order=updated_at.desc&limit=20`);
         const hws = Array.isArray(hwRes.data) ? hwRes.data : [];
@@ -9395,7 +10613,6 @@ export default {
           }
         }
 
-        const myEmail = normalizeEmail(session.email);
         const roomQuerySet = new Set([`student:${myEmail}`]);
         if (classCode) {
           roomQuerySet.add(classCode);
@@ -9411,27 +10628,64 @@ export default {
           roomQuerySet.add(`course:${canonicalCid}`);
         }
         const roomInParam = Array.from(roomQuerySet).map(k => encodeURIComponent(k)).join(',');
-        const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${roomInParam})&sender_email=neq.${encodeURIComponent(myEmail)}&order=created_at.desc&limit=5`);
+        const msgRes = await supabaseRequest(env, `ktn_messages?room_id=in.(${roomInParam})&sender_email=neq.${encodeURIComponent(myEmail)}&order=created_at.desc&limit=10`);
         const roomMsgs = Array.isArray(msgRes.data) ? msgRes.data : [];
+
+        // Chống spam: Tin nhắn riêng (1-1) ưu tiên cao và giữ riêng; tin nhắn nhóm cùng phòng liên tiếp được gộp thành 1 thông báo tóm tắt
+        const groupRoomBuckets = new Map();
         for (const latestMsg of roomMsgs) {
           const rawRoom = String(latestMsg.room_id || latestMsg.class_code || classCode || '').trim();
           const isPrivate = rawRoom.toLowerCase().startsWith('student:');
           const isCourseRoom = rawRoom.toLowerCase().startsWith('course:');
           const isPinned = Boolean(latestMsg.attachment && latestMsg.attachment.pinned);
           const isTeacherSender = latestMsg.sender_role === 'teacher' || latestMsg.sender_role === 'admin';
+
+          if (isPrivate || isPinned) {
+            items.push({
+              id: `NOTIF-MSG-${classCode || rawRoom}-${latestMsg.id}`,
+              type: isPinned ? 'announcement_pinned' : 'chat_message',
+              priority: 'high',
+              classCode: classCode || rawRoom,
+              roomId: rawRoom,
+              messageId: latestMsg.id,
+              title: isPinned
+                ? 'Thông báo quan trọng được ghim.'
+                : 'Cô giáo vừa nhắn riêng cho em.',
+              body: `${latestMsg.sender_name || (isTeacherSender ? 'Cô giáo' : 'Bạn cùng lớp')}: ${String(latestMsg.content || '').slice(0, 60)}`,
+              actionUrl: (classCode && !isPrivate && !isCourseRoom) ? `#/lop/${classCode.toLowerCase()}/buoi/1` : '#/nhom-lop',
+              createdAt: latestMsg.created_at
+            });
+          } else {
+            const normGroupKey = isCourseRoom ? rawRoom.toLowerCase() : (normalizeRoomClassCode(rawRoom) || classCode || rawRoom);
+            if (!groupRoomBuckets.has(normGroupKey)) {
+              groupRoomBuckets.set(normGroupKey, {
+                latestMsg,
+                rawRoom,
+                isCourseRoom,
+                isTeacherSender,
+                count: 1
+              });
+            } else {
+              groupRoomBuckets.get(normGroupKey).count += 1;
+            }
+          }
+        }
+
+        for (const [normGroupKey, bucket] of groupRoomBuckets.entries()) {
+          const { latestMsg, rawRoom, isCourseRoom, isTeacherSender, count } = bucket;
           items.push({
             id: `NOTIF-MSG-${classCode || rawRoom}-${latestMsg.id}`,
-            type: isPinned ? 'announcement_pinned' : 'chat_message',
+            type: 'chat_message',
+            priority: 'normal',
+            coalescedCount: count,
             classCode: classCode || rawRoom,
             roomId: rawRoom,
             messageId: latestMsg.id,
-            title: isPinned
-              ? 'Thông báo quan trọng được ghim.'
-              : (isPrivate
-                  ? 'Cô giáo vừa nhắn riêng cho em.'
-                  : (isTeacherSender ? 'Tin nhắn mới từ cô giáo.' : 'Tin nhắn mới trong nhóm lớp.')),
+            title: count > 1
+              ? `${count} tin nhắn mới trong nhóm ${isCourseRoom ? 'khóa học' : ('lớp ' + normGroupKey)}`
+              : (isTeacherSender ? 'Tin nhắn mới từ cô giáo.' : 'Tin nhắn mới trong nhóm lớp.'),
             body: `${latestMsg.sender_name || (isTeacherSender ? 'Cô giáo' : 'Bạn cùng lớp')}: ${String(latestMsg.content || '').slice(0, 60)}`,
-            actionUrl: (classCode && !isPrivate && !isCourseRoom) ? `#/lop/${classCode.toLowerCase()}/buoi/1` : '#/nhom-lop',
+            actionUrl: (classCode && !isCourseRoom) ? `#/lop/${classCode.toLowerCase()}/buoi/1` : '#/nhom-lop',
             createdAt: latestMsg.created_at
           });
         }
@@ -9468,6 +10722,10 @@ export default {
         }
       } else if (session.role === 'teacher') {
         const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+        assignedClasses.forEach(c => {
+          const clean = String(c || '').trim().toUpperCase();
+          if (clean) scopedClassesForScheduleEvents.add(clean);
+        });
         if (assignedClasses.length > 0) {
           const classListParam = assignedClasses.map(c => encodeURIComponent(c)).join(',');
           const hwRes = await supabaseRequest(env, `ktn_homeworks?class_code=in.(${classListParam})&status=eq.pending&order=submitted_at.desc&limit=15`);
@@ -9542,6 +10800,7 @@ export default {
           items.push({
             id: `NOTIF-TMSG-${normRoom}-${m.id}`,
             type: 'chat_message',
+            priority: isPrivate ? 'high' : 'normal',
             classCode: normRoom,
             roomId: normRoom,
             title: isPrivate ? 'Học sinh vừa nhắn riêng (1-1).' : 'Tin nhắn mới từ học sinh.',
@@ -9595,10 +10854,62 @@ export default {
         }
       }
 
-      const readStateRes = await supabaseRequest(
-        env,
-        `ktn_dlp_alerts?room_id=eq.NOTIF_READ_STATE&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=50`
-      );
+      // Bổ sung thông báo nhắc giờ học tự động (class_reminder) và đổi/hoãn lịch (schedule_changed / session_cancelled) từ nguồn thật
+      const [reminderLogRes, scheduleEvtRes, readStateRes] = await Promise.all([
+        supabaseRequest(
+          env,
+          `ktn_dlp_alerts?room_id=eq.CLASS_REMINDER_LOG&sender_email=eq.${encodeURIComponent(myEmail)}&order=created_at.desc&limit=10`
+        ),
+        supabaseRequest(
+          env,
+          'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20'
+        ),
+        supabaseRequest(
+          env,
+          `ktn_dlp_alerts?room_id=eq.NOTIF_READ_STATE&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=50`
+        )
+      ]);
+
+      if (reminderLogRes.ok && Array.isArray(reminderLogRes.data)) {
+        for (const row of reminderLogRes.data) {
+          try {
+            const parsed = JSON.parse(row.blocked_content || '{}');
+            const cls = String(parsed.classCode || row.sender_name || '').trim().toUpperCase();
+            if (session.role === 'student' && !scopedClassesForScheduleEvents.has(cls)) continue;
+            items.push({
+              id: parsed.id || row.id,
+              type: 'class_reminder',
+              classCode: cls,
+              title: parsed.title || 'Sắp đến giờ học tiếng Trung!',
+              body: parsed.body || `Lớp ${cls} sắp bắt đầu. Chuẩn bị vào lớp nhé!`,
+              actionLabel: parsed.actionLabel || 'Xem buổi học',
+              actionUrl: parsed.actionUrl || `#/classrooms?class=${encodeURIComponent(cls)}`,
+              createdAt: parsed.createdAt || row.created_at
+            });
+          } catch {}
+        }
+      }
+
+      if (scheduleEvtRes.ok && Array.isArray(scheduleEvtRes.data)) {
+        for (const row of scheduleEvtRes.data) {
+          try {
+            const parsed = JSON.parse(row.blocked_content || '{}');
+            const cls = String(parsed.classCode || '').trim().toUpperCase();
+            if (normalizeEmail(row.sender_email || parsed.updatedBy || '') === myEmail) continue;
+            if (session.role !== 'admin' && !scopedClassesForScheduleEvents.has(cls)) continue;
+            items.push({
+              id: parsed.id || row.id,
+              type: parsed.type || 'schedule_changed',
+              classCode: cls,
+              title: parsed.title || `Cập nhật lịch học Lớp ${cls}`,
+              body: parsed.body || '',
+              actionUrl: parsed.actionUrl || `#/classrooms?class=${encodeURIComponent(cls)}`,
+              createdAt: parsed.createdAt || row.created_at
+            });
+          } catch {}
+        }
+      }
+
       const readSet = new Set();
       if (readStateRes.ok && Array.isArray(readStateRes.data)) {
         for (const r of readStateRes.data) {
@@ -9609,15 +10920,21 @@ export default {
         }
       }
 
-      items.sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0));
+      const filteredItems = items.filter((it) => isEventTypeAllowedByUserPrefs(it.type, userPrefs));
+      filteredItems.sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0));
 
-      const hydrated = items.slice(0, 15).map(it => ({
+      const hydrated = filteredItems.slice(0, 20).map(it => ({
         ...it,
         target_email: session.email,
         read: readSet.has(it.id)
       }));
 
-      return jsonResponse({ ok: true, notifications: hydrated, readIds: Array.from(readSet) });
+      return jsonResponse({
+        ok: true,
+        notifications: hydrated,
+        readIds: Array.from(readSet),
+        settings: userPrefs
+      });
     }
 
     if (path === '/api/ktn/notifications/read' && (request.method === 'PATCH' || request.method === 'POST')) {

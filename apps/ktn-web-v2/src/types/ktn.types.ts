@@ -67,6 +67,60 @@ export interface KtnLessonUnit {
   workbookTitle?: string;
 }
 
+export interface ClassScheduleException {
+  date: string;
+  type: 'rescheduled' | 'postponed' | 'holiday' | 'cancelled';
+  newDate?: string;
+  startTime?: string;
+  endTime?: string;
+  note?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface CustomClassSession {
+  date: string;
+  startTime: string;
+  endTime: string;
+  title?: string;
+  meetingUrl?: string;
+}
+
+export interface UpcomingClassSession {
+  classCode: string;
+  sessionDate: string;
+  originalDate?: string;
+  dayOfWeek: number;
+  dayLabel: string;
+  startTime: string;
+  endTime: string;
+  startEpochMs: number;
+  endEpochMs: number;
+  timezone: string;
+  status: 'scheduled' | 'rescheduled' | 'postponed' | 'holiday' | 'cancelled';
+  note?: string;
+  title?: string;
+  meetingUrl?: string;
+}
+
+export interface ClassScheduleConfig {
+  classCode: string;
+  daysOfWeek: number[];
+  dayOfWeek?: string;
+  startTime: string;
+  endTime: string;
+  timezone: string;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+  mode: 'weekly' | 'custom_sessions';
+  customSessions: CustomClassSession[];
+  exceptions: ClassScheduleException[];
+  meetingUrl?: string;
+  status: 'confirmed' | 'unconfirmed' | 'paused';
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface KtnClassItem {
   id: string;
   name: string;
@@ -77,6 +131,18 @@ export interface KtnClassItem {
   total_lessons: number;
   current_lesson: number;
   active: boolean;
+  scheduleStatus?: 'confirmed' | 'legacy_unconfirmed' | 'unconfirmed' | 'paused';
+  officialScheduleText?: string;
+  legacyScheduleText?: string;
+  scheduleConfig?: ClassScheduleConfig | null;
+  upcomingSessions?: UpcomingClassSession[];
+  nextSession?: UpcomingClassSession | null;
+  suggestedFromLegacyText?: {
+    daysOfWeek?: number[];
+    startTime?: string;
+    endTime?: string;
+    legacyText?: string;
+  } | null;
 }
 
 export interface KtnSessionExercise {
@@ -141,6 +207,10 @@ export type NotificationType =
   | 'homework_submitted'
   | 'homework_assigned'
   | 'chat_message'
+  | 'class_reminder'
+  | 'schedule_changed'
+  | 'session_cancelled'
+  | 'course_granted'
   | 'class_announcement'
   | 'announcement_pinned'
   | 'order_pending';
@@ -154,11 +224,24 @@ export interface KtnNotification {
   homeworkId?: string;
   courseId?: string;
   lessonNum?: number;
+  sessionDate?: string;
   title: string;
   body: string;
   actionUrl: string;
+  actionLabel?: string;
+  priority?: 'high' | 'normal';
+  coalescedCount?: number;
   createdAt: string;
   read: boolean;
+}
+
+export interface UserNotificationSettings {
+  chat: boolean;
+  homework: boolean;
+  schedule: boolean;
+  important: boolean;
+  reminder10Min: boolean;
+  updatedAt?: string | null;
 }
 
 export type AccountStatus = 'ready_to_login' | 'pending_activation' | 'error';

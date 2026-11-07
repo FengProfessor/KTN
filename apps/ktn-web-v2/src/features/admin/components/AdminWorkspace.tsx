@@ -19,12 +19,15 @@ import {
   Copy,
   KeyRound,
   X,
+  Calendar,
+  Clock,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_COURSES } from '@/lib/demoData';
 import { formatVnd } from '@/lib/utils';
+import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
 import {
   KtnClassItem,
   KtnCourse,
@@ -83,6 +86,15 @@ export const AdminWorkspace: React.FC = () => {
   const [newTeacherPhone, setNewTeacherPhone] = useState('');
   const [newTeacherCode, setNewTeacherCode] = useState('');
   const [newTeacherClasses, setNewTeacherClasses] = useState<string[]>(['YCT2-04']);
+
+  // Official Class Schedule & Create Class modal state
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleModalMode, setScheduleModalMode] = useState<'create_class' | 'edit_schedule'>(
+    'edit_schedule'
+  );
+  const [selectedClassForSchedule, setSelectedClassForSchedule] =
+    useState<KtnClassItem | null>(null);
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
 
   // Ephemeral One-Time Credential Handoff Banner (in-memory only, never persisted to localStorage)
   const [credentialHandoff, setCredentialHandoff] = useState<{
@@ -1273,34 +1285,176 @@ export const AdminWorkspace: React.FC = () => {
           className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
-              <GraduationCap className="h-4 w-4 text-red-800" />
-              Danh sách lớp học ({classesList.length}) & Giáo viên ({teachersList.length})
-            </h2>
+            <div>
+              <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
+                <GraduationCap className="h-4 w-4 text-red-800" />
+                Danh sách lớp học ({classesList.length}) & Lịch học chính thức
+              </h2>
+              <p className="mt-0.5 text-[11px] text-stone-500">
+                Hệ thống tự động nhắc học viên và giáo viên trước giờ học 30 phút dựa trên lịch chính thức đã xác nhận.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              data-testid="admin-create-class-btn"
+              onClick={() => {
+                setSelectedClassForSchedule(null);
+                setScheduleModalMode('create_class');
+                setScheduleModalOpen(true);
+              }}
+              className="inline-flex min-h-[34px] items-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+            >
+              <PlusCircle className="h-3.5 w-3.5" />
+              <span>+ Tạo lớp mới</span>
+            </button>
           </div>
-          <div className="mt-2.5 divide-y divide-stone-100">
-            {classesList.map((cls) => (
-              <div
-                key={cls.id}
-                className="flex flex-wrap items-center justify-between gap-2 py-2.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-bold text-stone-900 sm:text-sm">
-                    {cls.id} · {cls.name}
-                  </p>
-                  <p className="truncate text-[11px] text-stone-500">
-                    GV: {cls.teacher_name} ({cls.teacher_email || cls.teacher_code}) ·{' '}
-                    {cls.schedule}
-                  </p>
+
+          <div className="mt-3 divide-y divide-stone-100">
+            {classesList.map((cls) => {
+              const isConfirmed =
+                cls.scheduleStatus === 'confirmed' && Boolean(cls.officialScheduleText);
+              const displaySchedule = isConfirmed
+                ? `Lớp ${cls.id} — ${cls.officialScheduleText}`
+                : 'Chưa có lịch học chính thức';
+              return (
+                <div
+                  key={cls.id}
+                  data-testid={`admin-class-row-${cls.id}`}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-xs font-bold text-stone-900 sm:text-sm">
+                        {cls.id} · {cls.name}
+                      </p>
+                      <span
+                        data-testid={`class-schedule-status-${cls.id}`}
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          isConfirmed
+                            ? 'bg-emerald-100 text-emerald-900'
+                            : 'bg-amber-100 text-amber-900'
+                        }`}
+                      >
+                        {isConfirmed ? 'Đã có lịch chính thức' : 'Chưa có lịch học chính thức'}
+                      </span>
+                      <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-700">
+                        Buổi {cls.current_lesson}/{cls.total_lessons}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] font-medium text-stone-600">
+                      GV phụ trách:{' '}
+                      <strong className="text-stone-800">{cls.teacher_name}</strong> (
+                      {cls.teacher_email || cls.teacher_code})
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      <span
+                        data-testid={`class-official-schedule-text-${cls.id}`}
+                        className={`inline-flex items-center gap-1 font-semibold ${
+                          isConfirmed ? 'text-red-900' : 'text-stone-500'
+                        }`}
+                      >
+                        <Calendar className="h-3.5 w-3.5 text-red-800" />
+                        {displaySchedule}
+                      </span>
+
+                      {!isConfirmed && cls.legacyScheduleText && (
+                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          Lịch văn bản cũ: &ldquo;{cls.legacyScheduleText}&rdquo; (Cần xác nhận)
+                        </span>
+                      )}
+
+                      {isConfirmed && cls.nextSession && (
+                        <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                          <Clock className="h-3 w-3" />
+                          Buổi tới: {cls.nextSession.dayLabel}, {cls.nextSession.sessionDate} (
+                          {cls.nextSession.startTime}–{cls.nextSession.endTime})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid={`admin-edit-schedule-btn-${cls.id}`}
+                      onClick={() => {
+                        setSelectedClassForSchedule(cls);
+                        setScheduleModalMode('edit_schedule');
+                        setScheduleModalOpen(true);
+                      }}
+                      className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
+                    >
+                      <Calendar className="h-3.5 w-3.5" />
+                      <span>{isConfirmed ? 'Chỉnh lịch' : 'Cài lịch học'}</span>
+                    </button>
+                  </div>
                 </div>
-                <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
-                  Buổi {cls.current_lesson}/{cls.total_lessons}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
+
+      <ClassScheduleModal
+        open={scheduleModalOpen}
+        mode={scheduleModalMode}
+        role="admin"
+        classItem={selectedClassForSchedule}
+        teachers={teachersList}
+        isSubmitting={isSavingSchedule}
+        onClose={() => setScheduleModalOpen(false)}
+        onSaveClassAndSchedule={async ({
+          isCreateClass,
+          classCode,
+          className,
+          teacherCode,
+          teacherEmail,
+          totalLessons,
+          schedulePayload,
+        }) => {
+          setIsSavingSchedule(true);
+          try {
+            if (!isDemoMode) {
+              await ktnApi.saveClass({
+                id: classCode,
+                name: className,
+                teacher_code: teacherCode,
+                teacher_email: teacherEmail,
+                total_lessons: totalLessons,
+                schedule:
+                  schedulePayload.status === 'confirmed'
+                    ? undefined
+                    : selectedClassForSchedule?.schedule || '',
+              });
+              if (
+                schedulePayload.status === 'confirmed' ||
+                schedulePayload.daysOfWeek.length > 0 ||
+                schedulePayload.customSessions.length > 0 ||
+                selectedClassForSchedule?.scheduleConfig
+              ) {
+                await ktnApi.saveClassSchedule(schedulePayload);
+              }
+            }
+            await queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+            addToast({
+              title: isCreateClass
+                ? `Đã tạo lớp ${classCode}`
+                : `Đã cập nhật lịch học lớp ${classCode}`,
+              description:
+                schedulePayload.status === 'confirmed'
+                  ? 'Lịch học chính thức đã được lưu và đồng bộ bộ nhắc tự động.'
+                  : 'Thông tin lớp học đã được lưu.',
+              variant: 'success',
+            });
+            setScheduleModalOpen(false);
+          } finally {
+            setIsSavingSchedule(false);
+          }
+        }}
+      />
 
       {/* Student Roster with Ultra-Fast Server-Side Search & Filters */}
       {showStudents && (

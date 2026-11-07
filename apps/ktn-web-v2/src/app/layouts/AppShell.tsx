@@ -37,6 +37,50 @@ export const AppShell: React.FC = () => {
 
   const seenNotifIdsRef = useRef<Set<string>>(new Set());
   const initializedNotifsForUserRef = useRef<string>('');
+  const bellButtonRef = useRef<HTMLButtonElement | null>(null);
+  const notifDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Close notification dropdown automatically when navigating to another page
+  useEffect(() => {
+    setNotifDropdownOpen(false);
+  }, [location.pathname, location.search, setNotifDropdownOpen]);
+
+  // Close notification dropdown on outside pointer/touch/click or Escape key
+  useEffect(() => {
+    if (!notifDropdownOpen) return;
+
+    const handleOutsideInteraction = (event: MouseEvent | TouchEvent | PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (notifDropdownRef.current?.contains(target)) return;
+      if (bellButtonRef.current?.contains(target)) return;
+      setNotifDropdownOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        setNotifDropdownOpen(false);
+        bellButtonRef.current?.focus();
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsideInteraction, true);
+    document.addEventListener('mousedown', handleOutsideInteraction, true);
+    document.addEventListener('touchstart', handleOutsideInteraction, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener('keydown', handleKeyDown, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsideInteraction, true);
+      document.removeEventListener('mousedown', handleOutsideInteraction, true);
+      document.removeEventListener('touchstart', handleOutsideInteraction, true);
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [notifDropdownOpen, setNotifDropdownOpen]);
 
   const isRestoringLiveSession = isRestoring && !isDemoMode && !user;
   const effectiveRole = user?.role || 'student';
@@ -430,11 +474,19 @@ export const AppShell: React.FC = () => {
               {/* Notification Bell & Dropdown */}
               <div className="relative">
                 <button
+                  ref={bellButtonRef}
                   type="button"
                   data-testid="header-notification-bell"
-                  onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
-                  className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100"
                   aria-label="Thông báo"
+                  aria-expanded={notifDropdownOpen}
+                  aria-haspopup="dialog"
+                  aria-controls="header-notification-dropdown"
+                  onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
+                  className={`relative inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
+                    notifDropdownOpen
+                      ? 'border-red-300 bg-red-50 text-red-800'
+                      : 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                  }`}
                 >
                   <Bell className="h-4 w-4" />
                   {unreadNotifications > 0 && (
@@ -449,33 +501,45 @@ export const AppShell: React.FC = () => {
 
                 {notifDropdownOpen && (
                   <div
+                    id="header-notification-dropdown"
+                    ref={notifDropdownRef}
+                    role="dialog"
+                    aria-label="Thông báo gần đây"
                     data-testid="header-notification-dropdown"
-                    className="fixed left-2.5 right-2.5 top-13 z-50 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-88"
+                    className="fixed left-3 right-3 top-13 z-50 max-w-md overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96"
                   >
                     <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50 px-3.5 py-2.5">
                       <div className="flex items-center gap-1.5">
                         <span className="font-display text-xs font-bold text-stone-900">
-                          Thông báo
+                          Thông báo mới nhất
                         </span>
                         {unreadNotifications > 0 && (
                           <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                            {unreadNotifications}
+                            {unreadNotifications} chưa đọc
                           </span>
                         )}
                       </div>
-                      {unreadNotifications > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => markAllReadMutation.mutate()}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-red-800 hover:underline"
-                        >
-                          <CheckCheck className="h-3.5 w-3.5" />
-                          Đọc tất cả
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        data-testid="header-notif-mark-all-read-btn"
+                        disabled={unreadNotifications === 0 || markAllReadMutation.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (unreadNotifications > 0) {
+                            markAllReadMutation.mutate();
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-red-800 hover:underline disabled:cursor-default disabled:text-stone-400 disabled:no-underline"
+                      >
+                        <CheckCheck className="h-3.5 w-3.5" />
+                        Đánh dấu tất cả đã đọc
+                      </button>
                     </div>
 
-                    <div className="max-h-72 divide-y divide-stone-100 overflow-y-auto">
+                    <div
+                      data-testid="header-notif-scroll-list"
+                      className="max-h-[min(60vh,20rem)] divide-y divide-stone-100 overflow-y-auto overscroll-contain"
+                    >
                       {recentNotifications.length === 0 ? (
                         <p className="p-5 text-center text-xs text-stone-500">
                           Chưa có thông báo mới.
@@ -491,13 +555,19 @@ export const AppShell: React.FC = () => {
                                 markSingleReadMutation.mutate(n.id);
                               }
                               setNotifDropdownOpen(false);
-                              navigate(resolveNotificationLink(n));
+                              const target = resolveNotificationLink(n);
+                              if (/^https:\/\//i.test(target)) {
+                                window.open(target, '_blank', 'noopener,noreferrer');
+                              } else {
+                                navigate(target);
+                              }
                             }}
                             className={`flex w-full items-start gap-2.5 px-3.5 py-2.5 text-left transition-colors ${
                               !n.read ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-stone-50'
                             }`}
                           >
                             <span
+                              data-testid={`header-notif-dot-${n.id}`}
                               className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
                                 !n.read ? 'bg-red-600' : 'bg-stone-300'
                               }`}
@@ -507,13 +577,27 @@ export const AppShell: React.FC = () => {
                                 <p className="truncate text-xs font-bold text-stone-900">
                                   {n.title}
                                 </p>
-                                <span className="shrink-0 text-[10px] text-stone-400">
+                                <span className="shrink-0 text-[10px] font-medium text-stone-400">
                                   {formatRelativeTime(n.createdAt)}
                                 </span>
                               </div>
-                              <p className="mt-0.5 line-clamp-1 text-[11px] text-stone-600">
+                              <p className="mt-0.5 line-clamp-2 text-[11px] text-stone-600">
                                 {n.body}
                               </p>
+                              <div className="mt-1 flex items-center justify-between">
+                                <span
+                                  className={`text-[10px] font-semibold ${
+                                    !n.read ? 'text-red-700' : 'text-stone-400'
+                                  }`}
+                                >
+                                  {!n.read ? 'Chưa đọc' : 'Đã đọc'}
+                                </span>
+                                {n.actionLabel && (
+                                  <span className="text-[10px] font-bold text-red-800">
+                                    {n.actionLabel} →
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </button>
                         ))
@@ -523,6 +607,7 @@ export const AppShell: React.FC = () => {
                     <div className="border-t border-stone-100 bg-stone-50 p-1.5 text-center">
                       <button
                         type="button"
+                        data-testid="header-notif-view-all-btn"
                         onClick={() => {
                           setNotifDropdownOpen(false);
                           navigate('/notifications');

@@ -238,13 +238,51 @@ export const ClassroomsPage: React.FC = () => {
                   <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
                     <Calendar className="h-4 w-4 shrink-0 text-amber-700" />
                     <div className="min-w-0">
-                      <p className="text-[10.5px] text-stone-500">Lịch học</p>
-                      <p className="truncate text-xs font-bold text-stone-900">
-                        {assignedClass.schedule || '19:30 T3 & T6'}
+                      <p className="text-[10.5px] text-stone-500">Lịch học chính thức</p>
+                      <p
+                        data-testid="student-classroom-schedule-text"
+                        className="truncate text-xs font-bold text-stone-900"
+                      >
+                        {assignedClass.scheduleStatus === 'confirmed' &&
+                        assignedClass.officialScheduleText
+                          ? assignedClass.officialScheduleText
+                          : 'Chưa có lịch học chính thức'}
                       </p>
                     </div>
                   </div>
                 </div>
+
+                {assignedClass.nextSession && (
+                  <div
+                    data-testid="student-classroom-next-session-banner"
+                    className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs"
+                  >
+                    <div>
+                      <p className="font-bold text-emerald-950">
+                        Buổi học tiếp theo: {assignedClass.nextSession.dayLabel},{' '}
+                        {assignedClass.nextSession.sessionDate} ({assignedClass.nextSession.startTime}–
+                        {assignedClass.nextSession.endTime})
+                      </p>
+                      {assignedClass.nextSession.note && (
+                        <p className="text-[11px] text-emerald-800">
+                          {assignedClass.nextSession.note}
+                        </p>
+                      )}
+                    </div>
+                    {assignedClass.nextSession.meetingUrl &&
+                      /^https:\/\//i.test(assignedClass.nextSession.meetingUrl) && (
+                        <a
+                          href={assignedClass.nextSession.meetingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid="student-classroom-join-meeting-btn"
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-900"
+                        >
+                          Xem buổi học →
+                        </a>
+                      )}
+                  </div>
+                )}
               </div>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-3">

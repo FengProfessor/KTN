@@ -14,11 +14,13 @@ import {
   Send,
   ExternalLink,
   AlertCircle,
+  Calendar,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_CLASS_SESSIONS, DEMO_HOMEWORKS } from '@/lib/demoData';
+import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
 import {
   KtnClassItem,
   KtnClassSession,
@@ -41,6 +43,8 @@ export const TeacherWorkspace: React.FC = () => {
   );
   const [activeSubTab, setActiveSubTab] = useState<'grading' | 'sessions' | 'students'>('grading');
   const [gradingFilter, setGradingFilter] = useState<'all' | 'pending' | 'graded'>('all');
+  const [scheduleModalOpen, setScheduleModalOpen] = useState<boolean>(false);
+  const [isSavingSchedule, setIsSavingSchedule] = useState<boolean>(false);
 
   const [activeHomeworkId, setActiveHomeworkId] = useState<string | null>(() =>
     searchParams.get('hwId')
@@ -337,44 +341,113 @@ export const TeacherWorkspace: React.FC = () => {
 
   const sessionsList = sessionsQuery.data || [];
   const studentsList = studentsQuery.data || [];
+  const selectedClassItem = useMemo(
+    () => classesList.find((c) => c.id === effectiveClassId) || classesList[0] || null,
+    [classesList, effectiveClassId]
+  );
   const hasApiError =
     !isDemoMode && (classesQuery.isError || homeworksQuery.isError);
 
   return (
     <div data-testid="teacher-workspace-page" className="space-y-3 sm:space-y-4">
-      {/* Compact Class Selector Bar */}
-      <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-2.5 py-2 shadow-2xs">
-        {classesList.length > 0 ? (
-          <select
-            aria-label="Chọn lớp phụ trách"
-            data-testid="teacher-class-select"
-            value={effectiveClassId}
-            onChange={(e) => setSelectedClassId(e.target.value)}
-            className="min-h-[36px] min-w-0 flex-1 rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none sm:max-w-xs"
-          >
-            {classesList.map((cls) => (
-              <option key={cls.id} value={cls.id}>
-                {cls.id} · {cls.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="text-xs font-semibold text-stone-600">
-            Chưa có lớp được phân công
-          </span>
-        )}
+      {/* Compact Class Selector & Schedule Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 shadow-2xs">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          {classesList.length > 0 ? (
+            <select
+              aria-label="Chọn lớp phụ trách"
+              data-testid="teacher-class-select"
+              value={effectiveClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              className="min-h-[36px] min-w-0 flex-1 rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none sm:max-w-xs"
+            >
+              {classesList.map((cls) => (
+                <option key={cls.id} value={cls.id}>
+                  {cls.id} · {cls.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-xs font-semibold text-stone-600">
+              Chưa có lớp được phân công
+            </span>
+          )}
+
+          {selectedClassItem && (
+            <span
+              data-testid="teacher-class-schedule-badge"
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                selectedClassItem.scheduleStatus === 'confirmed' &&
+                selectedClassItem.officialScheduleText
+                  ? 'bg-emerald-50 text-emerald-900'
+                  : 'bg-amber-50 text-amber-900'
+              }`}
+            >
+              <Calendar className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                {selectedClassItem.scheduleStatus === 'confirmed' &&
+                selectedClassItem.officialScheduleText
+                  ? `Lớp ${selectedClassItem.id} — ${selectedClassItem.officialScheduleText}`
+                  : 'Chưa có lịch học chính thức'}
+              </span>
+            </span>
+          )}
+        </div>
 
         {effectiveClassId && (
-          <button
-            type="button"
-            onClick={() => navigate(`/chat?room=class:${effectiveClassId}`)}
-            className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            <span>Nhóm {effectiveClassId}</span>
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              data-testid="teacher-edit-schedule-btn"
+              onClick={() => setScheduleModalOpen(true)}
+              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              <span>
+                {selectedClassItem?.scheduleStatus === 'confirmed'
+                  ? 'Chỉnh lịch'
+                  : 'Cài lịch học'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate(`/chat?room=class:${effectiveClassId}`)}
+              className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span>Nhóm {effectiveClassId}</span>
+            </button>
+          </div>
         )}
       </div>
+
+      <ClassScheduleModal
+        open={scheduleModalOpen}
+        mode="edit_schedule"
+        role="teacher"
+        classItem={selectedClassItem}
+        isSubmitting={isSavingSchedule}
+        onClose={() => setScheduleModalOpen(false)}
+        onSaveClassAndSchedule={async ({ schedulePayload }) => {
+          setIsSavingSchedule(true);
+          try {
+            if (!isDemoMode) {
+              await ktnApi.saveClassSchedule(schedulePayload);
+            }
+            await queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+            addToast({
+              title: `Đã cập nhật lịch học lớp ${schedulePayload.classCode}`,
+              description:
+                'Lịch học chính thức của lớp phụ trách đã được ghi nhận và đồng bộ nhắc giờ.',
+              variant: 'success',
+            });
+            setScheduleModalOpen(false);
+          } finally {
+            setIsSavingSchedule(false);
+          }
+        }}
+      />
 
       {hasApiError && (
         <div

@@ -127,6 +127,11 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
   const type = String(notif.type || '').trim();
   const actionUrl = String(notif.actionUrl || '').trim();
 
+  // 0. Valid external meeting room URL (for class_reminder with online room)
+  if (/^https:\/\//i.test(actionUrl)) {
+    return actionUrl;
+  }
+
   // 1. Teacher homework grading notification
   if (type === 'homework_submitted' || actionUrl.includes('view=grade')) {
     let hwId = String(notif.homeworkId || '').trim();
@@ -146,6 +151,7 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
   if (
     type === 'chat_message' ||
     type === 'announcement_pinned' ||
+    type === 'class_announcement' ||
     actionUrl.startsWith('/chat') ||
     actionUrl.startsWith('#/nhom-lop') ||
     actionUrl.includes('view=groups')
@@ -168,39 +174,67 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
     return room ? `/chat?room=${encodeURIComponent(room)}` : '/chat';
   }
 
-  // 4. Live classroom session / live class homework
+  // 4. Class schedule reminders, schedule changes, session cancellations, live classroom session / live class homework
   const rawCourseId = String(notif.courseId || '').trim();
   const isLiveClassCourse = rawCourseId.toUpperCase().startsWith('CLASS_');
   const lopMatch = actionUrl.match(/^#\/lop\/([^/]+)(?:\/buoi\/(\d+))?/i);
-  const classroomMatch = actionUrl.match(/^\/classrooms\/([^/?#]+)(?:\?.*session=(\d+))?/i);
+  const classroomMatch = actionUrl.match(/^(?:#)?\/classrooms(?:\/([^/?#]+))?(?:\?(.*))?/i);
 
-  if (type === 'homework_assigned' || isLiveClassCourse || lopMatch || classroomMatch || actionUrl.startsWith('/classrooms')) {
+  if (
+    type === 'class_reminder' ||
+    type === 'schedule_changed' ||
+    type === 'session_cancelled' ||
+    type === 'homework_assigned' ||
+    isLiveClassCourse ||
+    lopMatch ||
+    classroomMatch ||
+    actionUrl.startsWith('/classrooms') ||
+    actionUrl.startsWith('#/classrooms')
+  ) {
+    let queryCls = '';
+    let querySession = '';
+    if (classroomMatch?.[2]) {
+      const sp = new URLSearchParams(classroomMatch[2]);
+      queryCls = sp.get('class') || '';
+      querySession = sp.get('session') || '';
+    }
     const cls =
       (isLiveClassCourse ? rawCourseId.slice(6) : '') ||
       notif.classCode ||
+      queryCls ||
       lopMatch?.[1] ||
       classroomMatch?.[1] ||
       '';
-    const rawNum = Number(notif.sessionNum || notif.lessonNum || lopMatch?.[2] || classroomMatch?.[2] || 1);
-    const sessionNum = rawNum >= 100 ? Math.floor(rawNum / 100) : rawNum || 1;
+    const rawNum = Number(notif.sessionNum || notif.lessonNum || querySession || lopMatch?.[2] || 0);
+    const sessionNum = rawNum >= 100 ? Math.floor(rawNum / 100) : rawNum > 0 ? rawNum : 0;
     const params = new URLSearchParams();
     if (cls) params.set('class', cls.toUpperCase());
-    if (sessionNum) params.set('session', String(sessionNum));
+    if (sessionNum > 0) params.set('session', String(sessionNum));
     const qs = params.toString();
     return qs ? `/classrooms?${qs}` : '/classrooms';
   }
 
-  // 5. Video course lesson / graded homework
+  // 5. Video course lesson / graded homework / course granted
   const khoaMatch = actionUrl.match(/^#\/khoa\/([^/]+)(?:\/bai\/(\d+))?/i);
   const learningMatch = actionUrl.match(/^\/learning\/([^/]+)\/lesson\/(\d+)/i);
-  if (type === 'homework_graded' || khoaMatch || learningMatch || actionUrl.startsWith('/learning')) {
+  if (
+    type === 'homework_graded' ||
+    type === 'course_granted' ||
+    khoaMatch ||
+    learningMatch ||
+    actionUrl.startsWith('/learning') ||
+    actionUrl.startsWith('#/learning')
+  ) {
     const courseId = rawCourseId || khoaMatch?.[1] || learningMatch?.[1] || '';
     const lessonNum = Number(notif.lessonNum || khoaMatch?.[2] || learningMatch?.[2] || 1) || 1;
     const params = new URLSearchParams();
     if (courseId) params.set('courseId', courseId);
-    params.set('lesson', String(lessonNum));
-    params.set('tab', 'homework');
-    return `/learning?${params.toString()}`;
+    if (type !== 'course_granted') {
+      params.set('lesson', String(lessonNum));
+      params.set('tab', 'homework');
+    }
+    const qs = params.toString();
+    return qs ? `/learning?${qs}` : '/learning';
   }
 
   if (actionUrl.startsWith('/teacher')) return '/teacher';

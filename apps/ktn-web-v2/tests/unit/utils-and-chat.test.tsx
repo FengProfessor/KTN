@@ -187,6 +187,46 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
           actionUrl: '/custom-page/so-lien-lac-test?view=orders&orderId=ORD-1',
         })
       ).toBe('/admin');
+
+      expect(
+        resolveNotificationLink({
+          type: 'class_reminder',
+          classCode: 'YCT2-04',
+          actionUrl: '#/classrooms?class=YCT2-04',
+        })
+      ).toBe('/classrooms?class=YCT2-04');
+
+      expect(
+        resolveNotificationLink({
+          type: 'class_reminder',
+          classCode: 'YCT2-04',
+          actionUrl: 'https://zoom.us/j/123456789',
+        })
+      ).toBe('https://zoom.us/j/123456789');
+
+      expect(
+        resolveNotificationLink({
+          type: 'schedule_changed',
+          classCode: 'YCT2-04',
+          actionUrl: '#/classrooms?class=YCT2-04',
+        })
+      ).toBe('/classrooms?class=YCT2-04');
+
+      expect(
+        resolveNotificationLink({
+          type: 'session_cancelled',
+          classCode: 'YCT2-04',
+          actionUrl: '#/classrooms?class=YCT2-04',
+        })
+      ).toBe('/classrooms?class=YCT2-04');
+
+      expect(
+        resolveNotificationLink({
+          type: 'course_granted',
+          courseId: '6adadba969897b0002482ca5',
+          actionUrl: '#/learning?courseId=6adadba969897b0002482ca5',
+        })
+      ).toBe('/learning?courseId=6adadba969897b0002482ca5');
     });
   });
 
@@ -254,7 +294,7 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       delete (window as unknown as Record<string, unknown>).__KTN_EMBED_MODE__;
     });
 
-    it('exposes V3 provisioning, Vietnamese search, 3-way reconciliation, and attendance API methods', () => {
+    it('exposes V3 provisioning, Vietnamese search, 3-way reconciliation, attendance, and official class schedule API methods', () => {
       expect(typeof ktnApi.searchStudents).toBe('function');
       expect(typeof ktnApi.provisionStudent).toBe('function');
       expect(typeof ktnApi.saveTeacher).toBe('function');
@@ -264,6 +304,12 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       expect(typeof ktnApi.saveAttendance).toBe('function');
       expect(typeof ktnApi.getVapidPublicKey).toBe('function');
       expect(typeof ktnApi.uploadChatFile).toBe('function');
+      expect(typeof ktnApi.saveClass).toBe('function');
+      expect(typeof ktnApi.getClassSchedule).toBe('function');
+      expect(typeof ktnApi.saveClassSchedule).toBe('function');
+      expect(typeof ktnApi.runScheduleReminders).toBe('function');
+      expect(typeof ktnApi.getNotificationSettings).toBe('function');
+      expect(typeof ktnApi.updateNotificationSettings).toBe('function');
     });
 
     it('rejects chat files exceeding 100 MB before creating any message', async () => {

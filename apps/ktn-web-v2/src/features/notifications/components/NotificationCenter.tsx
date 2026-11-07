@@ -8,18 +8,21 @@ import {
   Award,
   BookOpen,
   Calendar,
+  Clock,
   BellRing,
   Check,
   ExternalLink,
   AlertCircle,
   RotateCcw,
+  SlidersHorizontal,
+  ShieldCheck,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { DEMO_NOTIFICATIONS } from '@/lib/demoData';
-import { KtnNotification } from '@/types/ktn.types';
-import { formatChatTimestamp, resolveNotificationLink } from '@/lib/utils';
+import { KtnNotification, UserNotificationSettings } from '@/types/ktn.types';
+import { formatRelativeTime, resolveNotificationLink } from '@/lib/utils';
 
 const DEFAULT_VAPID_PUBLIC_KEY =
   'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
@@ -60,11 +63,21 @@ export const NotificationCenter: React.FC = () => {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const addToast = useUiStore((s) => s.addToast);
 
-  const [filterTab, setFilterTab] = useState<'all' | 'unread' | 'homework' | 'chat'>('all');
+  const [filterTab, setFilterTab] = useState<
+    'all' | 'unread' | 'schedule' | 'homework' | 'chat' | 'important'
+  >('all');
+  const [showPrefsPanel, setShowPrefsPanel] = useState<boolean>(false);
   const [pushEnabled, setPushEnabled] = useState<boolean>(false);
   const [isSubscribingPush, setIsSubscribingPush] = useState<boolean>(false);
   const [demoState, setDemoState] = useState<'unread' | 'all_read' | 'empty'>('unread');
   const [demoLocalReadIds, setDemoLocalReadIds] = useState<Record<string, boolean>>({});
+  const [demoSettings, setDemoSettings] = useState<UserNotificationSettings>({
+    chat: true,
+    homework: true,
+    schedule: true,
+    important: true,
+    reminder10Min: false,
+  });
 
   // Verify real browser PushSubscription on mount and bind to current authenticated user — never assume enabled just from permission
   useEffect(() => {
@@ -152,6 +165,7 @@ export const NotificationCenter: React.FC = () => {
   const notificationsQuery = useQuery<{
     notifications: KtnNotification[];
     readIds: string[];
+    settings?: UserNotificationSettings;
   }>({
     queryKey: isDemoMode
       ? ['ktn-notifications', user?.email, isDemoMode, demoState]
@@ -159,7 +173,7 @@ export const NotificationCenter: React.FC = () => {
     queryFn: async () => {
       if (isDemoMode) {
         if (demoState === 'empty') {
-          return { notifications: [] as KtnNotification[], readIds: [] };
+          return { notifications: [] as KtnNotification[], readIds: [], settings: demoSettings };
         }
         const list = DEMO_NOTIFICATIONS.map((n) => ({
           ...n,
@@ -168,6 +182,7 @@ export const NotificationCenter: React.FC = () => {
         return {
           notifications: list,
           readIds: list.filter((n) => n.read).map((n) => n.id),
+          settings: demoSettings,
         };
       }
       return ktnApi.getNotifications();
@@ -177,6 +192,49 @@ export const NotificationCenter: React.FC = () => {
     refetchInterval: isDemoMode ? false : 4000,
     refetchIntervalInBackground: true,
   });
+
+  const notifSettingsQuery = useQuery<UserNotificationSettings>({
+    queryKey: ['ktn-notification-settings', user?.email, isDemoMode],
+    queryFn: async () => {
+      if (isDemoMode) return demoSettings;
+      return ktnApi.getNotificationSettings();
+    },
+    enabled: Boolean(user) || isDemoMode,
+  });
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (patch: Partial<UserNotificationSettings>) => {
+      if (isDemoMode) {
+        const merged: UserNotificationSettings = {
+          ...demoSettings,
+          ...patch,
+          important: true,
+        };
+        setDemoSettings(merged);
+        return merged;
+      }
+      return ktnApi.updateNotificationSettings({ ...patch, important: true });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-notification-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+      addToast({
+        title: 'Đã lưu tùy chọn thông báo',
+        description: 'Cài đặt thông báo của bạn đã được cập nhật.',
+        variant: 'success',
+      });
+    },
+  });
+
+  const activeSettings: UserNotificationSettings =
+    notifSettingsQuery.data ||
+    notificationsQuery.data?.settings || {
+      chat: true,
+      homework: true,
+      schedule: true,
+      important: true,
+      reminder10Min: false,
+    };
 
   const notifications = notificationsQuery.data?.notifications || [];
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -199,6 +257,13 @@ export const NotificationCenter: React.FC = () => {
   const filteredList = useMemo(() => {
     return notifications.filter((n) => {
       if (filterTab === 'unread') return !n.read;
+      if (filterTab === 'schedule') {
+        return (
+          n.type === 'class_reminder' ||
+          n.type === 'schedule_changed' ||
+          n.type === 'session_cancelled'
+        );
+      }
       if (filterTab === 'homework') {
         return (
           n.type === 'homework_graded' ||
@@ -207,10 +272,14 @@ export const NotificationCenter: React.FC = () => {
         );
       }
       if (filterTab === 'chat') {
+        return n.type === 'chat_message';
+      }
+      if (filterTab === 'important') {
         return (
-          n.type === 'chat_message' ||
+          n.type === 'announcement_pinned' ||
           n.type === 'class_announcement' ||
-          n.type === 'announcement_pinned'
+          n.type === 'order_pending' ||
+          n.type === 'course_granted'
         );
       }
       return true;
@@ -221,7 +290,12 @@ export const NotificationCenter: React.FC = () => {
     if (!item.read) {
       await markReadMutation.mutateAsync([item.id]);
     }
-    navigate(resolveNotificationLink(item));
+    const target = resolveNotificationLink(item);
+    if (/^https:\/\//i.test(target)) {
+      window.open(target, '_blank', 'noopener,noreferrer');
+    } else {
+      navigate(target);
+    }
   };
 
   const handleMarkAllRead = () => {
@@ -425,6 +499,20 @@ export const NotificationCenter: React.FC = () => {
   };
 
   const renderIcon = (type: string) => {
+    if (type === 'class_reminder') {
+      return (
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+          <Clock className="h-4 w-4" />
+        </div>
+      );
+    }
+    if (type === 'schedule_changed' || type === 'session_cancelled') {
+      return (
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-800">
+          <Calendar className="h-4 w-4" />
+        </div>
+      );
+    }
     if (type === 'homework_graded' || type === 'homework_submitted') {
       return (
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
@@ -517,8 +605,10 @@ export const NotificationCenter: React.FC = () => {
               [
                 { id: 'all', label: `Tất cả (${notifications.length})` },
                 { id: 'unread', label: `Chưa đọc (${unreadCount})` },
-                { id: 'homework', label: 'Chấm bài' },
+                { id: 'schedule', label: 'Lịch học' },
+                { id: 'homework', label: 'Bài tập' },
                 { id: 'chat', label: 'Tin nhắn' },
+                { id: 'important', label: 'Quan trọng' },
               ] as const
             ).map((tab) => (
               <button
@@ -537,7 +627,7 @@ export const NotificationCenter: React.FC = () => {
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {unreadCount > 0 && (
               <span
                 data-testid="notifications-unread-count-pill"
@@ -546,6 +636,20 @@ export const NotificationCenter: React.FC = () => {
                 {unreadCount} mới
               </span>
             )}
+
+            <button
+              type="button"
+              data-testid="toggle-notif-prefs-btn"
+              onClick={() => setShowPrefsPanel((v) => !v)}
+              className={`inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
+                showPrefsPanel
+                  ? 'border-red-300 bg-red-50 text-red-800'
+                  : 'border-stone-300 bg-stone-50 text-stone-700 hover:bg-stone-100'
+              }`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <span>Cài đặt</span>
+            </button>
 
             <button
               type="button"
@@ -569,10 +673,105 @@ export const NotificationCenter: React.FC = () => {
               className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white shadow-2xs hover:bg-red-900 disabled:opacity-40"
             >
               <CheckCheck className="h-3.5 w-3.5" />
-              <span>Đọc tất cả</span>
+              <span>Đánh dấu tất cả đã đọc</span>
             </button>
           </div>
         </div>
+
+        {/* User Notification Preferences Card */}
+        {showPrefsPanel && (
+          <div
+            data-testid="notification-preferences-card"
+            className="mt-3 rounded-xl border border-stone-200 bg-stone-50/90 p-3"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <p className="font-display text-xs font-bold text-stone-900">
+                Tùy chọn nhận thông báo & chống làm phiền
+              </p>
+              <span className="text-[11px] font-medium text-stone-500">
+                Đồng bộ theo tài khoản
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
+                <div>
+                  <p className="font-bold text-stone-900">Tin nhắn</p>
+                  <p className="text-[11px] text-stone-500">Tin nhắn riêng & nhóm lớp (gộp thông minh)</p>
+                </div>
+                <input
+                  type="checkbox"
+                  data-testid="notif-pref-chat"
+                  checked={activeSettings.chat}
+                  onChange={(e) => updateSettingsMutation.mutate({ chat: e.target.checked })}
+                  className="h-4 w-4 rounded accent-red-800"
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
+                <div>
+                  <p className="font-bold text-stone-900">Bài tập</p>
+                  <p className="text-[11px] text-stone-500">Bài tập mới & kết quả giáo viên chấm bài</p>
+                </div>
+                <input
+                  type="checkbox"
+                  data-testid="notif-pref-homework"
+                  checked={activeSettings.homework}
+                  onChange={(e) => updateSettingsMutation.mutate({ homework: e.target.checked })}
+                  className="h-4 w-4 rounded accent-red-800"
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
+                <div>
+                  <p className="font-bold text-stone-900">Lịch học</p>
+                  <p className="text-[11px] text-stone-500">Nhắc trước giờ học 30 phút & đổi/hoãn lịch</p>
+                </div>
+                <input
+                  type="checkbox"
+                  data-testid="notif-pref-schedule"
+                  checked={activeSettings.schedule}
+                  onChange={(e) => updateSettingsMutation.mutate({ schedule: e.target.checked })}
+                  className="h-4 w-4 rounded accent-red-800"
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
+                <div>
+                  <p className="font-bold text-stone-900">Nhắc thêm trước 10 phút</p>
+                  <p className="text-[11px] text-stone-500">Tùy chọn nhắc thêm sát giờ vào lớp</p>
+                </div>
+                <input
+                  type="checkbox"
+                  data-testid="notif-pref-reminder-10m"
+                  checked={activeSettings.reminder10Min}
+                  onChange={(e) =>
+                    updateSettingsMutation.mutate({ reminder10Min: e.target.checked })
+                  }
+                  className="h-4 w-4 rounded accent-red-800"
+                />
+              </label>
+
+              <div
+                data-testid="notif-pref-important"
+                className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs sm:col-span-2"
+              >
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-amber-800" />
+                  <div>
+                    <p className="font-bold text-amber-950">Thông báo quan trọng từ Quản lý</p>
+                    <p className="text-[11px] text-amber-800">
+                      Luôn được bật để đảm bảo học viên không bỏ lỡ thông báo học vụ quan trọng ngay cả khi tắt tin nhắn thường.
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-950">
+                  Luôn bật
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Items */}
         <div className="mt-2.5 space-y-2">
@@ -586,7 +785,7 @@ export const NotificationCenter: React.FC = () => {
                 Chưa có thông báo mới
               </h3>
               <p className="mt-0.5 text-xs text-stone-500">
-                Điểm bài tập hoặc tin nhắn lớp mới sẽ hiển thị tại đây.
+                Nhắc lịch học, điểm bài tập hoặc tin nhắn lớp mới sẽ hiển thị tại đây.
               </p>
             </div>
           ) : (
@@ -623,8 +822,13 @@ export const NotificationCenter: React.FC = () => {
                           MỚI
                         </span>
                       )}
+                      {item.coalescedCount && item.coalescedCount > 1 && (
+                        <span className="rounded-full bg-stone-200 px-1.5 py-0.2 text-[9.5px] font-bold text-stone-700">
+                          {item.coalescedCount} tin nhắn
+                        </span>
+                      )}
                       <span className="text-[11px] text-stone-400">
-                        • {formatChatTimestamp(item.createdAt)}
+                        • {formatRelativeTime(item.createdAt)}
                       </span>
                     </div>
 
@@ -654,7 +858,7 @@ export const NotificationCenter: React.FC = () => {
                       onClick={() => handleOpenNotification(item)}
                       className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-900"
                     >
-                      <span>Mở</span>
+                      <span>{item.actionLabel || 'Mở'}</span>
                       <ExternalLink className="h-3 w-3" />
                     </button>
                   )}

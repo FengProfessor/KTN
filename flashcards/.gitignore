@@ -1,0 +1,8 @@
+# Local flashcard dev artifacts
+_extracted/
+screenshots/
+*.py
+*.zip
+*.tar.gz
+.DS_Store
+Thumbs.db

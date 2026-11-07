@@ -1,163 +1,66 @@
-# Báo Cáo Kiểm Định Âm Thanh Người Bản Xứ (Phase 5 Audio Audit)
+# Báo Cáo Kiểm Định Chất Lượng Âm Thanh 605 Thẻ Từ Vựng (Phase 1 & Phase 2 Audio Quality Audit)
 
-> Áp dụng cho toàn bộ **605 thẻ từ vựng (Lộ 1 → Lộ 7)** của ứng dụng KTN Flashcard.
+> Áp dụng cho toàn bộ **605 thẻ từ vựng (Lộ 1 → Lộ 7)** của ứng dụng **KTN Flashcard**.
+> Dữ liệu kiểm định chi tiết từng thẻ được xuất tại:
+> - [`audio-quality-audit.csv`](./audio-quality-audit.csv) (Bảng kiểm định đầy đủ 16 cột cho toàn bộ 605 thẻ)
+> - [`audio-quality-audit.json`](./audio-quality-audit.json) (Dữ liệu JSON cấu trúc phục vụ đối soát tự động & công cụ duyệt)
+> - [`recording-needed-list.csv`](./recording-needed-list.csv) (Danh sách 121 thẻ cần thu âm nguyên từ / duyệt nghe bởi giáo viên tiếng Trung, phân theo mức ưu tiên `P0` và `P1`)
+> - [`audio-review.html`](./audio-review.html) (Trang công cụ nội bộ nghe duyệt liên tiếp 605 thẻ, chấm `Đạt / Cần sửa / Chưa xác minh` và xuất báo cáo)
 
-## 1. Nguồn gốc & Bản quyền âm thanh
+---
 
-| Nguồn thu âm | Tần số mẫu | Giấy phép | Mô tả |
-|---|---|---|---|
-| **Shtooka Project / Wikimedia Commons (`cmn-*.mp3`)** | 22,050 Hz Mono | CC-BY-SA 3.0 / 4.0 | Giọng đọc người bản xứ Bắc Kinh thu âm phòng thu (không phải TTS). |
-| **Chinese-Lessons Studio Syllable Corpus (2006)** | 44,100 Hz → 22,050 Hz Mono | Free Educational Use | Bộ thu âm người thật cho các âm tiết biến điệu thanh 3 (3+3 → 2+3). |
-| **Baidu TTS (`words/*.mp3`, 16,000 Hz)** | — | **ĐÃ LOẠI BỎ 100%** | Tuyệt đối không sử dụng bất kỳ tệp TTS máy nào. |
+## 1. Nguồn gốc, Bản quyền & Điều kiện Ghi công (License & Attribution)
 
-## 2. Các lỗi âm thanh đã khắc phục triệt để
-
-| Lộ | Thẻ | Từ vựng | Lỗi trước đây | Đã khắc phục |
+| Nguồn thu âm | Tần số mẫu & Định dạng | Giấy phép (License) | Điều kiện ghi công (Attribution) | Trạng thái sử dụng |
 |---|---|---|---|---|
-| Lộ 7 | #15 | `加减` (`jiā jiǎn`) | Trỏ nhầm vào `cmn-加.mp3` (chỉ đọc 1 chữ `加`) | Tạo `cmn-加减.mp3` từ bản thu người thật `cmn-加.mp3` + `cmn-减.mp3` (đọc đủ cả từ) |
-| Lộ 7 | #16 | `等于` (`děng yú`) | Trỏ nhầm vào `cmn-等.mp3` (chỉ đọc 1 chữ `等`) | Trỏ đúng vào bản thu nguyên từ người thật `cmn-等于.mp3` (`native_exact`) |
-| Lộ 7 | #30 | `小鸟` (`xiǎo niǎo`) | Trỏ nhầm vào `cmn-鸟.mp3` (chỉ đọc 1 chữ `鸟`) | Tạo `cmn-小鸟.mp3` có biến điệu thanh 3 (`xiáo niǎo`) từ giọng người thật |
-| Lộ 1 | #3 | `你好` (`nǐ hǎo`) | Tệp cũ lấy từ thư mục `words/` (Baidu TTS 16kHz) | Thay thế bằng giọng người thật có biến điệu thanh 3 (`cmn-泥.mp3` + `cmn-好.mp3`) |
-| Lộ 1 | #77 | `星期天` (`xīng qī tiān`) | Tệp cũ lấy từ thư mục `words/` (Baidu TTS 16kHz) | Thay thế bằng bản thu người thật `cmn-星期.mp3` + `cmn-天.mp3` |
+| **Shtooka Project Mandarin Collection (`cmn-*.mp3`, `File:Zh-*.ogg`)** | `22,050 Hz` Mono, `64 kbps` MP3 | **CC BY 2.0 fr / CC BY-SA 3.0 / 4.0** | Ghi công: *Shtooka Project — Wei Gao, Vion Nicolas (via Wikimedia Commons / shtooka.net)*. Cho phép xuất bản công khai, chia sẻ và phục vụ học tập. | **Đang sử dụng chính** (`484` thẻ đạt chuẩn `APPROVED` + `63` thẻ ghép cùng giọng chờ duyệt `PENDING_REVIEW`) |
+| **Chinese-Lessons Studio Syllable Corpus (2006) (`pinyin/*.mp3`)** | `44,100 Hz` → `22,050 Hz` Mono | **Free Educational Use** | Bộ âm tiết đơn đọc rời phục vụ học tập phi thương mại. Khi ghép chéo với Shtooka tạo sự lệch màu giọng giữa các âm tiết. | **Tạm khóa phát tự động (`NEEDS_REPLACEMENT`)** — Đưa vào danh sách thu âm lại nguyên từ |
+| **Baidu TTS / Máy đọc tự động (`words/*.mp3`, `16,000 Hz`)** | — | **ĐÃ LOẠI BỎ 100%** | Tuyệt đối không sử dụng bất kỳ tệp TTS máy nào và không gắn nhãn TTS là giọng người bản xứ. | **0 thẻ (Cấm tuyệt đối)** |
 
-## 3. Thống kê theo từng Lộ (`native_exact` vs `native_concat`)
+---
 
-- **`native_exact` (484/605 thẻ — 80.0%)**: Có sẵn bản thu âm người bản xứ đọc nguyên từ trong 1 lần thu (`Shtooka cmn-<từ>.mp3`).
-- **`native_concat` (121/605 thẻ — 20.0%)**: Từ ghép chưa có bản thu nguyên từ 1 lần đọc trong kho Shtooka; được nối chuẩn âm lượng (`loudnorm -16 LUFS`) và cắt khoảng lặng từ các bản thu âm tiết/từ đơn người thật cùng giọng (`cmn-<chữ>.mp3`), đồng thời liệt kê minh bạch bên dưới để trung tâm có thể thu âm bổ sung nguyên từ nếu muốn.
+## 2. Thống kê Tổng quan: Phân loại Nguồn (`audio_type`) vs Trạng thái Kiểm định (`audit_status`)
 
-| Lộ | Tổng số thẻ | Thu nguyên từ (`native_exact`) | Ghép âm tiết người thật (`native_concat`) |
-|---|---|---|---|
-| **Lộ 1** | 90 | 70 | 20 |
-| **Lộ 2** | 109 | 104 | 5 |
-| **Lộ 3** | 96 | 69 | 27 |
-| **Lộ 4** | 100 | 75 | 25 |
-| **Lộ 5** | 92 | 73 | 19 |
-| **Lộ 6** | 88 | 65 | 23 |
-| **Lộ 7** | 30 | 28 | 2 |
-| **Tổng cộng** | **605** | **484** | **121** |
+> **Nguyên tắc minh bạch (Phase 1.1 & 1.4):**
+> - Giữ nguyên phân loại nguồn **`484 native_exact`** và **`121 native_concat`** (tuyệt đối không đổi nhãn `native_concat` thành `native_exact` để làm đẹp bảng thống kê).
+> - Không coi việc file tồn tại và `> 1 KB` là bằng chứng phát âm đúng.
+> - Trên ứng dụng học viên (`index.html`), **chỉ tự động phát âm thanh cho các thẻ `APPROVED` (`484` thẻ)**. Các thẻ thuộc diện `NEEDS_REPLACEMENT` (`58` thẻ) và `PENDING_REVIEW` (`63` thẻ) vẫn học hình ảnh, nghĩa, lật thẻ và luyện viết chữ Hán bình thường, nhưng nút nghe hiển thị rõ trạng thái **“Đang cập nhật phát âm”** để tránh dạy sai tiếng Trung cho học sinh.
 
-## 4. Danh sách chi tiết các từ ghép `native_concat` (khuyến nghị thu âm bổ sung 1 lần đọc)
+| Lộ | Tổng số thẻ | `native_exact` (Thu nguyên từ) | `native_concat` (Ghép âm tiết) | ✅ `APPROVED` (Đạt chuẩn phát live) | ❌ `NEEDS_REPLACEMENT` (Cần thu/thay mới - P0) | ⏳ `PENDING_REVIEW` (Chờ GV duyệt ngữ điệu - P1) |
+|---|---:|---:|---:|---:|---:|---:|
+| **Lộ 1** | 90 | 70 | 20 | **71** | 13 | 6 |
+| **Lộ 2** | 109 | 104 | 5 | **104** | 3 | 2 |
+| **Lộ 3** | 96 | 69 | 27 | **69** | 12 | 15 |
+| **Lộ 4** | 100 | 75 | 25 | **74** | 6 | 20 |
+| **Lộ 5** | 92 | 73 | 19 | **73** | 8 | 11 |
+| **Lộ 6** | 88 | 65 | 23 | **65** | 15 | 8 |
+| **Lộ 7** | 30 | 28 | 2 | **28** | 1 | 1 |
+| **Tổng cộng** | **605** | **484** | **121** | **484** | **58** | **63** |
 
-| Lộ | Thẻ | Từ Hán | Pinyin | Tệp âm thanh | Nguồn ghép người thật |
-|---|---|---|---|---|---|
-| LO1 | #3 | `你好` | `nǐ hǎo` | `cmn-你好.mp3` | `cmn-泥.mp3 (sandhi ni2) + cmn-好.mp3` |
-| LO1 | #12 | `越南` | `yuè nán` | `cmn-越南.mp3` | `cmn-越.mp3 + cmn-南.mp3` |
-| LO1 | #13 | `英国` | `yīng guó` | `cmn-英国.mp3` | `pinyin/ying1.mp3 + cmn-国.mp3` |
-| LO1 | #17 | `哪儿` | `nǎr` | `cmn-哪儿.mp3` | `cmn-哪.mp3` |
-| LO1 | #18 | `胡志明` | `hú zhì míng` | `cmn-胡志明.mp3` | `cmn-胡.mp3 + cmn-志.mp3 + pinyin/ming2.mp3` |
-| LO1 | #19 | `河内` | `hé nèi` | `cmn-河内.mp3` | `cmn-河.mp3 + cmn-内.mp3` |
-| LO1 | #20 | `北京` | `běi jīng` | `cmn-北京.mp3` | `cmn-北.mp3 + pinyin/jing1.mp3` |
-| LO1 | #54 | `果汁` | `guǒ zhī` | `cmn-果汁.mp3` | `pinyin/guo3.mp3 + cmn-汁.mp3` |
-| LO1 | #60 | `海鲜` | `hǎi xiān` | `cmn-海鲜.mp3` | `cmn-海.mp3 + cmn-鲜.mp3` |
-| LO1 | #63 | `牛肉` | `niú ròu` | `cmn-牛肉.mp3` | `cmn-牛.mp3 + cmn-肉.mp3` |
-| LO1 | #66 | `面条` | `miàn tiáo` | `cmn-面条.mp3` | `cmn-面.mp3 + cmn-条.mp3` |
-| LO1 | #68 | `星期一` | `xīng qī yī` | `cmn-星期一.mp3` | `cmn-星期.mp3 + cmn-一.mp3` |
-| LO1 | #69 | `星期二` | `xīng qī èr` | `cmn-星期二.mp3` | `cmn-星期.mp3 + cmn-二.mp3` |
-| LO1 | #70 | `星期三` | `xīng qī sān` | `cmn-星期三.mp3` | `cmn-星期.mp3 + cmn-三.mp3` |
-| LO1 | #71 | `星期四` | `xīng qī sì` | `cmn-星期四.mp3` | `cmn-星期.mp3 + cmn-四.mp3` |
-| LO1 | #72 | `星期五` | `xīng qī wǔ` | `cmn-星期五.mp3` | `cmn-星期.mp3 + cmn-五.mp3` |
-| LO1 | #73 | `星期六` | `xīng qī liù` | `cmn-星期六.mp3` | `cmn-星期.mp3 + cmn-六.mp3` |
-| LO1 | #74 | `星期天` | `xīng qī tiān` | `cmn-星期天.mp3` | `cmn-星期.mp3 + cmn-天.mp3` |
-| LO1 | #77 | `法文` | `fǎ wén` | `cmn-法文.mp3` | `cmn-法.mp3 + cmn-文.mp3` |
-| LO1 | #86 | `运动场` | `yùn dòng chǎng` | `cmn-运动场.mp3` | `cmn-运动.mp3 + cmn-场.mp3` |
-| LO2 | #27 | `饭厅` | `fàn tīng` | `cmn-饭厅.mp3` | `cmn-饭.mp3 + cmn-厅.mp3` |
-| LO2 | #28 | `卫生间` | `wèi shēng jiān` | `cmn-卫生间.mp3` | `cmn-卫生.mp3 + cmn-间.mp3` |
-| LO2 | #31 | `你们的` | `nǐ men de` | `cmn-你们的.mp3` | `cmn-你们.mp3 + cmn-的.mp3` |
-| LO2 | #51 | `猪肉` | `zhū ròu` | `cmn-猪肉.mp3` | `cmn-猪.mp3 + cmn-肉.mp3` |
-| LO2 | #106 | `彩虹` | `cǎi hóng` | `cmn-彩虹.mp3` | `pinyin/cai3.mp3 + cmn-虹.mp3` |
-| LO3 | #7 | `湖边` | `hú biān` | `cmn-湖边.mp3` | `cmn-湖.mp3 + cmn-边.mp3` |
-| LO3 | #8 | `太极拳` | `tài jí quán` | `cmn-太极拳.mp3` | `cmn-太.mp3 + cmn-极.mp3 + pinyin/quan2.mp3` |
-| LO3 | #11 | `红色` | `hóng sè` | `cmn-红色.mp3` | `cmn-红.mp3 + cmn-色.mp3` |
-| LO3 | #12 | `白色` | `bái sè` | `cmn-白色.mp3` | `cmn-白.mp3 + cmn-色.mp3` |
-| LO3 | #13 | `黑色` | `hēi sè` | `cmn-黑色.mp3` | `cmn-黑.mp3 + cmn-色.mp3` |
-| LO3 | #25 | `老年人` | `lǎo nián rén` | `cmn-老年人.mp3` | `cmn-老年.mp3 + cmn-人.mp3` |
-| LO3 | #26 | `年轻人` | `nián qīng rén` | `cmn-年轻人.mp3` | `cmn-年轻.mp3 + cmn-人.mp3` |
-| LO3 | #27 | `音乐会` | `yīn yuè huì` | `cmn-音乐会.mp3` | `cmn-音乐.mp3 + cmn-会.mp3` |
-| LO3 | #30 | `订票` | `dìng piào` | `cmn-订票.mp3` | `cmn-订.mp3 + cmn-票.mp3` |
-| LO3 | #35 | `亚洲` | `Yà zhōu` | `cmn-亚洲.mp3` | `pinyin/ya4.mp3 + cmn-洲.mp3` |
-| LO3 | #36 | `欧洲` | `Ōu zhōu` | `cmn-欧洲.mp3` | `pinyin/ou1.mp3 + cmn-洲.mp3` |
-| LO3 | #39 | `下雨` | `xià yǔ` | `cmn-下雨.mp3` | `cmn-下.mp3 + cmn-雨.mp3` |
-| LO3 | #40 | `手机` | `shǒu jī` | `cmn-手机.mp3` | `cmn-手.mp3 + cmn-机.mp3` |
-| LO3 | #45 | `市中心` | `shì zhōng xīn` | `cmn-市中心.mp3` | `cmn-市.mp3 + cmn-中心.mp3` |
-| LO3 | #48 | `长城` | `Cháng chéng` | `cmn-长城.mp3` | `cmn-长.mp3 + cmn-城.mp3` |
-| LO3 | #49 | `台湾` | `Tái wān` | `cmn-台湾.mp3` | `cmn-台.mp3 + cmn-湾.mp3` |
-| LO3 | #50 | `埃及` | `Āi jí` | `cmn-埃及.mp3` | `pinyin/ai1.mp3 + pinyin/ji2.mp3` |
-| LO3 | #51 | `中秋节` | `Zhōng qiū jié` | `cmn-中秋节.mp3` | `cmn-中秋.mp3 + cmn-节.mp3` |
-| LO3 | #52 | `月饼` | `yuè bǐng` | `cmn-月饼.mp3` | `cmn-月.mp3 + cmn-饼.mp3` |
-| LO3 | #54 | `端午节` | `Duān wǔ jié` | `cmn-端午节.mp3` | `cmn-端.mp3 + pinyin/wu3.mp3 + cmn-节.mp3` |
-| LO3 | #55 | `龙舟` | `lóng zhōu` | `cmn-龙舟.mp3` | `cmn-龙.mp3 + cmn-舟.mp3` |
-| LO3 | #56 | `粽子` | `zòng zi` | `cmn-粽子.mp3` | `pinyin/zong4.mp3 + cmn-子.mp3` |
-| LO3 | #70 | `兼职` | `jiān zhí` | `cmn-兼职.mp3` | `cmn-兼.mp3 + pinyin/zhi2.mp3` |
-| LO3 | #78 | `名片` | `míng piàn` | `cmn-名片.mp3` | `cmn-名.mp3 + cmn-片.mp3` |
-| LO3 | #79 | `外卖` | `wài mài` | `cmn-外卖.mp3` | `cmn-外.mp3 + cmn-卖.mp3` |
-| LO3 | #82 | `羊肉` | `yáng ròu` | `cmn-羊肉.mp3` | `cmn-羊.mp3 + cmn-肉.mp3` |
-| LO3 | #93 | `绿色` | `lǜ sè` | `cmn-绿色.mp3` | `cmn-绿.mp3 + cmn-色.mp3` |
-| LO4 | #4 | `找失` | `zhǎo shī` | `cmn-找失.mp3` | `cmn-找.mp3 + cmn-失.mp3` |
-| LO4 | #8 | `烤箱` | `kǎo xiāng` | `cmn-烤箱.mp3` | `cmn-烤.mp3 + cmn-箱.mp3` |
-| LO4 | #9 | `烤炉` | `kǎo lú` | `cmn-烤炉.mp3` | `cmn-烤.mp3 + pinyin/lu2.mp3` |
-| LO4 | #15 | `购物` | `gòu wù` | `cmn-购物.mp3` | `cmn-购.mp3 + cmn-物.mp3` |
-| LO4 | #19 | `手机` | `shǒu jī` | `cmn-手机.mp3` | `cmn-手.mp3 + cmn-机.mp3` |
-| LO4 | #20 | `纪念品` | `jì niàn pǐn` | `cmn-纪念品.mp3` | `cmn-纪念.mp3 + cmn-品.mp3` |
-| LO4 | #21 | `画书` | `huà shū` | `cmn-画书.mp3` | `cmn-画.mp3 + cmn-书.mp3` |
-| LO4 | #25 | `直走` | `zhí zǒu` | `cmn-直走.mp3` | `cmn-直.mp3 + cmn-走.mp3` |
-| LO4 | #41 | `互联` | `hù lián` | `cmn-互联.mp3` | `pinyin/hu4.mp3 + cmn-联.mp3` |
-| LO4 | #42 | `联网` | `lián wǎng` | `cmn-联网.mp3` | `cmn-联.mp3 + cmn-网.mp3` |
-| LO4 | #43 | `互联网` | `hù lián wǎng` | `cmn-互联网.mp3` | `pinyin/hu4.mp3 + cmn-联.mp3 + cmn-网.mp3` |
-| LO4 | #54 | `脚背` | `jiǎo bèi` | `cmn-脚背.mp3` | `cmn-脚.mp3 + cmn-背.mp3` |
-| LO4 | #57 | `伤风` | `shāng fēng` | `cmn-伤风.mp3` | `cmn-伤.mp3 + cmn-风.mp3` |
-| LO4 | #66 | `越来` | `yuè lái` | `cmn-越来.mp3` | `cmn-越.mp3 + cmn-来.mp3` |
-| LO4 | #68 | `吃饭` | `chī fàn` | `cmn-吃饭.mp3` | `cmn-吃.mp3 + cmn-饭.mp3` |
-| LO4 | #75 | `喝酒` | `hē jiǔ` | `cmn-喝酒.mp3` | `cmn-喝.mp3 + cmn-酒.mp3` |
-| LO4 | #84 | `甜食` | `tián shí` | `cmn-甜食.mp3` | `cmn-甜.mp3 + cmn-食.mp3` |
-| LO4 | #87 | `超市` | `chāo shì` | `cmn-超市.mp3` | `cmn-超.mp3 + cmn-市.mp3` |
-| LO4 | #90 | `图书` | `tú shū` | `cmn-图书.mp3` | `cmn-图.mp3 + cmn-书.mp3` |
-| LO4 | #94 | `家里` | `jiā lǐ` | `cmn-家里.mp3` | `cmn-家.mp3 + cmn-里.mp3` |
-| LO4 | #95 | `爬山` | `pá shān` | `cmn-爬山.mp3` | `cmn-爬.mp3 + cmn-山.mp3` |
-| LO4 | #97 | `下雨` | `xià yǔ` | `cmn-下雨.mp3` | `cmn-下.mp3 + cmn-雨.mp3` |
-| LO4 | #98 | `山边` | `shān biān` | `cmn-山边.mp3` | `cmn-山.mp3 + cmn-边.mp3` |
-| LO4 | #99 | `口渴` | `kǒu kě` | `cmn-口渴.mp3` | `pinyin/kou2.mp3 (sandhi) + cmn-渴.mp3` |
-| LO4 | #100 | `来去` | `lái qù` | `cmn-来去.mp3` | `cmn-来.mp3 + cmn-去.mp3` |
-| LO5 | #11 | `零用钱` | `líng yòng qián` | `cmn-零用钱.mp3` | `cmn-零.mp3 + cmn-用.mp3 + cmn-钱.mp3` |
-| LO5 | #12 | `给花` | `gěi huā` | `cmn-给花.mp3` | `cmn-给.mp3 + cmn-花.mp3` |
-| LO5 | #17 | `十百千` | `shí bǎi qiān` | `cmn-十百千.mp3` | `cmn-十.mp3 + cmn-百.mp3 + cmn-千.mp3` |
-| LO5 | #18 | `手机` | `shǒu jī` | `cmn-手机.mp3` | `cmn-手.mp3 + cmn-机.mp3` |
-| LO5 | #20 | `上网` | `shàng wǎng` | `cmn-上网.mp3` | `cmn-上.mp3 + cmn-网.mp3` |
-| LO5 | #24 | `难听` | `nán tīng` | `cmn-难听.mp3` | `cmn-难.mp3 + cmn-听.mp3` |
-| LO5 | #43 | `请进` | `qǐng jìn` | `cmn-请进.mp3` | `cmn-请.mp3 + cmn-进.mp3` |
-| LO5 | #46 | `果汁` | `guǒ zhī` | `cmn-果汁.mp3` | `pinyin/guo3.mp3 + cmn-汁.mp3` |
-| LO5 | #52 | `走过` | `zǒu guò` | `cmn-走过.mp3` | `cmn-走.mp3 + cmn-过.mp3` |
-| LO5 | #56 | `能-看-新` | `néng - kàn - xīn` | `cmn-能看新.mp3` | `cmn-能.mp3 + cmn-看.mp3 + cmn-新.mp3` |
-| LO5 | #57 | `每天` | `měi tiān` | `cmn-每天.mp3` | `cmn-每.mp3 + cmn-天.mp3` |
-| LO5 | #61 | `远-近` | `yuǎn - jìn` | `cmn-远近.mp3` | `cmn-远.mp3 + cmn-近.mp3` |
-| LO5 | #65 | `下雨` | `xià yǔ` | `cmn-下雨.mp3` | `cmn-下.mp3 + cmn-雨.mp3` |
-| LO5 | #67 | `拿伞` | `ná sǎn` | `cmn-拿伞.mp3` | `cmn-拿.mp3 + cmn-伞.mp3` |
-| LO5 | #68 | `堵车` | `dǔ chē` | `cmn-堵车.mp3` | `cmn-堵.mp3 + cmn-车.mp3` |
-| LO5 | #73 | `中国` | `zhōng guó` | `cmn-中国.mp3` | `cmn-中.mp3 + cmn-国.mp3` |
-| LO5 | #75 | `年-次` | `nián - cì` | `cmn-年次.mp3` | `cmn-年.mp3 + cmn-次.mp3` |
-| LO5 | #76 | `坐-月` | `zuò - yuè` | `cmn-坐月.mp3` | `cmn-坐.mp3 + cmn-月.mp3` |
-| LO5 | #86 | `长胖` | `zhǎng pàng` | `cmn-长胖.mp3` | `cmn-长.mp3 + cmn-胖.mp3` |
-| LO6 | #1 | `大象` | `dà xiàng` | `cmn-大象.mp3` | `cmn-大.mp3 + cmn-象.mp3` |
-| LO6 | #6 | `矮-胖` | `ǎi - pàng` | `cmn-矮胖.mp3` | `cmn-矮.mp3 + cmn-胖.mp3` |
-| LO6 | #8 | `更胜` | `gèng shèng` | `cmn-更胜.mp3` | `cmn-更.mp3 + cmn-胜.mp3` |
-| LO6 | #13 | `洗手间` | `xǐ shǒu jiān` | `cmn-洗手间.mp3` | `cmn-洗.mp3 + cmn-手.mp3 + cmn-间.mp3` |
-| LO6 | #16 | `突` | `tū` | `cmn-突.mp3` | `pinyin/tu1.mp3` |
-| LO6 | #29 | `站着` | `zhàn zhe` | `cmn-站着.mp3` | `cmn-站.mp3 + cmn-着.mp3` |
-| LO6 | #30 | `坐着` | `zuò zhe` | `cmn-坐着.mp3` | `cmn-坐.mp3 + cmn-着.mp3` |
-| LO6 | #31 | `坐着` | `zuò zhe` | `cmn-坐着.mp3` | `cmn-坐.mp3 + cmn-着.mp3` |
-| LO6 | #40 | `流汗` | `liú hàn` | `cmn-流汗.mp3` | `cmn-流.mp3 + cmn-汗.mp3` |
-| LO6 | #41 | `流汗` | `liú hàn` | `cmn-流汗.mp3` | `cmn-流.mp3 + cmn-汗.mp3` |
-| LO6 | #44 | `乒乓` | `pīng pāng` | `cmn-乒乓.mp3` | `pinyin/ping1.mp3 + pinyin/pang1.mp3` |
-| LO6 | #51 | `寒冷的` | `Hánlěng de` | `cmn-寒冷的.mp3` | `cmn-寒冷.mp3 + cmn-的.mp3` |
-| LO6 | #52 | `堆雪人` | `duī xuě rén` | `cmn-堆雪人.mp3` | `cmn-堆.mp3 + cmn-雪.mp3 + cmn-人.mp3` |
-| LO6 | #53 | `凉爽` | `Liángshuǎng` | `cmn-凉爽.mp3` | `cmn-凉.mp3` |
-| LO6 | #64 | `巧克力` | `qiǎo kè lì` | `cmn-巧克力.mp3` | `cmn-巧.mp3 + cmn-克.mp3 + cmn-力.mp3` |
-| LO6 | #72 | `羊肉` | `yáng ròu` | `cmn-羊肉.mp3` | `cmn-羊.mp3 + cmn-肉.mp3` |
-| LO6 | #73 | `肉汤` | `ròu tāng` | `cmn-肉汤.mp3` | `cmn-肉.mp3 + cmn-汤.mp3` |
-| LO6 | #74 | `烤鸭` | `kǎo yā` | `cmn-烤鸭.mp3` | `cmn-烤.mp3 + pinyin/ya1.mp3` |
-| LO6 | #75 | `一双` | `yī shuāng` | `cmn-一双.mp3` | `cmn-一.mp3 + cmn-双.mp3` |
-| LO6 | #84 | `南-北` | `nán - běi` | `cmn-南北.mp3` | `cmn-南.mp3 + cmn-北.mp3` |
-| LO6 | #85 | `除了` | `chú le` | `cmn-除了.mp3` | `cmn-除.mp3 + cmn-了.mp3` |
-| LO6 | #87 | `长城` | `cháng chéng` | `cmn-长城.mp3` | `cmn-长.mp3 + cmn-城.mp3` |
-| LO6 | #88 | `爬山` | `pá shān` | `cmn-爬山.mp3` | `cmn-爬.mp3 + cmn-山.mp3` |
-| LO7 | #15 | `加减` | `jiā jiǎn` | `cmn-加减.mp3` | `cmn-加.mp3 + cmn-减.mp3` |
-| LO7 | #30 | `小鸟` | `xiǎo niǎo` | `cmn-小鸟.mp3` | `pinyin/xiao2.mp3 (sandhi) + cmn-鸟.mp3` |
+---
+
+## 3. Kết quả Kiểm tra Chuyên sâu các Từ Trọng điểm (Mục 1.3)
+
+| Lộ & ID | Từ vựng | Pinyin | Loại nguồn | Kết quả kiểm tra âm học & ngữ âm | Trạng thái (`audit_status`) | Hướng xử lý |
+|---|---|---|---|---|---|---|
+| **LO6 #53** | `凉爽` | `Liángshuǎng` | `native_concat` | File `cmn-凉爽.mp3` (`8,776 bytes`, `0.85s`) thực chất chỉ chứa `cmn-凉.mp3` (1 âm tiết `liáng`), **thiếu hoàn toàn âm tiết thứ 2 `爽` (`shuǎng`)**. Không ghép chắp vá âm tiết khác giọng để che lỗi cũ. | ❌ `NEEDS_REPLACEMENT` | Khóa phát âm sai trên UI (báo *“Đang cập nhật phát âm”*), đưa vào danh sách thu âm P0. |
+| **LO1 #17** | `哪儿` | `nǎr` | `native_concat` | File cũ chỉ đọc `nǎ` (thiếu âm cuốn lưỡi `r`). Đã thay thế bằng bản thu nguyên từ 1 lần đọc **`File:Zh-nǎr.ogg`** từ Shtooka Project (người đọc: *Wei Gao*, Bắc Kinh, `0.80s`, `CC BY 2.0 fr`), phát âm chuẩn âm cuốn lưỡi `nǎr`. Giữ nguyên nhãn `native_concat` theo quy tắc 1.1. | ✅ `APPROVED` | Đã khắc phục bằng bản thu nguyên từ Shtooka chính gốc. |
+| **LO1 #3** | `你好` | `nǐ hǎo` | `native_concat` | Ghép từ `cmn-泥.mp3` (`ní` thanh 2) + `cmn-好.mp3` (`hǎo` thanh 3). Dù đúng quy tắc biến điệu `3+3 → 2+3`, giữa hai chữ có khoảng ngắt `80ms` (`dur=1.26s`), thiếu ngữ điệu chào hỏi liền mạch tự nhiên. | ❌ `NEEDS_REPLACEMENT` | Khóa phát tự động bản ghép, đưa vào danh sách thu âm nguyên từ P0. |
+| **LO7 #30** | `小鸟` | `xiǎo niǎo` | `native_concat` | Ghép chéo 2 giọng đọc khác nhau: `pinyin/xiao2.mp3` (Chinese-Lessons Studio) + `cmn-鸟.mp3` (Shtooka), thời lượng kéo dài `1.81s`, đổi màu giọng rõ rệt giữa từ. | ❌ `NEEDS_REPLACEMENT` | Khóa phát tự động bản ghép, đưa vào danh sách thu âm nguyên từ P0. |
+| **LO7 #15** | `加减` | `jiā jiǎn` | `native_concat` | Ghép từ 2 bản thu cùng giọng Shtooka `cmn-加.mp3` (`jiā`) + `cmn-减.mp3` (`jiǎn`), đọc đủ cả 2 chữ (`1.26s`, `-18.3 dBFS`), không vi phạm biến điệu. Tuy nhiên là file nối 2 âm tiết rời nên cần giáo viên duyệt độ mượt trước khi mở live. | ⏳ `PENDING_REVIEW` | Tạm ẩn phát tự động cho tới khi giáo viên bấm duyệt `APPROVED` trên `audio-review.html`. |
+| **LO4 #24** | `去` *(进去)* | `jìn qù` | `native_exact` | Thẻ có Pinyin `jìn qù` và nghĩa Việt `Đi vào` (2 âm tiết `进去`), nhưng mặt trước PDF in thiếu chữ `进` và file `cmn-去.mp3` chỉ đọc 1 âm tiết `qù` (**thiếu âm tiết `jìn`**). Đã tải sẵn bản thu nguyên từ Shtooka `File:Zh-jìnqù.ogg` (`assets/audio/cmn-进去.mp3`) làm file thay thế ứng viên. | ❌ `NEEDS_REPLACEMENT` | Không tự ý sửa chữ Hán/Pinyin của thẻ; khóa phát file `cmn-去.mp3` thiếu âm tiết và gắn sẵn file ứng viên `cmn-进去.mp3` trong công cụ duyệt. |
+| **LO5 #86** | `长胖` | `zhǎng pàng` | `native_concat` | **Lỗi chữ đa âm (`多音字`)**: Chữ `长` trong `长胖` (béo lên/tăng cân) phải đọc là `zhǎng` (thanh 3), nhưng bản ghép dùng `cmn-长.mp3` đọc là `cháng` (thanh 2, giống trong `长城 cháng chéng`). | ❌ `NEEDS_REPLACEMENT` | Khóa phát âm sai ngay lập tức, đưa vào danh sách thu âm P0. |
+| **LO6 #75** | `一双` | `yī shuāng` | `native_concat` | **Lỗi biến điệu chữ `一`**: Đứng trước thanh 1 (`shuāng`), chữ `一` bắt buộc đọc biến điệu thành thanh 4 (`yì shuāng`), nhưng bản ghép nối `cmn-一.mp3` (thanh 1 gốc `yī`) + `cmn-双.mp3`. | ❌ `NEEDS_REPLACEMENT` | Khóa phát âm sai, đưa vào danh sách thu âm P0. |
+| **LO6 #13** | `洗手间` | `xǐ shǒu jiān` | `native_concat` | **Lỗi biến điệu thanh 3 + từ 3 âm tiết**: Ghép 3 chữ rời `cmn-洗.mp3 + cmn-手.mp3 + cmn-间.mp3` (`1.86s`), chữ `洗` giữ thanh 3 gốc thay vì biến điệu `xí shǒu jiān`, nhịp đọc rời rạc. | ❌ `NEEDS_REPLACEMENT` | Khóa phát âm sai, đưa vào danh sách thu âm P0. |
+| **Các từ thanh nhẹ (`轻声`)** | `你们的`, `寒冷的`, `站着`, `坐着`, `除了`, `粽子` | `nǐ men de`, `hán lěng de`, `zhàn zhe`, `zuò zhe`, `chú le`, `zòng zi` | `native_concat` | Các trợ từ/hậu tố thanh nhẹ (`的 de`, `着 zhe`, `了 le`, `子 zi`) khi ghép từ file chữ đơn bị nhấn nguyên thanh điệu gốc hoặc có khoảng lặng trước âm tiết nhẹ. | ❌ `NEEDS_REPLACEMENT` | Khóa phát tự động toàn bộ 7 thẻ ghép thanh nhẹ chưa tự nhiên, đưa vào danh sách thu âm P0. |
+| **Các từ 3 âm tiết ghép** | `星期一`..`星期天`, `运动场`, `卫生间`, `老年人`, `年轻人`, `音乐会`, `市中心`, `中秋节`, `纪念品`, `零用钱`, `十百千`, `堆雪人`, `巧克力` | 3 âm tiết | `native_concat` | Các từ 3 âm tiết ghép từ 2–3 file rời có khoảng ngắt nội bộ `>= 80ms` giữa các âm tiết, thiếu nhịp điệu từ ghép 3 chữ tự nhiên. | ❌ `NEEDS_REPLACEMENT` | Khóa phát tự động, đưa vào danh sách thu âm nguyên từ P0. |
+
+---
+
+## 4. Quy trình Nghe Duyệt Nhanh & Thu âm Bổ sung (Phase 2)
+
+1. Mở trang nội bộ **`flashcards/audio-review.html`** (trên local hoặc `https://fengprofessor.github.io/KTN/flashcards/audio-review.html`).
+2. Mặc định bộ lọc hiển thị **121 thẻ `native_concat`** để giáo viên tiếng Trung kiểm duyệt liên tiếp:
+   - Bấm **`▶️ Nghe liên tiếp tự động`** hoặc phím `Space` để nghe từng từ.
+   - Bấm phím `1` (`✅ Đạt`), `2` (`❌ Cần sửa`), hoặc `3` (`⏳ Chưa xác minh`).
+   - Bấm **`📥 Xuất audio-quality-audit.csv`** hoặc **`🎙️ Xuất DS cần thu âm (.csv)`** để tải ngay báo cáo cập nhật.

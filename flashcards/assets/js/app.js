@@ -99,6 +99,9 @@
     cardBackImg: document.getElementById('cardBackImg'),
     btnAudioFront: document.getElementById('btnAudioFront'),
     btnAudioBack: document.getElementById('btnAudioBack'),
+    audioFrontLabel: document.getElementById('audioFrontLabel'),
+    audioBackLabel: document.getElementById('audioBackLabel'),
+    btnBackToPortal: document.getElementById('btnBackToPortal'),
     btnPrev: document.getElementById('btnPrev'),
     btnNext: document.getElementById('btnNext'),
     btnFlip: document.getElementById('btnFlip'),
@@ -163,6 +166,7 @@
   function loadProgress() {
     state.recordsMap = {};
     const today = getTodayYMD();
+    const validCardIds = new Set((state.allCards || []).map(c => Number(c.id)));
 
     try {
       const rawV2 = localStorage.getItem(getSrsStorageKey());
@@ -172,9 +176,12 @@
           Object.keys(parsed).forEach(k => {
             const rec = parsed[k];
             if (rec && rec.cardId != null) {
-              state.recordsMap[rec.cardId] = {
-                cardId: Number(rec.cardId),
-                level: rec.level || state.activeLevel,
+              const cid = Number(rec.cardId);
+              if (rec.level && rec.level !== state.activeLevel) return;
+              if (validCardIds.size > 0 && !validCardIds.has(cid)) return;
+              state.recordsMap[cid] = {
+                cardId: cid,
+                level: state.activeLevel,
                 reviewStep: Number(rec.reviewStep || 0),
                 nextReviewDate: rec.nextReviewDate || today,
                 lastReviewedAt: rec.lastReviewedAt || new Date().toISOString(),
@@ -192,9 +199,10 @@
         let migrated = false;
         if (leg && Array.isArray(leg.review)) {
           leg.review.forEach(cid => {
-            if (!state.recordsMap[cid]) {
-              state.recordsMap[cid] = {
-                cardId: Number(cid),
+            const numId = Number(cid);
+            if (!state.recordsMap[numId] && (validCardIds.size === 0 || validCardIds.has(numId))) {
+              state.recordsMap[numId] = {
+                cardId: numId,
                 level: state.activeLevel,
                 reviewStep: 0,
                 nextReviewDate: today,
@@ -207,9 +215,10 @@
         }
         if (leg && Array.isArray(leg.mastered)) {
           leg.mastered.forEach(cid => {
-            if (!state.recordsMap[cid]) {
-              state.recordsMap[cid] = {
-                cardId: Number(cid),
+            const numId = Number(cid);
+            if (!state.recordsMap[numId] && (validCardIds.size === 0 || validCardIds.has(numId))) {
+              state.recordsMap[numId] = {
+                cardId: numId,
                 level: state.activeLevel,
                 reviewStep: 1,
                 nextReviewDate: addDaysYMD(today, 1),
@@ -264,9 +273,10 @@
 
   function isCardDueToday(cardId) {
     const rec = state.recordsMap[cardId];
-    if (!rec) return false;
+    if (!rec || !rec.nextReviewDate) return false;
+    if (rec.level && rec.level !== state.activeLevel) return false;
     const today = getTodayYMD();
-    return rec.nextReviewDate <= today || rec.status === 'forgot';
+    return rec.nextReviewDate <= today;
   }
 
   function getDueCardsForCurrentLevel() {
@@ -562,6 +572,36 @@
     });
   }
 
+  function isCardAudioApproved(card) {
+    if (!card) return false;
+    if (card.audio_status) {
+      return card.audio_status === 'APPROVED';
+    }
+    return card.audio_type === 'native_exact';
+  }
+
+  function updateAudioButtonsForCard(card) {
+    const approved = isCardAudioApproved(card);
+    clearAudioPlayingVisual();
+    [dom.btnAudioFront, dom.btnAudioBack, dom.btnWriteAudio].forEach(btn => {
+      if (!btn) return;
+      btn.classList.toggle('is-unverified-audio', !approved);
+      btn.setAttribute('aria-disabled', approved ? 'false' : 'true');
+      btn.dataset.audioApproved = approved ? 'true' : 'false';
+      btn.dataset.audioStatus = (card && card.audio_status) || (approved ? 'APPROVED' : 'PENDING_REVIEW');
+      btn.title = approved
+        ? 'Phát âm tiếng Trung bản xứ đã kiểm định'
+        : 'Đang cập nhật phát âm chuẩn cho từ này';
+    });
+    if (dom.audioFrontLabel) {
+      dom.audioFrontLabel.hidden = approved;
+      dom.audioFrontLabel.textContent = 'Đang cập nhật phát âm';
+    }
+    if (dom.audioBackLabel) {
+      dom.audioBackLabel.textContent = approved ? 'Cách đọc' : 'Đang cập nhật phát âm';
+    }
+  }
+
   function renderCurrentCard() {
     const card = getCurrentCard();
     if (!card) return;
@@ -581,6 +621,8 @@
       }
       dom.cardBackImg.alt = `${card.word} (${card.meaning_vi}) - Mặt sau`;
     }
+
+    updateAudioButtonsForCard(card);
 
     const currentNum = state.currentIndex + 1;
     const totalNum = Math.max(1, state.filteredCards.length);
@@ -663,11 +705,22 @@
   }
 
   function playAudio(audioPath) {
+    const card = getCurrentCard();
+    if (!audioPath && card && !isCardAudioApproved(card)) {
+      try {
+        if (dom.nativeAudioPlayer) {
+          dom.nativeAudioPlayer.pause();
+          dom.nativeAudioPlayer.removeAttribute('src');
+        }
+      } catch (_) {}
+      clearAudioPlayingVisual();
+      showToast('⏳ Đang cập nhật phát âm chuẩn cho từ này — Em vẫn học hình, nghĩa và luyện viết bình thường nhé!');
+      return false;
+    }
     if (!audioPath) {
-      const card = getCurrentCard();
       audioPath = card ? card.audio : null;
     }
-    if (!audioPath || !dom.nativeAudioPlayer) return;
+    if (!audioPath || !dom.nativeAudioPlayer) return false;
 
     // Ngăn phát chồng nhiều tệp âm thanh khi bấm liên tục
     try {
@@ -694,6 +747,7 @@
       clearAudioPlayingVisual();
       showToast('⚠️ Chưa tải được âm thanh cho từ này');
     };
+    return true;
   }
 
   let toastTimer = null;
@@ -1315,7 +1369,23 @@
     initTouchGestures();
   }
 
+  function configurePortalBackLink() {
+    if (!dom.btnBackToPortal) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ret = params.get('returnUrl') || '';
+      if (/^https?:\/\/(www\.)?khongtunhi\.com(\/|$)/i.test(ret) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(ret)) {
+        dom.btnBackToPortal.href = ret;
+        return;
+      }
+      if (document.referrer && (/^https?:\/\/(www\.)?khongtunhi\.com(\/|$)/i.test(document.referrer) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(document.referrer))) {
+        dom.btnBackToPortal.href = document.referrer;
+      }
+    } catch (_) {}
+  }
+
   function init() {
+    configurePortalBackLink();
     loadProgress();
     if (dom.levelSelect) dom.levelSelect.value = state.activeLevel;
     if (dom.drawerSubtitle) {
@@ -1340,6 +1410,9 @@
     markCardRemembered,
     startTodayReview,
     getDueCardsForCurrentLevel,
+    isCardDueToday,
+    isCardAudioApproved,
+    playAudio,
     loadProgress,
     saveProgress,
     addDaysYMD,

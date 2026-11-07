@@ -170,6 +170,35 @@ body {
   background-color: #FFFFFF;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.portal-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #FFF9EE;
+  border: 1px solid var(--border-rice);
+  color: var(--primary-red);
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+}
+
+.portal-back-btn:hover {
+  background: var(--primary-red);
+  color: #FFFFFF;
+  border-color: var(--primary-red);
+}
+
 .icon-btn {
   background: var(--bg-rice);
   border: 1px solid var(--border-rice);
@@ -551,6 +580,36 @@ body {
   color: #FFFFFF;
   box-shadow: 0 0 0 5px rgba(158, 42, 43, 0.25);
   animation: pulse-ring 1s infinite;
+}
+
+.floating-audio-btn.is-unverified-audio {
+  width: auto;
+  height: 32px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(254, 243, 199, 0.96);
+  border-color: #D97706;
+  color: #92400E;
+  gap: 5px;
+}
+
+.floating-audio-btn.is-unverified-audio svg {
+  width: 15px;
+  height: 15px;
+  opacity: 0.7;
+}
+
+.audio-pending-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.back-audio-btn.is-unverified-audio,
+.write-audio-btn.is-unverified-audio {
+  background: rgba(254, 243, 199, 0.96);
+  border-color: #D97706;
+  color: #92400E;
 }
 
 .tap-hint {

@@ -5,8 +5,8 @@
  * Progressively caches viewed card WebP images & native audio on demand (bounded cache).
  */
 
-const SHELL_CACHE = 'ktn-flashcards-shell-v2';
-const MEDIA_CACHE = 'ktn-flashcards-media-v2';
+const SHELL_CACHE = 'ktn-flashcards-shell-v3';
+const MEDIA_CACHE = 'ktn-flashcards-media-v3';
 const MAX_MEDIA_ITEMS = 300;
 
 const CORE_ASSETS = [

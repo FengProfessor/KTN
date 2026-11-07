@@ -20,7 +20,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-多.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -14.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 2,
@@ -42,7 +44,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-她.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.85s, -16.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 3,
@@ -65,7 +69,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-汉语.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 4,
@@ -88,7 +94,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-英语.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -13.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 5,
@@ -111,7 +119,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-法语.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -19.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 6,
@@ -133,7 +143,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-高.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -19.1 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 7,
@@ -155,7 +167,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-比.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -15.1 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 8,
@@ -178,7 +192,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-艺术.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -19.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 9,
@@ -201,7 +217,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-谢谢.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -21.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 10,
@@ -224,7 +242,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-今年.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -13.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 11,
@@ -246,7 +266,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-说.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -18.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 12,
@@ -269,7 +291,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-椅子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -20.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 13,
@@ -292,7 +316,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-桌子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -19.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 14,
@@ -315,7 +341,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-沙发.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -19.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 15,
@@ -338,7 +366,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-客厅.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -15.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 16,
@@ -361,7 +391,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-书架.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -20.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 17,
@@ -383,7 +415,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-床.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -19.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 18,
@@ -405,7 +439,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-上.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -19.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 19,
@@ -427,7 +463,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-里.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -16.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 20,
@@ -449,7 +487,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-灯.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -18.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 21,
@@ -471,7 +511,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-书.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -20.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 22,
@@ -494,7 +536,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-卧室.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 23,
@@ -517,7 +561,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-东边.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -15.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 24,
@@ -540,7 +586,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-西边.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -20.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 25,
@@ -563,7 +611,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-北边.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 26,
@@ -586,7 +636,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-南边.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -14.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 27,
@@ -610,7 +662,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_sources": [
       "cmn-饭.mp3",
       "cmn-厅.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-饭.mp3 + cmn-厅.mp3, 1.15s, -16.6 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 28,
@@ -635,7 +689,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_sources": [
       "cmn-卫生.mp3",
       "cmn-间.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-卫生.mp3 + cmn-间.mp3) có 1 khoảng ngắt >=80ms (1.41s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 29,
@@ -657,7 +713,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-门.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -16.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 30,
@@ -680,7 +738,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-对面.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -16.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 31,
@@ -705,7 +765,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_sources": [
       "cmn-你们.mp3",
       "cmn-的.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thanh nhẹ chưa chuẩn: '你们的' (nǐ men de) ghép cmn-你们.mp3 + cmn-的.mp3 có 2 khoảng ngắt, chữ '的' đọc nặng thay vì thanh nhẹ 'de'."
   },
   {
     "id": 32,
@@ -728,7 +790,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-家具.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 33,
@@ -750,7 +814,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-花.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -16.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 34,
@@ -773,7 +839,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-花园.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 35,
@@ -796,7 +864,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-干净.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 36,
@@ -819,7 +889,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-漂亮.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -20.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 37,
@@ -841,7 +913,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-真.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -21.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 38,
@@ -863,7 +937,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-买.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -17.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 39,
@@ -886,7 +962,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-点心.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -17.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 40,
@@ -908,7 +986,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-水.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -20.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 41,
@@ -930,7 +1010,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-还.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -16.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 42,
@@ -952,7 +1034,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-要.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.85s, -16.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 43,
@@ -974,7 +1058,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-和.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -18.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 44,
@@ -997,7 +1083,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-东西.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 45,
@@ -1019,7 +1107,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-瓶.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -13.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 46,
@@ -1041,7 +1131,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-斤.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -14.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 47,
@@ -1064,7 +1156,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-多少.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -19.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 48,
@@ -1086,7 +1180,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-钱.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 49,
@@ -1108,7 +1204,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-块.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -17.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 50,
@@ -1130,7 +1228,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-分.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -15.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 51,
@@ -1154,7 +1254,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_sources": [
       "cmn-猪.mp3",
       "cmn-肉.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-猪.mp3 + cmn-肉.mp3, 1.0s, -19.3 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 52,
@@ -1176,7 +1278,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-鸡.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -14.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 53,
@@ -1199,7 +1303,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-一共.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 54,
@@ -1221,7 +1327,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-零.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -12.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 55,
@@ -1245,7 +1353,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-自行车.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.5s, -19.7 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 56,
@@ -1268,7 +1378,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-衣服.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -13.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 57,
@@ -1290,7 +1402,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-件.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -18.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 58,
@@ -1313,7 +1427,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-便宜.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 59,
@@ -1335,7 +1451,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-贵.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -16.9 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 60,
@@ -1357,7 +1475,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-跟.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -16.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 61,
@@ -1380,7 +1500,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-一样.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -17.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 62,
@@ -1404,7 +1526,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-一点儿.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -17.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 63,
@@ -1427,7 +1551,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-德语.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 64,
@@ -1450,7 +1576,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-历史.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 65,
@@ -1473,7 +1601,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-地理.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -14.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 66,
@@ -1496,7 +1626,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-数学.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -17.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 67,
@@ -1519,7 +1651,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-明天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -12.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 68,
@@ -1541,7 +1675,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-了.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 69,
@@ -1564,7 +1700,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-上课.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 70,
@@ -1587,7 +1725,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-作业.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -20.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 71,
@@ -1610,7 +1750,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-考试.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 72,
@@ -1633,7 +1775,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-科目.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 73,
@@ -1656,7 +1800,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-中学.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -20.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 74,
@@ -1678,7 +1824,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-难.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -17.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 75,
@@ -1702,7 +1850,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-有意思.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.9 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 76,
@@ -1725,7 +1875,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-容易.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -14.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 77,
@@ -1747,7 +1899,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-来.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -18.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 78,
@@ -1771,7 +1925,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-乒乓球.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.7s, -17.6 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 79,
@@ -1795,7 +1951,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-羽毛球.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.55s, -13.0 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 80,
@@ -1817,7 +1975,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-踢.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -15.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 81,
@@ -1840,7 +2000,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-足球.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -17.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 82,
@@ -1863,7 +2025,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-学习.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 83,
@@ -1886,7 +2050,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-书法.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 84,
@@ -1909,7 +2075,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-晴天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -14.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 85,
@@ -1931,7 +2099,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-雨.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -13.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 86,
@@ -1954,7 +2124,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-春天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 87,
@@ -1977,7 +2149,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-夏天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 88,
@@ -2000,7 +2174,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-秋天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 89,
@@ -2023,7 +2199,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-冬天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.6s, -18.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 90,
@@ -2046,7 +2224,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-常常.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 91,
@@ -2068,7 +2248,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-风.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -17.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 92,
@@ -2091,7 +2273,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-舒服.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -15.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 93,
@@ -2114,7 +2298,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-感冒.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 94,
@@ -2136,7 +2322,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-病.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -15.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 95,
@@ -2158,7 +2346,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-头.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -17.1 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 96,
@@ -2180,7 +2370,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-疼.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -15.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 97,
@@ -2202,7 +2394,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-红.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -15.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 98,
@@ -2225,7 +2419,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-眼睛.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -17.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 99,
@@ -2248,7 +2444,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-肚子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 100,
@@ -2271,7 +2469,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-地方.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 101,
@@ -2293,7 +2493,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-冷.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -18.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 102,
@@ -2316,7 +2518,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-凉快.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -17.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 103,
@@ -2339,7 +2543,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-温暖.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 104,
@@ -2361,7 +2567,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-热.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -18.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 105,
@@ -2383,7 +2591,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-雪.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 106,
@@ -2407,7 +2617,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_sources": [
       "pinyin/cai3.mp3",
       "cmn-虹.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (pinyin/cai3.mp3 + cmn-虹.mp3), thời lượng 1.72s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 107,
@@ -2429,7 +2641,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-云.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -13.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 108,
@@ -2452,7 +2666,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-黑夜.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -14.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 109,
@@ -2475,7 +2691,9 @@ window.FLASHCARDS_DATA_LO2 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-白天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   }
 ];
 
@@ -2501,7 +2719,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-奶奶.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 2,
@@ -2524,7 +2744,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-爷爷.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -17.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 3,
@@ -2547,7 +2769,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-孩子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -18.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 4,
@@ -2570,7 +2794,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-散步.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 5,
@@ -2592,7 +2818,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-跑.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 6,
@@ -2615,7 +2843,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-公园.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 7,
@@ -2639,7 +2869,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-湖.mp3",
       "cmn-边.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-湖.mp3 + cmn-边.mp3, 1.19s, -16.3 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 8,
@@ -2665,7 +2897,9 @@ window.FLASHCARDS_DATA_LO3 = [
       "cmn-太.mp3",
       "cmn-极.mp3",
       "pinyin/quan2.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (cmn-太.mp3 + cmn-极.mp3 + pinyin/quan2.mp3), thời lượng 2.21s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 9,
@@ -2688,7 +2922,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-草地.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -19.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 10,
@@ -2711,7 +2947,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-颜色.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -20.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 11,
@@ -2735,7 +2973,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-红.mp3",
       "cmn-色.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-红.mp3 + cmn-色.mp3, 1.18s, -17.0 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 12,
@@ -2759,7 +2999,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-白.mp3",
       "cmn-色.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-白.mp3 + cmn-色.mp3, 1.21s, -17.3 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 13,
@@ -2783,7 +3025,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-黑.mp3",
       "cmn-色.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-黑.mp3 + cmn-色.mp3, 1.09s, -16.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 14,
@@ -2806,7 +3050,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-裤子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -18.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 15,
@@ -2828,7 +3074,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-鞋.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -20.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 16,
@@ -2850,7 +3098,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-穿.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -18.1 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 17,
@@ -2872,7 +3122,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-新.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -19.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 18,
@@ -2895,7 +3147,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-运动.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -14.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 19,
@@ -2918,7 +3172,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-剧院.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 20,
@@ -2941,7 +3197,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-京剧.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 21,
@@ -2963,7 +3221,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-票.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.85s, -18.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 22,
@@ -2986,7 +3246,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-表演.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 23,
@@ -3009,7 +3271,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-电影.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -21.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 24,
@@ -3032,7 +3296,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-高兴.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 25,
@@ -3057,7 +3323,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-老年.mp3",
       "cmn-人.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-老年.mp3 + cmn-人.mp3) có 1 khoảng ngắt >=80ms (1.54s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 26,
@@ -3082,7 +3350,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-年轻.mp3",
       "cmn-人.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-年轻.mp3 + cmn-人.mp3) có 1 khoảng ngắt >=80ms (1.43s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 27,
@@ -3107,7 +3377,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-音乐.mp3",
       "cmn-会.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-音乐.mp3 + cmn-会.mp3) có 1 khoảng ngắt >=80ms (1.23s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 28,
@@ -3130,7 +3402,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-开始.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 29,
@@ -3152,7 +3426,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-听.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -13.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 30,
@@ -3176,7 +3452,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-订.mp3",
       "cmn-票.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-订.mp3 + cmn-票.mp3, 1.02s, -14.8 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 31,
@@ -3199,7 +3477,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-休息.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 32,
@@ -3221,7 +3501,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-回.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -15.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 33,
@@ -3244,7 +3526,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-演员.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 34,
@@ -3267,7 +3551,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-表演.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 35,
@@ -3291,7 +3577,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "pinyin/ya4.mp3",
       "cmn-洲.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (pinyin/ya4.mp3 + cmn-洲.mp3), thời lượng 1.82s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 36,
@@ -3315,7 +3603,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "pinyin/ou1.mp3",
       "cmn-洲.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (pinyin/ou1.mp3 + cmn-洲.mp3), thời lượng 1.51s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 37,
@@ -3338,7 +3628,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-国际.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 38,
@@ -3361,7 +3653,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-有名.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 39,
@@ -3385,7 +3679,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-下.mp3",
       "cmn-雨.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-下.mp3 + cmn-雨.mp3, 1.27s, -16.9 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 40,
@@ -3409,7 +3705,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-手.mp3",
       "cmn-机.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-手.mp3 + cmn-机.mp3, 1.2s, -16.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 41,
@@ -3432,7 +3730,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-手表.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 42,
@@ -3456,7 +3756,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-收音机.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.55s, -17.2 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 43,
@@ -3479,7 +3781,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-广告.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -17.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 44,
@@ -3502,7 +3806,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-地铁.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 45,
@@ -3527,7 +3833,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-市.mp3",
       "cmn-中心.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-市.mp3 + cmn-中心.mp3) có 1 khoảng ngắt >=80ms (1.35s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 46,
@@ -3550,7 +3858,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-故宫.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -15.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 47,
@@ -3573,7 +3883,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-暑假.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -20.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 48,
@@ -3597,7 +3909,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-长.mp3",
       "cmn-城.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-长.mp3 + cmn-城.mp3, 1.31s, -17.3 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 49,
@@ -3621,7 +3935,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-台.mp3",
       "cmn-湾.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-台.mp3 + cmn-湾.mp3, 1.17s, -16.8 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 50,
@@ -3645,7 +3961,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "pinyin/ai1.mp3",
       "pinyin/ji2.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (pinyin/ai1.mp3 + pinyin/ji2.mp3), thời lượng 2.19s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 51,
@@ -3670,7 +3988,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-中秋.mp3",
       "cmn-节.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-中秋.mp3 + cmn-节.mp3) có 1 khoảng ngắt >=80ms (1.58s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 52,
@@ -3694,7 +4014,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-月.mp3",
       "cmn-饼.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-月.mp3 + cmn-饼.mp3, 1.19s, -15.9 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 53,
@@ -3717,7 +4039,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-月亮.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 54,
@@ -3743,7 +4067,9 @@ window.FLASHCARDS_DATA_LO3 = [
       "cmn-端.mp3",
       "pinyin/wu3.mp3",
       "cmn-节.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (cmn-端.mp3 + pinyin/wu3.mp3 + cmn-节.mp3), thời lượng 2.43s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 55,
@@ -3767,7 +4093,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-龙.mp3",
       "cmn-舟.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-龙.mp3 + cmn-舟.mp3, 1.06s, -16.1 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 56,
@@ -3791,7 +4119,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "pinyin/zong4.mp3",
       "cmn-子.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 giọng & thanh nhẹ: '粽子' (zòng zi) ghép pinyin/zong4.mp3 + cmn-子.mp3, đổi giọng đọc và chữ '子' đọc thanh 3 thay vì thanh nhẹ 'zi'."
   },
   {
     "id": 57,
@@ -3814,7 +4144,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-好吃.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -22.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 58,
@@ -3836,7 +4168,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-来.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -18.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 59,
@@ -3859,7 +4193,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-性别.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 60,
@@ -3881,7 +4217,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-女.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -14.9 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 61,
@@ -3903,7 +4241,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-男.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -18.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 62,
@@ -3926,7 +4266,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-出生.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 63,
@@ -3949,7 +4291,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-日期.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 64,
@@ -3972,7 +4316,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-学生.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -18.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 65,
@@ -3995,7 +4341,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-职业.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 66,
@@ -4018,7 +4366,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-电话.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 67,
@@ -4041,7 +4391,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-号码.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 68,
@@ -4064,7 +4416,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-国籍.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 69,
@@ -4087,7 +4441,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-训练.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 70,
@@ -4111,7 +4467,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-兼.mp3",
       "pinyin/zhi2.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (cmn-兼.mp3 + pinyin/zhi2.mp3), thời lượng 1.56s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 71,
@@ -4134,7 +4492,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-女士.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 72,
@@ -4157,7 +4517,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-申请.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 73,
@@ -4180,7 +4542,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-外语.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 74,
@@ -4202,7 +4566,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-请.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 75,
@@ -4224,7 +4590,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-做.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -17.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 76,
@@ -4246,7 +4614,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-饿.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -18.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 77,
@@ -4269,7 +4639,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-快餐.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 78,
@@ -4293,7 +4665,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-名.mp3",
       "cmn-片.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-名.mp3 + cmn-片.mp3, 1.15s, -15.6 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 79,
@@ -4317,7 +4691,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-外.mp3",
       "cmn-卖.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-外.mp3 + cmn-卖.mp3, 0.91s, -16.8 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 80,
@@ -4340,7 +4716,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-饭馆.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 81,
@@ -4363,7 +4741,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-菜单.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 82,
@@ -4387,7 +4767,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-羊.mp3",
       "cmn-肉.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-羊.mp3 + cmn-肉.mp3, 1.04s, -16.4 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 83,
@@ -4410,7 +4792,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-城市.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -19.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 84,
@@ -4433,7 +4817,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-广场.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.45s, -19.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 85,
@@ -4457,7 +4843,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-博物馆.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.6s, -15.3 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 86,
@@ -4480,7 +4868,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-风筝.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 87,
@@ -4503,7 +4893,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-展览.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 88,
@@ -4526,7 +4918,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-郊区.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 89,
@@ -4549,7 +4943,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-树木.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -15.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 90,
@@ -4574,7 +4970,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-公共汽车.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.75s, -16.0 dBFS), phát âm đầy đủ 4/4 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 91,
@@ -4597,7 +4995,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-污染.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -14.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 92,
@@ -4620,7 +5020,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-空气.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -15.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 93,
@@ -4644,7 +5046,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_sources": [
       "cmn-绿.mp3",
       "cmn-色.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-绿.mp3 + cmn-色.mp3, 1.04s, -15.4 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 94,
@@ -4666,7 +5070,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-草.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 95,
@@ -4689,7 +5095,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-安全.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -20.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 96,
@@ -4712,7 +5120,9 @@ window.FLASHCARDS_DATA_LO3 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-离开.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -15.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   }
 ];
 
@@ -4738,7 +5148,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-街道.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 2,
@@ -4761,7 +5173,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-厕所.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.5s, -20.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 3,
@@ -4784,7 +5198,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-邮局.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 4,
@@ -4808,7 +5224,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-找.mp3",
       "cmn-失.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-找.mp3 + cmn-失.mp3, 1.27s, -18.4 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 5,
@@ -4830,7 +5248,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-误.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.85s, -15.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 6,
@@ -4853,7 +5273,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-空调.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.5s, -15.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 7,
@@ -4875,7 +5297,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-冰.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -14.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 8,
@@ -4899,7 +5323,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-烤.mp3",
       "cmn-箱.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-烤.mp3 + cmn-箱.mp3, 1.21s, -16.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 9,
@@ -4923,7 +5349,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-烤.mp3",
       "pinyin/lu2.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (cmn-烤.mp3 + pinyin/lu2.mp3), thời lượng 2.18s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 10,
@@ -4946,7 +5374,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-浴室.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 11,
@@ -4970,7 +5400,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-洗衣机.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.7s, -18.1 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 12,
@@ -4993,7 +5425,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-地毯.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -17.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 13,
@@ -5016,7 +5450,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-马路.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 14,
@@ -5039,7 +5475,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-礼物.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -14.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 15,
@@ -5063,7 +5501,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-购.mp3",
       "cmn-物.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-购.mp3 + cmn-物.mp3, 0.96s, -16.4 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 16,
@@ -5087,7 +5527,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-照相机.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.55s, -16.6 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 17,
@@ -5110,7 +5552,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-孙女.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -14.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 18,
@@ -5133,7 +5577,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-录音.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -15.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 19,
@@ -5157,7 +5603,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-手.mp3",
       "cmn-机.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-手.mp3 + cmn-机.mp3, 1.2s, -16.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 20,
@@ -5182,7 +5630,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-纪念.mp3",
       "cmn-品.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-纪念.mp3 + cmn-品.mp3) có 1 khoảng ngắt >=80ms (1.89s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 21,
@@ -5206,7 +5656,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-画.mp3",
       "cmn-书.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-画.mp3 + cmn-书.mp3, 1.05s, -17.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 22,
@@ -5229,7 +5681,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-书店.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 23,
@@ -5252,7 +5706,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-裙子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 24,
@@ -5274,7 +5730,10 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-去.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thiếu âm tiết đầu: Pinyin thẻ là 'jìn qù' (Đi vào / 进去, 2 âm tiết) nhưng file cmn-去.mp3 chỉ đọc 1 âm tiết 'qù'. Đã chuẩn bị file thay thế ứng viên cmn-进去.mp3 (Shtooka File:Zh-jìnqù.ogg).",
+    "replacement_audio": "assets/audio/cmn-进去.mp3"
   },
   {
     "id": 25,
@@ -5298,7 +5757,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-直.mp3",
       "cmn-走.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-直.mp3 + cmn-走.mp3, 1.2s, -18.5 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 26,
@@ -5320,7 +5781,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-请.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 27,
@@ -5343,7 +5806,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-同学.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 28,
@@ -5366,7 +5831,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-老师.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 29,
@@ -5389,7 +5856,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-回答.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 30,
@@ -5412,7 +5881,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-练习.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 31,
@@ -5435,7 +5906,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-非常.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 32,
@@ -5457,7 +5930,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-除.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -19.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 33,
@@ -5479,7 +5954,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-得.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -21.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 34,
@@ -5502,7 +5979,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-比赛.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 35,
@@ -5525,7 +6004,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-体操.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -22.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 36,
@@ -5548,7 +6029,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-活动.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 37,
@@ -5571,7 +6054,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-发烧.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -18.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 38,
@@ -5594,7 +6079,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-看病.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 39,
@@ -5616,7 +6103,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-就.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -17.1 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 40,
@@ -5638,7 +6127,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-才.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -16.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 41,
@@ -5662,7 +6153,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "pinyin/hu4.mp3",
       "cmn-联.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (pinyin/hu4.mp3 + cmn-联.mp3), thời lượng 1.77s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 42,
@@ -5686,7 +6179,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-联.mp3",
       "cmn-网.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-联.mp3 + cmn-网.mp3, 1.37s, -16.0 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 43,
@@ -5712,7 +6207,9 @@ window.FLASHCARDS_DATA_LO4 = [
       "pinyin/hu4.mp3",
       "cmn-联.mp3",
       "cmn-网.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (pinyin/hu4.mp3 + cmn-联.mp3 + cmn-网.mp3), thời lượng 2.43s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 44,
@@ -5735,7 +6232,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-小学.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 45,
@@ -5758,7 +6257,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-帮助.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -15.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 46,
@@ -5781,7 +6282,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-学期.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -19.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 47,
@@ -5803,7 +6306,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-错.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -20.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 48,
@@ -5825,7 +6330,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-更.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.85s, -19.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 49,
@@ -5847,7 +6354,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-给.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -19.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 50,
@@ -5870,7 +6379,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-喉咙.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -15.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 51,
@@ -5893,7 +6404,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-鼻子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -16.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 52,
@@ -5916,7 +6429,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-牙齿.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -20.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 53,
@@ -5939,7 +6454,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-耳朵.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -19.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 54,
@@ -5963,7 +6480,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-脚.mp3",
       "cmn-背.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-脚.mp3 + cmn-背.mp3, 1.18s, -17.3 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 55,
@@ -5986,7 +6505,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-药方.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 56,
@@ -6009,7 +6530,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-中药.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 57,
@@ -6033,7 +6556,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-伤.mp3",
       "cmn-风.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-伤.mp3 + cmn-风.mp3, 1.13s, -16.8 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 58,
@@ -6056,7 +6581,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-咳嗽.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 59,
@@ -6079,7 +6606,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-开水.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -19.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 60,
@@ -6102,7 +6631,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-从来.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 61,
@@ -6125,7 +6656,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-身体.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -20.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 62,
@@ -6147,7 +6680,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-瘦.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -18.9 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 63,
@@ -6169,7 +6704,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-胖.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.85s, -18.1 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 64,
@@ -6191,7 +6728,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-矮.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -24.9 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 65,
@@ -6214,7 +6753,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-家务.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -20.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 66,
@@ -6238,7 +6779,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-越.mp3",
       "cmn-来.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-越.mp3 + cmn-来.mp3, 0.97s, -15.8 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 67,
@@ -6261,7 +6804,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-准备.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 68,
@@ -6285,7 +6830,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-吃.mp3",
       "cmn-饭.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-吃.mp3 + cmn-饭.mp3, 0.99s, -17.5 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 69,
@@ -6308,7 +6855,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-午饭.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 70,
@@ -6331,7 +6880,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-晚饭.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 71,
@@ -6353,7 +6904,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-煮.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -18.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 72,
@@ -6375,7 +6928,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-炒.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -21.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 73,
@@ -6397,7 +6952,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-爱.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -17.9 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 74,
@@ -6419,7 +6976,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-醉.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -20.1 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 75,
@@ -6443,7 +7002,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-喝.mp3",
       "cmn-酒.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-喝.mp3 + cmn-酒.mp3, 1.53s, -17.0 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 76,
@@ -6467,7 +7028,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-动物园.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.6s, -17.3 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 77,
@@ -6489,7 +7052,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-站.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -17.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 78,
@@ -6512,7 +7077,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-熊猫.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 79,
@@ -6536,7 +7103,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-明信片.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.6s, -13.6 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 80,
@@ -6559,7 +7128,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-生气.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -20.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 81,
@@ -6581,7 +7152,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-极.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -18.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 82,
@@ -6604,7 +7177,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-表演.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 83,
@@ -6627,7 +7202,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-朋友.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -18.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 84,
@@ -6651,7 +7228,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-甜.mp3",
       "cmn-食.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-甜.mp3 + cmn-食.mp3, 1.33s, -17.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 85,
@@ -6674,7 +7253,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-京剧.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 86,
@@ -6697,7 +7278,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-可爱.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -21.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 87,
@@ -6721,7 +7304,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-超.mp3",
       "cmn-市.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-超.mp3 + cmn-市.mp3, 1.02s, -18.8 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 88,
@@ -6744,7 +7329,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-科学.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -19.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 89,
@@ -6767,7 +7354,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-阅读.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -17.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 90,
@@ -6791,7 +7380,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-图.mp3",
       "cmn-书.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-图.mp3 + cmn-书.mp3, 1.17s, -17.0 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 91,
@@ -6815,7 +7406,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-图书馆.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.1 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 92,
@@ -6838,7 +7431,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-植物.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -20.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 93,
@@ -6861,7 +7456,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-以内.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 94,
@@ -6885,7 +7482,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-家.mp3",
       "cmn-里.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-家.mp3 + cmn-里.mp3, 1.16s, -16.4 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 95,
@@ -6909,7 +7508,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-爬.mp3",
       "cmn-山.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-爬.mp3 + cmn-山.mp3, 1.07s, -17.9 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 96,
@@ -6932,7 +7533,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-太阳.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 97,
@@ -6956,7 +7559,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-下.mp3",
       "cmn-雨.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-下.mp3 + cmn-雨.mp3, 1.27s, -16.9 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 98,
@@ -6980,7 +7585,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-山.mp3",
       "cmn-边.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-山.mp3 + cmn-边.mp3, 1.15s, -16.5 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 99,
@@ -7004,7 +7611,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "pinyin/kou2.mp3 (sandhi)",
       "cmn-渴.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 giọng đọc khác nhau cho từ biến điệu thanh 3: '口渴' ghép pinyin/kou2.mp3 (Chinese-Lessons) + cmn-渴.mp3 (Shtooka), đổi màu giọng giữa từ."
   },
   {
     "id": 100,
@@ -7028,7 +7637,9 @@ window.FLASHCARDS_DATA_LO4 = [
     "audio_sources": [
       "cmn-来.mp3",
       "cmn-去.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-来.mp3 + cmn-去.mp3, 0.99s, -17.5 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   }
 ];
 
@@ -7054,7 +7665,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-新闻.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 2,
@@ -7077,7 +7690,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-地球.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 3,
@@ -7100,7 +7715,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-污染.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -14.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 4,
@@ -7123,7 +7740,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-环境.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 5,
@@ -7146,7 +7765,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-严重.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 6,
@@ -7169,7 +7790,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-保护.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 7,
@@ -7192,7 +7815,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-节约.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -15.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 8,
@@ -7214,7 +7839,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-会.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -18.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 9,
@@ -7237,7 +7864,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-记者.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -20.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 10,
@@ -7260,7 +7889,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-请问.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 11,
@@ -7286,7 +7917,9 @@ window.FLASHCARDS_DATA_LO5 = [
       "cmn-零.mp3",
       "cmn-用.mp3",
       "cmn-钱.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-零.mp3 + cmn-用.mp3 + cmn-钱.mp3) có 2 khoảng ngắt >=80ms (1.73s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 12,
@@ -7310,7 +7943,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-给.mp3",
       "cmn-花.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-给.mp3 + cmn-花.mp3, 1.04s, -16.6 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 13,
@@ -7333,7 +7968,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-电影.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -21.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 14,
@@ -7356,7 +7993,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-正在.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 15,
@@ -7379,7 +8018,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-采访.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.55s, -17.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 16,
@@ -7402,7 +8043,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-电视.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 17,
@@ -7428,7 +8071,9 @@ window.FLASHCARDS_DATA_LO5 = [
       "cmn-十.mp3",
       "cmn-百.mp3",
       "cmn-千.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-十.mp3 + cmn-百.mp3 + cmn-千.mp3) có 2 khoảng ngắt >=80ms (1.74s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 18,
@@ -7452,7 +8097,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-手.mp3",
       "cmn-机.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-手.mp3 + cmn-机.mp3, 1.2s, -16.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 19,
@@ -7475,7 +8122,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-电脑.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 20,
@@ -7499,7 +8148,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-上.mp3",
       "cmn-网.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-上.mp3 + cmn-网.mp3, 1.24s, -16.9 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 21,
@@ -7522,7 +8173,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-再说.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 22,
@@ -7545,7 +8198,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-时间.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -19.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 23,
@@ -7568,7 +8223,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-觉得.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 24,
@@ -7592,7 +8249,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-难.mp3",
       "cmn-听.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-难.mp3 + cmn-听.mp3, 1.08s, -16.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 25,
@@ -7614,7 +8273,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-说.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -18.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 26,
@@ -7636,7 +8297,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-读.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -14.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 27,
@@ -7658,7 +8321,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-写.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -19.5 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 28,
@@ -7680,7 +8345,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-懂.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 29,
@@ -7703,7 +8370,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-小时.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 30,
@@ -7726,7 +8395,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-商店.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 31,
@@ -7748,7 +8419,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-开.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -18.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 32,
@@ -7770,7 +8443,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-关.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -18.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 33,
@@ -7793,7 +8468,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-杯子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 34,
@@ -7816,7 +8493,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-中午.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -22.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 35,
@@ -7838,7 +8517,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-半.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -18.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 36,
@@ -7861,7 +8542,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-身体.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -20.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 37,
@@ -7884,7 +8567,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-舒服.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -15.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 38,
@@ -7907,7 +8592,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-生病.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 39,
@@ -7930,7 +8617,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-感冒.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 40,
@@ -7953,7 +8642,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-休息.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 41,
@@ -7975,7 +8666,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-疼.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -15.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 42,
@@ -7997,7 +8690,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-药.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -17.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 43,
@@ -8021,7 +8716,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-请.mp3",
       "cmn-进.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-请.mp3 + cmn-进.mp3, 1.55s, -17.3 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 44,
@@ -8044,7 +8741,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-洗澡.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 45,
@@ -8066,7 +8765,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-快.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -19.4 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 46,
@@ -8090,7 +8791,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "pinyin/guo3.mp3",
       "cmn-汁.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (pinyin/guo3.mp3 + cmn-汁.mp3), thời lượng 2.01s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 47,
@@ -8113,7 +8816,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-青菜.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 48,
@@ -8136,7 +8841,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-青菜.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 49,
@@ -8158,7 +8865,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-把.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -19.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 50,
@@ -8180,7 +8889,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-谁.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -19.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 51,
@@ -8203,7 +8914,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-教室.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 52,
@@ -8227,7 +8940,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-走.mp3",
       "cmn-过.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-走.mp3 + cmn-过.mp3, 1.12s, -16.3 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 53,
@@ -8250,7 +8965,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-前后.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -18.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 54,
@@ -8273,7 +8990,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-左右.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 55,
@@ -8295,7 +9014,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-边.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -14.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 56,
@@ -8321,7 +9042,9 @@ window.FLASHCARDS_DATA_LO5 = [
       "cmn-能.mp3",
       "cmn-看.mp3",
       "cmn-新.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-能.mp3 + cmn-看.mp3 + cmn-新.mp3) có 2 khoảng ngắt >=80ms (1.61s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 57,
@@ -8345,7 +9068,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-每.mp3",
       "cmn-天.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-每.mp3 + cmn-天.mp3, 1.25s, -16.0 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 58,
@@ -8368,7 +9093,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-公共.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 59,
@@ -8391,7 +9118,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-汽车.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 60,
@@ -8416,7 +9145,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-公共汽车.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.75s, -16.0 dBFS), phát âm đầy đủ 4/4 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 61,
@@ -8440,7 +9171,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-远.mp3",
       "cmn-近.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 2 âm tiết / từ đối lập (cmn-远.mp3 + cmn-近.mp3) có 1 khoảng ngắt >=80ms (1.17s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 62,
@@ -8462,7 +9195,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-离.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -12.9 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 63,
@@ -8484,7 +9219,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-条.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -15.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 64,
@@ -8507,7 +9244,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-汽车.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 65,
@@ -8531,7 +9270,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-下.mp3",
       "cmn-雨.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-下.mp3 + cmn-雨.mp3, 1.27s, -16.9 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 66,
@@ -8554,7 +9295,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-迟到.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 67,
@@ -8578,7 +9321,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-拿.mp3",
       "cmn-伞.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-拿.mp3 + cmn-伞.mp3, 1.49s, -17.1 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 68,
@@ -8602,7 +9347,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-堵.mp3",
       "cmn-车.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-堵.mp3 + cmn-车.mp3, 1.45s, -17.2 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 69,
@@ -8625,7 +9372,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-厉害.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -15.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 70,
@@ -8647,7 +9396,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-陪.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -17.1 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 71,
@@ -8670,7 +9421,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-飞机.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -17.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 72,
@@ -8693,7 +9446,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-时候.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -19.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 73,
@@ -8717,7 +9472,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-中.mp3",
       "cmn-国.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-中.mp3 + cmn-国.mp3, 1.06s, -16.7 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 74,
@@ -8740,7 +9497,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-过去.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.45s, -20.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 75,
@@ -8764,7 +9523,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-年.mp3",
       "cmn-次.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 2 âm tiết / từ đối lập (cmn-年.mp3 + cmn-次.mp3) có 1 khoảng ngắt >=80ms (1.14s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 76,
@@ -8788,7 +9549,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-坐.mp3",
       "cmn-月.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 2 âm tiết / từ đối lập (cmn-坐.mp3 + cmn-月.mp3) có 1 khoảng ngắt >=80ms (0.98s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 77,
@@ -8811,7 +9574,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-上班.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -19.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 78,
@@ -8835,7 +9600,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-为什么.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.0 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 79,
@@ -8857,7 +9624,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-忙.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -14.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 80,
@@ -8880,7 +9649,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-事情.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -20.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 81,
@@ -8903,7 +9674,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-电影.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -21.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 82,
@@ -8926,7 +9699,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-意思.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -20.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 83,
@@ -8949,7 +9724,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-认识.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 84,
@@ -8972,7 +9749,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-出生.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 85,
@@ -8995,7 +9774,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-熊猫.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 86,
@@ -9019,7 +9800,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_sources": [
       "cmn-长.mp3",
       "cmn-胖.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Sai chữ đa âm (多音字): '长胖' phải đọc là 'zhǎng pàng' (thanh 3), nhưng bản ghép dùng cmn-长.mp3 đọc là 'cháng' (thanh 2 → 'cháng pàng')."
   },
   {
     "id": 87,
@@ -9042,7 +9825,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-可爱.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -21.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 88,
@@ -9065,7 +9850,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-头发.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -21.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 89,
@@ -9088,7 +9875,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-特别.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 90,
@@ -9111,7 +9900,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-功夫.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -20.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 91,
@@ -9134,7 +9925,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-帮助.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -15.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 92,
@@ -9157,7 +9950,9 @@ window.FLASHCARDS_DATA_LO5 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-别人.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.45s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   }
 ];
 
@@ -9184,7 +9979,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-大.mp3",
       "cmn-象.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-大.mp3 + cmn-象.mp3, 0.99s, -17.9 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 2,
@@ -9207,7 +10004,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-兔子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -17.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 3,
@@ -9230,7 +10029,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-蝴蝶.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -13.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 4,
@@ -9253,7 +10054,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-虫子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -20.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 5,
@@ -9276,7 +10079,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-尾巴.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 6,
@@ -9300,7 +10105,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-矮.mp3",
       "cmn-胖.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 2 âm tiết / từ đối lập (cmn-矮.mp3 + cmn-胖.mp3) có 2 khoảng ngắt >=80ms (1.09s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 7,
@@ -9323,7 +10130,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-讨厌.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 8,
@@ -9347,7 +10156,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-更.mp3",
       "cmn-胜.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-更.mp3 + cmn-胜.mp3, 0.95s, -17.6 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 9,
@@ -9370,7 +10181,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-电梯.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 10,
@@ -9393,7 +10206,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-空调.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.5s, -15.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 11,
@@ -9416,7 +10231,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-窗户.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -17.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 12,
@@ -9439,7 +10256,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-沙发.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -19.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 13,
@@ -9465,7 +10284,9 @@ window.FLASHCARDS_DATA_LO6 = [
       "cmn-洗.mp3",
       "cmn-手.mp3",
       "cmn-间.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thiếu biến điệu thanh 3 & ngắt nhịp: '洗手间' (xǐ shǒu jiān → xí shǒu jiān) ghép 3 file rời cmn-洗.mp3 + cmn-手.mp3 + cmn-间.mp3, chữ 洗 giữ nguyên thanh 3 nặng."
   },
   {
     "id": 14,
@@ -9488,7 +10309,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-公园.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 15,
@@ -9511,7 +10334,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-散步.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 16,
@@ -9533,7 +10358,10 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_concat",
     "audio_sources": [
       "pinyin/tu1.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Nguồn âm tiết đơn ngoài Shtooka & thẻ in thiếu chữ: Mặt trước in '突' (tū), mặt sau ví dụ '突然 (tūrán)', file cmn-突.mp3 lấy từ pinyin/tu1.mp3. Đã có file ứng viên cmn-突然.mp3 (Shtooka File:Zh-tūrán.ogg).",
+    "replacement_audio": "assets/audio/cmn-突然.mp3"
   },
   {
     "id": 17,
@@ -9556,7 +10384,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-邻居.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -13.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 18,
@@ -9579,7 +10409,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-习惯.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 19,
@@ -9602,7 +10434,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-周末.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 20,
@@ -9625,7 +10459,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-咖啡.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 21,
@@ -9647,7 +10483,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-带.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -16.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 22,
@@ -9670,7 +10508,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-儿子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 23,
@@ -9693,7 +10533,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-阿姨.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -22.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 24,
@@ -9716,7 +10558,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-年轻.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 25,
@@ -9739,7 +10583,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-照相.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 26,
@@ -9762,7 +10608,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-孩子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -18.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 27,
@@ -9785,7 +10633,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-照片.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 28,
@@ -9807,7 +10657,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-搞.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -18.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 29,
@@ -9831,7 +10683,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-站.mp3",
       "cmn-着.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thanh nhẹ & đa âm trợ từ '着': '站着' (zhàn zhe) ghép cmn-站.mp3 + cmn-着.mp3 rời, trợ từ '着' không đọc lướt thanh nhẹ tự nhiên."
   },
   {
     "id": 30,
@@ -9855,7 +10709,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-坐.mp3",
       "cmn-着.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thanh nhẹ & đa âm trợ từ '着': '坐着' (zuò zhe) ghép cmn-坐.mp3 + cmn-着.mp3 có khoảng ngắt, trợ từ '着' không đọc thanh nhẹ tự nhiên."
   },
   {
     "id": 31,
@@ -9879,7 +10735,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-坐.mp3",
       "cmn-着.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thanh nhẹ & đa âm trợ từ '着': '坐着' (zuò zhe, thẻ trùng Lộ 6) ghép cmn-坐.mp3 + cmn-着.mp3 có khoảng ngắt."
   },
   {
     "id": 32,
@@ -9901,7 +10759,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-戴.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.9s, -17.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 33,
@@ -9924,7 +10784,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-项链.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 34,
@@ -9947,7 +10809,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-联系.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -19.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 35,
@@ -9970,7 +10834,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-号码.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 36,
@@ -9993,7 +10859,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-选择.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -19.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 37,
@@ -10016,7 +10884,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-不但.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -17.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 38,
@@ -10039,7 +10909,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-而且.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 39,
@@ -10062,7 +10934,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-心情.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.5s, -19.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 40,
@@ -10086,7 +10960,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-流.mp3",
       "cmn-汗.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-流.mp3 + cmn-汗.mp3, 1.17s, -16.5 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 41,
@@ -10110,7 +10986,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-流.mp3",
       "cmn-汗.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-流.mp3 + cmn-汗.mp3, 1.17s, -16.5 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 42,
@@ -10133,7 +11011,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-网球.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.5s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 43,
@@ -10156,7 +11036,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-排球.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -19.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 44,
@@ -10180,7 +11062,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "pinyin/ping1.mp3",
       "pinyin/pang1.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (pinyin/ping1.mp3 + pinyin/pang1.mp3), thời lượng 2.41s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 45,
@@ -10204,7 +11088,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-体育馆.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.65s, -15.6 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 46,
@@ -10227,7 +11113,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-夏天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 47,
@@ -10250,7 +11138,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-秋天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -18.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 48,
@@ -10273,7 +11163,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-冬天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.6s, -18.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 49,
@@ -10296,7 +11188,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-春天.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 50,
@@ -10319,7 +11213,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-暖和.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -18.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 51,
@@ -10344,7 +11240,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-寒冷.mp3",
       "cmn-的.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thanh nhẹ chưa chuẩn: '寒冷的' (hán lěng de) ghép cmn-寒冷.mp3 + cmn-的.mp3 bị ngắt nhịp trước trợ từ thanh nhẹ '的'."
   },
   {
     "id": 52,
@@ -10370,7 +11268,9 @@ window.FLASHCARDS_DATA_LO6 = [
       "cmn-堆.mp3",
       "cmn-雪.mp3",
       "cmn-人.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-堆.mp3 + cmn-雪.mp3 + cmn-人.mp3) có 2 khoảng ngắt >=80ms (1.9s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 53,
@@ -10393,7 +11293,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_concat",
     "audio_sources": [
       "cmn-凉.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thiếu âm tiết thứ 2: File cmn-凉爽.mp3 chỉ chứa cmn-凉.mp3 (đọc 1 âm tiết 'liáng', thiếu 'shuǎng'). Cần thu âm nguyên từ 凉爽 (liángshuǎng)."
   },
   {
     "id": 54,
@@ -10416,7 +11318,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-到处.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 55,
@@ -10439,7 +11343,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-手表.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 56,
@@ -10462,7 +11368,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-记得.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -18.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 57,
@@ -10485,7 +11393,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-已经.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -17.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 58,
@@ -10508,7 +11418,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-办法.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -17.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 59,
@@ -10531,7 +11443,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-办法.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -17.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 60,
@@ -10553,7 +11467,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-尝.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -22.6 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 61,
@@ -10576,7 +11492,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-便宜.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 62,
@@ -10599,7 +11517,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-饮料.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 63,
@@ -10622,7 +11542,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-饮料.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 64,
@@ -10648,7 +11570,9 @@ window.FLASHCARDS_DATA_LO6 = [
       "cmn-巧.mp3",
       "cmn-克.mp3",
       "cmn-力.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 3 âm tiết / từ đối lập (cmn-巧.mp3 + cmn-克.mp3 + cmn-力.mp3) có 2 khoảng ngắt >=80ms (1.68s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 65,
@@ -10671,7 +11595,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-饼干.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -18.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 66,
@@ -10694,7 +11620,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-玩具.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -16.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 67,
@@ -10717,7 +11645,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-即便.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 68,
@@ -10740,7 +11670,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-申请.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -19.3 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 69,
@@ -10763,7 +11695,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-简单.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 70,
@@ -10786,7 +11720,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-简单.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -16.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 71,
@@ -10809,7 +11745,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-只要.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -19.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 72,
@@ -10833,7 +11771,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-羊.mp3",
       "cmn-肉.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-羊.mp3 + cmn-肉.mp3, 1.04s, -16.4 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 73,
@@ -10857,7 +11797,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-肉.mp3",
       "cmn-汤.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-肉.mp3 + cmn-汤.mp3, 1.29s, -17.6 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 74,
@@ -10881,7 +11823,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-烤.mp3",
       "pinyin/ya1.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 bộ thu âm khác giọng (cmn-烤.mp3 + pinyin/ya1.mp3), thời lượng 1.69s, đổi màu giọng/phòng thu giữa từ. Cần thu âm nguyên từ."
   },
   {
     "id": 75,
@@ -10905,7 +11849,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-一.mp3",
       "cmn-双.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thiếu biến điệu chữ 一: '一双' trong khẩu ngữ chuẩn phải biến điệu thành 'yì shuāng' (thanh 4 + thanh 1), nhưng bản ghép nối 'yī' (thanh 1 gốc) + 'shuāng'."
   },
   {
     "id": 76,
@@ -10929,7 +11875,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-服务员.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.6s, -16.0 dBFS), phát âm đầy đủ 3/3 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 77,
@@ -10952,7 +11900,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-盘子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -18.6 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 78,
@@ -10974,7 +11924,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-碗.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -17.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 79,
@@ -10997,7 +11949,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-暑假.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -20.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 80,
@@ -11020,7 +11974,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-寒假.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -17.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 81,
@@ -11043,7 +11999,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-打算.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -21.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 82,
@@ -11066,7 +12024,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-旅游.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -12.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 83,
@@ -11089,7 +12049,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-北方.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -16.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 84,
@@ -11113,7 +12075,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-南.mp3",
       "cmn-北.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Từ ghép 2 âm tiết / từ đối lập (cmn-南.mp3 + cmn-北.mp3) có 1 khoảng ngắt >=80ms (1.36s), nhịp đọc rời rạc. Cần thu âm nguyên từ."
   },
   {
     "id": 85,
@@ -11137,7 +12101,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-除.mp3",
       "cmn-了.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Thanh nhẹ trợ từ '了': '除了' (chú le / trên thẻ in 除了...还有) ghép cmn-除.mp3 + cmn-了.mp3 rời, chữ '了' nhấn nặng và có khoảng ngắt."
   },
   {
     "id": 86,
@@ -11160,7 +12126,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-地图.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -15.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 87,
@@ -11184,7 +12152,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-长.mp3",
       "cmn-城.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-长.mp3 + cmn-城.mp3, 1.31s, -17.3 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 88,
@@ -11208,7 +12178,9 @@ window.FLASHCARDS_DATA_LO6 = [
     "audio_sources": [
       "cmn-爬.mp3",
       "cmn-山.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-爬.mp3 + cmn-山.mp3, 1.07s, -17.9 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   }
 ];
 
@@ -11234,7 +12206,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-猴子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -15.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 2,
@@ -11256,7 +12230,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-狗.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -19.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 3,
@@ -11278,7 +12254,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-猪.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -20.9 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 4,
@@ -11300,7 +12278,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-猫.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -15.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 5,
@@ -11323,7 +12303,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-兔子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -17.2 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 6,
@@ -11345,7 +12327,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-马.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -19.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 7,
@@ -11367,7 +12351,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-蛇.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -22.0 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 8,
@@ -11389,7 +12375,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-鸡.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 0.95s, -14.7 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 9,
@@ -11411,7 +12399,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-羊.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.0s, -17.3 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 10,
@@ -11433,7 +12423,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-牛.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -13.8 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 11,
@@ -11455,7 +12447,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-龙.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.05s, -15.2 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 12,
@@ -11478,7 +12472,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-老鼠.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -21.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 13,
@@ -11501,7 +12497,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-老虎.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 14,
@@ -11524,7 +12522,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-数学.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -17.7 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 15,
@@ -11548,7 +12548,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_sources": [
       "cmn-加.mp3",
       "cmn-减.mp3"
-    ]
+    ],
+    "audio_status": "PENDING_REVIEW",
+    "audio_note": "Ghép từ các bản thu âm tiết cùng giọng Shtooka (cmn-加.mp3 + cmn-减.mp3, 1.43s, -17.4 dBFS). Đủ 2/2 âm tiết, đúng thanh điệu, chờ giáo viên tiếng Trung duyệt ngữ điệu tự nhiên."
   },
   {
     "id": 16,
@@ -11571,7 +12573,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-等于.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -20.4 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 17,
@@ -11593,7 +12597,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-两.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.9 dBFS), phát âm đầy đủ 1/1 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 18,
@@ -11616,7 +12622,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-干净.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 19,
@@ -11639,7 +12647,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-照顾.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -20.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 20,
@@ -11662,7 +12672,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-互相.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -17.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 21,
@@ -11685,7 +12697,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-句子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -16.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 22,
@@ -11708,7 +12722,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-马上.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.35s, -19.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 23,
@@ -11731,7 +12747,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-马虎.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -17.1 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 24,
@@ -11754,7 +12772,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-表演.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.25s, -16.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 25,
@@ -11777,7 +12797,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-节目.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.2s, -15.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 26,
@@ -11800,7 +12822,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-牌子.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.1s, -18.0 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 27,
@@ -11823,7 +12847,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-虽然.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.4s, -18.8 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 28,
@@ -11846,7 +12872,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-容易.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.15s, -14.9 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 29,
@@ -11869,7 +12897,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_type": "native_exact",
     "audio_sources": [
       "cmn-刚才.mp3 (Shtooka human)"
-    ]
+    ],
+    "audio_status": "APPROVED",
+    "audio_note": "Bản thu nguyên từ 1 lần đọc người bản xứ Bắc Kinh (Shtooka Project, 1.3s, -17.5 dBFS), phát âm đầy đủ 2/2 âm tiết, rõ ràng, tự nhiên."
   },
   {
     "id": 30,
@@ -11893,7 +12923,9 @@ window.FLASHCARDS_DATA_LO7 = [
     "audio_sources": [
       "pinyin/xiao2.mp3 (sandhi)",
       "cmn-鸟.mp3"
-    ]
+    ],
+    "audio_status": "NEEDS_REPLACEMENT",
+    "audio_note": "Ghép chéo 2 giọng đọc khác nhau cho từ biến điệu thanh 3: '小鸟' ghép pinyin/xiao2.mp3 (Chinese-Lessons) + cmn-鸟.mp3 (Shtooka), đổi màu giọng giữa từ."
   }
 ];
 

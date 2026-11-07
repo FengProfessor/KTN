@@ -11,12 +11,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "nǐ hǎo",
     "example_vi": "Xin chào",
     "audio": "assets/audio/cmn-你.mp3",
-    "front_img": "assets/images/cards/lo1/card_1_front.png",
-    "back_img": "assets/images/cards/lo1/card_1_back.png",
+    "front_img": "assets/images/cards/lo1/card_1_front.webp",
+    "back_img": "assets/images/cards/lo1/card_1_back.webp",
     "hanzi_chars": [
       "你"
     ],
-    "lesson": "Lộ 1 • Bài 13: Xin chào"
+    "lesson": "Lộ 1 • Bài 13: Xin chào",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_1.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-你.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 2,
@@ -29,12 +35,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "hěn hǎo",
     "example_vi": "Rất tốt",
     "audio": "assets/audio/cmn-好.mp3",
-    "front_img": "assets/images/cards/lo1/card_2_front.png",
-    "back_img": "assets/images/cards/lo1/card_2_back.png",
+    "front_img": "assets/images/cards/lo1/card_2_front.webp",
+    "back_img": "assets/images/cards/lo1/card_2_back.webp",
     "hanzi_chars": [
       "好"
     ],
-    "lesson": "Lộ 1 • Bài 13: Xin chào"
+    "lesson": "Lộ 1 • Bài 13: Xin chào",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_2.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-好.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 3,
@@ -47,13 +59,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "nǐ hǎo lǎo shī",
     "example_vi": "Em chào thầy/cô",
     "audio": "assets/audio/cmn-你好.mp3",
-    "front_img": "assets/images/cards/lo1/card_3_front.png",
-    "back_img": "assets/images/cards/lo1/card_3_back.png",
+    "front_img": "assets/images/cards/lo1/card_3_front.webp",
+    "back_img": "assets/images/cards/lo1/card_3_back.webp",
     "hanzi_chars": [
       "你",
       "好"
     ],
-    "lesson": "Lộ 1 • Bài 13: Xin chào"
+    "lesson": "Lộ 1 • Bài 13: Xin chào",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_3.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-泥.mp3 (sandhi ni2)",
+      "cmn-好.mp3"
+    ]
   },
   {
     "id": 4,
@@ -66,12 +85,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "nǐ hǎo ma?",
     "example_vi": "Bạn khỏe không?",
     "audio": "assets/audio/cmn-吗.mp3",
-    "front_img": "assets/images/cards/lo1/card_4_front.png",
-    "back_img": "assets/images/cards/lo1/card_4_back.png",
+    "front_img": "assets/images/cards/lo1/card_4_front.webp",
+    "back_img": "assets/images/cards/lo1/card_4_back.webp",
     "hanzi_chars": [
       "吗"
     ],
-    "lesson": "Lộ 1 • Bài 13: Xin chào"
+    "lesson": "Lộ 1 • Bài 13: Xin chào",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_4.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-吗.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 5,
@@ -84,12 +109,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ shì xué sheng",
     "example_vi": "Tôi là học sinh",
     "audio": "assets/audio/cmn-我.mp3",
-    "front_img": "assets/images/cards/lo1/card_5_front.png",
-    "back_img": "assets/images/cards/lo1/card_5_back.png",
+    "front_img": "assets/images/cards/lo1/card_5_front.webp",
+    "back_img": "assets/images/cards/lo1/card_5_back.webp",
     "hanzi_chars": [
       "我"
     ],
-    "lesson": "Lộ 1 • Bài 13: Xin chào"
+    "lesson": "Lộ 1 • Bài 13: Xin chào",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_5.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-我.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 6,
@@ -102,12 +133,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "hěn hǎo",
     "example_vi": "Rất khỏe / Rất tốt",
     "audio": "assets/audio/cmn-很.mp3",
-    "front_img": "assets/images/cards/lo1/card_6_front.png",
-    "back_img": "assets/images/cards/lo1/card_6_back.png",
+    "front_img": "assets/images/cards/lo1/card_6_front.webp",
+    "back_img": "assets/images/cards/lo1/card_6_back.webp",
     "hanzi_chars": [
       "很"
     ],
-    "lesson": "Lộ 1 • Bài 13: Xin chào"
+    "lesson": "Lộ 1 • Bài 13: Xin chào",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_6.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-很.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 7,
@@ -120,12 +157,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ jiào xiǎo míng",
     "example_vi": "Tôi tên là Tiểu Minh",
     "audio": "assets/audio/cmn-叫.mp3",
-    "front_img": "assets/images/cards/lo1/card_7_front.png",
-    "back_img": "assets/images/cards/lo1/card_7_back.png",
+    "front_img": "assets/images/cards/lo1/card_7_front.webp",
+    "back_img": "assets/images/cards/lo1/card_7_back.webp",
     "hanzi_chars": [
       "叫"
     ],
-    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì"
+    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_7.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-叫.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 8,
@@ -138,12 +181,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ shì lǎo shī",
     "example_vi": "Tôi là giáo viên",
     "audio": "assets/audio/cmn-是.mp3",
-    "front_img": "assets/images/cards/lo1/card_8_front.png",
-    "back_img": "assets/images/cards/lo1/card_8_back.png",
+    "front_img": "assets/images/cards/lo1/card_8_front.webp",
+    "back_img": "assets/images/cards/lo1/card_8_back.webp",
     "hanzi_chars": [
       "是"
     ],
-    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì"
+    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_8.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-是.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 9,
@@ -156,12 +205,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "nǐ shì nǎ guó rén?",
     "example_vi": "Bạn là người nước nào?",
     "audio": "assets/audio/cmn-哪.mp3",
-    "front_img": "assets/images/cards/lo1/card_9_front.png",
-    "back_img": "assets/images/cards/lo1/card_9_back.png",
+    "front_img": "assets/images/cards/lo1/card_9_front.webp",
+    "back_img": "assets/images/cards/lo1/card_9_back.webp",
     "hanzi_chars": [
       "哪"
     ],
-    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì"
+    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_9.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-哪.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 10,
@@ -174,12 +229,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "zhōng guó",
     "example_vi": "Nước Trung Quốc",
     "audio": "assets/audio/cmn-国.mp3",
-    "front_img": "assets/images/cards/lo1/card_10_front.png",
-    "back_img": "assets/images/cards/lo1/card_10_back.png",
+    "front_img": "assets/images/cards/lo1/card_10_front.webp",
+    "back_img": "assets/images/cards/lo1/card_10_back.webp",
     "hanzi_chars": [
       "国"
     ],
-    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì"
+    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_10.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-国.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 11,
@@ -192,12 +253,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "yuè nán rén",
     "example_vi": "Người Việt Nam",
     "audio": "assets/audio/cmn-人.mp3",
-    "front_img": "assets/images/cards/lo1/card_11_front.png",
-    "back_img": "assets/images/cards/lo1/card_11_back.png",
+    "front_img": "assets/images/cards/lo1/card_11_front.webp",
+    "back_img": "assets/images/cards/lo1/card_11_back.webp",
     "hanzi_chars": [
       "人"
     ],
-    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì"
+    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_11.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-人.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 12,
@@ -210,13 +277,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ shì yuè nán rén",
     "example_vi": "Tôi là người Việt Nam",
     "audio": "assets/audio/cmn-越南.mp3",
-    "front_img": "assets/images/cards/lo1/card_12_front.png",
-    "back_img": "assets/images/cards/lo1/card_12_back.png",
+    "front_img": "assets/images/cards/lo1/card_12_front.webp",
+    "back_img": "assets/images/cards/lo1/card_12_back.webp",
     "hanzi_chars": [
       "越",
       "南"
     ],
-    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì"
+    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_12.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-越.mp3",
+      "cmn-南.mp3"
+    ]
   },
   {
     "id": 13,
@@ -229,13 +303,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "tā shì yīng guó rén",
     "example_vi": "Anh ấy là người Anh",
     "audio": "assets/audio/cmn-英国.mp3",
-    "front_img": "assets/images/cards/lo1/card_13_front.png",
-    "back_img": "assets/images/cards/lo1/card_13_back.png",
+    "front_img": "assets/images/cards/lo1/card_13_front.webp",
+    "back_img": "assets/images/cards/lo1/card_13_back.webp",
     "hanzi_chars": [
       "英",
       "国"
     ],
-    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì"
+    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_13.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "pinyin/ying1.mp3",
+      "cmn-国.mp3"
+    ]
   },
   {
     "id": 14,
@@ -248,13 +329,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ péng you zài měi guó",
     "example_vi": "Bạn tôi ở Mỹ",
     "audio": "assets/audio/cmn-美国.mp3",
-    "front_img": "assets/images/cards/lo1/card_14_front.png",
-    "back_img": "assets/images/cards/lo1/card_14_back.png",
+    "front_img": "assets/images/cards/lo1/card_14_front.webp",
+    "back_img": "assets/images/cards/lo1/card_14_back.webp",
     "hanzi_chars": [
       "美",
       "国"
     ],
-    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì"
+    "lesson": "Lộ 1 • Bài 14: Bạn tên là gì",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_14.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-美国.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 15,
@@ -267,12 +354,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ jiā zài hé nèi",
     "example_vi": "Nhà tôi ở Hà Nội",
     "audio": "assets/audio/cmn-家.mp3",
-    "front_img": "assets/images/cards/lo1/card_15_front.png",
-    "back_img": "assets/images/cards/lo1/card_15_back.png",
+    "front_img": "assets/images/cards/lo1/card_15_front.webp",
+    "back_img": "assets/images/cards/lo1/card_15_back.webp",
     "hanzi_chars": [
       "家"
     ],
-    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?"
+    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_15.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-家.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 16,
@@ -285,12 +378,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ zài jiā",
     "example_vi": "Tôi ở nhà",
     "audio": "assets/audio/cmn-在.mp3",
-    "front_img": "assets/images/cards/lo1/card_16_front.png",
-    "back_img": "assets/images/cards/lo1/card_16_back.png",
+    "front_img": "assets/images/cards/lo1/card_16_front.webp",
+    "back_img": "assets/images/cards/lo1/card_16_back.webp",
     "hanzi_chars": [
       "在"
     ],
-    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?"
+    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_16.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-在.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 17,
@@ -303,13 +402,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "nǐ zài nǎr?",
     "example_vi": "Bạn đang ở đâu?",
     "audio": "assets/audio/cmn-哪儿.mp3",
-    "front_img": "assets/images/cards/lo1/card_17_front.png",
-    "back_img": "assets/images/cards/lo1/card_17_back.png",
+    "front_img": "assets/images/cards/lo1/card_17_front.webp",
+    "back_img": "assets/images/cards/lo1/card_17_back.webp",
     "hanzi_chars": [
       "哪",
       "儿"
     ],
-    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?"
+    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_17.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-哪.mp3"
+    ]
   },
   {
     "id": 18,
@@ -322,14 +427,22 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "tā jiā zài hú zhì míng",
     "example_vi": "Nhà anh ấy ở TP.HCM",
     "audio": "assets/audio/cmn-胡志明.mp3",
-    "front_img": "assets/images/cards/lo1/card_18_front.png",
-    "back_img": "assets/images/cards/lo1/card_18_back.png",
+    "front_img": "assets/images/cards/lo1/card_18_front.webp",
+    "back_img": "assets/images/cards/lo1/card_18_back.webp",
     "hanzi_chars": [
       "胡",
       "志",
       "明"
     ],
-    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?"
+    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_18.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-胡.mp3",
+      "cmn-志.mp3",
+      "pinyin/ming2.mp3"
+    ]
   },
   {
     "id": 19,
@@ -342,13 +455,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ zhù zài hé nèi",
     "example_vi": "Tôi sống ở Hà Nội",
     "audio": "assets/audio/cmn-河内.mp3",
-    "front_img": "assets/images/cards/lo1/card_19_front.png",
-    "back_img": "assets/images/cards/lo1/card_19_back.png",
+    "front_img": "assets/images/cards/lo1/card_19_front.webp",
+    "back_img": "assets/images/cards/lo1/card_19_back.webp",
     "hanzi_chars": [
       "河",
       "内"
     ],
-    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?"
+    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_19.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-河.mp3",
+      "cmn-内.mp3"
+    ]
   },
   {
     "id": 20,
@@ -361,13 +481,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "tā zhù zài běi jīng",
     "example_vi": "Cô ấy sống ở Bắc Kinh",
     "audio": "assets/audio/cmn-北京.mp3",
-    "front_img": "assets/images/cards/lo1/card_20_front.png",
-    "back_img": "assets/images/cards/lo1/card_20_back.png",
+    "front_img": "assets/images/cards/lo1/card_20_front.webp",
+    "back_img": "assets/images/cards/lo1/card_20_back.webp",
     "hanzi_chars": [
       "北",
       "京"
     ],
-    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?"
+    "lesson": "Lộ 1 • Bài 15: Nhà bạn ở đâu?",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_20.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-北.mp3",
+      "pinyin/jing1.mp3"
+    ]
   },
   {
     "id": 21,
@@ -380,12 +507,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "tā shì wǒ tóng xué",
     "example_vi": "Cô ấy là bạn cùng lớp của tôi",
     "audio": "assets/audio/cmn-她.mp3",
-    "front_img": "assets/images/cards/lo1/card_21_front.png",
-    "back_img": "assets/images/cards/lo1/card_21_back.png",
+    "front_img": "assets/images/cards/lo1/card_21_front.webp",
+    "back_img": "assets/images/cards/lo1/card_21_back.webp",
     "hanzi_chars": [
       "她"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_21.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-她.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 22,
@@ -398,12 +531,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "tā shì lǎo shī",
     "example_vi": "Anh ấy là thầy giáo",
     "audio": "assets/audio/cmn-他.mp3",
-    "front_img": "assets/images/cards/lo1/card_22_front.png",
-    "back_img": "assets/images/cards/lo1/card_22_back.png",
+    "front_img": "assets/images/cards/lo1/card_22_front.webp",
+    "back_img": "assets/images/cards/lo1/card_22_back.webp",
     "hanzi_chars": [
       "他"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_22.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-他.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 23,
@@ -416,12 +555,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "zhè shì shū",
     "example_vi": "Đây là quyển sách",
     "audio": "assets/audio/cmn-这.mp3",
-    "front_img": "assets/images/cards/lo1/card_23_front.png",
-    "back_img": "assets/images/cards/lo1/card_23_back.png",
+    "front_img": "assets/images/cards/lo1/card_23_front.webp",
+    "back_img": "assets/images/cards/lo1/card_23_back.webp",
     "hanzi_chars": [
       "这"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_23.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-这.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 24,
@@ -434,12 +579,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "nà shì wǒ de jiā",
     "example_vi": "Kia là nhà của tôi",
     "audio": "assets/audio/cmn-那.mp3",
-    "front_img": "assets/images/cards/lo1/card_24_front.png",
-    "back_img": "assets/images/cards/lo1/card_24_back.png",
+    "front_img": "assets/images/cards/lo1/card_24_front.webp",
+    "back_img": "assets/images/cards/lo1/card_24_back.webp",
     "hanzi_chars": [
       "那"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_24.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-那.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 25,
@@ -452,13 +603,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ ài bà ba",
     "example_vi": "Tôi yêu bố",
     "audio": "assets/audio/cmn-爸爸.mp3",
-    "front_img": "assets/images/cards/lo1/card_25_front.png",
-    "back_img": "assets/images/cards/lo1/card_25_back.png",
+    "front_img": "assets/images/cards/lo1/card_25_front.webp",
+    "back_img": "assets/images/cards/lo1/card_25_back.webp",
     "hanzi_chars": [
       "爸",
       "爸"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_25.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-爸爸.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 26,
@@ -471,13 +628,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "mā ma zài jiā",
     "example_vi": "Mẹ đang ở nhà",
     "audio": "assets/audio/cmn-妈妈.mp3",
-    "front_img": "assets/images/cards/lo1/card_26_front.png",
-    "back_img": "assets/images/cards/lo1/card_26_back.png",
+    "front_img": "assets/images/cards/lo1/card_26_front.webp",
+    "back_img": "assets/images/cards/lo1/card_26_back.webp",
     "hanzi_chars": [
       "妈",
       "妈"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_26.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-妈妈.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 27,
@@ -490,13 +653,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ yǒu yī gè gē ge",
     "example_vi": "Tôi có một anh trai",
     "audio": "assets/audio/cmn-哥哥.mp3",
-    "front_img": "assets/images/cards/lo1/card_27_front.png",
-    "back_img": "assets/images/cards/lo1/card_27_back.png",
+    "front_img": "assets/images/cards/lo1/card_27_front.webp",
+    "back_img": "assets/images/cards/lo1/card_27_back.webp",
     "hanzi_chars": [
       "哥",
       "哥"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_27.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-哥哥.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 28,
@@ -509,13 +678,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "dì di hěn kě ài",
     "example_vi": "Em trai rất đáng yêu",
     "audio": "assets/audio/cmn-弟弟.mp3",
-    "front_img": "assets/images/cards/lo1/card_28_front.png",
-    "back_img": "assets/images/cards/lo1/card_28_back.png",
+    "front_img": "assets/images/cards/lo1/card_28_front.webp",
+    "back_img": "assets/images/cards/lo1/card_28_back.webp",
     "hanzi_chars": [
       "弟",
       "弟"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_28.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-弟弟.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 29,
@@ -528,13 +703,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "jiě jie zài xué xiào",
     "example_vi": "Chị gái đang ở trường",
     "audio": "assets/audio/cmn-姐姐.mp3",
-    "front_img": "assets/images/cards/lo1/card_29_front.png",
-    "back_img": "assets/images/cards/lo1/card_29_back.png",
+    "front_img": "assets/images/cards/lo1/card_29_front.webp",
+    "back_img": "assets/images/cards/lo1/card_29_back.webp",
     "hanzi_chars": [
       "姐",
       "姐"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_29.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-姐姐.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 30,
@@ -547,13 +728,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "mèi mei xǐ huan huà huà",
     "example_vi": "Em gái thích vẽ tranh",
     "audio": "assets/audio/cmn-妹妹.mp3",
-    "front_img": "assets/images/cards/lo1/card_30_front.png",
-    "back_img": "assets/images/cards/lo1/card_30_back.png",
+    "front_img": "assets/images/cards/lo1/card_30_front.webp",
+    "back_img": "assets/images/cards/lo1/card_30_back.webp",
     "hanzi_chars": [
       "妹",
       "妹"
     ],
-    "lesson": "Lộ 1 • Bài 16: Bố mẹ"
+    "lesson": "Lộ 1 • Bài 16: Bố mẹ",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_30.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-妹妹.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 31,
@@ -566,12 +753,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ yǒu māo",
     "example_vi": "Tôi có mèo",
     "audio": "assets/audio/cmn-有.mp3",
-    "front_img": "assets/images/cards/lo1/card_31_front.png",
-    "back_img": "assets/images/cards/lo1/card_31_back.png",
+    "front_img": "assets/images/cards/lo1/card_31_front.webp",
+    "back_img": "assets/images/cards/lo1/card_31_back.webp",
     "hanzi_chars": [
       "有"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_31.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-有.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 32,
@@ -584,13 +777,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ méi yǒu shū",
     "example_vi": "Tôi không có sách",
     "audio": "assets/audio/cmn-没有.mp3",
-    "front_img": "assets/images/cards/lo1/card_32_front.png",
-    "back_img": "assets/images/cards/lo1/card_32_back.png",
+    "front_img": "assets/images/cards/lo1/card_32_front.webp",
+    "back_img": "assets/images/cards/lo1/card_32_back.webp",
     "hanzi_chars": [
       "没",
       "有"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_32.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-没有.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 33,
@@ -603,12 +802,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "tā yǒu yī zhī māo",
     "example_vi": "Cô ấy có một con mèo",
     "audio": "assets/audio/cmn-猫.mp3",
-    "front_img": "assets/images/cards/lo1/card_33_front.png",
-    "back_img": "assets/images/cards/lo1/card_33_back.png",
+    "front_img": "assets/images/cards/lo1/card_33_front.webp",
+    "back_img": "assets/images/cards/lo1/card_33_back.webp",
     "hanzi_chars": [
       "猫"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_33.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-猫.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 34,
@@ -621,12 +826,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "gǒu hěn dà",
     "example_vi": "Con chó rất to",
     "audio": "assets/audio/cmn-狗.mp3",
-    "front_img": "assets/images/cards/lo1/card_34_front.png",
-    "back_img": "assets/images/cards/lo1/card_34_back.png",
+    "front_img": "assets/images/cards/lo1/card_34_front.webp",
+    "back_img": "assets/images/cards/lo1/card_34_back.webp",
     "hanzi_chars": [
       "狗"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_34.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-狗.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 35,
@@ -639,12 +850,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "yī zhī gǒu",
     "example_vi": "Một con chó",
     "audio": "assets/audio/cmn-只.mp3",
-    "front_img": "assets/images/cards/lo1/card_35_front.png",
-    "back_img": "assets/images/cards/lo1/card_35_back.png",
+    "front_img": "assets/images/cards/lo1/card_35_front.webp",
+    "back_img": "assets/images/cards/lo1/card_35_back.webp",
     "hanzi_chars": [
       "只"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_35.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-只.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 36,
@@ -657,12 +874,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xiǎo gǒu hěn kě ài",
     "example_vi": "Chú chó con rất đáng yêu",
     "audio": "assets/audio/cmn-小.mp3",
-    "front_img": "assets/images/cards/lo1/card_36_front.png",
-    "back_img": "assets/images/cards/lo1/card_36_back.png",
+    "front_img": "assets/images/cards/lo1/card_36_front.webp",
+    "back_img": "assets/images/cards/lo1/card_36_back.webp",
     "hanzi_chars": [
       "小"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_36.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-小.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 37,
@@ -675,12 +898,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "yī gè píng guǒ",
     "example_vi": "Một quả táo",
     "audio": "assets/audio/cmn-一.mp3",
-    "front_img": "assets/images/cards/lo1/card_37_front.png",
-    "back_img": "assets/images/cards/lo1/card_37_back.png",
+    "front_img": "assets/images/cards/lo1/card_37_front.webp",
+    "back_img": "assets/images/cards/lo1/card_37_back.webp",
     "hanzi_chars": [
       "一"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_37.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-一.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 38,
@@ -693,12 +922,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "èr nián jí",
     "example_vi": "Lớp 2",
     "audio": "assets/audio/cmn-二.mp3",
-    "front_img": "assets/images/cards/lo1/card_38_front.png",
-    "back_img": "assets/images/cards/lo1/card_38_back.png",
+    "front_img": "assets/images/cards/lo1/card_38_front.webp",
+    "back_img": "assets/images/cards/lo1/card_38_back.webp",
     "hanzi_chars": [
       "二"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_38.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-二.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 39,
@@ -711,12 +946,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "sān zhī māo",
     "example_vi": "Ba con mèo",
     "audio": "assets/audio/cmn-三.mp3",
-    "front_img": "assets/images/cards/lo1/card_39_front.png",
-    "back_img": "assets/images/cards/lo1/card_39_back.png",
+    "front_img": "assets/images/cards/lo1/card_39_front.webp",
+    "back_img": "assets/images/cards/lo1/card_39_back.webp",
     "hanzi_chars": [
       "三"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_39.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-三.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 40,
@@ -729,12 +970,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "sì běn shū",
     "example_vi": "Bốn quyển sách",
     "audio": "assets/audio/cmn-四.mp3",
-    "front_img": "assets/images/cards/lo1/card_40_front.png",
-    "back_img": "assets/images/cards/lo1/card_40_back.png",
+    "front_img": "assets/images/cards/lo1/card_40_front.webp",
+    "back_img": "assets/images/cards/lo1/card_40_back.webp",
     "hanzi_chars": [
       "四"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_40.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-四.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 41,
@@ -747,12 +994,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǔ gè rén",
     "example_vi": "Năm người",
     "audio": "assets/audio/cmn-五.mp3",
-    "front_img": "assets/images/cards/lo1/card_41_front.png",
-    "back_img": "assets/images/cards/lo1/card_41_back.png",
+    "front_img": "assets/images/cards/lo1/card_41_front.webp",
+    "back_img": "assets/images/cards/lo1/card_41_back.webp",
     "hanzi_chars": [
       "五"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_41.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-五.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 42,
@@ -765,12 +1018,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "liù gè bēi zi",
     "example_vi": "Sáu cái cốc",
     "audio": "assets/audio/cmn-六.mp3",
-    "front_img": "assets/images/cards/lo1/card_42_front.png",
-    "back_img": "assets/images/cards/lo1/card_42_back.png",
+    "front_img": "assets/images/cards/lo1/card_42_front.webp",
+    "back_img": "assets/images/cards/lo1/card_42_back.webp",
     "hanzi_chars": [
       "六"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_42.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-六.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 43,
@@ -783,12 +1042,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "qī zhī niǎo",
     "example_vi": "Bảy con chim",
     "audio": "assets/audio/cmn-七.mp3",
-    "front_img": "assets/images/cards/lo1/card_43_front.png",
-    "back_img": "assets/images/cards/lo1/card_43_back.png",
+    "front_img": "assets/images/cards/lo1/card_43_front.webp",
+    "back_img": "assets/images/cards/lo1/card_43_back.webp",
     "hanzi_chars": [
       "七"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_43.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-七.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 44,
@@ -801,12 +1066,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "bā gè hái zi",
     "example_vi": "Tám đứa trẻ",
     "audio": "assets/audio/cmn-八.mp3",
-    "front_img": "assets/images/cards/lo1/card_44_front.png",
-    "back_img": "assets/images/cards/lo1/card_44_back.png",
+    "front_img": "assets/images/cards/lo1/card_44_front.webp",
+    "back_img": "assets/images/cards/lo1/card_44_back.webp",
     "hanzi_chars": [
       "八"
     ],
-    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo"
+    "lesson": "Lộ 1 • Bài 17: Tôi có một con mèo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_44.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-八.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 45,
@@ -819,12 +1090,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "jiǔ gè shuǐ guǒ",
     "example_vi": "Chín quả trái cây",
     "audio": "assets/audio/cmn-九.mp3",
-    "front_img": "assets/images/cards/lo1/card_45_front.png",
-    "back_img": "assets/images/cards/lo1/card_45_back.png",
+    "front_img": "assets/images/cards/lo1/card_45_front.webp",
+    "back_img": "assets/images/cards/lo1/card_45_back.webp",
     "hanzi_chars": [
       "九"
     ],
-    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to"
+    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_45.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-九.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 46,
@@ -837,12 +1114,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "shí gè píng guǒ",
     "example_vi": "Mười quả táo",
     "audio": "assets/audio/cmn-十.mp3",
-    "front_img": "assets/images/cards/lo1/card_46_front.png",
-    "back_img": "assets/images/cards/lo1/card_46_back.png",
+    "front_img": "assets/images/cards/lo1/card_46_front.webp",
+    "back_img": "assets/images/cards/lo1/card_46_back.webp",
     "hanzi_chars": [
       "十"
     ],
-    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to"
+    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_46.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-十.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 47,
@@ -855,13 +1138,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "zhè shì wǒ de fáng zi",
     "example_vi": "Đây là nhà của tôi",
     "audio": "assets/audio/cmn-房子.mp3",
-    "front_img": "assets/images/cards/lo1/card_47_front.png",
-    "back_img": "assets/images/cards/lo1/card_47_back.png",
+    "front_img": "assets/images/cards/lo1/card_47_front.webp",
+    "back_img": "assets/images/cards/lo1/card_47_back.webp",
     "hanzi_chars": [
       "房",
       "子"
     ],
-    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to"
+    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_47.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-房子.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 48,
@@ -874,12 +1163,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "fáng zi hěn dà",
     "example_vi": "Ngôi nhà rất to",
     "audio": "assets/audio/cmn-大.mp3",
-    "front_img": "assets/images/cards/lo1/card_48_front.png",
-    "back_img": "assets/images/cards/lo1/card_48_back.png",
+    "front_img": "assets/images/cards/lo1/card_48_front.webp",
+    "back_img": "assets/images/cards/lo1/card_48_back.webp",
     "hanzi_chars": [
       "大"
     ],
-    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to"
+    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_48.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-大.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 49,
@@ -892,12 +1187,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "yī gè rén",
     "example_vi": "Một người",
     "audio": "assets/audio/cmn-个.mp3",
-    "front_img": "assets/images/cards/lo1/card_49_front.png",
-    "back_img": "assets/images/cards/lo1/card_49_back.png",
+    "front_img": "assets/images/cards/lo1/card_49_front.webp",
+    "back_img": "assets/images/cards/lo1/card_49_back.webp",
     "hanzi_chars": [
       "个"
     ],
-    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to"
+    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_49.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-个.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 50,
@@ -910,13 +1211,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ yǒu sān gè fáng jiān",
     "example_vi": "Tôi có ba căn phòng",
     "audio": "assets/audio/cmn-房间.mp3",
-    "front_img": "assets/images/cards/lo1/card_50_front.png",
-    "back_img": "assets/images/cards/lo1/card_50_back.png",
+    "front_img": "assets/images/cards/lo1/card_50_front.webp",
+    "back_img": "assets/images/cards/lo1/card_50_back.webp",
     "hanzi_chars": [
       "房",
       "间"
     ],
-    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to"
+    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_50.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-房间.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 51,
@@ -929,13 +1236,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "chú fáng hěn gān jìng",
     "example_vi": "Nhà bếp rất sạch sẽ",
     "audio": "assets/audio/cmn-厨房.mp3",
-    "front_img": "assets/images/cards/lo1/card_51_front.png",
-    "back_img": "assets/images/cards/lo1/card_51_back.png",
+    "front_img": "assets/images/cards/lo1/card_51_front.webp",
+    "back_img": "assets/images/cards/lo1/card_51_back.webp",
     "hanzi_chars": [
       "厨",
       "房"
     ],
-    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to"
+    "lesson": "Lộ 1 • Bài 18: Nhà tôi không to",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_51.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-厨房.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 52,
@@ -948,13 +1261,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ xǐ huan chī shuǐ guǒ",
     "example_vi": "Tôi thích ăn trái cây",
     "audio": "assets/audio/cmn-水果.mp3",
-    "front_img": "assets/images/cards/lo1/card_52_front.png",
-    "back_img": "assets/images/cards/lo1/card_52_back.png",
+    "front_img": "assets/images/cards/lo1/card_52_front.webp",
+    "back_img": "assets/images/cards/lo1/card_52_back.webp",
     "hanzi_chars": [
       "水",
       "果"
     ],
-    "lesson": "Lộ 1 • Bài 20: Tôi mua táo"
+    "lesson": "Lộ 1 • Bài 20: Tôi mua táo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_52.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-水果.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 53,
@@ -967,13 +1286,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "sān gè píng guǒ",
     "example_vi": "Ba quả táo",
     "audio": "assets/audio/cmn-苹果.mp3",
-    "front_img": "assets/images/cards/lo1/card_53_front.png",
-    "back_img": "assets/images/cards/lo1/card_53_back.png",
+    "front_img": "assets/images/cards/lo1/card_53_front.webp",
+    "back_img": "assets/images/cards/lo1/card_53_back.webp",
     "hanzi_chars": [
       "苹",
       "果"
     ],
-    "lesson": "Lộ 1 • Bài 20: Tôi mua táo"
+    "lesson": "Lộ 1 • Bài 20: Tôi mua táo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_53.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-苹果.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 54,
@@ -986,13 +1311,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "píng guǒ guǒ zhī",
     "example_vi": "Nước ép táo",
     "audio": "assets/audio/cmn-果汁.mp3",
-    "front_img": "assets/images/cards/lo1/card_54_front.png",
-    "back_img": "assets/images/cards/lo1/card_54_back.png",
+    "front_img": "assets/images/cards/lo1/card_54_front.webp",
+    "back_img": "assets/images/cards/lo1/card_54_back.webp",
     "hanzi_chars": [
       "果",
       "汁"
     ],
-    "lesson": "Lộ 1 • Bài 20: Tôi mua táo"
+    "lesson": "Lộ 1 • Bài 20: Tôi mua táo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_54.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "pinyin/guo3.mp3",
+      "cmn-汁.mp3"
+    ]
   },
   {
     "id": 55,
@@ -1005,13 +1337,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "yī píng qì shuǐ",
     "example_vi": "Một chai nước ngọt",
     "audio": "assets/audio/cmn-汽水.mp3",
-    "front_img": "assets/images/cards/lo1/card_55_front.png",
-    "back_img": "assets/images/cards/lo1/card_55_back.png",
+    "front_img": "assets/images/cards/lo1/card_55_front.webp",
+    "back_img": "assets/images/cards/lo1/card_55_back.webp",
     "hanzi_chars": [
       "汽",
       "水"
     ],
-    "lesson": "Lộ 1 • Bài 20: Tôi mua táo"
+    "lesson": "Lộ 1 • Bài 20: Tôi mua táo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_55.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-汽水.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 56,
@@ -1024,12 +1362,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ xǐ huan hē chá",
     "example_vi": "Tôi thích uống trà",
     "audio": "assets/audio/cmn-茶.mp3",
-    "front_img": "assets/images/cards/lo1/card_56_front.png",
-    "back_img": "assets/images/cards/lo1/card_56_back.png",
+    "front_img": "assets/images/cards/lo1/card_56_front.webp",
+    "back_img": "assets/images/cards/lo1/card_56_back.webp",
     "hanzi_chars": [
       "茶"
     ],
-    "lesson": "Lộ 1 • Bài 20: Tôi mua táo"
+    "lesson": "Lộ 1 • Bài 20: Tôi mua táo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_56.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-茶.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 57,
@@ -1042,12 +1386,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ yào hē shuǐ",
     "example_vi": "Tôi muốn uống nước",
     "audio": "assets/audio/cmn-要.mp3",
-    "front_img": "assets/images/cards/lo1/card_57_front.png",
-    "back_img": "assets/images/cards/lo1/card_57_back.png",
+    "front_img": "assets/images/cards/lo1/card_57_front.webp",
+    "back_img": "assets/images/cards/lo1/card_57_back.webp",
     "hanzi_chars": [
       "要"
     ],
-    "lesson": "Lộ 1 • Bài 20: Tôi mua táo"
+    "lesson": "Lộ 1 • Bài 20: Tôi mua táo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_57.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-要.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 58,
@@ -1060,12 +1410,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "nǐ ne?",
     "example_vi": "Còn bạn thì sao?",
     "audio": "assets/audio/cmn-呢.mp3",
-    "front_img": "assets/images/cards/lo1/card_58_front.png",
-    "back_img": "assets/images/cards/lo1/card_58_back.png",
+    "front_img": "assets/images/cards/lo1/card_58_front.webp",
+    "back_img": "assets/images/cards/lo1/card_58_back.webp",
     "hanzi_chars": [
       "呢"
     ],
-    "lesson": "Lộ 1 • Bài 20: Tôi mua táo"
+    "lesson": "Lộ 1 • Bài 20: Tôi mua táo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_58.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-呢.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 59,
@@ -1078,13 +1434,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ xǐ huan píng guǒ",
     "example_vi": "Tôi thích táo",
     "audio": "assets/audio/cmn-喜欢.mp3",
-    "front_img": "assets/images/cards/lo1/card_59_front.png",
-    "back_img": "assets/images/cards/lo1/card_59_back.png",
+    "front_img": "assets/images/cards/lo1/card_59_front.webp",
+    "back_img": "assets/images/cards/lo1/card_59_back.webp",
     "hanzi_chars": [
       "喜",
       "欢"
     ],
-    "lesson": "Lộ 1 • Bài 20: Tôi mua táo"
+    "lesson": "Lộ 1 • Bài 20: Tôi mua táo",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_59.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-喜欢.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 60,
@@ -1097,13 +1459,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ ài chī hǎi xiān",
     "example_vi": "Tôi thích ăn hải sản",
     "audio": "assets/audio/cmn-海鲜.mp3",
-    "front_img": "assets/images/cards/lo1/card_60_front.png",
-    "back_img": "assets/images/cards/lo1/card_60_back.png",
+    "front_img": "assets/images/cards/lo1/card_60_front.webp",
+    "back_img": "assets/images/cards/lo1/card_60_back.webp",
     "hanzi_chars": [
       "海",
       "鲜"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_60.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-海.mp3",
+      "cmn-鲜.mp3"
+    ]
   },
   {
     "id": 61,
@@ -1116,12 +1485,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ yě xǐ huan māo",
     "example_vi": "Tôi cũng thích mèo",
     "audio": "assets/audio/cmn-也.mp3",
-    "front_img": "assets/images/cards/lo1/card_61_front.png",
-    "back_img": "assets/images/cards/lo1/card_61_back.png",
+    "front_img": "assets/images/cards/lo1/card_61_front.webp",
+    "back_img": "assets/images/cards/lo1/card_61_back.webp",
     "hanzi_chars": [
       "也"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_61.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-也.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 62,
@@ -1134,12 +1509,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "mā ma zuò de cài hěn hǎo chī",
     "example_vi": "Món mẹ nấu rất ngon",
     "audio": "assets/audio/cmn-菜.mp3",
-    "front_img": "assets/images/cards/lo1/card_62_front.png",
-    "back_img": "assets/images/cards/lo1/card_62_back.png",
+    "front_img": "assets/images/cards/lo1/card_62_front.webp",
+    "back_img": "assets/images/cards/lo1/card_62_back.webp",
     "hanzi_chars": [
       "菜"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_62.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-菜.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 63,
@@ -1152,13 +1533,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "niú ròu hěn hǎo chī",
     "example_vi": "Thịt bò rất ngon",
     "audio": "assets/audio/cmn-牛肉.mp3",
-    "front_img": "assets/images/cards/lo1/card_63_front.png",
-    "back_img": "assets/images/cards/lo1/card_63_back.png",
+    "front_img": "assets/images/cards/lo1/card_63_front.webp",
+    "back_img": "assets/images/cards/lo1/card_63_back.webp",
     "hanzi_chars": [
       "牛",
       "肉"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_63.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-牛.mp3",
+      "cmn-肉.mp3"
+    ]
   },
   {
     "id": 64,
@@ -1171,12 +1559,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ bù chī yú",
     "example_vi": "Tôi không ăn cá",
     "audio": "assets/audio/cmn-鱼.mp3",
-    "front_img": "assets/images/cards/lo1/card_64_front.png",
-    "back_img": "assets/images/cards/lo1/card_64_back.png",
+    "front_img": "assets/images/cards/lo1/card_64_front.webp",
+    "back_img": "assets/images/cards/lo1/card_64_back.webp",
     "hanzi_chars": [
       "鱼"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_64.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-鱼.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 65,
@@ -1189,13 +1583,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ ài chī mǐ fàn",
     "example_vi": "Tôi thích ăn cơm",
     "audio": "assets/audio/cmn-米饭.mp3",
-    "front_img": "assets/images/cards/lo1/card_65_front.png",
-    "back_img": "assets/images/cards/lo1/card_65_back.png",
+    "front_img": "assets/images/cards/lo1/card_65_front.webp",
+    "back_img": "assets/images/cards/lo1/card_65_back.webp",
     "hanzi_chars": [
       "米",
       "饭"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_65.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-米饭.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 66,
@@ -1208,13 +1608,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǒ bù xǐ huan chī miàn tiáo",
     "example_vi": "Tôi không thích ăn mì",
     "audio": "assets/audio/cmn-面条.mp3",
-    "front_img": "assets/images/cards/lo1/card_66_front.png",
-    "back_img": "assets/images/cards/lo1/card_66_back.png",
+    "front_img": "assets/images/cards/lo1/card_66_front.webp",
+    "back_img": "assets/images/cards/lo1/card_66_back.webp",
     "hanzi_chars": [
       "面",
       "条"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_66.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-面.mp3",
+      "cmn-条.mp3"
+    ]
   },
   {
     "id": 67,
@@ -1227,13 +1634,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "zhè gè xīng qī",
     "example_vi": "Tuần này",
     "audio": "assets/audio/cmn-星期.mp3",
-    "front_img": "assets/images/cards/lo1/card_67_front.png",
-    "back_img": "assets/images/cards/lo1/card_67_back.png",
+    "front_img": "assets/images/cards/lo1/card_67_front.webp",
+    "back_img": "assets/images/cards/lo1/card_67_back.webp",
     "hanzi_chars": [
       "星",
       "期"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_67.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-星期.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 68,
@@ -1246,14 +1659,21 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xīng qī yī wǒ yǒu zhōng wén kè",
     "example_vi": "Thứ Hai tôi có tiết tiếng Trung",
     "audio": "assets/audio/cmn-星期一.mp3",
-    "front_img": "assets/images/cards/lo1/card_68_front.png",
-    "back_img": "assets/images/cards/lo1/card_68_back.png",
+    "front_img": "assets/images/cards/lo1/card_68_front.webp",
+    "back_img": "assets/images/cards/lo1/card_68_back.webp",
     "hanzi_chars": [
       "星",
       "期",
       "一"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_68.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-星期.mp3",
+      "cmn-一.mp3"
+    ]
   },
   {
     "id": 69,
@@ -1266,14 +1686,21 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xīng qī èr jiàn",
     "example_vi": "Hẹn gặp vào thứ Ba",
     "audio": "assets/audio/cmn-星期二.mp3",
-    "front_img": "assets/images/cards/lo1/card_69_front.png",
-    "back_img": "assets/images/cards/lo1/card_69_back.png",
+    "front_img": "assets/images/cards/lo1/card_69_front.webp",
+    "back_img": "assets/images/cards/lo1/card_69_back.webp",
     "hanzi_chars": [
       "星",
       "期",
       "二"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_69.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-星期.mp3",
+      "cmn-二.mp3"
+    ]
   },
   {
     "id": 70,
@@ -1286,14 +1713,21 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xīng qī sān qù tú shū guǎn",
     "example_vi": "Thứ Tư đi thư viện",
     "audio": "assets/audio/cmn-星期三.mp3",
-    "front_img": "assets/images/cards/lo1/card_70_front.png",
-    "back_img": "assets/images/cards/lo1/card_70_back.png",
+    "front_img": "assets/images/cards/lo1/card_70_front.webp",
+    "back_img": "assets/images/cards/lo1/card_70_back.webp",
     "hanzi_chars": [
       "星",
       "期",
       "三"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_70.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-星期.mp3",
+      "cmn-三.mp3"
+    ]
   },
   {
     "id": 71,
@@ -1306,14 +1740,21 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xīng qī sì pǎo bù",
     "example_vi": "Thứ Năm chạy bộ",
     "audio": "assets/audio/cmn-星期四.mp3",
-    "front_img": "assets/images/cards/lo1/card_71_front.png",
-    "back_img": "assets/images/cards/lo1/card_71_back.png",
+    "front_img": "assets/images/cards/lo1/card_71_front.webp",
+    "back_img": "assets/images/cards/lo1/card_71_back.webp",
     "hanzi_chars": [
       "星",
       "期",
       "四"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_71.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-星期.mp3",
+      "cmn-四.mp3"
+    ]
   },
   {
     "id": 72,
@@ -1326,14 +1767,21 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xīng qī wǔ huí jiā",
     "example_vi": "Thứ Sáu về nhà",
     "audio": "assets/audio/cmn-星期五.mp3",
-    "front_img": "assets/images/cards/lo1/card_72_front.png",
-    "back_img": "assets/images/cards/lo1/card_72_back.png",
+    "front_img": "assets/images/cards/lo1/card_72_front.webp",
+    "back_img": "assets/images/cards/lo1/card_72_back.webp",
     "hanzi_chars": [
       "星",
       "期",
       "五"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_72.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-星期.mp3",
+      "cmn-五.mp3"
+    ]
   },
   {
     "id": 73,
@@ -1346,14 +1794,21 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xīng qī liù xiū xi",
     "example_vi": "Thứ Bảy nghỉ ngơi",
     "audio": "assets/audio/cmn-星期六.mp3",
-    "front_img": "assets/images/cards/lo1/card_73_front.png",
-    "back_img": "assets/images/cards/lo1/card_73_back.png",
+    "front_img": "assets/images/cards/lo1/card_73_front.webp",
+    "back_img": "assets/images/cards/lo1/card_73_back.webp",
     "hanzi_chars": [
       "星",
       "期",
       "六"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_73.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-星期.mp3",
+      "cmn-六.mp3"
+    ]
   },
   {
     "id": 74,
@@ -1366,14 +1821,21 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xīng qī tiān qù gōng yuán",
     "example_vi": "Chủ Nhật đi công viên",
     "audio": "assets/audio/cmn-星期天.mp3",
-    "front_img": "assets/images/cards/lo1/card_74_front.png",
-    "back_img": "assets/images/cards/lo1/card_74_back.png",
+    "front_img": "assets/images/cards/lo1/card_74_front.webp",
+    "back_img": "assets/images/cards/lo1/card_74_back.webp",
     "hanzi_chars": [
       "星",
       "期",
       "天"
     ],
-    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản"
+    "lesson": "Lộ 1 • Bài 21: Tôi thích ăn hải sản",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_74.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-星期.mp3",
+      "cmn-天.mp3"
+    ]
   },
   {
     "id": 75,
@@ -1386,13 +1848,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "zhōng wén kè",
     "example_vi": "Tiết học tiếng Trung",
     "audio": "assets/audio/cmn-中文.mp3",
-    "front_img": "assets/images/cards/lo1/card_75_front.png",
-    "back_img": "assets/images/cards/lo1/card_75_back.png",
+    "front_img": "assets/images/cards/lo1/card_75_front.webp",
+    "back_img": "assets/images/cards/lo1/card_75_back.webp",
     "hanzi_chars": [
       "中",
       "文"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_75.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-中文.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 76,
@@ -1405,13 +1873,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "yīng yǔ lǎo shī",
     "example_vi": "Giáo viên tiếng Anh",
     "audio": "assets/audio/cmn-英语.mp3",
-    "front_img": "assets/images/cards/lo1/card_76_front.png",
-    "back_img": "assets/images/cards/lo1/card_76_back.png",
+    "front_img": "assets/images/cards/lo1/card_76_front.webp",
+    "back_img": "assets/images/cards/lo1/card_76_back.webp",
     "hanzi_chars": [
       "英",
       "语"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_76.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-英语.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 77,
@@ -1424,13 +1898,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "fǎ wén kè",
     "example_vi": "Tiết học tiếng Pháp",
     "audio": "assets/audio/cmn-法文.mp3",
-    "front_img": "assets/images/cards/lo1/card_77_front.png",
-    "back_img": "assets/images/cards/lo1/card_77_back.png",
+    "front_img": "assets/images/cards/lo1/card_77_front.webp",
+    "back_img": "assets/images/cards/lo1/card_77_back.webp",
     "hanzi_chars": [
       "法",
       "文"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_77.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-法.mp3",
+      "cmn-文.mp3"
+    ]
   },
   {
     "id": 78,
@@ -1443,13 +1924,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "tǐ yù guǎn",
     "example_vi": "Nhà thi đấu thể dục",
     "audio": "assets/audio/cmn-体育.mp3",
-    "front_img": "assets/images/cards/lo1/card_78_front.png",
-    "back_img": "assets/images/cards/lo1/card_78_back.png",
+    "front_img": "assets/images/cards/lo1/card_78_front.webp",
+    "back_img": "assets/images/cards/lo1/card_78_back.webp",
     "hanzi_chars": [
       "体",
       "育"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_78.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-体育.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 79,
@@ -1462,12 +1949,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "zhōng wén kè",
     "example_vi": "Tiết tiếng Trung",
     "audio": "assets/audio/cmn-课.mp3",
-    "front_img": "assets/images/cards/lo1/card_79_front.png",
-    "back_img": "assets/images/cards/lo1/card_79_back.png",
+    "front_img": "assets/images/cards/lo1/card_79_front.webp",
+    "back_img": "assets/images/cards/lo1/card_79_back.webp",
     "hanzi_chars": [
       "课"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_79.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-课.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 80,
@@ -1480,13 +1973,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "xiàn zài jǐ diǎn?",
     "example_vi": "Bây giờ là mấy giờ?",
     "audio": "assets/audio/cmn-现在.mp3",
-    "front_img": "assets/images/cards/lo1/card_80_front.png",
-    "back_img": "assets/images/cards/lo1/card_80_back.png",
+    "front_img": "assets/images/cards/lo1/card_80_front.webp",
+    "back_img": "assets/images/cards/lo1/card_80_back.webp",
     "hanzi_chars": [
       "现",
       "在"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_80.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-现在.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 81,
@@ -1499,12 +1998,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "jǐ diǎn",
     "example_vi": "Mấy giờ",
     "audio": "assets/audio/cmn-几.mp3",
-    "front_img": "assets/images/cards/lo1/card_81_front.png",
-    "back_img": "assets/images/cards/lo1/card_81_back.png",
+    "front_img": "assets/images/cards/lo1/card_81_front.webp",
+    "back_img": "assets/images/cards/lo1/card_81_back.webp",
     "hanzi_chars": [
       "几"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_81.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-几.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 82,
@@ -1517,12 +2022,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "bā diǎn",
     "example_vi": "Tám giờ",
     "audio": "assets/audio/cmn-点.mp3",
-    "front_img": "assets/images/cards/lo1/card_82_front.png",
-    "back_img": "assets/images/cards/lo1/card_82_back.png",
+    "front_img": "assets/images/cards/lo1/card_82_front.webp",
+    "back_img": "assets/images/cards/lo1/card_82_back.webp",
     "hanzi_chars": [
       "点"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_82.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-点.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 83,
@@ -1535,12 +2046,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "bā diǎn bàn",
     "example_vi": "Tám giờ rưỡi",
     "audio": "assets/audio/cmn-半.mp3",
-    "front_img": "assets/images/cards/lo1/card_83_front.png",
-    "back_img": "assets/images/cards/lo1/card_83_back.png",
+    "front_img": "assets/images/cards/lo1/card_83_front.webp",
+    "back_img": "assets/images/cards/lo1/card_83_back.webp",
     "hanzi_chars": [
       "半"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_83.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-半.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 84,
@@ -1553,12 +2070,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "wǔ fēn",
     "example_vi": "Năm phút",
     "audio": "assets/audio/cmn-分.mp3",
-    "front_img": "assets/images/cards/lo1/card_84_front.png",
-    "back_img": "assets/images/cards/lo1/card_84_back.png",
+    "front_img": "assets/images/cards/lo1/card_84_front.webp",
+    "back_img": "assets/images/cards/lo1/card_84_back.webp",
     "hanzi_chars": [
       "分"
     ],
-    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung"
+    "lesson": "Lộ 1 • Bài 22: Tôi có tiết tiếng Trung",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_84.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-分.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 85,
@@ -1571,12 +2094,18 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "qù xué xiào",
     "example_vi": "Đi đến trường",
     "audio": "assets/audio/cmn-去.mp3",
-    "front_img": "assets/images/cards/lo1/card_85_front.png",
-    "back_img": "assets/images/cards/lo1/card_85_back.png",
+    "front_img": "assets/images/cards/lo1/card_85_front.webp",
+    "back_img": "assets/images/cards/lo1/card_85_back.webp",
     "hanzi_chars": [
       "去"
     ],
-    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện"
+    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_85.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-去.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 86,
@@ -1589,14 +2118,21 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "qù yùn dòng chǎng",
     "example_vi": "Đi ra sân thể thao",
     "audio": "assets/audio/cmn-运动场.mp3",
-    "front_img": "assets/images/cards/lo1/card_86_front.png",
-    "back_img": "assets/images/cards/lo1/card_86_back.png",
+    "front_img": "assets/images/cards/lo1/card_86_front.webp",
+    "back_img": "assets/images/cards/lo1/card_86_back.webp",
     "hanzi_chars": [
       "运",
       "动",
       "场"
     ],
-    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện"
+    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_86.webp",
+    "audio_type": "native_concat",
+    "audio_sources": [
+      "cmn-运动.mp3",
+      "cmn-场.mp3"
+    ]
   },
   {
     "id": 87,
@@ -1609,14 +2145,20 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "qù tú shū guǎn",
     "example_vi": "Đi thư viện",
     "audio": "assets/audio/cmn-图书馆.mp3",
-    "front_img": "assets/images/cards/lo1/card_87_front.png",
-    "back_img": "assets/images/cards/lo1/card_87_back.png",
+    "front_img": "assets/images/cards/lo1/card_87_front.webp",
+    "back_img": "assets/images/cards/lo1/card_87_back.webp",
     "hanzi_chars": [
       "图",
       "书",
       "馆"
     ],
-    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện"
+    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_87.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-图书馆.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 88,
@@ -1629,13 +2171,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "zhōng wén jiào shì",
     "example_vi": "Phòng học tiếng Trung",
     "audio": "assets/audio/cmn-教室.mp3",
-    "front_img": "assets/images/cards/lo1/card_88_front.png",
-    "back_img": "assets/images/cards/lo1/card_88_back.png",
+    "front_img": "assets/images/cards/lo1/card_88_front.webp",
+    "back_img": "assets/images/cards/lo1/card_88_back.webp",
     "hanzi_chars": [
       "教",
       "室"
     ],
-    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện"
+    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_88.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-教室.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 89,
@@ -1648,13 +2196,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "qù lǐ táng",
     "example_vi": "Đi hội trường",
     "audio": "assets/audio/cmn-礼堂.mp3",
-    "front_img": "assets/images/cards/lo1/card_89_front.png",
-    "back_img": "assets/images/cards/lo1/card_89_back.png",
+    "front_img": "assets/images/cards/lo1/card_89_front.webp",
+    "back_img": "assets/images/cards/lo1/card_89_back.webp",
     "hanzi_chars": [
       "礼",
       "堂"
     ],
-    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện"
+    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_89.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-礼堂.mp3 (Shtooka human)"
+    ]
   },
   {
     "id": 90,
@@ -1667,13 +2221,19 @@ window.FLASHCARDS_DATA_LO1 = [
     "example_pinyin": "tǐ yù guǎn lǐ",
     "example_vi": "Trong nhà thi đấu",
     "audio": "assets/audio/cmn-体育馆.mp3",
-    "front_img": "assets/images/cards/lo1/card_90_front.png",
-    "back_img": "assets/images/cards/lo1/card_90_back.png",
+    "front_img": "assets/images/cards/lo1/card_90_front.webp",
+    "back_img": "assets/images/cards/lo1/card_90_back.webp",
     "hanzi_chars": [
       "体",
       "育",
       "馆"
     ],
-    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện"
+    "lesson": "Lộ 1 • Bài 24: Tôi đi thư viện",
+    "level": "lo1",
+    "thumb_img": "assets/images/cards/lo1/thumb_90.webp",
+    "audio_type": "native_exact",
+    "audio_sources": [
+      "cmn-体育馆.mp3 (Shtooka human)"
+    ]
   }
 ];

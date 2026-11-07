@@ -1,77 +1,122 @@
 /**
- * KHỔNG TỬ NHÍ • Flashcard & Luyện Viết Hanzi
- * Client-side PWA / Mobile Web App (Zero server requirement, 100% offline & local audio)
+ * KHỔNG TỬ NHÍ • FLASHCARD & LUYỆN VIẾT CHỮ HÁN (LỘ 1 – LỘ 7)
+ * Cơ chế ôn tập đơn giản cố định 1–3–7–14–30 ngày (Không dùng FSRS / SM-2 / Anki)
  */
 
 (function () {
   'use strict';
 
-  // --- STATE ---
-  const initialLevel = localStorage.getItem('ktn_active_level') || 'lo1';
+  // Lịch giãn ngày cố định khi bấm "Nhớ rồi": 1 -> 3 -> 7 -> 14 -> 30 ngày
+  const FIXED_REVIEW_DAYS = [1, 3, 7, 14, 30];
+
+  const LEVEL_LABELS = {
+    lo1: 'Lộ 1 • 90 Thẻ Từ Vựng',
+    lo2: 'Lộ 2 • 109 Thẻ Từ Vựng',
+    lo3: 'Lộ 3 • 96 Thẻ Từ Vựng',
+    lo4: 'Lộ 4 • 100 Thẻ Từ Vựng',
+    lo5: 'Lộ 5 • 92 Thẻ Từ Vựng',
+    lo6: 'Lộ 6 • 88 Thẻ Từ Vựng',
+    lo7: 'Lộ 7 • 30 Thẻ Từ Vựng',
+  };
+
+  function getLevelCards(levelKey) {
+    if (window.FLASHCARDS_DATA_BY_LEVEL && window.FLASHCARDS_DATA_BY_LEVEL[levelKey]) {
+      return window.FLASHCARDS_DATA_BY_LEVEL[levelKey];
+    }
+    return window.FLASHCARDS_DATA || [];
+  }
+
+  function formatDateYMD(dateObj) {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function addDaysYMD(baseYMD, daysToAdd) {
+    const parts = (baseYMD || formatDateYMD(new Date())).split('-').map(Number);
+    const dt = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1, 12, 0, 0);
+    dt.setDate(dt.getDate() + daysToAdd);
+    return formatDateYMD(dt);
+  }
+
+  function getTodayYMD() {
+    if (window.__KTN_MOCK_TODAY__) return window.__KTN_MOCK_TODAY__;
+    return formatDateYMD(new Date());
+  }
+
+  const savedLevel = localStorage.getItem('ktn_flashcard_active_level') || 'lo1';
+
   const state = {
-    activeLevel: initialLevel,
-    allCards: (window.FLASHCARDS_DATA_BY_LEVEL && window.FLASHCARDS_DATA_BY_LEVEL[initialLevel])
-      ? window.FLASHCARDS_DATA_BY_LEVEL[initialLevel]
-      : (window.FLASHCARDS_DATA || []),
+    activeLevel: LEVEL_LABELS[savedLevel] ? savedLevel : 'lo1',
+    allCards: [],
     filteredCards: [],
     currentIndex: 0,
     isFlipped: false,
-    currentFilter: 'all',
+    activeCategory: 'all',
     drawerFilter: 'all',
-    storageKey: 'ktn_flashcard_progress_' + initialLevel,
+    drawerSearchQuery: '',
+    // Map<cardId, { cardId, level, reviewStep, nextReviewDate, lastReviewedAt, status }>
+    recordsMap: {},
+    // Legacy compatibility sets
     reviewSet: new Set(),
     masteredSet: new Set(),
-    // Writing modal state
+    // HanziWriter state
     activeWriter: null,
-    activeCharIdx: 0,
+    compoundWriters: [],
+    isCompoundMode: false,
+    compoundQuizActiveIdx: 0,
     currentCharList: [],
+    activeCharIdx: 0,
     showOutline: true,
     isQuizMode: false,
-    isCompoundMode: false,
-    compoundWriters: [],
-    compoundQuizActiveIdx: 0,
   };
 
-  // --- DOM ELEMENTS ---
+  state.allCards = getLevelCards(state.activeLevel);
+  state.filteredCards = [...state.allCards];
+
   const dom = {
-    // Header & counters
     levelSelect: document.getElementById('levelSelect'),
-    headerWordCount: document.getElementById('headerWordCount'),
+    networkBadge: document.getElementById('networkBadge'),
+    categoryNav: document.getElementById('categoryNav'),
     progressBarFill: document.getElementById('progressBarFill'),
     currentCardIndexText: document.getElementById('currentCardIndexText'),
     currentCardStatus: document.getElementById('currentCardStatus'),
-    reviewCount: document.getElementById('reviewCount'),
-    masteredCount: document.getElementById('masteredCount'),
-
-    // Category nav
-    categoryNav: document.getElementById('categoryNav'),
-
-    // Card scene & images
+    headerWordCount: document.getElementById('headerWordCount'),
+    todayReviewBanner: document.getElementById('todayReviewBanner'),
+    todayReviewMessage: document.getElementById('todayReviewMessage'),
+    dueTodayBannerNum: document.getElementById('dueTodayBannerNum'),
+    btnStartTodayReview: document.getElementById('btnStartTodayReview'),
+    statDuePill: document.getElementById('statDuePill'),
+    statRememberedPill: document.getElementById('statRememberedPill'),
+    statRelearnPill: document.getElementById('statRelearnPill'),
+    statDueCount: document.getElementById('statDueCount'),
+    statRememberedCount: document.getElementById('statRememberedCount'),
+    statRelearnCount: document.getElementById('statRelearnCount'),
     cardScene: document.getElementById('cardScene'),
     flashcard: document.getElementById('flashcard'),
     cardFrontImg: document.getElementById('cardFrontImg'),
     cardBackImg: document.getElementById('cardBackImg'),
     btnAudioFront: document.getElementById('btnAudioFront'),
     btnAudioBack: document.getElementById('btnAudioBack'),
-
-    // Bottom toolbar
     btnPrev: document.getElementById('btnPrev'),
+    btnNext: document.getElementById('btnNext'),
     btnFlip: document.getElementById('btnFlip'),
     btnOpenWrite: document.getElementById('btnOpenWrite'),
-    btnNext: document.getElementById('btnNext'),
     btnMarkReview: document.getElementById('btnMarkReview'),
     btnMarkMastered: document.getElementById('btnMarkMastered'),
-
-    // Write modal
+    forgotSubHint: document.getElementById('forgotSubHint'),
+    rememberedSubHint: document.getElementById('rememberedSubHint'),
     writeModal: document.getElementById('writeModal'),
     btnCloseWrite: document.getElementById('btnCloseWrite'),
+    btnWriteAudio: document.getElementById('btnWriteAudio'),
     writeWordTitle: document.getElementById('writeWordTitle'),
     writePinyinTitle: document.getElementById('writePinyinTitle'),
-    btnWriteAudio: document.getElementById('btnWriteAudio'),
     writeCharTabs: document.getElementById('writeCharTabs'),
     singleMeiziContainer: document.getElementById('singleMeiziContainer'),
     compoundMeiziContainer: document.getElementById('compoundMeiziContainer'),
     hanziWriterTarget: document.getElementById('hanziWriterTarget'),
+    strokeOfflineNotice: document.getElementById('strokeOfflineNotice'),
     btnAnimateStroke: document.getElementById('btnAnimateStroke'),
     btnQuizStroke: document.getElementById('btnQuizStroke'),
     btnResetStroke: document.getElementById('btnResetStroke'),
@@ -79,232 +124,485 @@
     quizSuccessOverlay: document.getElementById('quizSuccessOverlay'),
     quizMistakeFeedback: document.getElementById('quizMistakeFeedback'),
     btnNextCharOrClose: document.getElementById('btnNextCharOrClose'),
-
-    // Word drawer
     btnDrawerOpen: document.getElementById('btnDrawerOpen'),
     btnDrawerClose: document.getElementById('btnDrawerClose'),
-    drawerSubtitle: document.getElementById('drawerSubtitle'),
     wordDrawerBackdrop: document.getElementById('wordDrawerBackdrop'),
     drawerWordList: document.getElementById('drawerWordList'),
-    drawerFilterChips: document.querySelectorAll('.drawer-filter-chips .drawer-chip'),
-
-    // Toast & Audio
+    drawerSubtitle: document.getElementById('drawerSubtitle'),
+    drawerSearchInput: document.getElementById('drawerSearchInput'),
+    drawerFilterChips: document.querySelectorAll('.drawer-chip'),
     toastMessage: document.getElementById('toastMessage'),
     nativeAudioPlayer: document.getElementById('nativeAudioPlayer'),
   };
 
-  // --- LOCAL STORAGE SYNC ---
+  // ==============================================================
+  // STORAGE & MIGRATION (Phase 2)
+  // Lưu tối thiểu: cardId, level, reviewStep, nextReviewDate, lastReviewedAt
+  // ==============================================================
+  function getSrsStorageKey(level) {
+    return `ktn_flashcard_srs_v2_${level || state.activeLevel}`;
+  }
+
+  function getLegacyStorageKey(level) {
+    return `ktn_flashcard_progress_${level || state.activeLevel}`;
+  }
+
+  function syncLegacySetsFromRecords() {
+    state.reviewSet = new Set();
+    state.masteredSet = new Set();
+    Object.values(state.recordsMap).forEach(rec => {
+      if (!rec || !rec.cardId) return;
+      if (rec.reviewStep >= 1) {
+        state.masteredSet.add(rec.cardId);
+      } else if (rec.status === 'forgot' || rec.reviewStep === 0) {
+        state.reviewSet.add(rec.cardId);
+      }
+    });
+  }
+
   function loadProgress() {
+    state.recordsMap = {};
+    const today = getTodayYMD();
+
     try {
-      const saved = localStorage.getItem(state.storageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        state.reviewSet = new Set(parsed.review || []);
-        state.masteredSet = new Set(parsed.mastered || []);
-      } else {
-        state.reviewSet = new Set();
-        state.masteredSet = new Set();
+      const rawV2 = localStorage.getItem(getSrsStorageKey());
+      if (rawV2) {
+        const parsed = JSON.parse(rawV2);
+        if (parsed && typeof parsed === 'object') {
+          Object.keys(parsed).forEach(k => {
+            const rec = parsed[k];
+            if (rec && rec.cardId != null) {
+              state.recordsMap[rec.cardId] = {
+                cardId: Number(rec.cardId),
+                level: rec.level || state.activeLevel,
+                reviewStep: Number(rec.reviewStep || 0),
+                nextReviewDate: rec.nextReviewDate || today,
+                lastReviewedAt: rec.lastReviewedAt || new Date().toISOString(),
+                status: rec.status || (Number(rec.reviewStep) > 0 ? 'remembered' : 'forgot'),
+              };
+            }
+          });
+        }
+      }
+
+      // Chuyển đổi có kiểm soát từ dữ liệu cũ "Cần ôn / Đã thuộc"
+      const rawLegacy = localStorage.getItem(getLegacyStorageKey());
+      if (rawLegacy) {
+        const leg = JSON.parse(rawLegacy);
+        let migrated = false;
+        if (leg && Array.isArray(leg.review)) {
+          leg.review.forEach(cid => {
+            if (!state.recordsMap[cid]) {
+              state.recordsMap[cid] = {
+                cardId: Number(cid),
+                level: state.activeLevel,
+                reviewStep: 0,
+                nextReviewDate: today,
+                lastReviewedAt: new Date().toISOString(),
+                status: 'forgot',
+              };
+              migrated = true;
+            }
+          });
+        }
+        if (leg && Array.isArray(leg.mastered)) {
+          leg.mastered.forEach(cid => {
+            if (!state.recordsMap[cid]) {
+              state.recordsMap[cid] = {
+                cardId: Number(cid),
+                level: state.activeLevel,
+                reviewStep: 1,
+                nextReviewDate: addDaysYMD(today, 1),
+                lastReviewedAt: new Date().toISOString(),
+                status: 'remembered',
+              };
+              migrated = true;
+            }
+          });
+        }
+        if (migrated) {
+          saveProgress();
+        }
       }
     } catch (e) {
-      console.warn('LocalStorage error:', e);
-      state.reviewSet = new Set();
-      state.masteredSet = new Set();
+      console.warn('Could not load flashcard progress:', e);
     }
+
+    syncLegacySetsFromRecords();
   }
 
   function saveProgress() {
     try {
-      const data = {
-        review: Array.from(state.reviewSet),
-        mastered: Array.from(state.masteredSet),
-      };
-      localStorage.setItem(state.storageKey, JSON.stringify(data));
-      updateStatusCounters();
+      syncLegacySetsFromRecords();
+      localStorage.setItem(getSrsStorageKey(), JSON.stringify(state.recordsMap));
+      // Giữ tương thích ngược với cấu trúc cũ
+      localStorage.setItem(
+        getLegacyStorageKey(),
+        JSON.stringify({
+          review: Array.from(state.reviewSet),
+          mastered: Array.from(state.masteredSet),
+        })
+      );
+
+      // Nếu có tài khoản KTN đăng nhập sẵn trên cùng origin, lưu bản đồng bộ theo user
+      const ktnUserRaw = localStorage.getItem('ktn_user') || localStorage.getItem('user');
+      if (ktnUserRaw) {
+        try {
+          const u = JSON.parse(ktnUserRaw);
+          const uid = u.id || u.username || u.email;
+          if (uid) {
+            localStorage.setItem(`ktn_flashcard_user_${uid}_${state.activeLevel}`, JSON.stringify(state.recordsMap));
+          }
+        } catch (_) {}
+      }
     } catch (e) {
-      console.warn('LocalStorage save error:', e);
+      console.warn('Could not save flashcard progress:', e);
+    }
+    updateStatusCounters();
+    renderDrawerList();
+  }
+
+  function isCardDueToday(cardId) {
+    const rec = state.recordsMap[cardId];
+    if (!rec) return false;
+    const today = getTodayYMD();
+    return rec.nextReviewDate <= today || rec.status === 'forgot';
+  }
+
+  function getDueCardsForCurrentLevel() {
+    return state.allCards.filter(c => isCardDueToday(c.id));
+  }
+
+  function getNextIntervalDaysForCard(cardId) {
+    const rec = state.recordsMap[cardId];
+    const currentStep = rec && rec.reviewStep > 0 ? rec.reviewStep : 0;
+    const idx = Math.min(currentStep, FIXED_REVIEW_DAYS.length - 1);
+    return FIXED_REVIEW_DAYS[idx];
+  }
+
+  // ==============================================================
+  // PHASE 2 REVIEW ACTIONS: "QUÊN RỒI" & "NHỚ RỒI"
+  // ==============================================================
+  function markCardForgot() {
+    const card = getCurrentCard();
+    if (!card) return;
+
+    const today = getTodayYMD();
+    const tomorrow = addDaysYMD(today, 1);
+
+    // 1. Reset chuỗi nhớ liên tiếp về 0 & đặt lịch ôn tiếp vào ngày mai
+    state.recordsMap[card.id] = {
+      cardId: card.id,
+      level: state.activeLevel,
+      reviewStep: 0,
+      nextReviewDate: tomorrow,
+      lastReviewedAt: new Date().toISOString(),
+      status: 'forgot',
+    };
+
+    // 2. Đưa từ xuất hiện lại sau 3–5 thẻ khác trong phiên hiện tại (hoặc cuối phiên nếu còn ít hơn 3 thẻ)
+    const remainingAfterCurrent = state.filteredCards.length - 1 - state.currentIndex;
+    const offset = remainingAfterCurrent >= 3
+      ? Math.min(remainingAfterCurrent, 3 + Math.floor(Math.random() * 3))
+      : Math.max(1, remainingAfterCurrent + 1);
+
+    const insertPos = Math.min(state.filteredCards.length, state.currentIndex + offset + 1);
+    state.filteredCards.splice(insertPos, 0, card);
+
+    saveProgress();
+    showToast(`🔄 Quên rồi: "${card.word}" sẽ xuất hiện lại sau ${Math.min(offset, Math.max(1, remainingAfterCurrent))} thẻ & ôn lại ngày mai`);
+
+    // Tự động chuyển sang thẻ kế tiếp nếu có nhiều hơn 1 thẻ
+    if (state.currentIndex < state.filteredCards.length - 1) {
+      state.currentIndex++;
+    }
+    renderCurrentCard();
+  }
+
+  function markCardRemembered() {
+    const card = getCurrentCard();
+    if (!card) return;
+
+    const today = getTodayYMD();
+    const prevRec = state.recordsMap[card.id];
+    const prevStep = prevRec && prevRec.reviewStep > 0 ? prevRec.reviewStep : 0;
+    const newStep = prevStep + 1;
+    const dayIdx = Math.min(newStep - 1, FIXED_REVIEW_DAYS.length - 1);
+    const intervalDays = FIXED_REVIEW_DAYS[dayIdx];
+    const nextDate = addDaysYMD(today, intervalDays);
+
+    state.recordsMap[card.id] = {
+      cardId: card.id,
+      level: state.activeLevel,
+      reviewStep: newStep,
+      nextReviewDate: nextDate,
+      lastReviewedAt: new Date().toISOString(),
+      status: 'remembered',
+    };
+
+    saveProgress();
+    showToast(`✅ Nhớ rồi: "${card.word}" — Hẹn ôn lại sau ${intervalDays} ngày (${nextDate})`);
+
+    if (state.currentIndex < state.filteredCards.length - 1) {
+      state.currentIndex++;
+      renderCurrentCard();
+    } else {
+      renderCurrentCard();
     }
   }
 
-  function updateStatusCounters() {
-    if (dom.reviewCount) dom.reviewCount.textContent = state.reviewSet.size;
-    if (dom.masteredCount) dom.masteredCount.textContent = state.masteredSet.size;
+  function startTodayReview() {
+    const dueCards = getDueCardsForCurrentLevel();
+    if (dueCards.length > 0) {
+      applyFilter('due');
+      showToast(`🌱 Bắt đầu ôn ${dueCards.length} từ cần ôn hôm nay!`);
+    } else {
+      // Nếu chưa có từ nào đến hạn, gợi ý học nhẹ 8 từ chưa học thay vì bắt học cả 90 thẻ
+      const unlearned = state.allCards.filter(c => !state.recordsMap[c.id]).slice(0, 8);
+      if (unlearned.length > 0) {
+        state.activeCategory = 'due';
+        state.filteredCards = unlearned;
+        state.currentIndex = 0;
+        updateActiveNavChip('due');
+        renderCurrentCard();
+        showToast(`🌱 Khởi động nhẹ với ${unlearned.length} từ mới trong vài phút nhé!`);
+      } else {
+        applyFilter('all');
+        showToast('🎉 Em đã hoàn thành xuất sắc lịch ôn hôm nay!');
+      }
+    }
   }
 
-  // --- DYNAMIC CATEGORY NAVIGATION ---
-  const CATEGORY_EMOJIS = {
-    'Chào hỏi': '💬',
-    'Giới thiệu & Quốc gia': '🌏',
-    'Địa điểm & Thành phố': '📍',
-    'Đại từ chỉ định': '👉',
-    'Gia đình': '👨‍👩‍👧',
-    'Động vật & Sở hữu': '🐾',
-    'Số đếm': '🔢',
-    'Nhà ở & Phòng': '🏠',
-    'Đồ uống & Trái cây': '🍎',
-    'Sở thích & Mong muốn': '❤️',
-    'Món ăn & Thực phẩm': '🍜',
-    'Các thứ trong tuần': '📅',
-    'Môn học & Ngôn ngữ': '📚',
-    'Thời gian & Giờ giấc': '⏰',
-    'Khuôn viên trường học': '🏫',
-    'Động vật': '🐾',
-    'Số & Đo lường': '🔢',
-    'Giao tiếp & Đời sống': '💬'
-  };
+  // ==============================================================
+  // CATEGORY & FILTER NAVIGATION
+  // ==============================================================
+  function getCategories() {
+    const cats = new Set();
+    state.allCards.forEach(c => {
+      if (c.category) cats.add(c.category);
+    });
+    return Array.from(cats);
+  }
 
   function renderCategoryNav() {
     if (!dom.categoryNav) return;
     dom.categoryNav.innerHTML = '';
 
-    const counts = {};
-    state.allCards.forEach(c => {
-      const cat = c.category || 'Khác';
-      counts[cat] = (counts[cat] || 0) + 1;
-    });
+    const dueCount = getDueCardsForCurrentLevel().length;
+    const relearnCount = state.reviewSet.size;
+    const rememberedCount = state.masteredSet.size;
 
-    // 1. Tất cả
-    const allChip = document.createElement('button');
-    allChip.className = `nav-chip ${state.currentFilter === 'all' ? 'active' : ''}`;
-    allChip.dataset.filter = 'all';
-    allChip.textContent = `Tất cả (${state.allCards.length})`;
-    allChip.addEventListener('click', () => applyFilter('all'));
+    const allChip = createChip(`Tất cả (${state.allCards.length})`, 'all', state.activeCategory === 'all');
+    const dueChip = createChip(`🌱 Hôm nay (${dueCount})`, 'due', state.activeCategory === 'due', 'nav-chip-due');
+    const reviewChip = createChip(`🔄 Học lại (${relearnCount})`, 'review', state.activeCategory === 'review', 'nav-chip-review');
+    const masteredChip = createChip(`✅ Đã nhớ (${rememberedCount})`, 'mastered', state.activeCategory === 'mastered', 'nav-chip-mastered');
+
     dom.categoryNav.appendChild(allChip);
-
-    // 2. Từng danh mục
-    Object.keys(counts).forEach(cat => {
-      const chip = document.createElement('button');
-      chip.className = `nav-chip ${state.currentFilter === cat ? 'active' : ''}`;
-      chip.dataset.filter = cat;
-      const emoji = CATEGORY_EMOJIS[cat] || '🏷️';
-      chip.textContent = `${emoji} ${cat} (${counts[cat]})`;
-      chip.addEventListener('click', () => applyFilter(cat));
-      dom.categoryNav.appendChild(chip);
-    });
-
-    // 3. Cần ôn
-    const reviewChip = document.createElement('button');
-    reviewChip.className = `nav-chip nav-chip-review ${state.currentFilter === 'review' ? 'active' : ''}`;
-    reviewChip.dataset.filter = 'review';
-    reviewChip.innerHTML = `⚠️ Cần ôn (<span id="reviewCount">${state.reviewSet.size}</span>)`;
-    reviewChip.addEventListener('click', () => applyFilter('review'));
+    dom.categoryNav.appendChild(dueChip);
     dom.categoryNav.appendChild(reviewChip);
-
-    // 4. Đã thuộc
-    const masteredChip = document.createElement('button');
-    masteredChip.className = `nav-chip nav-chip-mastered ${state.currentFilter === 'mastered' ? 'active' : ''}`;
-    masteredChip.dataset.filter = 'mastered';
-    masteredChip.innerHTML = `⭐ Đã thuộc (<span id="masteredCount">${state.masteredSet.size}</span>)`;
-    masteredChip.addEventListener('click', () => applyFilter('mastered'));
     dom.categoryNav.appendChild(masteredChip);
 
-    // Cập nhật lại DOM references cho số đếm
-    dom.reviewCount = document.getElementById('reviewCount');
-    dom.masteredCount = document.getElementById('masteredCount');
+    getCategories().forEach(cat => {
+      const count = state.allCards.filter(c => c.category === cat).length;
+      const chip = createChip(`${cat} (${count})`, cat, state.activeCategory === cat);
+      dom.categoryNav.appendChild(chip);
+    });
   }
 
-  // --- FILTERING ---
-  function applyFilter(filter) {
-    state.currentFilter = filter;
-    state.isFlipped = false;
-    dom.flashcard.classList.remove('is-flipped');
+  function createChip(label, value, isActive, extraClass = '') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `nav-chip ${extraClass} ${isActive ? 'active' : ''}`.trim();
+    btn.textContent = label;
+    btn.dataset.filter = value;
+    btn.addEventListener('click', () => applyFilter(value));
+    return btn;
+  }
 
-    // Cập nhật trạng thái active của các nút filter
-    if (dom.categoryNav) {
-      const chips = dom.categoryNav.querySelectorAll('.nav-chip');
-      chips.forEach(chip => {
-        chip.classList.toggle('active', chip.dataset.filter === filter);
-      });
-    }
+  function updateActiveNavChip(filterValue) {
+    if (!dom.categoryNav) return;
+    dom.categoryNav.querySelectorAll('.nav-chip').forEach(chip => {
+      chip.classList.toggle('active', chip.dataset.filter === filterValue);
+    });
+  }
 
-    if (filter === 'all') {
+  function applyFilter(filterValue) {
+    state.activeCategory = filterValue;
+
+    if (filterValue === 'all') {
       state.filteredCards = [...state.allCards];
-    } else if (filter === 'review') {
-      state.filteredCards = state.allCards.filter(c => state.reviewSet.has(c.id));
-    } else if (filter === 'mastered') {
-      state.filteredCards = state.allCards.filter(c => state.masteredSet.has(c.id));
+    } else if (filterValue === 'due') {
+      const due = getDueCardsForCurrentLevel();
+      if (due.length === 0) {
+        showToast('🌱 Chưa có từ đến hạn hôm nay — hiển thị 8 từ gợi ý!');
+        state.filteredCards = state.allCards.filter(c => !state.recordsMap[c.id]).slice(0, 8);
+        if (state.filteredCards.length === 0) state.filteredCards = [...state.allCards];
+      } else {
+        state.filteredCards = due;
+      }
+    } else if (filterValue === 'review') {
+      const rev = state.allCards.filter(c => state.reviewSet.has(c.id));
+      if (rev.length === 0) {
+        showToast('Chưa có từ nào trong mục Cần học lại!');
+        state.activeCategory = 'all';
+        state.filteredCards = [...state.allCards];
+      } else {
+        state.filteredCards = rev;
+      }
+    } else if (filterValue === 'mastered') {
+      const mas = state.allCards.filter(c => state.masteredSet.has(c.id));
+      if (mas.length === 0) {
+        showToast('Chưa có từ nào trong mục Đã nhớ!');
+        state.activeCategory = 'all';
+        state.filteredCards = [...state.allCards];
+      } else {
+        state.filteredCards = mas;
+      }
     } else {
-      state.filteredCards = state.allCards.filter(c => c.category === filter);
+      state.filteredCards = state.allCards.filter(c => c.category === filterValue);
     }
 
-    if (state.filteredCards.length === 0) {
-      showToast('Không có thẻ nào trong mục này');
-      state.filteredCards = [...state.allCards];
-      state.currentFilter = 'all';
-      if (dom.categoryNav) {
-        const chips = dom.categoryNav.querySelectorAll('.nav-chip');
-        chips.forEach(chip => chip.classList.toggle('active', chip.dataset.filter === 'all'));
+    state.currentIndex = 0;
+    state.isFlipped = false;
+    updateActiveNavChip(state.activeCategory);
+    renderCurrentCard();
+  }
+
+  function updateStatusCounters() {
+    const dueCount = getDueCardsForCurrentLevel().length;
+    const rememberedCount = state.masteredSet.size;
+    const relearnCount = state.reviewSet.size;
+
+    if (dom.statDueCount) dom.statDueCount.textContent = String(dueCount);
+    if (dom.statRememberedCount) dom.statRememberedCount.textContent = String(rememberedCount);
+    if (dom.statRelearnCount) dom.statRelearnCount.textContent = String(relearnCount);
+    if (dom.dueTodayBannerNum) dom.dueTodayBannerNum.textContent = String(dueCount);
+
+    if (dom.todayReviewMessage) {
+      if (dueCount > 0) {
+        dom.todayReviewMessage.innerHTML = `🌱 Hôm nay em có <strong id="dueTodayBannerNum">${dueCount}</strong> từ cần ôn — Học trong vài phút nhé!`;
+      } else if (rememberedCount > 0) {
+        dom.todayReviewMessage.innerHTML = `🎉 Hôm nay em có <strong id="dueTodayBannerNum">0</strong> từ đến hạn — Đã nhớ <strong>${rememberedCount}</strong> từ!`;
+      } else {
+        const sugerCount = Math.min(8, state.allCards.length);
+        dom.todayReviewMessage.innerHTML = `🌱 Hôm nay em có thể khởi động nhẹ <strong>${sugerCount}</strong> từ mới trong vài phút nhé!`;
       }
     }
 
-    state.currentIndex = 0;
-    renderCurrentCard();
-    renderDrawerList();
+    if (dom.categoryNav) {
+      const allChip = dom.categoryNav.querySelector('[data-filter="all"]');
+      const dueChip = dom.categoryNav.querySelector('[data-filter="due"]');
+      const reviewChip = dom.categoryNav.querySelector('[data-filter="review"]');
+      const masteredChip = dom.categoryNav.querySelector('[data-filter="mastered"]');
+      if (allChip) allChip.textContent = `Tất cả (${state.allCards.length})`;
+      if (dueChip) dueChip.textContent = `🌱 Hôm nay (${dueCount})`;
+      if (reviewChip) reviewChip.textContent = `🔄 Học lại (${relearnCount})`;
+      if (masteredChip) masteredChip.textContent = `✅ Đã nhớ (${rememberedCount})`;
+    }
+
+    // Update drawer filter chip labels
+    const dAll = document.querySelector('[data-drawer-filter="all"]');
+    const dDue = document.querySelector('[data-drawer-filter="due"]');
+    const dRev = document.querySelector('[data-drawer-filter="review"]');
+    const dMas = document.querySelector('[data-drawer-filter="mastered"]');
+    if (dAll) dAll.textContent = `Tất cả (${state.allCards.length})`;
+    if (dDue) dDue.textContent = `🌱 Hôm nay (${dueCount})`;
+    if (dRev) dRev.textContent = `🔄 Học lại (${relearnCount})`;
+    if (dMas) dMas.textContent = `✅ Đã nhớ (${rememberedCount})`;
   }
 
-  // --- LEVEL SWITCHING ---
   function switchLevel(newLevel) {
-    if (!window.FLASHCARDS_DATA_BY_LEVEL || !window.FLASHCARDS_DATA_BY_LEVEL[newLevel]) {
-      console.warn('Level not found:', newLevel);
-      return;
-    }
+    if (!LEVEL_LABELS[newLevel]) return;
     state.activeLevel = newLevel;
-    try {
-      localStorage.setItem('ktn_active_level', newLevel);
-    } catch(e) {}
-    state.storageKey = 'ktn_flashcard_progress_' + newLevel;
+    localStorage.setItem('ktn_flashcard_active_level', newLevel);
+
+    state.allCards = getLevelCards(newLevel);
     loadProgress();
-    state.allCards = window.FLASHCARDS_DATA_BY_LEVEL[newLevel] || [];
+
+    state.activeCategory = 'all';
     state.filteredCards = [...state.allCards];
     state.currentIndex = 0;
-    state.currentFilter = 'all';
     state.isFlipped = false;
 
     if (dom.levelSelect) dom.levelSelect.value = newLevel;
     if (dom.drawerSubtitle) {
-      const levelTitle = newLevel === 'lo1' ? 'Lộ 1 • 90 Thẻ Từ Vựng' : 'Lộ 7 • 30 Thẻ Từ Vựng';
-      dom.drawerSubtitle.textContent = levelTitle;
+      dom.drawerSubtitle.textContent = LEVEL_LABELS[newLevel];
     }
 
     renderCategoryNav();
     updateStatusCounters();
     renderCurrentCard();
     renderDrawerList();
-    showToast(`Đã chuyển sang ${newLevel === 'lo1' ? 'Lộ 1 (90 thẻ)' : 'Lộ 7 (30 thẻ)'}`);
+    showToast(`Đã chuyển sang ${LEVEL_LABELS[newLevel]}`);
   }
 
-  // --- RENDER CURRENT CARD ---
+  // ==============================================================
+  // RENDER CURRENT CARD & ADJACENT PRELOAD (Phase 4)
+  // ==============================================================
   function getCurrentCard() {
     return state.filteredCards[state.currentIndex] || state.allCards[0];
+  }
+
+  const preloadedSet = new Set();
+  function preloadAdjacentCards() {
+    const indices = [state.currentIndex + 1, state.currentIndex - 1];
+    indices.forEach(idx => {
+      if (idx >= 0 && idx < state.filteredCards.length) {
+        const c = state.filteredCards[idx];
+        if (c && c.front_img && !preloadedSet.has(c.front_img)) {
+          preloadedSet.add(c.front_img);
+          const imgF = new Image();
+          imgF.src = c.front_img;
+          if (c.back_img) {
+            const imgB = new Image();
+            imgB.src = c.back_img;
+          }
+        }
+      }
+    });
   }
 
   function renderCurrentCard() {
     const card = getCurrentCard();
     if (!card) return;
 
-    // Reset flip
     state.isFlipped = false;
-    dom.flashcard.classList.remove('is-flipped');
+    if (dom.flashcard) dom.flashcard.classList.remove('is-flipped');
 
-    // Update images
-    dom.cardFrontImg.src = card.front_img;
-    dom.cardBackImg.src = card.back_img;
+    if (dom.cardFrontImg) {
+      if (dom.cardFrontImg.getAttribute('src') !== card.front_img) {
+        dom.cardFrontImg.src = card.front_img;
+      }
+      dom.cardFrontImg.alt = `${card.word} (${card.pinyin}) - Mặt trước`;
+    }
+    if (dom.cardBackImg) {
+      if (dom.cardBackImg.getAttribute('src') !== card.back_img) {
+        dom.cardBackImg.src = card.back_img;
+      }
+      dom.cardBackImg.alt = `${card.word} (${card.meaning_vi}) - Mặt sau`;
+    }
 
-    // Progress bar and indicators
     const currentNum = state.currentIndex + 1;
-    const totalNum = state.filteredCards.length;
+    const totalNum = Math.max(1, state.filteredCards.length);
     const percent = Math.round((currentNum / totalNum) * 100);
 
     if (dom.progressBarFill) dom.progressBarFill.style.width = percent + '%';
     if (dom.currentCardIndexText) dom.currentCardIndexText.textContent = `Từ ${currentNum} / ${totalNum}`;
     if (dom.headerWordCount) dom.headerWordCount.textContent = `${currentNum}/${totalNum}`;
 
-    // Card status indicator
+    const rec = state.recordsMap[card.id];
+    const nextDays = getNextIntervalDaysForCard(card.id);
+    if (dom.rememberedSubHint) {
+      dom.rememberedSubHint.textContent = `+${nextDays} ngày`;
+    }
+
     if (dom.currentCardStatus) {
-      if (state.masteredSet.has(card.id)) {
-        dom.currentCardStatus.textContent = '⭐ Đã thuộc';
+      if (rec && rec.reviewStep >= 1) {
+        const stepDays = FIXED_REVIEW_DAYS[Math.min(rec.reviewStep - 1, FIXED_REVIEW_DAYS.length - 1)];
+        dom.currentCardStatus.textContent = `✅ Đã nhớ (bước ${rec.reviewStep} • ${stepDays} ngày)`;
         dom.currentCardStatus.className = 'status-chip status-mastered';
-      } else if (state.reviewSet.has(card.id)) {
-        dom.currentCardStatus.textContent = '⚠️ Cần ôn';
+      } else if (rec && rec.status === 'forgot') {
+        dom.currentCardStatus.textContent = '🔄 Cần học lại';
         dom.currentCardStatus.className = 'status-chip status-review';
       } else {
         dom.currentCardStatus.textContent = 'Chưa học';
@@ -312,25 +610,34 @@
       }
     }
 
-    // Update bottom status buttons
     if (dom.btnMarkReview) {
-      dom.btnMarkReview.classList.toggle('is-active', state.reviewSet.has(card.id));
+      dom.btnMarkReview.classList.toggle('is-active', Boolean(rec && rec.status === 'forgot'));
     }
     if (dom.btnMarkMastered) {
-      dom.btnMarkMastered.classList.toggle('is-active', state.masteredSet.has(card.id));
+      dom.btnMarkMastered.classList.toggle('is-active', Boolean(rec && rec.reviewStep >= 1));
     }
+
+    // Highlight active item in sidebar/drawer without re-rendering full DOM if already rendered
+    if (dom.drawerWordList) {
+      dom.drawerWordList.querySelectorAll('.drawer-item').forEach(el => {
+        el.classList.toggle('active', Number(el.dataset.cardId) === card.id);
+      });
+    }
+
+    preloadAdjacentCards();
   }
 
-  // --- NAVIGATION ---
+  // ==============================================================
+  // NAVIGATION & AUDIO (Phase 5)
+  // ==============================================================
   function nextCard() {
     if (state.currentIndex < state.filteredCards.length - 1) {
       state.currentIndex++;
       renderCurrentCard();
     } else {
-      // Loop back or show completion
       state.currentIndex = 0;
       renderCurrentCard();
-      showToast('Đã xem hết danh sách!');
+      showToast('Đã hoàn thành lượt xem! Quay lại từ đầu.');
     }
   }
 
@@ -339,75 +646,56 @@
       state.currentIndex--;
       renderCurrentCard();
     } else {
-      state.currentIndex = state.filteredCards.length - 1;
+      state.currentIndex = Math.max(0, state.filteredCards.length - 1);
       renderCurrentCard();
     }
   }
 
   function toggleFlip() {
     state.isFlipped = !state.isFlipped;
-    dom.flashcard.classList.toggle('is-flipped', state.isFlipped);
+    if (dom.flashcard) dom.flashcard.classList.toggle('is-flipped', state.isFlipped);
   }
 
-  // --- AUDIO PLAYBACK ---
+  function clearAudioPlayingVisual() {
+    [dom.btnAudioFront, dom.btnAudioBack, dom.btnWriteAudio].forEach(btn => {
+      if (btn) btn.classList.remove('is-playing');
+    });
+  }
+
   function playAudio(audioPath) {
     if (!audioPath) {
       const card = getCurrentCard();
       audioPath = card ? card.audio : null;
     }
-    if (!audioPath) return;
+    if (!audioPath || !dom.nativeAudioPlayer) return;
 
-    // Visual playing state
+    // Ngăn phát chồng nhiều tệp âm thanh khi bấm liên tục
+    try {
+      dom.nativeAudioPlayer.pause();
+      dom.nativeAudioPlayer.currentTime = 0;
+    } catch (_) {}
+
     [dom.btnAudioFront, dom.btnAudioBack, dom.btnWriteAudio].forEach(btn => {
       if (btn) btn.classList.add('is-playing');
     });
 
     dom.nativeAudioPlayer.src = audioPath;
-    dom.nativeAudioPlayer.play().catch(err => {
-      console.warn('Audio play prevented or file not found:', err);
-    });
-
-    dom.nativeAudioPlayer.onended = () => {
-      [dom.btnAudioFront, dom.btnAudioBack, dom.btnWriteAudio].forEach(btn => {
-        if (btn) btn.classList.remove('is-playing');
+    const playPromise = dom.nativeAudioPlayer.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(err => {
+        clearAudioPlayingVisual();
+        console.warn('Audio play error:', err);
+        showToast('⚠️ Chưa tải được âm thanh cho từ này');
       });
+    }
+
+    dom.nativeAudioPlayer.onended = clearAudioPlayingVisual;
+    dom.nativeAudioPlayer.onerror = () => {
+      clearAudioPlayingVisual();
+      showToast('⚠️ Chưa tải được âm thanh cho từ này');
     };
   }
 
-  // --- STATUS TOGGLES ---
-  function toggleMastered() {
-    const card = getCurrentCard();
-    if (!card) return;
-
-    if (state.masteredSet.has(card.id)) {
-      state.masteredSet.delete(card.id);
-      showToast('Bỏ đánh dấu Đã thuộc');
-    } else {
-      state.masteredSet.add(card.id);
-      state.reviewSet.delete(card.id); // Mutual exclusion
-      showToast(`⭐ Đã thuộc: ${card.word}`);
-    }
-    saveProgress();
-    renderCurrentCard();
-  }
-
-  function toggleReview() {
-    const card = getCurrentCard();
-    if (!card) return;
-
-    if (state.reviewSet.has(card.id)) {
-      state.reviewSet.delete(card.id);
-      showToast('Bỏ đánh dấu Cần ôn');
-    } else {
-      state.reviewSet.add(card.id);
-      state.masteredSet.delete(card.id); // Mutual exclusion
-      showToast(`⚠️ Đã lưu vào Cần ôn: ${card.word}`);
-    }
-    saveProgress();
-    renderCurrentCard();
-  }
-
-  // --- TOAST NOTIFICATION ---
   let toastTimer = null;
   function showToast(msg) {
     if (!dom.toastMessage) return;
@@ -416,19 +704,59 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       dom.toastMessage.classList.remove('show');
-    }, 1800);
+    }, 2200);
   }
 
   // ==============================================================
-  // HANZI WRITING & MỄ TỰ CÁCH (米字格)
+  // HANZI WRITING & MỄ TỰ CÁCH (Phase 6)
   // ==============================================================
+  function getOfflineStrokeData(ch) {
+    if (window.HANZI_STROKE_DATA && window.HANZI_STROKE_DATA[ch]) {
+      return window.HANZI_STROKE_DATA[ch];
+    }
+    if (window.HANZI_STROKES && window.HANZI_STROKES[ch]) {
+      return window.HANZI_STROKES[ch];
+    }
+    return null;
+  }
+
+  function createCharDataLoader() {
+    return function (ch, onComplete) {
+      const local = getOfflineStrokeData(ch);
+      if (local) {
+        if (dom.strokeOfflineNotice) dom.strokeOfflineNotice.style.display = 'none';
+        onComplete(local);
+        return;
+      }
+      fetch(`https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/${encodeURIComponent(ch)}.json`)
+        .then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(data => {
+          if (dom.strokeOfflineNotice) dom.strokeOfflineNotice.style.display = 'none';
+          onComplete(data);
+        })
+        .catch(() => {
+          if (dom.strokeOfflineNotice) {
+            dom.strokeOfflineNotice.textContent = `⚠️ Chưa có dữ liệu nét viết offline cho chữ "${ch}". Vui lòng kiểm tra kết nối mạng.`;
+            dom.strokeOfflineNotice.style.display = 'block';
+          }
+        });
+    };
+  }
+
   function openWriteModal() {
     const card = getCurrentCard();
     if (!card) return;
 
-    state.currentCharList = card.hanzi_chars || [card.word];
+    const cleanChars = (card.hanzi_chars && card.hanzi_chars.length > 0)
+      ? card.hanzi_chars
+      : Array.from(card.word).filter(ch => ch >= '\u4e00' && ch <= '\u9fff');
 
-    // If compound word (2+ characters), default to "Ghép cả từ"
+    state.currentCharList = cleanChars.length > 0 ? cleanChars : [card.word];
+    if (dom.strokeOfflineNotice) dom.strokeOfflineNotice.style.display = 'none';
+
     if (state.currentCharList.length > 1) {
       state.isCompoundMode = true;
       state.activeCharIdx = -1;
@@ -452,11 +780,11 @@
   function closeWriteModal() {
     dom.writeModal.classList.remove('open');
     if (state.activeWriter) {
-      try { state.activeWriter.cancelQuiz(); } catch (e) {}
+      try { state.activeWriter.cancelQuiz(); } catch (_) {}
     }
     if (state.compoundWriters && state.compoundWriters.length > 0) {
       state.compoundWriters.forEach(item => {
-        try { item.writer.cancelQuiz(); } catch (e) {}
+        try { item.writer.cancelQuiz(); } catch (_) {}
       });
     }
   }
@@ -470,8 +798,8 @@
 
     dom.writeCharTabs.style.display = 'flex';
 
-    // 1. Compound Tab: "🀄 Ghép cả từ: 猴子"
     const compoundBtn = document.createElement('button');
+    compoundBtn.type = 'button';
     compoundBtn.className = `char-tab compound-tab ${state.isCompoundMode ? 'active' : ''}`;
     compoundBtn.innerHTML = `🀄 Ghép cả từ: <strong>${state.currentCharList.join('')}</strong>`;
     compoundBtn.addEventListener('click', () => {
@@ -482,9 +810,9 @@
     });
     dom.writeCharTabs.appendChild(compoundBtn);
 
-    // 2. Individual Character Tabs: "[ Chữ 1: 猴 ]", "[ Chữ 2: 子 ]"
     state.currentCharList.forEach((ch, idx) => {
       const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = `char-tab ${!state.isCompoundMode && idx === state.activeCharIdx ? 'active' : ''}`;
       btn.textContent = `Chữ ${idx + 1}: ${ch}`;
       btn.addEventListener('click', () => {
@@ -522,6 +850,10 @@
       </svg>
     `;
 
+    const isThreePlus = chars.length >= 3;
+    const boxSizeClass = isThreePlus ? 'meizi-box-xs' : 'meizi-box-sm';
+    const targetSize = isThreePlus ? 96 : 134;
+
     chars.forEach((ch, idx) => {
       if (idx > 0) {
         const conn = document.createElement('div');
@@ -531,7 +863,7 @@
       }
 
       const box = document.createElement('div');
-      box.className = `meizi-box meizi-box-sm ${idx === 0 ? 'quiz-active' : ''}`;
+      box.className = `meizi-box ${boxSizeClass} ${idx === 0 ? 'quiz-active' : ''}`;
       box.id = `meiziBoxCompound_${idx}`;
 
       const badge = document.createElement('div');
@@ -548,11 +880,10 @@
 
       dom.compoundMeiziContainer.appendChild(box);
 
-      const targetSize = 135;
       const writer = HanziWriter.create(canvasWrap, ch, {
         width: targetSize,
         height: targetSize,
-        padding: 8,
+        padding: 6,
         showOutline: state.showOutline,
         strokeColor: '#1F2421',
         outlineColor: '#DDD6C8',
@@ -562,81 +893,56 @@
         drawingWidth: 20,
         showHintAfterMisses: 2,
         highlightOnComplete: true,
-        delayBetweenStrokes: 180,
-        strokeAnimationSpeed: 1.3,
-        charDataLoader: function (c, onComplete) {
-          if (window.HANZI_STROKES && window.HANZI_STROKES[c]) {
-            onComplete(window.HANZI_STROKES[c]);
-          } else {
-            fetch(`https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/${encodeURIComponent(c)}.json`)
-              .then(r => r.json())
-              .then(data => onComplete(data))
-              .catch(err => console.error('Char load error:', err));
-          }
-        },
+        delayBetweenStrokes: 170,
+        strokeAnimationSpeed: 1.35,
+        charDataLoader: createCharDataLoader(),
       });
 
       state.compoundWriters.push({ writer, char: ch, box, badge });
     });
 
-    // Auto animate in sequence
     setTimeout(() => {
       startAnimateStroke();
-    }, 250);
+    }, 180);
   }
 
   function initHanziWriter(char) {
     if (!char) return;
 
-    // Reset overlay & show single container
     dom.quizSuccessOverlay.classList.remove('show');
     if (dom.singleMeiziContainer) dom.singleMeiziContainer.style.display = 'block';
     if (dom.compoundMeiziContainer) dom.compoundMeiziContainer.style.display = 'none';
 
     dom.hanziWriterTarget.innerHTML = '';
 
-    const targetWidth = 250;
-    const targetHeight = 250;
-
-    // Create HanziWriter instance
     state.activeWriter = HanziWriter.create(dom.hanziWriterTarget, char, {
-      width: targetWidth,
-      height: targetHeight,
-      padding: 14,
+      width: 244,
+      height: 244,
+      padding: 12,
       showOutline: state.showOutline,
-      strokeColor: '#1F2421',      // Mực đen thư pháp
-      outlineColor: '#DDD6C8',     // Giấy xuyến chỉ
-      radicalColor: '#B9382B',     // Chu sa đỏ cho bộ thủ
-      highlightColor: '#2D7F58',   // Xanh ngọc nét đúng
-      drawingColor: '#1F2421',     // Nét bút lông
-      drawingWidth: 26,            // Nét dày đầm tay
-      showHintAfterMisses: 2,      // Tự nhắc nét sau 2 lần vẽ sai
+      strokeColor: '#1F2421',
+      outlineColor: '#DDD6C8',
+      radicalColor: '#B9382B',
+      highlightColor: '#2D7F58',
+      drawingColor: '#1F2421',
+      drawingWidth: 24,
+      showHintAfterMisses: 2,
       highlightOnComplete: true,
-      delayBetweenStrokes: 220,
-      strokeAnimationSpeed: 1.2,
-      charDataLoader: function (c, onComplete) {
-        if (window.HANZI_STROKES && window.HANZI_STROKES[c]) {
-          onComplete(window.HANZI_STROKES[c]);
-        } else {
-          // Fallback to jsdelivr CDN
-          fetch(`https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/${encodeURIComponent(c)}.json`)
-            .then(r => r.json())
-            .then(data => onComplete(data))
-            .catch(err => console.error('Char data load error:', err));
-        }
-      },
+      delayBetweenStrokes: 200,
+      strokeAnimationSpeed: 1.25,
+      charDataLoader: createCharDataLoader(),
     });
 
-    // Auto animate on load
     setTimeout(() => {
       if (state.activeWriter) {
         state.activeWriter.animateCharacter();
       }
-    }, 200);
+    }, 160);
   }
 
   function startAnimateStroke() {
     dom.quizSuccessOverlay.classList.remove('show');
+    state.isQuizMode = false;
 
     if (state.isCompoundMode && state.compoundWriters.length > 0) {
       let i = 0;
@@ -650,24 +956,25 @@
               item.box.classList.remove('quiz-active');
               item.box.classList.add('quiz-done');
               i++;
-              setTimeout(animateNext, 200);
-            }
+              setTimeout(animateNext, 160);
+            },
           });
         } else {
           setTimeout(() => {
             state.compoundWriters.forEach(w => w.box.classList.remove('quiz-done', 'quiz-active'));
-          }, 1500);
+          }, 1200);
         }
       }
       state.compoundWriters.forEach(w => {
         w.box.classList.remove('quiz-done', 'quiz-active');
-        try { w.writer.cancelQuiz(); } catch (e) {}
+        try { w.writer.cancelQuiz(); } catch (_) {}
       });
       animateNext();
       return;
     }
 
     if (state.activeWriter) {
+      try { state.activeWriter.cancelQuiz(); } catch (_) {}
       state.activeWriter.showCharacter();
       state.activeWriter.animateCharacter();
     }
@@ -698,25 +1005,21 @@
             currentItem.box.classList.add('quiz-done');
 
             if (stepIdx < state.compoundWriters.length - 1) {
-              setTimeout(() => {
-                runCompoundQuizStep(stepIdx + 1);
-              }, 400);
+              setTimeout(() => runCompoundQuizStep(stepIdx + 1), 320);
             } else {
               setTimeout(() => {
                 const word = state.currentCharList.join('');
-                if (totalCompoundMistakes === 0) {
-                  dom.quizMistakeFeedback.textContent = `Tuyệt vời! Bé đã ghép trọn vẹn cả từ "${word}" chuẩn 100%! ✨`;
-                } else {
-                  dom.quizMistakeFeedback.textContent = `Bé đã ghép xong từ "${word}" rất giỏi! (Chỉ cần chú ý ${totalCompoundMistakes} nét)`;
-                }
+                dom.quizMistakeFeedback.textContent = totalCompoundMistakes === 0
+                  ? `Tuyệt vời! Bé đã ghép trọn vẹn cả từ "${word}" chuẩn 100%! ✨`
+                  : `Bé đã ghép xong từ "${word}" rất giỏi! (Chỉ cần chú ý ${totalCompoundMistakes} nét)`;
                 dom.btnNextCharOrClose.textContent = 'Hoàn thành từ này ✓';
                 dom.quizSuccessOverlay.classList.add('show');
-              }, 400);
+              }, 320);
             }
           },
           onMistake: function (strokeData) {
-            showToast(`Chưa đúng nét thứ ${strokeData.strokeNum + 1} của chữ "${currentItem.char}", bé thử lại nhé!`);
-          }
+            showToast(`Nhắc nhẹ: nét thứ ${strokeData.strokeNum + 1} của chữ "${currentItem.char}", bé thử lại nhé!`);
+          },
         });
       }
 
@@ -725,13 +1028,14 @@
     }
 
     if (state.activeWriter) {
+      showToast('Bé hãy dùng ngón tay hoặc chuột viết theo thứ tự nét nhé!');
       state.activeWriter.quiz({
         showOutline: state.showOutline,
         onComplete: function (res) {
           handleQuizSuccess(res);
         },
         onMistake: function (strokeData) {
-          showToast(`Chưa đúng nét thứ ${strokeData.strokeNum + 1}, bé thử lại nhé!`);
+          showToast(`Nhắc nhẹ: chưa đúng nét thứ ${strokeData.strokeNum + 1}, bé thử lại nhé!`);
         },
       });
     }
@@ -739,18 +1043,15 @@
 
   function handleQuizSuccess(res) {
     const mistakes = res.totalMistakes || 0;
-    if (mistakes === 0) {
-      dom.quizMistakeFeedback.textContent = 'Tuyệt vời! Bé vẽ chuẩn 100% không sai nét nào! ✨';
-    } else {
-      dom.quizMistakeFeedback.textContent = `Bé vẽ rất tốt! (Chỉ cần chú ý ${mistakes} nét)`;
-    }
+    dom.quizMistakeFeedback.textContent = mistakes === 0
+      ? 'Tuyệt vời! Bé viết chuẩn 100% không sai nét nào! ✨'
+      : `Bé viết rất tốt! (Chỉ cần chú ý ${mistakes} nét)`;
 
-    if (state.activeCharIdx < state.currentCharList.length - 1) {
+    if (!state.isCompoundMode && state.activeCharIdx < state.currentCharList.length - 1) {
       dom.btnNextCharOrClose.textContent = `Viết chữ "${state.currentCharList[state.activeCharIdx + 1]}" ➔`;
     } else {
       dom.btnNextCharOrClose.textContent = 'Hoàn thành từ này ✓';
     }
-
     dom.quizSuccessOverlay.classList.add('show');
   }
 
@@ -774,26 +1075,16 @@
 
   function resetStroke() {
     dom.quizSuccessOverlay.classList.remove('show');
-
-    if (state.isCompoundMode && state.compoundWriters.length > 0) {
-      state.compoundWriters.forEach(item => {
-        try { item.writer.cancelQuiz(); } catch (e) {}
-        item.box.classList.remove('quiz-active', 'quiz-done');
-        item.writer.showCharacter();
-      });
-      startAnimateStroke();
+    if (state.isQuizMode) {
+      startQuizStroke();
+      showToast('Đã xóa nét — Bé bắt đầu viết lại nhé!');
       return;
     }
-
-    if (state.activeWriter) {
-      try { state.activeWriter.cancelQuiz(); } catch (e) {}
-      state.activeWriter.showCharacter();
-      state.activeWriter.animateCharacter();
-    }
+    startAnimateStroke();
   }
 
   // ==============================================================
-  // WORD DRAWER (THƯ VIỆN 30 THẺ TỪ VỰNG)
+  // WORD DRAWER / DESKTOP SIDEBAR (Phase 3 & Phase 4 Thumbnails)
   // ==============================================================
   function openWordDrawer() {
     dom.wordDrawerBackdrop.classList.add('open');
@@ -809,67 +1100,89 @@
     dom.drawerWordList.innerHTML = '';
 
     let list = state.allCards;
-    if (state.drawerFilter === 'review') {
+    if (state.drawerFilter === 'due') {
+      list = getDueCardsForCurrentLevel();
+    } else if (state.drawerFilter === 'review') {
       list = state.allCards.filter(c => state.reviewSet.has(c.id));
     } else if (state.drawerFilter === 'mastered') {
       list = state.allCards.filter(c => state.masteredSet.has(c.id));
     }
 
+    const q = (state.drawerSearchQuery || '').trim().toLowerCase();
+    if (q) {
+      list = list.filter(c =>
+        (c.word && c.word.toLowerCase().includes(q)) ||
+        (c.pinyin && c.pinyin.toLowerCase().includes(q)) ||
+        (c.meaning_vi && c.meaning_vi.toLowerCase().includes(q)) ||
+        (c.meaning_en && c.meaning_en.toLowerCase().includes(q))
+      );
+    }
+
     if (list.length === 0) {
-      dom.drawerWordList.innerHTML = '<div style="text-align:center;padding:24px;color:#8C827A;font-size:12.5px;">Chưa có từ nào trong danh sách này</div>';
+      dom.drawerWordList.innerHTML = '<div style="text-align:center;padding:24px;color:#8C827A;font-size:12.5px;">Chưa có từ nào trong mục này</div>';
       return;
     }
 
     const currentCard = getCurrentCard();
+    const fragment = document.createDocumentFragment();
 
     list.forEach(card => {
       const item = document.createElement('div');
       item.className = `drawer-item ${currentCard && currentCard.id === card.id ? 'active' : ''}`;
+      item.dataset.cardId = String(card.id);
 
+      const rec = state.recordsMap[card.id];
       let badgeHtml = '';
-      if (state.masteredSet.has(card.id)) {
-        badgeHtml = '<span class="drawer-item-badge status-mastered">⭐ Đã thuộc</span>';
-      } else if (state.reviewSet.has(card.id)) {
-        badgeHtml = '<span class="drawer-item-badge status-review">⚠️ Cần ôn</span>';
+      if (rec && rec.reviewStep >= 1) {
+        const days = FIXED_REVIEW_DAYS[Math.min(rec.reviewStep - 1, FIXED_REVIEW_DAYS.length - 1)];
+        badgeHtml = `<span class="drawer-item-badge status-mastered">✅ ${days}d</span>`;
+      } else if (rec && rec.status === 'forgot') {
+        badgeHtml = '<span class="drawer-item-badge status-review">🔄 Học lại</span>';
       }
 
+      // Phase 4: Thư viện từ chỉ tải thumbnail nhẹ (~3KB) + lazy-load
+      const thumbSrc = card.thumb_img || card.front_img;
+
       item.innerHTML = `
-        <img class="drawer-item-img" src="${card.front_img}" alt="${card.word}">
+        <img class="drawer-item-img" src="${thumbSrc}" alt="${card.word}" loading="lazy" decoding="async" width="36" height="50">
         <div class="drawer-item-content">
           <div style="display:flex;align-items:center;gap:6px;">
             <span class="drawer-item-word">${card.word}</span>
-            <span style="font-size:11.5px;color:#8C6D62;font-weight:700;">/${card.pinyin}/</span>
+            <span style="font-size:11px;color:#8C6D62;font-weight:700;">/${card.pinyin}/</span>
           </div>
-          <span class="drawer-item-meaning">${card.meaning_vi} • ${card.meaning_en}</span>
+          <span class="drawer-item-meaning">${card.meaning_vi}${card.meaning_en ? ' • ' + card.meaning_en : ''}</span>
         </div>
         ${badgeHtml}
       `;
 
       item.addEventListener('click', () => {
-        // Find index in current filtered list or switch filter
         const idxInFiltered = state.filteredCards.findIndex(c => c.id === card.id);
         if (idxInFiltered !== -1) {
           state.currentIndex = idxInFiltered;
         } else {
-          // Switch to all cards and select
-          applyFilter('all');
+          state.activeCategory = 'all';
+          state.filteredCards = [...state.allCards];
+          updateActiveNavChip('all');
           state.currentIndex = state.allCards.findIndex(c => c.id === card.id);
         }
         renderCurrentCard();
         closeWordDrawer();
       });
 
-      dom.drawerWordList.appendChild(item);
+      fragment.appendChild(item);
     });
+
+    dom.drawerWordList.appendChild(fragment);
   }
 
   // ==============================================================
-  // TOUCH SWIPE GESTURES (Mobile Support)
+  // TOUCH SWIPE & NETWORK STATUS & PWA (Phase 3 & Phase 7)
   // ==============================================================
   let touchStartX = 0;
   let touchStartY = 0;
 
   function initTouchGestures() {
+    if (!dom.cardScene) return;
     dom.cardScene.addEventListener('touchstart', e => {
       touchStartX = e.changedTouches[0].screenX;
       touchStartY = e.changedTouches[0].screenY;
@@ -878,74 +1191,69 @@
     dom.cardScene.addEventListener('touchend', e => {
       const touchEndX = e.changedTouches[0].screenX;
       const touchEndY = e.changedTouches[0].screenY;
-      handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+      const diffX = touchEndX - touchStartX;
+      const diffY = touchEndY - touchStartY;
+      if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX < 0) nextCard();
+        else prevCard();
+      }
     }, { passive: true });
   }
 
-  function handleSwipe(startX, startY, endX, endY) {
-    const diffX = endX - startX;
-    const diffY = endY - startY;
+  function updateNetworkIndicator() {
+    if (!dom.networkBadge) return;
+    const online = navigator.onLine !== false;
+    dom.networkBadge.textContent = online ? '● Online' : '⚡ Offline (Thẻ đã lưu)';
+    dom.networkBadge.classList.toggle('is-offline', !online);
+  }
 
-    // Minimum swipe threshold
-    if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY)) {
-      if (diffX < 0) {
-        // Swipe Left -> Next
-        nextCard();
-      } else {
-        // Swipe Right -> Prev
-        prevCard();
-      }
+  function registerFlashcardServiceWorker() {
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(err => {
+        console.warn('[KTN Flashcards] SW registration skipped:', err.message);
+      });
     }
   }
 
   // ==============================================================
-  // EVENT LISTENERS INITIALIZATION
+  // EVENT LISTENERS & INITIALIZATION
   // ==============================================================
   function initEvents() {
-    // Card Scene tap to flip
     dom.cardScene.addEventListener('click', (e) => {
-      // Ignore if clicking on speaker buttons
-      if (e.target.closest('#btnAudioFront') || e.target.closest('#btnAudioBack')) {
-        return;
-      }
+      if (e.target.closest('#btnAudioFront') || e.target.closest('#btnAudioBack')) return;
       toggleFlip();
     });
 
-    // Flip button
     dom.btnFlip.addEventListener('click', toggleFlip);
-
-    // Nav buttons
     dom.btnPrev.addEventListener('click', prevCard);
     dom.btnNext.addEventListener('click', nextCard);
 
-    // Audio buttons
     dom.btnAudioFront.addEventListener('click', (e) => {
       e.stopPropagation();
       playAudio();
     });
-
     dom.btnAudioBack.addEventListener('click', (e) => {
       e.stopPropagation();
       playAudio();
     });
+    dom.btnWriteAudio.addEventListener('click', () => playAudio());
 
-    dom.btnWriteAudio.addEventListener('click', () => {
-      playAudio();
-    });
+    // Phase 2: "Quên rồi" & "Nhớ rồi"
+    dom.btnMarkReview.addEventListener('click', markCardForgot);
+    dom.btnMarkMastered.addEventListener('click', markCardRemembered);
 
-    // Status buttons
-    dom.btnMarkReview.addEventListener('click', toggleReview);
-    dom.btnMarkMastered.addEventListener('click', toggleMastered);
+    if (dom.btnStartTodayReview) {
+      dom.btnStartTodayReview.addEventListener('click', startTodayReview);
+    }
+    if (dom.statDuePill) dom.statDuePill.addEventListener('click', () => applyFilter('due'));
+    if (dom.statRememberedPill) dom.statRememberedPill.addEventListener('click', () => applyFilter('mastered'));
+    if (dom.statRelearnPill) dom.statRelearnPill.addEventListener('click', () => applyFilter('review'));
 
-    // Level Selector dropdown
     if (dom.levelSelect) {
       dom.levelSelect.value = state.activeLevel;
-      dom.levelSelect.addEventListener('change', (e) => {
-        switchLevel(e.target.value);
-      });
+      dom.levelSelect.addEventListener('change', (e) => switchLevel(e.target.value));
     }
 
-    // Luyện viết Hanzi modal
     dom.btnOpenWrite.addEventListener('click', openWriteModal);
     dom.btnCloseWrite.addEventListener('click', closeWriteModal);
     dom.btnAnimateStroke.addEventListener('click', startAnimateStroke);
@@ -954,24 +1262,28 @@
     dom.btnToggleOutline.addEventListener('click', toggleOutlineStroke);
 
     dom.btnNextCharOrClose.addEventListener('click', () => {
-      if (state.activeCharIdx < state.currentCharList.length - 1) {
+      if (!state.isCompoundMode && state.activeCharIdx < state.currentCharList.length - 1) {
         state.activeCharIdx++;
         renderWriteCharTabs();
         initHanziWriter(state.currentCharList[state.activeCharIdx]);
       } else {
         closeWriteModal();
-        showToast('Bé đã hoàn thành xuất sắc!');
+        showToast('Bé đã hoàn thành luyện viết từ này!');
       }
     });
 
-    // Drawer events
     dom.btnDrawerOpen.addEventListener('click', openWordDrawer);
     dom.btnDrawerClose.addEventListener('click', closeWordDrawer);
     dom.wordDrawerBackdrop.addEventListener('click', (e) => {
-      if (e.target === dom.wordDrawerBackdrop) {
-        closeWordDrawer();
-      }
+      if (e.target === dom.wordDrawerBackdrop) closeWordDrawer();
     });
+
+    if (dom.drawerSearchInput) {
+      dom.drawerSearchInput.addEventListener('input', (e) => {
+        state.drawerSearchQuery = e.target.value || '';
+        renderDrawerList();
+      });
+    }
 
     dom.drawerFilterChips.forEach(chip => {
       chip.addEventListener('click', () => {
@@ -982,35 +1294,58 @@
       });
     });
 
-    // Keyboard shortcuts (Desktop friendly)
     window.addEventListener('keydown', (e) => {
       if (dom.writeModal.classList.contains('open')) return;
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
       if (e.key === 'ArrowRight') nextCard();
-      if (e.key === 'ArrowLeft') prevCard();
-      if (e.key === ' ') {
+      else if (e.key === 'ArrowLeft') prevCard();
+      else if (e.key === ' ') {
         e.preventDefault();
         toggleFlip();
+      } else if (e.key === '1') {
+        markCardForgot();
+      } else if (e.key === '2') {
+        markCardRemembered();
       }
     });
+
+    window.addEventListener('online', updateNetworkIndicator);
+    window.addEventListener('offline', updateNetworkIndicator);
 
     initTouchGestures();
   }
 
-  // --- BOOTSTRAP ---
   function init() {
     loadProgress();
     if (dom.levelSelect) dom.levelSelect.value = state.activeLevel;
     if (dom.drawerSubtitle) {
-      dom.drawerSubtitle.textContent = state.activeLevel === 'lo1' ? 'Lộ 1 • 90 Thẻ Từ Vựng' : 'Lộ 7 • 30 Thẻ Từ Vựng';
+      dom.drawerSubtitle.textContent = LEVEL_LABELS[state.activeLevel];
     }
+    updateNetworkIndicator();
     renderCategoryNav();
     updateStatusCounters();
     applyFilter('all');
+    renderDrawerList();
     initEvents();
-    console.log('[Khổng Tử Nhí] Flashcards App initialized with Level:', state.activeLevel, '(' + state.allCards.length + ' cards)');
+    registerFlashcardServiceWorker();
+    console.log('[KTN Flashcard] Initialized Level:', state.activeLevel, '(' + state.allCards.length + ' cards)');
   }
 
-  // Start app when DOM ready
+  // Expose controlled API for testing & verification
+  window.KTNFlashcardApp = {
+    FIXED_REVIEW_DAYS,
+    getState: () => state,
+    switchLevel,
+    markCardForgot,
+    markCardRemembered,
+    startTodayReview,
+    getDueCardsForCurrentLevel,
+    loadProgress,
+    saveProgress,
+    addDaysYMD,
+    getTodayYMD,
+  };
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

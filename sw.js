@@ -15,7 +15,22 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-function syncSubscriptionToBackend(sub) {
+function hasMatchingApplicationServerKey(sub, expectedKeyBytes) {
+  try {
+    const rawKey = sub && sub.options && sub.options.applicationServerKey;
+    if (!rawKey) return true;
+    const actual = new Uint8Array(rawKey);
+    if (actual.length !== expectedKeyBytes.length) return false;
+    for (let i = 0; i < actual.length; i++) {
+      if (actual[i] !== expectedKeyBytes[i]) return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function syncSubscriptionToBackend(sub, previousEndpoint) {
   if (!sub || typeof sub.toJSON !== 'function') return Promise.resolve();
   const subJson = sub.toJSON();
   if (!subJson || !subJson.endpoint || !subJson.keys || !subJson.keys.p256dh || !subJson.keys.auth) {
@@ -33,7 +48,8 @@ function syncSubscriptionToBackend(sub) {
           p256dh: subJson.keys.p256dh,
           auth: subJson.keys.auth
         }
-      }
+      },
+      ...(previousEndpoint ? { previousEndpoint } : {})
     })
   }).catch(() => null);
 }
@@ -45,11 +61,38 @@ self.addEventListener('install', () => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     self.clients.claim().then(() => {
-      if (self.registration && self.registration.pushManager) {
-        return self.registration.pushManager.getSubscription().then((sub) => {
-          if (sub) return syncSubscriptionToBackend(sub);
-        }).catch(() => null);
-      }
+      if (!self.registration || !self.registration.pushManager) return;
+      const expectedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      return self.registration.pushManager.getSubscription().then((sub) => {
+        if (!sub) return;
+        let previousEndpoint = '';
+        let subPromise = Promise.resolve(sub);
+        if (!hasMatchingApplicationServerKey(sub, expectedKey)) {
+          previousEndpoint = sub.endpoint || '';
+          subPromise = sub.unsubscribe().catch(() => false).then(() =>
+            self.registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: expectedKey
+            })
+          );
+        }
+        return subPromise.then((activeSub) => {
+          if (!activeSub) return;
+          return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            if (windowClients && windowClients.length > 0) {
+              windowClients.forEach((client) => {
+                client.postMessage({
+                  type: 'KTN_PUSH_SUBSCRIPTION_CHANGED',
+                  subscription: activeSub.toJSON(),
+                  previousEndpoint: previousEndpoint || undefined
+                });
+              });
+              return;
+            }
+            return syncSubscriptionToBackend(activeSub, previousEndpoint);
+          });
+        });
+      }).catch(() => null);
     })
   );
 });
@@ -74,6 +117,7 @@ self.addEventListener('push', (event) => {
   }
   const title = notif.title || 'Học Viện Khổng Tử Nhí';
   const targetUrl = notif.action_url || (notif.data && notif.data.url) || '/custom-page/so-lien-lac-test#/notifications';
+  const eventType = String(notif.eventType || notif.type || (notif.data && notif.data.type) || 'notification');
   const options = {
     body: notif.body || 'Chạm để mở ứng dụng xem chi tiết.',
     icon: notif.icon || CDN_LOGO,
@@ -86,38 +130,62 @@ self.addEventListener('push', (event) => {
       action_url: targetUrl,
       id: eventId,
       eventId: eventId,
-      type: notif.type || (notif.data && notif.data.type) || 'notification',
+      eventType: eventType,
+      type: eventType,
       roomId: notif.roomId || (notif.data && notif.data.roomId) || '',
       classCode: notif.classCode || (notif.data && notif.data.classCode) || '',
       homeworkId: notif.homeworkId || (notif.data && notif.data.homeworkId) || ''
     },
     vibrate: [200, 100, 200]
   };
+  const showPromise = self.registration.showNotification(title, options).catch(() => {
+    return self.registration.showNotification(title, {
+      body: options.body,
+      icon: options.icon,
+      tag: eventId,
+      data: options.data
+    });
+  });
   event.waitUntil(
-    self.registration.showNotification(title, options).catch(() => {
-      return self.registration.showNotification(title, {
-        body: options.body,
-        icon: options.icon,
-        tag: eventId,
-        data: options.data
-      });
-    })
+    showPromise.then(() =>
+      Promise.all([
+        fetch('/api/ktn/push/ack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventId, eventType, displayedAt: new Date().toISOString() })
+        }).catch(() => null),
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+          windowClients.forEach((client) => {
+            client.postMessage({
+              type: 'KTN_PUSH_RECEIVED',
+              eventId,
+              eventType,
+              title,
+              body: options.body,
+              data: options.data
+            });
+          });
+        }).catch(() => null)
+      ])
+    )
   );
 });
 
 // 2. Tự động gia hạn Push Subscription vĩnh viễn nếu Apple/Google xoay vòng token (Cài 1 lần - Vĩnh viễn)
 self.addEventListener('pushsubscriptionchange', (event) => {
+  const prevEndpoint = (event && event.oldSubscription && event.oldSubscription.endpoint) ? event.oldSubscription.endpoint : '';
   event.waitUntil(
     self.registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     }).then((newSub) => {
-      return syncSubscriptionToBackend(newSub).then(() => {
+      return syncSubscriptionToBackend(newSub, prevEndpoint).then(() => {
         return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
           clients.forEach((client) => {
             client.postMessage({
               type: 'KTN_PUSH_SUBSCRIPTION_CHANGED',
-              subscription: newSub.toJSON()
+              subscription: newSub.toJSON(),
+              previousEndpoint: prevEndpoint || undefined
             });
           });
         });
@@ -163,9 +231,8 @@ self.addEventListener('notificationclick', (event) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
         if ('focus' in client) {
-          client.focus();
           client.postMessage({ type: 'KTN_NOTIFICATION_CLICKED', data });
-          return;
+          return client.focus();
         }
       }
       if (self.clients.openWindow) {

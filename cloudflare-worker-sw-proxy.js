@@ -304,7 +304,22 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-function syncSubscriptionToBackend(sub) {
+function hasMatchingApplicationServerKey(sub, expectedKeyBytes) {
+  try {
+    const rawKey = sub && sub.options && sub.options.applicationServerKey;
+    if (!rawKey) return true;
+    const actual = new Uint8Array(rawKey);
+    if (actual.length !== expectedKeyBytes.length) return false;
+    for (let i = 0; i < actual.length; i++) {
+      if (actual[i] !== expectedKeyBytes[i]) return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function syncSubscriptionToBackend(sub, previousEndpoint) {
   if (!sub || typeof sub.toJSON !== 'function') return Promise.resolve();
   const subJson = sub.toJSON();
   if (!subJson || !subJson.endpoint || !subJson.keys || !subJson.keys.p256dh || !subJson.keys.auth) {
@@ -314,7 +329,10 @@ function syncSubscriptionToBackend(sub) {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ subscription: subJson })
+    body: JSON.stringify({
+      subscription: subJson,
+      ...(previousEndpoint ? { previousEndpoint } : {})
+    })
   }).catch(() => {});
 }
 
@@ -322,11 +340,38 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     self.clients.claim().then(() => {
-      if (self.registration && self.registration.pushManager) {
-        return self.registration.pushManager.getSubscription().then((sub) => {
-          if (sub) return syncSubscriptionToBackend(sub);
-        }).catch(() => {});
-      }
+      if (!self.registration || !self.registration.pushManager) return;
+      const expectedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      return self.registration.pushManager.getSubscription().then((sub) => {
+        if (!sub) return;
+        let previousEndpoint = '';
+        let subPromise = Promise.resolve(sub);
+        if (!hasMatchingApplicationServerKey(sub, expectedKey)) {
+          previousEndpoint = sub.endpoint || '';
+          subPromise = sub.unsubscribe().catch(() => false).then(() =>
+            self.registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: expectedKey
+            })
+          );
+        }
+        return subPromise.then((activeSub) => {
+          if (!activeSub) return;
+          return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            if (windowClients && windowClients.length > 0) {
+              windowClients.forEach((c) =>
+                c.postMessage({
+                  type: 'KTN_PUSH_SUBSCRIPTION_CHANGED',
+                  subscription: activeSub.toJSON(),
+                  previousEndpoint: previousEndpoint || undefined
+                })
+              );
+              return;
+            }
+            return syncSubscriptionToBackend(activeSub, previousEndpoint);
+          });
+        });
+      }).catch(() => {});
     })
   );
 });
@@ -343,6 +388,7 @@ self.addEventListener('push', (event) => {
   }
   RECENT_PUSH_EVENT_IDS.add(eventId);
   const targetUrl = notif.action_url || notif.url || '/custom-page/so-lien-lac-test#/notifications';
+  const eventType = String(notif.eventType || notif.type || 'web_push');
   const options = {
     body: notif.body || 'Chạm để mở Sổ Liên Lạc Điện Tử.',
     icon: notif.icon || CDN_LOGO,
@@ -355,30 +401,62 @@ self.addEventListener('push', (event) => {
       action_url: targetUrl,
       id: eventId,
       eventId,
-      eventType: notif.eventType || ''
+      eventType,
+      type: eventType,
+      roomId: notif.roomId || '',
+      classCode: notif.classCode || '',
+      homeworkId: notif.homeworkId || ''
     }
   };
+  const showPromise = self.registration.showNotification(title, options).catch(() =>
+    self.registration.showNotification(title, {
+      body: options.body,
+      tag: eventId,
+      data: options.data
+    })
+  );
   event.waitUntil(
-    self.registration.showNotification(title, options).catch(() =>
-      self.registration.showNotification(title, {
-        body: options.body,
-        tag: eventId,
-        data: options.data
-      })
+    showPromise.then(() =>
+      Promise.all([
+        fetch('/api/ktn/push/ack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventId, eventType, displayedAt: new Date().toISOString() })
+        }).catch(() => {}),
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+          windowClients.forEach((c) =>
+            c.postMessage({
+              type: 'KTN_PUSH_RECEIVED',
+              eventId,
+              eventType,
+              title,
+              body: options.body,
+              data: options.data
+            })
+          );
+        }).catch(() => {})
+      ])
     )
   );
 });
 
 self.addEventListener('pushsubscriptionchange', (event) => {
+  const prevEndpoint = (event && event.oldSubscription && event.oldSubscription.endpoint) ? event.oldSubscription.endpoint : '';
   event.waitUntil(
     self.registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     }).then((newSub) => {
       return Promise.all([
-        syncSubscriptionToBackend(newSub),
+        syncSubscriptionToBackend(newSub, prevEndpoint),
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-          clients.forEach((c) => c.postMessage({ type: 'KTN_PUSH_SUBSCRIPTION_CHANGED', subscription: newSub.toJSON() }));
+          clients.forEach((c) =>
+            c.postMessage({
+              type: 'KTN_PUSH_SUBSCRIPTION_CHANGED',
+              subscription: newSub.toJSON(),
+              previousEndpoint: prevEndpoint || undefined
+            })
+          );
         })
       ]);
     }).catch(() => {})
@@ -413,8 +491,8 @@ self.addEventListener('notificationclick', (event) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       const portalClient = windowClients.find((c) => c && typeof c.url === 'string' && c.url.includes('/custom-page/so-lien-lac'));
       if (portalClient) {
-        if ('focus' in portalClient) portalClient.focus();
         portalClient.postMessage({ type: 'KTN_NOTIFICATION_CLICKED', data: event.notification.data });
+        if ('focus' in portalClient) return portalClient.focus();
         return;
       }
       const anyClient = windowClients[0];
@@ -777,12 +855,56 @@ async function sendWebPushToSubscription(env, subRow, payloadObj) {
       };
     }
 
+    let gatewayErrToken = '';
+    try {
+      const rawErrText = await pushRes.text();
+      if (rawErrText) {
+        try {
+          const parsedErr = JSON.parse(rawErrText);
+          gatewayErrToken = String(parsedErr?.reason || parsedErr?.error || parsedErr?.message || '').trim();
+        } catch {
+          gatewayErrToken = String(rawErrText).trim();
+        }
+      }
+    } catch {
+      gatewayErrToken = '';
+    }
+    const cleanErrCode = gatewayErrToken
+      .replace(/https?:\/\/\S+/gi, '')
+      .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/g, '')
+      .replace(/[^a-zA-Z0-9_.-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 48);
+
+    const permanentFailureCodes = [
+      'Unregistered',
+      'NotRegistered',
+      'InvalidRegistration',
+      'VapidPkHashMismatch',
+      'DeviceTokenNotForTopic',
+      'BadDeviceToken'
+    ];
+    const isPermanentInvalidSub =
+      (pushRes.status === 400 || pushRes.status === 401 || pushRes.status === 403) &&
+      permanentFailureCodes.some((code) => cleanErrCode.toLowerCase().includes(code.toLowerCase()));
+
+    if (isPermanentInvalidSub) {
+      await supabaseRequest(env, `ktn_push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, {
+        method: 'DELETE'
+      }).catch(() => null);
+    }
+
     return {
       ok: false,
+      expired: isPermanentInvalidSub,
+      removed: isPermanentInvalidSub,
       status: pushRes.status,
       pushServiceAccepted: false,
       deviceDisplayConfirmed: false,
-      reason: `PUSH_SERVICE_HTTP_${pushRes.status}`
+      reason: cleanErrCode
+        ? `PUSH_SERVICE_HTTP_${pushRes.status}:${cleanErrCode}`
+        : `PUSH_SERVICE_HTTP_${pushRes.status}`
     };
   } catch (netErr) {
     const isAbort = netErr && (netErr.name === 'AbortError' || String(netErr.message || '').includes('aborted'));
@@ -8066,6 +8188,18 @@ export default {
             const isImmediateDoubleClick = Number.isFinite(lastGradedMs) && Math.abs(Date.now() - lastGradedMs) <= 3000;
             let replayPushDispatch = null;
             if (!isImmediateDoubleClick && existingHw.student_email) {
+              const regradeNowIso = new Date().toISOString();
+              existingHw.graded_at = regradeNowIso;
+              const regradePatchPromise = supabaseRequest(
+                env,
+                `ktn_homeworks?id=eq.${encodeURIComponent(existingHw.id)}`,
+                {
+                  method: 'PATCH',
+                  body: { graded_at: regradeNowIso, updated_at: regradeNowIso }
+                }
+              ).catch(() => null);
+              if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(regradePatchPromise);
+
               const targetStuEmail = normalizeEmail(existingHw.student_email);
               const rawNum = Number(existingHw.lesson_num || 1) || 1;
               const sessionNum = rawNum >= 100 ? Math.floor(rawNum / 100) : rawNum;
@@ -8111,7 +8245,7 @@ export default {
                 syncStatus: prevMeta.syncStatus,
                 remoteId: prevMeta.izteachRemoteId || null
               },
-              ...(replayPushDispatch ? { pushDispatch: replayPushDispatch } : {})
+              ...(replayPushDispatch ? { pushDispatch: replayPushDispatch, pushDelivery: replayPushDispatch } : {})
             });
           }
         }
@@ -9247,13 +9381,14 @@ export default {
           for (const cs of classSessions) {
             const sNum = Number(cs.session_num) || 1;
             const exList = Array.isArray(cs.exercises) ? cs.exercises : (Array.isArray(cs.assignments) ? cs.assignments : []);
+            const sTitle = String(cs.session_title || cs.title || `Buổi ${sNum}`).trim();
             items.push({
               id: `NOTIF-ASSIGN-${classCode}-S${sNum}-${cs.updated_at || cs.id || sNum}`,
               type: 'homework_assigned',
               classCode,
               sessionNum: sNum,
               title: `Bài tập mới Lớp ${classCode} · Buổi ${sNum}`,
-              body: `${cs.title || ('Buổi ' + sNum)}${exList.length ? ` (${exList.length} bài tập)` : ''}`,
+              body: `${sTitle}${exList.length ? ` (${exList.length} bài tập)` : ''}`,
               actionUrl: `#/lop/${classCode.toLowerCase()}/buoi/${sNum}`,
               createdAt: cs.updated_at || cs.created_at || new Date().toISOString()
             });
@@ -9579,6 +9714,16 @@ export default {
         }, 400);
       }
       const normEmail = normalizeEmail(session.email);
+      const previousEndpoint = String(body.previousEndpoint || sub.previousEndpoint || '').trim();
+      if (previousEndpoint && previousEndpoint.startsWith('https://') && previousEndpoint !== endpoint && normEmail) {
+        const cleanupPrevPromise = supabaseRequest(
+          env,
+          `ktn_push_subscriptions?user_email=eq.${encodeURIComponent(normEmail)}&endpoint=eq.${encodeURIComponent(previousEndpoint)}`,
+          { method: 'DELETE' }
+        ).catch(() => null);
+        if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(cleanupPrevPromise);
+        else await cleanupPrevPromise;
+      }
       let realClassCode = session.classCode ? String(session.classCode).trim().toUpperCase() : null;
       if (session.role === 'student' && normEmail) {
         const stuRes = await supabaseRequest(
@@ -9624,9 +9769,39 @@ export default {
       return jsonResponse({
         ok: true,
         endpoint,
+        previousEndpointRemoved: Boolean(previousEndpoint && previousEndpoint !== endpoint),
         userEmail: normEmail,
         classCode: realClassCode,
         serverDeliveryConfigured: Boolean(env.VAPID_PRIVATE_KEY)
+      });
+    }
+
+    if (path === '/api/ktn/push/ack' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const rawEventId = String(body.eventId || '').trim();
+      if (!rawEventId) {
+        return jsonResponse({ ok: false, error: 'MISSING_EVENT_ID' }, 400);
+      }
+      const safeAckEventId = rawEventId.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/g, 'stu');
+      const displayedAt = new Date().toISOString();
+      let matched = false;
+      if (Array.isArray(globalThis.__ktnPushDiagnosticsLog)) {
+        for (const item of globalThis.__ktnPushDiagnosticsLog) {
+          if (item && (item.eventId === safeAckEventId || item.eventId === rawEventId)) {
+            item.deviceDisplayConfirmed = true;
+            item.deviceDisplayedAt = displayedAt;
+            item.deviceAckCount = (Number(item.deviceAckCount) || 0) + 1;
+            matched = true;
+            break;
+          }
+        }
+      }
+      return jsonResponse({
+        ok: true,
+        eventId: safeAckEventId,
+        matchedDiagnosticEntry: matched,
+        deviceDisplayConfirmed: true,
+        deviceDisplayedAt: displayedAt
       });
     }
 

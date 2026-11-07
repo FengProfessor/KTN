@@ -106,6 +106,24 @@ export const AppShell: React.FC = () => {
       return outputArray;
     };
 
+    const hasMatchingApplicationServerKey = (
+      sub: PushSubscription | null,
+      expectedKeyBytes: Uint8Array
+    ): boolean => {
+      try {
+        const rawKey = sub?.options?.applicationServerKey;
+        if (!rawKey) return true;
+        const actual = new Uint8Array(rawKey);
+        if (actual.length !== expectedKeyBytes.length) return false;
+        for (let i = 0; i < actual.length; i++) {
+          if (actual[i] !== expectedKeyBytes[i]) return false;
+        }
+        return true;
+      } catch {
+        return true;
+      }
+    };
+
     const syncPushSubscriptionForSession = async (force = false) => {
       if (cancelled || isDemoMode || !user?.email || !('PushManager' in window)) return;
       const now = Date.now();
@@ -116,8 +134,21 @@ export const AppShell: React.FC = () => {
         const readyReg = await navigator.serviceWorker.ready;
         if (cancelled || !readyReg?.pushManager) return;
 
+        let vapidPublicKey =
+          'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
+        try {
+          const keyRes = await ktnApi.getVapidPublicKey();
+          if (keyRes.publicKey && keyRes.publicKey.length >= 40) {
+            vapidPublicKey = keyRes.publicKey;
+          }
+        } catch {
+          // fallback to default VAPID public key
+        }
+        const appServerKey = urlBase64ToUint8Array(vapidPublicKey);
+
         let sub = await readyReg.pushManager.getSubscription();
         let subJson = sub ? sub.toJSON() : null;
+        let previousEndpoint = '';
         const isFakeOrCorrupt =
           subJson &&
           (!subJson.endpoint ||
@@ -125,8 +156,12 @@ export const AppShell: React.FC = () => {
             !subJson.keys?.p256dh ||
             !subJson.keys?.auth ||
             subJson.keys.p256dh === 'ktn-mobile-web-p256dh');
+        const isVapidKeyMismatch = sub ? !hasMatchingApplicationServerKey(sub, appServerKey) : false;
 
-        if (sub && isFakeOrCorrupt) {
+        if (sub && (isFakeOrCorrupt || isVapidKeyMismatch)) {
+          if (isVapidKeyMismatch && subJson?.endpoint) {
+            previousEndpoint = String(subJson.endpoint).trim();
+          }
           try {
             await sub.unsubscribe();
           } catch {
@@ -137,17 +172,6 @@ export const AppShell: React.FC = () => {
         }
 
         if (!sub && 'Notification' in window && Notification.permission === 'granted') {
-          let vapidPublicKey =
-            'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
-          try {
-            const keyRes = await ktnApi.getVapidPublicKey();
-            if (keyRes.publicKey && keyRes.publicKey.length >= 40) {
-              vapidPublicKey = keyRes.publicKey;
-            }
-          } catch {
-            // fallback to default VAPID public key
-          }
-          const appServerKey = urlBase64ToUint8Array(vapidPublicKey);
           sub = await readyReg.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: appServerKey as unknown as BufferSource,
@@ -160,15 +184,23 @@ export const AppShell: React.FC = () => {
         const auth = String(subJson?.keys?.auth || '').trim();
         if (!endpoint || !p256dh || !auth || cancelled) return;
 
-        const saveRes = await ktnApi.subscribePush({
-          endpoint,
-          expirationTime: subJson?.expirationTime ?? null,
-          keys: { p256dh, auth },
-          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
-        });
+        const saveRes = await ktnApi.subscribePush(
+          {
+            endpoint,
+            expirationTime: subJson?.expirationTime ?? null,
+            keys: { p256dh, auth },
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
+          },
+          previousEndpoint || undefined
+        );
         if (saveRes.ok) {
           try {
             localStorage.setItem('ktn_push_enabled_v2', '1');
+            window.dispatchEvent(
+              new CustomEvent('ktn:push-subscription-synced', {
+                detail: { enabled: true, endpoint },
+              })
+            );
           } catch {
             // ignore
           }
@@ -205,8 +237,27 @@ export const AppShell: React.FC = () => {
         }
       } else if (payload.type === 'KTN_PUSH_SUBSCRIPTION_CHANGED' && payload.subscription) {
         if (!isDemoMode && user?.email) {
-          ktnApi.subscribePush(payload.subscription).catch(() => null);
+          ktnApi
+            .subscribePush(payload.subscription, payload.previousEndpoint)
+            .then((res) => {
+              if (res.ok) {
+                try {
+                  localStorage.setItem('ktn_push_enabled_v2', '1');
+                  window.dispatchEvent(
+                    new CustomEvent('ktn:push-subscription-synced', {
+                      detail: { enabled: true, endpoint: res.endpoint },
+                    })
+                  );
+                } catch {
+                  // ignore
+                }
+              }
+            })
+            .catch(() => null);
         }
+      } else if (payload.type === 'KTN_PUSH_RECEIVED') {
+        queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+        queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
       }
     };
     navigator.serviceWorker.addEventListener('message', onSwMessage);
@@ -215,7 +266,7 @@ export const AppShell: React.FC = () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       navigator.serviceWorker.removeEventListener('message', onSwMessage);
     };
-  }, [navigate, isDemoMode, user?.email]);
+  }, [navigate, isDemoMode, user?.email, queryClient]);
 
   // Alert user via in-app toast when unread notifications arrive in foreground
   useEffect(() => {

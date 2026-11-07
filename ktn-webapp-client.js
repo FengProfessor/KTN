@@ -568,6 +568,19 @@
       for (let i = 0; i < rawData.length; ++i) appServerKey[i] = rawData.charCodeAt(i);
 
       let sub = await reg.pushManager.getSubscription();
+      let previousEndpoint = '';
+      if (sub && sub.options && sub.options.applicationServerKey) {
+        const actualKey = new Uint8Array(sub.options.applicationServerKey);
+        let keyMatches = actualKey.length === appServerKey.length;
+        for (let i = 0; keyMatches && i < actualKey.length; i++) {
+          if (actualKey[i] !== appServerKey[i]) keyMatches = false;
+        }
+        if (!keyMatches) {
+          previousEndpoint = sub.endpoint || '';
+          await sub.unsubscribe().catch(() => false);
+          sub = null;
+        }
+      }
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
@@ -582,6 +595,7 @@
           role: detectUserRole(session) || 'student',
           classCode: session?.classCode || null,
           subscription: sub.toJSON(),
+          ...(previousEndpoint ? { previousEndpoint } : {}),
           notifySettings
         }
       });

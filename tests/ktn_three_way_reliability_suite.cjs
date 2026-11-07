@@ -658,9 +658,12 @@ function loadWorkerInstance(sharedState = null) {
 
     if (u.hostname === 'fcm.googleapis.com' || u.hostname === 'web.push.apple.com') {
       if (!Array.isArray(state.pushDeliveries)) state.pushDeliveries = [];
+      const customMap = state.faults.pushEndpointCustomResponses || {};
+      const customResp = customMap[urlStr] || null;
       const expiredSet = state.faults.expiredPushEndpoints || new Set();
       const isExpired = expiredSet instanceof Set ? expiredSet.has(urlStr) : Boolean(expiredSet[urlStr]);
-      const status = isExpired ? 410 : (state.faults.pushServiceStatus || 201);
+      const status = customResp ? customResp.status : (isExpired ? 410 : (state.faults.pushServiceStatus || 201));
+      const respBody = customResp ? (customResp.body || '') : (isExpired ? 'Gone' : '');
       const bodyLen = init.body ? (init.body.byteLength || init.body.length || 0) : 0;
       state.pushDeliveries.push({
         endpoint: urlStr,
@@ -669,7 +672,7 @@ function loadWorkerInstance(sharedState = null) {
         headers: init.headers || {},
         bodyLength: bodyLen
       });
-      return new Response(isExpired ? 'Gone' : '', { status });
+      return new Response(respBody, { status });
     }
 
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -3277,31 +3280,110 @@ async function runSuite() {
     const step5Deliveries = [...state.pushDeliveries];
     const step5PushMeta = step5GradeHw.data?.pushDelivery;
 
-    // Verify 410 Gone expired endpoint auto-cleanup without deleting active phone endpoint
+    // Verify 410 Gone expired endpoint + 403 VapidPkHashMismatch auto-cleanup without deleting active phone endpoint
+    const stuAMismatchedEndpoint = 'https://fcm.googleapis.com/fcm/send/Q5_STUDENT_A_VAPID_MISMATCH';
+    const stuAStaleBeforeRotateEndpoint = 'https://web.push.apple.com/Q6_STUDENT_A_OLD_VAPID_KEY';
+    const stuARotatedPhoneEndpoint = 'https://web.push.apple.com/Q7_STUDENT_A_ROTATED_IPHONE';
+
     await callApi('/api/ktn/push/subscribe', {
       method: 'POST',
       headers: { Authorization: `Bearer ${studentAToken}` },
       body: { subscription: await makeRealPushSub(stuAExpiredEndpoint) }
     });
+    await callApi('/api/ktn/push/subscribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: { subscription: await makeRealPushSub(stuAMismatchedEndpoint) }
+    });
+    await callApi('/api/ktn/push/subscribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: { subscription: await makeRealPushSub(stuAStaleBeforeRotateEndpoint) }
+    });
+    const rotateSubRes = await callApi('/api/ktn/push/subscribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        subscription: await makeRealPushSub(stuARotatedPhoneEndpoint),
+        previousEndpoint: stuAStaleBeforeRotateEndpoint
+      }
+    });
+    const stalePrevRemovedOnRotate = !state.tables.ktn_push_subscriptions.some(
+      r => r.endpoint === stuAStaleBeforeRotateEndpoint
+    );
+    // Remove rotated test endpoint so only stuAPhoneEndpoint + stuAExpiredEndpoint + stuAMismatchedEndpoint remain
+    state.tables.ktn_push_subscriptions = state.tables.ktn_push_subscriptions.filter(
+      r => r.endpoint !== stuARotatedPhoneEndpoint
+    );
+
     state.faults.expiredPushEndpoints = new Set([stuAExpiredEndpoint]);
+    state.faults.pushEndpointCustomResponses = {
+      [stuAMismatchedEndpoint]: { status: 403, body: JSON.stringify({ reason: 'VapidPkHashMismatch' }) }
+    };
     state.pushDeliveries = [];
     const expiredCleanupMsg = await callApi('/api/ktn/messages', {
       method: 'POST',
       headers: { Authorization: `Bearer ${teacherAToken}` },
       body: {
         roomId: 'student:e2e.hs.a@khongtunhi.com',
-        content: 'Kiểm tra dọn dẹp thiết bị hết hạn 410'
+        content: 'Kiểm tra dọn dẹp thiết bị hết hạn 410 và lệch khóa VAPID 403'
       }
     });
     state.faults.expiredPushEndpoints = null;
+    state.faults.pushEndpointCustomResponses = null;
     const expiredRemovedFromDb = !state.tables.ktn_push_subscriptions.some(r => r.endpoint === stuAExpiredEndpoint);
+    const mismatchedRemovedFromDb = !state.tables.ktn_push_subscriptions.some(r => r.endpoint === stuAMismatchedEndpoint);
     const activeStillInDb = state.tables.ktn_push_subscriptions.some(r => r.endpoint === stuAPhoneEndpoint);
+    const mismatchReasonLogged = String(expiredCleanupMsg.data?.pushDelivery?.reason || '').includes('PUSH_SERVICE_HTTP_403:VapidPkHashMismatch');
+
+    // Verify idempotent re-grading >3s later returns both pushDispatch and pushDelivery
+    const gradedHwRow = state.tables.ktn_homeworks.find(h => h.id === submittedHwId);
+    if (gradedHwRow) {
+      gradedHwRow.graded_at = new Date(Date.now() - 10000).toISOString();
+    }
+    state.pushDeliveries = [];
+    const step5RegradeIdem = await callApi('/api/ktn/homeworks/grade', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        id: submittedHwId,
+        score: 10,
+        status: 'graded',
+        teacherFeedback: 'Phát âm xuất sắc!'
+      }
+    });
+    const regradeHasPushDelivery =
+      step5RegradeIdem.data?.idempotent === true &&
+      step5RegradeIdem.data?.pushDelivery?.pushAccepted === 1 &&
+      step5RegradeIdem.data?.pushDispatch?.pushAccepted === 1;
+
+    // Verify GET /api/ktn/notifications includes session_title on homework_assigned
+    const stuANotifsRes = await callApi('/api/ktn/notifications', {
+      headers: { Authorization: `Bearer ${studentAToken}` }
+    });
+    const assignNotifItem = (stuANotifsRes.data?.notifications || []).find(
+      n => n.type === 'homework_assigned' && Number(n.sessionNum) === 8
+    );
+    const assignNotifHasSessionTitle = Boolean(
+      assignNotifItem && String(assignNotifItem.body || '').includes('Buổi 8: Gia đình của em')
+    );
+
+    // Verify POST /api/ktn/push/ack transitions deviceDisplayConfirmed from false to true on the diagnostic entry
+    const ackRes = await callApi('/api/ktn/push/ack', {
+      method: 'POST',
+      body: {
+        eventId: step1PushMeta?.eventId,
+        eventType: 'chat_group_message'
+      }
+    });
 
     // Verify diagnostics endpoint format & zero sensitive data leakage
     const diagRes = await callApi('/api/ktn/push/diagnostics', {
       headers: { Authorization: `Bearer ${teacherAToken}` }
     });
     const diagLogs = diagRes.data?.recentLogs || [];
+    const step1DiagEntry = diagLogs.find(item => item.eventId === step1PushMeta?.eventId);
+    const step2DiagEntry = diagLogs.find(item => item.eventId === step2PushMeta?.eventId);
     const diagJsonStr = JSON.stringify(diagLogs);
     const hasNoSensitiveSecretsInLogs =
       !diagJsonStr.includes(stuAPhoneEndpoint) &&
@@ -3344,11 +3426,21 @@ async function runSuite() {
       step5PushMeta?.eventType === 'homework_graded' &&
       step5PushMeta?.recipientCount === 1 &&
       step5PushMeta?.pushAccepted === 1 &&
-      // 410 cleanup & diagnostics
+      // Rotation, 410/403 cleanup, re-grade pushDelivery, notifications & ack diagnostics
+      rotateSubRes.data?.previousEndpointRemoved === true &&
+      stalePrevRemovedOnRotate === true &&
       expiredCleanupMsg.data?.pushDelivery?.pushAccepted === 1 &&
-      expiredCleanupMsg.data?.pushDelivery?.pushFailed === 1 &&
+      expiredCleanupMsg.data?.pushDelivery?.pushFailed === 2 &&
       expiredRemovedFromDb === true &&
+      mismatchedRemovedFromDb === true &&
+      mismatchReasonLogged === true &&
       activeStillInDb === true &&
+      regradeHasPushDelivery === true &&
+      assignNotifHasSessionTitle === true &&
+      ackRes.status === 200 &&
+      ackRes.data?.deviceDisplayConfirmed === true &&
+      step1DiagEntry?.deviceDisplayConfirmed === true &&
+      step2DiagEntry?.deviceDisplayConfirmed === false &&
       diagRes.status === 200 &&
       diagLogs.length >= 5 &&
       hasNoSensitiveSecretsInLogs === true;
@@ -3356,9 +3448,9 @@ async function runSuite() {
     record(
       'D18-WEB-PUSH-FIVE-STEP-SEQUENTIAL-RELIABILITY-AND-MULTI-DEVICE-LOGOUT',
       'GROUP_V3',
-      'Sequential 5-step Web Push chain (group #1 -> group #2 -> private -> homework assign -> homework grade) delivers RFC 8291 encrypted push with unique eventId only to target recipient (never sender or other classes), preserves mobile subscription across PC logout, cleans up 410 Gone, and logs sanitized diagnostics',
+      'Sequential 5-step Web Push chain (group #1 -> group #2 -> private -> homework assign -> homework grade) delivers RFC 8291 encrypted push with unique eventId only to target recipient (never sender or other classes), preserves mobile subscription across PC logout, rotates stale VAPID subscriptions, cleans up 410 Gone & 403 VapidPkHashMismatch, tracks deviceDisplayConfirmed via /api/ktn/push/ack, and logs sanitized diagnostics',
       all5StepsPassed,
-      `pcLogoutPreserved=${phoneSubPreservedAfterPcLogout}, s1=${step1PushMeta?.pushAccepted}, s2=${step2PushMeta?.pushAccepted}, s3=${step3PushMeta?.pushAccepted}, s4=${step4PushMeta?.pushAccepted}, s5=${step5PushMeta?.pushAccepted}, 410Cleaned=${expiredRemovedFromDb}, logsSanitized=${hasNoSensitiveSecretsInLogs}`
+      `pcLogoutPreserved=${phoneSubPreservedAfterPcLogout}, s1=${step1PushMeta?.pushAccepted}, s2=${step2PushMeta?.pushAccepted}, s3=${step3PushMeta?.pushAccepted}, s4=${step4PushMeta?.pushAccepted}, s5=${step5PushMeta?.pushAccepted}, rotateCleaned=${stalePrevRemovedOnRotate}, 410Cleaned=${expiredRemovedFromDb}, 403MismatchCleaned=${mismatchedRemovedFromDb}, ackConfirmed=${step1DiagEntry?.deviceDisplayConfirmed}, logsSanitized=${hasNoSensitiveSecretsInLogs}`
     );
   }
 

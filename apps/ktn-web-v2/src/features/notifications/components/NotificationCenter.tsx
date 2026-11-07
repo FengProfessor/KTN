@@ -35,6 +35,24 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+function hasMatchingApplicationServerKey(
+  sub: PushSubscription | null | undefined,
+  expectedKeyBytes: Uint8Array
+): boolean {
+  try {
+    const rawKey = sub?.options?.applicationServerKey;
+    if (!rawKey) return true;
+    const actual = new Uint8Array(rawKey);
+    if (actual.length !== expectedKeyBytes.length) return false;
+    for (let i = 0; i < actual.length; i++) {
+      if (actual[i] !== expectedKeyBytes[i]) return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 export const NotificationCenter: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -51,10 +69,24 @@ export const NotificationCenter: React.FC = () => {
   // Verify real browser PushSubscription on mount and bind to current authenticated user — never assume enabled just from permission
   useEffect(() => {
     let cancelled = false;
+    const onPushSynced = (evt: Event) => {
+      const detail = (evt as CustomEvent<{ enabled?: boolean }>)?.detail;
+      if (!cancelled && detail?.enabled) {
+        setPushEnabled(true);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('ktn:push-subscription-synced', onPushSynced);
+    }
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       setPushEnabled(false);
-      return;
+      return () => {
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('ktn:push-subscription-synced', onPushSynced);
+        }
+      };
     }
+    const expectedDefaultKey = urlBase64ToUint8Array(DEFAULT_VAPID_PUBLIC_KEY);
     navigator.serviceWorker
       .getRegistration('/')
       .then((reg) => reg?.pushManager?.getSubscription())
@@ -64,12 +96,14 @@ export const NotificationCenter: React.FC = () => {
         const endpoint = String(subJson?.endpoint || '').trim();
         const p256dh = String(subJson?.keys?.p256dh || '').trim();
         const auth = String(subJson?.keys?.auth || '').trim();
+        const keyMatches = hasMatchingApplicationServerKey(sub, expectedDefaultKey);
         const hasRealSub = Boolean(
           endpoint &&
             !endpoint.includes('push.khongtunhi.com/v2/') &&
             p256dh &&
             auth &&
-            p256dh !== 'ktn-mobile-web-p256dh'
+            p256dh !== 'ktn-mobile-web-p256dh' &&
+            keyMatches
         );
         if (!hasRealSub) {
           setPushEnabled(false);
@@ -111,6 +145,7 @@ export const NotificationCenter: React.FC = () => {
       });
     return () => {
       cancelled = true;
+      window.removeEventListener('ktn:push-subscription-synced', onPushSynced);
     };
   }, [user?.email, isDemoMode]);
 
@@ -286,6 +321,7 @@ export const NotificationCenter: React.FC = () => {
 
       const appServerKey = urlBase64ToUint8Array(vapidPublicKey);
       const existingSub = await readyReg.pushManager.getSubscription();
+      let previousEndpoint = '';
       if (existingSub) {
         const existingJson = existingSub.toJSON();
         const isFakeOrCorrupt =
@@ -294,11 +330,15 @@ export const NotificationCenter: React.FC = () => {
           !existingJson.keys?.p256dh ||
           !existingJson.keys?.auth ||
           existingJson.keys.p256dh === 'ktn-mobile-web-p256dh';
-        if (isFakeOrCorrupt) {
+        const isVapidKeyMismatch = !hasMatchingApplicationServerKey(existingSub, appServerKey);
+        if (isFakeOrCorrupt || isVapidKeyMismatch) {
+          if (isVapidKeyMismatch && existingJson.endpoint) {
+            previousEndpoint = String(existingJson.endpoint).trim();
+          }
           try {
             await existingSub.unsubscribe();
           } catch {
-            // ignore unsubscribe error on corrupt subscription
+            // ignore unsubscribe error on corrupt/mismatched subscription
           }
         }
       }
@@ -311,6 +351,8 @@ export const NotificationCenter: React.FC = () => {
         });
       } catch {
         if (existingSub) {
+          const prevEp = existingSub.endpoint || '';
+          if (prevEp && !previousEndpoint) previousEndpoint = prevEp;
           try {
             await existingSub.unsubscribe();
           } catch {
@@ -332,12 +374,15 @@ export const NotificationCenter: React.FC = () => {
         throw new Error('Trình duyệt không trả về khóa mã hóa PushSubscription hợp lệ (p256dh/auth).');
       }
 
-      const saveRes = await ktnApi.subscribePush({
-        endpoint,
-        expirationTime: subJson.expirationTime ?? null,
-        keys: { p256dh, auth },
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
-      });
+      const saveRes = await ktnApi.subscribePush(
+        {
+          endpoint,
+          expirationTime: subJson.expirationTime ?? null,
+          keys: { p256dh, auth },
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
+        },
+        previousEndpoint || undefined
+      );
 
       if (!saveRes.ok) {
         throw new Error('Máy chủ chưa xác nhận lưu đăng ký thông báo đẩy.');
@@ -345,6 +390,11 @@ export const NotificationCenter: React.FC = () => {
 
       try {
         localStorage.setItem('ktn_push_enabled_v2', '1');
+        window.dispatchEvent(
+          new CustomEvent('ktn:push-subscription-synced', {
+            detail: { enabled: true, endpoint },
+          })
+        );
       } catch {
         // ignore
       }

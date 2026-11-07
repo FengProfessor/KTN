@@ -636,15 +636,20 @@ export const ktnApi = {
   },
 
   async subscribePush(
-    subscription: Record<string, unknown>
+    subscription: Record<string, unknown>,
+    previousEndpoint?: string
   ): Promise<{ ok: boolean; endpoint?: string; serverDeliveryConfigured?: boolean }> {
+    const prev = String(previousEndpoint || subscription.previousEndpoint || '').trim();
     const res = await ktnRequest<{
       ok: boolean;
       endpoint?: string;
       serverDeliveryConfigured?: boolean;
     }>('/api/ktn/push/subscribe', {
       method: 'POST',
-      body: JSON.stringify({ subscription })
+      body: JSON.stringify({
+        subscription,
+        ...(prev ? { previousEndpoint: prev } : {})
+      })
     });
     return {
       ok: Boolean(res?.ok),

@@ -3999,15 +3999,29 @@
         if (!reg || !reg.pushManager) return null;
 
         await navigator.serviceWorker.ready;
+        const appServerKey = this.urlBase64ToUint8Array(this.VAPID_PUBLIC_KEY);
         let sub = await reg.pushManager.getSubscription();
+        let previousEndpoint = '';
+        if (sub && sub.options && sub.options.applicationServerKey) {
+          const actualKey = new Uint8Array(sub.options.applicationServerKey);
+          let keyMatches = actualKey.length === appServerKey.length;
+          for (let i = 0; keyMatches && i < actualKey.length; i++) {
+            if (actualKey[i] !== appServerKey[i]) keyMatches = false;
+          }
+          if (!keyMatches) {
+            previousEndpoint = sub.endpoint || '';
+            await sub.unsubscribe().catch(() => false);
+            sub = null;
+          }
+        }
         if (!sub) {
           sub = await reg.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: this.urlBase64ToUint8Array(this.VAPID_PUBLIC_KEY)
+            applicationServerKey: appServerKey
           });
         }
         if (sub) {
-          await this.savePushSubscriptionToCloud(sub.toJSON());
+          await this.savePushSubscriptionToCloud(sub.toJSON(), previousEndpoint);
         }
         return sub;
       } catch {
@@ -4015,12 +4029,9 @@
       }
     },
 
-    async savePushSubscriptionToCloud(subJson) {
+    async savePushSubscriptionToCloud(subJson, previousEndpoint) {
       try {
         if (!subJson || !subJson.endpoint || !subJson.keys) return false;
-        const lastSavedEp = localStorage.getItem('ktn_saved_push_ep_v1');
-        if (lastSavedEp === subJson.endpoint) return true;
-
         if (!window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return false;
         const ctx = this.getActiveContext();
         const res = await window.KtnWebApp.apiRequest('/api/ktn/push/subscribe', {
@@ -4029,7 +4040,8 @@
             email: ctx.email || '',
             role: ctx.role || 'student',
             classCode: (ctx.classCodes && ctx.classCodes[0]) || null,
-            subscription: subJson
+            subscription: subJson,
+            ...(previousEndpoint ? { previousEndpoint } : {})
           }
         });
         if (res && res.ok) {

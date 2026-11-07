@@ -270,8 +270,8 @@ export const AdminHome: React.FC = () => {
 
         <QuickActionTile
           icon={ShieldCheck}
-          label="Phân quyền"
-          status="Cấp khóa / Xếp lớp"
+          label="Đồng bộ"
+          status="Đối soát 3 hệ thống"
           accent="emerald"
           testId="admin-quick-permissions"
           onClick={() => navigate('/admin/more')}
@@ -344,8 +344,9 @@ export const AdminHome: React.FC = () => {
                 rightAction={
                   <button
                     type="button"
+                    data-testid={`admin-home-open-student-${stu.email}`}
                     onClick={() =>
-                      navigate(`/admin/more?email=${encodeURIComponent(stu.email)}`)
+                      navigate(`/admin/students?email=${encodeURIComponent(stu.email)}`)
                     }
                     className="min-h-[36px] rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-900 hover:bg-red-100"
                   >

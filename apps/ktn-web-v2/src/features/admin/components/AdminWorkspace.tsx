@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -21,13 +21,16 @@ import {
   X,
   Calendar,
   Clock,
+  ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_COURSES } from '@/lib/demoData';
-import { formatVnd } from '@/lib/utils';
+import { formatVnd, resolveStudentOnlineCourses } from '@/lib/utils';
 import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
+import { StudentDetailDrawer } from '@/features/admin/components/StudentDetailDrawer';
 import {
   KtnClassItem,
   KtnCourse,
@@ -38,10 +41,12 @@ import {
   KtnTeacherRecord,
 } from '@/types/ktn.types';
 
+const VALID_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export const AdminWorkspace: React.FC = () => {
   const navigate = useNavigate();
   const { section } = useParams<{ section?: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
@@ -50,11 +55,14 @@ export const AdminWorkspace: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     'all' | 'students' | 'classes' | 'orders' | 'more'
   >('all');
-  const [targetEmail, setTargetEmail] = useState(
-    () => searchParams.get('email') || 'taphong2002vip@gmail.com'
-  );
-  const [targetCourseId, setTargetCourseId] = useState('6adadba969897b0002482ca5');
-  const [targetClassCode, setTargetClassCode] = useState('YCT2-04');
+
+  // Selected student for StudentDetailDrawer (neutral by default — only opened by explicit click or valid ?email= param)
+  const [selectedStudentEmail, setSelectedStudentEmail] = useState<string | null>(() => {
+    const rawEmail = (searchParams.get('email') || '').trim().toLowerCase();
+    return VALID_EMAIL_REGEX.test(rawEmail) ? rawEmail : null;
+  });
+  const [selectedStudentSnapshot, setSelectedStudentSnapshot] =
+    useState<KtnStudentRecord | null>(null);
 
   // Server-side Student Search state (250ms debounce + pagination + filters)
   const [searchInput, setSearchInput] = useState('');
@@ -65,27 +73,25 @@ export const AdminWorkspace: React.FC = () => {
   const [pageOffset, setPageOffset] = useState(0);
   const pageLimit = 20;
 
-  // One-click Student Provisioning modal state
+  // One-click Student Provisioning modal state (neutral defaults: no class, no courses)
   const [showCreateStudentModal, setShowCreateStudentModal] = useState(false);
   const [newStuName, setNewStuName] = useState('');
   const [newStuEmail, setNewStuEmail] = useState('');
   const [newStuPhone, setNewStuPhone] = useState('');
   const [newStuParent, setNewStuParent] = useState('');
-  const [newStuClassCode, setNewStuClassCode] = useState(''); // Never defaults to YCT2-04!
-  const [newStuCourseIds, setNewStuCourseIds] = useState<string[]>([
-    '6adadba969897b0002482ca5',
-  ]);
+  const [newStuClassCode, setNewStuClassCode] = useState('');
+  const [newStuCourseIds, setNewStuCourseIds] = useState<string[]>([]);
   const [newStuIdempotencyKey, setNewStuIdempotencyKey] = useState(
     () => `PROV-UI-${Date.now()}`
   );
 
-  // One-click Teacher Creation modal state
+  // One-click Teacher Creation modal state (neutral defaults: no classes pre-selected)
   const [showCreateTeacherModal, setShowCreateTeacherModal] = useState(false);
   const [newTeacherName, setNewTeacherName] = useState('');
   const [newTeacherEmail, setNewTeacherEmail] = useState('');
   const [newTeacherPhone, setNewTeacherPhone] = useState('');
   const [newTeacherCode, setNewTeacherCode] = useState('');
-  const [newTeacherClasses, setNewTeacherClasses] = useState<string[]>(['YCT2-04']);
+  const [newTeacherClasses, setNewTeacherClasses] = useState<string[]>([]);
 
   // Official Class Schedule & Create Class modal state
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
@@ -117,10 +123,20 @@ export const AdminWorkspace: React.FC = () => {
   }, [searchInput]);
 
   useEffect(() => {
-    const emailParam = searchParams.get('email');
-    if (emailParam) {
-      setTargetEmail(emailParam);
+    const rawEmail = (searchParams.get('email') || '').trim().toLowerCase();
+    const hasValidEmail = VALID_EMAIL_REGEX.test(rawEmail);
+
+    if (hasValidEmail) {
+      setSelectedStudentEmail(rawEmail);
+      // Redirect legacy /admin/more?email=... deep-links to unified /admin/students?email=...
+      if (section === 'more') {
+        navigate(`/admin/students?email=${encodeURIComponent(rawEmail)}`, {
+          replace: true,
+        });
+        return;
+      }
     }
+
     if (
       section === 'students' ||
       section === 'classes' ||
@@ -131,7 +147,7 @@ export const AdminWorkspace: React.FC = () => {
     } else {
       setActiveTab('all');
     }
-  }, [section, searchParams]);
+  }, [section, searchParams, navigate]);
 
   const coursesCatalogQuery = useQuery<KtnCourse[]>({
     queryKey: ['ktn-courses-catalog', isDemoMode],
@@ -340,45 +356,259 @@ export const AdminWorkspace: React.FC = () => {
     },
   });
 
-  const updateEntitlementMutation = useMutation({
-    mutationFn: async (params: {
-      action?: 'grant' | 'revoke';
-      email: string;
-      courseId: string;
-      classCode: string;
-    }) => {
-      if (isDemoMode) {
-        await new Promise((r) => setTimeout(r, 350));
-        return { message: 'Updated' };
+  const [drawerActionError, setDrawerActionError] = useState<string | null>(null);
+
+  const handleStudentMutationSuccess = (
+    res: {
+      student?: KtnStudentRecord;
+      accountCreated?: boolean;
+      initialPassword?: string | null;
+      message?: string;
+    },
+    fallbackEmail: string,
+    defaultToastTitle: string
+  ) => {
+    setDrawerActionError(null);
+    if (res?.student) {
+      setSelectedStudentSnapshot(res.student);
+    }
+    queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
+    queryClient.invalidateQueries({ queryKey: ['ktn-admin-sync-status'] });
+    if (res?.accountCreated && res?.initialPassword) {
+      setCredentialHandoff({
+        name: res.student?.name || fallbackEmail,
+        email: res.student?.email || fallbackEmail,
+        roleLabel: 'Học viên',
+        accountCreated: true,
+        existingAccount: false,
+        initialPassword: res.initialPassword,
+      });
+    }
+    addToast({
+      title: res?.message || defaultToastTitle,
+      variant: 'success',
+    });
+  };
+
+  const buildBaseDemoStudent = (email: string): KtnStudentRecord =>
+    selectedStudent || {
+      code: 'KTN-DEMO',
+      email,
+      name: email,
+      class_code: null,
+      has_live_class: false,
+      has_online_courses: false,
+      online_courses: [],
+      studentCase: 'unassigned',
+    };
+
+  const grantCoursesMutation = useMutation({
+    mutationFn: async (params: { email: string; courseIds: string[] }) => {
+      setDrawerActionError(null);
+      if (!params.courseIds || params.courseIds.length === 0) {
+        throw new Error('Vui lòng chọn ít nhất 1 khóa học trước khi cấp quyền.');
       }
-      return ktnApi.manageStudentCourses({
-        action: params.action || 'grant',
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 250));
+        const base = buildBaseDemoStudent(params.email);
+        const existingCourses = base.online_courses || [];
+        const addedCourses = DEMO_COURSES.filter((c) =>
+          params.courseIds.includes(c.id)
+        ).map((c) => ({
+          id: c.id,
+          code: c.code || c.id,
+          title: c.title,
+          shortTitle: c.shortTitle || c.title,
+        }));
+        const mergedMap = new Map<string, (typeof existingCourses)[number]>();
+        [...existingCourses, ...addedCourses].forEach((c) => mergedMap.set(c.id, c));
+        const updatedStudent: KtnStudentRecord = {
+          ...base,
+          has_online_courses: mergedMap.size > 0,
+          online_courses: Array.from(mergedMap.values()),
+        };
+        return { message: 'Đã cấp thêm khóa học thành công!', student: updatedStudent };
+      }
+      return ktnApi.grantStudentCourses({
         email: params.email,
-        courseIds: [params.courseId],
-        classCode: params.classCode || null,
+        courseIds: params.courseIds,
       });
     },
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
-      queryClient.invalidateQueries({ queryKey: ['ktn-admin-sync-status'] });
-      if (res && 'accountCreated' in res && res.accountCreated && res.initialPassword) {
-        setCredentialHandoff({
-          name: res.student?.name || targetEmail,
-          email: res.student?.email || targetEmail,
-          roleLabel: 'Học viên',
-          accountCreated: true,
-          existingAccount: false,
-          initialPassword: res.initialPassword,
-        });
-      }
-      addToast({
-        title: 'Đã cập nhật quyền khóa học & xếp lớp!',
-        variant: 'success',
-      });
+    onSuccess: (res, vars) => {
+      handleStudentMutationSuccess(
+        res,
+        vars.email,
+        'Đã cấp thêm khóa học (giữ nguyên lớp trực tiếp)!'
+      );
     },
     onError: (err: Error) => {
+      setDrawerActionError(err.message);
       addToast({
-        title: 'Không thể cập nhật phân quyền',
+        title: 'Không thể cấp khóa học',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
+  const revokeCourseMutation = useMutation({
+    mutationFn: async (params: { email: string; courseId: string }) => {
+      setDrawerActionError(null);
+      if (!params.courseId) {
+        throw new Error('Vui lòng chọn khóa học cần thu hồi.');
+      }
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 250));
+        const base = buildBaseDemoStudent(params.email);
+        const remaining = (base.online_courses || []).filter(
+          (c) => c.id !== params.courseId
+        );
+        const updatedStudent: KtnStudentRecord = {
+          ...base,
+          has_online_courses: remaining.length > 0,
+          online_courses: remaining,
+        };
+        return { message: 'Đã thu hồi khóa học!', student: updatedStudent };
+      }
+      return ktnApi.revokeStudentCourse({
+        email: params.email,
+        courseId: params.courseId,
+      });
+    },
+    onSuccess: (res, vars) => {
+      handleStudentMutationSuccess(
+        res,
+        vars.email,
+        'Đã thu hồi khóa học (giữ nguyên các khóa khác & lớp học)!'
+      );
+    },
+    onError: (err: Error) => {
+      setDrawerActionError(err.message);
+      addToast({
+        title: 'Không thể thu hồi khóa học',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
+  const assignClassMutation = useMutation({
+    mutationFn: async (params: { email: string; classCode: string | null }) => {
+      setDrawerActionError(null);
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 250));
+        const base = buildBaseDemoStudent(params.email);
+        const updatedStudent: KtnStudentRecord = {
+          ...base,
+          class_code: params.classCode,
+          has_live_class: Boolean(params.classCode),
+        };
+        return {
+          message: params.classCode
+            ? `Đã chuyển sang lớp ${params.classCode}!`
+            : 'Đã bỏ xếp lớp trực tiếp!',
+          student: updatedStudent,
+        };
+      }
+      return ktnApi.assignStudentClass({
+        email: params.email,
+        classCode: params.classCode,
+      });
+    },
+    onSuccess: (res, vars) => {
+      handleStudentMutationSuccess(
+        res,
+        vars.email,
+        vars.classCode
+          ? `Đã cập nhật lớp trực tiếp (${vars.classCode}) — giữ nguyên quyền khóa học!`
+          : 'Đã bỏ xếp lớp trực tiếp — giữ nguyên quyền khóa học!'
+      );
+    },
+    onError: (err: Error) => {
+      setDrawerActionError(err.message);
+      addToast({
+        title: 'Không thể cập nhật lớp trực tiếp',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
+  const replaceAllCoursesMutation = useMutation({
+    mutationFn: async (params: { email: string; courseIds: string[] }) => {
+      setDrawerActionError(null);
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 250));
+        const base = buildBaseDemoStudent(params.email);
+        const nextCourses = DEMO_COURSES.filter((c) =>
+          params.courseIds.includes(c.id)
+        ).map((c) => ({
+          id: c.id,
+          code: c.code || c.id,
+          title: c.title,
+          shortTitle: c.shortTitle || c.title,
+        }));
+        const updatedStudent: KtnStudentRecord = {
+          ...base,
+          has_online_courses: nextCourses.length > 0,
+          online_courses: nextCourses,
+        };
+        return { message: 'Đã thay thế danh sách khóa học!', student: updatedStudent };
+      }
+      return ktnApi.replaceAllStudentCourses({
+        email: params.email,
+        courseIds: params.courseIds,
+      });
+    },
+    onSuccess: (res, vars) => {
+      handleStudentMutationSuccess(
+        res,
+        vars.email,
+        'Đã thay thế toàn bộ danh sách khóa học!'
+      );
+    },
+    onError: (err: Error) => {
+      setDrawerActionError(err.message);
+      addToast({
+        title: 'Không thể thay thế danh sách khóa học',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (params: {
+      email: string;
+      name: string;
+      phone?: string;
+      parentName?: string;
+    }) => {
+      setDrawerActionError(null);
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 250));
+        const base = buildBaseDemoStudent(params.email);
+        const updatedStudent: KtnStudentRecord = {
+          ...base,
+          name: params.name,
+          phone: params.phone || '',
+          parent_name: params.parentName || '',
+        };
+        return { message: 'Đã lưu thông tin hồ sơ học viên!', student: updatedStudent };
+      }
+      return ktnApi.updateStudentProfile(params);
+    },
+    onSuccess: (res, vars) => {
+      handleStudentMutationSuccess(
+        res,
+        vars.email,
+        'Đã cập nhật thông tin hồ sơ học viên!'
+      );
+    },
+    onError: (err: Error) => {
+      setDrawerActionError(err.message);
+      addToast({
+        title: 'Không thể lưu thông tin học viên',
         description: err.message,
         variant: 'error',
       });
@@ -443,6 +673,7 @@ export const AdminWorkspace: React.FC = () => {
       setNewStuPhone('');
       setNewStuParent('');
       setNewStuClassCode('');
+      setNewStuCourseIds([]);
       setNewStuIdempotencyKey(`PROV-UI-${Date.now()}`);
       addToast({
         title: res.message || 'Đã tạo & cấp quyền học viên thành công!',
@@ -504,6 +735,7 @@ export const AdminWorkspace: React.FC = () => {
       setNewTeacherEmail('');
       setNewTeacherPhone('');
       setNewTeacherCode('');
+      setNewTeacherClasses([]);
       addToast({
         title: res.message || 'Đã lưu hồ sơ giáo viên & phân công lớp!',
         variant: 'success',
@@ -549,16 +781,87 @@ export const AdminWorkspace: React.FC = () => {
     },
   });
 
-  const coursesList =
-    coursesCatalogQuery.data && coursesCatalogQuery.data.length > 0
-      ? coursesCatalogQuery.data
-      : DEMO_COURSES;
+  // Never fall back to DEMO_COURSES in live mode when catalog API fails
+  const coursesList = isDemoMode ? DEMO_COURSES : coursesCatalogQuery.data || [];
+  const catalogError =
+    !isDemoMode &&
+    (coursesCatalogQuery.isError ||
+      (!coursesCatalogQuery.isLoading && coursesList.length === 0));
   const classesList = isDemoMode ? DEMO_CLASSES : classesQuery.data || [];
+  const knownClassIds = useMemo(
+    () => new Set(classesList.map((c) => c.id)),
+    [classesList]
+  );
   const ordersList = ordersQuery.data || [];
   const studentsList = studentSearchQuery.data?.items || [];
   const totalStudentsCount = studentSearchQuery.data?.totalCount ?? studentsList.length;
   const teachersList = teachersQuery.data || [];
   const syncStatus = syncStatusQuery.data;
+
+  const studentInCurrentPage = useMemo(() => {
+    if (!selectedStudentEmail) return null;
+    const norm = selectedStudentEmail.toLowerCase();
+    return studentsList.find((s) => (s.email || '').toLowerCase() === norm) || null;
+  }, [selectedStudentEmail, studentsList]);
+
+  // If a student is opened via ?email=... deep-link or is not on the current pagination page, look them up by email
+  const selectedStudentLookupQuery = useQuery<KtnStudentRecord | null>({
+    queryKey: ['ktn-admin-student-detail-lookup', selectedStudentEmail, isDemoMode],
+    queryFn: async () => {
+      if (!selectedStudentEmail || isDemoMode) return null;
+      const res = await ktnApi.searchStudents({ q: selectedStudentEmail, limit: 10 });
+      const norm = selectedStudentEmail.toLowerCase();
+      return (
+        (res.items || []).find((s) => (s.email || '').toLowerCase() === norm) || null
+      );
+    },
+    enabled:
+      Boolean(selectedStudentEmail) &&
+      !isDemoMode &&
+      !studentInCurrentPage,
+  });
+
+  useEffect(() => {
+    if (studentInCurrentPage) {
+      setSelectedStudentSnapshot(studentInCurrentPage);
+    } else if (selectedStudentLookupQuery.data) {
+      setSelectedStudentSnapshot(selectedStudentLookupQuery.data);
+    }
+  }, [studentInCurrentPage, selectedStudentLookupQuery.data]);
+
+  const selectedStudent: KtnStudentRecord | null = useMemo(() => {
+    if (!selectedStudentEmail) return null;
+    const norm = selectedStudentEmail.toLowerCase();
+    if (
+      selectedStudentSnapshot &&
+      (selectedStudentSnapshot.email || '').toLowerCase() === norm
+    ) {
+      return selectedStudentSnapshot;
+    }
+    if (studentInCurrentPage) return studentInCurrentPage;
+    if (selectedStudentLookupQuery.data) return selectedStudentLookupQuery.data;
+    return null;
+  }, [
+    selectedStudentEmail,
+    selectedStudentSnapshot,
+    studentInCurrentPage,
+    selectedStudentLookupQuery.data,
+  ]);
+
+  const openStudentDrawer = (stu: KtnStudentRecord) => {
+    setSelectedStudentSnapshot(stu);
+    setSelectedStudentEmail(stu.email.toLowerCase());
+  };
+
+  const closeStudentDrawer = () => {
+    setSelectedStudentEmail(null);
+    setSelectedStudentSnapshot(null);
+    if (searchParams.has('email')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('email');
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
 
   const hasApiError =
     !isDemoMode &&
@@ -601,7 +904,7 @@ export const AdminWorkspace: React.FC = () => {
               },
               { id: 'classes', label: `Lớp (${classesList.length})`, to: '/admin/classes' },
               { id: 'orders', label: `Đơn hàng (${ordersList.length})`, to: '/admin/orders' },
-              { id: 'more', label: 'Phân quyền & Đồng bộ', to: '/admin/more' },
+              { id: 'more', label: 'Đối soát & Đồng bộ', to: '/admin/more' },
             ] as const
           ).map((t) => (
             <button
@@ -768,7 +1071,7 @@ export const AdminWorkspace: React.FC = () => {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-bold text-stone-700">
-                Xếp lớp trực tiếp (tùy chọn — không tự gán nếu chỉ học video):
+                Xếp lớp trực tiếp (tùy chọn):
               </label>
               <select
                 data-testid="provision-student-class-select"
@@ -776,7 +1079,7 @@ export const AdminWorkspace: React.FC = () => {
                 onChange={(e) => setNewStuClassCode(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-stone-300 px-2.5 py-1.5 text-xs font-bold"
               >
-                <option value="">-- Không xếp lớp (Chỉ học khóa Video) --</option>
+                <option value="">— Chưa xếp lớp —</option>
                 {classesList.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.id} · {c.name}
@@ -787,32 +1090,43 @@ export const AdminWorkspace: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-stone-700">
-                Cấp khóa học Video ({newStuCourseIds.length} khóa đã chọn):
+                Cấp khóa học Video (tùy chọn —{' '}
+                {newStuCourseIds.length > 0
+                  ? `${newStuCourseIds.length} khóa đã chọn`
+                  : '— Chưa chọn khóa học —'}
+                ):
               </label>
               <div className="mt-1 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-2">
-                {coursesList.map((course) => {
-                  const checked = newStuCourseIds.includes(course.id);
-                  return (
-                    <button
-                      key={course.id}
-                      type="button"
-                      onClick={() =>
-                        setNewStuCourseIds((prev) =>
+                {coursesList.length === 0 ? (
+                  <span className="text-[11px] font-medium text-stone-500">
+                    — Chưa chọn khóa học —
+                  </span>
+                ) : (
+                  coursesList.map((course) => {
+                    const checked = newStuCourseIds.includes(course.id);
+                    return (
+                      <button
+                        key={course.id}
+                        type="button"
+                        data-testid={`provision-student-course-btn-${course.id}`}
+                        onClick={() =>
+                          setNewStuCourseIds((prev) =>
+                            checked
+                              ? prev.filter((id) => id !== course.id)
+                              : [...prev, course.id]
+                          )
+                        }
+                        className={`rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
                           checked
-                            ? prev.filter((id) => id !== course.id)
-                            : [...prev, course.id]
-                        )
-                      }
-                      className={`rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
-                        checked
-                          ? 'bg-red-800 text-white'
-                          : 'border border-stone-200 bg-white text-stone-700'
-                      }`}
-                    >
-                      {course.shortTitle || course.title}
-                    </button>
-                  );
-                })}
+                            ? 'bg-red-800 text-white'
+                            : 'border border-stone-200 bg-white text-stone-700'
+                        }`}
+                      >
+                        {course.shortTitle || course.title}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -918,7 +1232,11 @@ export const AdminWorkspace: React.FC = () => {
 
           <div>
             <label className="block text-xs font-bold text-stone-700">
-              Lớp phụ trách ({newTeacherClasses.length} lớp):
+              Lớp phụ trách (tùy chọn —{' '}
+              {newTeacherClasses.length > 0
+                ? `${newTeacherClasses.length} lớp đã chọn`
+                : '— Chưa xếp lớp —'}
+              ):
             </label>
             <div className="mt-1 flex flex-wrap gap-1.5">
               {classesList.map((cls) => {
@@ -927,6 +1245,7 @@ export const AdminWorkspace: React.FC = () => {
                   <button
                     key={cls.id}
                     type="button"
+                    data-testid={`create-teacher-class-btn-${cls.id}`}
                     onClick={() =>
                       setNewTeacherClasses((prev) =>
                         selected ? prev.filter((c) => c !== cls.id) : [...prev, cls.id]
@@ -994,112 +1313,42 @@ export const AdminWorkspace: React.FC = () => {
         </div>
       )}
 
-      {/* Orders & Entitlements Grid */}
+      {/* Orders & 3-System Sync Reconciliation Grid */}
       {(showOrders || showPermissions) && (
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
-          {/* Grant Course & Assign Class Form */}
+          {/* 3-System Sync Health & Reconciliation Tools (No duplicate student entitlement form) */}
           {showPermissions && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                updateEntitlementMutation.mutate({
-                  action: 'grant',
-                  email: targetEmail,
-                  courseId: targetCourseId,
-                  classCode: targetClassCode,
-                });
-              }}
+            <div
               className={`space-y-3 rounded-xl border border-stone-200 bg-white p-3.5 shadow-2xs ${
                 showOrders ? 'lg:col-span-5' : 'lg:col-span-12'
               }`}
             >
-              <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
-                <ShieldCheck className="h-4 w-4 text-red-800" />
-                Phân quyền khóa học & Xếp lớp
-              </h2>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-700">
-                  Email học viên:
-                </label>
-                <input
-                  type="email"
-                  value={targetEmail}
-                  onChange={(e) => setTargetEmail(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700">Khóa học:</label>
-                  <select
-                    value={targetCourseId}
-                    onChange={(e) => setTargetCourseId(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-stone-300 px-2.5 py-1.5 text-xs font-bold"
-                  >
-                    {coursesList.map((course) => (
-                      <option key={course.id} value={course.id}>
-                        {course.shortTitle || course.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700">Xếp lớp:</label>
-                  <select
-                    value={targetClassCode}
-                    onChange={(e) => setTargetClassCode(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-stone-300 px-2.5 py-1.5 text-xs font-bold"
-                  >
-                    <option value="">Chưa xếp lớp (Chỉ Video)</option>
-                    {classesList.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="submit"
-                  data-testid="admin-grant-course-btn"
-                  disabled={updateEntitlementMutation.isPending}
-                  className="inline-flex min-h-[38px] flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-800 px-3 py-2 text-xs font-bold text-white hover:bg-red-900"
-                >
-                  {updateEntitlementMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <PlusCircle className="h-4 w-4" />
-                  )}
-                  <span>Cấp quyền & Xếp lớp</span>
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
+                  <ShieldCheck className="h-4 w-4 text-red-800" />
+                  Đối soát & Đồng bộ hệ thống
+                </h2>
                 <button
                   type="button"
-                  data-testid="admin-revoke-course-btn"
-                  disabled={updateEntitlementMutation.isPending}
-                  onClick={() =>
-                    updateEntitlementMutation.mutate({
-                      action: 'revoke',
-                      email: targetEmail,
-                      courseId: targetCourseId,
-                      classCode: targetClassCode,
-                    })
-                  }
-                  className="inline-flex min-h-[38px] shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"
+                  data-testid="admin-goto-students-btn"
+                  onClick={() => navigate('/admin/students')}
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-900 hover:bg-red-100"
                 >
-                  Thu hồi
+                  <Users className="h-3.5 w-3.5" />
+                  <span>Mở danh sách Học viên để cấp quyền / xếp lớp</span>
                 </button>
               </div>
 
-              {/* 3-System Sync Health Summary inside Permissions/More */}
+              <p className="text-[11px] text-stone-600">
+                Để cấp khóa học, thu hồi khóa học hoặc chuyển lớp trực tiếp, hãy chọn trực tiếp học viên trong mục{' '}
+                <strong className="text-stone-900">Học viên</strong>. Khu vực này dành riêng cho đối soát đồng bộ giữa Web · Supabase · izTeach.
+              </p>
+
+              {/* 3-System Sync Health Summary */}
               {syncStatus && (
                 <div
                   data-testid="admin-sync-health-card"
-                  className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs"
+                  className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-stone-800">
@@ -1140,7 +1389,7 @@ export const AdminWorkspace: React.FC = () => {
                   </div>
                   {syncStatus.driftItems.length > 0 && (
                     <div className="mt-2 space-y-1.5 border-t border-stone-200 pt-2">
-                      {syncStatus.driftItems.slice(0, 4).map((item) => (
+                      {syncStatus.driftItems.slice(0, 6).map((item) => (
                         <div
                           key={item.id}
                           data-testid={`admin-drift-item-${item.entityKey}`}
@@ -1154,15 +1403,30 @@ export const AdminWorkspace: React.FC = () => {
                               {item.detail || item.reason || item.driftCode}
                             </p>
                           </div>
-                          {item.retryAction && (
-                            <button
-                              type="button"
-                              onClick={() => retrySyncMutation.mutate(item.retryAction!)}
-                              className="shrink-0 rounded-lg bg-red-800 px-2 py-1 text-[10px] font-bold text-white"
-                            >
-                              Đồng bộ lại
-                            </button>
-                          )}
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {VALID_EMAIL_REGEX.test(item.entityKey || '') && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  navigate(
+                                    `/admin/students?email=${encodeURIComponent(item.entityKey)}`
+                                  )
+                                }
+                                className="rounded-lg border border-stone-200 bg-stone-50 px-2 py-1 text-[10px] font-bold text-stone-700 hover:bg-stone-100"
+                              >
+                                Mở hồ sơ
+                              </button>
+                            )}
+                            {item.retryAction && (
+                              <button
+                                type="button"
+                                onClick={() => retrySyncMutation.mutate(item.retryAction!)}
+                                className="rounded-lg bg-red-800 px-2 py-1 text-[10px] font-bold text-white"
+                              >
+                                Đồng bộ lại
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1190,7 +1454,7 @@ export const AdminWorkspace: React.FC = () => {
                   </button>
                 </div>
               )}
-            </form>
+            </div>
           )}
 
           {/* Orders Queue with Separated Payment Status & Provisioning Status */}
@@ -1456,7 +1720,7 @@ export const AdminWorkspace: React.FC = () => {
         }}
       />
 
-      {/* Student Roster with Ultra-Fast Server-Side Search & Filters */}
+      {/* Student Roster with Ultra-Fast Server-Side Search, Filters & Unified Detail Drawer */}
       {showStudents && (
         <div
           data-testid="admin-students-section"
@@ -1471,9 +1735,12 @@ export const AdminWorkspace: React.FC = () => {
                   {studentSearchQuery.data.queryMs}ms
                 </span>
               )}
+              {studentSearchQuery.isFetching && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-stone-400" />
+              )}
             </h2>
 
-            {/* Search & Filter Bar */}
+            {/* Search, Filter & Quick Create Bar */}
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
               <div className="relative min-w-[210px] flex-1 sm:max-w-xs">
                 <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-stone-400" />
@@ -1498,7 +1765,7 @@ export const AdminWorkspace: React.FC = () => {
                 className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
               >
                 <option value="ALL">Tất cả lớp</option>
-                <option value="NONE">Chưa xếp lớp</option>
+                <option value="NONE">— Chưa xếp lớp —</option>
                 {classesList.map((c) => (
                   <option key={c.id} value={c.id}>
                     Lớp {c.id}
@@ -1537,7 +1804,18 @@ export const AdminWorkspace: React.FC = () => {
                 <option value="ALL">Mọi trạng thái</option>
                 <option value="synced">Đã đồng bộ</option>
                 <option value="pending_activation">Chờ kích hoạt</option>
+                <option value="needs_resync">Cần đồng bộ lại</option>
               </select>
+
+              <button
+                type="button"
+                data-testid="admin-roster-create-student-btn"
+                onClick={() => setShowCreateStudentModal(true)}
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-xl bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                <span>+ Tạo học viên</span>
+              </button>
             </div>
           </div>
 
@@ -1563,47 +1841,93 @@ export const AdminWorkspace: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Mobile Compact List (< sm) */}
+              {/* Mobile Compact Cards (< sm) */}
               <div className="mt-2.5 divide-y divide-stone-100 sm:hidden">
-                {studentsList.map((stu) => (
-                  <div
-                    key={stu.code || stu.email}
-                    className="flex items-center justify-between gap-2 py-2.5"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-bold text-stone-900">{stu.name}</p>
-                      <p className="truncate text-[11px] text-stone-500">{stu.email}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-1">
-                        {stu.class_code ? (
-                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
-                            {stu.class_code}
-                          </span>
-                        ) : (
-                          <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
-                            Chưa xếp lớp
-                          </span>
-                        )}
-                        {(stu.online_courses || []).map((c) => (
-                          <span
-                            key={c.id}
-                            className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-900"
-                          >
-                            {c.shortTitle || c.title}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate(`/admin/more?email=${encodeURIComponent(stu.email)}`)
-                      }
-                      className="min-h-[34px] shrink-0 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-bold text-stone-700"
+                {studentsList.map((stu) => {
+                  const resolvedCourses = resolveStudentOnlineCourses(
+                    stu.online_courses,
+                    coursesList
+                  );
+                  const visibleCourses = resolvedCourses.slice(0, 2);
+                  const extraCoursesCount = Math.max(0, resolvedCourses.length - 2);
+                  const hasLegacyInvalidClass =
+                    Boolean(stu.class_code) &&
+                    classesList.length > 0 &&
+                    !knownClassIds.has(stu.class_code!);
+                  const isSelected =
+                    selectedStudentEmail === (stu.email || '').toLowerCase();
+
+                  return (
+                    <div
+                      key={stu.code || stu.email}
+                      data-testid={`admin-student-card-${stu.email}`}
+                      onClick={() => openStudentDrawer(stu)}
+                      className={`flex cursor-pointer items-center justify-between gap-2 rounded-xl px-2 py-2.5 transition-colors ${
+                        isSelected ? 'bg-red-50/70' : 'hover:bg-stone-50'
+                      }`}
                     >
-                      Phân quyền
-                    </button>
-                  </div>
-                ))}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <p className="truncate text-xs font-bold text-stone-900">
+                            {stu.name}
+                          </p>
+                          <span className="shrink-0 font-mono text-[10px] text-stone-400">
+                            {stu.code}
+                          </span>
+                        </div>
+                        <p className="truncate text-[11px] text-stone-500">
+                          {stu.email}
+                          {stu.phone ? ` · ${stu.phone}` : ''}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {stu.class_code ? (
+                            <span className="inline-block whitespace-nowrap rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
+                              {stu.class_code}
+                            </span>
+                          ) : (
+                            <span className="inline-block whitespace-nowrap rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
+                              Chưa xếp lớp
+                            </span>
+                          )}
+                          {hasLegacyInvalidClass && (
+                            <span className="inline-flex items-center gap-0.5 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                              <AlertTriangle className="h-2.5 w-2.5" />
+                              Cần kiểm tra mã lớp
+                            </span>
+                          )}
+                          {visibleCourses.map((c) => (
+                            <span
+                              key={c.id}
+                              className="max-w-[150px] truncate rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-900"
+                            >
+                              {c.shortTitle || c.title}
+                            </span>
+                          ))}
+                          {extraCoursesCount > 0 && (
+                            <span
+                              data-testid={`student-mobile-extra-courses-badge-${stu.email}`}
+                              className="whitespace-nowrap rounded bg-stone-200 px-1.5 py-0.5 text-[10px] font-bold text-stone-700"
+                            >
+                              +{extraCoursesCount} khóa
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`admin-mobile-open-student-btn-${stu.email}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openStudentDrawer(stu);
+                        }}
+                        className="inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs"
+                      >
+                        <span>Xem / Sửa</span>
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Desktop Table (>= sm) */}
@@ -1611,81 +1935,193 @@ export const AdminWorkspace: React.FC = () => {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-stone-200 text-stone-500">
-                      <th className="pb-2 font-bold">Học viên</th>
-                      <th className="pb-2 font-bold">Email / SĐT</th>
-                      <th className="pb-2 font-bold">Lớp trực tiếp</th>
-                      <th className="pb-2 font-bold">Khóa học đã mở</th>
-                      <th className="pb-2 font-bold">Đồng bộ</th>
+                      <th className="pb-2 pr-2 font-bold">Học viên</th>
+                      <th className="pb-2 pr-2 font-bold">Email / SĐT</th>
+                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                        Lớp trực tiếp
+                      </th>
+                      <th className="pb-2 pr-2 font-bold">Khóa học đã mở</th>
+                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                        Trạng thái & Đồng bộ
+                      </th>
+                      <th className="whitespace-nowrap pb-2 text-right font-bold">
+                        Thao tác
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
-                    {studentsList.map((stu) => (
-                      <tr
-                        key={stu.code || stu.email}
-                        data-testid={`admin-student-row-${stu.email}`}
-                      >
-                        <td className="py-2.5 font-bold text-stone-900">
-                          <div>{stu.name}</div>
-                          <div className="font-mono text-[10px] font-normal text-stone-400">
-                            {stu.code}
-                          </div>
-                        </td>
-                        <td className="py-2.5 text-stone-600">
-                          <div>{stu.email}</div>
-                          {stu.phone && (
-                            <div className="text-[11px] text-stone-400">{stu.phone}</div>
-                          )}
-                        </td>
-                        <td className="py-2.5">
-                          {stu.class_code ? (
-                            <span className="rounded-md bg-red-100 px-2 py-0.5 font-bold text-red-900">
-                              {stu.class_code}
-                            </span>
-                          ) : (
-                            <span className="text-stone-400">Chưa xếp lớp</span>
-                          )}
-                        </td>
-                        <td className="py-2.5">
-                          {(stu.online_courses || []).length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {stu.online_courses.map((c) => (
-                                <span
-                                  key={c.id}
-                                  className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-900"
-                                >
-                                  {c.shortTitle || c.title}
-                                </span>
-                              ))}
+                    {studentsList.map((stu) => {
+                      const resolvedCourses = resolveStudentOnlineCourses(
+                        stu.online_courses,
+                        coursesList
+                      );
+                      const visibleCourses = resolvedCourses.slice(0, 2);
+                      const extraCoursesCount = Math.max(0, resolvedCourses.length - 2);
+                      const hasLegacyInvalidClass =
+                        Boolean(stu.class_code) &&
+                        classesList.length > 0 &&
+                        !knownClassIds.has(stu.class_code!);
+                      const isSelected =
+                        selectedStudentEmail === (stu.email || '').toLowerCase();
+
+                      const rawSync = (stu.syncStatus || 'synced').toLowerCase();
+                      const rawAccount = (stu.accountStatus || 'ready_to_login').toLowerCase();
+                      const isSyncError =
+                        rawSync === 'error' ||
+                        rawSync === 'failed' ||
+                        rawSync === 'partial_failure' ||
+                        rawSync === 'needs_resync';
+                      const isPendingActivation =
+                        rawAccount === 'pending_activation' ||
+                        rawSync === 'pending_activation' ||
+                        rawSync === 'pending';
+
+                      return (
+                        <tr
+                          key={stu.code || stu.email}
+                          data-testid={`admin-student-row-${stu.email}`}
+                          tabIndex={0}
+                          role="button"
+                          aria-label={`Mở hồ sơ học viên ${stu.name}`}
+                          onClick={() => openStudentDrawer(stu)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              openStudentDrawer(stu);
+                            }
+                          }}
+                          className={`cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-red-800 ${
+                            isSelected ? 'bg-red-50/70' : 'hover:bg-stone-50'
+                          }`}
+                        >
+                          <td className="py-2.5 pr-2 font-bold text-stone-900">
+                            <div className="group-hover:text-red-800">{stu.name}</div>
+                            <div className="font-mono text-[10px] font-normal text-stone-400">
+                              {stu.code}
                             </div>
-                          ) : (
-                            <span className="font-semibold text-amber-700">Chưa mở khóa</span>
-                          )}
-                        </td>
-                        <td className="py-2.5">
-                          {stu.syncStatus === 'pending_activation' ||
-                          stu.accountStatus === 'pending_activation' ? (
+                          </td>
+                          <td className="py-2.5 pr-2 text-stone-600">
+                            <div className="font-medium text-stone-800">{stu.email}</div>
+                            {stu.phone && (
+                              <div className="text-[11px] text-stone-400">{stu.phone}</div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pr-2">
+                            {stu.class_code ? (
+                              <div className="inline-flex flex-wrap items-center gap-1">
+                                <span
+                                  data-testid={`student-class-badge-${stu.email}`}
+                                  className="inline-block whitespace-nowrap rounded-md bg-red-100 px-2 py-0.5 font-bold text-red-900"
+                                >
+                                  {stu.class_code}
+                                </span>
+                                {hasLegacyInvalidClass && (
+                                  <span
+                                    data-testid={`student-legacy-class-badge-${stu.email}`}
+                                    className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900"
+                                  >
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Cần kiểm tra mã lớp
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="whitespace-nowrap text-stone-400">
+                                Chưa xếp lớp
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 pr-2">
+                            {resolvedCourses.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-1">
+                                {visibleCourses.map((c) => (
+                                  <span
+                                    key={c.id}
+                                    className="max-w-[180px] truncate rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-900"
+                                    title={c.title}
+                                  >
+                                    {c.shortTitle || c.title}
+                                  </span>
+                                ))}
+                                {extraCoursesCount > 0 && (
+                                  <span
+                                    data-testid={`student-extra-courses-badge-${stu.email}`}
+                                    className="whitespace-nowrap rounded bg-stone-200 px-1.5 py-0.5 text-[11px] font-bold text-stone-700"
+                                    title={resolvedCourses
+                                      .slice(2)
+                                      .map((c) => c.title)
+                                      .join(', ')}
+                                  >
+                                    +{extraCoursesCount} khóa
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="font-semibold text-amber-700">
+                                Chưa mở khóa
+                              </span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pr-2">
+                            {isSyncError ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  retrySyncMutation.mutate({
+                                    type: 'student_sync',
+                                    email: stu.email,
+                                  });
+                                }}
+                                className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-900 hover:bg-red-200"
+                              >
+                                <AlertCircle className="h-3 w-3" />
+                                Lỗi đồng bộ (Đồng bộ lại)
+                              </button>
+                            ) : isPendingActivation ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  retrySyncMutation.mutate({
+                                    type: 'student_provision',
+                                    email: stu.email,
+                                  });
+                                }}
+                                className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900 hover:bg-amber-200"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                                Chờ kích hoạt (Đồng bộ lại)
+                              </button>
+                            ) : hasLegacyInvalidClass ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                                <AlertTriangle className="h-3 w-3" />
+                                Cần kiểm tra mã lớp
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Đã đồng bộ
+                              </span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 text-right">
                             <button
                               type="button"
-                              onClick={() =>
-                                retrySyncMutation.mutate({
-                                  type: 'student_provision',
-                                  email: stu.email,
-                                })
-                              }
-                              className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900 hover:bg-amber-200"
+                              data-testid={`admin-open-student-btn-${stu.email}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openStudentDrawer(stu);
+                              }}
+                              className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs hover:bg-red-50"
                             >
-                              <RefreshCw className="h-3 w-3" />
-                              Chờ kích hoạt (Đồng bộ lại)
+                              <span>Xem / Sửa</span>
+                              <ChevronRight className="h-3.5 w-3.5" />
                             </button>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
-                              <CheckCircle2 className="h-3 w-3" />
-                              Sẵn sàng
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1721,6 +2157,50 @@ export const AdminWorkspace: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Unified Student Detail Drawer (Desktop slide-over / Mobile full-screen) */}
+      <StudentDetailDrawer
+        student={selectedStudent}
+        open={Boolean(selectedStudent)}
+        onClose={closeStudentDrawer}
+        catalogCourses={coursesList}
+        catalogError={catalogError}
+        catalogLoading={coursesCatalogQuery.isLoading}
+        onRetryCatalog={() => {
+          coursesCatalogQuery.refetch();
+        }}
+        classesList={classesList}
+        actionError={drawerActionError}
+        onClearError={() => setDrawerActionError(null)}
+        isGrantingCourse={grantCoursesMutation.isPending}
+        isRevokingCourse={revokeCourseMutation.isPending}
+        isAssigningClass={assignClassMutation.isPending}
+        isReplacingCourses={replaceAllCoursesMutation.isPending}
+        isUpdatingProfile={updateProfileMutation.isPending}
+        isResyncing={retrySyncMutation.isPending}
+        onGrantCourses={(params) => grantCoursesMutation.mutateAsync(params)}
+        onRevokeCourse={(params) => revokeCourseMutation.mutateAsync(params)}
+        onAssignClass={(params) => assignClassMutation.mutateAsync(params)}
+        onReplaceAllCourses={(params) => replaceAllCoursesMutation.mutateAsync(params)}
+        onUpdateProfile={(params) => updateProfileMutation.mutateAsync(params)}
+        onResyncStudent={(stu) => {
+          retrySyncMutation.mutate({
+            type:
+              stu.accountStatus === 'pending_activation' ||
+              stu.syncStatus === 'pending_activation'
+                ? 'student_provision'
+                : 'student_sync',
+            email: stu.email,
+          });
+        }}
+        onCopyEmail={(email) => {
+          navigator.clipboard?.writeText(email).catch(() => {});
+          addToast({
+            title: `Đã sao chép email: ${email}`,
+            variant: 'success',
+          });
+        }}
+      />
     </div>
   );
 };

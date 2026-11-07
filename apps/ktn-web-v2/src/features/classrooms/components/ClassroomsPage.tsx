@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Users,
   Calendar,
   BookOpen,
-  PlayCircle,
   MessageSquare,
   CheckCircle2,
   Clock,
@@ -14,6 +13,8 @@ import {
   Sparkles,
   AlertCircle,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
@@ -22,7 +23,6 @@ import { HomeworkPanel } from '@/features/learning/components/HomeworkPanel';
 import {
   DEMO_CLASSES,
   DEMO_CLASS_SESSIONS,
-  DEMO_COURSES,
   DEMO_HOMEWORKS,
 } from '@/lib/demoData';
 import { KtnClassItem, KtnClassSession, KtnHomework } from '@/types/ktn.types';
@@ -35,16 +35,36 @@ export const ClassroomsPage: React.FC = () => {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const addToast = useUiStore((s) => s.addToast);
 
+  const sessionParam = Number(searchParams.get('session'));
+  const exerciseParam = Number(searchParams.get('exercise'));
+  const hasDeepLinkSession =
+    (Number.isFinite(sessionParam) && sessionParam > 0) ||
+    (Number.isFinite(exerciseParam) && exerciseParam >= 100);
+
   const [selectedSessionNum, setSelectedSessionNum] = useState<number>(() => {
-    const p = Number(searchParams.get('session'));
-    return Number.isFinite(p) && p > 0 ? p : 1;
+    if (Number.isFinite(sessionParam) && sessionParam > 0) return sessionParam;
+    if (Number.isFinite(exerciseParam) && exerciseParam >= 100) {
+      return Math.floor(exerciseParam / 100);
+    }
+    return 1;
   });
-  const [activeExerciseLessonNum, setActiveExerciseLessonNum] = useState<number | null>(null);
+  const [activeExerciseLessonNum, setActiveExerciseLessonNum] = useState<number | null>(() => {
+    if (Number.isFinite(exerciseParam) && exerciseParam >= 100) return exerciseParam;
+    return null;
+  });
+  const [mobileSessionsExpanded, setMobileSessionsExpanded] = useState<boolean>(false);
+  const didAutoSelectSessionRef = useRef<boolean>(false);
 
   useEffect(() => {
-    const p = Number(searchParams.get('session'));
-    if (Number.isFinite(p) && p > 0) {
-      setSelectedSessionNum(p);
+    const sParam = Number(searchParams.get('session'));
+    const exParam = Number(searchParams.get('exercise'));
+    if (Number.isFinite(sParam) && sParam > 0) {
+      setSelectedSessionNum(sParam);
+    } else if (Number.isFinite(exParam) && exParam >= 100) {
+      setSelectedSessionNum(Math.floor(exParam / 100));
+    }
+    if (Number.isFinite(exParam) && exParam >= 100) {
+      setActiveExerciseLessonNum(exParam);
     }
   }, [searchParams]);
 
@@ -98,6 +118,21 @@ export const ClassroomsPage: React.FC = () => {
     },
     enabled: Boolean(activeClassCode) && (Boolean(user) || isDemoMode),
   });
+
+  // Default to the nearest session with exercises/content when no deep-link is in the URL
+  useEffect(() => {
+    if (hasDeepLinkSession || didAutoSelectSessionRef.current) return;
+    const list = sessionsQuery.data || [];
+    if (list.length === 0) return;
+    didAutoSelectSessionRef.current = true;
+    const withExercises = list.find(
+      (s) => (s.exercises && s.exercises.length > 0) || Boolean(s.summary)
+    );
+    if (withExercises) {
+      const sNum = Number(withExercises.sessionNum || withExercises.session_num || 1);
+      setSelectedSessionNum(sNum);
+    }
+  }, [hasDeepLinkSession, sessionsQuery.data]);
 
   const submitLiveClassHwMutation = useMutation({
     mutationFn: async (payload: {
@@ -168,17 +203,11 @@ export const ClassroomsPage: React.FC = () => {
     sessions[0] ||
     null;
 
-  const entitledCourses = isDemoMode
-    ? DEMO_COURSES
-    : user?.onlineCourses && user.onlineCourses.length > 0
-    ? user.onlineCourses
-    : [];
-
   const hasApiError =
     !isDemoMode && (classesQuery.isError || sessionsQuery.isError || homeworksQuery.isError);
 
   return (
-    <div data-testid="classrooms-page" className="space-y-3 sm:space-y-4">
+    <div data-testid="classrooms-page" className="space-y-3 pb-4 sm:space-y-4">
       {hasApiError && (
         <div
           role="alert"
@@ -203,200 +232,182 @@ export const ClassroomsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Section 1: Clear Separation Between Live Classroom & Video Courses */}
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
-        {/* Live Classroom Card (7 cols) */}
-        <div
-          data-testid="live-classroom-card"
-          className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-white p-4 shadow-2xs lg:col-span-7"
-        >
-          {assignedClass ? (
-            <>
-              <div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-900">
-                    <Users className="h-3.5 w-3.5 text-red-800" />
-                    LỚP TRỰC TIẾP
-                  </span>
-                  <span className="rounded-lg bg-stone-100 px-2 py-0.5 font-mono text-xs font-bold text-stone-700">
-                    Mã lớp: {assignedClass.id}
-                  </span>
-                </div>
-
-                <h1 className="mt-2 font-display text-base font-bold text-stone-900 sm:text-lg">
-                  {assignedClass.name}
-                </h1>
-
-                <div className="mt-2.5 grid grid-cols-2 gap-2">
-                  <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
-                    <GraduationCap className="h-4 w-4 shrink-0 text-red-800" />
-                    <div className="min-w-0">
-                      <p className="text-[10.5px] text-stone-500">Giáo viên</p>
-                      <p className="truncate text-xs font-bold text-stone-900">
-                        {assignedClass.teacher_name || 'Cô Lâm Mỹ Linh'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
-                    <Calendar className="h-4 w-4 shrink-0 text-amber-700" />
-                    <div className="min-w-0">
-                      <p className="text-[10.5px] text-stone-500">Lịch học chính thức</p>
-                      <p
-                        data-testid="student-classroom-schedule-text"
-                        className="truncate text-xs font-bold text-stone-900"
-                      >
-                        {assignedClass.scheduleStatus === 'confirmed' &&
-                        assignedClass.officialScheduleText
-                          ? assignedClass.officialScheduleText
-                          : 'Chưa có lịch học chính thức'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {assignedClass.nextSession && (
-                  <div
-                    data-testid="student-classroom-next-session-banner"
-                    className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs"
-                  >
-                    <div>
-                      <p className="font-bold text-emerald-950">
-                        Buổi học tiếp theo: {assignedClass.nextSession.dayLabel},{' '}
-                        {assignedClass.nextSession.sessionDate} ({assignedClass.nextSession.startTime}–
-                        {assignedClass.nextSession.endTime})
-                      </p>
-                      {assignedClass.nextSession.note && (
-                        <p className="text-[11px] text-emerald-800">
-                          {assignedClass.nextSession.note}
-                        </p>
-                      )}
-                    </div>
-                    {assignedClass.nextSession.meetingUrl &&
-                      /^https:\/\//i.test(assignedClass.nextSession.meetingUrl) && (
-                        <a
-                          href={assignedClass.nextSession.meetingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          data-testid="student-classroom-join-meeting-btn"
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-900"
-                        >
-                          Xem buổi học →
-                        </a>
-                      )}
-                  </div>
-                )}
+      {/* Section 1: Strictly Live Classroom Info (No Video Course Promotions) */}
+      <div
+        data-testid="live-classroom-card"
+        className="rounded-2xl border border-stone-200 bg-white p-3.5 shadow-2xs sm:p-4"
+      >
+        {assignedClass ? (
+          <>
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-900">
+                  <Users className="h-3.5 w-3.5 text-red-800" />
+                  LỚP TRỰC TIẾP
+                </span>
+                <span className="rounded-lg bg-stone-100 px-2 py-0.5 font-mono text-xs font-bold text-stone-700">
+                  Mã lớp: {assignedClass.id}
+                </span>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-3">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/chat?room=class:${assignedClass.id}`)}
-                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
-                >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  Chat lớp {assignedClass.id}
-                </button>
+              <h1 className="mt-1.5 font-display text-base font-bold text-stone-900 sm:text-lg">
+                {assignedClass.name}
+              </h1>
 
-                {attendanceQuery.data?.summary && (
-                  <span
-                    data-testid="student-attendance-summary-badge"
-                    className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-900"
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
-                    Chuyên cần: {attendanceQuery.data.summary.present + attendanceQuery.data.summary.late}/
-                    {Math.max(1, attendanceQuery.data.summary.total)} buổi
-                  </span>
-                )}
-              </div>
-            </>
-          ) : (
-            /* Honest Empty State when student is NOT assigned to any live class */
-            <div
-              data-testid="unassigned-class-empty-state"
-              className="flex flex-col items-start justify-center py-2"
-            >
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
-                <AlertCircle className="h-3.5 w-3.5" />
-                CHƯA XẾP LỚP TRỰC TIẾP
-              </span>
-              <h2 className="mt-1.5 font-display text-sm font-bold text-stone-900 sm:text-base">
-                Chưa xếp lớp trực tiếp
-              </h2>
-              <p className="mt-0.5 text-xs text-stone-600">
-                Tự học khóa Video đã mở hoặc nhắn Học vụ để xếp lịch học cùng giáo viên.
-              </p>
-              <button
-                type="button"
-                onClick={() => navigate('/chat')}
-                className="mt-3 inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900"
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                Nhắn Học vụ xếp lớp
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Self-Paced Video Courses Card (5 cols) */}
-        <div
-          data-testid="video-courses-summary-card"
-          className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-gradient-to-br from-stone-900 via-red-950 to-stone-900 p-4 text-white shadow-2xs lg:col-span-5"
-        >
-          <div>
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-bold text-amber-300">
-              <PlayCircle className="h-3.5 w-3.5" />
-              KHÓA VIDEO TỰ HỌC
-            </span>
-            <h2 className="mt-2 font-display text-sm font-bold sm:text-base">
-              Khóa học đã mở ({entitledCourses.length})
-            </h2>
-
-            <div className="mt-2.5 space-y-2">
-              {entitledCourses.length === 0 ? (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-xs text-stone-300">
-                  Chưa có học phần Video nào được kích hoạt.
+              <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
+                  <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-red-800" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10.5px] text-stone-500">Giáo viên phụ trách</p>
+                    <p className="break-words text-xs font-bold text-stone-900">
+                      {assignedClass.teacher_name || 'Cô Lâm Mỹ Linh'}
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                entitledCourses.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-bold text-amber-200">{c.title}</p>
-                      <p className="text-[11px] text-stone-300">Video + MP3</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/learning?courseId=${encodeURIComponent(c.id)}`)}
-                      className="min-h-[34px] shrink-0 rounded-lg bg-amber-400 px-3 py-1 text-xs font-bold text-stone-950 hover:bg-amber-300"
+
+                <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
+                  <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10.5px] text-stone-500">Lịch học chính thức</p>
+                    <p
+                      data-testid="student-classroom-schedule-text"
+                      className="break-words text-xs font-bold text-stone-900"
                     >
-                      Vào học
-                    </button>
+                      {assignedClass.scheduleStatus === 'confirmed' &&
+                      assignedClass.officialScheduleText
+                        ? assignedClass.officialScheduleText
+                        : 'Chưa có lịch học chính thức'}
+                    </p>
                   </div>
-                ))
+                </div>
+              </div>
+
+              {assignedClass.nextSession && (
+                <div
+                  data-testid="student-classroom-next-session-banner"
+                  className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs"
+                >
+                  <div>
+                    <p className="font-bold text-emerald-950">
+                      Buổi học tiếp theo: {assignedClass.nextSession.dayLabel},{' '}
+                      {assignedClass.nextSession.sessionDate} ({assignedClass.nextSession.startTime}–
+                      {assignedClass.nextSession.endTime})
+                    </p>
+                    {assignedClass.nextSession.note && (
+                      <p className="text-[11px] text-emerald-800">
+                        {assignedClass.nextSession.note}
+                      </p>
+                    )}
+                  </div>
+                  {assignedClass.nextSession.meetingUrl &&
+                    /^https:\/\//i.test(assignedClass.nextSession.meetingUrl) && (
+                      <a
+                        href={assignedClass.nextSession.meetingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="student-classroom-join-meeting-btn"
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-900"
+                      >
+                        Vào phòng học →
+                      </a>
+                    )}
+                </div>
               )}
             </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2.5">
+              <button
+                type="button"
+                data-testid="classroom-open-chat-btn"
+                onClick={() => navigate(`/chat?room=class:${assignedClass.id}`)}
+                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Chat lớp {assignedClass.id}
+              </button>
+
+              {attendanceQuery.data?.summary && (
+                <span
+                  data-testid="student-attendance-summary-badge"
+                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-900"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
+                  Chuyên cần: {attendanceQuery.data.summary.present + attendanceQuery.data.summary.late}/
+                  {Math.max(1, attendanceQuery.data.summary.total)} buổi
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          /* Honest Empty State when student is NOT assigned to any live class */
+          <div
+            data-testid="unassigned-class-empty-state"
+            className="flex flex-col items-start justify-center py-3"
+          >
+            <p className="font-display text-sm font-bold text-stone-900 sm:text-base">
+              Em chưa được xếp vào lớp học trực tiếp.
+            </p>
+            <button
+              type="button"
+              data-testid="unassigned-class-contact-btn"
+              onClick={() => navigate('/chat')}
+              className="mt-3 inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Liên hệ Học vụ
+            </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Section 2: Classroom Sessions & Assigned Exercises */}
       {assignedClass && (
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-2xs">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-3">
-            <h2 className="font-display text-sm font-bold text-stone-900 sm:text-base">
-              Buổi học & Bài tập lớp {assignedClass.id}
-            </h2>
-            <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-[11px] font-bold text-stone-700">
-              {sessions.length} buổi
-            </span>
+        <div className="rounded-2xl border border-stone-200 bg-white p-3.5 shadow-2xs sm:p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
+            <div>
+              <h2 className="font-display text-sm font-bold text-stone-900 sm:text-base">
+                Buổi học & Bài tập lớp {assignedClass.id}
+              </h2>
+              {activeSession && (
+                <p className="text-[11px] font-medium text-stone-500 lg:hidden">
+                  Đang xem: Buổi {activeSession.sessionNum || activeSession.session_num} —{' '}
+                  {activeSession.title || activeSession.session_title}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-[11px] font-bold text-stone-700">
+                {sessions.length} buổi
+              </span>
+              {sessions.length > 1 && (
+                <button
+                  type="button"
+                  data-testid="toggle-mobile-session-list-btn"
+                  onClick={() => setMobileSessionsExpanded((prev) => !prev)}
+                  className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-xs font-bold text-stone-700 lg:hidden"
+                >
+                  <span>{mobileSessionsExpanded ? 'Thu gọn buổi' : 'Chọn buổi học'}</span>
+                  {mobileSessionsExpanded ? (
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-3.5 lg:grid-cols-12">
-            {/* Session Timeline Selector (4 cols) */}
-            <div className="space-y-1.5 lg:col-span-4">
+            {/* Session Timeline Selector: Compact horizontal strip on mobile (unless expanded), full list on desktop */}
+            <div
+              data-testid="classroom-session-selector"
+              className={
+                mobileSessionsExpanded
+                  ? 'max-h-60 space-y-1.5 overflow-y-auto lg:col-span-4 lg:max-h-none lg:overflow-visible'
+                  : 'flex items-center gap-1.5 overflow-x-auto pb-1 lg:col-span-4 lg:block lg:space-y-1.5 lg:overflow-visible lg:pb-0'
+              }
+            >
               {sessions.length === 0 ? (
                 <p className="rounded-xl bg-stone-50 p-3 text-xs text-stone-500">
                   Chưa có buổi học nào được cập nhật.
@@ -414,15 +425,20 @@ export const ClassroomsPage: React.FC = () => {
                       onClick={() => {
                         setSelectedSessionNum(sNum);
                         setActiveExerciseLessonNum(null);
+                        setMobileSessionsExpanded(false);
                       }}
-                      className={`flex w-full items-center gap-2.5 rounded-xl border p-2.5 text-left transition-all ${
+                      className={`flex items-center gap-2 rounded-xl border text-left transition-all ${
+                        mobileSessionsExpanded
+                          ? 'w-full p-2.5'
+                          : 'shrink-0 px-2.5 py-1.5 lg:w-full lg:p-2.5'
+                      } ${
                         isSelected
                           ? 'border-red-300 bg-red-50/90 shadow-2xs'
                           : 'border-stone-200 bg-white hover:bg-stone-50'
                       }`}
                     >
                       <div
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-display text-xs font-bold ${
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg font-display text-xs font-bold lg:h-8 lg:w-8 ${
                           isSelected
                             ? 'bg-red-800 text-white'
                             : 'bg-stone-100 text-stone-700'
@@ -430,7 +446,11 @@ export const ClassroomsPage: React.FC = () => {
                       >
                         B{sNum}
                       </div>
-                      <div className="min-w-0 flex-1">
+                      <div
+                        className={`min-w-0 flex-1 ${
+                          mobileSessionsExpanded ? 'block' : 'hidden lg:block'
+                        }`}
+                      >
                         <p className="truncate text-xs font-bold text-stone-900">
                           {session.title || session.session_title}
                         </p>
@@ -447,7 +467,7 @@ export const ClassroomsPage: React.FC = () => {
             {/* Active Session Details & Exercises (8 cols) */}
             <div className="lg:col-span-8">
               {activeSession ? (
-                <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3.5 sm:p-4">
+                <div className="rounded-2xl border border-stone-200 bg-stone-50/60 p-3 sm:p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span
                       data-testid="active-session-badge"
@@ -464,7 +484,7 @@ export const ClassroomsPage: React.FC = () => {
                     {activeSession.title || activeSession.session_title}
                   </h3>
                   {activeSession.summary && (
-                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-stone-700">
+                    <p className="mt-1 text-xs leading-relaxed text-stone-700">
                       {activeSession.summary}
                     </p>
                   )}
@@ -482,7 +502,7 @@ export const ClassroomsPage: React.FC = () => {
                       const liveLessonNum = sNum * 100 + exNum;
                       const liveCourseId = `CLASS_${assignedClass.id.toUpperCase()}`;
 
-                      // Section 10.4 Fix: Match ONLY live-classroom homework for this class & session/exercise, NEVER video-course homework
+                      // Match ONLY live-classroom homework for this class & session/exercise, NEVER video-course homework
                       const matchedHw = (homeworksQuery.data || []).find((h) => {
                         const hCourseId = String(h.course_id || '').trim().toUpperCase();
                         const isSameLiveClass =
@@ -500,7 +520,7 @@ export const ClassroomsPage: React.FC = () => {
                       const isDrawerOpen = activeExerciseLessonNum === liveLessonNum;
 
                       return (
-                        <div key={ex.id || exNum} className="space-y-2.5">
+                        <div key={ex.id || exNum} className="space-y-2">
                           <div
                             data-testid={`classroom-exercise-${liveLessonNum}`}
                             className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-white p-3 shadow-2xs"
@@ -534,7 +554,7 @@ export const ClassroomsPage: React.FC = () => {
                                   </span>
                                 )}
                               </div>
-                              <p className="mt-0.5 line-clamp-2 text-xs text-stone-600">
+                              <p className="mt-0.5 text-xs text-stone-600">
                                 {ex.prompt || ex.instruction}
                               </p>
                             </div>
@@ -591,4 +611,5 @@ export const ClassroomsPage: React.FC = () => {
     </div>
   );
 };
+
 

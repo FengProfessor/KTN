@@ -25,11 +25,94 @@ export function createLocalWorkerHarness() {
     console.warn('[LocalWorkerHarness] Could not load lesson JSON files:', err);
   }
 
+  const syntheticStudents = [];
+  const syntheticIzStudents = [];
+  const syntheticPermsByUid = {};
+
+  for (let i = 1; i <= 1043; i++) {
+    const seq = String(i).padStart(4, '0');
+    const uid = `33333333-4444-4555-8666-00000000${seq}`;
+    const izId = `66fa0000000000000000${seq}`;
+    const email = `e2e.hs.${seq}@khongtunhi.com`;
+    const code = `KTN-E2E-${seq}`;
+    const name =
+      i === 1
+        ? 'Học viên thử nghiệm 0001 (3 khóa)'
+        : i === 2
+          ? 'Học viên thử nghiệm 0002 (Mã lớp cũ)'
+          : i === 999
+            ? 'Trần Bảo Ngọc 0999'
+            : `Học viên thử nghiệm ${seq}`;
+    const phone = `097800${seq}`;
+    const classCode =
+      i === 2 ? 'LEGACY-2023' : i % 2 === 0 ? 'YCT3-02' : 'YCT1-01';
+    const onlineCourses =
+      i === 1
+        ? [
+            {
+              id: '6adadba969897b0002482ca5',
+              code: 'HSK1-30',
+              title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+              shortTitle: 'HSK1 3.0',
+            },
+            {
+              id: '6adadbd569897b0002482cb0',
+              code: 'YCT1-KIDS',
+              title: 'Khóa học Tiêu Chuẩn YCT 1 — Tiếng Trung Thiếu Nhi',
+              shortTitle: 'YCT 1',
+            },
+            {
+              id: '6adadc0069897b0002482cc1',
+              code: 'YCT2-KIDS',
+              title: 'Khóa học Tiêu Chuẩn YCT 2 — Giao Tiếp Phản Xạ',
+              shortTitle: 'YCT 2',
+            },
+          ]
+        : [
+            {
+              id: '6adadba969897b0002482ca5',
+              code: 'HSK1-30',
+              title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+              shortTitle: 'HSK1 3.0',
+            },
+          ];
+
+    syntheticStudents.push({
+      code,
+      email,
+      name,
+      parent_name: `PH Học viên ${seq}`,
+      phone,
+      cognito_user_id: uid,
+      izteach_student_id: izId,
+      class_code: classCode,
+      has_live_class: Boolean(classCode),
+      has_online_courses: onlineCourses.length > 0,
+      online_courses: onlineCourses,
+      account_status: 'active',
+      sync_status: 'synced',
+      updated_at: new Date().toISOString(),
+    });
+
+    syntheticIzStudents.push({
+      _id: izId,
+      id: izId,
+      dynamoId: uid,
+      userId: uid,
+      email,
+      name,
+      phone,
+    });
+
+    syntheticPermsByUid[uid] = onlineCourses.map((c) => c.id);
+  }
+
   const state = {
     faults: {
       failMessagesPost: false,
       failMessagesGet: false,
-      failHomeworkPost: false
+      failHomeworkPost: false,
+      failStudentCoursesPost: false
     },
     uploadedBlobs: new Map(),
     tables: {
@@ -95,7 +178,8 @@ export function createLocalWorkerHarness() {
           has_online_courses: false,
           online_courses: [],
           updated_at: new Date().toISOString()
-        }
+        },
+        ...syntheticStudents
       ],
       ktn_teachers: [
         {
@@ -300,7 +384,8 @@ export function createLocalWorkerHarness() {
           email: 'taphong2002vip@gmail.com',
           name: 'Tạ Phong (Chưa cấp khóa)',
           phone: '0912345699'
-        }
+        },
+        ...syntheticIzStudents
       ],
       permissionsByUid: {
         'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68': [
@@ -312,7 +397,8 @@ export function createLocalWorkerHarness() {
           '65e7704a9ea90c00080d5195'
         ],
         '22222222-3333-4444-5555-666666666662': [],
-        '424d2085-8685-4a49-a5e8-8fb63b0c85c5': []
+        '424d2085-8685-4a49-a5e8-8fb63b0c85c5': [],
+        ...syntheticPermsByUid
       },
       homeworkPosts: []
     },
@@ -407,7 +493,8 @@ export function createLocalWorkerHarness() {
         const offset = Math.max(0, Number(body.p_offset || 0));
 
         const matched = [];
-        for (const r of state.tables.ktn_students) {
+        for (let rowIdx = 0; rowIdx < state.tables.ktn_students.length; rowIdx++) {
+          const r = state.tables.ktn_students[rowIdx];
           const rowClass = String(r.class_code || '').trim().toUpperCase();
           if (allowedClasses !== null) {
             if (allowedClasses.length === 0 || !allowedClasses.includes(rowClass)) continue;
@@ -461,11 +548,11 @@ export function createLocalWorkerHarness() {
           else if (hay.includes(qNorm)) score = 60;
           else score = 45;
 
-          matched.push({ row: r, score });
+          matched.push({ row: r, score, rowIdx });
         }
         matched.sort((a, b) => {
           if (b.score !== a.score) return b.score - a.score;
-          return String(a.row.email || '').localeCompare(String(b.row.email || ''));
+          return a.rowIdx - b.rowIdx;
         });
         const totalCount = matched.length;
         const page = matched.slice(offset, offset + limit).map(m => ({
@@ -493,6 +580,12 @@ export function createLocalWorkerHarness() {
       }
       if (table === 'ktn_homeworks' && method === 'POST' && state.faults.failHomeworkPost) {
         return new Response(JSON.stringify({ message: 'Simulated database error' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (table.startsWith('ktn_students') && (method === 'POST' || method === 'PATCH') && state.faults.failStudentCoursesPost) {
+        return new Response(JSON.stringify({ message: 'Simulated database write error for student entitlements' }), {
           status: 503,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -703,6 +796,12 @@ export function createLocalWorkerHarness() {
       }
 
       if (p.includes('/prod/user-permission/add-products/') && method === 'PUT') {
+        if (state.faults.failStudentCoursesPost) {
+          return new Response(JSON.stringify({ message: 'Simulated izTeach add-products 502 error' }), {
+            status: 502,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
         const uid = decodeURIComponent(p.split('/add-products/')[1]);
         const body = init.body ? JSON.parse(init.body) : {};
         const current = new Set(state.izteach.permissionsByUid[uid] || []);
@@ -715,6 +814,12 @@ export function createLocalWorkerHarness() {
       }
 
       if (p.includes('/prod/user-permission/remove-products/') && method === 'PUT') {
+        if (state.faults.failStudentCoursesPost) {
+          return new Response(JSON.stringify({ message: 'Simulated izTeach remove-products 502 error' }), {
+            status: 502,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
         const uid = decodeURIComponent(p.split('/remove-products/')[1]);
         const body = init.body ? JSON.parse(init.body) : {};
         const toRemove = new Set((body.productIds || body.onlineCourses || []).map(String));

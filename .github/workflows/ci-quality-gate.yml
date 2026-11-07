@@ -2,9 +2,9 @@ name: KTN Three-Way Sync & Security Quality Gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/ktn-react-ui-v2]
   pull_request:
-    branches: [main]
+    branches: [main, feat/ktn-react-ui-v2]
   workflow_dispatch:
 
 env:

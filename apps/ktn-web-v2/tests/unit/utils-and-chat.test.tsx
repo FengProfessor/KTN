@@ -5,6 +5,9 @@ import {
   getInitials,
   formatFileSize,
   resolveNotificationLink,
+  resolveHomeworkLink,
+  resolveStudentOnlineCourses,
+  disambiguateCatalogCourses,
 } from '../../src/lib/utils';
 import {
   encodeAttachmentUrl,
@@ -242,6 +245,32 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
           actionUrl: '#/khoa/6adadba969897b0002482ca5/bai/1',
         })
       ).toBe('/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework');
+
+      // Live classroom homework notifications (course_id = CLASS_<CODE>) must open /classrooms, never /learning
+      expect(
+        resolveNotificationLink({
+          type: 'homework_graded',
+          courseId: 'CLASS_YCT2-04',
+          lessonNum: 201,
+          actionUrl: '/learning?courseId=CLASS_YCT2-04&lesson=201&tab=homework',
+        })
+      ).toBe('/classrooms?class=YCT2-04&session=2&exercise=201');
+
+      expect(
+        resolveHomeworkLink({
+          course_id: 'CLASS_YCT2-04',
+          class_code: 'YCT2-04',
+          lesson_num: 101,
+        })
+      ).toBe('/classrooms?class=YCT2-04&session=1&exercise=101');
+
+      expect(
+        resolveHomeworkLink({
+          course_id: '6adadba969897b0002482ca5',
+          class_code: 'YCT2-04',
+          lesson_num: 3,
+        })
+      ).toBe('/learning?courseId=6adadba969897b0002482ca5&lesson=3&tab=homework');
     });
   });
 
@@ -353,6 +382,52 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       expect(parsed?.sizeLabel).toBe('75.0 MB');
       expect(parsed?.sizeBytes).toBe(75 * 1024 * 1024);
       expect(parsed?.mimeType).toBe('video/mp4');
+    });
+
+    it('resolves canonical course titles, replaces generic labels, deduplicates IDs, and disambiguates duplicate titles', () => {
+      const catalog = disambiguateCatalogCourses([
+        {
+          id: '6adadba969897b0002482ca5',
+          title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+          shortTitle: 'HSK1 3.0',
+          code: 'HSK1-30',
+        },
+        {
+          id: '6adadbd569897b0002482cb0',
+          title: 'Khóa Giao Tiếp Thiếu Nhi',
+          code: 'GT-A',
+        },
+        {
+          id: '6adadc0069897b0002482cc1',
+          title: 'Khóa Giao Tiếp Thiếu Nhi',
+          code: 'GT-B',
+        },
+      ]);
+
+      expect(catalog[1].title).not.toBe(catalog[2].title);
+      expect(catalog[1].title).toContain('GT-A');
+      expect(catalog[2].title).toContain('GT-B');
+
+      const resolved = resolveStudentOnlineCourses(
+        [
+          { id: '6adadba969897b0002482ca5', title: 'Khóa học trực tuyến' },
+          { id: '6adadba969897b0002482ca5', title: 'Khóa học trực tuyến' },
+          { id: '65e7704a9ea90c00080d5195', title: 'Khóa học trực tuyến' },
+        ],
+        catalog
+      );
+
+      expect(resolved).toHaveLength(2);
+      expect(resolved[0].title).toBe('Khóa học Tiêu Chuẩn New HSK 1 (3.0)');
+      expect(resolved[1].title).toBe('Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)');
+    });
+
+    it('exposes isolated student management API methods (grant, revoke, assignClass, replaceAll, updateProfile)', () => {
+      expect(typeof ktnApi.grantStudentCourses).toBe('function');
+      expect(typeof ktnApi.revokeStudentCourse).toBe('function');
+      expect(typeof ktnApi.assignStudentClass).toBe('function');
+      expect(typeof ktnApi.replaceAllStudentCourses).toBe('function');
+      expect(typeof ktnApi.updateStudentProfile).toBe('function');
     });
   });
 });

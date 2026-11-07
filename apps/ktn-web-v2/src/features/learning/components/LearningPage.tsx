@@ -374,8 +374,11 @@ export const LearningPage: React.FC = () => {
       )}
 
       {/* Course Selector Header (Compact on mobile) */}
-      <div className="space-y-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 shadow-2xs sm:flex sm:items-center sm:justify-between sm:space-y-0 sm:px-4 sm:py-3">
-        <div className="flex items-center justify-between gap-2 min-w-0">
+      <div
+        data-testid="learning-course-switcher-header"
+        className="space-y-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 shadow-2xs sm:flex sm:items-center sm:justify-between sm:space-y-0 sm:px-4 sm:py-3"
+      >
+        <div className="flex min-w-0 items-center justify-between gap-2">
           <h1 className="truncate font-display text-sm font-bold text-stone-900 sm:text-base">
             {activeCourse.title}
           </h1>
@@ -384,41 +387,50 @@ export const LearningPage: React.FC = () => {
           </span>
         </div>
 
-        {/* Course Level Pills (Single-line horizontal scroll on mobile) */}
+        {/* Course Level Pills (Single-line horizontal scroll on mobile, entitled courses first) */}
         {coursesList.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
-            {coursesList.slice(0, 4).map((course) => {
-              const isEntitled =
-                isDemoMode ||
-                user?.role === 'teacher' ||
-                user?.role === 'admin' ||
-                (user?.onlineCourses || []).some((c) => c.id === course.id);
+          <div
+            data-testid="learning-course-pills"
+            className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0"
+          >
+            {[...coursesList]
+              .sort((a, b) => {
+                const aEnt = (user?.onlineCourses || []).some((c) => c.id === a.id) ? 0 : 1;
+                const bEnt = (user?.onlineCourses || []).some((c) => c.id === b.id) ? 0 : 1;
+                return aEnt - bEnt;
+              })
+              .map((course) => {
+                const isEntitled =
+                  isDemoMode ||
+                  user?.role === 'teacher' ||
+                  user?.role === 'admin' ||
+                  (user?.onlineCourses || []).some((c) => c.id === course.id);
 
-              return (
-                <button
-                  key={course.id}
-                  type="button"
-                  data-testid={`select-course-${course.id}`}
-                  onClick={() => {
-                    setSelectedCourseId(course.id);
-                    setSelectedLessonNum(1);
-                    syncUrlParams(course.id, 1, activeTab);
-                  }}
-                  className={`inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
-                    activeCourse.id === course.id
-                      ? 'bg-red-800 text-white shadow-2xs'
-                      : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
-                  }`}
-                >
-                  <span>{course.shortTitle || course.code}</span>
-                  {!isEntitled && (
-                    <span className="rounded bg-stone-200 px-1 py-0.2 text-[10px] text-stone-600">
-                      Khóa
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={course.id}
+                    type="button"
+                    data-testid={`select-course-${course.id}`}
+                    onClick={() => {
+                      setSelectedCourseId(course.id);
+                      setSelectedLessonNum(1);
+                      syncUrlParams(course.id, 1, activeTab);
+                    }}
+                    className={`inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                      activeCourse.id === course.id
+                        ? 'bg-red-800 text-white shadow-2xs'
+                        : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                    }`}
+                  >
+                    <span>{course.shortTitle || course.code}</span>
+                    {!isEntitled && (
+                      <span className="rounded bg-stone-200 px-1 py-0.2 text-[10px] text-stone-600">
+                        Khóa
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
           </div>
         )}
       </div>

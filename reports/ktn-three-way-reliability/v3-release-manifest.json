@@ -2,78 +2,78 @@
   "schemaVersion": "3.0",
   "app": "ktn-web-v2",
   "releaseTag": "v3.0.0",
-  "gitCommit": "7aa06f6",
-  "generatedAt": "2026-11-07T14:26:41.012Z",
-  "mode": "live",
+  "gitCommit": "45b34ec",
+  "generatedAt": "2026-11-07T17:21:51.533Z",
+  "mode": "dry-run",
   "vendorId": "3529cd2b-7af6-4fda-887c-392a79393d6a",
   "customPageId": "6adff7ba36309b0002b6e659",
   "customPageSlug": "so-lien-lac-test",
-  "s3Prefix": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6",
+  "s3Prefix": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec",
   "cloudfrontOrigin": "https://d21acfi38wn3iy.cloudfront.net",
   "totalAssets": 9,
-  "totalBytes": 1093671,
+  "totalBytes": 1145461,
   "allChunksUnder500KiB": true,
   "hlsPreloadedOnInitialShell": false,
   "assets": [
     {
-      "fileName": "assets/AdminWorkspace-KDa5AwiY.js",
-      "bytes": 41175,
-      "sizeKiB": 40.21,
+      "fileName": "assets/AdminWorkspace-CzPldR7_.js",
+      "bytes": 81842,
+      "sizeKiB": 79.92,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "b6b6cb6c12830b030b92afe2911938cc7f0ad2fe65205e32710e1864f24000f7",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/AdminWorkspace-KDa5AwiY.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/AdminWorkspace-KDa5AwiY.js"
+      "sha256": "302722315c721656cff37317a437d09f1be183aa8ec8399df94ae506875ba132",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/AdminWorkspace-CzPldR7_.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/AdminWorkspace-CzPldR7_.js"
     },
     {
-      "fileName": "assets/ClassScheduleModal-Dw6DSHNE.js",
+      "fileName": "assets/ClassScheduleModal-8OPpHWlG.js",
       "bytes": 24630,
       "sizeKiB": 24.05,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "c5b0f2ba4b40af4fba859607428578d156c83797b095cbec2db3dbc2e37a26de",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/ClassScheduleModal-Dw6DSHNE.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/ClassScheduleModal-Dw6DSHNE.js"
+      "sha256": "45646ee215081607c16028fa06c9ad2b48daa61607e2f944cf9cf1deb1b4903c",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/ClassScheduleModal-8OPpHWlG.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/ClassScheduleModal-8OPpHWlG.js"
     },
     {
-      "fileName": "assets/index-Bl4aCqYj.css",
-      "bytes": 44844,
-      "sizeKiB": 43.79,
+      "fileName": "assets/index-Cd6vnWyo.css",
+      "bytes": 46557,
+      "sizeKiB": 45.47,
       "withinBudget": true,
       "mimeType": "text/css; charset=utf-8",
-      "sha256": "5963a7c800f5f89001856bdd7333aacd3a690e983dcadcf333d14a5c4e0aa6bd",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/index-Bl4aCqYj.css",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/index-Bl4aCqYj.css"
+      "sha256": "2154de37c91e26399d625170ed908460b75abd04be5f2ef2651bf7b86994fbe5",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/index-Cd6vnWyo.css",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/index-Cd6vnWyo.css"
     },
     {
-      "fileName": "assets/index-z_mck_-p.js",
-      "bytes": 285709,
-      "sizeKiB": 279.01,
+      "fileName": "assets/index-D0lVWE_Z.js",
+      "bytes": 292812,
+      "sizeKiB": 285.95,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "beb4aee466599809259d001d4cde9294c0e45c8541c5de6665b8b02c12c4d5b2",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/index-z_mck_-p.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/index-z_mck_-p.js"
+      "sha256": "db8596ba25e2deb212bc69da6d89d5d13d56b734182e891a6afdab9f7641d6ff",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/index-D0lVWE_Z.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/index-D0lVWE_Z.js"
     },
     {
-      "fileName": "assets/LearningPage-BSJv51Np.js",
-      "bytes": 24571,
-      "sizeKiB": 24,
+      "fileName": "assets/LearningPage-DnngtX9_.js",
+      "bytes": 24817,
+      "sizeKiB": 24.24,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "a54e18b30fc5fbd07d4dc781f67253e01b9c19b701835f1f75cd9ab1da23a3be",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/LearningPage-BSJv51Np.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/LearningPage-BSJv51Np.js"
+      "sha256": "8de52c29330eb88b95389c0112f1dbe2b973634f0061824863d063e46f38c648",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/LearningPage-DnngtX9_.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/LearningPage-DnngtX9_.js"
     },
     {
-      "fileName": "assets/TeacherWorkspace-CqSnLpmz.js",
+      "fileName": "assets/TeacherWorkspace-DRVPTClG.js",
       "bytes": 20880,
       "sizeKiB": 20.39,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "6cb88c2daae5612e4d31403e959107a66d1f2aff94b4e4f1de0a216cbc0fb613",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/TeacherWorkspace-CqSnLpmz.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/TeacherWorkspace-CqSnLpmz.js"
+      "sha256": "2e032f18dd4f48e08f401ea6bc3d0449c345f5d75cb405145b9700ea3e8482f4",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/TeacherWorkspace-DRVPTClG.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/TeacherWorkspace-DRVPTClG.js"
     },
     {
       "fileName": "assets/vendor-hls-Dy2NRv67.js",
@@ -82,18 +82,18 @@
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
       "sha256": "0fd24ea438c5fd2dc27e348328a90523b4417fa3a2f14e046c7a099e72b8f11b",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/vendor-hls-Dy2NRv67.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/vendor-hls-Dy2NRv67.js"
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/vendor-hls-Dy2NRv67.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/vendor-hls-Dy2NRv67.js"
     },
     {
-      "fileName": "assets/vendor-icons-EG5Czf49.js",
-      "bytes": 32903,
-      "sizeKiB": 32.13,
+      "fileName": "assets/vendor-icons-g6YQqHEz.js",
+      "bytes": 34964,
+      "sizeKiB": 34.14,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "1710bf50f5ecc2a0999391b1bfe2e2629e1b1c374c133e4ce15fc1e0712d9278",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/vendor-icons-EG5Czf49.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/vendor-icons-EG5Czf49.js"
+      "sha256": "cebedbb1ffe4dd99a4c368bb124993cee83b9b663f34f8d4050e43831810fd84",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/vendor-icons-g6YQqHEz.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/vendor-icons-g6YQqHEz.js"
     },
     {
       "fileName": "assets/vendor-react-zGRsKWYw.js",
@@ -102,12 +102,9 @@
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
       "sha256": "8ee1a27bf9a7521c05041809bfa9f9e9962547be5d2549b692e80d9f3184cfb8",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/vendor-react-zGRsKWYw.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-7aa06f6/assets/vendor-react-zGRsKWYw.js"
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/vendor-react-zGRsKWYw.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-45b34ec/assets/vendor-react-zGRsKWYw.js"
     }
   ],
-  "rollbackCommand": "node deploy_ktn_react_v2_izteach.cjs --rollback reports/ktn-three-way-reliability/v3-release-manifest.json",
-  "cdnVerifiedCount": 9,
-  "customPageUpdated": true,
-  "customPageVerifiedAt": "2026-11-07T14:26:46.661Z"
+  "rollbackCommand": "node deploy_ktn_react_v2_izteach.cjs --rollback reports/ktn-three-way-reliability/v3-release-manifest.json"
 }

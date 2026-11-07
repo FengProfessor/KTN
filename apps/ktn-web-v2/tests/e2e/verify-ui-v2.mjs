@@ -1094,6 +1094,43 @@ async function runSuite() {
     // Capture chat-mobile-390.png, learning-mobile-390.png, notifications-mobile-390.png & verify composer above bottom nav
     await studentPage.setViewportSize({ width: 390, height: 844 });
 
+    if (!fs.existsSync(path.join(SCREENSHOT_DIR, 'student-home-before-390.png'))) {
+      await studentPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+      await studentPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 8000 });
+      await studentPage.waitForTimeout(300);
+      await studentPage.screenshot({
+        path: path.join(SCREENSHOT_DIR, 'student-home-before-390.png'),
+        fullPage: true,
+      });
+      await studentPage.goto(`${baseUrl}/classrooms?class=YCT2-04&session=1`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await studentPage.waitForSelector('[data-testid="classrooms-page"]', { timeout: 8000 });
+      await studentPage.waitForTimeout(300);
+      await studentPage.screenshot({
+        path: path.join(SCREENSHOT_DIR, 'classrooms-before-390.png'),
+        fullPage: true,
+      });
+      await studentPage.setViewportSize({ width: 1440, height: 900 });
+      await studentPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+      await studentPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 8000 });
+      await studentPage.waitForTimeout(300);
+      await studentPage.screenshot({
+        path: path.join(SCREENSHOT_DIR, 'student-home-before-1440.png'),
+        fullPage: true,
+      });
+      await studentPage.goto(`${baseUrl}/classrooms?class=YCT2-04&session=1`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await studentPage.waitForSelector('[data-testid="classrooms-page"]', { timeout: 8000 });
+      await studentPage.waitForTimeout(300);
+      await studentPage.screenshot({
+        path: path.join(SCREENSHOT_DIR, 'classrooms-before-1440.png'),
+        fullPage: true,
+      });
+      await studentPage.setViewportSize({ width: 390, height: 844 });
+    }
+
     await studentPage.goto(`${baseUrl}/learning`, { waitUntil: 'domcontentloaded' });
     await studentPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 8000 });
     await studentPage.waitForTimeout(250);
@@ -1329,6 +1366,645 @@ async function runSuite() {
 
     await perfContext.close();
     await embedContext.close();
+
+    // =========================================================================
+    // TEST L — UNIFIED STUDENT MANAGEMENT UX (ALL 13 MANDATORY SCENARIOS)
+    // =========================================================================
+    const unifiedAdminContext = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+    });
+    const unifiedAdminPage = await unifiedAdminContext.newPage();
+    const studentCoursesPayloads = [];
+    unifiedAdminPage.on('request', (req) => {
+      if (req.url().includes('/api/ktn/students/courses') && req.method() === 'POST') {
+        try {
+          studentCoursesPayloads.push(JSON.parse(req.postData() || '{}'));
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    await unifiedAdminPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await unifiedAdminPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await unifiedAdminPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 10000 });
+
+    // L1 (Scenarios 1 & 7): Opening /admin/students has neutral defaults (no auto-selected student, no HSK1, no YCT2-04)
+    await unifiedAdminPage.goto(`${baseUrl}/admin/students`, { waitUntil: 'domcontentloaded' });
+    await unifiedAdminPage.waitForSelector('[data-testid="admin-students-section"]', {
+      timeout: 10000,
+    });
+    const drawerOpenOnLoad = await unifiedAdminPage.isVisible(
+      '[data-testid="student-detail-drawer"]'
+    );
+    await unifiedAdminPage.click('[data-testid="admin-open-create-student-btn"]');
+    await unifiedAdminPage.waitForSelector('[data-testid="admin-create-student-modal"]', {
+      timeout: 5000,
+    });
+    const defaultStuClass = await unifiedAdminPage.inputValue(
+      '[data-testid="provision-student-class-select"]'
+    );
+    const createModalText = await unifiedAdminPage.textContent(
+      '[data-testid="admin-create-student-modal"]'
+    );
+    await unifiedAdminPage.click('[aria-label="Đóng cửa sổ tạo học viên"]');
+
+    await unifiedAdminPage.click('[data-testid="admin-open-create-teacher-btn"]');
+    await unifiedAdminPage.waitForSelector('[data-testid="admin-create-teacher-modal"]', {
+      timeout: 5000,
+    });
+    const createTeacherText = await unifiedAdminPage.textContent(
+      '[data-testid="admin-create-teacher-modal"]'
+    );
+    await unifiedAdminPage.click('[aria-label="Đóng cửa sổ tạo giáo viên"]');
+
+    recordTest(
+      'TEST L',
+      'L1',
+      'Opening /admin/students starts in neutral state (no auto-selected student, — Chưa xếp lớp —, — Chưa chọn khóa học —)',
+      !drawerOpenOnLoad &&
+        defaultStuClass === '' &&
+        Boolean(createModalText?.includes('— Chưa xếp lớp —')) &&
+        Boolean(createModalText?.includes('— Chưa chọn khóa học —')) &&
+        Boolean(createTeacherText?.includes('— Chưa xếp lớp —')),
+      `drawerOpen=${drawerOpenOnLoad}, defaultClass="${defaultStuClass}"`
+    );
+
+    // L2 (Scenario 2 & P2 table polish): Search across 1,047+ students, max 2 course badges (+N khóa), legacy class badge
+    await unifiedAdminPage.fill('[data-testid="admin-search-input"]', 'e2e.hs.000');
+    await unifiedAdminPage.waitForTimeout(450);
+    await unifiedAdminPage.waitForSelector(
+      '[data-testid="admin-student-row-e2e.hs.0001@khongtunhi.com"]',
+      { timeout: 8000 }
+    );
+    const extraCoursesBadgeText = await unifiedAdminPage.textContent(
+      '[data-testid="student-extra-courses-badge-e2e.hs.0001@khongtunhi.com"]'
+    );
+    const legacyBadgeOnTable = await unifiedAdminPage.isVisible(
+      '[data-testid="student-legacy-class-badge-e2e.hs.0002@khongtunhi.com"]'
+    );
+
+    // Capture Desktop Student Roster Screenshot (filtered to synthetic e2e.hs. accounts — zero real PII)
+    await unifiedAdminPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'admin-students-unified-desktop.png'),
+      fullPage: false,
+    });
+
+    await unifiedAdminPage.fill('[data-testid="admin-search-input"]', 'tran bao ngoc 0999');
+    await unifiedAdminPage.waitForTimeout(450);
+    await unifiedAdminPage.waitForSelector(
+      '[data-testid="admin-student-row-e2e.hs.0999@khongtunhi.com"]',
+      { timeout: 8000 }
+    );
+    const tabStudentsText = await unifiedAdminPage.textContent('[data-testid="admin-tab-students"]');
+
+    recordTest(
+      'TEST L',
+      'L2',
+      'Server-side search across >1,000 students finds target by unaccented name and enforces max 2 course badges (+N khóa)',
+      Boolean(
+        extraCoursesBadgeText?.includes('+1 khóa') &&
+          legacyBadgeOnTable &&
+          tabStudentsText
+      ),
+      `extraBadge="${extraCoursesBadgeText?.trim()}", legacyBadge=${legacyBadgeOnTable}`
+    );
+
+    // L3 (Scenarios 3 & 8): Click student row -> opens drawer with real profile/entitlements & disables Grant when no course selected
+    await unifiedAdminPage.click('[data-testid="admin-student-row-e2e.hs.0999@khongtunhi.com"]');
+    await unifiedAdminPage.waitForSelector('[data-testid="student-detail-drawer"]', {
+      timeout: 5000,
+    });
+    const drawerName = await unifiedAdminPage.textContent('[data-testid="drawer-student-name"]');
+    const drawerIdentityEmail = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-identity-email"]'
+    );
+    const drawerClassInitial = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-current-class-badge"]'
+    );
+    const hasInitialHsk1 = await unifiedAdminPage.isVisible(
+      '[data-testid="drawer-granted-course-6adadba969897b0002482ca5"]'
+    );
+    const courseSelectDefault = await unifiedAdminPage.inputValue(
+      '[data-testid="drawer-course-select"]'
+    );
+    const grantDisabledWhenEmpty = await unifiedAdminPage.isDisabled(
+      '[data-testid="drawer-grant-course-submit-btn"]'
+    );
+    const statusAccountText = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-status-account"]'
+    );
+    const statusCoursesText = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-status-courses"]'
+    );
+    const statusClassText = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-status-class"]'
+    );
+
+    // Capture Desktop Drawer Screenshot
+    await unifiedAdminPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'admin-student-drawer-desktop.png'),
+      fullPage: false,
+    });
+
+    recordTest(
+      'TEST L',
+      'L3',
+      'Clicking student row opens StudentDetailDrawer with exact profile/entitlements, 3-part sync status, and disabled Grant button when empty',
+      Boolean(
+        drawerName?.includes('Trần Bảo Ngọc 0999') &&
+          drawerIdentityEmail?.includes('e2e.hs.0999@khongtunhi.com') &&
+          drawerClassInitial?.includes('YCT1-01') &&
+          hasInitialHsk1 &&
+          courseSelectDefault === '' &&
+          grantDisabledWhenEmpty &&
+          statusAccountText &&
+          statusCoursesText &&
+          statusClassText
+      ),
+      `name="${drawerName?.trim()}", class="${drawerClassInitial?.trim()}", grantDisabled=${grantDisabledWhenEmpty}`
+    );
+
+    // L4 (Scenario 4): Grant an additional course -> class_code remains unchanged, payload omits class_code
+    studentCoursesPayloads.length = 0;
+    await unifiedAdminPage.click(
+      '[data-testid="drawer-course-option-65e7704a9ea90c00080d5195"]'
+    );
+    await unifiedAdminPage.waitForSelector('[data-testid="drawer-grant-preview"]', {
+      timeout: 3000,
+    });
+    await unifiedAdminPage.click('[data-testid="drawer-grant-course-submit-btn"]');
+    await unifiedAdminPage.waitForSelector(
+      '[data-testid="drawer-granted-course-65e7704a9ea90c00080d5195"]',
+      { timeout: 8000 }
+    );
+    const grantPayload = studentCoursesPayloads[studentCoursesPayloads.length - 1] || {};
+    const classAfterGrant = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-current-class-badge"]'
+    );
+
+    recordTest(
+      'TEST L',
+      'L4',
+      'Granting a course sends action="grant" without classCode/class_code, adds course, and keeps live class unchanged',
+      grantPayload.action === 'grant' &&
+        !('class_code' in grantPayload) &&
+        !('classCode' in grantPayload) &&
+        Array.isArray(grantPayload.courseIds || grantPayload.course_ids) &&
+        (grantPayload.courseIds || grantPayload.course_ids).includes('65e7704a9ea90c00080d5195') &&
+        Boolean(classAfterGrant?.includes('YCT1-01')),
+      `payload=${JSON.stringify(grantPayload)}, classAfter="${classAfterGrant?.trim()}"`
+    );
+
+    // L5 (Scenario 5): Revoke a single course (with confirmation) -> class_code and other courses remain intact
+    studentCoursesPayloads.length = 0;
+    await unifiedAdminPage.click(
+      '[data-testid="drawer-revoke-course-btn-65e7704a9ea90c00080d5195"]'
+    );
+    await unifiedAdminPage.waitForSelector('[data-testid="drawer-revoke-confirm-box"]', {
+      timeout: 3000,
+    });
+    await unifiedAdminPage.click('[data-testid="drawer-confirm-revoke-btn"]');
+    await unifiedAdminPage.waitForFunction(
+      () =>
+        !document.querySelector(
+          '[data-testid="drawer-granted-course-65e7704a9ea90c00080d5195"]'
+        ),
+      null,
+      { timeout: 8000 }
+    );
+    const revokePayload = studentCoursesPayloads[studentCoursesPayloads.length - 1] || {};
+    const stillHasHsk1AfterRevoke = await unifiedAdminPage.isVisible(
+      '[data-testid="drawer-granted-course-6adadba969897b0002482ca5"]'
+    );
+    const classAfterRevoke = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-current-class-badge"]'
+    );
+
+    recordTest(
+      'TEST L',
+      'L5',
+      'Revoking a course requires confirmation, sends action="revoke" without classCode/class_code, and preserves other courses + live class',
+      revokePayload.action === 'revoke' &&
+        !('class_code' in revokePayload) &&
+        !('classCode' in revokePayload) &&
+        stillHasHsk1AfterRevoke &&
+        Boolean(classAfterRevoke?.includes('YCT1-01')),
+      `payload=${JSON.stringify(revokePayload)}, stillHasHsk1=${stillHasHsk1AfterRevoke}`
+    );
+
+    // L6 (Scenario 6): Assign / Change live class -> online_courses remain unchanged, payload omits course_ids
+    studentCoursesPayloads.length = 0;
+    await unifiedAdminPage.selectOption('[data-testid="drawer-class-select"]', 'YCT3-02');
+    await unifiedAdminPage.waitForSelector('[data-testid="drawer-class-change-preview"]', {
+      timeout: 3000,
+    });
+    await unifiedAdminPage.click('[data-testid="drawer-save-class-btn"]');
+    await unifiedAdminPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="drawer-current-class-badge"]')
+          ?.textContent?.includes('YCT3-02'),
+      null,
+      { timeout: 8000 }
+    );
+    const assignClassPayload = studentCoursesPayloads[studentCoursesPayloads.length - 1] || {};
+    const stillHasHsk1AfterClassChange = await unifiedAdminPage.isVisible(
+      '[data-testid="drawer-granted-course-6adadba969897b0002482ca5"]'
+    );
+
+    recordTest(
+      'TEST L',
+      'L6',
+      'Changing live class sends action="assign_class" without courseIds/course_ids and preserves video course entitlements',
+      assignClassPayload.action === 'assign_class' &&
+        (assignClassPayload.classCode || assignClassPayload.class_code) === 'YCT3-02' &&
+        !('course_ids' in assignClassPayload) &&
+        !('courseIds' in assignClassPayload) &&
+        stillHasHsk1AfterClassChange,
+      `payload=${JSON.stringify(assignClassPayload)}`
+    );
+
+    // L7 (Scenario 11): API failure displays real error alert in drawer and never reports fake success
+    await fetch(`${baseUrl}/api/ktn/test/fault`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ failStudentCoursesPost: true }),
+    });
+    await unifiedAdminPage.click(
+      '[data-testid="drawer-course-option-65e7704a9ea90c00080d5195"]'
+    );
+    await unifiedAdminPage.click('[data-testid="drawer-grant-course-submit-btn"]');
+    await unifiedAdminPage.waitForSelector('[data-testid="drawer-action-error-alert"]', {
+      timeout: 8000,
+    });
+    const drawerErrAlertText = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-action-error-alert"]'
+    );
+    const falselyGrantedOnError = await unifiedAdminPage.isVisible(
+      '[data-testid="drawer-granted-course-65e7704a9ea90c00080d5195"]'
+    );
+    await fetch(`${baseUrl}/api/ktn/test/fault`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ failStudentCoursesPost: false }),
+    });
+
+    recordTest(
+      'TEST L',
+      'L7',
+      'When POST /api/ktn/students/courses fails, StudentDetailDrawer displays real error alert and does not mutate entitlements',
+      Boolean(
+        drawerErrAlertText &&
+          drawerErrAlertText.includes('Thao tác chưa hoàn tất') &&
+          !falselyGrantedOnError
+      ),
+      drawerErrAlertText?.replace(/\s+/g, ' ').trim().slice(0, 90) || ''
+    );
+
+    // L8 (Scenario 9 + Legacy URL redirect + Legacy class code warning): Closing drawer preserves search/filter; /admin/more?email=... redirects to drawer
+    await unifiedAdminPage.click('[data-testid="drawer-close-btn"]');
+    await unifiedAdminPage.waitForFunction(
+      () => !document.querySelector('[data-testid="student-detail-drawer"]'),
+      null,
+      { timeout: 5000 }
+    );
+    const preservedSearchVal = await unifiedAdminPage.inputValue(
+      '[data-testid="admin-search-input"]'
+    );
+
+    // Test legacy URL /admin/more?email=e2e.hs.0002@khongtunhi.com redirect & legacy class code warning
+    await unifiedAdminPage.goto(
+      `${baseUrl}/admin/more?email=${encodeURIComponent('e2e.hs.0002@khongtunhi.com')}`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await unifiedAdminPage.waitForSelector('[data-testid="student-detail-drawer"]', {
+      timeout: 8000,
+    });
+    const redirectedUrl = unifiedAdminPage.url();
+    const legacyWarningVisible = await unifiedAdminPage.isVisible(
+      '[data-testid="drawer-legacy-class-warning"]'
+    );
+    const legacyClassKept = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-current-class-badge"]'
+    );
+
+    recordTest(
+      'TEST L',
+      'L8',
+      'Closing drawer preserves search state, /admin/more?email=... redirects to /admin/students drawer, and legacy class code shows warning without deleting data',
+      preservedSearchVal === 'tran bao ngoc 0999' &&
+        redirectedUrl.includes('/admin/students') &&
+        legacyWarningVisible &&
+        Boolean(legacyClassKept?.includes('LEGACY-2023')),
+      `search="${preservedSearchVal}", legacyClass="${legacyClassKept?.trim()}"`
+    );
+
+    // L9 (Scenarios 10 & 12): Mobile 390x844 full-screen drawer, profile edit, close via Quay lại, and persistence after F5 reload
+    await unifiedAdminPage.setViewportSize({ width: 390, height: 844 });
+    await unifiedAdminPage.goto(`${baseUrl}/admin/students`, { waitUntil: 'domcontentloaded' });
+    await unifiedAdminPage.waitForSelector('[data-testid="admin-students-section"]', {
+      timeout: 8000,
+    });
+    await unifiedAdminPage.fill('[data-testid="admin-search-input"]', 'e2e.hs.0999');
+    await unifiedAdminPage.waitForTimeout(450);
+    await unifiedAdminPage.waitForSelector(
+      '[data-testid="admin-mobile-open-student-btn-e2e.hs.0999@khongtunhi.com"]',
+      { timeout: 8000 }
+    );
+
+    // Capture Mobile Student Roster Screenshot (filtered to synthetic e2e.hs.0999)
+    await unifiedAdminPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'admin-students-unified-mobile.png'),
+      fullPage: false,
+    });
+
+    await unifiedAdminPage.click(
+      '[data-testid="admin-mobile-open-student-btn-e2e.hs.0999@khongtunhi.com"]'
+    );
+    await unifiedAdminPage.waitForSelector('[data-testid="student-detail-drawer"]', {
+      timeout: 5000,
+    });
+    const mobileBackBtnVisible = await unifiedAdminPage.isVisible(
+      '[data-testid="drawer-back-btn"]'
+    );
+
+    // Capture Mobile Drawer Screenshot
+    await unifiedAdminPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'admin-student-drawer-mobile.png'),
+      fullPage: false,
+    });
+
+    // Edit student phone in Section A
+    await unifiedAdminPage.click('[data-testid="drawer-edit-profile-btn"]');
+    await unifiedAdminPage.fill('[data-testid="drawer-profile-phone-input"]', '0978999888');
+    await unifiedAdminPage.click('[data-testid="drawer-save-profile-btn"]');
+    await unifiedAdminPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="drawer-info-phone"]')
+          ?.textContent?.includes('0978999888'),
+      null,
+      { timeout: 8000 }
+    );
+
+    // Close mobile drawer via Quay lại button
+    await unifiedAdminPage.click('[data-testid="drawer-back-btn"]');
+    await unifiedAdminPage.waitForFunction(
+      () => !document.querySelector('[data-testid="student-detail-drawer"]'),
+      null,
+      { timeout: 5000 }
+    );
+
+    // Reload (F5) and verify class YCT3-02, course HSK1, and phone 0978999888 persisted
+    await unifiedAdminPage.reload({ waitUntil: 'domcontentloaded' });
+    await unifiedAdminPage.waitForSelector('[data-testid="admin-students-section"]', {
+      timeout: 8000,
+    });
+    await unifiedAdminPage.fill('[data-testid="admin-search-input"]', 'e2e.hs.0999');
+    await unifiedAdminPage.waitForTimeout(450);
+    await unifiedAdminPage.click(
+      '[data-testid="admin-mobile-open-student-btn-e2e.hs.0999@khongtunhi.com"]'
+    );
+    await unifiedAdminPage.waitForSelector('[data-testid="student-detail-drawer"]', {
+      timeout: 5000,
+    });
+    const phoneAfterF5 = await unifiedAdminPage.textContent('[data-testid="drawer-info-phone"]');
+    const classAfterF5 = await unifiedAdminPage.textContent(
+      '[data-testid="drawer-current-class-badge"]'
+    );
+    const courseAfterF5 = await unifiedAdminPage.isVisible(
+      '[data-testid="drawer-granted-course-6adadba969897b0002482ca5"]'
+    );
+
+    recordTest(
+      'TEST L',
+      'L9',
+      'Mobile 390x844 opens full-width StudentDetailDrawer, saves profile edits, closes via Quay lại, and persists all changes after F5 reload',
+      mobileBackBtnVisible &&
+        Boolean(phoneAfterF5?.includes('0978999888')) &&
+        Boolean(classAfterF5?.includes('YCT3-02')) &&
+        courseAfterF5,
+      `mobileBack=${mobileBackBtnVisible}, phone="${phoneAfterF5?.trim()}", class="${classAfterF5?.trim()}"`
+    );
+
+    await unifiedAdminContext.close();
+
+    // =========================================================================
+    // TEST M — STUDENT MOBILE UX CLEANUP: STREAMLINED HOME, PURE CLASSROOMS, DEEP-LINKS & NOTIFICATION SETTINGS (M1..M6)
+    // =========================================================================
+    const uxStudentContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const uxStudentPage = await uxStudentContext.newPage();
+    await uxStudentPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await uxStudentPage.click('[data-testid="quick-login-hoangngan@khongtunhi.com"]');
+    await uxStudentPage.waitForSelector('[data-testid="student-dashboard-page"]', {
+      timeout: 10000,
+    });
+    await uxStudentPage.waitForTimeout(350);
+
+    // M1: StudentHome has no duplicate greeting strip, no 4-tile grid, compact Discovery cards, and captures after screenshots
+    const hasDuplicateGreeting =
+      (await uxStudentPage.locator('[data-testid="student-greeting-strip"]').count()) > 0;
+    const hasDuplicateFourGrid =
+      (await uxStudentPage.locator('[data-testid="student-quick-courses"]').count()) > 0;
+    const hasNextClassOnHome = await uxStudentPage.isVisible(
+      '[data-testid="student-next-class-card"]'
+    );
+    const hasContinueOnHome = await uxStudentPage.isVisible(
+      '[data-testid="student-continue-learning-card"]'
+    );
+    const hasFlashcardOnHome = await uxStudentPage.isVisible(
+      '[data-testid="discovery-card-flashcard"]'
+    );
+
+    await uxStudentPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'student-home-after-390.png'),
+      fullPage: true,
+    });
+    await uxStudentPage.setViewportSize({ width: 1440, height: 900 });
+    await uxStudentPage.waitForTimeout(250);
+    await uxStudentPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'student-home-after-1440.png'),
+      fullPage: true,
+    });
+
+    recordTest(
+      'TEST M',
+      'M1',
+      'StudentHome removes duplicate greeting strip and 4-tile nav grid while keeping compact Next Class, Continue Learning, and Discovery cards',
+      !hasDuplicateGreeting &&
+        !hasDuplicateFourGrid &&
+        hasNextClassOnHome &&
+        hasContinueOnHome &&
+        hasFlashcardOnHome,
+      `greetingStrip=${hasDuplicateGreeting}, fourGrid=${hasDuplicateFourGrid}`
+    );
+
+    // M2: ClassroomsPage has ZERO video-courses-summary-card, compact mobile session selector, no horizontal overflow, and captures after screenshots
+    await uxStudentPage.setViewportSize({ width: 390, height: 844 });
+    await uxStudentPage.goto(`${baseUrl}/classrooms`, { waitUntil: 'domcontentloaded' });
+    await uxStudentPage.waitForSelector('[data-testid="classrooms-page"]', { timeout: 8000 });
+    await uxStudentPage.waitForTimeout(350);
+
+    const hasVideoSummaryOnClassrooms =
+      (await uxStudentPage.locator('[data-testid="video-courses-summary-card"]').count()) > 0;
+    const classroomsOverflow390 = await uxStudentPage.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth
+    );
+    const sessionSelectorHeightMobile = await uxStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="classroom-session-selector"]');
+      return el ? Math.round(el.getBoundingClientRect().height) : 999;
+    });
+
+    await uxStudentPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'classrooms-after-390.png'),
+      fullPage: true,
+    });
+    await uxStudentPage.setViewportSize({ width: 1440, height: 900 });
+    await uxStudentPage.waitForTimeout(250);
+    await uxStudentPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'classrooms-after-1440.png'),
+      fullPage: true,
+    });
+
+    recordTest(
+      'TEST M',
+      'M2',
+      'ClassroomsPage removes video-courses-summary-card completely and renders compact horizontal session selector on mobile without overflow',
+      !hasVideoSummaryOnClassrooms &&
+        classroomsOverflow390 <= 2 &&
+        sessionSelectorHeightMobile <= 80,
+      `videoCard=${hasVideoSummaryOnClassrooms}, overflow=${classroomsOverflow390}px, mobileSessionHeight=${sessionSelectorHeightMobile}px`
+    );
+
+    // M3: Unassigned student on /classrooms sees ONLY "Em chưa được xếp vào lớp học trực tiếp." and "Liên hệ Học vụ"
+    const unassignedCheckContext = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+    });
+    const unassignedCheckPage = await unassignedCheckContext.newPage();
+    await unassignedCheckPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await unassignedCheckPage.click('[data-testid="quick-login-taphong2002vip@gmail.com"]');
+    await unassignedCheckPage.waitForSelector('[data-testid="student-dashboard-page"]', {
+      timeout: 8000,
+    });
+    await unassignedCheckPage.goto(`${baseUrl}/classrooms`, { waitUntil: 'domcontentloaded' });
+    await unassignedCheckPage.waitForSelector('[data-testid="unassigned-class-empty-state"]', {
+      timeout: 8000,
+    });
+    const unassignedEmptyText = await unassignedCheckPage.textContent(
+      '[data-testid="unassigned-class-empty-state"]'
+    );
+    const unassignedHasVideoCard =
+      (await unassignedCheckPage.locator('[data-testid="video-courses-summary-card"]').count()) > 0;
+    await unassignedCheckContext.close();
+
+    recordTest(
+      'TEST M',
+      'M3',
+      'Unassigned student on /classrooms sees "Em chưa được xếp vào lớp học trực tiếp." and "Liên hệ Học vụ" with zero video course promo',
+      Boolean(
+        unassignedEmptyText?.includes('Em chưa được xếp vào lớp học trực tiếp.') &&
+          unassignedEmptyText?.includes('Liên hệ Học vụ') &&
+          !unassignedHasVideoCard
+      ),
+      `text="${unassignedEmptyText?.replace(/\s+/g, ' ').trim()}"`
+    );
+
+    // M4: Live classroom homework (course_id = CLASS_YCT2-04) clicked on StudentHome opens /classrooms?class=YCT2-04&session=1&exercise=101 (never /learning)
+    await uxStudentPage.setViewportSize({ width: 390, height: 844 });
+    await uxStudentPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await uxStudentPage.waitForSelector('[data-testid="student-dashboard-page"]', {
+      timeout: 8000,
+    });
+    await uxStudentPage.waitForSelector('[data-testid^="dashboard-hw-item-"]', {
+      timeout: 8000,
+    });
+    const classHwItem = uxStudentPage
+      .locator('[data-testid^="dashboard-hw-item-"]')
+      .filter({ hasText: 'YCT2-04' })
+      .first();
+    await classHwItem.click();
+    await uxStudentPage.waitForSelector('[data-testid="classrooms-page"]', { timeout: 8000 });
+    await uxStudentPage.waitForSelector('[data-testid="homework-submission-panel"]', {
+      timeout: 8000,
+    });
+    const hwDeepLinkUrl = uxStudentPage.url();
+    const hwPanelOpenedOnClassrooms = await uxStudentPage.isVisible(
+      '[data-testid="homework-submission-panel"]'
+    );
+
+    recordTest(
+      'TEST M',
+      'M4',
+      'Clicking CLASS_YCT2-04 homework on StudentHome navigates directly to /classrooms with exact session & exercise and opens HomeworkPanel',
+      hwDeepLinkUrl.includes('/classrooms') &&
+        hwDeepLinkUrl.includes('class=YCT2-04') &&
+        hwDeepLinkUrl.includes('exercise=101') &&
+        !hwDeepLinkUrl.includes('/learning') &&
+        hwPanelOpenedOnClassrooms,
+      `url=${hwDeepLinkUrl}, hwPanelOpen=${hwPanelOpenedOnClassrooms}`
+    );
+
+    // M5: LearningPage displays entitled video courses switcher and opens video homework via deep-link
+    await uxStudentPage.goto(
+      `${baseUrl}/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await uxStudentPage.waitForSelector('[data-testid="video-learning-page"]', { timeout: 8000 });
+    await uxStudentPage.waitForSelector('[data-testid="homework-submission-panel"]', {
+      timeout: 8000,
+    });
+    const hasCourseSwitcherOnLearning = await uxStudentPage.isVisible(
+      '[data-testid="learning-course-switcher-header"]'
+    );
+    const hasHwPanelOnLearning = await uxStudentPage.isVisible(
+      '[data-testid="homework-submission-panel"]'
+    );
+
+    recordTest(
+      'TEST M',
+      'M5',
+      'LearningPage displays video course switcher header and opens HomeworkPanel when deep-linked with tab=homework',
+      hasCourseSwitcherOnLearning && hasHwPanelOnLearning,
+      `courseSwitcher=${hasCourseSwitcherOnLearning}, hwPanel=${hasHwPanelOnLearning}`
+    );
+
+    // M6: NotificationCenter displays Cài đặt thông báo with device push status, iPhone PWA guide, and toggles for Tin nhắn, Bài tập, Điểm số, Lịch học
+    await uxStudentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded' });
+    await uxStudentPage.waitForSelector('[data-testid="notification-center-page"]', {
+      timeout: 8000,
+    });
+    const hasNotifPrefsCard = await uxStudentPage.isVisible(
+      '[data-testid="notification-preferences-card"]'
+    );
+    const deviceStatusBadgeText = await uxStudentPage.textContent(
+      '[data-testid="device-push-status-badge"]'
+    );
+    const hasIphoneGuide = await uxStudentPage.isVisible(
+      '[data-testid="iphone-pwa-push-guide"]'
+    );
+    const hasEnablePushBtn = await uxStudentPage.isVisible(
+      '[data-testid="enable-web-push-btn"]'
+    );
+    const hasPrefToggles =
+      (await uxStudentPage.isVisible('[data-testid="notif-pref-chat"]')) &&
+      (await uxStudentPage.isVisible('[data-testid="notif-pref-homework"]')) &&
+      (await uxStudentPage.isVisible('[data-testid="notif-pref-grades"]')) &&
+      (await uxStudentPage.isVisible('[data-testid="notif-pref-schedule"]'));
+
+    recordTest(
+      'TEST M',
+      'M6',
+      'NotificationCenter displays Cài đặt thông báo with device push status, iPhone PWA guide, push opt-in button, and Tin nhắn/Bài tập/Điểm số/Lịch học toggles',
+      hasNotifPrefsCard &&
+        Boolean(deviceStatusBadgeText?.trim()) &&
+        hasIphoneGuide &&
+        hasEnablePushBtn &&
+        hasPrefToggles,
+      `deviceStatus="${deviceStatusBadgeText?.trim()}", toggles=${hasPrefToggles}`
+    );
+
+    await uxStudentContext.close();
   } finally {
     await browser.close();
     await viteServer.close();

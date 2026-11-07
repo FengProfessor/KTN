@@ -855,6 +855,8 @@ export const ktnApi = {
     action: 'grant' | 'revoke' | 'set' | 'assign_class';
     email: string;
     name?: string;
+    phone?: string;
+    parentName?: string;
     courseIds?: string[];
     classCode?: string | null;
   }): Promise<{
@@ -883,6 +885,90 @@ export const ktnApi = {
       }
     );
     return res;
+  },
+
+  async grantStudentCourses(params: {
+    email: string;
+    courseIds: string[];
+  }) {
+    const cleanIds = Array.from(
+      new Set((params.courseIds || []).map((id) => String(id || '').trim()).filter(Boolean))
+    );
+    if (cleanIds.length === 0) {
+      throw new KtnApiError({
+        message: 'Vui lòng chọn ít nhất 1 khóa học cần cấp.',
+        status: 400,
+        code: 'EMPTY_COURSE_SELECTION'
+      });
+    }
+    return this.manageStudentCourses({
+      action: 'grant',
+      email: params.email.trim(),
+      courseIds: cleanIds
+    });
+  },
+
+  async revokeStudentCourse(params: {
+    email: string;
+    courseId: string;
+  }) {
+    const cleanId = String(params.courseId || '').trim();
+    if (!cleanId) {
+      throw new KtnApiError({
+        message: 'Vui lòng chọn khóa học cần thu hồi.',
+        status: 400,
+        code: 'EMPTY_COURSE_REVOKE'
+      });
+    }
+    return this.manageStudentCourses({
+      action: 'revoke',
+      email: params.email.trim(),
+      courseIds: [cleanId]
+    });
+  },
+
+  async assignStudentClass(params: {
+    email: string;
+    classCode: string | null;
+  }) {
+    const normalizedClass =
+      params.classCode && String(params.classCode).trim()
+        ? String(params.classCode).trim().toUpperCase()
+        : null;
+    return this.manageStudentCourses({
+      action: 'assign_class',
+      email: params.email.trim(),
+      classCode: normalizedClass
+    });
+  },
+
+  async replaceAllStudentCourses(params: {
+    email: string;
+    courseIds: string[];
+  }) {
+    const cleanIds = Array.from(
+      new Set((params.courseIds || []).map((id) => String(id || '').trim()).filter(Boolean))
+    );
+    return this.manageStudentCourses({
+      action: 'set',
+      email: params.email.trim(),
+      courseIds: cleanIds
+    });
+  },
+
+  async updateStudentProfile(params: {
+    email: string;
+    name: string;
+    phone?: string;
+    parentName?: string;
+  }) {
+    return this.manageStudentCourses({
+      action: 'assign_class',
+      email: params.email.trim(),
+      name: params.name.trim(),
+      phone: params.phone !== undefined ? params.phone.trim() : undefined,
+      parentName: params.parentName !== undefined ? params.parentName.trim() : undefined
+    });
   },
 
   async getTeachers(q?: string): Promise<KtnTeacherRecord[]> {

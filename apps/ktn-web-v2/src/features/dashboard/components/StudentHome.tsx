@@ -3,11 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlayCircle,
-  MessageSquare,
-  FileCheck2,
   Bell,
   Award,
-  Users,
   CheckCircle2,
   AlertCircle,
   RotateCcw,
@@ -29,8 +26,11 @@ import {
   DEMO_LESSONS,
   DEMO_NOTIFICATIONS,
 } from '@/lib/demoData';
-import { useChatRooms } from '@/features/chat/hooks/useMessages';
-import { formatRelativeTime, resolveNotificationLink } from '@/lib/utils';
+import {
+  formatRelativeTime,
+  resolveHomeworkLink,
+  resolveNotificationLink,
+} from '@/lib/utils';
 import {
   KtnClassItem,
   KtnCourse,
@@ -39,12 +39,9 @@ import {
   KtnNotification,
 } from '@/types/ktn.types';
 import {
-  PrimaryActionCard,
-  QuickActionTile,
   SectionHeading,
   CompactListItem,
   MobileTaskList,
-  EmptyState,
 } from '@/components/shared/CompactUi';
 
 export const StudentHome: React.FC = () => {
@@ -57,8 +54,6 @@ export const StudentHome: React.FC = () => {
   const effectiveClassCode = isDemoMode
     ? user?.classCode || DEMO_CLASSES[0].id
     : user?.classCode || null;
-
-  const { data: chatRooms = [] } = useChatRooms();
 
   // Check if external Flashcard URL is configured & active
   const flashcardUrl = useMemo(() => {
@@ -180,15 +175,6 @@ export const StudentHome: React.FC = () => {
   });
 
   const homeworks = homeworksQuery.data || [];
-  const latestGraded = homeworks.find((h) => h.status === 'graded');
-  const primaryRoom =
-    chatRooms.find((r) => effectiveClassCode && r.classCode === effectiveClassCode) ||
-    chatRooms[0] ||
-    null;
-  const totalUnreadMessages = chatRooms.reduce(
-    (sum, r) => sum + (Number(r.unreadCount) || 0),
-    0
-  );
   const notificationsList = notificationsQuery.data?.notifications || [];
 
   // Calculate real lesson progress for primary course
@@ -225,26 +211,28 @@ export const StudentHome: React.FC = () => {
     assignedClass?.officialScheduleText,
   ]);
 
-  const compactClassSummary = useMemo(() => {
-    if (effectiveClassCode) {
-      return `${effectiveClassCode} · ${officialScheduleLine}`;
-    }
-    if (myVideoCourses.length > 0) {
-      return `Tự học · Đã mở ${myVideoCourses.length} khóa`;
-    }
-    return 'Chưa xếp lớp · Chưa mở khóa';
-  }, [effectiveClassCode, officialScheduleLine, myVideoCourses.length]);
+  const priorityHomeworks = useMemo(() => {
+    const sorted = [...homeworks].sort(
+      (a, b) =>
+        new Date(b.submitted_at || 0).getTime() -
+        new Date(a.submitted_at || 0).getTime()
+    );
+    return sorted.slice(0, 2);
+  }, [homeworks]);
 
-  const studentDisplayName = user?.name || (isDemoMode ? 'Bé Hoàng Ngân' : 'Em');
-  const shortStudyReminder = useMemo(() => {
-    if (assignedClass?.nextSession) {
-      return `Nhớ chuẩn bị vở và vào lớp đúng giờ (${assignedClass.nextSession.startTime} ${assignedClass.nextSession.dayLabel}) nhé!`;
-    }
-    if (nextLesson) {
-      return `Mỗi ngày 15 phút học tiếng Trung giúp con nhớ chữ Hán thật lâu!`;
-    }
-    return 'Chào mừng con đến với không gian học tiếng Trung Khổng Tử Nhí!';
-  }, [assignedClass?.nextSession, nextLesson]);
+  const dedupedNotifications = useMemo(() => {
+    const shownHwLessons = new Set(priorityHomeworks.map((hw) => Number(hw.lesson_num)));
+    return notificationsList
+      .filter(
+        (n) =>
+          !(
+            n.type === 'homework_graded' &&
+            n.lessonNum !== undefined &&
+            shownHwLessons.has(Number(n.lessonNum))
+          )
+      )
+      .slice(0, 2);
+  }, [notificationsList, priorityHomeworks]);
 
   const hasApiError =
     !isDemoMode && (homeworksQuery.isError || notificationsQuery.isError);
@@ -253,29 +241,8 @@ export const StudentHome: React.FC = () => {
     <div
       data-testid="student-dashboard-page"
       data-role-home="student"
-      className="space-y-3.5 sm:space-y-4"
+      className="space-y-3 sm:space-y-3.5"
     >
-      {/* 1. Lời chào và lời nhắc ngắn */}
-      <div
-        data-testid="student-greeting-strip"
-        className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50/90 via-white to-red-50/60 px-3.5 py-2.5 shadow-2xs"
-      >
-        <div className="min-w-0">
-          <p className="font-display text-xs font-extrabold text-stone-900 sm:text-sm">
-            👋 Chào {studentDisplayName}! <span className="text-red-800">加油 (Cố lên nhé)!</span>
-          </p>
-          <p className="truncate text-[11px] font-medium text-stone-600">
-            {shortStudyReminder}
-          </p>
-        </div>
-        <span
-          data-testid="dashboard-class-summary"
-          className="shrink-0 rounded-full border border-stone-200 bg-white px-2.5 py-0.5 text-[11px] font-bold text-stone-700"
-        >
-          {compactClassSummary}
-        </span>
-      </div>
-
       {hasApiError && (
         <div
           role="alert"
@@ -299,326 +266,214 @@ export const StudentHome: React.FC = () => {
         </div>
       )}
 
-      {/* 2 & 3. Lớp học tiếp theo (Thứ/ngày/giờ, tên lớp, giáo viên + Nút vào bài học / xem lớp) */}
-      {effectiveClassCode ? (
-        <section
-          data-testid="student-next-class-card"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-3.5 shadow-2xs sm:p-4"
-        >
-          <div className="flex min-w-0 flex-1 items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-800">
-              <Calendar className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded-md bg-red-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                  Lớp học tiếp theo
-                </span>
-                <span className="font-mono text-xs font-bold text-stone-700">
-                  Lớp {effectiveClassCode}
-                </span>
-                {assignedClass?.teacher_name && (
-                  <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-semibold text-stone-700">
-                    GV: {assignedClass.teacher_name}
-                  </span>
-                )}
+      {/* 1 & 2. Việc quan trọng sắp tới (Lớp học tiếp theo) + Học tiếp khóa video đã cấp */}
+      <div data-testid="dashboard-courses-vs-classrooms" className="space-y-2.5">
+        {effectiveClassCode ? (
+          <section
+            data-testid="student-next-class-card"
+            className="flex items-center justify-between gap-2.5 rounded-2xl border border-stone-200 bg-white p-3 shadow-2xs sm:p-3.5"
+          >
+            <div className="flex min-w-0 flex-1 items-start gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-800">
+                <Calendar className="h-4 w-4" />
               </div>
-
-              <h2 className="mt-1 truncate font-display text-sm font-bold text-stone-900 sm:text-base">
-                {assignedClass?.name || `Lớp trực tiếp ${effectiveClassCode}`}
-              </h2>
-
-              <p
-                data-testid="student-next-class-schedule-line"
-                className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-red-900"
-              >
-                <Clock className="h-3.5 w-3.5 shrink-0 text-red-700" />
-                {assignedClass?.nextSession ? (
-                  <span>
-                    {assignedClass.nextSession.dayLabel}, {assignedClass.nextSession.sessionDate} ·{' '}
-                    {assignedClass.nextSession.startTime}–{assignedClass.nextSession.endTime}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="rounded-md bg-red-800 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    Lớp học tiếp theo
                   </span>
-                ) : (
-                  <span>{officialScheduleLine}</span>
-                )}
-              </p>
-            </div>
-          </div>
+                  <span className="font-mono text-xs font-bold text-stone-700">
+                    {effectiveClassCode}
+                  </span>
+                </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {assignedClass?.nextSession?.meetingUrl &&
-              /^https:\/\//i.test(assignedClass.nextSession.meetingUrl) && (
-                <a
-                  href={assignedClass.nextSession.meetingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-testid="student-join-meeting-link"
-                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-emerald-800"
+                <h2 className="mt-0.5 truncate font-display text-sm font-bold text-stone-900">
+                  {assignedClass?.name || `Lớp trực tiếp ${effectiveClassCode}`}
+                </h2>
+
+                <p className="mt-0.5 text-[11px] font-medium text-stone-600">
+                  GV: {assignedClass?.teacher_name || 'Cô Lâm Mỹ Linh'}
+                </p>
+
+                <p
+                  data-testid="student-next-class-schedule-line"
+                  className="mt-0.5 flex flex-wrap items-center gap-1 text-xs font-semibold text-red-900"
                 >
-                  <span>Vào phòng học</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </a>
-              )}
+                  <Clock className="h-3.5 w-3.5 shrink-0 text-red-700" />
+                  {assignedClass?.nextSession ? (
+                    <span>
+                      {assignedClass.nextSession.dayLabel}, {assignedClass.nextSession.sessionDate}{' '}
+                      · {assignedClass.nextSession.startTime}–{assignedClass.nextSession.endTime}
+                    </span>
+                  ) : (
+                    <span>{officialScheduleLine}</span>
+                  )}
+                </p>
+              </div>
+            </div>
 
             <button
               type="button"
               data-testid="student-next-class-cta-btn"
-              onClick={() => navigate(`/classrooms?class=${encodeURIComponent(effectiveClassCode)}`)}
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+              onClick={() =>
+                navigate(`/classrooms?class=${encodeURIComponent(effectiveClassCode)}`)
+              }
+              className="inline-flex min-h-[38px] shrink-0 items-center gap-1 rounded-xl bg-red-800 px-3 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
             >
-              <span>Xem buổi học</span>
+              <span>Xem lớp</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
-          </div>
-        </section>
-      ) : null}
+          </section>
+        ) : null}
 
-      {/* 4. Khóa học video đang học (Primary Action Card) */}
-      {primaryCourse ? (
-        <PrimaryActionCard
-          testId="student-continue-learning-card"
-          eyebrow={primaryCourse.shortTitle || primaryCourse.title}
-          title={nextLesson?.title || primaryCourse.title}
-          subtitle={
-            courseUnits.length > 0
-              ? `Đã học ${completedInCourse}/${courseUnits.length} bài`
-              : 'Sẵn sàng vào bài học'
-          }
-          progressPercent={progressPercent}
-          progressLabel={progressPercent !== undefined ? `${progressPercent}%` : undefined}
-          ctaLabel="Học tiếp"
-          ctaIcon={PlayCircle}
-          ctaTestId="dashboard-continue-learning-btn"
-          onCtaClick={() =>
-            navigate(
-              nextLesson
-                ? `/learning?courseId=${encodeURIComponent(primaryCourse.id)}&lesson=${nextLesson.num}`
-                : `/learning?courseId=${encodeURIComponent(primaryCourse.id)}`
-            )
-          }
-        />
-      ) : (
-        <PrimaryActionCard
-          testId="student-continue-learning-card"
-          eyebrow="Khóa học của em"
-          title="Chưa có khóa học được mở quyền"
-          subtitle="Liên hệ Học vụ để kích hoạt khóa học"
-          ctaLabel="Học tiếp"
-          ctaIcon={PlayCircle}
-          ctaTestId="dashboard-continue-learning-btn"
-          onCtaClick={() => navigate('/learning')}
-        />
+        {primaryCourse ? (
+          <section
+            data-testid="student-continue-learning-card"
+            className="flex items-center justify-between gap-2.5 rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50/90 via-white to-red-50/40 p-3 shadow-2xs sm:p-3.5"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-800 text-amber-300">
+                <PlayCircle className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-[10.5px] font-bold uppercase tracking-wide text-red-900">
+                    {primaryCourse.shortTitle || primaryCourse.title}
+                  </span>
+                  {progressPercent !== undefined && (
+                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                      {progressPercent}%
+                    </span>
+                  )}
+                </div>
+                <p className="truncate font-display text-xs font-bold text-stone-900 sm:text-sm">
+                  {nextLesson?.title || primaryCourse.title}
+                </p>
+                {courseUnits.length > 0 && (
+                  <p className="text-[11px] text-stone-500">
+                    Đã học {completedInCourse}/{courseUnits.length} bài
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="dashboard-continue-learning-btn"
+              onClick={() =>
+                navigate(
+                  nextLesson
+                    ? `/learning?courseId=${encodeURIComponent(primaryCourse.id)}&lesson=${nextLesson.num}`
+                    : `/learning?courseId=${encodeURIComponent(primaryCourse.id)}`
+                )
+              }
+              className="inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-2 text-xs font-extrabold text-stone-950 shadow-2xs hover:bg-amber-300"
+            >
+              <PlayCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>Học tiếp</span>
+            </button>
+          </section>
+        ) : null}
+      </div>
+
+      {/* 3. Bài tập cần quan tâm (Tối đa 2 mục) */}
+      {priorityHomeworks.length > 0 && (
+        <section data-testid="student-priority-homework-section" className="space-y-1.5">
+          <SectionHeading
+            title="Bài tập & Điểm mới"
+            count={priorityHomeworks.length}
+          />
+          <MobileTaskList testId="student-priority-homework-list">
+            {priorityHomeworks.map((hw) => {
+              const rawTitle = (hw.lesson_title || '').trim();
+              const isLiveClassHw = String(hw.course_id || '')
+                .toUpperCase()
+                .startsWith('CLASS_');
+              const displayTitle =
+                /^(bài|lớp|buổi)\b/i.test(rawTitle) || hw.lesson_num > 100
+                  ? rawTitle || `Bài ${hw.lesson_num}`
+                  : `Bài ${hw.lesson_num}: ${rawTitle || 'Bài thu âm'}`;
+              return (
+                <CompactListItem
+                  key={`hw-${hw.id}`}
+                  testId={`dashboard-hw-item-${hw.id}`}
+                  icon={
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                      <Award className="h-4 w-4" />
+                    </div>
+                  }
+                  title={displayTitle}
+                  subtitle={
+                    hw.teacher_feedback ||
+                    hw.student_note ||
+                    (isLiveClassHw
+                      ? `Bài tập lớp ${String(hw.course_id).slice(6) || hw.class_code || ''}`
+                      : 'Đang chờ giáo viên chấm')
+                  }
+                  badge={
+                    hw.status === 'graded' ? (
+                      <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        <CheckCircle2 className="h-2.5 w-2.5" />
+                        {hw.score}/10
+                      </span>
+                    ) : (
+                      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                        Chờ chấm
+                      </span>
+                    )
+                  }
+                  meta={formatRelativeTime(hw.submitted_at)}
+                  onClick={() => navigate(resolveHomeworkLink(hw))}
+                />
+              );
+            })}
+          </MobileTaskList>
+        </section>
       )}
 
-      {/* Quick Actions 2x2 Grid */}
-      <section
-        data-testid="dashboard-courses-vs-classrooms"
-        className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3"
-      >
-        <QuickActionTile
-          icon={PlayCircle}
-          label="Khóa học"
-          status={
-            myVideoCourses.length > 0
-              ? `${myVideoCourses.length} khóa đang học`
-              : 'Chưa mở khóa'
-          }
-          accent="red"
-          testId="student-quick-courses"
-          onClick={() => navigate('/learning')}
-        />
-
-        <QuickActionTile
-          icon={FileCheck2}
-          label="Bài tập"
-          status={
-            latestGraded
-              ? `Điểm: ${latestGraded.score}/10`
-              : homeworks.length > 0
-              ? `${homeworks.length} đã nộp`
-              : 'Nộp bài'
-          }
-          accent="emerald"
-          testId="student-quick-homework"
-          onClick={() => navigate('/learning?tab=homework')}
-        />
-
-        <QuickActionTile
-          icon={MessageSquare}
-          label="Tin nhắn"
-          status={
-            totalUnreadMessages > 0
-              ? `${totalUnreadMessages} tin mới`
-              : primaryRoom?.teacherName || 'Nhắn giáo viên'
-          }
-          badgeCount={totalUnreadMessages}
-          accent="amber"
-          testId="dashboard-open-chat-btn"
-          onClick={() =>
-            navigate(
-              primaryRoom?.roomId
-                ? `/chat?room=${encodeURIComponent(primaryRoom.roomId)}`
-                : '/chat'
-            )
-          }
-        />
-
-        <QuickActionTile
-          icon={Users}
-          label="Lớp học"
-          status={effectiveClassCode ? `Lớp ${effectiveClassCode}` : 'Chưa xếp lớp'}
-          accent="blue"
-          testId="student-quick-classrooms"
-          onClick={() => navigate('/classrooms')}
-        />
-      </section>
-
-      {/* 5. Bài tập cần hoàn thành & Hoạt động gần đây */}
-      <section className="space-y-2">
-        {(() => {
-          const shownHwLessons = new Set(
-            homeworks.slice(0, 2).map((hw) => hw.lesson_num)
-          );
-          const dedupedNotifications = notificationsList.filter(
-            (n) =>
-              !(
-                n.type === 'homework_graded' &&
-                n.lessonNum !== undefined &&
-                shownHwLessons.has(Number(n.lessonNum))
-              )
-          );
-          const totalFeedCount = homeworks.length + dedupedNotifications.length;
-          return (
-            <>
-              <SectionHeading
-                title="Bài tập & Hoạt động gần đây"
-                count={totalFeedCount}
-                actionLabel="Thông báo →"
-                onAction={() => navigate('/notifications')}
-              />
-
-              {totalFeedCount === 0 ? (
-                <EmptyState
-                  icon={Bell}
-                  title="Chưa có hoạt động mới"
-                  description="Điểm bài tập và tin nhắn của giáo viên sẽ hiển thị tại đây."
-                />
-              ) : (
-                <MobileTaskList testId="student-recent-feed">
-                  {homeworks.slice(0, 2).map((hw) => {
-                    const rawTitle = (hw.lesson_title || '').trim();
-                    const displayTitle =
-                      /^(bài|lớp|buổi)\b/i.test(rawTitle) || hw.lesson_num > 100
-                        ? rawTitle || `Bài ${hw.lesson_num}`
-                        : `Bài ${hw.lesson_num}: ${rawTitle || 'Bài thu âm'}`;
-                    return (
-                      <CompactListItem
-                        key={`hw-${hw.id}`}
-                        icon={
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
-                            <Award className="h-4 w-4" />
-                          </div>
-                        }
-                        title={displayTitle}
-                        subtitle={
-                          hw.teacher_feedback ||
-                          hw.student_note ||
-                          'Đang chờ giáo viên chấm'
-                        }
-                        badge={
-                          hw.status === 'graded' ? (
-                            <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                              <CheckCircle2 className="h-2.5 w-2.5" />
-                              {hw.score}/10
-                            </span>
-                          ) : (
-                            <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                              Chờ chấm
-                            </span>
-                          )
-                        }
-                        meta={formatRelativeTime(hw.submitted_at)}
-                        onClick={() =>
-                          navigate(
-                            `/learning?courseId=${encodeURIComponent(hw.course_id)}&lesson=${hw.lesson_num}&tab=homework`
-                          )
-                        }
-                      />
-                    );
-                  })}
-
-                  {dedupedNotifications.slice(0, 2).map((notif) => (
-                    <CompactListItem
-                      key={notif.id}
-                      testId={`dashboard-notif-item-${notif.id}`}
-                      unread={!notif.read}
-                      icon={
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-800">
-                          <Bell className="h-4 w-4" />
-                        </div>
-                      }
-                      title={notif.title}
-                      subtitle={notif.body}
-                      meta={formatRelativeTime(notif.createdAt)}
-                      onClick={() => {
-                        if (!notif.read) {
-                          markReadMutation.mutate(notif.id);
-                        }
-                        navigate(resolveNotificationLink(notif));
-                      }}
-                    />
-                  ))}
-                </MobileTaskList>
-              )}
-            </>
-          );
-        })()}
-      </section>
-
-      {/* 6. Khu vực Khám phá tiếng Trung (3 ô trực quan: Flashcard, Video ngắn, Trò chơi) */}
-      <section data-testid="chinese-discovery-section" className="space-y-2.5 pt-1">
+      {/* 4. Flashcard và tiện ích (Khám phá tiếng Trung gọn gàng) */}
+      <section data-testid="chinese-discovery-section" className="space-y-2 pt-0.5">
         <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-1.5 font-display text-sm font-bold text-stone-900">
-            <Sparkles className="h-4 w-4 text-amber-600" />
-            <span>Khám phá tiếng Trung</span>
+          <h2 className="flex items-center gap-1.5 font-display text-[13px] font-bold text-stone-900 sm:text-sm">
+            <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+            <span>Flashcard & Tiện ích</span>
           </h2>
-          <span className="text-[11px] font-medium text-stone-500">
-            Tiện ích luyện tập mỗi ngày
-          </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-2.5 sm:grid sm:grid-cols-3 sm:gap-3 sm:space-y-0">
           {/* Ô 1 — Flashcard tiếng Trung */}
           <div
             data-testid="discovery-card-flashcard"
-            className="flex flex-col justify-between rounded-2xl border border-amber-200/90 bg-gradient-to-br from-amber-50/90 via-white to-orange-50/60 p-4 shadow-2xs"
+            className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200/90 bg-gradient-to-br from-amber-50/90 via-white to-orange-50/60 p-3 shadow-2xs sm:flex-col sm:items-stretch"
           >
-            <div>
+            <div className="flex min-w-0 flex-1 items-start gap-2.5 sm:block">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-800">
-                  <BookOpenCheck className="h-5 w-5" />
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-800">
+                  <BookOpenCheck className="h-4 w-4" />
                 </div>
-                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-900">
+                <span className="hidden rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-900 sm:inline-block">
                   汉字卡片 · Từ vựng
                 </span>
               </div>
 
-              <h3 className="mt-3 font-display text-sm font-bold text-stone-900">
-                Flashcard — Học từ vựng
-              </h3>
-              <p className="mt-1 text-xs leading-relaxed text-stone-600">
-                Lật thẻ, nghe phát âm, luyện viết chữ Hán
-              </p>
+              <div className="min-w-0 flex-1 sm:mt-2">
+                <h3 className="font-display text-xs font-bold text-stone-900 sm:text-sm">
+                  Flashcard — Học từ vựng
+                </h3>
+                <p className="mt-0.5 text-[11px] leading-snug text-stone-600">
+                  Lật thẻ, nghe phát âm, luyện viết chữ Hán
+                </p>
+              </div>
             </div>
 
-            <div className="mt-3.5 flex items-center justify-between gap-2 pt-1">
+            <div className="shrink-0 sm:mt-2.5">
               {flashcardUrl ? (
                 <a
                   href={flashcardUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   data-testid="flashcard-cta-btn"
-                  className="inline-flex min-h-[36px] w-full items-center justify-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+                  className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900 sm:w-full"
                 >
                   <span>Học ngay</span>
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -629,10 +484,10 @@ export const StudentHome: React.FC = () => {
                   disabled
                   data-testid="flashcard-cta-btn"
                   title="Hệ thống Flashcard đang được kết nối trực tiếp vào Sổ liên lạc"
-                  className="inline-flex min-h-[36px] w-full cursor-not-allowed items-center justify-between rounded-xl border border-amber-300/80 bg-amber-100/60 px-3 py-1.5 text-xs font-bold text-amber-900"
+                  className="inline-flex min-h-[34px] cursor-not-allowed items-center justify-between gap-1.5 rounded-xl border border-amber-300/80 bg-amber-100/60 px-2.5 py-1.5 text-[11px] font-bold text-amber-900 sm:w-full"
                 >
                   <span>Học ngay</span>
-                  <span className="rounded-md bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                  <span className="rounded bg-white/90 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-800">
                     Đang tích hợp
                   </span>
                 </button>
@@ -640,70 +495,99 @@ export const StudentHome: React.FC = () => {
             </div>
           </div>
 
-          {/* Ô 2 — Video ngắn tiếng Trung */}
-          <div
-            data-testid="discovery-card-short-video"
-            className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-gradient-to-br from-red-50/70 via-white to-stone-50 p-4 shadow-2xs"
-          >
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 text-red-800">
-                  <Clapperboard className="h-5 w-5" />
+          {/* Ô 2 & Ô 3 — Gọn trên 1 hàng 2 cột ở Mobile */}
+          <div className="grid grid-cols-2 gap-2.5 sm:col-span-2 sm:grid-cols-2 sm:gap-3">
+            <div
+              data-testid="discovery-card-short-video"
+              className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-white p-2.5 shadow-2xs sm:p-3"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-800">
+                    <Clapperboard className="h-3.5 w-3.5" />
+                  </div>
+                  <span
+                    data-testid="short-video-coming-soon-badge"
+                    className="rounded-full bg-red-100 px-2 py-0.5 text-[9.5px] font-extrabold text-red-900"
+                  >
+                    Sắp ra mắt
+                  </span>
                 </div>
-                <span
-                  data-testid="short-video-coming-soon-badge"
-                  className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-extrabold text-red-900"
-                >
-                  Sắp ra mắt
-                </span>
+
+                <h3 className="mt-1.5 font-display text-xs font-bold text-stone-900">
+                  Video ngắn tiếng Trung
+                </h3>
+                <p className="mt-0.5 text-[11px] leading-snug text-stone-500">
+                  Xem video ngắn, học tiếng Trung mỗi ngày
+                </p>
               </div>
-
-              <h3 className="mt-3 font-display text-sm font-bold text-stone-900">
-                Video ngắn tiếng Trung
-              </h3>
-              <p className="mt-1 text-xs leading-relaxed text-stone-600">
-                Xem video ngắn, học tiếng Trung mỗi ngày
-              </p>
             </div>
 
-            <div className="mt-3.5 flex items-center gap-1.5 rounded-xl bg-stone-100/80 px-3 py-1.5 text-[11px] font-semibold text-stone-600">
-              <span>🎬 Tình huống giao tiếp & hoạt hình chữ Hán</span>
-            </div>
-          </div>
-
-          {/* Ô 3 — Trò chơi tiếng Trung */}
-          <div
-            data-testid="discovery-card-games"
-            className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-gradient-to-br from-emerald-50/70 via-white to-stone-50 p-4 shadow-2xs"
-          >
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
-                  <Gamepad2 className="h-5 w-5" />
+            <div
+              data-testid="discovery-card-games"
+              className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-white p-2.5 shadow-2xs sm:p-3"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">
+                    <Gamepad2 className="h-3.5 w-3.5" />
+                  </div>
+                  <span
+                    data-testid="games-coming-soon-badge"
+                    className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9.5px] font-extrabold text-emerald-900"
+                  >
+                    Sắp ra mắt
+                  </span>
                 </div>
-                <span
-                  data-testid="games-coming-soon-badge"
-                  className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-900"
-                >
-                  Sắp ra mắt
-                </span>
+
+                <h3 className="mt-1.5 font-display text-xs font-bold text-stone-900">
+                  Trò chơi tiếng Trung
+                </h3>
+                <p className="mt-0.5 text-[11px] leading-snug text-stone-500">
+                  Vừa chơi vừa nhớ từ vựng
+                </p>
               </div>
-
-              <h3 className="mt-3 font-display text-sm font-bold text-stone-900">
-                Trò chơi tiếng Trung
-              </h3>
-              <p className="mt-1 text-xs leading-relaxed text-stone-600">
-                Vừa chơi vừa nhớ từ vựng
-              </p>
-            </div>
-
-            <div className="mt-3.5 flex items-center gap-1.5 rounded-xl bg-stone-100/80 px-3 py-1.5 text-[11px] font-semibold text-stone-600">
-              <span>🎮 Ghép chữ Hán & thử thách phản xạ</span>
             </div>
           </div>
         </div>
       </section>
+
+      {/* 5. Hoạt động gần đây rút gọn (Tối đa 2 thông báo, ẩn nếu trống) */}
+      {dedupedNotifications.length > 0 && (
+        <section data-testid="student-recent-activity-section" className="space-y-1.5">
+          <SectionHeading
+            title="Hoạt động gần đây"
+            count={dedupedNotifications.length}
+            actionLabel="Xem tất cả →"
+            onAction={() => navigate('/notifications')}
+          />
+          <MobileTaskList testId="student-recent-feed">
+            {dedupedNotifications.map((notif) => (
+              <CompactListItem
+                key={notif.id}
+                testId={`dashboard-notif-item-${notif.id}`}
+                unread={!notif.read}
+                icon={
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-800">
+                    <Bell className="h-4 w-4" />
+                  </div>
+                }
+                title={notif.title}
+                subtitle={notif.body}
+                meta={formatRelativeTime(notif.createdAt)}
+                onClick={() => {
+                  if (!notif.read) {
+                    markReadMutation.mutate(notif.id);
+                  }
+                  navigate(resolveNotificationLink(notif));
+                }}
+              />
+            ))}
+          </MobileTaskList>
+        </section>
+      )}
     </div>
   );
 };
+
 

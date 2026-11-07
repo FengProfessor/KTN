@@ -35,7 +35,7 @@ export function resolveHeaderTitle(
     if (pathname.includes('/students')) return { title: 'Học viên' };
     if (pathname.includes('/classes')) return { title: 'Lớp học' };
     if (pathname.includes('/orders')) return { title: 'Đơn hàng' };
-    if (pathname.includes('/more')) return { title: 'Phân quyền & Thêm' };
+    if (pathname.includes('/more')) return { title: 'Đối soát & Đồng bộ' };
     return { title: 'Tổng quan học vụ' };
   }
 

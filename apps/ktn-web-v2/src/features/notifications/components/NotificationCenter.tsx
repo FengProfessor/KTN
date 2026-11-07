@@ -66,9 +66,10 @@ export const NotificationCenter: React.FC = () => {
   const [filterTab, setFilterTab] = useState<
     'all' | 'unread' | 'schedule' | 'homework' | 'chat' | 'important'
   >('all');
-  const [showPrefsPanel, setShowPrefsPanel] = useState<boolean>(false);
+  const [showPrefsPanel, setShowPrefsPanel] = useState<boolean>(true);
   const [pushEnabled, setPushEnabled] = useState<boolean>(false);
   const [isSubscribingPush, setIsSubscribingPush] = useState<boolean>(false);
+  const [gradesEnabled, setGradesEnabled] = useState<boolean>(true);
   const [demoState, setDemoState] = useState<'unread' | 'all_read' | 'empty'>('unread');
   const [demoLocalReadIds, setDemoLocalReadIds] = useState<Record<string, boolean>>({});
   const [demoSettings, setDemoSettings] = useState<UserNotificationSettings>({
@@ -648,21 +649,7 @@ export const NotificationCenter: React.FC = () => {
               }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span>Cài đặt</span>
-            </button>
-
-            <button
-              type="button"
-              data-testid="enable-web-push-btn"
-              onClick={handleEnableWebPush}
-              className={`inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
-                pushEnabled
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                  : 'border-stone-300 bg-stone-50 text-stone-700 hover:bg-stone-100'
-              }`}
-            >
-              <BellRing className="h-3.5 w-3.5" />
-              <span>{pushEnabled ? 'Đã bật' : 'Bật chuông'}</span>
+              <span>Cài đặt thông báo</span>
             </button>
 
             <button
@@ -682,22 +669,95 @@ export const NotificationCenter: React.FC = () => {
         {showPrefsPanel && (
           <div
             data-testid="notification-preferences-card"
-            className="mt-3 rounded-xl border border-stone-200 bg-stone-50/90 p-3"
+            className="mt-3 space-y-2.5 rounded-xl border border-stone-200 bg-stone-50/90 p-3"
           >
-            <div className="mb-2 flex items-center justify-between">
-              <p className="font-display text-xs font-bold text-stone-900">
-                Tùy chọn nhận thông báo & chống làm phiền
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-display text-xs font-bold text-stone-900 sm:text-sm">
+                Cài đặt thông báo
               </p>
               <span className="text-[11px] font-medium text-stone-500">
-                Đồng bộ theo tài khoản
+                Đồng bộ theo tài khoản & thiết bị
               </span>
             </div>
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Device Push Status & Opt-in Button */}
+            {(() => {
+              const isPushSupported =
+                typeof window !== 'undefined' &&
+                'serviceWorker' in navigator &&
+                'PushManager' in window &&
+                'Notification' in window;
+              const isDenied =
+                isPushSupported &&
+                typeof Notification !== 'undefined' &&
+                Notification.permission === 'denied';
+              const statusLabel = pushEnabled
+                ? 'Đã bật'
+                : !isPushSupported
+                ? 'Thiết bị không hỗ trợ'
+                : isDenied
+                ? 'Bị chặn'
+                : 'Chưa bật';
+
+              return (
+                <div
+                  data-testid="device-push-status-row"
+                  className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-white p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-bold text-stone-900">
+                        Trạng thái thông báo trên thiết bị hiện tại:
+                      </p>
+                      <span
+                        data-testid="device-push-status-badge"
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                          pushEnabled
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : isDenied
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-900'
+                        }`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
+                    <p
+                      data-testid="iphone-pwa-push-guide"
+                      className="mt-1 text-[11px] leading-relaxed text-stone-600"
+                    >
+                      Trên iPhone/iPad: Nhấn nút Chia sẻ (Share) trên Safari → Thêm vào Màn hình chính
+                      (Add to Home Screen), sau đó mở ứng dụng từ màn hình chính để bật thông báo.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="enable-web-push-btn"
+                    onClick={handleEnableWebPush}
+                    disabled={isSubscribingPush}
+                    className={`inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${
+                      pushEnabled
+                        ? 'border border-emerald-300 bg-emerald-50 text-emerald-900'
+                        : 'bg-red-800 text-white shadow-2xs hover:bg-red-900'
+                    }`}
+                  >
+                    <BellRing className="h-3.5 w-3.5" />
+                    <span>
+                      {pushEnabled
+                        ? 'Đang nhận thông báo trên thiết bị này'
+                        : 'Bật thông báo trên thiết bị này'}
+                    </span>
+                  </button>
+                </div>
+              );
+            })()}
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
                 <div>
                   <p className="font-bold text-stone-900">Tin nhắn</p>
-                  <p className="text-[11px] text-stone-500">Tin nhắn riêng & nhóm lớp (gộp thông minh)</p>
+                  <p className="text-[11px] text-stone-500">Tin nhắn riêng & nhóm lớp</p>
                 </div>
                 <input
                   type="checkbox"
@@ -711,7 +771,7 @@ export const NotificationCenter: React.FC = () => {
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
                 <div>
                   <p className="font-bold text-stone-900">Bài tập</p>
-                  <p className="text-[11px] text-stone-500">Bài tập mới & kết quả giáo viên chấm bài</p>
+                  <p className="text-[11px] text-stone-500">Bài tập mới được giao</p>
                 </div>
                 <input
                   type="checkbox"
@@ -724,8 +784,26 @@ export const NotificationCenter: React.FC = () => {
 
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
                 <div>
+                  <p className="font-bold text-stone-900">Điểm số</p>
+                  <p className="text-[11px] text-stone-500">Kết quả giáo viên chấm bài</p>
+                </div>
+                <input
+                  type="checkbox"
+                  data-testid="notif-pref-grades"
+                  checked={gradesEnabled && activeSettings.homework}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setGradesEnabled(checked);
+                    updateSettingsMutation.mutate({ homework: checked });
+                  }}
+                  className="h-4 w-4 rounded accent-red-800"
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
+                <div>
                   <p className="font-bold text-stone-900">Lịch học</p>
-                  <p className="text-[11px] text-stone-500">Nhắc trước giờ học 30 phút & đổi/hoãn lịch</p>
+                  <p className="text-[11px] text-stone-500">Nhắc trước giờ học & đổi lịch</p>
                 </div>
                 <input
                   type="checkbox"
@@ -736,7 +814,7 @@ export const NotificationCenter: React.FC = () => {
                 />
               </label>
 
-              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs sm:col-span-2">
                 <div>
                   <p className="font-bold text-stone-900">Nhắc thêm trước 10 phút</p>
                   <p className="text-[11px] text-stone-500">Tùy chọn nhắc thêm sát giờ vào lớp</p>
@@ -761,7 +839,7 @@ export const NotificationCenter: React.FC = () => {
                   <div>
                     <p className="font-bold text-amber-950">Thông báo quan trọng từ Quản lý</p>
                     <p className="text-[11px] text-amber-800">
-                      Luôn được bật để đảm bảo học viên không bỏ lỡ thông báo học vụ quan trọng ngay cả khi tắt tin nhắn thường.
+                      Luôn được bật để đảm bảo không bỏ lỡ thông báo học vụ quan trọng.
                     </p>
                   </div>
                 </div>

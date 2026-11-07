@@ -297,7 +297,7 @@ export const roleNavigation: Record<UserRole, RoleNavigationDef> = {
       },
       {
         to: '/admin/more',
-        label: 'Phân quyền',
+        label: 'Đồng bộ',
         icon: ShieldCheck,
         testId: 'nav-admin-more',
         matchPrefix: ['/admin/more'],

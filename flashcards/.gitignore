@@ -22,3 +22,5 @@ Thumbs.db
 !*.py
 !*.css
 !*.md
+
+!*.webp

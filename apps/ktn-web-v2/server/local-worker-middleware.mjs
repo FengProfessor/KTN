@@ -56,16 +56,16 @@ export function createLocalWorkerHarness() {
               shortTitle: 'HSK1 3.0',
             },
             {
-              id: '6adadbd569897b0002482cb0',
-              code: 'YCT1-KIDS',
-              title: 'Khóa học Tiêu Chuẩn YCT 1 — Tiếng Trung Thiếu Nhi',
-              shortTitle: 'YCT 1',
+              id: '65e7704a9ea90c00080d5195',
+              code: 'CFK-01',
+              title: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)',
+              shortTitle: 'Chinese For Kids',
             },
             {
-              id: '6adadc0069897b0002482cc1',
-              code: 'YCT2-KIDS',
-              title: 'Khóa học Tiêu Chuẩn YCT 2 — Giao Tiếp Phản Xạ',
-              shortTitle: 'YCT 2',
+              id: '65e7636a0a1b61000825c2ef',
+              code: 'MINI-01',
+              title: 'Khóa học Tiêu Chuẩn Tiếng Trung Trẻ Em Mini 1',
+              shortTitle: 'Tiếng Trung Trẻ Em Mini 1',
             },
           ]
         : [
@@ -526,7 +526,21 @@ export function createLocalWorkerHarness() {
             : caseFilter.toLowerCase() === 'none' ? 'unassigned'
             : caseFilter.toLowerCase();
           if (accountFilter && accountFilter !== 'ALL' && accSt !== accountFilter) continue;
-          if (syncFilter && syncFilter !== 'ALL' && synSt !== syncFilter) continue;
+          if (syncFilter && syncFilter !== 'ALL') {
+            if (syncFilter.toLowerCase() === 'needs_resync') {
+              const synLower = String(synSt || '').toLowerCase();
+              const isResyncNeeded =
+                synLower === 'needs_resync' ||
+                synLower === 'sync_failed' ||
+                synLower === 'partial_failure' ||
+                synLower === 'pending_sync' ||
+                synLower === 'error' ||
+                Boolean(r.last_sync_error);
+              if (!isResyncNeeded) continue;
+            } else if (synSt !== syncFilter) {
+              continue;
+            }
+          }
           if (caseFilter && caseFilter !== 'ALL' && normStuCase !== normCaseFilter) continue;
 
           const hay = r.search_text || normalizeViMock([r.code, r.name, r.email, r.phone, r.parent_name, r.class_code].join(' '));

@@ -21,6 +21,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import {
   DEMO_CLASSES,
+  DEMO_CLASS_SESSIONS,
   DEMO_COURSES,
   DEMO_HOMEWORKS,
   DEMO_LESSONS,
@@ -33,6 +34,7 @@ import {
 } from '@/lib/utils';
 import {
   KtnClassItem,
+  KtnClassSession,
   KtnCourse,
   KtnHomework,
   KtnLessonUnit,
@@ -136,7 +138,7 @@ export const StudentHome: React.FC = () => {
     retry: false,
   });
 
-  // 5. Homeworks & Notifications
+  // 5. Homeworks, Class Sessions & Notifications
   const homeworksQuery = useQuery<KtnHomework[]>({
     queryKey: ['ktn-homeworks', user?.email, isDemoMode],
     queryFn: async () => {
@@ -144,6 +146,16 @@ export const StudentHome: React.FC = () => {
       return ktnApi.getHomeworks();
     },
     enabled: Boolean(user) || isDemoMode,
+  });
+
+  const classSessionsQuery = useQuery<KtnClassSession[]>({
+    queryKey: ['ktn-class-sessions', effectiveClassCode, user?.email, isDemoMode],
+    queryFn: async () => {
+      if (!effectiveClassCode) return [];
+      if (isDemoMode) return DEMO_CLASS_SESSIONS;
+      return ktnApi.getClassSessions(effectiveClassCode);
+    },
+    enabled: Boolean(effectiveClassCode) && (Boolean(user) || isDemoMode),
   });
 
   const notificationsQuery = useQuery<{
@@ -217,8 +229,53 @@ export const StudentHome: React.FC = () => {
         new Date(b.submitted_at || 0).getTime() -
         new Date(a.submitted_at || 0).getTime()
     );
-    return sorted.slice(0, 2);
-  }, [homeworks]);
+    const items: KtnHomework[] = sorted.slice(0, 2);
+
+    if (items.length < 2 && effectiveClassCode) {
+      const liveCourseId = `CLASS_${effectiveClassCode.toUpperCase()}`;
+      const sessions = classSessionsQuery.data || [];
+      for (const s of sessions) {
+        const sNum = Number(s.sessionNum || s.session_num || 1);
+        const exercises = s.exercises || [];
+        for (let idx = 0; idx < exercises.length; idx++) {
+          if (items.length >= 2) break;
+          const ex = exercises[idx];
+          const exNum = Number(ex.num || idx + 1);
+          const liveLessonNum = sNum * 100 + exNum;
+          const alreadySubmitted = homeworks.some((h) => {
+            const hCourse = String(h.course_id || '').trim().toUpperCase();
+            return (
+              hCourse === liveCourseId &&
+              (Number(h.lesson_num) === liveLessonNum ||
+                (exNum === 1 && Number(h.lesson_num) === sNum))
+            );
+          });
+          if (!alreadySubmitted) {
+            items.push({
+              id: `UNSUB-${liveCourseId}-${liveLessonNum}`,
+              student_email: user?.email || '',
+              student_name: user?.name || '',
+              class_code: effectiveClassCode,
+              course_id: liveCourseId,
+              lesson_num: liveLessonNum,
+              lesson_title: `Lớp ${effectiveClassCode} · Buổi ${sNum} · ${ex.title}`,
+              file_url: '',
+              file_type: ex.type || 'audio',
+              attachments: [],
+              student_note: ex.prompt || ex.instruction || `Bài tập lớp ${effectiveClassCode} cần hoàn thành`,
+              status: 'pending',
+              score: null,
+              teacher_feedback: null,
+              submitted_at: s.updatedAt || new Date().toISOString(),
+            });
+          }
+        }
+        if (items.length >= 2) break;
+      }
+    }
+
+    return items.slice(0, 2);
+  }, [homeworks, effectiveClassCode, classSessionsQuery.data, user?.email, user?.name]);
 
   const dedupedNotifications = useMemo(() => {
     const shownHwLessons = new Set(priorityHomeworks.map((hw) => Number(hw.lesson_num)));
@@ -411,7 +468,11 @@ export const StudentHome: React.FC = () => {
                       : 'Đang chờ giáo viên chấm')
                   }
                   badge={
-                    hw.status === 'graded' ? (
+                    String(hw.id || '').startsWith('UNSUB-') ? (
+                      <span className="rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
+                        Chưa nộp
+                      </span>
+                    ) : hw.status === 'graded' ? (
                       <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
                         <CheckCircle2 className="h-2.5 w-2.5" />
                         {hw.score}/10

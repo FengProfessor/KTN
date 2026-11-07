@@ -20,6 +20,7 @@ import { KtnApiError, ktnApi } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { DEMO_COURSES, DEMO_HOMEWORKS, DEMO_LESSONS } from '@/lib/demoData';
+import { disambiguateCatalogCourses } from '@/lib/utils';
 import { KtnCourse, KtnHomework, KtnLessonUnit } from '@/types/ktn.types';
 
 export const LearningPage: React.FC = () => {
@@ -393,44 +394,44 @@ export const LearningPage: React.FC = () => {
             data-testid="learning-course-pills"
             className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0"
           >
-            {[...coursesList]
-              .sort((a, b) => {
+            {disambiguateCatalogCourses(
+              [...coursesList].sort((a, b) => {
                 const aEnt = (user?.onlineCourses || []).some((c) => c.id === a.id) ? 0 : 1;
                 const bEnt = (user?.onlineCourses || []).some((c) => c.id === b.id) ? 0 : 1;
                 return aEnt - bEnt;
               })
-              .map((course) => {
-                const isEntitled =
-                  isDemoMode ||
-                  user?.role === 'teacher' ||
-                  user?.role === 'admin' ||
-                  (user?.onlineCourses || []).some((c) => c.id === course.id);
+            ).map((course) => {
+              const isEntitled =
+                isDemoMode ||
+                user?.role === 'teacher' ||
+                user?.role === 'admin' ||
+                (user?.onlineCourses || []).some((c) => c.id === course.id);
 
-                return (
-                  <button
-                    key={course.id}
-                    type="button"
-                    data-testid={`select-course-${course.id}`}
-                    onClick={() => {
-                      setSelectedCourseId(course.id);
-                      setSelectedLessonNum(1);
-                      syncUrlParams(course.id, 1, activeTab);
-                    }}
-                    className={`inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
-                      activeCourse.id === course.id
-                        ? 'bg-red-800 text-white shadow-2xs'
-                        : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
-                    }`}
-                  >
-                    <span>{course.shortTitle || course.code}</span>
-                    {!isEntitled && (
-                      <span className="rounded bg-stone-200 px-1 py-0.2 text-[10px] text-stone-600">
-                        Khóa
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              return (
+                <button
+                  key={course.id}
+                  type="button"
+                  data-testid={`select-course-${course.id}`}
+                  onClick={() => {
+                    setSelectedCourseId(course.id);
+                    setSelectedLessonNum(1);
+                    syncUrlParams(course.id, 1, activeTab);
+                  }}
+                  className={`inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                    activeCourse.id === course.id
+                      ? 'bg-red-800 text-white shadow-2xs'
+                      : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  <span>{course.displayLabel}</span>
+                  {!isEntitled && (
+                    <span className="rounded bg-stone-200 px-1 py-0.2 text-[10px] text-stone-600">
+                      Chưa mở
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

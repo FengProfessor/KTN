@@ -119,20 +119,38 @@ export const ClassroomsPage: React.FC = () => {
     enabled: Boolean(activeClassCode) && (Boolean(user) || isDemoMode),
   });
 
-  // Default to the nearest session with exercises/content when no deep-link is in the URL
+  // Default to the nearest session with unsubmitted homework or exercises/content when no deep-link is in the URL
   useEffect(() => {
     if (hasDeepLinkSession || didAutoSelectSessionRef.current) return;
     const list = sessionsQuery.data || [];
     if (list.length === 0) return;
     didAutoSelectSessionRef.current = true;
-    const withExercises = list.find(
-      (s) => (s.exercises && s.exercises.length > 0) || Boolean(s.summary)
-    );
-    if (withExercises) {
-      const sNum = Number(withExercises.sessionNum || withExercises.session_num || 1);
+    const liveCourseId = `CLASS_${String(activeClassCode || '').toUpperCase()}`;
+    const hws = homeworksQuery.data || [];
+    const withUnsubmitted = list.find((s) => {
+      const sNum = Number(s.sessionNum || s.session_num || 1);
+      const exs = s.exercises || [];
+      if (exs.length === 0) return false;
+      return exs.some((ex, idx) => {
+        const exNum = Number(ex.num || idx + 1);
+        const liveLessonNum = sNum * 100 + exNum;
+        const matched = hws.find(
+          (h) =>
+            String(h.course_id || '').trim().toUpperCase() === liveCourseId &&
+            (Number(h.lesson_num) === liveLessonNum ||
+              (exNum === 1 && Number(h.lesson_num) === sNum))
+        );
+        return !matched || matched.status === 'revision_requested';
+      });
+    });
+    const targetSession =
+      withUnsubmitted ||
+      list.find((s) => (s.exercises && s.exercises.length > 0) || Boolean(s.summary));
+    if (targetSession) {
+      const sNum = Number(targetSession.sessionNum || targetSession.session_num || 1);
       setSelectedSessionNum(sNum);
     }
-  }, [hasDeepLinkSession, sessionsQuery.data]);
+  }, [hasDeepLinkSession, sessionsQuery.data, homeworksQuery.data, activeClassCode]);
 
   const submitLiveClassHwMutation = useMutation({
     mutationFn: async (payload: {
@@ -207,7 +225,7 @@ export const ClassroomsPage: React.FC = () => {
     !isDemoMode && (classesQuery.isError || sessionsQuery.isError || homeworksQuery.isError);
 
   return (
-    <div data-testid="classrooms-page" className="space-y-3 pb-4 sm:space-y-4">
+    <div data-testid="classrooms-page" className="space-y-3 pb-16 sm:space-y-4 sm:pb-6">
       {hasApiError && (
         <div
           role="alert"
@@ -254,8 +272,8 @@ export const ClassroomsPage: React.FC = () => {
                 {assignedClass.name}
               </h1>
 
-              <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2 sm:p-2.5">
                   <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-red-800" />
                   <div className="min-w-0 flex-1">
                     <p className="text-[10.5px] text-stone-500">Giáo viên phụ trách</p>
@@ -265,7 +283,7 @@ export const ClassroomsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2.5">
+                <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2 sm:p-2.5">
                   <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
                   <div className="min-w-0 flex-1">
                     <p className="text-[10.5px] text-stone-500">Lịch học chính thức</p>
@@ -467,7 +485,7 @@ export const ClassroomsPage: React.FC = () => {
             {/* Active Session Details & Exercises (8 cols) */}
             <div className="lg:col-span-8">
               {activeSession ? (
-                <div className="rounded-2xl border border-stone-200 bg-stone-50/60 p-3 sm:p-4">
+                <div className="rounded-xl bg-stone-50/50 p-2.5 sm:rounded-2xl sm:border sm:border-stone-200 sm:p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span
                       data-testid="active-session-badge"

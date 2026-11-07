@@ -28,7 +28,11 @@ import { ktnApi } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_COURSES } from '@/lib/demoData';
-import { formatVnd, resolveStudentOnlineCourses } from '@/lib/utils';
+import {
+  disambiguateCatalogCourses,
+  formatVnd,
+  resolveStudentOnlineCourses,
+} from '@/lib/utils';
 import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
 import { StudentDetailDrawer } from '@/features/admin/components/StudentDetailDrawer';
 import {
@@ -1784,9 +1788,9 @@ export const AdminWorkspace: React.FC = () => {
                 className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
               >
                 <option value="ALL">Tất cả khóa học</option>
-                {coursesList.map((course) => (
+                {disambiguateCatalogCourses(coursesList).map((course) => (
                   <option key={course.id} value={course.id}>
-                    {course.shortTitle || course.title}
+                    {course.displayLabel}
                   </option>
                 ))}
               </select>
@@ -1964,16 +1968,23 @@ export const AdminWorkspace: React.FC = () => {
                       const isSelected =
                         selectedStudentEmail === (stu.email || '').toLowerCase();
 
-                      const rawSync = (stu.syncStatus || 'synced').toLowerCase();
-                      const rawAccount = (stu.accountStatus || 'ready_to_login').toLowerCase();
+                      const rawSync = String(
+                        stu.syncStatus || stu.sync_status || 'synced'
+                      ).toLowerCase();
+                      const rawAccount = String(
+                        stu.accountStatus || stu.account_status || 'ready_to_login'
+                      ).toLowerCase();
                       const isSyncError =
                         rawSync === 'error' ||
                         rawSync === 'failed' ||
+                        rawSync === 'sync_failed' ||
                         rawSync === 'partial_failure' ||
-                        rawSync === 'needs_resync';
+                        rawSync === 'needs_resync' ||
+                        Boolean(stu.last_sync_error);
                       const isPendingActivation =
                         rawAccount === 'pending_activation' ||
                         rawSync === 'pending_activation' ||
+                        rawSync === 'pending_sync' ||
                         rawSync === 'pending';
 
                       return (
@@ -2184,10 +2195,14 @@ export const AdminWorkspace: React.FC = () => {
         onReplaceAllCourses={(params) => replaceAllCoursesMutation.mutateAsync(params)}
         onUpdateProfile={(params) => updateProfileMutation.mutateAsync(params)}
         onResyncStudent={(stu) => {
+          const rawAcc = String(stu.accountStatus || stu.account_status || '').toLowerCase();
+          const rawSyn = String(stu.syncStatus || stu.sync_status || '').toLowerCase();
           retrySyncMutation.mutate({
             type:
-              stu.accountStatus === 'pending_activation' ||
-              stu.syncStatus === 'pending_activation'
+              !stu.cognito_user_id ||
+              rawAcc === 'pending_activation' ||
+              rawSyn === 'pending_activation' ||
+              rawSyn === 'pending_sync'
                 ? 'student_provision'
                 : 'student_sync',
             email: stu.email,

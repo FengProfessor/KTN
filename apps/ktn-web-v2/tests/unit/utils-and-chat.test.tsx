@@ -413,13 +413,15 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
           { id: '6adadba969897b0002482ca5', title: 'Khóa học trực tuyến' },
           { id: '6adadba969897b0002482ca5', title: 'Khóa học trực tuyến' },
           { id: '65e7704a9ea90c00080d5195', title: 'Khóa học trực tuyến' },
+          { id: '661528ea42af880008944573', title: 'Khóa học trực tuyến' },
         ],
         catalog
       );
 
-      expect(resolved).toHaveLength(2);
+      expect(resolved).toHaveLength(3);
       expect(resolved[0].title).toBe('Khóa học Tiêu Chuẩn New HSK 1 (3.0)');
       expect(resolved[1].title).toBe('Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)');
+      expect(resolved[2].title).toBe('Chinese For Kids 3 (Khóa học cho bé 7 – 9 tuổi)');
     });
 
     it('exposes isolated student management API methods (grant, revoke, assignClass, replaceAll, updateProfile)', () => {

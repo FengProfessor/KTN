@@ -323,6 +323,12 @@ export const CANONICAL_IZTEACH_COURSE_TITLES: Record<string, CanonicalCourseMeta
     title: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)',
     shortTitle: 'Chinese For Kids'
   },
+  '661528ea42af880008944573': {
+    id: '661528ea42af880008944573',
+    code: 'CFK-03',
+    title: 'Chinese For Kids 3 (Khóa học cho bé 7 – 9 tuổi)',
+    shortTitle: 'Chinese For Kids 3'
+  },
   '65e7636a0a1b61000825c2ef': {
     id: '65e7636a0a1b61000825c2ef',
     code: 'MINI-01',

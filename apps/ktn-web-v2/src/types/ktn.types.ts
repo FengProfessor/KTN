@@ -240,6 +240,7 @@ export interface KtnNotification {
 export interface UserNotificationSettings {
   chat: boolean;
   homework: boolean;
+  grades?: boolean;
   schedule: boolean;
   important: boolean;
   reminder10Min: boolean;
@@ -264,6 +265,8 @@ export interface KtnStudentRecord {
   studentCase: StudentCase;
   accountStatus?: AccountStatus | string;
   syncStatus?: SyncStatus | string;
+  account_status?: AccountStatus | string;
+  sync_status?: SyncStatus | string;
   readyToLogin?: boolean;
   fullySynced?: boolean;
   last_sync_error?: string | null;

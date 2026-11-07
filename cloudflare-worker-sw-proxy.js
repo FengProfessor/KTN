@@ -1197,6 +1197,7 @@ async function loadAllClassScheduleConfigs(env) {
 const DEFAULT_USER_NOTIFICATION_PREFS = {
   chat: true,
   homework: true,
+  grades: true,
   schedule: true,
   important: true,
   reminder10Min: false
@@ -1207,6 +1208,7 @@ function sanitizeUserNotificationPrefs(raw) {
   return {
     chat: src.chat !== false,
     homework: src.homework !== false,
+    grades: src.grades !== false,
     schedule: src.schedule !== false,
     // Thông báo quan trọng từ quản lý luôn được bật, không bao giờ bị tắt khi tắt tin nhắn thông thường
     important: true,
@@ -1228,6 +1230,9 @@ function isEventTypeAllowedByUserPrefs(eventType, rawPrefs) {
   }
   if (t.startsWith('chat_') || t === 'chat_message') {
     return prefs.chat !== false;
+  }
+  if (t === 'homework_graded' || t.startsWith('grade_')) {
+    return prefs.grades !== false;
   }
   if (t.startsWith('homework_')) {
     return prefs.homework !== false;
@@ -2965,6 +2970,8 @@ function enrichStudentRowV3(row) {
     studentCase,
     account_status: accountStatus,
     sync_status: syncStatus,
+    accountStatus,
+    syncStatus,
     search_text: row.search_text || buildStudentSearchText(row)
   };
 }
@@ -3007,7 +3014,19 @@ function filterAndRankStudents(rows, filters = {}) {
     }
 
     if (syncStatusFilter && syncStatusFilter !== 'all') {
-      if (String(stu.sync_status || '').toLowerCase() !== syncStatusFilter) continue;
+      const stuSync = String(stu.sync_status || '').toLowerCase();
+      if (syncStatusFilter === 'needs_resync') {
+        const needsResync =
+          stuSync === 'needs_resync' ||
+          stuSync === 'sync_failed' ||
+          stuSync === 'partial_failure' ||
+          stuSync === 'pending_sync' ||
+          stuSync === 'error' ||
+          Boolean(stu.last_sync_error);
+        if (!needsResync) continue;
+      } else if (stuSync !== syncStatusFilter) {
+        continue;
+      }
     }
 
     if (caseFilter && caseFilter !== 'all') {
@@ -3916,11 +3935,12 @@ async function mergeAndUpsertStudentCourses(env, {
   const studentCode = existingRow?.code || codeHint || ('KTN-' + Date.now().toString().slice(-6));
   const resolvedCognito = cognitoUserId || existingRow?.cognito_user_id || null;
   const resolvedIzStuId = izteachStudentId || existingRow?.izteach_student_id || null;
+  const resolvedPhone = phone !== undefined ? String(phone).trim() : (existingRow?.phone || '');
   const basePayload = {
     code: studentCode,
     email: cleanEmail,
-    name: name || existingRow?.name || cleanEmail.split('@')[0],
-    phone: phone || existingRow?.phone || '',
+    name: (name !== undefined && String(name).trim() !== '') ? String(name).trim() : (existingRow?.name || cleanEmail.split('@')[0]),
+    phone: resolvedPhone,
     cognito_user_id: resolvedCognito,
     izteach_student_id: resolvedIzStuId,
     class_code: finalClassCode,
@@ -3931,10 +3951,12 @@ async function mergeAndUpsertStudentCourses(env, {
   };
 
   const extendedPayload = { ...basePayload };
-  const resolvedParentName = (parentName !== undefined && String(parentName).trim() !== '')
+  const resolvedParentName = parentName !== undefined
     ? String(parentName).trim()
     : (existingRow?.parent_name || '');
-  if (resolvedParentName) extendedPayload.parent_name = resolvedParentName;
+  if (parentName !== undefined || resolvedParentName) {
+    extendedPayload.parent_name = resolvedParentName;
+  }
   if (accountStatus !== undefined) extendedPayload.account_status = accountStatus;
   if (syncStatus !== undefined) {
     extendedPayload.sync_status = syncStatus;
@@ -5016,11 +5038,16 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
             }
             const cIds = extractIzTeachOnlineCourseIds(pData);
             if (cIds.length > 0 || !byEmail.has(stuRow.email) || safeOptions.reconcileAllPermissions) {
+              const prevCourses = Array.isArray(stuRow.online_courses) ? stuRow.online_courses : [];
               stuRow.online_courses = normalizeOnlineCourseEntries(
-                cIds.map(cid => ({
-                  id: cid,
-                  title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || 'Khóa học trực tuyến'
-                }))
+                cIds.map(cid => {
+                  const prevObj = prevCourses.find(c => String(c?.id || c?._id || c || '') === String(cid));
+                  const prevTitle = typeof prevObj === 'object' && prevObj?.title && prevObj.title !== 'Khóa học trực tuyến' ? prevObj.title : '';
+                  return {
+                    id: cid,
+                    title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || prevTitle || 'Khóa học trực tuyến'
+                  };
+                })
               );
               stuRow.has_online_courses = stuRow.online_courses.length > 0;
             }
@@ -6004,7 +6031,12 @@ export default {
         pgParts.push(`account_status=eq.${encodeURIComponent(accountStatusFilter.toLowerCase())}`);
       }
       if (syncStatusFilter && syncStatusFilter !== 'ALL') {
-        pgParts.push(`sync_status=eq.${encodeURIComponent(syncStatusFilter.toLowerCase())}`);
+        const sfLower = syncStatusFilter.toLowerCase();
+        if (sfLower === 'needs_resync') {
+          pgParts.push('sync_status=in.(needs_resync,sync_failed,partial_failure,pending_sync,error)');
+        } else {
+          pgParts.push(`sync_status=eq.${encodeURIComponent(sfLower)}`);
+        }
       }
       if (courseFilter && courseFilter !== 'ALL') {
         const cfObj = encodeURIComponent(JSON.stringify([{ id: courseFilter }]));
@@ -6621,9 +6653,15 @@ export default {
       // ghi nhận rõ trạng thái pending_activation thay vì báo giả 'synced'
       const hasValidAccount = isValidCognitoUuid(cognitoUserId);
       const computedAccountStatus = hasValidAccount ? 'active' : 'pending_activation';
-      const computedSyncStatus = (assignClassProvisionFailed && !hasValidAccount)
-        ? 'pending_activation'
-        : 'synced';
+      let computedSyncStatus = 'synced';
+      let computedLastSyncError = null;
+      if (assignClassProvisionFailed && !hasValidAccount) {
+        computedSyncStatus = 'pending_activation';
+        computedLastSyncError = provResult?.error || 'IZTEACH_ACCOUNT_PENDING';
+      } else if (action === 'assign_class' && !provResult) {
+        computedSyncStatus = existingStu?.sync_status || (hasValidAccount ? 'synced' : 'pending_activation');
+        computedLastSyncError = existingStu?.last_sync_error !== undefined ? existingStu.last_sync_error : null;
+      }
 
       const updatedStudent = await mergeAndUpsertStudentCourses(env, {
         email,
@@ -6639,7 +6677,7 @@ export default {
         codeHint: body.code || '',
         accountStatus: computedAccountStatus,
         syncStatus: computedSyncStatus,
-        lastSyncError: (assignClassProvisionFailed && !hasValidAccount) ? (provResult?.error || 'IZTEACH_ACCOUNT_PENDING') : null
+        lastSyncError: computedLastSyncError
       });
 
       if (!updatedStudent || updatedStudent.ok === false) {
@@ -10523,7 +10561,10 @@ export default {
       }
       if (request.method === 'PUT' || request.method === 'POST' || request.method === 'PATCH') {
         const body = await request.json().catch(() => ({}));
-        const nextPrefs = sanitizeUserNotificationPrefs(body.settings || body);
+        const existingMap = await getUserNotificationPreferencesMap(env, [myEmail]);
+        const currentPrefs = existingMap.get(myEmail) || DEFAULT_USER_NOTIFICATION_PREFS;
+        const incoming = body.settings && typeof body.settings === 'object' ? body.settings : body;
+        const nextPrefs = sanitizeUserNotificationPrefs({ ...currentPrefs, ...incoming });
         const prefId = `NPREF_${myEmail}`;
         const nowIso = new Date().toISOString();
         let saveRes = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {

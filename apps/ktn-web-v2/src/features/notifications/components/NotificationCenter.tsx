@@ -69,12 +69,12 @@ export const NotificationCenter: React.FC = () => {
   const [showPrefsPanel, setShowPrefsPanel] = useState<boolean>(true);
   const [pushEnabled, setPushEnabled] = useState<boolean>(false);
   const [isSubscribingPush, setIsSubscribingPush] = useState<boolean>(false);
-  const [gradesEnabled, setGradesEnabled] = useState<boolean>(true);
   const [demoState, setDemoState] = useState<'unread' | 'all_read' | 'empty'>('unread');
   const [demoLocalReadIds, setDemoLocalReadIds] = useState<Record<string, boolean>>({});
   const [demoSettings, setDemoSettings] = useState<UserNotificationSettings>({
     chat: true,
     homework: true,
+    grades: true,
     schedule: true,
     important: true,
     reminder10Min: false,
@@ -203,18 +203,29 @@ export const NotificationCenter: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
   });
 
+  const activeSettings: UserNotificationSettings =
+    notifSettingsQuery.data ||
+    notificationsQuery.data?.settings || {
+      chat: true,
+      homework: true,
+      grades: true,
+      schedule: true,
+      important: true,
+      reminder10Min: false,
+    };
+
   const updateSettingsMutation = useMutation({
     mutationFn: async (patch: Partial<UserNotificationSettings>) => {
+      const merged: UserNotificationSettings = {
+        ...activeSettings,
+        ...patch,
+        important: true,
+      };
       if (isDemoMode) {
-        const merged: UserNotificationSettings = {
-          ...demoSettings,
-          ...patch,
-          important: true,
-        };
         setDemoSettings(merged);
         return merged;
       }
-      return ktnApi.updateNotificationSettings({ ...patch, important: true });
+      return ktnApi.updateNotificationSettings(merged);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-notification-settings'] });
@@ -226,16 +237,6 @@ export const NotificationCenter: React.FC = () => {
       });
     },
   });
-
-  const activeSettings: UserNotificationSettings =
-    notifSettingsQuery.data ||
-    notificationsQuery.data?.settings || {
-      chat: true,
-      homework: true,
-      schedule: true,
-      important: true,
-      reminder10Min: false,
-    };
 
   const notifications = notificationsQuery.data?.notifications || [];
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -790,12 +791,10 @@ export const NotificationCenter: React.FC = () => {
                 <input
                   type="checkbox"
                   data-testid="notif-pref-grades"
-                  checked={gradesEnabled && activeSettings.homework}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setGradesEnabled(checked);
-                    updateSettingsMutation.mutate({ homework: checked });
-                  }}
+                  checked={activeSettings.grades !== false}
+                  onChange={(e) =>
+                    updateSettingsMutation.mutate({ grades: e.target.checked })
+                  }
                   className="h-4 w-4 rounded accent-red-800"
                 />
               </label>

@@ -1437,6 +1437,9 @@ async function runSuite() {
       '[data-testid="admin-student-row-e2e.hs.0001@khongtunhi.com"]',
       { timeout: 8000 }
     );
+    const row0001Text = await unifiedAdminPage.textContent(
+      '[data-testid="admin-student-row-e2e.hs.0001@khongtunhi.com"]'
+    );
     const extraCoursesBadgeText = await unifiedAdminPage.textContent(
       '[data-testid="student-extra-courses-badge-e2e.hs.0001@khongtunhi.com"]'
     );
@@ -1461,9 +1464,11 @@ async function runSuite() {
     recordTest(
       'TEST L',
       'L2',
-      'Server-side search across >1,000 students finds target by unaccented name and enforces max 2 course badges (+N khóa)',
+      'Server-side search across >1,000 students finds target by unaccented name and enforces max 2 canonical course badges (+N khóa)',
       Boolean(
         extraCoursesBadgeText?.includes('+1 khóa') &&
+          row0001Text?.includes('Chinese For Kids') &&
+          !row0001Text?.includes('Khóa (') &&
           legacyBadgeOnTable &&
           tabStudentsText
       ),
@@ -1802,6 +1807,14 @@ async function runSuite() {
     });
     await uxStudentPage.waitForTimeout(350);
 
+    // Dismiss transient login toast before capturing clean StudentHome screenshots
+    const closeToastBtns = uxStudentPage.locator('[aria-label="Đóng thông báo"]');
+    const toastCount = await closeToastBtns.count();
+    for (let i = 0; i < toastCount; i++) {
+      await closeToastBtns.first().click().catch(() => {});
+    }
+    await uxStudentPage.waitForTimeout(150);
+
     // M1: StudentHome has no duplicate greeting strip, no 4-tile grid, compact Discovery cards, and captures after screenshots
     const hasDuplicateGreeting =
       (await uxStudentPage.locator('[data-testid="student-greeting-strip"]').count()) > 0;
@@ -1969,7 +1982,7 @@ async function runSuite() {
       `courseSwitcher=${hasCourseSwitcherOnLearning}, hwPanel=${hasHwPanelOnLearning}`
     );
 
-    // M6: NotificationCenter displays Cài đặt thông báo with device push status, iPhone PWA guide, and toggles for Tin nhắn, Bài tập, Điểm số, Lịch học
+    // M6: NotificationCenter displays Cài đặt thông báo with device push status, iPhone PWA guide, and independent persistent toggles for Tin nhắn, Bài tập, Điểm số, Lịch học
     await uxStudentPage.goto(`${baseUrl}/notifications`, { waitUntil: 'domcontentloaded' });
     await uxStudentPage.waitForSelector('[data-testid="notification-center-page"]', {
       timeout: 8000,
@@ -1992,16 +2005,33 @@ async function runSuite() {
       (await uxStudentPage.isVisible('[data-testid="notif-pref-grades"]')) &&
       (await uxStudentPage.isVisible('[data-testid="notif-pref-schedule"]'));
 
+    // Toggle Điểm số (notif-pref-grades) off -> verify Bài tập (notif-pref-homework) stays checked and persists after reload
+    await uxStudentPage.click('[data-testid="notif-pref-grades"]');
+    await uxStudentPage.waitForTimeout(350);
+    await uxStudentPage.reload({ waitUntil: 'domcontentloaded' });
+    await uxStudentPage.waitForSelector('[data-testid="notification-center-page"]', {
+      timeout: 8000,
+    });
+    const gradesAfterToggleOff = await uxStudentPage.isChecked('[data-testid="notif-pref-grades"]');
+    const homeworkStayedChecked = await uxStudentPage.isChecked(
+      '[data-testid="notif-pref-homework"]'
+    );
+    // Restore notif-pref-grades to true
+    await uxStudentPage.click('[data-testid="notif-pref-grades"]');
+    await uxStudentPage.waitForTimeout(250);
+
     recordTest(
       'TEST M',
       'M6',
-      'NotificationCenter displays Cài đặt thông báo with device push status, iPhone PWA guide, push opt-in button, and Tin nhắn/Bài tập/Điểm số/Lịch học toggles',
+      'NotificationCenter displays Cài đặt thông báo with device push status, iPhone PWA guide, push opt-in button, and independent persistent Tin nhắn/Bài tập/Điểm số/Lịch học toggles',
       hasNotifPrefsCard &&
         Boolean(deviceStatusBadgeText?.trim()) &&
         hasIphoneGuide &&
         hasEnablePushBtn &&
-        hasPrefToggles,
-      `deviceStatus="${deviceStatusBadgeText?.trim()}", toggles=${hasPrefToggles}`
+        hasPrefToggles &&
+        gradesAfterToggleOff === false &&
+        homeworkStayedChecked === true,
+      `deviceStatus="${deviceStatusBadgeText?.trim()}", gradesOff=${!gradesAfterToggleOff}, hwKept=${homeworkStayedChecked}`
     );
 
     await uxStudentContext.close();

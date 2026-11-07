@@ -656,6 +656,22 @@ function loadWorkerInstance(sharedState = null) {
       });
     }
 
+    if (u.hostname === 'fcm.googleapis.com' || u.hostname === 'web.push.apple.com') {
+      if (!Array.isArray(state.pushDeliveries)) state.pushDeliveries = [];
+      const expiredSet = state.faults.expiredPushEndpoints || new Set();
+      const isExpired = expiredSet instanceof Set ? expiredSet.has(urlStr) : Boolean(expiredSet[urlStr]);
+      const status = isExpired ? 410 : (state.faults.pushServiceStatus || 201);
+      const bodyLen = init.body ? (init.body.byteLength || init.body.length || 0) : 0;
+      state.pushDeliveries.push({
+        endpoint: urlStr,
+        method,
+        status,
+        headers: init.headers || {},
+        bodyLength: bodyLen
+      });
+      return new Response(isExpired ? 'Gone' : '', { status });
+    }
+
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
@@ -666,6 +682,7 @@ function loadWorkerInstance(sharedState = null) {
     Request,
     Response,
     Headers,
+    AbortController: globalThis.AbortController,
     URL,
     URLSearchParams,
     crypto: globalThis.crypto || crypto.webcrypto,
@@ -717,7 +734,15 @@ function loadWorkerInstance(sharedState = null) {
       },
       body: opts.body && typeof opts.body === 'object' ? JSON.stringify(opts.body) : opts.body
     });
-    const res = await worker.fetch(req, env, { waitUntil: () => {} });
+    const waitUntilPromises = [];
+    const res = await worker.fetch(req, env, {
+      waitUntil: p => {
+        if (p && typeof p.then === 'function') waitUntilPromises.push(p);
+      }
+    });
+    if (waitUntilPromises.length > 0) {
+      await Promise.allSettled(waitUntilPromises);
+    }
     const data = await res.json().catch(() => null);
     return { status: res.status, ok: res.ok, headers: res.headers, data };
   }
@@ -3103,6 +3128,237 @@ async function runSuite() {
         foundObjectCourse &&
         schemaV2IdemReplayed,
       `unaccentedFound=${foundUnaccented}, concatenatedFound=${foundConcatenated}, accentedFound=${foundAccented}, objectCourseFound=${foundObjectCourse}, schemaV2IdemReplayed=${schemaV2IdemReplayed}`
+    );
+
+    // D18: Mandatory 5-Step Sequential Web Push Reliability Chain, Recipient Isolation, Multi-Device Logout Preservation, 410 Cleanup & Sanitized Diagnostics
+    const subtle = (globalThis.crypto || crypto.webcrypto).subtle;
+    const vapidPair = await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    const vapidJwk = await subtle.exportKey('jwk', vapidPair.privateKey);
+    const vapidRawPub = Buffer.from( await subtle.exportKey('raw', vapidPair.publicKey) );
+    env.VAPID_PUBLIC_KEY = vapidRawPub.toString('base64url');
+    env.VAPID_PRIVATE_KEY = vapidJwk.d;
+
+    async function makeRealPushSub(endpointUrl) {
+      const kp = await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+      const rawPub = Buffer.from(await subtle.exportKey('raw', kp.publicKey));
+      return {
+        endpoint: endpointUrl,
+        keys: {
+          p256dh: rawPub.toString('base64url'),
+          auth: crypto.randomBytes(16).toString('base64url')
+        }
+      };
+    }
+
+    const stuAPhoneEndpoint = 'https://web.push.apple.com/Q1_STUDENT_A_IPHONE';
+    const stuBPhoneEndpoint = 'https://fcm.googleapis.com/fcm/send/Q2_STUDENT_B_OTHER_CLASS';
+    const teacherAPcEndpoint = 'https://fcm.googleapis.com/fcm/send/Q3_TEACHER_A_PC';
+    const stuAExpiredEndpoint = 'https://web.push.apple.com/Q4_STUDENT_A_EXPIRED_DEVICE';
+
+    state.tables.ktn_push_subscriptions = [];
+    state.pushDeliveries = [];
+
+    const subStuARes = await callApi('/api/ktn/push/subscribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}`, 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)' },
+      body: { subscription: await makeRealPushSub(stuAPhoneEndpoint) }
+    });
+    const subStuBRes = await callApi('/api/ktn/push/subscribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentBToken}`, 'User-Agent': 'Mozilla/5.0 (Linux; Android 14)' },
+      body: { subscription: await makeRealPushSub(stuBPhoneEndpoint) }
+    });
+    const subTeacherARes = await callApi('/api/ktn/push/subscribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}`, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      body: { subscription: await makeRealPushSub(teacherAPcEndpoint) }
+    });
+
+    // Simulate stale null class_code on Student A's push_subscription row to verify authoritative Supabase class resolution
+    const stuASubRow = state.tables.ktn_push_subscriptions.find(r => r.endpoint === stuAPhoneEndpoint);
+    if (stuASubRow) stuASubRow.class_code = null;
+
+    // Simulate Student A logging in on a PC browser and then logging out on PC (must NOT delete Student A's iPhone subscription!)
+    const stuAPcLogin = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: { email: 'e2e.hs.a@khongtunhi.com', password: 'TestStrongPassword!2026' }
+    });
+    const stuAPcToken = stuAPcLogin.data?.token;
+    const stuAPcLogout = await callApi('/api/ktn/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${stuAPcToken}` },
+      body: {}
+    });
+    const phoneSubPreservedAfterPcLogout = state.tables.ktn_push_subscriptions.some(
+      r => r.endpoint === stuAPhoneEndpoint && r.user_email === 'e2e.hs.a@khongtunhi.com'
+    );
+
+    // STEP 1: Teacher A sends class group message #1 -> Student A receives push; Teacher A (sender) & Student B (YCT3-02) do NOT
+    state.pushDeliveries = [];
+    const step1GroupMsg1 = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        roomId: 'class:YCT2-04',
+        content: 'Thông báo nhóm lớp lần 1 từ cô Linh'
+      }
+    });
+    const step1Deliveries = [...state.pushDeliveries];
+    const step1PushMeta = step1GroupMsg1.data?.pushDelivery;
+
+    // STEP 2: Teacher A sends class group message #2 -> Student A continues to receive push with distinct eventId
+    state.pushDeliveries = [];
+    const step2GroupMsg2 = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        roomId: 'class:YCT2-04',
+        content: 'Thông báo nhóm lớp lần 2 từ cô Linh'
+      }
+    });
+    const step2Deliveries = [...state.pushDeliveries];
+    const step2PushMeta = step2GroupMsg2.data?.pushDelivery;
+
+    // STEP 3: Teacher A sends private message -> Student A receives push; others do NOT
+    state.pushDeliveries = [];
+    const step3PrivateMsg = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        roomId: 'student:e2e.hs.a@khongtunhi.com',
+        content: 'Cô nhắn riêng cho con nhé'
+      }
+    });
+    const step3Deliveries = [...state.pushDeliveries];
+    const step3PushMeta = step3PrivateMsg.data?.pushDelivery;
+
+    // STEP 4: Teacher A assigns homework (POST /api/ktn/class-sessions) -> Student A receives push; Student B (YCT3-02) does NOT
+    state.pushDeliveries = [];
+    const step4AssignHw = await callApi('/api/ktn/class-sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        classCode: 'YCT2-04',
+        sessionNum: 8,
+        title: 'Buổi 8: Gia đình của em',
+        exercises: [
+          { num: 1, title: 'Thu âm từ mới Buổi 8', prompt: 'Đọc to 5 từ mới', type: 'audio' }
+        ]
+      }
+    });
+    const step4Deliveries = [...state.pushDeliveries];
+    const step4PushMeta = step4AssignHw.data?.pushDelivery;
+
+    // STEP 5: Teacher A grades Student A's homework -> Student A receives push
+    const stuAHwSubmit = await callApi('/api/ktn/homeworks', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: 'CLASS_YCT2-04',
+        classCode: 'YCT2-04',
+        lessonNum: 8,
+        lessonTitle: 'Buổi 8: Gia đình của em',
+        fileUrl: 'https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/hw-b8.wav',
+        fileType: 'audio/wav'
+      }
+    });
+    const submittedHwId = stuAHwSubmit.data?.homework?.id;
+    state.pushDeliveries = [];
+    const step5GradeHw = await callApi('/api/ktn/homeworks/grade', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        id: submittedHwId,
+        score: 10,
+        status: 'graded',
+        teacherFeedback: 'Phát âm xuất sắc!'
+      }
+    });
+    const step5Deliveries = [...state.pushDeliveries];
+    const step5PushMeta = step5GradeHw.data?.pushDelivery;
+
+    // Verify 410 Gone expired endpoint auto-cleanup without deleting active phone endpoint
+    await callApi('/api/ktn/push/subscribe', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: { subscription: await makeRealPushSub(stuAExpiredEndpoint) }
+    });
+    state.faults.expiredPushEndpoints = new Set([stuAExpiredEndpoint]);
+    state.pushDeliveries = [];
+    const expiredCleanupMsg = await callApi('/api/ktn/messages', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        roomId: 'student:e2e.hs.a@khongtunhi.com',
+        content: 'Kiểm tra dọn dẹp thiết bị hết hạn 410'
+      }
+    });
+    state.faults.expiredPushEndpoints = null;
+    const expiredRemovedFromDb = !state.tables.ktn_push_subscriptions.some(r => r.endpoint === stuAExpiredEndpoint);
+    const activeStillInDb = state.tables.ktn_push_subscriptions.some(r => r.endpoint === stuAPhoneEndpoint);
+
+    // Verify diagnostics endpoint format & zero sensitive data leakage
+    const diagRes = await callApi('/api/ktn/push/diagnostics', {
+      headers: { Authorization: `Bearer ${teacherAToken}` }
+    });
+    const diagLogs = diagRes.data?.recentLogs || [];
+    const diagJsonStr = JSON.stringify(diagLogs);
+    const hasNoSensitiveSecretsInLogs =
+      !diagJsonStr.includes(stuAPhoneEndpoint) &&
+      !diagJsonStr.includes('p256dh') &&
+      !diagJsonStr.includes(env.VAPID_PRIVATE_KEY);
+
+    const all5StepsPassed =
+      subStuARes.status === 200 &&
+      subStuBRes.status === 200 &&
+      subTeacherARes.status === 200 &&
+      stuAPcLogout.status === 200 &&
+      phoneSubPreservedAfterPcLogout === true &&
+      // Step 1
+      step1Deliveries.length === 1 &&
+      step1Deliveries[0].endpoint === stuAPhoneEndpoint &&
+      step1Deliveries[0].bodyLength > 100 &&
+      step1PushMeta?.pushAccepted === 1 &&
+      step1PushMeta?.pushFailed === 0 &&
+      step1PushMeta?.pushServiceAccepted === true &&
+      step1PushMeta?.deviceDisplayConfirmed === false &&
+      // Step 2
+      step2Deliveries.length === 1 &&
+      step2Deliveries[0].endpoint === stuAPhoneEndpoint &&
+      step2PushMeta?.pushAccepted === 1 &&
+      step2PushMeta?.eventId !== step1PushMeta?.eventId &&
+      // Step 3
+      step3Deliveries.length === 1 &&
+      step3Deliveries[0].endpoint === stuAPhoneEndpoint &&
+      step3PushMeta?.eventType === 'chat_private_message' &&
+      step3PushMeta?.recipientCount === 1 &&
+      step3PushMeta?.pushAccepted === 1 &&
+      // Step 4
+      step4Deliveries.length === 1 &&
+      step4Deliveries[0].endpoint === stuAPhoneEndpoint &&
+      step4PushMeta?.eventType === 'homework_assigned' &&
+      step4PushMeta?.pushAccepted === 1 &&
+      // Step 5
+      step5Deliveries.length === 1 &&
+      step5Deliveries[0].endpoint === stuAPhoneEndpoint &&
+      step5PushMeta?.eventType === 'homework_graded' &&
+      step5PushMeta?.recipientCount === 1 &&
+      step5PushMeta?.pushAccepted === 1 &&
+      // 410 cleanup & diagnostics
+      expiredCleanupMsg.data?.pushDelivery?.pushAccepted === 1 &&
+      expiredCleanupMsg.data?.pushDelivery?.pushFailed === 1 &&
+      expiredRemovedFromDb === true &&
+      activeStillInDb === true &&
+      diagRes.status === 200 &&
+      diagLogs.length >= 5 &&
+      hasNoSensitiveSecretsInLogs === true;
+
+    record(
+      'D18-WEB-PUSH-FIVE-STEP-SEQUENTIAL-RELIABILITY-AND-MULTI-DEVICE-LOGOUT',
+      'GROUP_V3',
+      'Sequential 5-step Web Push chain (group #1 -> group #2 -> private -> homework assign -> homework grade) delivers RFC 8291 encrypted push with unique eventId only to target recipient (never sender or other classes), preserves mobile subscription across PC logout, cleans up 410 Gone, and logs sanitized diagnostics',
+      all5StepsPassed,
+      `pcLogoutPreserved=${phoneSubPreservedAfterPcLogout}, s1=${step1PushMeta?.pushAccepted}, s2=${step2PushMeta?.pushAccepted}, s3=${step3PushMeta?.pushAccepted}, s4=${step4PushMeta?.pushAccepted}, s5=${step5PushMeta?.pushAccepted}, 410Cleaned=${expiredRemovedFromDb}, logsSanitized=${hasNoSensitiveSecretsInLogs}`
     );
   }
 

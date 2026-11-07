@@ -17,7 +17,7 @@
   const IDB_NAME = 'ktn_webapp_auth_db';
   const IDB_STORE = 'session_store';
   const SESSION_KEY = 'ktn_sll_persistent_auth_v2';
-  const VAPID_PUBLIC_KEY = 'BFWxJ4T_sakVqTfRjAQOpN7RghDoQRo9owPWy_W1lvdoVYpqFdLJRmEOYgQEPPiEHpotoaixRt8oq2_R4VH8afM';
+  const VAPID_PUBLIC_KEY = 'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
 
   function escapeHtml(val) {
     if (val === null || val === undefined) return '';

@@ -90,7 +90,7 @@ export function inspectDlpClient(text: string): DlpCheckResult {
   const s = String(text || '').trim();
   if (!s) return { blocked: false, reasons: [] };
   const reasons: string[] = [];
-  if (/(?:\+?84|0)(?:\s*[.-]?\s*\d){8,9}\b/.test(s)) {
+  if (/(?<!\d)(?:\+?84|0)(?:\s*[.-]?\s*\d){8,9}(?!\d)/.test(s)) {
     reasons.push('Vì an toàn học đường (DLP), không chia sẻ số điện thoại cá nhân trong nhóm lớp.');
   }
   if (/(?:zalo\.me|facebook\.com|fb\.com|m\.me|t\.me)\//i.test(s)) {

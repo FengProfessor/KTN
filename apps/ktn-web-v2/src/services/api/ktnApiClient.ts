@@ -255,7 +255,22 @@ export const ktnApi = {
 
   async logout(): Promise<void> {
     try {
-      await ktnRequest('/api/ktn/auth/logout', { method: 'POST' });
+      let unsubscribeEndpoint = '';
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration('/');
+          const sub = await reg?.pushManager?.getSubscription();
+          if (sub?.endpoint) {
+            unsubscribeEndpoint = String(sub.endpoint).trim();
+          }
+        } catch {
+          // ignore
+        }
+      }
+      await ktnRequest('/api/ktn/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify(unsubscribeEndpoint ? { unsubscribeEndpoint } : {})
+      });
     } catch {
       // Best-effort server revoke, always clear client state
     } finally {

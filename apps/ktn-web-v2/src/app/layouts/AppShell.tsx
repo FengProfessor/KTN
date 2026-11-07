@@ -89,10 +89,104 @@ export const AppShell: React.FC = () => {
   const unreadNotifications = notificationsList.filter((n) => !n.read).length;
   const recentNotifications = notificationsList.slice(0, 5);
 
-  // Register Service Worker (/sw.js) and handle notification click deep-links & subscription changes
+  // Register Service Worker (/sw.js), auto-sync existing PushSubscription, and handle deep-links
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    let cancelled = false;
+    let lastSyncTs = 0;
+
+    const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
+      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    };
+
+    const syncPushSubscriptionForSession = async (force = false) => {
+      if (cancelled || isDemoMode || !user?.email || !('PushManager' in window)) return;
+      const now = Date.now();
+      if (!force && now - lastSyncTs < 15000) return;
+      lastSyncTs = now;
+      try {
+        await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        const readyReg = await navigator.serviceWorker.ready;
+        if (cancelled || !readyReg?.pushManager) return;
+
+        let sub = await readyReg.pushManager.getSubscription();
+        let subJson = sub ? sub.toJSON() : null;
+        const isFakeOrCorrupt =
+          subJson &&
+          (!subJson.endpoint ||
+            subJson.endpoint.includes('push.khongtunhi.com/v2/') ||
+            !subJson.keys?.p256dh ||
+            !subJson.keys?.auth ||
+            subJson.keys.p256dh === 'ktn-mobile-web-p256dh');
+
+        if (sub && isFakeOrCorrupt) {
+          try {
+            await sub.unsubscribe();
+          } catch {
+            // ignore
+          }
+          sub = null;
+          subJson = null;
+        }
+
+        if (!sub && 'Notification' in window && Notification.permission === 'granted') {
+          let vapidPublicKey =
+            'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
+          try {
+            const keyRes = await ktnApi.getVapidPublicKey();
+            if (keyRes.publicKey && keyRes.publicKey.length >= 40) {
+              vapidPublicKey = keyRes.publicKey;
+            }
+          } catch {
+            // fallback to default VAPID public key
+          }
+          const appServerKey = urlBase64ToUint8Array(vapidPublicKey);
+          sub = await readyReg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: appServerKey as unknown as BufferSource,
+          });
+          subJson = sub ? sub.toJSON() : null;
+        }
+
+        const endpoint = String(subJson?.endpoint || '').trim();
+        const p256dh = String(subJson?.keys?.p256dh || '').trim();
+        const auth = String(subJson?.keys?.auth || '').trim();
+        if (!endpoint || !p256dh || !auth || cancelled) return;
+
+        const saveRes = await ktnApi.subscribePush({
+          endpoint,
+          expirationTime: subJson?.expirationTime ?? null,
+          keys: { p256dh, auth },
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'ktn-web-v2',
+        });
+        if (saveRes.ok) {
+          try {
+            localStorage.setItem('ktn_push_enabled_v2', '1');
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // Non-fatal: user can still explicitly re-enable in NotificationCenter
+      }
+    };
+
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => null);
+    syncPushSubscriptionForSession(true);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncPushSubscriptionForSession(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const onSwMessage = (event: MessageEvent) => {
       const payload = event.data || {};
@@ -117,41 +211,16 @@ export const AppShell: React.FC = () => {
     };
     navigator.serviceWorker.addEventListener('message', onSwMessage);
     return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       navigator.serviceWorker.removeEventListener('message', onSwMessage);
     };
   }, [navigate, isDemoMode, user?.email]);
 
-  // Alert user via in-app toast & Service Worker notification when unread notifications arrive
+  // Alert user via in-app toast when unread notifications arrive in foreground
   useEffect(() => {
     const activeEmail = user?.email || (isDemoMode ? 'demo' : '');
     if (!activeEmail || notificationsList.length === 0) return;
-
-    const triggerSwNotification = (notif: KtnNotification) => {
-      if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
-        return;
-      }
-      const deepLink = `/custom-page/so-lien-lac-test#${resolveNotificationLink(notif)}`;
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready
-          .then((reg) => {
-            if (reg.active) {
-              reg.active.postMessage({
-                type: 'KTN_SHOW_NOTIFICATION',
-                title: notif.title,
-                body: notif.body,
-                data: { id: notif.id, action_url: deepLink, url: deepLink },
-              });
-            } else if (typeof reg.showNotification === 'function') {
-              reg.showNotification(notif.title, {
-                body: notif.body,
-                tag: notif.id,
-                data: { id: notif.id, action_url: deepLink, url: deepLink },
-              });
-            }
-          })
-          .catch(() => null);
-      }
-    };
 
     if (initializedNotifsForUserRef.current !== activeEmail) {
       initializedNotifsForUserRef.current = activeEmail;
@@ -176,7 +245,6 @@ export const AppShell: React.FC = () => {
             description: latest.body,
             variant: 'default',
           });
-          triggerSwNotification(latest);
         }
       }
       return;
@@ -196,7 +264,6 @@ export const AppShell: React.FC = () => {
         description: topNotif.body,
         variant: 'default',
       });
-      triggerSwNotification(topNotif);
     }
   }, [notificationsList, user?.email, isDemoMode, addToast]);
 

@@ -293,6 +293,7 @@ function buildSwScript(vapidPublicKey) {
   return `
 const CDN_LOGO = '${CDN_LOGO}';
 const VAPID_PUBLIC_KEY = '${vapidPublicKey || DEFAULT_VAPID_PUBLIC_KEY}';
+const RECENT_PUSH_EVENT_IDS = new Set();
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -303,8 +304,32 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function syncSubscriptionToBackend(sub) {
+  if (!sub || typeof sub.toJSON !== 'function') return Promise.resolve();
+  const subJson = sub.toJSON();
+  if (!subJson || !subJson.endpoint || !subJson.keys || !subJson.keys.p256dh || !subJson.keys.auth) {
+    return Promise.resolve();
+  }
+  return fetch('/api/ktn/push/subscribe', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription: subJson })
+  }).catch(() => {});
+}
+
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    self.clients.claim().then(() => {
+      if (self.registration && self.registration.pushManager) {
+        return self.registration.pushManager.getSubscription().then((sub) => {
+          if (sub) return syncSubscriptionToBackend(sub);
+        }).catch(() => {});
+      }
+    })
+  );
+});
 
 self.addEventListener('push', (event) => {
   let payload = {};
@@ -312,15 +337,36 @@ self.addEventListener('push', (event) => {
   catch { payload = { title: 'Học Viện Khổng Tử Nhí', body: event.data ? event.data.text() : 'Bạn có thông báo mới!' }; }
   const notif = payload.notification || payload;
   const title = notif.title || 'Học Viện Khổng Tử Nhí';
+  const eventId = String(notif.eventId || notif.id || ('ktn-push-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)));
+  if (RECENT_PUSH_EVENT_IDS.size > 100) {
+    RECENT_PUSH_EVENT_IDS.clear();
+  }
+  RECENT_PUSH_EVENT_IDS.add(eventId);
+  const targetUrl = notif.action_url || notif.url || '/custom-page/so-lien-lac-test#/notifications';
   const options = {
     body: notif.body || 'Chạm để mở Sổ Liên Lạc Điện Tử.',
     icon: notif.icon || CDN_LOGO,
     badge: notif.badge || CDN_LOGO,
-    tag: notif.id || ('ktn-push-' + Date.now()),
+    tag: eventId,
     renotify: true,
-    data: { url: notif.action_url || '/custom-page/so-lien-lac-test#/notifications', id: notif.id || '' }
+    timestamp: Number(notif.timestamp) || Date.now(),
+    data: {
+      url: targetUrl,
+      action_url: targetUrl,
+      id: eventId,
+      eventId,
+      eventType: notif.eventType || ''
+    }
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.registration.showNotification(title, options).catch(() =>
+      self.registration.showNotification(title, {
+        body: options.body,
+        tag: eventId,
+        data: options.data
+      })
+    )
+  );
 });
 
 self.addEventListener('pushsubscriptionchange', (event) => {
@@ -329,9 +375,12 @@ self.addEventListener('pushsubscriptionchange', (event) => {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     }).then((newSub) => {
-      return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-        clients.forEach((c) => c.postMessage({ type: 'KTN_PUSH_SUBSCRIPTION_CHANGED', subscription: newSub.toJSON() }));
-      });
+      return Promise.all([
+        syncSubscriptionToBackend(newSub),
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+          clients.forEach((c) => c.postMessage({ type: 'KTN_PUSH_SUBSCRIPTION_CHANGED', subscription: newSub.toJSON() }));
+        })
+      ]);
     }).catch(() => {})
   );
 });
@@ -339,21 +388,27 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 self.addEventListener('message', (event) => {
   const data = event.data || {};
   if (data.type === 'KTN_SHOW_NOTIFICATION') {
+    const localId = String((data.data && (data.data.eventId || data.data.id)) || ('ktn-local-' + Date.now()));
+    if (RECENT_PUSH_EVENT_IDS.has(localId)) {
+      return;
+    }
     const targetUrl = (data.data && (data.data.action_url || data.data.url)) || '/custom-page/so-lien-lac-test#/notifications';
-    event.waitUntil(self.registration.showNotification(data.title || 'Học Viện Khổng Tử Nhí', {
-      body: data.body || '',
-      icon: CDN_LOGO,
-      badge: CDN_LOGO,
-      tag: (data.data && data.data.id) || ('ktn-local-' + Date.now()),
-      renotify: true,
-      data: { url: targetUrl, id: (data.data && data.data.id) || '' }
-    }));
+    event.waitUntil(
+      self.registration.showNotification(data.title || 'Học Viện Khổng Tử Nhí', {
+        body: data.body || '',
+        icon: CDN_LOGO,
+        badge: CDN_LOGO,
+        tag: localId,
+        renotify: true,
+        data: { url: targetUrl, action_url: targetUrl, id: localId, eventId: localId }
+      }).catch(() => {})
+    );
   }
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/custom-page/so-lien-lac-test#/notifications';
+  const targetUrl = (event.notification.data && (event.notification.data.url || event.notification.data.action_url)) || '/custom-page/so-lien-lac-test#/notifications';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       const portalClient = windowClients.find((c) => c && typeof c.url === 'string' && c.url.includes('/custom-page/so-lien-lac'));
@@ -411,19 +466,181 @@ async function hkdfDeriveBytes(salt, ikm, info, length) {
   return new Uint8Array(bits);
 }
 
+function recordPushDiagnosticLog(entry) {
+  const safeEventId = String(entry.eventId || '').replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/g, 'stu');
+  const logLine = `${safeEventId} | ${entry.eventType} | ${entry.recipientCount} | ${entry.subscriptionCount} | ${entry.pushAccepted} | ${entry.pushFailed} | ${entry.reason}`;
+  console.log(`[KTN-PUSH] ${logLine}`);
+  if (!Array.isArray(globalThis.__ktnPushDiagnosticsLog)) {
+    globalThis.__ktnPushDiagnosticsLog = [];
+  }
+  globalThis.__ktnPushDiagnosticsLog.unshift({
+    timestamp: new Date().toISOString(),
+    eventId: safeEventId,
+    eventType: entry.eventType,
+    recipientCount: entry.recipientCount,
+    subscriptionCount: entry.subscriptionCount,
+    pushAccepted: entry.pushAccepted,
+    pushFailed: entry.pushFailed,
+    reason: entry.reason,
+    logLine,
+    pushServiceAccepted: entry.pushAccepted > 0,
+    deviceDisplayConfirmed: false
+  });
+  if (globalThis.__ktnPushDiagnosticsLog.length > 100) {
+    globalThis.__ktnPushDiagnosticsLog.length = 100;
+  }
+  return logLine;
+}
+
+async function resolveClassRecipientEmails(env, classCode, options = {}) {
+  const cleanClass = String(classCode || '').trim().toUpperCase();
+  const excludeEmail = normalizeEmail(options.excludeEmail || '');
+  const includeTeacher = Boolean(options.includeTeacher);
+  if (!cleanClass) return { classCode: '', recipientEmails: [] };
+
+  const recipientSet = new Set();
+  const stuRes = await supabaseRequest(
+    env,
+    `ktn_students?class_code=eq.${encodeURIComponent(cleanClass)}&select=email,class_code&limit=500`
+  );
+  if (stuRes.ok && Array.isArray(stuRes.data)) {
+    for (const s of stuRes.data) {
+      const sCls = String(s?.class_code || '').trim().toUpperCase();
+      const em = normalizeEmail(s?.email || '');
+      if (em && sCls === cleanClass && em !== excludeEmail) {
+        recipientSet.add(em);
+      }
+    }
+  }
+
+  if (includeTeacher) {
+    const [clsRes, teaRes] = await Promise.all([
+      supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(cleanClass)}&select=teacher_email&limit=5`),
+      supabaseRequest(env, 'ktn_teachers?active=eq.true&select=email,assigned_classes,aliases,active&limit=50')
+    ]);
+    if (clsRes.ok && Array.isArray(clsRes.data)) {
+      for (const c of clsRes.data) {
+        const tEm = normalizeEmail(c?.teacher_email || '');
+        if (tEm && tEm !== excludeEmail) recipientSet.add(tEm);
+      }
+    }
+    if (teaRes.ok && Array.isArray(teaRes.data)) {
+      for (const t of teaRes.data) {
+        if (t?.active === false) continue;
+        const meta = extractTeacherMetaFromRow(t);
+        if (meta.assignedClasses.includes(cleanClass)) {
+          const tEm = normalizeEmail(t?.email || '');
+          if (tEm && tEm !== excludeEmail) recipientSet.add(tEm);
+        }
+      }
+    }
+  }
+
+  recipientSet.delete(excludeEmail);
+  return {
+    classCode: cleanClass,
+    recipientEmails: Array.from(recipientSet)
+  };
+}
+
+async function resolvePrivateMessageRecipientEmails(env, studentEmail, session) {
+  const targetStu = normalizeEmail(studentEmail || '');
+  const senderEmail = normalizeEmail(session?.email || '');
+  if (!targetStu) return [];
+
+  if (session?.role !== 'student') {
+    return targetStu !== senderEmail ? [targetStu] : [];
+  }
+
+  const recipientSet = new Set();
+  const stuRes = await supabaseRequest(
+    env,
+    `ktn_students?email=eq.${encodeURIComponent(targetStu)}&select=class_code&limit=1`
+  );
+  const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+  const stuClass = String(stuRow?.class_code || session?.classCode || '').trim().toUpperCase();
+  if (stuClass) {
+    const clsRecipients = await resolveClassRecipientEmails(env, stuClass, {
+      includeTeacher: true,
+      excludeEmail: senderEmail
+    });
+    const teaRes = await supabaseRequest(env, 'ktn_teachers?active=eq.true&select=email,assigned_classes,aliases,active&limit=50');
+    const teacherEmailSet = new Set();
+    if (teaRes.ok && Array.isArray(teaRes.data)) {
+      for (const t of teaRes.data) {
+        if (t?.active === false) continue;
+        const em = normalizeEmail(t?.email || '');
+        if (em) teacherEmailSet.add(em);
+      }
+    }
+    for (const em of clsRecipients.recipientEmails) {
+      if (teacherEmailSet.has(em) && em !== senderEmail) {
+        recipientSet.add(em);
+      }
+    }
+  }
+  if (recipientSet.size === 0) {
+    const teaRes = await supabaseRequest(env, 'ktn_teachers?active=eq.true&select=email,active&limit=20');
+    if (teaRes.ok && Array.isArray(teaRes.data)) {
+      for (const t of teaRes.data) {
+        if (t?.active === false) continue;
+        const em = normalizeEmail(t?.email || '');
+        if (em && em !== senderEmail) recipientSet.add(em);
+      }
+    }
+  }
+  recipientSet.delete(senderEmail);
+  return Array.from(recipientSet);
+}
+
 async function sendWebPushToSubscription(env, subRow, payloadObj) {
   const vapidPublicKey = String(env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY).trim();
   const vapidPrivateRaw = String(env.VAPID_PRIVATE_KEY || '').trim();
   if (!vapidPrivateRaw) {
-    return { ok: false, blocked: true, reason: 'MISSING_VAPID_PRIVATE_KEY' };
+    return {
+      ok: false,
+      blocked: true,
+      status: 0,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      reason: 'MISSING_VAPID_PRIVATE_KEY'
+    };
   }
   const endpoint = String(subRow?.endpoint || '').trim();
   const p256dh = String(subRow?.p256dh || subRow?.keys?.p256dh || '').trim();
   const auth = String(subRow?.auth || subRow?.keys?.auth || '').trim();
   if (!endpoint.startsWith('https://') || !p256dh || !auth) {
-    return { ok: false, invalid: true, reason: 'INVALID_SUBSCRIPTION_RECORD' };
+    return {
+      ok: false,
+      invalid: true,
+      status: 0,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      reason: 'INVALID_SUBSCRIPTION_RECORD'
+    };
+  }
+  if (
+    endpoint.includes('push.khongtunhi.com/v2/') ||
+    p256dh === 'ktn-mobile-web-p256dh' ||
+    auth === 'ktn-mobile-web-auth'
+  ) {
+    await supabaseRequest(env, `ktn_push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, {
+      method: 'DELETE'
+    }).catch(() => null);
+    return {
+      ok: false,
+      invalid: true,
+      expired: true,
+      removed: true,
+      status: 0,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      reason: 'CORRUPT_SYNTHETIC_SUBSCRIPTION_REMOVED'
+    };
   }
 
+  let jwt = '';
+  let bodyBytes = null;
   try {
     const endpointUrl = new URL(endpoint);
     const aud = `${endpointUrl.protocol}//${endpointUrl.host}`;
@@ -435,7 +652,24 @@ async function sendWebPushToSubscription(env, subRow, payloadObj) {
       enc.encode(JSON.stringify({ aud, exp, sub: 'mailto:hocvienkhongtunhi123@gmail.com' }))
     );
     const unsignedToken = `${jwtHeader}.${jwtPayload}`;
-    const jwk = JSON.parse(vapidPrivateRaw.replace(/^['"]|['"]$/g, ''));
+    const cleanedPriv = vapidPrivateRaw.replace(/^['"]|['"]$/g, '').trim();
+    let jwk;
+    if (cleanedPriv.startsWith('{')) {
+      jwk = JSON.parse(cleanedPriv);
+    } else {
+      const pubBytes = b64urlDecodeBytes(vapidPublicKey);
+      if (pubBytes.length !== 65 || pubBytes[0] !== 4) {
+        throw new Error('Invalid VAPID_PUBLIC_KEY uncompressed P-256 point');
+      }
+      jwk = {
+        kty: 'EC',
+        crv: 'P-256',
+        x: b64urlEncodeBytes(pubBytes.slice(1, 33)),
+        y: b64urlEncodeBytes(pubBytes.slice(33, 65)),
+        d: cleanedPriv,
+        ext: true
+      };
+    }
     const vapidPrivKey = await crypto.subtle.importKey(
       'jwk',
       jwk,
@@ -448,7 +682,7 @@ async function sendWebPushToSubscription(env, subRow, payloadObj) {
       vapidPrivKey,
       enc.encode(unsignedToken)
     );
-    const jwt = `${unsignedToken}.${b64urlEncodeBytes(new Uint8Array(sigBuf))}`;
+    jwt = `${unsignedToken}.${b64urlEncodeBytes(new Uint8Array(sigBuf))}`;
 
     const uaPublicBytes = b64urlDecodeBytes(p256dh);
     const authSecretBytes = b64urlDecodeBytes(auth);
@@ -490,7 +724,21 @@ async function sendWebPushToSubscription(env, subRow, payloadObj) {
     header[19] = 0;
     header[20] = asPublicBytes.length;
     header.set(asPublicBytes, 21);
+    bodyBytes = concatUint8Arrays(header, ciphertext);
+  } catch (cryptoErr) {
+    return {
+      ok: false,
+      cryptoError: true,
+      status: 0,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      reason: `WEB_PUSH_ENCRYPT_ERROR:${cryptoErr?.name || 'CryptoError'}`
+    };
+  }
 
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
+  try {
     const pushRes = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -500,40 +748,305 @@ async function sendWebPushToSubscription(env, subRow, payloadObj) {
         TTL: '86400',
         Urgency: 'high'
       },
-      body: concatUint8Arrays(header, ciphertext)
+      body: bodyBytes,
+      ...(controller ? { signal: controller.signal } : {})
     });
 
     if (pushRes.status === 404 || pushRes.status === 410) {
       await supabaseRequest(env, `ktn_push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, {
         method: 'DELETE'
       }).catch(() => null);
-      return { ok: false, expired: true, removed: true, status: pushRes.status, endpoint };
+      return {
+        ok: false,
+        expired: true,
+        removed: true,
+        status: pushRes.status,
+        pushServiceAccepted: false,
+        deviceDisplayConfirmed: false,
+        reason: `SUBSCRIPTION_EXPIRED_${pushRes.status}`
+      };
     }
-    return { ok: pushRes.ok, status: pushRes.status, endpoint };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'WEB_PUSH_DELIVERY_FAILED', endpoint };
+
+    if (pushRes.ok) {
+      return {
+        ok: true,
+        status: pushRes.status,
+        pushServiceAccepted: true,
+        deviceDisplayConfirmed: false,
+        reason: `PUSH_SERVICE_ACCEPTED_${pushRes.status}`
+      };
+    }
+
+    return {
+      ok: false,
+      status: pushRes.status,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      reason: `PUSH_SERVICE_HTTP_${pushRes.status}`
+    };
+  } catch (netErr) {
+    const isAbort = netErr && (netErr.name === 'AbortError' || String(netErr.message || '').includes('aborted'));
+    return {
+      ok: false,
+      networkError: true,
+      status: 0,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      reason: isAbort ? 'PUSH_GATEWAY_TIMEOUT' : `PUSH_NETWORK_ERROR:${netErr?.name || 'FetchError'}`
+    };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 
-async function dispatchWebPushForQuery(env, queryFilter, payloadObj) {
+async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) {
+  const eventId = String(meta.eventId || payloadObj?.eventId || payloadObj?.id || `EVT-${Date.now()}`).trim();
+  const eventType = String(meta.eventType || payloadObj?.eventType || 'web_push').trim();
+  const senderEmail = normalizeEmail(meta.senderEmail || '');
+  const verifyClassCode = String(meta.classCode || '').trim().toUpperCase();
+  const hasExplicitRecipients = Array.isArray(meta.recipientEmails);
+  const cleanRecipients = hasExplicitRecipients
+    ? Array.from(
+        new Set(
+          meta.recipientEmails
+            .map((e) => normalizeEmail(e))
+            .filter((e) => e && e !== senderEmail)
+        )
+      )
+    : [];
+
   if (!env.VAPID_PRIVATE_KEY) {
-    return { ok: false, skipped: true, reason: 'MISSING_VAPID_PRIVATE_KEY', delivered: 0, expiredRemoved: 0 };
+    const recipientCount = hasExplicitRecipients ? cleanRecipients.length : 0;
+    const reason = 'MISSING_VAPID_PRIVATE_KEY';
+    const logLine = recordPushDiagnosticLog({
+      eventId,
+      eventType,
+      recipientCount,
+      subscriptionCount: 0,
+      pushAccepted: 0,
+      pushFailed: 0,
+      reason
+    });
+    return {
+      ok: false,
+      skipped: true,
+      eventId,
+      eventType,
+      recipientCount,
+      subscriptionCount: 0,
+      pushAccepted: 0,
+      pushFailed: 0,
+      reason,
+      logLine,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      total: 0,
+      delivered: 0,
+      expiredRemoved: 0,
+      results: []
+    };
   }
+
+  if (hasExplicitRecipients && cleanRecipients.length === 0) {
+    const reason = 'NO_ELIGIBLE_RECIPIENTS';
+    const logLine = recordPushDiagnosticLog({
+      eventId,
+      eventType,
+      recipientCount: 0,
+      subscriptionCount: 0,
+      pushAccepted: 0,
+      pushFailed: 0,
+      reason
+    });
+    return {
+      ok: true,
+      eventId,
+      eventType,
+      recipientCount: 0,
+      subscriptionCount: 0,
+      pushAccepted: 0,
+      pushFailed: 0,
+      reason,
+      logLine,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      total: 0,
+      delivered: 0,
+      expiredRemoved: 0,
+      results: []
+    };
+  }
+
   try {
-    const subsRes = await supabaseRequest(env, `ktn_push_subscriptions?${queryFilter}&limit=50`);
-    const rows = Array.isArray(subsRes.data) ? subsRes.data : [];
-    let delivered = 0;
+    const effectiveFilter = hasExplicitRecipients
+      ? `user_email=in.(${cleanRecipients.map((e) => encodeURIComponent(e)).join(',')})`
+      : String(queryFilter || '');
+    const subsRes = await supabaseRequest(env, `ktn_push_subscriptions?${effectiveFilter}&limit=100`);
+    const rawRows = Array.isArray(subsRes.data) ? subsRes.data : [];
+    const recipientSet = hasExplicitRecipients ? new Set(cleanRecipients) : null;
+
+    const seenEndpoints = new Set();
+    const matchedRows = [];
     let expiredRemoved = 0;
-    const results = [];
-    for (const row of rows) {
-      const r = await sendWebPushToSubscription(env, row, payloadObj);
-      if (r.ok) delivered += 1;
-      if (r.expired) expiredRemoved += 1;
-      results.push(r);
+
+    for (const row of rawRows) {
+      const rowEmail = normalizeEmail(row?.user_email || '');
+      if (senderEmail && rowEmail === senderEmail) continue;
+      if (recipientSet && !recipientSet.has(rowEmail)) continue;
+      const ep = String(row?.endpoint || '').trim();
+      const p256dh = String(row?.p256dh || row?.keys?.p256dh || '').trim();
+      const auth = String(row?.auth || row?.keys?.auth || '').trim();
+      if (!ep) continue;
+      if (
+        ep.includes('push.khongtunhi.com/v2/') ||
+        p256dh === 'ktn-mobile-web-p256dh' ||
+        auth === 'ktn-mobile-web-auth'
+      ) {
+        await supabaseRequest(env, `ktn_push_subscriptions?endpoint=eq.${encodeURIComponent(ep)}`, {
+          method: 'DELETE'
+        }).catch(() => null);
+        expiredRemoved += 1;
+        continue;
+      }
+      if (seenEndpoints.has(ep)) continue;
+      seenEndpoints.add(ep);
+      matchedRows.push(row);
+
+      if (verifyClassCode && row?.user_role === 'student' && String(row?.class_code || '').trim().toUpperCase() !== verifyClassCode) {
+        supabaseRequest(env, `ktn_push_subscriptions?endpoint=eq.${encodeURIComponent(ep)}`, {
+          method: 'PATCH',
+          prefer: 'return=minimal',
+          body: { class_code: verifyClassCode, updated_at: new Date().toISOString() }
+        }).catch(() => null);
+      }
     }
-    return { ok: true, total: rows.length, delivered, expiredRemoved, results };
+
+    const recipientCount = hasExplicitRecipients
+      ? cleanRecipients.length
+      : new Set(matchedRows.map((r) => normalizeEmail(r?.user_email || '')).filter(Boolean)).size || 1;
+    const subscriptionCount = matchedRows.length;
+
+    if (subscriptionCount === 0) {
+      const reason = expiredRemoved > 0 ? 'CORRUPT_SUBSCRIPTION_REMOVED_NO_VALID_SUB' : 'NO_ACTIVE_PUSH_SUBSCRIPTION';
+      const logLine = recordPushDiagnosticLog({
+        eventId,
+        eventType,
+        recipientCount,
+        subscriptionCount: 0,
+        pushAccepted: 0,
+        pushFailed: 0,
+        reason
+      });
+      return {
+        ok: true,
+        eventId,
+        eventType,
+        recipientCount,
+        subscriptionCount: 0,
+        pushAccepted: 0,
+        pushFailed: 0,
+        reason,
+        logLine,
+        pushServiceAccepted: false,
+        deviceDisplayConfirmed: false,
+        total: 0,
+        delivered: 0,
+        expiredRemoved,
+        results: []
+      };
+    }
+
+    const enrichedPayload = {
+      ...payloadObj,
+      id: eventId,
+      eventId,
+      eventType,
+      timestamp: Date.now()
+    };
+
+    const results = await Promise.all(
+      matchedRows.map((row) => sendWebPushToSubscription(env, row, enrichedPayload))
+    );
+
+    let pushAccepted = 0;
+    let pushFailed = 0;
+    const failReasons = [];
+    for (const r of results) {
+      if (r.ok) {
+        pushAccepted += 1;
+      } else {
+        pushFailed += 1;
+        if (r.reason) failReasons.push(r.reason);
+      }
+      if (r.expired) {
+        expiredRemoved += 1;
+      }
+    }
+
+    const uniqueFailReasons = Array.from(new Set(failReasons));
+    let reason = 'PUSH_SERVICE_ACCEPTED';
+    if (pushAccepted > 0 && pushFailed > 0) {
+      reason = `PARTIAL_ACCEPTED(${ uniqueFailReasons.join(',') })`;
+    } else if (pushAccepted === 0) {
+      reason = uniqueFailReasons.join(',') || 'ALL_PUSH_REQUESTS_FAILED';
+    }
+
+    const logLine = recordPushDiagnosticLog({
+      eventId,
+      eventType,
+      recipientCount,
+      subscriptionCount,
+      pushAccepted,
+      pushFailed,
+      reason
+    });
+
+    return {
+      ok: true,
+      eventId,
+      eventType,
+      recipientCount,
+      subscriptionCount,
+      pushAccepted,
+      pushFailed,
+      reason,
+      logLine,
+      pushServiceAccepted: pushAccepted > 0,
+      deviceDisplayConfirmed: false,
+      total: subscriptionCount,
+      delivered: pushAccepted,
+      expiredRemoved,
+      results
+    };
   } catch (err) {
-    return { ok: false, delivered: 0, expiredRemoved: 0, error: String(err) };
+    const recipientCount = hasExplicitRecipients ? cleanRecipients.length : 0;
+    const reason = `DISPATCH_EXCEPTION:${err?.name || 'Error'}`;
+    const logLine = recordPushDiagnosticLog({
+      eventId,
+      eventType,
+      recipientCount,
+      subscriptionCount: 0,
+      pushAccepted: 0,
+      pushFailed: 1,
+      reason
+    });
+    return {
+      ok: false,
+      eventId,
+      eventType,
+      recipientCount,
+      subscriptionCount: 0,
+      pushAccepted: 0,
+      pushFailed: 1,
+      reason,
+      logLine,
+      pushServiceAccepted: false,
+      deviceDisplayConfirmed: false,
+      total: 0,
+      delivered: 0,
+      expiredRemoved: 0,
+      error: reason
+    };
   }
 }
 
@@ -3995,10 +4508,14 @@ export default {
         }
       }
 
-      if (sessionEmail) {
-        await supabaseRequest(env, `ktn_push_subscriptions?user_email=eq.${encodeURIComponent(sessionEmail)}`, {
-          method: 'DELETE'
-        }).catch(() => null);
+      const logoutBody = await request.json().catch(() => ({}));
+      const explicitUnsubEndpoint = String(logoutBody?.unsubscribeEndpoint || '').trim();
+      if (sessionEmail && explicitUnsubEndpoint.startsWith('https://')) {
+        await supabaseRequest(
+          env,
+          `ktn_push_subscriptions?endpoint=eq.${encodeURIComponent(explicitUnsubEndpoint)}&user_email=eq.${encodeURIComponent(normalizeEmail(sessionEmail))}`,
+          { method: 'DELETE' }
+        ).catch(() => null);
       }
 
       const clearCookieHeader = {
@@ -7545,6 +8062,40 @@ export default {
         ) {
           const prevMeta = existingHw.workbook_answers?._syncMeta || {};
           if (prevMeta.syncStatus === 'synced' || prevMeta.syncStatus === 'not_applicable_live_class') {
+            const lastGradedMs = Date.parse(existingHw.graded_at || existingHw.updated_at || '');
+            const isImmediateDoubleClick = Number.isFinite(lastGradedMs) && Math.abs(Date.now() - lastGradedMs) <= 3000;
+            let replayPushDispatch = null;
+            if (!isImmediateDoubleClick && existingHw.student_email) {
+              const targetStuEmail = normalizeEmail(existingHw.student_email);
+              const rawNum = Number(existingHw.lesson_num || 1) || 1;
+              const sessionNum = rawNum >= 100 ? Math.floor(rawNum / 100) : rawNum;
+              const isLiveCls = String(existingHw.course_id || '').toUpperCase().startsWith('CLASS_') || rawNum >= 100;
+              const gradedActionUrl = isLiveCls
+                ? `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(String(existingHw.class_code || '').toUpperCase())}&session=${sessionNum}`
+                : `/custom-page/so-lien-lac-test#/learning?courseId=${encodeURIComponent(String(existingHw.course_id || ''))}&lesson=${rawNum}&tab=homework`;
+              const gradeEventId = `NOTIF-GRADED-${existingHw.id}-${existingHw.status}-${Date.now()}`;
+              const pushPromise = dispatchWebPushForQuery(
+                env,
+                `user_email=eq.${encodeURIComponent(targetStuEmail)}`,
+                {
+                  id: gradeEventId,
+                  eventId: gradeEventId,
+                  eventType: 'homework_graded',
+                  title: 'Cô giáo vừa chấm bài tập!',
+                  body: `${existingHw.lesson_title || ('Bài ' + (existingHw.lesson_num || 1))}: ${existingHw.score ?? ''}/10 — ${String(existingHw.teacher_feedback || '').slice(0, 60)}`,
+                  action_url: gradedActionUrl
+                },
+                {
+                  eventId: gradeEventId,
+                  eventType: 'homework_graded',
+                  recipientEmails: targetStuEmail ? [targetStuEmail] : [],
+                  senderEmail: session.email,
+                  classCode: String(existingHw.class_code || '').trim().toUpperCase()
+                }
+              );
+              if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushPromise);
+              replayPushDispatch = await pushPromise;
+            }
             return jsonResponse({
               ok: true,
               idempotent: true,
@@ -7559,7 +8110,8 @@ export default {
                 idempotentReplay: true,
                 syncStatus: prevMeta.syncStatus,
                 remoteId: prevMeta.izteachRemoteId || null
-              }
+              },
+              ...(replayPushDispatch ? { pushDispatch: replayPushDispatch } : {})
             });
           }
         }
@@ -7734,23 +8286,36 @@ export default {
           }
         }
 
-        if (env.VAPID_PRIVATE_KEY && savedHw?.student_email) {
+        let pushDispatch = null;
+        if (savedHw?.student_email) {
+          const targetStuEmail = normalizeEmail(savedHw.student_email);
           const rawNum = Number(savedHw.lesson_num || 1) || 1;
           const sessionNum = rawNum >= 100 ? Math.floor(rawNum / 100) : rawNum;
           const gradedActionUrl = unitResolution.isLiveClass
             ? `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(String(savedHw.class_code || '').toUpperCase())}&session=${sessionNum}`
             : `/custom-page/so-lien-lac-test#/learning?courseId=${encodeURIComponent(String(savedHw.course_id || ''))}&lesson=${rawNum}&tab=homework`;
-          const pushTask = dispatchWebPushForQuery(
+          const gradeEventId = `NOTIF-GRADED-${savedHw.id}-${savedHw.status}-${Date.now()}`;
+          const pushPromise = dispatchWebPushForQuery(
             env,
-            `user_email=eq.${encodeURIComponent(normalizeEmail(savedHw.student_email))}`,
+            `user_email=eq.${encodeURIComponent(targetStuEmail)}`,
             {
-              id: `NOTIF-GRADED-${savedHw.id}-${savedHw.status}`,
+              id: gradeEventId,
+              eventId: gradeEventId,
+              eventType: 'homework_graded',
               title: 'Cô giáo vừa chấm bài tập!',
               body: `${savedHw.lesson_title || ('Bài ' + (savedHw.lesson_num || 1))}: ${savedHw.score ?? ''}/10 — ${String(savedHw.teacher_feedback || '').slice(0, 60)}`,
               action_url: gradedActionUrl
+            },
+            {
+              eventId: gradeEventId,
+              eventType: 'homework_graded',
+              recipientEmails: targetStuEmail ? [targetStuEmail] : [],
+              senderEmail: session.email,
+              classCode: String(savedHw.class_code || '').trim().toUpperCase()
             }
-          ).catch(() => null);
-          if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushTask);
+          );
+          if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushPromise);
+          pushDispatch = await pushPromise;
         }
 
         return jsonResponse({
@@ -7759,7 +8324,8 @@ export default {
           unitId: unitResolution.unitId || null,
           mirroredToIzTeach: Boolean(izteachMirror?.ok && !izteachMirror?.skipped),
           homework: savedHw,
-          izteachMirror: izteachMirror || undefined
+          izteachMirror: izteachMirror || undefined,
+          ...(pushDispatch ? { pushDispatch, pushDelivery: pushDispatch } : {})
         });
       });
     }
@@ -7859,6 +8425,34 @@ export default {
         }
 
         const saved = sbRes.data[0];
+        const clsRecipients = await resolveClassRecipientEmails(env, classCode, {
+          includeTeacher: false,
+          excludeEmail: session.email
+        });
+        const assignEventId = `NOTIF-ASSIGN-${classCode}-S${sessionNum}-${Date.now()}`;
+        const assignActionUrl = `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(classCode)}&session=${sessionNum}`;
+        const assignPushPromise = dispatchWebPushForQuery(
+          env,
+          '',
+          {
+            id: assignEventId,
+            eventId: assignEventId,
+            eventType: 'homework_assigned',
+            title: `Bài tập mới Lớp ${classCode} · Buổi ${sessionNum}`,
+            body: `${saved.session_title || title}${exercises.length ? ` (${exercises.length} bài tập)` : ''}`,
+            action_url: assignActionUrl
+          },
+          {
+            eventId: assignEventId,
+            eventType: 'homework_assigned',
+            recipientEmails: clsRecipients.recipientEmails,
+            senderEmail: session.email,
+            classCode
+          }
+        );
+        if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(assignPushPromise);
+        const pushDispatch = await assignPushPromise;
+
         return jsonResponse({
           ok: true,
           sessionItem: {
@@ -7871,7 +8465,9 @@ export default {
             exercises: saved.exercises || [],
             updatedBy: saved.updated_by,
             updatedAt: saved.updated_at
-          }
+          },
+          pushDispatch,
+          pushDelivery: pushDispatch
         });
       }
     }
@@ -8438,29 +9034,29 @@ export default {
           });
         }
 
-        // Kiểm tra chống gửi trùng lặp trong vòng 4 giây gần nhất trên máy chủ
-        const recentRes = await supabaseRequest(
-          env,
-          `ktn_messages?room_id=in.(${inList})&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=5`
-        );
-        if (recentRes.ok && Array.isArray(recentRes.data)) {
-          const nowMs = Date.now();
-          const duplicateHit = recentRes.data.find(m => {
-            if (!m || String(m.content || '').trim() !== content) return false;
-            if (String(m.attachment_url || '') !== attachmentUrl) return false;
-            const createdMs = Date.parse(m.created_at || '');
-            return Number.isFinite(createdMs) && Math.abs(nowMs - createdMs) <= 4000;
-          });
-          if (duplicateHit && duplicateHit.id) {
-            if (clientDedupKey) globalThis.__ktnClientMessageIdMap.set(clientDedupKey, duplicateHit);
-            return jsonResponse({
-              ok: true,
-              persisted: true,
-              idempotent: true,
-              ...(clientMessageId ? { clientMessageId } : {}),
-              serverMessageId: duplicateHit.id,
-              message: duplicateHit
+        // Kiểm tra chống gửi trùng lặp: nếu trình duyệt đã cấp clientMessageId mới thì tôn trọng clientMessageId; chỉ chặn nháy đúp 1.5s khi không có clientMessageId
+        if (!clientMessageId) {
+          const recentRes = await supabaseRequest(
+            env,
+            `ktn_messages?room_id=in.(${inList})&sender_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=5`
+          );
+          if (recentRes.ok && Array.isArray(recentRes.data)) {
+            const nowMs = Date.now();
+            const duplicateHit = recentRes.data.find(m => {
+              if (!m || String(m.content || '').trim() !== content) return false;
+              if (String(m.attachment_url || '') !== attachmentUrl) return false;
+              const createdMs = Date.parse(m.created_at || '');
+              return Number.isFinite(createdMs) && Math.abs(nowMs - createdMs) <= 1500;
             });
+            if (duplicateHit && duplicateHit.id) {
+              return jsonResponse({
+                ok: true,
+                persisted: true,
+                idempotent: true,
+                serverMessageId: duplicateHit.id,
+                message: duplicateHit
+              });
+            }
           }
         }
 
@@ -8502,24 +9098,87 @@ export default {
           pinnedMessage = pinRes.pinnedMessage;
         }
 
-        if (env.VAPID_PRIVATE_KEY) {
-          let pushFilter = `user_email=neq.${encodeURIComponent(session.email)}`;
-          if (/^student:/i.test(targetRoomKey)) {
-            const targetStu = normalizeEmail(targetRoomKey.slice(8));
-            pushFilter =
+        let pushDispatch = null;
+        {
+          let recipientEmails = [];
+          let msgEventId = `NOTIF-MSG-${savedRow.id}`;
+          let msgEventType = 'chat_group_message';
+          let verifiedCls = '';
+          let pushTitle = `Tin nhắn mới từ ${session.name || session.email}`;
+
+          if (access.type === 'student' || /^(?:direct:)?student:/i.test(targetRoomKey)) {
+            const targetStu = normalizeEmail(
+              access.studentEmail || targetRoomKey.replace(/^(?:direct:)?student:/i, '')
+            );
+            recipientEmails = await resolvePrivateMessageRecipientEmails(env, targetStu, session);
+            msgEventId = `NOTIF-PRIVMSG-${savedRow.id}`;
+            msgEventType = 'chat_private_message';
+            pushTitle =
               session.role === 'student'
-                ? 'user_role=in.(teacher,admin)'
-                : `user_email=eq.${encodeURIComponent(targetStu)}`;
+                ? `Tin nhắn riêng từ ${session.name || session.email}`
+                : `Tin nhắn riêng từ ${session.name || 'Cô giáo'}`;
           } else if (access.type === 'class' && access.classCode) {
-            pushFilter = `or=(class_code.eq.${encodeURIComponent(access.classCode)},user_role.in.(teacher,admin))&user_email=neq.${encodeURIComponent(session.email)}`;
+            const clsResolved = await resolveClassRecipientEmails(env, access.classCode, {
+              includeTeacher: session.role === 'student',
+              excludeEmail: session.email
+            });
+            recipientEmails = clsResolved.recipientEmails;
+            verifiedCls = clsResolved.classCode;
+            msgEventId = `NOTIF-MSG-${savedRow.id}`;
+            msgEventType = 'chat_group_message';
+            pushTitle = `Nhóm lớp ${access.classCode} · ${session.name || session.email}`;
+          } else if (access.type === 'course' && access.courseId) {
+            msgEventId = `NOTIF-COURSEMSG-${savedRow.id}`;
+            msgEventType = 'chat_course_message';
+            const senderNorm = normalizeEmail(session.email);
+            const courseRecipSet = new Set();
+            const stuCourseRes = await supabaseRequest(env, 'ktn_students?select=email,online_courses&limit=500');
+            if (stuCourseRes.ok && Array.isArray(stuCourseRes.data)) {
+              for (const s of stuCourseRes.data) {
+                const em = normalizeEmail(s?.email || '');
+                if (!em || em === senderNorm) continue;
+                const cList = Array.isArray(s?.online_courses) ? s.online_courses : [];
+                const hasCourse = cList.some((c) => {
+                  const cid = String(c?.id || c?._id || c || '').trim().toLowerCase();
+                  return (COURSE_CHAT_ALIASES[cid] || cid) === access.courseId || cid === access.rawCourseId;
+                });
+                if (hasCourse) courseRecipSet.add(em);
+              }
+            }
+            if (session.role === 'student') {
+              const teaRes = await supabaseRequest(env, 'ktn_teachers?active=eq.true&select=email,active&limit=20');
+              if (teaRes.ok && Array.isArray(teaRes.data)) {
+                for (const t of teaRes.data) {
+                  if (t?.active === false) continue;
+                  const em = normalizeEmail(t?.email || '');
+                  if (em && em !== senderNorm) courseRecipSet.add(em);
+                }
+              }
+            }
+            recipientEmails = Array.from(courseRecipSet);
           }
-          const pushTask = dispatchWebPushForQuery(env, pushFilter, {
-            id: `NOTIF-MSG-${savedRow.id}`,
-            title: `Tin nhắn mới từ ${session.name || session.email}`,
-            body: String(content || '[Tệp đính kèm]').slice(0, 80),
-            action_url: `/custom-page/so-lien-lac-test#/chat?room=${encodeURIComponent(targetRoomKey)}`
-          }).catch(() => null);
-          if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushTask);
+
+          const pushPromise = dispatchWebPushForQuery(
+            env,
+            '',
+            {
+              id: msgEventId,
+              eventId: msgEventId,
+              eventType: msgEventType,
+              title: pushTitle,
+              body: String(content || '[Tệp đính kèm]').slice(0, 80),
+              action_url: `/custom-page/so-lien-lac-test#/chat?room=${encodeURIComponent(targetRoomKey)}`
+            },
+            {
+              eventId: msgEventId,
+              eventType: msgEventType,
+              recipientEmails,
+              senderEmail: session.email,
+              classCode: verifiedCls
+            }
+          );
+          if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pushPromise);
+          pushDispatch = await pushPromise;
         }
 
         return jsonResponse({
@@ -8528,7 +9187,8 @@ export default {
           ...(clientMessageId ? { clientMessageId } : {}),
           serverMessageId: savedRow.id,
           message: savedRow,
-          ...(pinnedMessage ? { pinnedMessage } : {})
+          ...(pinnedMessage ? { pinnedMessage } : {}),
+          ...(pushDispatch ? { pushDispatch, pushDelivery: pushDispatch } : {})
         });
       });
     }
@@ -8918,10 +9578,22 @@ export default {
           message: 'Đăng ký thông báo đẩy không hợp lệ: bắt buộc có PushSubscription thật (endpoint, keys.p256dh, keys.auth).'
         }, 400);
       }
+      const normEmail = normalizeEmail(session.email);
+      let realClassCode = session.classCode ? String(session.classCode).trim().toUpperCase() : null;
+      if (session.role === 'student' && normEmail) {
+        const stuRes = await supabaseRequest(
+          env,
+          `ktn_students?email=eq.${encodeURIComponent(normEmail)}&select=class_code&limit=1`
+        );
+        const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+        if (stuRow?.class_code) {
+          realClassCode = String(stuRow.class_code).trim().toUpperCase();
+        }
+      }
       const subPayload = {
-        user_email: session.email,
+        user_email: normEmail,
         user_role: session.role,
-        class_code: session.classCode || null,
+        class_code: realClassCode,
         endpoint,
         p256dh,
         auth: authKey,
@@ -8952,8 +9624,34 @@ export default {
       return jsonResponse({
         ok: true,
         endpoint,
-        userEmail: session.email,
+        userEmail: normEmail,
+        classCode: realClassCode,
         serverDeliveryConfigured: Boolean(env.VAPID_PRIVATE_KEY)
+      });
+    }
+
+    if (path === '/api/ktn/push/diagnostics' && request.method === 'GET') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || (session.role !== 'admin' && session.role !== 'teacher')) {
+        return jsonResponse({ ok: false, message: 'Chỉ Giáo viên hoặc Quản lý mới được xem chẩn đoán Push.' }, 403);
+      }
+      const subsRes = await supabaseRequest(
+        env,
+        'ktn_push_subscriptions?select=user_email,user_role,class_code,updated_at,user_agent&order=updated_at.desc&limit=50'
+      );
+      const activeSubscriptions = (Array.isArray(subsRes.data) ? subsRes.data : []).map((r) => ({
+        userEmail: r.user_email,
+        userRole: r.user_role,
+        classCode: r.class_code || null,
+        updatedAt: r.updated_at || null,
+        isMobileUa: /Android|iPhone|iPad|iPod|Mobile/i.test(String(r.user_agent || ''))
+      }));
+      return jsonResponse({
+        ok: true,
+        format: 'eventId | eventType | recipientCount | subscriptionCount | pushAccepted | pushFailed | reason',
+        recentLogs: Array.isArray(globalThis.__ktnPushDiagnosticsLog) ? globalThis.__ktnPushDiagnosticsLog : [],
+        activeSubscriptionCount: activeSubscriptions.length,
+        activeSubscriptions
       });
     }
 
@@ -8974,9 +9672,13 @@ export default {
       const targetEmail =
         (session.role === 'admin' || session.role === 'teacher') && body.targetEmail
           ? normalizeEmail(body.targetEmail)
-          : session.email;
+          : normalizeEmail(session.email);
+      const eventId = String(body.eventId || body.id || `ktn-push-${Date.now()}`);
+      const eventType = String(body.eventType || 'direct_push');
       const payloadObj = {
-        id: String(body.id || `ktn-push-${Date.now()}`),
+        id: eventId,
+        eventId,
+        eventType,
         title: String(body.title || 'Học Viện Khổng Tử Nhí'),
         body: String(body.body || 'Bạn có thông báo mới trên Sổ Liên Lạc Điện Tử.'),
         action_url: String(body.actionUrl || body.action_url || '/custom-page/so-lien-lac-test#/notifications')
@@ -8984,7 +9686,13 @@ export default {
       const result = await dispatchWebPushForQuery(
         env,
         `user_email=eq.${encodeURIComponent(targetEmail)}`,
-        payloadObj
+        payloadObj,
+        {
+          eventId,
+          eventType,
+          recipientEmails: targetEmail ? [targetEmail] : [],
+          senderEmail: ''
+        }
       );
       return jsonResponse({
         ok: result.ok && (result.delivered > 0 || result.expiredRemoved > 0),

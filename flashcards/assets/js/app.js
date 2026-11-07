@@ -311,6 +311,11 @@
     };
 
     // 2. Đưa từ xuất hiện lại sau 3–5 thẻ khác trong phiên hiện tại (hoặc cuối phiên nếu còn ít hơn 3 thẻ)
+    for (let i = state.filteredCards.length - 1; i > state.currentIndex; i--) {
+      if (state.filteredCards[i] && state.filteredCards[i].id === card.id) {
+        state.filteredCards.splice(i, 1);
+      }
+    }
     const remainingAfterCurrent = state.filteredCards.length - 1 - state.currentIndex;
     const offset = remainingAfterCurrent >= 3
       ? Math.min(remainingAfterCurrent, 3 + Math.floor(Math.random() * 3))
@@ -572,23 +577,36 @@
     });
   }
 
+  function getCardAudioStatus(card) {
+    if (!card) return 'PENDING_REVIEW';
+    try {
+      const rawOverrides = localStorage.getItem('ktn_audio_audit_overrides_v2');
+      if (rawOverrides) {
+        const map = JSON.parse(rawOverrides);
+        const key = `${(state.activeLevel || 'lo1').toUpperCase()}#${card.id}`;
+        if (map && map[key] && map[key].status) {
+          return map[key].status;
+        }
+      }
+    } catch (_) {}
+    if (card.audio_status) return card.audio_status;
+    return card.audio_type === 'native_exact' ? 'APPROVED' : 'PENDING_REVIEW';
+  }
+
   function isCardAudioApproved(card) {
-    if (!card) return false;
-    if (card.audio_status) {
-      return card.audio_status === 'APPROVED';
-    }
-    return card.audio_type === 'native_exact';
+    return getCardAudioStatus(card) === 'APPROVED';
   }
 
   function updateAudioButtonsForCard(card) {
-    const approved = isCardAudioApproved(card);
+    const status = getCardAudioStatus(card);
+    const approved = status === 'APPROVED';
     clearAudioPlayingVisual();
     [dom.btnAudioFront, dom.btnAudioBack, dom.btnWriteAudio].forEach(btn => {
       if (!btn) return;
       btn.classList.toggle('is-unverified-audio', !approved);
       btn.setAttribute('aria-disabled', approved ? 'false' : 'true');
       btn.dataset.audioApproved = approved ? 'true' : 'false';
-      btn.dataset.audioStatus = (card && card.audio_status) || (approved ? 'APPROVED' : 'PENDING_REVIEW');
+      btn.dataset.audioStatus = status;
       btn.title = approved
         ? 'Phát âm tiếng Trung bản xứ đã kiểm định'
         : 'Đang cập nhật phát âm chuẩn cho từ này';
@@ -706,7 +724,8 @@
 
   function playAudio(audioPath) {
     const card = getCurrentCard();
-    if (!audioPath && card && !isCardAudioApproved(card)) {
+    const isDefaultCardAudio = !audioPath || (card && audioPath === card.audio);
+    if (isDefaultCardAudio && card && !isCardAudioApproved(card)) {
       try {
         if (dom.nativeAudioPlayer) {
           dom.nativeAudioPlayer.pause();
@@ -717,8 +736,8 @@
       showToast('⏳ Đang cập nhật phát âm chuẩn cho từ này — Em vẫn học hình, nghĩa và luyện viết bình thường nhé!');
       return false;
     }
-    if (!audioPath) {
-      audioPath = card ? card.audio : null;
+    if (!audioPath && card) {
+      audioPath = card.replacement_audio || card.audio || null;
     }
     if (!audioPath || !dom.nativeAudioPlayer) return false;
 

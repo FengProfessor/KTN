@@ -189,9 +189,18 @@ async function main() {
       const cardNiHao = st.filteredCards[st.currentIndex];
       const approvedNiHao = app.isCardAudioApproved(cardNiHao);
       const playedNiHao = app.playAudio();
+      const playedNiHaoExplicit = app.playAudio(cardNiHao.audio);
       const backLabelNiHao = document.getElementById('audioBackLabel').textContent;
       const frontDisabledNiHao = document.getElementById('btnAudioFront').getAttribute('aria-disabled');
       const toastText = document.getElementById('toastMessage').textContent;
+
+      // Verify teacher override from audio-review.html (ktn_audio_audit_overrides_v2) bridges to index.html
+      localStorage.setItem(
+        'ktn_audio_audit_overrides_v2',
+        JSON.stringify({ [`LO1#${cardNiHao.id}`]: { status: 'APPROVED', notes: 'Teacher verified' } })
+      );
+      const approvedAfterOverride = app.isCardAudioApproved(cardNiHao);
+      localStorage.removeItem('ktn_audio_audit_overrides_v2');
 
       // Card #17 (哪儿) was upgraded to single-take Shtooka File:Zh-nǎr.ogg -> APPROVED while keeping native_concat
       const idxNar = st.filteredCards.findIndex(c => c.word === '哪儿');
@@ -204,6 +213,8 @@ async function main() {
         wordNiHao: cardNiHao.word,
         approvedNiHao,
         playedNiHao,
+        playedNiHaoExplicit,
+        approvedAfterOverride,
         backLabelNiHao,
         frontDisabledNiHao,
         toastText,
@@ -217,6 +228,8 @@ async function main() {
     assert.equal(audioGateCheck.wordNiHao, '你好');
     assert.equal(audioGateCheck.approvedNiHao, false, '你好 must NOT be approved');
     assert.equal(audioGateCheck.playedNiHao, false, 'Unapproved audio must NOT play');
+    assert.equal(audioGateCheck.playedNiHaoExplicit, false, 'Unapproved audio must NOT play even when card.audio is passed explicitly');
+    assert.equal(audioGateCheck.approvedAfterOverride, true, 'Teacher override in ktn_audio_audit_overrides_v2 must bridge to Flashcard app');
     assert.equal(audioGateCheck.backLabelNiHao, 'Đang cập nhật phát âm');
     assert.equal(audioGateCheck.frontDisabledNiHao, 'true');
     assert.ok(audioGateCheck.toastText.includes('Đang cập nhật phát âm'), 'Toast must inform student audio is updating');
@@ -236,11 +249,15 @@ async function main() {
       st.currentIndex = 0;
       const c1 = st.filteredCards[0];
       app.markCardForgot();
+      // Trigger a second markCardForgot on Card #1 to verify future queue deduplication
+      st.currentIndex = 0;
+      app.markCardForgot();
       let reinsertIdx = -1;
+      let futureCopyCount = 0;
       for (let i = 1; i < st.filteredCards.length; i++) {
         if (st.filteredCards[i].id === c1.id) {
-          reinsertIdx = i;
-          break;
+          if (reinsertIdx === -1) reinsertIdx = i;
+          futureCopyCount++;
         }
       }
 
@@ -269,6 +286,7 @@ async function main() {
 
       return {
         reinsertIdx,
+        futureCopyCount,
         forgotRec: st.recordsMap[c1.id],
         dueOnSameDayAfterForgot,
         dueBannerOnSameDay,
@@ -280,6 +298,7 @@ async function main() {
     });
 
     assert.ok(srsResult.reinsertIdx >= 4 && srsResult.reinsertIdx <= 6, `Forgot card must reappear 3-5 cards later (got ${srsResult.reinsertIdx})`);
+    assert.equal(srsResult.futureCopyCount, 1, 'Repeated Quên rồi clicks must deduplicate future copies in session queue');
     assert.equal(srsResult.forgotRec.nextReviewDate, '2026-11-08');
     assert.equal(srsResult.dueOnSameDayAfterForgot.includes(1), false, 'Future forgot card (due tomorrow) must NOT be counted in Ôn hôm nay');
     assert.equal(srsResult.dueBannerOnSameDay, '0', 'dueTodayBannerNum must be 0 when only tomorrow forgot cards exist');

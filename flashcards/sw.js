@@ -23,6 +23,7 @@ const CORE_ASSETS = [
   './assets/images/cards/lo1/card_1_front.webp',
   './assets/images/cards/lo1/card_1_back.webp',
   './assets/images/cards/lo1/thumb_1.webp',
+  './assets/audio/cmn-你.mp3',
 ];
 
 self.addEventListener('install', (event) => {

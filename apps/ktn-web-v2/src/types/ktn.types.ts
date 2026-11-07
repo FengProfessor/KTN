@@ -19,6 +19,7 @@ export interface KtnUserSession {
   role: UserRole;
   roles: UserRole[];
   classCode: string | null;
+  assignedClasses?: string[];
   hasLiveClass: boolean;
   hasOnlineCourses: boolean;
   onlineCourses: OnlineCourseEntitlement[];
@@ -113,6 +114,7 @@ export interface ClassScheduleConfig {
   effectiveFrom: string;
   effectiveUntil: string | null;
   mode: 'weekly' | 'custom_sessions';
+  scheduleMode?: 'weekly' | 'custom_sessions';
   customSessions: CustomClassSession[];
   exceptions: ClassScheduleException[];
   meetingUrl?: string;

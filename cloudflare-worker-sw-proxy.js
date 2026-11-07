@@ -1044,7 +1044,10 @@ function computeUpcomingClassSessions(cfg, nowMs = Date.now(), limit = 6) {
   const endDefault = normalizeTimeHHMM(cfg.endTime, addOneHourHHMM(startDefault));
   const effectiveFrom = String(cfg.effectiveFrom || '').trim();
   const effectiveUntil = String(cfg.effectiveUntil || '').trim();
-  const scheduleMode = cfg.scheduleMode === 'custom_sessions' ? 'custom_sessions' : 'weekly';
+  const scheduleMode =
+    cfg.scheduleMode === 'custom_sessions' || cfg.mode === 'custom_sessions'
+      ? 'custom_sessions'
+      : 'weekly';
   const daysSet = new Set(
     (Array.isArray(cfg.daysOfWeek) ? cfg.daysOfWeek : [])
       .map(Number)
@@ -1064,18 +1067,38 @@ function computeUpcomingClassSessions(cfg, nowMs = Date.now(), limit = 6) {
     for (const ex of cfg.exceptions) {
       const dt = String(ex?.date || '').trim();
       const exStatus = String(ex?.status || ex?.type || '').trim().toLowerCase();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dt) && exStatus) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dt) || !exStatus) continue;
+      const newDate = String(ex?.newDate || '').trim();
+      if (exStatus === 'rescheduled' && /^\d{4}-\d{2}-\d{2}$/.test(newDate) && newDate !== dt) {
+        exceptionsMap.set(dt, {
+          ...ex,
+          status: 'postponed',
+          type: 'postponed',
+          movedToDate: newDate,
+          note: ex?.note || `Đổi lịch sang ${newDate}`
+        });
+        exceptionsMap.set(newDate, {
+          ...ex,
+          date: newDate,
+          originalDate: dt,
+          status: 'rescheduled',
+          type: 'rescheduled'
+        });
+      } else {
         exceptionsMap.set(dt, { ...ex, status: exStatus, type: exStatus });
       }
     }
   }
 
   const results = [];
+  const seenDates = new Set();
   const baseCheckMs = Number(nowMs);
-  for (let dayOffset = 0; dayOffset <= 42; dayOffset++) {
+  for (let dayOffset = -1; dayOffset <= 42; dayOffset++) {
     const probeMs = baseCheckMs + dayOffset * 86400 * 1000;
     const vn = getVnDateTimeParts(probeMs);
     const dateStr = vn.dateStr;
+    if (seenDates.has(dateStr)) continue;
+    seenDates.add(dateStr);
 
     if (effectiveFrom && /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) && dateStr < effectiveFrom) {
       continue;
@@ -1097,19 +1120,22 @@ function computeUpcomingClassSessions(cfg, nowMs = Date.now(), limit = 6) {
     }
 
     const sessionStart = normalizeTimeHHMM(
-      ex?.startTime || customSession?.startTime || startDefault,
+      ex?.startTime || ex?.newStartTime || customSession?.startTime || startDefault,
       startDefault
     );
     const sessionEnd = normalizeTimeHHMM(
-      ex?.endTime || customSession?.endTime || endDefault,
+      ex?.endTime || ex?.newEndTime || customSession?.endTime || endDefault,
       addOneHourHHMM(sessionStart)
     );
     const startEpochMs = vnDateTimeToEpochMs(dateStr, sessionStart);
-    const endEpochMs = vnDateTimeToEpochMs(dateStr, sessionEnd);
+    let endEpochMs = vnDateTimeToEpochMs(dateStr, sessionEnd);
     if (!Number.isFinite(startEpochMs)) continue;
+    if (Number.isFinite(endEpochMs) && endEpochMs <= startEpochMs) {
+      endEpochMs += 86400 * 1000;
+    }
 
     // Bỏ qua buổi học đã kết thúc hoàn toàn từ trước
-    if (endEpochMs < baseCheckMs - 15 * 60 * 1000) {
+    if (endEpochMs <= baseCheckMs) {
       continue;
     }
 
@@ -1539,10 +1565,12 @@ async function saveClassScheduleConfig(env, session, rawClassCode, rawInput = {}
   const existingMap = await loadAllClassScheduleConfigs(env);
   const prevCfg = existingMap.get(classCode) || {};
 
+  const requestedMode = rawInput.scheduleMode || rawInput.mode;
+  const prevMode = prevCfg.scheduleMode || prevCfg.mode;
   const scheduleMode =
-    rawInput.scheduleMode === 'custom_sessions'
+    requestedMode === 'custom_sessions'
       ? 'custom_sessions'
-      : prevCfg.scheduleMode === 'custom_sessions' && !rawInput.scheduleMode
+      : prevMode === 'custom_sessions' && !requestedMode
         ? 'custom_sessions'
         : 'weekly';
 
@@ -1600,12 +1628,17 @@ async function saveClassScheduleConfig(env, session, rawClassCode, rawInput = {}
       const st = String(ex?.status || ex?.type || '').trim().toLowerCase();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return null;
       if (!['rescheduled', 'postponed', 'cancelled', 'holiday'].includes(st)) return null;
+      const newDateRaw = String(ex?.newDate || '').trim();
+      const newDate = st === 'rescheduled' && /^\d{4}-\d{2}-\d{2}$/.test(newDateRaw) ? newDateRaw : undefined;
+      const startOverride = ex?.startTime || ex?.newStartTime;
+      const endOverride = ex?.endTime || ex?.newEndTime;
       return {
         date: dt,
         status: st,
         type: st,
-        startTime: ex?.startTime ? normalizeTimeHHMM(ex.startTime, startTime || '19:30') : undefined,
-        endTime: ex?.endTime ? normalizeTimeHHMM(ex.endTime, endTime || '20:30') : undefined,
+        ...(newDate ? { newDate } : {}),
+        startTime: startOverride ? normalizeTimeHHMM(startOverride, startTime || '19:30') : undefined,
+        endTime: endOverride ? normalizeTimeHHMM(endOverride, endTime || '20:30') : undefined,
         note: String(ex?.note || '').trim(),
         updatedBy: ex?.updatedBy || session.email,
         updatedAt: ex?.updatedAt || nowIso
@@ -1671,6 +1704,7 @@ async function saveClassScheduleConfig(env, session, rawClassCode, rawInput = {}
     effectiveUntil,
     effective_until: effectiveUntil,
     scheduleMode,
+    mode: scheduleMode,
     customSessions,
     exceptions,
     meetingUrl,
@@ -10875,7 +10909,7 @@ export default {
           try {
             const parsed = JSON.parse(row.blocked_content || '{}');
             const cls = String(parsed.classCode || row.sender_name || '').trim().toUpperCase();
-            if (session.role === 'student' && !scopedClassesForScheduleEvents.has(cls)) continue;
+            if (session.role !== 'admin' && !scopedClassesForScheduleEvents.has(cls)) continue;
             items.push({
               id: parsed.id || row.id,
               type: 'class_reminder',

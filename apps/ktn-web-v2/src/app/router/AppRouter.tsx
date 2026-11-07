@@ -143,7 +143,7 @@ export const AppRouter: React.FC = () => {
           <Route
             path="classrooms"
             element={
-              <RequireRole allowed={['student']}>
+              <RequireRole allowed={['student', 'teacher', 'admin']}>
                 <ClassroomsPage />
               </RequireRole>
             }

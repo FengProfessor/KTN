@@ -57,8 +57,11 @@ export const ClassroomsPage: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
   });
 
+  const urlClassParam = (searchParams.get('class') || '').trim().toUpperCase();
   const activeClassCode =
-    user?.classCode || (isDemoMode ? 'YCT2-04' : '');
+    user?.role === 'teacher' || user?.role === 'admin'
+      ? urlClassParam || user?.assignedClasses?.[0] || user?.classCode || (isDemoMode ? 'YCT2-04' : '')
+      : user?.classCode || (isDemoMode ? 'YCT2-04' : '');
 
   const sessionsQuery = useQuery<KtnClassSession[]>({
     queryKey: ['ktn-class-sessions', activeClassCode, user?.email, isDemoMode],

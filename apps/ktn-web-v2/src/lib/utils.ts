@@ -143,18 +143,28 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
   }
 
   // 2. Admin order notification
-  if (type === 'order_pending' || actionUrl.includes('view=orders') || actionUrl.startsWith('/admin')) {
+  if (
+    type === 'order_pending' ||
+    actionUrl.includes('view=orders') ||
+    actionUrl.includes('/admin')
+  ) {
     return '/admin';
   }
 
-  // 3. Chat message or pinned announcement notification
+  // 3. Chat message or pinned announcement notification (unless actionUrl explicitly points to a video course / learning page)
+  const isCourseOrLearningAction =
+    actionUrl.includes('/khoa/') ||
+    actionUrl.includes('/learning') ||
+    actionUrl.includes('courseId=');
+
   if (
-    type === 'chat_message' ||
-    type === 'announcement_pinned' ||
-    type === 'class_announcement' ||
-    actionUrl.startsWith('/chat') ||
-    actionUrl.startsWith('#/nhom-lop') ||
-    actionUrl.includes('view=groups')
+    !isCourseOrLearningAction &&
+    (type === 'chat_message' ||
+      type === 'announcement_pinned' ||
+      type === 'class_announcement' ||
+      actionUrl.startsWith('/chat') ||
+      actionUrl.startsWith('#/nhom-lop') ||
+      actionUrl.includes('view=groups'))
   ) {
     let room = String(notif.roomId || '').trim();
     if (!room && actionUrl.includes('room=')) {

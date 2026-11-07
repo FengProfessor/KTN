@@ -545,11 +545,16 @@ async function runSuite() {
     });
     const exactStartTimeRunData = await exactStartTimeRunRes.json();
 
-    // Now mark the 2nd upcoming session as 'postponed' and test 29 minutes before that session's original time
+    // Now mark the 2nd upcoming session as 'postponed' and 3rd upcoming session as 'rescheduled' to next day 23:30–00:30 (cross-midnight)
     const secondSession = (yctSchedData.upcomingSessions || [])[1];
-    if (!secondSession) {
-      throw new Error('Expected at least 2 upcoming sessions on YCT2-04');
+    const thirdSession = (yctSchedData.upcomingSessions || [])[2];
+    if (!secondSession || !thirdSession) {
+      throw new Error('Expected at least 3 upcoming sessions on YCT2-04');
     }
+    const thirdParts = thirdSession.sessionDate.split('-').map(Number);
+    const nextDayUtc = new Date(Date.UTC(thirdParts[0], thirdParts[1] - 1, thirdParts[2]) + 86400000);
+    const rescheduledNewDate = `${nextDayUtc.getUTCFullYear()}-${String(nextDayUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(nextDayUtc.getUTCDate()).padStart(2, '0')}`;
+
     await fetch(`${baseUrl}/api/ktn/classes/schedule`, {
       method: 'POST',
       headers: {
@@ -567,6 +572,14 @@ async function runSuite() {
             date: secondSession.sessionDate,
             type: 'postponed',
             note: 'Hoãn buổi học sang tuần sau',
+          },
+          {
+            date: thirdSession.sessionDate,
+            type: 'rescheduled',
+            newDate: rescheduledNewDate,
+            startTime: '23:30',
+            endTime: '00:30',
+            note: 'Đổi buổi sang ngày hôm sau ca muộn qua nửa đêm',
           },
         ],
       }),
@@ -586,13 +599,109 @@ async function runSuite() {
     });
     const postponedRemindData = await postponedRemindRes.json();
 
+    // Old date of rescheduled 3rd session must NOT trigger reminder
+    const rescheduledOldSimNowMs = thirdSession.startEpochMs - 29 * 60 * 1000;
+    const rescheduledOldRemindRes = await fetch(`${baseUrl}/api/ktn/schedule/run-reminders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({
+        nowMs: rescheduledOldSimNowMs,
+        classCode: 'YCT2-04',
+      }),
+    });
+    const rescheduledOldRemindData = await rescheduledOldRemindRes.json();
+
+    // New date (rescheduledNewDate at 23:30–00:30 VN time, cross-midnight) MUST trigger reminder 29 min before 23:30
+    const [ny, nm, nd] = rescheduledNewDate.split('-').map(Number);
+    const rescheduledNewStartEpochMs = Date.UTC(ny, nm - 1, nd, 23, 30, 0) - 7 * 3600 * 1000;
+    const rescheduledNewSimNowMs = rescheduledNewStartEpochMs - 29 * 60 * 1000;
+    const rescheduledNewRemindRes = await fetch(`${baseUrl}/api/ktn/schedule/run-reminders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({
+        nowMs: rescheduledNewSimNowMs,
+        classCode: 'YCT2-04',
+      }),
+    });
+    const rescheduledNewRemindData = await rescheduledNewRemindRes.json();
+
+    // Verify custom_sessions mode via frontend payload shape (mode: 'custom_sessions', daysOfWeek: [])
+    const customModeSaveRes = await fetch(`${baseUrl}/api/ktn/classes/schedule`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({
+        classCode: 'YCT2-04',
+        mode: 'custom_sessions',
+        daysOfWeek: [],
+        customSessions: [
+          {
+            date: rescheduledNewDate,
+            startTime: '18:30',
+            endTime: '19:45',
+            title: 'Buổi học chuyên đề đặc biệt',
+          },
+        ],
+        status: 'confirmed',
+        notifyMembers: false,
+      }),
+    });
+    const customModeSaveData = await customModeSaveRes.json();
+
+    // Restore YCT2-04 clean weekly schedule (Tuesday & Friday 19:30–20:45)
+    await fetch(`${baseUrl}/api/ktn/classes/schedule`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${teacherToken}`,
+      },
+      body: JSON.stringify({
+        classCode: 'YCT2-04',
+        mode: 'weekly',
+        daysOfWeek: [2, 5],
+        startTime: '19:30',
+        endTime: '20:45',
+        status: 'confirmed',
+        exceptions: [
+          {
+            date: secondSession.sessionDate,
+            type: 'postponed',
+            note: 'Hoãn buổi học sang tuần sau',
+          },
+        ],
+        notifyMembers: false,
+      }),
+    });
+
+    // Verify Teacher clicking a class_reminder deep link (/classrooms?class=YCT2-04) renders YCT2-04 properly
+    await teacherPage.goto(`${baseUrl}/classrooms?class=YCT2-04`, { waitUntil: 'networkidle' });
+    await teacherPage.waitForTimeout(400);
+    const teacherClassroomsBody = (await teacherPage.locator('body').innerText()) || '';
+    const teacherDeepLinkOk =
+      teacherClassroomsBody.includes('YCT2-04') &&
+      !teacherClassroomsBody.includes('Chưa xếp lớp trực tiếp');
+
     recordTest(
       'CASE-11',
-      'Buổi học đã hoãn/hủy không phát thông báo nhắc giờ sai; đúng giờ bắt đầu không phát thêm thông báo mặc định',
+      'Buổi học đã hoãn/hủy/đổi ngày không phát nhắc giờ sai ở ngày cũ, phát đúng ở ngày mới (kể cả ca học qua nửa đêm 23:30–00:30), hỗ trợ chế độ custom_sessions và deep-link giáo viên',
       exactStartTimeRunData.remindedSessionsCount === 0 &&
         postponedRemindData.remindedSessionsCount === 0 &&
-        postponedRemindData.dispatchedCount === 0,
-      `exactStartReminded=${exactStartTimeRunData.remindedSessionsCount}, postponedReminded=${postponedRemindData.remindedSessionsCount}`
+        postponedRemindData.dispatchedCount === 0 &&
+        rescheduledOldRemindData.remindedSessionsCount === 0 &&
+        rescheduledNewRemindData.remindedSessionsCount === 1 &&
+        customModeSaveRes.status === 200 &&
+        customModeSaveData.scheduleConfig?.scheduleMode === 'custom_sessions' &&
+        customModeSaveData.scheduleConfig?.mode === 'custom_sessions' &&
+        teacherDeepLinkOk,
+      `exactStart=${exactStartTimeRunData.remindedSessionsCount}, postponed=${postponedRemindData.remindedSessionsCount}, reschedOld=${rescheduledOldRemindData.remindedSessionsCount}, reschedNew=${rescheduledNewRemindData.remindedSessionsCount}, customModeOk=${customModeSaveRes.status === 200}, teacherDeepLinkOk=${teacherDeepLinkOk}`
     );
 
     // =========================================================================

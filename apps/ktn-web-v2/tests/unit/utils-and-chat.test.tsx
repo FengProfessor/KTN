@@ -227,6 +227,21 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
           actionUrl: '#/learning?courseId=6adadba969897b0002482ca5',
         })
       ).toBe('/learning?courseId=6adadba969897b0002482ca5');
+
+      expect(
+        resolveNotificationLink({
+          type: 'class_announcement',
+          actionUrl: '/custom-page/so-lien-lac-test#/admin/orders',
+        })
+      ).toBe('/admin');
+
+      expect(
+        resolveNotificationLink({
+          type: 'class_announcement',
+          courseId: '6adadba969897b0002482ca5',
+          actionUrl: '#/khoa/6adadba969897b0002482ca5/bai/1',
+        })
+      ).toBe('/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework');
     });
   });
 

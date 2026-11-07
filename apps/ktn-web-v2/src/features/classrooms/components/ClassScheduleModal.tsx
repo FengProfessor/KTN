@@ -83,6 +83,7 @@ export interface ClassScheduleModalProps {
       effectiveFrom: string;
       effectiveUntil: string | null;
       mode: 'weekly' | 'custom_sessions';
+      scheduleMode?: 'weekly' | 'custom_sessions';
       customSessions: CustomClassSession[];
       exceptions: ClassScheduleException[];
       meetingUrl: string;
@@ -167,7 +168,11 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
     const cfg: ClassScheduleConfig | null | undefined = classItem.scheduleConfig;
     if (cfg && (cfg.status === 'confirmed' || cfg.daysOfWeek?.length || cfg.customSessions?.length)) {
-      setScheduleMode(cfg.mode === 'custom_sessions' ? 'custom_sessions' : 'weekly');
+      const savedMode =
+        cfg.scheduleMode === 'custom_sessions' || cfg.mode === 'custom_sessions'
+          ? 'custom_sessions'
+          : 'weekly';
+      setScheduleMode(savedMode);
       setDaysOfWeek(Array.isArray(cfg.daysOfWeek) ? cfg.daysOfWeek : []);
       setStartTime(cfg.startTime || '');
       setEndTime(cfg.endTime || '');
@@ -191,7 +196,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       setExceptions([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isCreateMode, classItem?.id, todayStr]);
+  }, [open, isCreateMode, classItem?.id, classItem?.scheduleConfig?.updatedAt, todayStr]);
 
   const toggleDayOfWeek = (day: number) => {
     setDaysOfWeek((prev) =>
@@ -257,16 +262,31 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
     const excByDate = new Map<string, ClassScheduleException>();
     for (const exc of exceptions) {
-      if (exc?.date) excByDate.set(exc.date, exc);
+      if (!exc?.date) continue;
+      if (exc.type === 'rescheduled' && exc.newDate && exc.newDate !== exc.date) {
+        excByDate.set(exc.date, {
+          ...exc,
+          type: 'postponed',
+          note: exc.note || `Đổi lịch sang ${exc.newDate}`,
+        });
+        excByDate.set(exc.newDate, {
+          ...exc,
+          date: exc.newDate,
+          type: 'rescheduled',
+        });
+      } else {
+        excByDate.set(exc.date, exc);
+      }
     }
 
     if (scheduleMode === 'custom_sessions') {
       for (const cs of customSessions) {
         if (!cs.date || !cs.startTime) continue;
         const exc = excByDate.get(cs.date);
-        const isoDay = getIsoDayFromDateStr(cs.date);
+        const targetDate = exc?.newDate || cs.date;
+        const isoDay = getIsoDayFromDateStr(targetDate);
         results.push({
-          date: exc?.newDate || cs.date,
+          date: targetDate,
           dayLabel: formatDayLabelVi(isoDay),
           startTime: exc?.startTime || cs.startTime,
           endTime: exc?.endTime || cs.endTime || '20:30',
@@ -290,10 +310,11 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       if (effectiveFrom && dateStr < effectiveFrom) continue;
       if (effectiveUntil && dateStr > effectiveUntil) continue;
       const jsDay = d.getUTCDay();
-      if (!daysOfWeek.includes(jsDay)) continue;
-
       const exc = excByDate.get(dateStr);
-      const targetDate = exc?.newDate || dateStr;
+      const isExtraRescheduled = Boolean(exc && exc.type === 'rescheduled');
+      if (!daysOfWeek.includes(jsDay) && !isExtraRescheduled) continue;
+
+      const targetDate = dateStr;
       const targetIsoDay = getIsoDayFromDateStr(targetDate);
       results.push({
         date: targetDate,
@@ -391,6 +412,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
           effectiveFrom: effectiveFrom || todayStr,
           effectiveUntil: effectiveUntil.trim() ? effectiveUntil.trim() : null,
           mode: scheduleMode,
+          scheduleMode,
           customSessions,
           exceptions,
           meetingUrl: meetingUrl.trim(),

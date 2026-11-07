@@ -58,201 +58,196 @@
     .course-chip button {
       border: none; background: transparent; color: #991B1B; font-weight: 900; cursor: pointer; padding: 0 2px; font-size: 13px;
     }
+    @media (max-width: 640px) {
+      .admin-header { padding: 10px 12px; gap: 8px; }
+      .admin-nav { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; order: 3; }
+      .admin-nav button { padding: 8px 6px; font-size: 12px; text-align: center; }
+      .admin-main { margin: 12px auto; padding: 0 10px; }
+      .admin-card { padding: 14px; border-radius: 14px; margin-bottom: 12px; }
+      .order-row { flex-direction: column; align-items: stretch; gap: 10px; }
+      .order-row .btn-approve { width: 100%; text-align: center; }
+      .stu-table thead { display: none; }
+      .stu-table, .stu-table tbody, .stu-table tr, .stu-table td { display: block; width: 100%; box-sizing: border-box; }
+      .stu-table tr { border: 1px solid #E2E8F0; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #FFFFFF; }
+      .stu-table td { padding: 4px 0; border-bottom: none; }
+    }
   </style>
   <script src="ktn-webapp-client.js"></script>
 </head>
 <body>
   <header class="admin-header">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <img src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png" alt="Logo" style="width:36px;height:36px;border-radius:50%;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <img src="https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png" alt="Logo" style="width:32px;height:32px;border-radius:50%;">
       <div>
-        <strong style="font-size:15px;color:#F8FAFC;">ĐIỀU HÀNH TRUNG TÂM — QUẢN LÝ (ADMIN)</strong>
-        <div id="admin-welcome-label" style="font-size:11.5px;color:#94A3B8;">Đang xác thực quyền Quản lý...</div>
+        <strong style="font-size:14px;color:#F8FAFC;">QUẢN LÝ</strong>
+        <div id="admin-welcome-label" style="font-size:11.5px;color:#94A3B8;">Đang tải...</div>
       </div>
     </div>
 
     <nav class="admin-nav" aria-label="Menu Quản lý">
-      <button type="button" id="a-btn-orders" class="active" onclick="switchAdminTab('orders')">💳 Đơn Hàng &amp; Duyệt 1 Chạm</button>
-      <button type="button" id="a-btn-students" onclick="switchAdminTab('students')">🎓 Cấp/Mở Thêm Khóa Học &amp; Xếp Lớp</button>
-      <button type="button" id="a-btn-courses" onclick="switchAdminTab('courses')">📚 Kho Khóa Học &amp; Đồng Bộ izTeach</button>
-      <button type="button" id="a-btn-payment" onclick="switchAdminTab('payment')">⚙️ Cấu Hình Giá &amp; VietQR Tự Động</button>
+      <button type="button" id="a-btn-orders" class="active" onclick="switchAdminTab('orders')">💳 Đơn hàng</button>
+      <button type="button" id="a-btn-students" onclick="switchAdminTab('students')">🎓 Học viên &amp; Lớp</button>
+      <button type="button" id="a-btn-courses" onclick="switchAdminTab('courses')">📚 Khóa học</button>
+      <button type="button" id="a-btn-payment" onclick="switchAdminTab('payment')">⚙️ Thanh toán</button>
     </nav>
 
-    <div style="display:flex;gap:8px;">
-      <button type="button" onclick="enableAdminPwa()" style="background:#B91C1C;color:#FFF;border:none;padding:7px 12px;border-radius:8px;font-weight:700;cursor:pointer;">🔔 Bật thông báo đơn mới</button>
-      <button type="button" onclick="KtnWebApp.logout()" style="background:rgba(255,255,255,0.12);color:#FFF;border:none;padding:7px 12px;border-radius:8px;font-weight:700;cursor:pointer;">Đăng xuất</button>
+    <div style="display:flex;gap:6px;">
+      <button type="button" onclick="enableAdminPwa()" title="Bật thông báo đơn mới" style="background:#B91C1C;color:#FFF;border:none;padding:7px 10px;border-radius:8px;font-weight:700;cursor:pointer;">🔔</button>
+      <button type="button" onclick="KtnWebApp.logout()" style="background:rgba(255,255,255,0.12);color:#FFF;border:none;padding:7px 10px;border-radius:8px;font-weight:700;cursor:pointer;">Thoát</button>
     </div>
   </header>
 
   <main class="admin-main">
-    <!-- TAB 1: ĐƠN HÀNG & DUYỆT 1 CHẠM (TỰ ĐỘNG CỘNG DỒN KHÓA HỌC MỚI CHO HỌC VIÊN CŨ & MỚI) -->
+    <!-- TAB 1: ĐƠN HÀNG & DUYỆT 1 CHẠM -->
     <section id="a-pane-orders" class="admin-pane active">
       <div class="admin-card">
-        <h2 style="margin-top:0;">➕ Tạo Nhanh Đơn Đăng Ký Khóa Học (Cho Học Viên Mới Hoặc Mua Thêm Khóa)</h2>
-        <p style="font-size:13px;color:#475569;margin-top:0;">
-          Nếu học viên cũ mua thêm khóa mới (hoặc nâng cấp lên <strong>Trọn Bộ 6 Khóa</strong>), khi bấm <strong>Duyệt 1 Chạm</strong> hệ thống sẽ <strong>tự động cộng dồn khóa học mới</strong> vào tài khoản izTeach mà không làm mất khóa học cũ.
-        </p>
-        <form onsubmit="createManualOrder(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end;">
-          <label style="font-size:12.5px;font-weight:700;">Họ tên học viên:
+        <h2 style="margin:0 0 12px;font-size:16px;">➕ Tạo đơn đăng ký</h2>
+        <form onsubmit="createManualOrder(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;align-items:end;">
+          <label style="font-size:12.5px;font-weight:700;">Họ tên:
             <input type="text" id="new-ord-name" placeholder="VD: Bé Nguyễn Hoàng Ngân" required style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
           </label>
-          <label style="font-size:12.5px;font-weight:700;">Email tài khoản học viên:
+          <label style="font-size:12.5px;font-weight:700;">Email:
             <input type="email" id="new-ord-email" placeholder="VD: taphong2002@gmail.com" required style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
           </label>
-          <label style="font-size:12.5px;font-weight:700;">Số điện thoại phụ huynh:
+          <label style="font-size:12.5px;font-weight:700;">Điện thoại:
             <input type="text" id="new-ord-phone" placeholder="VD: 0987654321" required style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
           </label>
-          <label style="font-size:12.5px;font-weight:700;">Khóa học đăng ký:
+          <label style="font-size:12.5px;font-weight:700;">Khóa học:
             <select id="new-ord-course" style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;"></select>
           </label>
-          <button type="submit" class="btn-red" style="height:38px;">+ Tạo Đơn &amp; Duyệt Ngay</button>
+          <button type="submit" class="btn-red" style="height:38px;">+ Tạo &amp; Duyệt</button>
         </form>
       </div>
 
       <div class="admin-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-          <h2 style="margin:0;">💳 Danh Sách Đơn Đăng Ký Khóa Học (Duyệt 1 Chạm Cộng Dồn Khóa)</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 style="margin:0;font-size:16px;">💳 Đơn đăng ký</h2>
           <button type="button" onclick="loadAdminOrders()" class="btn-outline">🔄 Làm mới</button>
         </div>
-        <div id="admin-orders-list">Đang tải danh sách đơn hàng từ Supabase...</div>
+        <div id="admin-orders-list">Đang tải...</div>
       </div>
     </section>
 
-    <!-- TAB 2: CẤP THÊM / THU HỒI KHÓA HỌC & XẾP LỚP TRỰC TIẾP (4 KỊCH BẢN HỌC VIÊN THẬT) -->
+    <!-- TAB 2: CẤP THÊM / THU HỒI KHÓA HỌC & XẾP LỚP -->
     <section id="a-pane-students" class="admin-pane">
       <div class="admin-card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-          <div>
-            <h2 style="margin:0;">🎓 Cấp Thêm / Thu Hồi Khóa Học &amp; Xếp Lớp Trực Tiếp Cho Học Viên</h2>
-            <p style="font-size:13px;color:#475569;margin:4px 0 0;">
-              Hỗ trợ đủ 4 trường hợp học viên thật: <strong>(1) Học cả Lớp Cô + Khóa Video (`both`)</strong> · <strong>(2) Chỉ học Khóa Video (`online_only`)</strong> · <strong>(3) Chỉ học Lớp Cô (`sll_only`)</strong> · <strong>(4) Tài khoản mới (`unassigned`)</strong>.
-            </p>
-          </div>
+          <h2 style="margin:0;font-size:16px;">🎓 Phân quyền khóa học &amp; Xếp lớp</h2>
           <div style="display:flex;gap:8px;">
-            <button type="button" class="btn-outline" onclick="selectBundle6Courses()">🎁 Tích chọn nhanh Trọn Bộ 6 Khóa</button>
-            <button type="button" class="btn-outline" onclick="clearCourseCheckboxes()">Bỏ chọn tất cả</button>
+            <button type="button" class="btn-outline" onclick="selectBundle6Courses()">🎁 Chọn 6 khóa</button>
+            <button type="button" class="btn-outline" onclick="clearCourseCheckboxes()">Bỏ chọn</button>
           </div>
         </div>
 
-        <form onsubmit="saveStudentCourseAssignment(event)" style="margin-top:14px;background:#F8FAFC;padding:16px;border-radius:12px;border:1px solid #E2E8F0;">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;">
-            <label style="font-size:13px;font-weight:700;">Email học viên (bắt buộc):
+        <form onsubmit="saveStudentCourseAssignment(event)" style="margin-top:12px;background:#F8FAFC;padding:14px;border-radius:12px;border:1px solid #E2E8F0;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
+            <label style="font-size:12.5px;font-weight:700;">Email học viên:
               <input type="email" id="stu-assign-email" placeholder="VD: taphong2002@gmail.com" required style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
             </label>
-            <label style="font-size:13px;font-weight:700;">Họ và tên học viên:
+            <label style="font-size:12.5px;font-weight:700;">Họ tên:
               <input type="text" id="stu-assign-name" placeholder="VD: Tạ Phong Võ" style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
             </label>
-            <label style="font-size:13px;font-weight:700;">Xếp vào Lớp trực tiếp với cô:
+            <label style="font-size:12.5px;font-weight:700;">Lớp học:
               <select id="stu-assign-class" style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
-                <option value="">-- Không xếp lớp trực tiếp (Chỉ học Video) --</option>
+                <option value="">-- Không xếp lớp (Chỉ Video) --</option>
                 <option value="YCT2-04">Lớp YCT2-04 (Cô Lâm Mỹ Linh · T3 &amp; T6)</option>
                 <option value="YCT3-02">Lớp YCT3-02 (Cô Trần Thu Hà · T4 &amp; CN)</option>
               </select>
             </label>
-            <label style="font-size:13px;font-weight:700;">Chế độ cập nhật khóa học:
+            <label style="font-size:12.5px;font-weight:700;">Chế độ:
               <select id="stu-assign-action" style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
-                <option value="grant">➕ Cộng dồn thêm các khóa được tích chọn</option>
-                <option value="set">🔄 Đặt lại danh sách khóa đúng theo ô tích chọn</option>
+                <option value="grant">➕ Cộng dồn khóa</option>
+                <option value="set">🔄 Đặt lại theo ô chọn</option>
               </select>
             </label>
           </div>
 
-          <div style="margin-top:12px;font-size:13px;font-weight:800;color:#0F172A;">
-            Tích chọn các Khóa học Video trực tuyến muốn cấp quyền mở trên izTeach:
-          </div>
+          <div style="margin-top:12px;font-size:12.5px;font-weight:800;color:#0F172A;">Khóa học Video:</div>
           <div id="stu-course-checkboxes" class="course-checkbox-grid"></div>
 
-          <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:10px;">
-            <button type="submit" class="btn-approve">⚡ Lưu Phân Quyền &amp; Kích Hoạt Khóa Học Trên izTeach</button>
+          <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:10px;">
+            <button type="submit" class="btn-approve">⚡ Lưu phân quyền</button>
           </div>
         </form>
       </div>
 
       <div class="admin-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-          <h2 style="margin:0;">📋 Danh Sách Học Viên &amp; Trạng Thái Khóa Học Thật</h2>
-          <button type="button" class="btn-outline" onclick="loadAdminStudents()">🔄 Làm mới danh sách</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 style="margin:0;font-size:16px;">📋 Danh sách học viên</h2>
+          <button type="button" class="btn-outline" onclick="loadAdminStudents()">🔄 Làm mới</button>
         </div>
         <div style="overflow-x:auto;">
           <table class="stu-table">
             <thead>
               <tr>
-                <th>Học viên / Mã HV</th>
-                <th>Nhóm kịch bản (4 Cases)</th>
-                <th>Lớp trực tiếp (Cô giáo)</th>
-                <th>Khóa học Video đã kích hoạt (Bấm × để thu hồi)</th>
-                <th>Thao tác nhanh</th>
+                <th>Học viên</th>
+                <th>Nhóm</th>
+                <th>Lớp học</th>
+                <th>Khóa học đã mở</th>
+                <th>Thao tác</th>
               </tr>
             </thead>
             <tbody id="admin-students-tbody">
-              <tr><td colspan="5">Đang tải danh sách học viên...</td></tr>
+              <tr><td colspan="5">Đang tải...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </section>
 
-    <!-- TAB 3: KHO KHÓA HỌC & ĐỒNG BỘ TỰ ĐỘNG KHÓA MỚI TỪ IZTEACH (KHÓA THỨ 10, 11...) -->
+    <!-- TAB 3: KHO KHÓA HỌC & ĐỒNG BỘ IZTEACH -->
     <section id="a-pane-courses" class="admin-pane">
       <div class="admin-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-          <div>
-            <h2 style="margin:0;">📚 Danh Mục Khóa Học &amp; Đồng Bộ Khóa Học Mới Tạo Trên izTeach</h2>
-            <p style="font-size:13px;color:#475569;margin:4px 0 0;">
-              Khi trung tâm tạo thêm khóa học mới thứ 10, 11... trên izTeach, bấm nút <strong>🔄 Đồng bộ tự động từ izTeach</strong> hoặc dán mã Course ID bên dưới để hệ thống tự động tải toàn bộ bài giảng Video HLS + Bài tập về cổng học viên.
-            </p>
-          </div>
-          <button type="button" class="btn-approve" onclick="syncCoursesFromIzTeach()">🔄 Đồng Bộ Tự Động Tất Cả Khóa Học Từ izTeach</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+          <h2 style="margin:0;font-size:16px;">📚 Danh mục khóa học</h2>
+          <button type="button" class="btn-approve" onclick="syncCoursesFromIzTeach()">🔄 Đồng bộ izTeach</button>
         </div>
 
-        <form onsubmit="addNewCourseFromIzTeach(event)" style="margin-top:14px;padding:14px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;align-items:end;">
-          <label style="font-size:12.5px;font-weight:700;">Mã Course ID trên izTeach (24 ký tự):
+        <form onsubmit="addNewCourseFromIzTeach(event)" style="margin-top:12px;padding:12px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end;">
+          <label style="font-size:12.5px;font-weight:700;">Course ID izTeach:
             <input type="text" id="sync-course-id" placeholder="VD: 6983672f409cc20002e530b8" required style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
           </label>
-          <label style="font-size:12.5px;font-weight:700;">Tên khóa học hiển thị:
-            <input type="text" id="sync-course-title" placeholder="VD: Khóa học HSK 2 Chuẩn Quốc Tế" required style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
+          <label style="font-size:12.5px;font-weight:700;">Tên khóa học:
+            <input type="text" id="sync-course-title" placeholder="VD: Khóa học HSK 2" required style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
           </label>
-          <label style="font-size:12.5px;font-weight:700;">Nhãn cấp độ (Badge):
+          <label style="font-size:12.5px;font-weight:700;">Nhãn:
             <input type="text" id="sync-course-badge" value="KHÓA HỌC MỚI" style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
           </label>
           <label style="font-size:12.5px;font-weight:700;">Học phí (VNĐ):
             <input type="number" id="sync-course-price" value="890000" style="width:100%;padding:8px 10px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;box-sizing:border-box;">
           </label>
-          <button type="submit" class="btn-red" style="height:38px;">+ Thêm &amp; Quét Bài Giảng izTeach</button>
+          <button type="submit" class="btn-red" style="height:38px;">+ Thêm khóa</button>
         </form>
 
-        <div id="admin-courses-catalog-list" style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;">
-          Đang tải danh mục khóa học...
+        <div id="admin-courses-catalog-list" style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
+          Đang tải...
         </div>
       </div>
     </section>
 
-    <!-- TAB 4: CẤU HÌNH BẢNG GIÁ & CÔNG TẮC VIETQR TỰ ĐỘNG -->
+    <!-- TAB 4: CẤU HÌNH BẢNG GIÁ & VIETQR -->
     <section id="a-pane-payment" class="admin-pane">
       <div class="admin-card">
-        <h2 style="margin-top:0;">⚙️ Cấu Hình Bảng Giá &amp; Tự Động Duyệt Mã VietQR</h2>
-        <p style="font-size:13.5px;color:#475569;">
-          Mặc định hệ thống để chế độ <strong>Duyệt tay 1 chạm</strong> (để tư vấn viên gọi điện xác nhận với phụ huynh). Khi trung tâm chốt bảng giá và muốn khách quét VietQR tự động kích hoạt khóa học ngay lập tức qua Webhook (SePay/PayOS), hãy bật công tắc bên dưới.
-        </p>
-        <form onsubmit="savePaymentConfig(event)" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:720px;">
-          <label style="font-size:13px;font-weight:700;">Ngân hàng nhận chuyển khoản:
+        <h2 style="margin:0 0 12px;font-size:16px;">⚙️ Cấu hình VietQR</h2>
+        <form onsubmit="savePaymentConfig(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-width:720px;">
+          <label style="font-size:12.5px;font-weight:700;">Ngân hàng:
             <input type="text" id="cfg-bank-name" value="MBBank" style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;">
           </label>
-          <label style="font-size:13px;font-weight:700;">Số tài khoản VietQR:
-            <input type="text" id="cfg-account-no" placeholder="Nhập số tài khoản trung tâm..." style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;">
+          <label style="font-size:12.5px;font-weight:700;">Số tài khoản:
+            <input type="text" id="cfg-account-no" placeholder="Số tài khoản..." style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;">
           </label>
-          <label style="font-size:13px;font-weight:700;">Tên chủ tài khoản:
+          <label style="font-size:12.5px;font-weight:700;">Chủ tài khoản:
             <input type="text" id="cfg-account-name" value="HOC VIEN KHONG TU NHI" style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;">
           </label>
-          <label style="font-size:13px;font-weight:700;">Học phí mặc định (VNĐ):
+          <label style="font-size:12.5px;font-weight:700;">Học phí mặc định (VNĐ):
             <input type="number" id="cfg-default-amount" value="890000" style="width:100%;padding:9px;border:1px solid #CBD5E1;border-radius:8px;margin-top:4px;">
           </label>
-          <label style="grid-column:1 / -1;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:800;color:#B91C1C;padding:10px;background:#FFF1F2;border-radius:10px;">
+          <label style="grid-column:1 / -1;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:800;color:#B91C1C;padding:10px;background:#FFF1F2;border-radius:10px;">
             <input type="checkbox" id="cfg-auto-approve">
-            Bật tự động duyệt &amp; cấp tài khoản izTeach ngay khi nhận Webhook ngân hàng (Bỏ qua duyệt tay)
+            Tự động duyệt đơn khi nhận Webhook VietQR
           </label>
           <div style="grid-column:1 / -1;">
-            <button type="submit" class="btn-approve" style="background:#B91C1C;">💾 Lưu Cấu Hình Thanh Toán Lên Supabase</button>
+            <button type="submit" class="btn-approve" style="background:#B91C1C;">💾 Lưu cấu hình</button>
           </div>
         </form>
       </div>
@@ -348,7 +343,7 @@
             </div>
             <div style="font-weight:800;font-size:14.5px;margin-top:6px;color:#0F172A;">${esc(c.title)}</div>
             <div style="font-size:12.5px;color:#475569;margin-top:4px;">
-              🎬 Số bài giảng: <strong>${esc(c.lessonsCount || 20)} bài</strong> · Học phí: <strong>${Number(c.price || 890000).toLocaleString('vi-VN')}đ</strong>
+              🎬 <strong>${esc(c.lessonsCount || 20)} bài</strong> · <strong>${Number(c.price || 890000).toLocaleString('vi-VN')}đ</strong>
             </div>
           </div>
         </div>
@@ -418,54 +413,72 @@
       const res = await KtnWebApp.apiRequest('/api/ktn/orders');
       const orders = (res.ok && Array.isArray(res.data?.orders)) ? res.data.orders : [];
       if (!orders.length) {
-        box.innerHTML = '<div style="padding:16px;color:#64748B;">Chưa có đơn hàng mới trên Supabase.</div>';
+        box.innerHTML = '<div style="padding:16px;color:#64748B;">Chưa có đơn hàng mới.</div>';
         return;
       }
       box.innerHTML = orders.map(ord => {
         const isApproved = ord.approval_status === 'approved';
         const payLabel = ord.payment_status === 'paid'
-          ? '💰 Đã xác nhận CK'
-          : '📞 Chờ gọi tư vấn / Chờ xác nhận CK';
+          ? '💰 Đã CK'
+          : '⏳ Chờ CK';
         const jsEmail = esc(String(ord.student_email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
         const jsOrderId = esc(String(ord.order_id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
         return `<div class="order-row">
           <div>
-            <div style="font-weight:800;font-size:15px;">${esc(ord.order_id)} · ${esc(ord.student_name)} (${esc(ord.phone)})</div>
-            <div style="font-size:13px;color:#475569;margin-top:3px;">
-              Email cấp phát: <strong>${esc(ord.student_email)}</strong> · Khóa: <strong>${esc(ord.course_name)}</strong> · ${Number(ord.amount || 890000).toLocaleString('vi-VN')}đ
+            <div style="font-weight:800;font-size:14.5px;">${esc(ord.order_id)} · ${esc(ord.student_name)} (${esc(ord.phone)})</div>
+            <div style="font-size:12.5px;color:#475569;margin-top:3px;">
+              <strong>${esc(ord.student_email)}</strong> · <strong>${esc(ord.course_name)}</strong> · ${Number(ord.amount || 890000).toLocaleString('vi-VN')}đ
             </div>
-            <div style="margin-top:6px;display:flex;gap:8px;align-items:center;">
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
               <span class="badge ${isApproved ? 'badge-approved' : 'badge-pending'}">${payLabel}</span>
-              <span class="badge ${isApproved ? 'badge-approved' : 'badge-pending'}">${isApproved ? '✓ Đã mở khóa & cộng dồn trên izTeach' : '⏳ Chờ Admin duyệt'}</span>
+              <span class="badge ${isApproved ? 'badge-approved' : 'badge-pending'}">${isApproved ? '✓ Đã duyệt' : '⏳ Chờ duyệt'}</span>
             </div>
           </div>
           <div>
             ${isApproved
-              ? `<button type="button" class="btn-approve" style="background:#334155;" onclick="copyApprovedAccount('${jsEmail}')">📋 Copy Tài Khoản Gửi Zalo</button>`
-              : `<button type="button" class="btn-approve" onclick="approveOrderNow('${jsOrderId}')">⚡ Duyệt 1 Chạm &amp; Cộng Dồn Khóa izTeach</button>`
+              ? `<button type="button" class="btn-approve" style="background:#334155;" onclick="copyApprovedAccount('${jsEmail}')">📋 Copy TK</button>`
+              : `<button type="button" class="btn-approve" onclick="approveOrderNow('${jsOrderId}')">⚡ Duyệt đơn</button>`
             }
           </div>
         </div>`;
       }).join('');
     }
 
+      const ephemeralInitialPasswords = new Map();
+
     async function approveOrderNow(orderId, orderPayload) {
       const res = await KtnWebApp.apiRequest('/api/ktn/orders/approve', {
         method: 'POST',
         body: { orderId, order: orderPayload }
       });
-      if (!res.ok) {
-        alert(res.data?.message || 'Chưa duyệt được đơn hàng.');
+      if (!res.ok || res.data?.ok === false) {
+        const failedStep = res.data?.failedStep ? ` (Bước lỗi: ${res.data.failedStep})` : '';
+        alert((res.data?.message || 'Chưa hoàn tất kích hoạt đơn hàng.') + failedStep);
+        loadAdminOrders();
         return;
       }
-      copyApprovedAccount(res.data.studentEmail);
+      const em = String(res.data.studentEmail || '').trim().toLowerCase();
+      if (em && res.data.accountCreated && res.data.initialPassword) {
+        ephemeralInitialPasswords.set(em, String(res.data.initialPassword));
+      }
+      copyApprovedAccount(res.data.studentEmail, {
+        initialPassword: res.data.accountCreated ? res.data.initialPassword : null,
+        accountCreated: Boolean(res.data.accountCreated),
+        credentialMode: res.data.credentialMode || ''
+      });
       loadAdminOrders();
     }
 
-    function copyApprovedAccount(email) {
-      const text = `Học Viện Khổng Tử Nhí gửi thông tin tài khoản học tập:\n- Trang đăng nhập: https://khongtunhi.com/?login=1\n- Tài khoản: ${email}\n- Mật khẩu mặc định: 123456`;
+    function copyApprovedAccount(email, handoffInfo = null) {
+      const cleanEmail = String(email || '').trim();
+      const lowerEmail = cleanEmail.toLowerCase();
+      const oneTimePwd = (handoffInfo && handoffInfo.initialPassword) || ephemeralInitialPasswords.get(lowerEmail) || null;
+      const pwdLine = oneTimePwd
+        ? `- Mật khẩu khởi tạo lần đầu: ${oneTimePwd} (Vui lòng đổi mật khẩu sau khi đăng nhập)`
+        : `- Mật khẩu: Sử dụng mật khẩu hiện tại của tài khoản (hoặc chọn "Quên mật khẩu" tại https://khongtunhi.com/?login=1 để đặt lại)`;
+      const text = `Học Viện Khổng Tử Nhí gửi thông tin tài khoản học tập:\n- Trang đăng nhập: https://khongtunhi.com/?login=1\n- Tài khoản: ${cleanEmail}\n${pwdLine}`;
       navigator.clipboard?.writeText(text);
-      alert('📋 Đã kích hoạt trên izTeach & sao chép thông tin tài khoản để gửi Zalo cho phụ huynh:\n\n' + text);
+      alert('📋 Đã sao chép thông tin bàn giao tài khoản để gửi Zalo cho phụ huynh:\n\n' + text);
     }
 
     async function loadAdminStudents() {
@@ -473,16 +486,16 @@
       const res = await KtnWebApp.apiRequest('/api/ktn/students');
       const list = (res.ok && Array.isArray(res.data?.students)) ? res.data.students : [];
       if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="color:#64748B;">Chưa có học viên nào trong bảng ktn_students. Hãy cấp khóa học ở biểu mẫu phía trên!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="color:#64748B;">Chưa có học viên.</td></tr>';
         return;
       }
       tbody.innerHTML = list.map(stu => {
         const courses = Array.isArray(stu.online_courses) ? stu.online_courses : [];
         const sCase = stu.studentCase || 'unassigned';
-        let caseBadge = '<span class="badge badge-gray">4. Chưa kích hoạt (unassigned)</span>';
-        if (sCase === 'both') caseBadge = '<span class="badge badge-approved">1. Học cả Video + Lớp Cô (both)</span>';
-        else if (sCase === 'online_only') caseBadge = '<span class="badge badge-blue">2. Chỉ học Khóa Video (online_only)</span>';
-        else if (sCase === 'sll_only') caseBadge = '<span class="badge badge-pending">3. Chỉ học Lớp Cô (sll_only)</span>';
+        let caseBadge = '<span class="badge badge-gray">⏳ Chưa kích hoạt</span>';
+        if (sCase === 'both') caseBadge = '<span class="badge badge-approved">✓ Video + Lớp</span>';
+        else if (sCase === 'online_only') caseBadge = '<span class="badge badge-blue">🎬 Khóa Video</span>';
+        else if (sCase === 'sll_only') caseBadge = '<span class="badge badge-pending">🏫 Lớp Cô</span>';
 
         const jsStuEmail = esc(String(stu.email || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
         const jsStuName = esc(String(stu.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
@@ -499,12 +512,12 @@
                 </span>
               `;
             }).join('')
-          : '<span style="color:#94A3B8;font-size:12.5px;">Chưa có khóa Video</span>';
+          : '<span style="color:#94A3B8;font-size:12.5px;">Chưa có khóa</span>';
 
         return `<tr>
           <td>
             <div style="font-weight:800;color:#0F172A;">${esc(stu.name || stu.email)}</div>
-            <div style="font-size:12px;color:#64748B;">${esc(stu.email)} · Mã: ${esc(stu.code || '--')}</div>
+            <div style="font-size:12px;color:#64748B;">${esc(stu.email)} · ${esc(stu.code || '--')}</div>
           </td>
           <td>${caseBadge}</td>
           <td>
@@ -515,7 +528,7 @@
           <td>${courseChips}</td>
           <td>
             <button type="button" class="btn-outline" onclick="prefillStudentEditor('${jsStuEmail}', '${jsStuName}', '${jsStuClass}', '${jsCourseCsv}')">
-              ✏️ Sửa / Cấp thêm khóa
+              ✏️ Sửa / Cấp khóa
             </button>
           </td>
         </tr>`;
@@ -555,7 +568,12 @@
         alert(res.data?.message || 'Lỗi cập nhật khóa học cho học viên.');
         return;
       }
-      alert(res.data?.message || '✅ Đã cập nhật khóa học & xếp lớp thành công!');
+      if (res.data?.accountCreated && res.data?.initialPassword) {
+        ephemeralInitialPasswords.set(String(email || '').trim().toLowerCase(), String(res.data.initialPassword));
+        copyApprovedAccount(email, name || email, res.data.credentialMode || 'new_account_initial_password');
+      } else {
+        alert(res.data?.message || '✅ Đã cập nhật khóa học & xếp lớp thành công!');
+      }
       await loadAdminStudents();
     }
 

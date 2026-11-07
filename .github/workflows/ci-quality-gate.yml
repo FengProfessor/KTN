@@ -14,7 +14,7 @@ jobs:
   quality-and-reliability-gate:
     name: Syntax, Build Drift & Three-Way Reliability Suite
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -42,8 +42,11 @@ jobs:
           node --check so-lien-lac-auth.js
           node --check build_clean_real_portal.js
           node --check verify_security_and_flow.cjs
+          node --check deploy_ktn_react_v2_izteach.cjs
           node --check tests/ktn_three_way_reliability_suite.cjs
           node --check tests/ktn_browser_e2e_local.cjs
+          node --check tests/ktn_postgres_migration_and_search_benchmark.mjs
+          node --check tests/ktn_live_production_acceptance.cjs
 
       - name: Verify Student Portal Build Consistency (No Unbuilt Template Drift)
         run: |
@@ -63,3 +66,23 @@ jobs:
           mkdir -p /tmp/ktn-ci-deps
           npm --prefix /tmp/ktn-ci-deps install --no-save puppeteer
           node tests/ktn_browser_e2e_local.cjs
+
+      - name: Run KTN React UI V2 Quality Gate & PostgreSQL V3 Migration/Search Benchmark
+        working-directory: apps/ktn-web-v2
+        run: |
+          npm ci
+          node ../../tests/ktn_postgres_migration_and_search_benchmark.mjs
+          npm run typecheck
+          npm run test:unit
+          npm run build
+          if [ ! -x /usr/bin/google-chrome ]; then
+            npx playwright install --with-deps chromium
+          fi
+          npm run test:e2e
+
+      - name: Verify KTN React V2 Static Deployment Dry-Run & Bundle Budget (<500 KiB)
+        run: |
+          node deploy_ktn_react_v2_izteach.cjs --dry-run
+          node deploy_ktn_react_v2_izteach.cjs --dry-run --rollback reports/ktn-three-way-reliability/v3-release-manifest.json
+
+

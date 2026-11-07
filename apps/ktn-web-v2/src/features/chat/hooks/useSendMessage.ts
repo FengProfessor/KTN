@@ -1,0 +1,210 @@
+import { useCallback } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { chatApi } from '../services/chatApi';
+import { useUiStore } from '@/stores/useUiStore';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { generateClientMessageId } from '@/lib/utils';
+import { ChatMessage, PinnedAnnouncement, SendMessageInput } from '../types/chat.types';
+import { RealtimeChatBroadcastPayload } from './useChatRealtime';
+
+export function useSendMessage(
+  onBroadcast?: (payload: RealtimeChatBroadcastPayload) => void
+) {
+  const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const isDemoMode = useUiStore((s) => s.isDemoMode);
+  const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
+  const isOfflineSimulated = useUiStore((s) => s.isOfflineSimulated);
+  const addSendingMessage = useUiStore((s) => s.addSendingMessage);
+  const removeSendingMessage = useUiStore((s) => s.removeSendingMessage);
+  const markMessageFailed = useUiStore((s) => s.markMessageFailed);
+  const removeFailedMessage = useUiStore((s) => s.removeFailedMessage);
+  const setRoomDraft = useUiStore((s) => s.setRoomDraft);
+  const getRoomDraft = useUiStore((s) => s.getRoomDraft);
+  const toggleReactionStore = useUiStore((s) => s.toggleReaction);
+  const addToast = useUiStore((s) => s.addToast);
+
+  const sendMutation = useMutation({
+    mutationFn: async (input: SendMessageInput) => {
+      const clientMessageId = input.clientMessageId || generateClientMessageId('cmsg');
+      const nowIso = new Date().toISOString();
+
+      const optimisticMessage: ChatMessage = {
+        id: clientMessageId,
+        clientMessageId,
+        room_id: input.roomId,
+        class_code: input.classCode || input.roomId.replace(/^class:/, ''),
+        sender_email: user?.email || 'hoangngan@khongtunhi.com',
+        sender_name: user?.name || 'Học viên KTN',
+        sender_role: user?.role || 'student',
+        content: input.content,
+        attachment: input.attachment || null,
+        replyTo: input.replyTo || null,
+        reactions: [],
+        created_at: nowIso,
+        status: 'sending',
+      };
+
+      // Step 1: Transition to SENDING immediately (never claim 'Đã gửi' before server ack)
+      removeFailedMessage(input.roomId, clientMessageId);
+      addSendingMessage(input.roomId, optimisticMessage);
+
+      try {
+        if (isOfflineSimulated) {
+          await new Promise((r) => setTimeout(r, 250));
+          throw new Error('Thiết bị đang mất kết nối mạng. Tin nhắn được giữ trên máy.');
+        }
+
+        if (isDemoMode || chatDemoScenario !== 'live_real') {
+          await new Promise((r) => setTimeout(r, 350));
+          const demoAck: ChatMessage = {
+            ...optimisticMessage,
+            id: `demo_srv_${Date.now()}`,
+            status: 'sent',
+          };
+          removeSendingMessage(input.roomId, clientMessageId);
+          return {
+            message: demoAck,
+            clientMessageId,
+            serverMessageId: demoAck.id,
+          };
+        }
+
+        // Step 2: Call authoritative Worker BFF endpoint
+        const res = await chatApi.sendMessage({
+          roomId: input.roomId,
+          classCode: input.classCode,
+          content: input.content,
+          attachment: input.attachment,
+          replyTo: input.replyTo,
+          clientMessageId,
+          isPinned: input.isPinned,
+        });
+
+        // Step 3: Server acknowledged -> Remove from temporary sending queue & update cache
+        removeSendingMessage(input.roomId, clientMessageId);
+
+        const confirmedMsg: ChatMessage = {
+          ...res.message,
+          clientMessageId,
+          status: 'sent',
+        };
+
+        queryClient.setQueryData(
+          ['chat-messages', input.roomId, user?.email, isDemoMode, chatDemoScenario],
+          (
+            oldData:
+              | {
+                  messages: ChatMessage[];
+                  pinnedMessage: PinnedAnnouncement | null;
+                  pagination: Record<string, unknown>;
+                }
+              | undefined
+          ) => {
+            if (!oldData) return oldData;
+            const exists = oldData.messages.some(
+              (m) =>
+                String(m.id) === String(confirmedMsg.id) ||
+                (m.clientMessageId && m.clientMessageId === clientMessageId)
+            );
+            if (exists) return oldData;
+            return {
+              ...oldData,
+              messages: [...oldData.messages, confirmedMsg],
+            };
+          }
+        );
+
+        queryClient.invalidateQueries({ queryKey: ['chat-messages', input.roomId] });
+        queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+
+        onBroadcast?.({
+          type: 'NEW_MESSAGE',
+          roomId: input.roomId,
+          senderEmail: user?.email,
+          timestamp: Date.now(),
+        });
+
+        return res;
+      } catch (err) {
+        const errorReason =
+          err instanceof Error
+            ? err.message
+            : 'Chưa gửi được tin nhắn. Vui lòng kiểm tra kết nối và thử lại.';
+
+        // Step 4: Server failed -> Transition to FAILED, retain draft in composer if empty, allow 1-click retry
+        markMessageFailed(input.roomId, optimisticMessage, errorReason);
+
+        const currentDraft = getRoomDraft(input.roomId);
+        if (!currentDraft.trim() && input.content) {
+          setRoomDraft(input.roomId, input.content);
+        }
+
+        addToast({
+          title: 'Chưa gửi được tin nhắn',
+          description: `${errorReason} (Tin nhắn vẫn được giữ để thử lại).`,
+          variant: 'error',
+        });
+
+        throw err;
+      }
+    },
+  });
+
+  const retryFailedMessage = useCallback(
+    async (failedMsg: ChatMessage) => {
+      const clientMessageId = failedMsg.clientMessageId || failedMsg.id;
+      return sendMutation.mutateAsync({
+        roomId: failedMsg.room_id,
+        classCode: failedMsg.class_code,
+        content: failedMsg.content,
+        attachment: failedMsg.attachment,
+        replyTo: failedMsg.replyTo,
+        clientMessageId, // Same clientMessageId guarantees idempotency on backend
+      });
+    },
+    [sendMutation]
+  );
+
+  const toggleReaction = useCallback(
+    (params: { roomId: string; messageId: string; emoji: string }) => {
+      toggleReactionStore(params.messageId, params.emoji, user?.name || 'Học viên KTN');
+      onBroadcast?.({
+        type: 'REACTION_UPDATED',
+        roomId: params.roomId,
+        senderEmail: user?.email,
+        timestamp: Date.now(),
+      });
+    },
+    [toggleReactionStore, user?.name, user?.email, onBroadcast]
+  );
+
+  const pinMutation = useMutation({
+    mutationFn: async (params: { roomId: string; content: string; messageId?: string }) => {
+      if (isDemoMode || chatDemoScenario !== 'live_real') return null;
+      const res = await chatApi.pinAnnouncement(params.roomId, params.content, params.messageId);
+      onBroadcast?.({
+        type: 'PIN_UPDATED',
+        roomId: params.roomId,
+        senderEmail: user?.email,
+        timestamp: Date.now(),
+      });
+      return res;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['chat-messages', variables.roomId] });
+      addToast({
+        title: 'Đã cập nhật thông báo ghim của lớp học',
+        variant: 'success',
+      });
+    },
+  });
+
+  return {
+    sendMessage: sendMutation.mutateAsync,
+    isSending: sendMutation.isPending,
+    retryFailedMessage,
+    toggleReaction,
+    pinAnnouncement: pinMutation.mutate,
+  };
+}

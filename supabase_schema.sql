@@ -4,7 +4,13 @@
 -- Phối hợp: File nặng (Video HLS, PDF, MP3, File bài tập S3) vẫn lưu trên izTeach.
 -- ============================================================================
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgcrypto extension not required on PostgreSQL 13+ (gen_random_uuid is built-in).';
+END $$;
+
 
 -- 1. BẢNG CẤU HÌNH BẢNG GIÁ & THANH TOÁN VIETQR (HỖ TRỢ DUYỆT TAY + BẬT TỰ ĐỘNG)
 CREATE TABLE IF NOT EXISTS public.ktn_payment_config (
@@ -162,16 +168,22 @@ ON CONFLICT (code) DO NOTHING;
 
 -- 6. BẢNG ĐIỂM DANH THEO BUỔI HỌC (THAY THẾ CHUỖI TEXT TĨNH CŨ)
 CREATE TABLE IF NOT EXISTS public.ktn_attendance (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   class_code TEXT NOT NULL REFERENCES public.ktn_classes(id) ON DELETE CASCADE,
-  student_code TEXT NOT NULL REFERENCES public.ktn_students(code) ON DELETE CASCADE,
-  student_email TEXT NOT NULL,
-  lesson_num INTEGER NOT NULL,
+  student_code TEXT REFERENCES public.ktn_students(code) ON DELETE CASCADE,
+  student_email TEXT,
+  student_name TEXT DEFAULT '',
+  lesson_num INTEGER NOT NULL DEFAULT 1,
+  session_num INTEGER DEFAULT 1,
+  date TEXT DEFAULT CURRENT_DATE::text,
   status TEXT NOT NULL DEFAULT 'present'
-    CHECK (status IN ('present', 'excused', 'absent')),
+    CHECK (status IN ('present', 'late', 'excused', 'absent', 'absent_excused', 'absent_unexcused')),
+  note TEXT DEFAULT '',
   teacher_note TEXT DEFAULT '',
   recorded_by TEXT,
+  updated_by TEXT,
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (class_code, student_code, lesson_num)
 );
 
@@ -290,3 +302,154 @@ BEGIN
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.ktn_dlp_alerts; EXCEPTION WHEN DUPLICATE_OBJECT THEN NULL; END;
   END IF;
 END $$;
+
+-- 11. NÂNG CẤP V3: BẢNG ĐIỀU PHỐI TÀI KHOẢN & NHẬT KÝ ĐỐI SOÁT 3 BÊN
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+ALTER TABLE public.ktn_students
+  ADD COLUMN IF NOT EXISTS parent_name TEXT,
+  ADD COLUMN IF NOT EXISTS izteach_student_id TEXT,
+  ADD COLUMN IF NOT EXISTS has_live_class BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS has_online_courses BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS account_status TEXT DEFAULT 'ready_to_login',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT,
+  ADD COLUMN IF NOT EXISTS internal_note TEXT,
+  ADD COLUMN IF NOT EXISTS search_text TEXT;
+
+ALTER TABLE public.ktn_teachers
+  ADD COLUMN IF NOT EXISTS assigned_classes JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS cognito_user_id TEXT,
+  ADD COLUMN IF NOT EXISTS izteach_staff_id TEXT,
+  ADD COLUMN IF NOT EXISTS provisioning_status TEXT DEFAULT 'ready_to_login',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'teacher',
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS internal_note TEXT,
+  ADD COLUMN IF NOT EXISTS search_text TEXT;
+
+ALTER TABLE public.ktn_orders
+  ADD COLUMN IF NOT EXISTS provisioning_status TEXT DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
+  ADD COLUMN IF NOT EXISTS operation_id TEXT,
+  ADD COLUMN IF NOT EXISTS class_code TEXT,
+  ADD COLUMN IF NOT EXISTS approved_by TEXT,
+  ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS completed_steps JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS failed_step TEXT,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT;
+
+ALTER TABLE public.ktn_homeworks
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS izteach_remote_id TEXT,
+  ADD COLUMN IF NOT EXISTS unit_id TEXT,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT;
+
+ALTER TABLE public.ktn_attendance
+  ALTER COLUMN id TYPE TEXT USING id::text,
+  ALTER COLUMN id SET DEFAULT gen_random_uuid()::text,
+  ALTER COLUMN student_code DROP NOT NULL,
+  ALTER COLUMN lesson_num SET DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS student_email TEXT,
+  ADD COLUMN IF NOT EXISTS student_name TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS session_num INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS date TEXT DEFAULT CURRENT_DATE::text,
+  ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS updated_by TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.ktn_attendance DROP CONSTRAINT IF EXISTS ktn_attendance_status_check;
+ALTER TABLE public.ktn_attendance ADD CONSTRAINT ktn_attendance_status_check
+  CHECK (status IN ('present', 'late', 'excused', 'absent', 'absent_excused', 'absent_unexcused'));
+
+CREATE TABLE IF NOT EXISTS public.ktn_provisioning_jobs (
+  operation_id TEXT PRIMARY KEY,
+  idempotency_key TEXT UNIQUE,
+  job_type TEXT NOT NULL,
+  target_email TEXT NOT NULL,
+  target_role TEXT DEFAULT 'student',
+  actor_email TEXT,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  sync_status TEXT DEFAULT 'pending',
+  retryable BOOLEAN DEFAULT true,
+  completed_steps JSONB DEFAULT '[]'::jsonb,
+  failed_step TEXT,
+  cognito_user_id TEXT,
+  izteach_student_id TEXT,
+  request_payload JSONB DEFAULT '{}'::jsonb,
+  response_payload JSONB DEFAULT '{}'::jsonb,
+  result_summary JSONB DEFAULT '{}'::jsonb,
+  error_code TEXT,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.ktn_sync_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  operation_id TEXT,
+  event_type TEXT NOT NULL,
+  target_system TEXT DEFAULT 'three_way',
+  source_system TEXT DEFAULT 'worker_bff',
+  entity_type TEXT NOT NULL DEFAULT 'student',
+  entity_id TEXT,
+  entity_key TEXT,
+  status TEXT DEFAULT 'info',
+  sync_status TEXT NOT NULL DEFAULT 'info',
+  error_code TEXT,
+  drift_code TEXT,
+  details JSONB DEFAULT '{}'::jsonb,
+  error_message TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+DROP INDEX IF EXISTS public.idx_ktn_students_class;
+DROP INDEX IF EXISTS public.idx_ktn_students_class_code;
+DROP INDEX IF EXISTS public.idx_ktn_students_email;
+DROP INDEX IF EXISTS public.idx_ktn_students_name_trgm;
+CREATE INDEX IF NOT EXISTS idx_ktn_students_email_lower ON public.ktn_students (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_ktn_students_code_lower ON public.ktn_students (LOWER(code));
+CREATE INDEX IF NOT EXISTS idx_ktn_students_phone ON public.ktn_students (phone);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_updated_email ON public.ktn_students (updated_at DESC NULLS LAST, email ASC);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_class_updated ON public.ktn_students (class_code, updated_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_search_text_trgm ON public.ktn_students USING GIN (search_text gin_trgm_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS idx_ktn_attendance_class_date ON public.ktn_attendance (class_code, date DESC);
+CREATE INDEX IF NOT EXISTS idx_ktn_attendance_student_date ON public.ktn_attendance (student_code, date DESC);
+
+ALTER TABLE public.ktn_provisioning_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ktn_sync_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.ktn_provisioning_jobs, public.ktn_sync_events FROM PUBLIC;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    BEGIN
+      CREATE ROLE service_role NOLOGIN;
+    EXCEPTION WHEN insufficient_privilege OR duplicate_object THEN
+      NULL;
+    END;
+  END IF;
+END $$;
+DROP POLICY IF EXISTS "Allow all for service role" ON public.ktn_provisioning_jobs;
+DROP POLICY IF EXISTS "service_role_only_ktn_provisioning_jobs" ON public.ktn_provisioning_jobs;
+CREATE POLICY "service_role_only_ktn_provisioning_jobs"
+  ON public.ktn_provisioning_jobs
+  AS PERMISSIVE
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON public.ktn_sync_events;
+DROP POLICY IF EXISTS "service_role_only_ktn_sync_events" ON public.ktn_sync_events;
+CREATE POLICY "service_role_only_ktn_sync_events"
+  ON public.ktn_sync_events
+  AS PERMISSIVE
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+

@@ -7,6 +7,9 @@ import {
   BookOpen,
   Headphones,
   FileCheck2,
+  FileText,
+  Download,
+  ExternalLink,
   ChevronRight,
   Volume2,
   ListVideo,
@@ -21,6 +24,7 @@ import {
   Loader2,
   ShieldCheck,
   Copy,
+  Layers,
 } from 'lucide-react';
 import { HlsVideoPlayer, VideoPlayerStatus } from './HlsVideoPlayer';
 import { HomeworkPanel } from './HomeworkPanel';
@@ -40,6 +44,14 @@ import {
 } from '@/types/ktn.types';
 
 const VALID_VN_PHONE_REGEX = /^0\d{9}$/;
+
+function formatMaterialBytes(bytes?: number | null): string {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 export const STUDENT_TRACKER_STAGES: Array<{
   id: StudentOrderTrackerStage;
@@ -74,9 +86,14 @@ export const LearningPage: React.FC = () => {
     const p = Number(searchParams.get('lesson'));
     return Number.isFinite(p) && p > 0 ? p : 1;
   });
-  const [activeTab, setActiveTab] = useState<'overview' | 'audio' | 'homework'>(() => {
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(
+    () => searchParams.get('unitId') || null
+  );
+  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'homework'>(() => {
     const t = searchParams.get('tab');
-    return t === 'homework' || t === 'audio' ? t : 'overview';
+    if (t === 'homework') return 'homework';
+    if (t === 'materials' || t === 'audio') return 'materials';
+    return 'overview';
   });
   const [mobileLessonDrawerOpen, setMobileLessonDrawerOpen] = useState(false);
 
@@ -106,11 +123,14 @@ export const LearningPage: React.FC = () => {
   const syncUrlParams = (
     nextCourseId: string,
     nextLessonNum: number,
-    nextTab?: 'overview' | 'audio' | 'homework'
+    nextTab?: 'overview' | 'materials' | 'homework',
+    nextUnitId?: string | null
   ) => {
     const next = new URLSearchParams(searchParams);
     next.set('courseId', nextCourseId);
     next.set('lesson', String(nextLessonNum));
+    if (nextUnitId) next.set('unitId', nextUnitId);
+    else next.delete('unitId');
     if (nextTab) {
       if (nextTab === 'overview') next.delete('tab');
       else next.set('tab', nextTab);
@@ -122,11 +142,17 @@ export const LearningPage: React.FC = () => {
   useEffect(() => {
     const cid = searchParams.get('courseId');
     const lnum = Number(searchParams.get('lesson'));
+    const uid = searchParams.get('unitId');
     const tab = searchParams.get('tab');
     if (cid) setSelectedCourseId(cid);
     if (Number.isFinite(lnum) && lnum > 0) setSelectedLessonNum(lnum);
-    if (tab === 'homework' || tab === 'audio' || tab === 'overview') {
-      setActiveTab(tab);
+    if (uid !== null) setSelectedUnitId(uid || null);
+    if (tab === 'homework') {
+      setActiveTab('homework');
+    } else if (tab === 'materials' || tab === 'audio') {
+      setActiveTab('materials');
+    } else if (tab === 'overview') {
+      setActiveTab('overview');
     }
   }, [searchParams]);
 
@@ -452,14 +478,68 @@ export const LearningPage: React.FC = () => {
     return [];
   }, [unitsQuery.data, isDemoMode]);
 
+  const groupedMainLessons = useMemo(() => {
+    const groups = new Map<
+      number,
+      {
+        lessonNum: number;
+        primaryUnit: KtnLessonUnit;
+        subUnits: KtnLessonUnit[];
+        title: string;
+        titleZh: string;
+        titleVi: string;
+        duration: string;
+      }
+    >();
+
+    for (const u of lessons) {
+      if (u.unitType === 'workbook') continue;
+      const lNum = Number(u.lessonNumber || u.num || 1);
+      if (!groups.has(lNum)) {
+        groups.set(lNum, {
+          lessonNum: lNum,
+          primaryUnit: u,
+          subUnits: [],
+          title: u.title,
+          titleZh: u.titleZh || '',
+          titleVi: u.titleVi || '',
+          duration: u.duration || '12:00',
+        });
+      }
+      groups.get(lNum)!.subUnits.push(u);
+    }
+
+    return Array.from(groups.values());
+  }, [lessons]);
+
+  const workbookUnits = useMemo(
+    () => lessons.filter((u) => u.unitType === 'workbook'),
+    [lessons]
+  );
+
   const activeLesson: KtnLessonUnit | null = useMemo(() => {
     if (lessons.length === 0) return null;
+    if (selectedUnitId) {
+      const byUnitId = lessons.find(
+        (l) =>
+          String(l.unitId || l._id || l.id) === String(selectedUnitId)
+      );
+      if (byUnitId) return byUnitId;
+    }
     return (
-      lessons.find((l) => Number(l.num) === Number(selectedLessonNum)) ||
+      lessons.find(
+        (l) => Number(l.lessonNumber || l.num) === Number(selectedLessonNum)
+      ) ||
       lessons[0] ||
       null
     );
-  }, [lessons, selectedLessonNum]);
+  }, [lessons, selectedLessonNum, selectedUnitId]);
+
+  const activeLessonGroup = useMemo(() => {
+    if (!activeLesson) return null;
+    const lNum = Number(activeLesson.lessonNumber || activeLesson.num);
+    return groupedMainLessons.find((g) => g.lessonNum === lNum) || null;
+  }, [groupedMainLessons, activeLesson]);
 
   // 3. Fetch Student Homeworks
   const homeworksQuery = useQuery<KtnHomework[]>({
@@ -490,19 +570,27 @@ export const LearningPage: React.FC = () => {
       };
     }
     const list = homeworksQuery.data || [];
+    const targetLessonNum = Number(activeLesson.lessonNumber || activeLesson.num);
     return (
       list.find(
         (h) =>
           String(h.course_id) === String(activeCourse.id) &&
-          Number(h.lesson_num) === Number(activeLesson.num)
+          Number(h.lesson_num) === targetLessonNum
       ) || null
     );
   }, [homeworksQuery.data, activeCourse.id, activeLesson, isDemoMode, videoDemoScenario]);
 
-  // 4. Submit Homework Mutation (Presigned S3 Upload + POST /api/ktn/homeworks)
+  // 4. Submit Homework Mutation (Presigned S3 Upload + POST /api/ktn/homeworks, or Text Answer)
   const submitHomeworkMutation = useMutation({
-    mutationFn: async (params: { file: File | Blob; fileName: string; note: string }) => {
+    mutationFn: async (params: {
+      file?: File | Blob | null;
+      fileName?: string;
+      note: string;
+      submissionMode?: 'file' | 'text';
+      textAnswer?: string;
+    }) => {
       if (!activeLesson) throw new Error('Chưa chọn bài học');
+      const targetLessonNum = Number(activeLesson.lessonNumber || activeLesson.num);
 
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 450));
@@ -510,7 +598,7 @@ export const LearningPage: React.FC = () => {
           homework: {
             ...DEMO_HOMEWORKS[0],
             id: `demo_hw_${Date.now()}`,
-            lesson_num: activeLesson.num,
+            lesson_num: targetLessonNum,
             lesson_title: activeLesson.title,
             student_note: params.note,
             status: 'pending' as const,
@@ -520,20 +608,40 @@ export const LearningPage: React.FC = () => {
         };
       }
 
-      const uploaded = await ktnApi.uploadHomeworkFile(params.file, params.fileName);
+      if (!params.file || params.submissionMode === 'text') {
+        return ktnApi.submitHomework({
+          courseId: activeCourse.id,
+          classCode: user?.classCode || '',
+          lessonNum: targetLessonNum,
+          lessonTitle: activeLesson.title,
+          unitId: activeLesson.unitId || activeLesson._id || activeLesson.id || null,
+          fileUrl: '',
+          fileType: 'text/plain',
+          studentNote: params.note,
+          textAnswer: params.textAnswer || params.note,
+          submissionMode: 'text',
+          attachments: [],
+        });
+      }
+
+      const uploaded = await ktnApi.uploadHomeworkFile(
+        params.file,
+        params.fileName || `btvn-bai-${targetLessonNum}.dat`
+      );
 
       return ktnApi.submitHomework({
         courseId: activeCourse.id,
         classCode: user?.classCode || '',
-        lessonNum: activeLesson.num,
+        lessonNum: targetLessonNum,
         lessonTitle: activeLesson.title,
-        unitId: activeLesson._id || activeLesson.id || null,
+        unitId: activeLesson.unitId || activeLesson._id || activeLesson.id || null,
         fileUrl: uploaded.fileUrl,
         fileType: uploaded.fileType,
         studentNote: params.note,
+        submissionMode: 'file',
         attachments: [
           {
-            title: params.fileName,
+            title: params.fileName || `Bài nộp Bài ${targetLessonNum}`,
             fileUrl: uploaded.fileUrl,
             mediaType: uploaded.fileType,
             size: uploaded.size,
@@ -581,12 +689,13 @@ export const LearningPage: React.FC = () => {
     unitsQuery.error,
   ]);
 
-  const lessonKey = `${activeCourse.id}:${activeLesson?.num || 1}`;
+  const activeLessonNumber = Number(activeLesson?.lessonNumber || activeLesson?.num || 1);
+  const lessonKey = `${activeCourse.id}:${activeLessonNumber}`;
   const isCurrentLessonCompleted = Boolean(completedLessons[lessonKey]);
 
   const handleToggleCompleted = () => {
     if (!activeLesson) return;
-    toggleLessonCompleted(activeCourse.id, activeLesson.num);
+    toggleLessonCompleted(activeCourse.id, activeLessonNumber);
     addToast({
       title: !isCurrentLessonCompleted
         ? 'Tuyệt vời! Đã hoàn thành bài học 🎉'
@@ -595,14 +704,38 @@ export const LearningPage: React.FC = () => {
     });
   };
 
-  const completedCount = lessons.filter(
-    (l) => completedLessons[`${activeCourse.id}:${l.num}`]
-  ).length;
+  const totalCurriculumCount =
+    groupedMainLessons.length > 0 ? groupedMainLessons.length : lessons.length;
+  const completedCount =
+    groupedMainLessons.length > 0
+      ? groupedMainLessons.filter(
+          (g) => completedLessons[`${activeCourse.id}:${g.lessonNum}`]
+        ).length
+      : lessons.filter((l) => completedLessons[`${activeCourse.id}:${l.num}`]).length;
 
   const myOrdersList = myOrdersQuery.data || [];
 
+  const handleSelectLessonGroup = (group: {
+    lessonNum: number;
+    primaryUnit: KtnLessonUnit;
+  }) => {
+    const uid =
+      group.primaryUnit.unitId || group.primaryUnit._id || group.primaryUnit.id || null;
+    setSelectedLessonNum(group.lessonNum);
+    setSelectedUnitId(uid);
+    syncUrlParams(activeCourse.id, group.lessonNum, activeTab, uid);
+  };
+
+  const handleSelectUnit = (unit: KtnLessonUnit) => {
+    const lNum = Number(unit.lessonNumber || unit.num || 1);
+    const uid = unit.unitId || unit._id || unit.id || null;
+    setSelectedLessonNum(lNum);
+    setSelectedUnitId(uid);
+    syncUrlParams(activeCourse.id, lNum, activeTab, uid);
+  };
+
   return (
-    <div data-testid="video-learning-page" className="space-y-3 sm:space-y-4">
+    <div data-testid="video-learning-page" className="space-y-3 pb-16 sm:space-y-4 sm:pb-6">
       {/* Demo Mode Video State Switcher */}
       {isDemoMode && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-2 text-xs">
@@ -663,17 +796,23 @@ export const LearningPage: React.FC = () => {
         </div>
       )}
 
-      {/* Course Selector Header (Compact on mobile — Khóa của em prioritized first) */}
+      {/* Course Selector Header (Full Course Title — never truncated to Kh...) */}
       <div
         data-testid="learning-course-switcher-header"
         className="space-y-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 shadow-2xs sm:flex sm:items-center sm:justify-between sm:space-y-0 sm:px-4 sm:py-3"
       >
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <h1 className="truncate font-display text-sm font-bold text-stone-900 sm:text-base">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <h1
+            data-testid="learning-active-course-title"
+            className="font-display text-sm font-bold leading-snug text-stone-900 sm:text-base"
+          >
             {activeCourse.title}
           </h1>
-          <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-bold text-stone-700">
-            {completedCount}/{lessons.length} bài
+          <span
+            data-testid="learning-course-progress-pill"
+            className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-200"
+          >
+            Tiến độ: {completedCount}/{totalCurriculumCount} bài
           </span>
         </div>
 
@@ -700,7 +839,8 @@ export const LearningPage: React.FC = () => {
                   onClick={() => {
                     setSelectedCourseId(course.id);
                     setSelectedLessonNum(1);
-                    syncUrlParams(course.id, 1, activeTab);
+                    setSelectedUnitId(null);
+                    syncUrlParams(course.id, 1, activeTab, null);
                   }}
                   className={`inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
                     activeCourse.id === course.id
@@ -723,8 +863,87 @@ export const LearningPage: React.FC = () => {
 
       {/* Main Responsive Grid: Video + Tabs on Left (8 cols), Lesson List Sidebar on Right (4 cols) */}
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
-        {/* Left Column: Video Player & Lesson Content Tabs */}
+        {/* Left Column: Prominent Lesson Banner + Video Player + 3 Clear Tabs */}
         <div className="space-y-3 sm:space-y-4 lg:col-span-8">
+          {/* Phase 3A: Prominent Active Lesson Header Banner */}
+          {activeLesson && playerStatusOverride !== 'unentitled' && (
+            <div
+              data-testid="lesson-header-banner"
+              className="rounded-xl border border-stone-200 bg-white px-3.5 py-3 shadow-2xs sm:px-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center rounded-lg bg-red-800 px-2.5 py-0.5 text-[11px] font-bold text-white">
+                    {activeLesson.unitType === 'workbook'
+                      ? activeLesson.partNumber || 'Sách bài tập'
+                      : activeLesson.partNumber && String(activeLesson.partNumber).includes('.')
+                      ? `Bài ${activeLessonNumber} · Phần ${activeLesson.partNumber}`
+                      : `Bài ${activeLessonNumber}/${totalCurriculumCount}`}
+                  </span>
+                  {activeLesson.rawTitle && (
+                    <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-semibold text-stone-600">
+                      {activeLesson.rawTitle}
+                    </span>
+                  )}
+                  {activeLesson.duration && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">
+                      <Clock className="h-3 w-3 text-stone-500" />
+                      {activeLesson.duration}
+                    </span>
+                  )}
+                </div>
+
+                {isCurrentLessonCompleted && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Đã hoàn thành
+                  </span>
+                )}
+              </div>
+
+              <h2
+                data-testid="active-lesson-title"
+                className="mt-1.5 font-display text-base font-bold leading-snug text-stone-900 sm:text-lg"
+              >
+                {activeLesson.title}
+              </h2>
+
+              {(activeLesson.titleZh || activeLesson.titleVi) && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  {activeLesson.titleZh && (
+                    <span
+                      data-testid="active-lesson-title-zh"
+                      className="font-bold text-red-900"
+                    >
+                      {activeLesson.titleZh}
+                    </span>
+                  )}
+                  {activeLesson.titleZh && activeLesson.titleVi && (
+                    <span className="text-stone-400">—</span>
+                  )}
+                  {activeLesson.titleVi && (
+                    <span
+                      data-testid="active-lesson-title-vi"
+                      className="font-semibold text-stone-700"
+                    >
+                      {activeLesson.titleVi}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {activeLesson.grammar && (
+                <p
+                  data-testid="active-lesson-grammar-summary"
+                  className="mt-1.5 text-xs leading-relaxed text-stone-600"
+                >
+                  <strong className="font-semibold text-stone-800">Trọng tâm bài học:</strong>{' '}
+                  {activeLesson.grammar}
+                </p>
+              )}
+            </div>
+          )}
+
           <HlsVideoPlayer
             lessonTitle={activeLesson?.title || 'Bài giảng tiếng Trung KTN'}
             courseName={activeCourse.title}
@@ -744,13 +963,63 @@ export const LearningPage: React.FC = () => {
             onRequestUnlockCourse={() => openRegistrationModal(activeCourse)}
           />
 
+          {/* Sub-part Video Switcher (When a lesson has multiple video parts like 3.1/3.2 or 13.1/13.2) */}
+          {activeLesson &&
+            playerStatusOverride !== 'unentitled' &&
+            activeLessonGroup &&
+            activeLessonGroup.subUnits.length > 1 && (
+              <div
+                data-testid="lesson-parts-switcher"
+                className="flex flex-wrap items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 shadow-2xs"
+              >
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-stone-700">
+                  <Layers className="h-3.5 w-3.5 text-red-800" />
+                  Các phần của Bài {activeLessonGroup.lessonNum}:
+                </span>
+                {activeLessonGroup.subUnits.map((sub, sIdx) => {
+                  const subUid = sub.unitId || sub._id || sub.id;
+                  const activeUid =
+                    activeLesson.unitId || activeLesson._id || activeLesson.id;
+                  const isCurrentPart = String(subUid) === String(activeUid);
+                  const partCode = sub.partNumber || `${activeLessonGroup.lessonNum}.${sIdx + 1}`;
+                  return (
+                    <button
+                      key={subUid || sIdx}
+                      type="button"
+                      data-testid={`switch-part-${partCode}`}
+                      onClick={() => handleSelectUnit(sub)}
+                      className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-colors ${
+                        isCurrentPart
+                          ? 'bg-red-800 text-white shadow-2xs'
+                          : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                      }`}
+                    >
+                      <PlayCircle className="h-3.5 w-3.5" />
+                      <span>Phần {partCode}</span>
+                      {sub.duration && (
+                        <span
+                          className={`text-[10px] ${
+                            isCurrentPart ? 'text-red-100' : 'text-stone-500'
+                          }`}
+                        >
+                          ({sub.duration})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
           {/* Mobile Lesson Drawer Trigger & Content Tabs (Only when entitled and lessons exist) */}
           {activeLesson && playerStatusOverride !== 'unentitled' && (
             <>
               <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 lg:hidden">
                 <div className="min-w-0">
                   <p className="text-[11px] font-bold uppercase text-red-800">
-                    Bài {activeLesson.num}/{lessons.length}
+                    {activeLesson.unitType === 'workbook'
+                      ? activeLesson.partNumber || 'Sách bài tập'
+                      : `Bài ${activeLessonNumber}/${totalCurriculumCount}`}
                   </p>
                   <p className="truncate text-xs font-semibold text-stone-900">
                     {activeLesson.title}
@@ -758,62 +1027,152 @@ export const LearningPage: React.FC = () => {
                 </div>
                 <button
                   type="button"
+                  data-testid="mobile-lesson-drawer-toggle"
                   onClick={() => setMobileLessonDrawerOpen((prev) => !prev)}
                   className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg bg-stone-100 px-2.5 py-1.5 text-xs font-bold text-stone-800"
                 >
                   <ListVideo className="h-3.5 w-3.5 text-red-800" />
-                  <span>Chọn bài ({lessons.length})</span>
+                  <span>
+                    Chọn bài ({totalCurriculumCount}
+                    {workbookUnits.length > 0 ? `+${workbookUnits.length} SBT` : ''})
+                  </span>
                 </button>
               </div>
 
               {mobileLessonDrawerOpen && (
-                <div className="rounded-2xl border border-stone-200 bg-white p-2.5 lg:hidden">
-                  <div className="max-h-56 space-y-1 overflow-y-auto">
-                    {lessons.map((lesson) => {
-                      const isSelected = Number(lesson.num) === Number(activeLesson.num);
+                <div
+                  data-testid="mobile-lesson-drawer"
+                  className="rounded-2xl border border-stone-200 bg-white p-2.5 lg:hidden"
+                >
+                  <div className="max-h-72 space-y-1.5 overflow-y-auto">
+                    {groupedMainLessons.map((grp) => {
+                      const isSelected =
+                        activeLesson.unitType !== 'workbook' &&
+                        Number(grp.lessonNum) === Number(activeLessonNumber);
                       const done = Boolean(
-                        completedLessons[`${activeCourse.id}:${lesson.num}`]
+                        completedLessons[`${activeCourse.id}:${grp.lessonNum}`]
                       );
                       return (
-                        <button
-                          key={lesson._id || lesson.num}
-                          type="button"
-                          onClick={() => {
-                            setSelectedLessonNum(lesson.num);
-                            syncUrlParams(activeCourse.id, lesson.num, activeTab);
-                            setMobileLessonDrawerOpen(false);
-                          }}
-                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs ${
-                            isSelected
-                              ? 'bg-red-50 font-bold text-red-900'
-                              : 'text-stone-700 hover:bg-stone-50'
-                          }`}
+                        <div
+                          key={grp.lessonNum}
+                          className="rounded-xl border border-stone-100 bg-stone-50/50 p-1.5"
                         >
-                          <span className="truncate">{lesson.title}</span>
-                          {done && (
-                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleSelectLessonGroup(grp);
+                              if (grp.subUnits.length <= 1) {
+                                setMobileLessonDrawerOpen(false);
+                              }
+                            }}
+                            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs ${
+                              isSelected
+                                ? 'bg-red-50 font-bold text-red-900'
+                                : 'font-semibold text-stone-800 hover:bg-stone-100'
+                            }`}
+                          >
+                            <span className="line-clamp-1">{grp.title}</span>
+                            <div className="ml-2 flex shrink-0 items-center gap-1.5">
+                              <span className="text-[10px] text-stone-500">
+                                {grp.duration}
+                              </span>
+                              {done && (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              )}
+                            </div>
+                          </button>
+
+                          {grp.subUnits.length > 1 && (
+                            <div className="mt-1 flex flex-wrap gap-1 px-2 pb-1">
+                              {grp.subUnits.map((sub, sIdx) => {
+                                const subUid = sub.unitId || sub._id || sub.id;
+                                const activeUid =
+                                  activeLesson.unitId ||
+                                  activeLesson._id ||
+                                  activeLesson.id;
+                                const isPartActive = String(subUid) === String(activeUid);
+                                const pCode =
+                                  sub.partNumber || `${grp.lessonNum}.${sIdx + 1}`;
+                                return (
+                                  <button
+                                    key={subUid || sIdx}
+                                    type="button"
+                                    onClick={() => {
+                                      handleSelectUnit(sub);
+                                      setMobileLessonDrawerOpen(false);
+                                    }}
+                                    className={`rounded-md px-2 py-1 text-[11px] font-bold ${
+                                      isPartActive
+                                        ? 'bg-red-800 text-white'
+                                        : 'border border-stone-200 bg-white text-stone-700'
+                                    }`}
+                                  >
+                                    Phần {pCode} ({sub.duration || '12:00'})
+                                  </button>
+                                );
+                              })}
+                            </div>
                           )}
-                        </button>
+                        </div>
                       );
                     })}
+
+                    {workbookUnits.length > 0 && (
+                      <div className="pt-2">
+                        <p className="px-2 pb-1 text-[11px] font-bold uppercase text-stone-500">
+                          Chữa Sách bài tập (SBT)
+                        </p>
+                        {workbookUnits.map((wb) => {
+                          const wbUid = wb.unitId || wb._id || wb.id;
+                          const activeUid =
+                            activeLesson.unitId || activeLesson._id || activeLesson.id;
+                          const isSelected = String(wbUid) === String(activeUid);
+                          return (
+                            <button
+                              key={wbUid || wb.num}
+                              type="button"
+                              onClick={() => {
+                                handleSelectUnit(wb);
+                                setMobileLessonDrawerOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs ${
+                                isSelected
+                                  ? 'bg-red-50 font-bold text-red-900'
+                                  : 'text-stone-700 hover:bg-stone-50'
+                              }`}
+                            >
+                              <span className="truncate">{wb.title}</span>
+                              <span className="ml-2 shrink-0 text-[10px] text-stone-500">
+                                {wb.duration}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Lesson Navigation Tabs: Nội dung / MP3 / Bài tập / Hỏi GV */}
-              <div className="rounded-xl border border-stone-200 bg-white p-3 sm:p-4 shadow-2xs">
-                <div className="flex items-center justify-between gap-1.5 overflow-x-auto border-b border-stone-200 pb-2">
-                  <div className="flex items-center gap-1 shrink-0">
+              {/* Phase 3C: Three Clear Tabs Below Video: Nội dung | Học liệu | Bài tập */}
+              <div className="rounded-xl border border-stone-200 bg-white p-3 shadow-2xs sm:p-4">
+                <div className="flex items-center justify-between gap-1.5 overflow-x-auto border-b border-stone-200 pb-2.5">
+                  <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
                       data-testid="tab-lesson-overview"
                       onClick={() => {
                         setActiveTab('overview');
-                        syncUrlParams(activeCourse.id, activeLesson.num, 'overview');
+                        syncUrlParams(
+                          activeCourse.id,
+                          activeLessonNumber,
+                          'overview',
+                          selectedUnitId
+                        );
                       }}
-                      className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                      className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
                         activeTab === 'overview'
-                          ? 'bg-red-800 text-white'
+                          ? 'bg-red-800 text-white shadow-2xs'
                           : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                       }`}
                     >
@@ -823,19 +1182,29 @@ export const LearningPage: React.FC = () => {
 
                     <button
                       type="button"
-                      data-testid="tab-lesson-audio"
+                      data-testid="tab-lesson-materials"
                       onClick={() => {
-                        setActiveTab('audio');
-                        syncUrlParams(activeCourse.id, activeLesson.num, 'audio');
+                        setActiveTab('materials');
+                        syncUrlParams(
+                          activeCourse.id,
+                          activeLessonNumber,
+                          'materials',
+                          selectedUnitId
+                        );
                       }}
-                      className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
-                        activeTab === 'audio'
-                          ? 'bg-red-800 text-white'
+                      className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                        activeTab === 'materials'
+                          ? 'bg-red-800 text-white shadow-2xs'
                           : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                       }`}
                     >
                       <Headphones className="h-3.5 w-3.5" />
-                      <span>MP3 ({activeLesson.audioTracks?.length || 0})</span>
+                      <span>
+                        Học liệu (
+                        {(activeLesson.materials?.length || 0) +
+                          (activeLesson.audioTracks?.length || 0)}
+                        )
+                      </span>
                     </button>
 
                     <button
@@ -843,21 +1212,34 @@ export const LearningPage: React.FC = () => {
                       data-testid="tab-lesson-homework"
                       onClick={() => {
                         setActiveTab('homework');
-                        syncUrlParams(activeCourse.id, activeLesson.num, 'homework');
+                        syncUrlParams(
+                          activeCourse.id,
+                          activeLessonNumber,
+                          'homework',
+                          selectedUnitId
+                        );
                       }}
-                      className={`inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                      className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
                         activeTab === 'homework'
-                          ? 'bg-red-800 text-white'
+                          ? 'bg-red-800 text-white shadow-2xs'
                           : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                       }`}
                     >
                       <FileCheck2 className="h-3.5 w-3.5" />
                       <span>Bài tập</span>
-                      {currentLessonHomework?.status === 'graded' && (
+                      {currentLessonHomework?.status === 'graded' ? (
                         <span className="rounded-full bg-emerald-600 px-1.5 py-0.2 text-[10px] text-white">
                           {currentLessonHomework.score}đ
                         </span>
-                      )}
+                      ) : currentLessonHomework ? (
+                        <span className="rounded-full bg-blue-600 px-1.5 py-0.2 text-[10px] text-white">
+                          Đã nộp
+                        </span>
+                      ) : activeLesson.homeworkAssignment?.assigned !== false ? (
+                        <span className="rounded-full bg-amber-500/90 px-1.5 py-0.2 text-[10px] text-white">
+                          Cần làm
+                        </span>
+                      ) : null}
                     </button>
                   </div>
 
@@ -877,93 +1259,248 @@ export const LearningPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Tab 1: Overview */}
+                {/* Tab 1: Nội dung (Overview & Quick Real Material Links) */}
                 {activeTab === 'overview' && (
-                  <div className="mt-2.5 space-y-2.5">
-                    <div>
-                      <h2
-                        data-testid="active-lesson-title"
-                        className="font-display text-sm font-bold text-stone-900 sm:text-base"
-                      >
-                        {activeLesson.title}
-                      </h2>
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-stone-600">
+                  <div data-testid="lesson-overview-panel" className="mt-3 space-y-3">
+                    <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3">
+                      <p className="text-xs font-bold text-stone-900">
+                        Chủ đề & Ngữ pháp trọng tâm:
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-stone-700">
                         {activeLesson.grammar ||
-                          'Xem video bài giảng, luyện nghe phát âm chuẩn và gửi bản thu âm bài tập.'}
+                          'Xem video bài giảng, luyện nghe phát âm chuẩn và thực hành bài tập theo hướng dẫn.'}
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-2">
-                        <span className="block text-[10px] font-bold uppercase text-stone-500">
-                          SGK • Tr.{activeLesson.sgkPage || 1}
-                        </span>
-                        <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
-                          Đọc theo bài
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-2">
-                        <span className="block text-[10px] font-bold uppercase text-stone-500">
-                          SBT • Tr.{activeLesson.sbtPage || 1}
-                        </span>
-                        <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
-                          Nghe MP3
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-2.5 py-2">
-                        <span className="block text-[10px] font-bold uppercase text-amber-900">
-                          Viết • Tr.{activeLesson.voVietPage || 1}
-                        </span>
-                        <p className="mt-0.5 text-[11px] font-semibold text-stone-800">
-                          Thu âm nộp
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Tab 2: Audio Tracks */}
-                {activeTab === 'audio' && (
-                  <div className="mt-2.5 space-y-2">
-                    {!activeLesson.audioTracks || activeLesson.audioTracks.length === 0 ? (
-                      <p className="py-3 text-center text-xs text-stone-500">
-                        Âm thanh đã tích hợp trực tiếp trong video bài giảng.
-                      </p>
-                    ) : (
-                      activeLesson.audioTracks.map((audio, idx) => (
-                        <div
-                          key={idx}
-                          className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-stone-50 p-2.5"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-800 text-white">
-                              <Volume2 className="h-3.5 w-3.5" />
-                            </span>
-                            <p className="text-xs font-bold text-stone-900">{audio.name}</p>
-                          </div>
-                          <audio
-                            controls
-                            preload="none"
-                            src={audio.url}
-                            className="h-8 max-w-xs"
-                          />
+                    {/* Quick access to real verified materials of this lesson (never fake page 1) */}
+                    {(activeLesson.materials && activeLesson.materials.length > 0) ||
+                    (activeLesson.audioTracks && activeLesson.audioTracks.length > 0) ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold uppercase tracking-wide text-stone-600">
+                            Học liệu của bài này
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('materials');
+                              syncUrlParams(
+                                activeCourse.id,
+                                activeLessonNumber,
+                                'materials',
+                                selectedUnitId
+                              );
+                            }}
+                            className="text-xs font-bold text-red-800 hover:underline"
+                          >
+                            Xem tất cả học liệu & MP3 →
+                          </button>
                         </div>
-                      ))
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          {(activeLesson.materials || []).slice(0, 3).map((mat) => (
+                            <a
+                              key={mat.id}
+                              href={mat.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              data-testid={`overview-material-link-${mat.id}`}
+                              className="flex flex-col justify-between rounded-xl border border-stone-200 bg-stone-50 p-2.5 transition-colors hover:border-red-300 hover:bg-red-50/40"
+                            >
+                              <div>
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-red-800">
+                                  <FileText className="h-3 w-3" />
+                                  {mat.page ? `Trang ${mat.page}` : 'Tài liệu PDF'}
+                                </span>
+                                <p className="mt-0.5 line-clamp-1 text-xs font-bold text-stone-900">
+                                  {mat.title}
+                                </p>
+                              </div>
+                              <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-800">
+                                {mat.actionLabel || 'Mở xem tài liệu'}
+                                <ExternalLink className="h-3 w-3" />
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        data-testid="overview-no-materials-notice"
+                        className="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-3 py-2.5 text-xs text-stone-500"
+                      >
+                        Bài này chưa có tài liệu đính kèm.
+                      </div>
                     )}
                   </div>
                 )}
 
-                {/* Tab 3: Homework */}
+                {/* Tab 2: Học liệu (PDF SGK/SBT/Vở viết + MP3 Bài khóa/Từ mới/SBT) */}
+                {activeTab === 'materials' && (
+                  <div
+                    data-testid="lesson-materials-section"
+                    className="mt-3 space-y-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3
+                          data-testid="lesson-materials-heading"
+                          className="font-display text-sm font-bold text-stone-900"
+                        >
+                          Học liệu của bài này
+                        </h3>
+                        <p className="text-xs text-stone-500">
+                          Sách giáo khoa, sách bài tập, vở tập viết và các tệp nghe MP3 đúng theo{' '}
+                          {activeLesson.title}
+                        </p>
+                      </div>
+                    </div>
+
+                    {(!activeLesson.materials || activeLesson.materials.length === 0) &&
+                    (!activeLesson.audioTracks || activeLesson.audioTracks.length === 0) ? (
+                      <div
+                        data-testid="empty-lesson-materials"
+                        className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-center text-xs font-semibold text-stone-600"
+                      >
+                        Bài này chưa có tài liệu đính kèm.
+                      </div>
+                    ) : (
+                      <>
+                        {/* 1. PDF / Document Materials */}
+                        {activeLesson.materials && activeLesson.materials.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="text-xs font-bold uppercase tracking-wide text-stone-600">
+                              Sách & Tài liệu học tập ({activeLesson.materials.length})
+                            </h4>
+                            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                              {activeLesson.materials.map((mat) => {
+                                const sizeStr = formatMaterialBytes(mat.size);
+                                const downloadHref =
+                                  mat.baseUrl || mat.fileUrl || mat.url;
+                                return (
+                                  <div
+                                    key={mat.id}
+                                    data-testid={`material-card-${mat.id}`}
+                                    className="flex flex-col justify-between rounded-xl border border-stone-200 bg-stone-50/80 p-3 shadow-2xs"
+                                  >
+                                    <div className="flex items-start gap-2.5">
+                                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-800 text-white">
+                                        <FileText className="h-4 w-4" />
+                                      </span>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-bold leading-snug text-stone-900">
+                                          {mat.title}
+                                        </p>
+                                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500">
+                                          {mat.page && (
+                                            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-bold text-amber-900">
+                                              Trang {mat.page}
+                                            </span>
+                                          )}
+                                          {sizeStr && <span>• {sizeStr}</span>}
+                                          <span>• PDF chuẩn</span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                      <a
+                                        href={mat.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        data-testid={`material-open-btn-${mat.id}`}
+                                        className="inline-flex min-h-[34px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-red-900"
+                                      >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                        <span>
+                                          {mat.actionLabel ||
+                                            (mat.page
+                                              ? `Mở xem (Trang ${mat.page})`
+                                              : 'Xem tài liệu')}
+                                        </span>
+                                      </a>
+                                      <a
+                                        href={downloadHref}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        download
+                                        data-testid={`material-download-btn-${mat.id}`}
+                                        className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-100"
+                                      >
+                                        <Download className="h-3.5 w-3.5" />
+                                        <span>Tải về</span>
+                                      </a>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. MP3 Audio Tracks (SGK & SBT) — preload="none" */}
+                        {activeLesson.audioTracks && activeLesson.audioTracks.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="text-xs font-bold uppercase tracking-wide text-stone-600">
+                              File nghe MP3 của bài này ({activeLesson.audioTracks.length})
+                            </h4>
+                            <div className="space-y-2">
+                              {activeLesson.audioTracks.map((audio, idx) => (
+                                <div
+                                  key={audio.url || idx}
+                                  data-testid={`lesson-audio-row-${idx}`}
+                                  className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-stone-50 p-2.5"
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-800 text-white">
+                                      <Volume2 className="h-3.5 w-3.5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-xs font-bold text-stone-900">
+                                        {audio.name}
+                                      </p>
+                                      <span className="text-[10px] font-semibold uppercase text-stone-500">
+                                        {audio.category === 'sbt'
+                                          ? 'MP3 Luyện nghe Sách bài tập'
+                                          : 'MP3 Bài khóa & Từ mới SGK'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <audio
+                                    controls
+                                    preload="none"
+                                    data-testid={`lesson-audio-player-${idx}`}
+                                    src={audio.url}
+                                    className="h-8 w-full max-w-xs sm:w-64"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab 3: Bài tập (Homework) */}
                 {activeTab === 'homework' && (
-                  <div className="mt-2.5">
+                  <div className="mt-3">
                     <HomeworkPanel
-                      key={`${activeCourse.id}:${activeLesson.num}`}
+                      key={`${activeCourse.id}:${activeLessonNumber}:${activeLesson.unitId || ''}`}
                       courseId={activeCourse.id}
-                      lessonNum={activeLesson.num}
+                      lessonNum={activeLessonNumber}
+                      unitId={
+                        activeLesson.unitId || activeLesson._id || activeLesson.id || null
+                      }
                       lessonTitle={activeLesson.title}
                       classCode={user?.classCode || ''}
+                      homeworkAssignment={activeLesson.homeworkAssignment}
                       existingSubmission={currentLessonHomework}
                       isSubmitting={submitHomeworkMutation.isPending}
+                      onHomeworkConfigSaved={() => {
+                        unitsQuery.refetch();
+                      }}
                       onSubmitHomework={async (params) => {
                         await submitHomeworkMutation.mutateAsync(params);
                       }}
@@ -975,13 +1512,20 @@ export const LearningPage: React.FC = () => {
               {activeTab !== 'homework' && (
                 <div className="hidden lg:block">
                   <HomeworkPanel
-                    key={`${activeCourse.id}:${activeLesson.num}`}
+                    key={`${activeCourse.id}:${activeLessonNumber}:${activeLesson.unitId || ''}`}
                     courseId={activeCourse.id}
-                    lessonNum={activeLesson.num}
+                    lessonNum={activeLessonNumber}
+                    unitId={
+                      activeLesson.unitId || activeLesson._id || activeLesson.id || null
+                    }
                     lessonTitle={activeLesson.title}
                     classCode={user?.classCode || ''}
+                    homeworkAssignment={activeLesson.homeworkAssignment}
                     existingSubmission={currentLessonHomework}
                     isSubmitting={submitHomeworkMutation.isPending}
+                    onHomeworkConfigSaved={() => {
+                      unitsQuery.refetch();
+                    }}
                     onSubmitHomework={async (params) => {
                       await submitHomeworkMutation.mutateAsync(params);
                     }}
@@ -992,16 +1536,20 @@ export const LearningPage: React.FC = () => {
           )}
         </div>
 
-        {/* Right Column: Curriculum Lesson List Sidebar */}
+        {/* Right Column: Grouped Curriculum Lesson List Sidebar (Phase 3D) */}
         <aside className="hidden lg:block lg:col-span-4">
-          <div className="sticky top-4 flex max-h-[calc(100vh-6rem)] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xs">
+          <div
+            data-testid="curriculum-sidebar"
+            className="sticky top-4 flex max-h-[calc(100vh-6rem)] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xs"
+          >
             <div className="border-b border-stone-200 bg-stone-50/80 p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="font-display text-sm font-bold text-stone-900">
-                  Danh sách bài giảng ({lessons.length})
+                  Chương trình học ({totalCurriculumCount} bài
+                  {workbookUnits.length > 0 ? ` · ${workbookUnits.length} SBT` : ''})
                 </h2>
-                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                  Hoàn thành {completedCount}/{lessons.length}
+                <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                  Hoàn thành {completedCount}/{totalCurriculumCount}
                 </span>
               </div>
 
@@ -1010,8 +1558,8 @@ export const LearningPage: React.FC = () => {
                   className="h-full rounded-full bg-emerald-600 transition-all duration-300"
                   style={{
                     width: `${
-                      lessons.length > 0
-                        ? Math.round((completedCount / lessons.length) * 100)
+                      totalCurriculumCount > 0
+                        ? Math.round((completedCount / totalCurriculumCount) * 100)
                         : 0
                     }%`,
                   }}
@@ -1019,73 +1567,187 @@ export const LearningPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto divide-y divide-stone-100 p-2">
-              {lessons.map((lesson, idx) => {
-                const isSelected = Number(lesson.num) === Number(activeLesson?.num);
+            <div className="flex-1 space-y-1.5 overflow-y-auto p-2.5">
+              {/* Main Lessons Group (1..15) */}
+              {groupedMainLessons.map((grp) => {
+                const isSelectedLesson =
+                  activeLesson?.unitType !== 'workbook' &&
+                  Number(grp.lessonNum) === Number(activeLessonNumber);
                 const isDone = Boolean(
-                  completedLessons[`${activeCourse.id}:${lesson.num}`]
+                  completedLessons[`${activeCourse.id}:${grp.lessonNum}`]
                 );
 
                 return (
-                  <button
-                    key={lesson._id || lesson.num}
-                    type="button"
-                    data-testid={`lesson-sidebar-item-${lesson.num}`}
-                    onClick={() => {
-                      setSelectedLessonNum(lesson.num);
-                      syncUrlParams(activeCourse.id, lesson.num, activeTab);
-                    }}
-                    className={`flex w-full items-start gap-3 rounded-xl p-3 text-left transition-all ${
-                      isSelected
-                        ? 'bg-red-50/95 ring-1 ring-red-200'
-                        : 'hover:bg-stone-50'
+                  <div
+                    key={grp.lessonNum}
+                    className={`rounded-xl border transition-all ${
+                      isSelectedLesson
+                        ? 'border-red-200 bg-red-50/70'
+                        : 'border-stone-100 bg-white hover:border-stone-200 hover:bg-stone-50/60'
                     }`}
                   >
-                    <div
-                      className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                        isDone
-                          ? 'bg-emerald-600 text-white'
-                          : isSelected
-                          ? 'bg-red-800 text-white'
-                          : 'bg-stone-100 text-stone-600'
-                      }`}
+                    <button
+                      type="button"
+                      data-testid={`lesson-sidebar-item-${grp.lessonNum}`}
+                      onClick={() => handleSelectLessonGroup(grp)}
+                      className="flex w-full items-start gap-2.5 p-2.5 text-left"
                     >
-                      {isDone ? (
-                        <CheckCircle2 className="h-4 w-4" />
-                      ) : isSelected ? (
-                        <PlayCircle className="h-4 w-4" />
-                      ) : (
-                        idx + 1
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={`text-xs leading-snug ${
-                          isSelected ? 'font-bold text-red-950' : 'font-semibold text-stone-800'
+                      <div
+                        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+                          isDone
+                            ? 'bg-emerald-600 text-white'
+                            : isSelectedLesson
+                            ? 'bg-red-800 text-white'
+                            : 'bg-stone-100 text-stone-700'
                         }`}
                       >
-                        {lesson.title}
-                      </p>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] text-stone-500">
-                        <span>{lesson.duration || '12:00'}</span>
-                        {lesson.audioTracks && lesson.audioTracks.length > 0 && (
-                          <span>• {lesson.audioTracks.length} file nghe</span>
-                        )}
-                        {isDone && (
-                          <span className="font-semibold text-emerald-700">• Đã học</span>
+                        {isDone ? (
+                          <CheckCircle2 className="h-4 w-4" />
+                        ) : isSelectedLesson ? (
+                          <PlayCircle className="h-4 w-4" />
+                        ) : (
+                          grp.lessonNum
                         )}
                       </div>
-                    </div>
 
-                    <ChevronRight
-                      className={`mt-1 h-4 w-4 shrink-0 ${
-                        isSelected ? 'text-red-800' : 'text-stone-300'
-                      }`}
-                    />
-                  </button>
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={`text-xs leading-snug ${
+                            isSelectedLesson
+                              ? 'font-bold text-red-950'
+                              : 'font-semibold text-stone-800'
+                          }`}
+                        >
+                          {grp.title}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500">
+                          <span>{grp.duration}</span>
+                          {grp.subUnits.length > 1 && (
+                            <span className="rounded bg-stone-200/80 px-1.5 py-0.2 text-[10px] font-bold text-stone-700">
+                              {grp.subUnits.length} phần
+                            </span>
+                          )}
+                          {grp.primaryUnit.audioTracks &&
+                            grp.primaryUnit.audioTracks.length > 0 && (
+                              <span>• {grp.primaryUnit.audioTracks.length} MP3</span>
+                            )}
+                          {isDone && (
+                            <span className="font-semibold text-emerald-700">
+                              • Đã học
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <ChevronRight
+                        className={`mt-1 h-4 w-4 shrink-0 ${
+                          isSelectedLesson ? 'text-red-800' : 'text-stone-300'
+                        }`}
+                      />
+                    </button>
+
+                    {/* Sub-part buttons (e.g. 3.1/3.2, 12.1/12.2/12.3, 13.1/13.2) */}
+                    {grp.subUnits.length > 1 && (
+                      <div className="flex flex-wrap gap-1.5 border-t border-stone-200/60 px-2.5 py-2">
+                        {grp.subUnits.map((sub, sIdx) => {
+                          const subUid = sub.unitId || sub._id || sub.id;
+                          const activeUid =
+                            activeLesson?.unitId ||
+                            activeLesson?._id ||
+                            activeLesson?.id;
+                          const isCurrentPart = String(subUid) === String(activeUid);
+                          const partCode =
+                            sub.partNumber || `${grp.lessonNum}.${sIdx + 1}`;
+                          return (
+                            <button
+                              key={subUid || sIdx}
+                              type="button"
+                              data-testid={`lesson-part-btn-${partCode}`}
+                              onClick={() => handleSelectUnit(sub)}
+                              className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
+                                isCurrentPart
+                                  ? 'bg-red-800 text-white shadow-2xs'
+                                  : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
+                              }`}
+                            >
+                              <PlayCircle className="h-3 w-3" />
+                              <span>Phần {partCode}</span>
+                              {sub.duration && (
+                                <span
+                                  className={`text-[10px] ${
+                                    isCurrentPart ? 'text-red-100' : 'text-stone-400'
+                                  }`}
+                                >
+                                  ({sub.duration})
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
+
+              {/* Separate Workbook (SBT) Group Section */}
+              {workbookUnits.length > 0 && (
+                <div
+                  data-testid="sidebar-workbook-section"
+                  className="mt-3 border-t border-stone-200 pt-3"
+                >
+                  <p className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                    Chữa Sách Bài Tập ({workbookUnits.length} phần)
+                  </p>
+                  <div className="space-y-1.5">
+                    {workbookUnits.map((wb) => {
+                      const wbUid = wb.unitId || wb._id || wb.id;
+                      const activeUid =
+                        activeLesson?.unitId || activeLesson?._id || activeLesson?.id;
+                      const isSelected = String(wbUid) === String(activeUid);
+                      const wbCode = wb.partNumber || `SBT ${wb.num}`;
+                      return (
+                        <button
+                          key={wbUid || wb.num}
+                          type="button"
+                          data-testid={`lesson-sidebar-item-${wb.num}`}
+                          onClick={() => handleSelectUnit(wb)}
+                          className={`flex w-full items-start gap-2.5 rounded-xl border p-2.5 text-left transition-all ${
+                            isSelected
+                              ? 'border-red-200 bg-red-50/90'
+                              : 'border-stone-100 bg-stone-50/60 hover:bg-stone-100/70'
+                          }`}
+                        >
+                          <div
+                            className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${
+                              isSelected
+                                ? 'bg-red-800 text-white'
+                                : 'bg-amber-100 text-amber-900'
+                            }`}
+                          >
+                            SBT
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p
+                              data-testid={`workbook-unit-title-${wbCode}`}
+                              className={`text-xs leading-snug ${
+                                isSelected
+                                  ? 'font-bold text-red-950'
+                                  : 'font-semibold text-stone-800'
+                              }`}
+                            >
+                              {wb.title}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-stone-500">
+                              {wb.rawTitle} • {wb.duration || '12:00'}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </aside>

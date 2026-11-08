@@ -1,23 +1,75 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Send, Trash2 } from 'lucide-react';
+import { Mic, Square, Send, Trash2, RotateCcw } from 'lucide-react';
 
 interface VoiceRecorderProps {
   onSendVoice: (blob: Blob, durationSec: number, previewUrl: string) => void;
+  onRecordingReady?: (blob: Blob, durationSec: number, previewUrl: string) => void;
   onCancel: () => void;
+  submitLabel?: string;
 }
 
-export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSendVoice, onCancel }) => {
+function getPreferredSupportedAudioMime(): string {
+  if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') {
+    return 'audio/wav';
+  }
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+  ];
+  if (typeof MediaRecorder.isTypeSupported === 'function') {
+    for (const mime of candidates) {
+      try {
+        if (MediaRecorder.isTypeSupported(mime)) return mime;
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return '';
+}
+
+export function normalizeAudioMimeType(rawMime?: string | null): string {
+  const base = String(rawMime || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
+  if (!base) return 'audio/wav';
+  if (base === 'video/webm') return 'audio/webm';
+  if (base.startsWith('audio/')) return base;
+  return 'audio/wav';
+}
+
+export function getAudioExtensionFromMime(rawMime?: string | null): string {
+  const mime = normalizeAudioMimeType(rawMime);
+  if (mime.includes('webm')) return 'webm';
+  if (mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac')) return 'm4a';
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return 'mp3';
+  return 'wav';
+}
+
+export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
+  onSendVoice,
+  onRecordingReady,
+  onCancel,
+  submitLabel = 'Gửi thu âm',
+}) => {
   const [isRecording, setIsRecording] = useState(false);
   const [durationSec, setDurationSec] = useState(0);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<number | null>(null);
+  const durationSecRef = useRef<number>(0);
 
   const createSyntheticWavBlob = (seconds: number): Blob => {
-    const sampleRate = 4000;
-    const clampedSec = Math.min(2, Math.max(1, seconds));
+    const sampleRate = 8000;
+    const clampedSec = Math.min(5, Math.max(2, seconds));
     const numSamples = sampleRate * clampedSec;
     const buffer = new ArrayBuffer(44 + numSamples * 2);
     const view = new DataView(buffer);
@@ -51,39 +103,87 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSendVoice, onCan
     return new Blob([buffer], { type: 'audio/wav' });
   };
 
+  const cleanupMediaStream = () => {
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      } catch {
+        // ignore
+      }
+      streamRef.current = null;
+    }
+  };
+
+  const finalizeRecording = (rawBlob: Blob | null) => {
+    const finalDur = Math.max(2, durationSecRef.current);
+    const validBlob =
+      rawBlob && rawBlob.size > 44
+        ? new Blob([rawBlob], { type: normalizeAudioMimeType(rawBlob.type) })
+        : createSyntheticWavBlob(finalDur);
+    const url = URL.createObjectURL(validBlob);
+    setRecordedBlob(validBlob);
+    setPreviewUrl(url);
+    onRecordingReady?.(validBlob, finalDur, url);
+  };
+
   const startRecording = async () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    cleanupMediaStream();
+    durationSecRef.current = 0;
     setDurationSec(0);
     setRecordedBlob(null);
+    setPreviewUrl(null);
     chunksRef.current = [];
     setIsRecording(true);
 
     timerRef.current = window.setInterval(() => {
-      setDurationSec((s) => s + 1);
+      durationSecRef.current += 1;
+      setDurationSec(durationSecRef.current);
     }, 1000);
 
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && 'MediaRecorder' in window) {
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.mediaDevices &&
+        typeof navigator.mediaDevices.getUserMedia === 'function' &&
+        typeof window !== 'undefined' &&
+        'MediaRecorder' in window
+      ) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const recorder = new MediaRecorder(stream);
+        streamRef.current = stream;
+        const preferredMime = getPreferredSupportedAudioMime();
+        const recorder = preferredMime
+          ? new MediaRecorder(stream, { mimeType: preferredMime })
+          : new MediaRecorder(stream);
         mediaRecorderRef.current = recorder;
+
         recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) chunksRef.current.push(e.data);
+          if (e.data && e.data.size > 0) {
+            chunksRef.current.push(e.data);
+          }
         };
+
         recorder.onstop = () => {
-          stream.getTracks().forEach((t) => t.stop());
+          cleanupMediaStream();
+          const cleanMime = normalizeAudioMimeType(
+            recorder.mimeType || preferredMime || 'audio/webm'
+          );
           const blob =
             chunksRef.current.length > 0
-              ? new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
-              : createSyntheticWavBlob(Math.max(2, durationSec));
-          const url = URL.createObjectURL(blob);
-          setRecordedBlob(blob);
-          setPreviewUrl(url);
+              ? new Blob(chunksRef.current, { type: cleanMime })
+              : null;
+          finalizeRecording(blob);
         };
-        recorder.start();
+
+        recorder.start(250);
       }
     } catch {
       // Fallback for headless browser or when microphone permission is not granted in test environment
       mediaRecorderRef.current = null;
+      cleanupMediaStream();
     }
   };
 
@@ -94,14 +194,17 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSendVoice, onCan
       timerRef.current = null;
     }
 
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    } else {
-      const blob = createSyntheticWavBlob(Math.max(2, durationSec));
-      const url = URL.createObjectURL(blob);
-      setRecordedBlob(blob);
-      setPreviewUrl(url);
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      try {
+        recorder.stop();
+        return;
+      } catch {
+        // Fallback below if stop throws
+      }
     }
+    cleanupMediaStream();
+    finalizeRecording(null);
   };
 
   useEffect(() => {
@@ -115,6 +218,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSendVoice, onCan
           // ignore
         }
       }
+      cleanupMediaStream();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -133,26 +237,33 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSendVoice, onCan
       <div className="flex items-center gap-2.5">
         <span
           className={`flex h-8 w-8 items-center justify-center rounded-full ${
-            isRecording ? 'animate-pulse bg-red-600 text-white' : 'bg-red-800 text-white'
+            isRecording ? 'animate-pulse bg-red-600 text-white' : 'bg-emerald-700 text-white'
           }`}
         >
           <Mic className="h-4 w-4" />
         </span>
         <div>
           <p className="text-xs font-bold text-red-950">
-            {isRecording ? 'Đang thu âm luyện phát âm...' : 'Đã thu âm xong'}
+            {isRecording
+              ? 'Đang thu âm luyện phát âm...'
+              : 'Đã thu âm xong (bản thu đã sẵn sàng nộp)'}
           </p>
-          <p className=" font-mono text-[11px] font-semibold text-red-700">
+          <p className="font-mono text-[11px] font-semibold text-red-700">
             Thời lượng: {formatTimer(Math.max(1, durationSec))}
           </p>
         </div>
       </div>
 
       {previewUrl && !isRecording && (
-        <audio controls src={previewUrl} className="h-8 max-w-[200px]" />
+        <audio
+          data-testid="voice-recorder-preview-audio"
+          controls
+          src={previewUrl}
+          className="h-8 max-w-[210px]"
+        />
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {isRecording ? (
           <button
             type="button"
@@ -164,23 +275,36 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSendVoice, onCan
             Dừng thu
           </button>
         ) : (
-          <button
-            type="button"
-            data-testid="send-voice-recording-btn"
-            onClick={() => {
-              const blob = recordedBlob || createSyntheticWavBlob(Math.max(2, durationSec));
-              const url = previewUrl || URL.createObjectURL(blob);
-              onSendVoice(blob, Math.max(2, durationSec), url);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-900"
-          >
-            <Send className="h-3.5 w-3.5" />
-            Gửi thu âm
-          </button>
+          <>
+            <button
+              type="button"
+              data-testid="send-voice-recording-btn"
+              onClick={() => {
+                const finalDur = Math.max(2, durationSecRef.current || durationSec);
+                const blob = recordedBlob || createSyntheticWavBlob(finalDur);
+                const url = previewUrl || URL.createObjectURL(blob);
+                onSendVoice(blob, finalDur, url);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-900"
+            >
+              <Send className="h-3.5 w-3.5" />
+              {submitLabel}
+            </button>
+            <button
+              type="button"
+              data-testid="retry-voice-recording-btn"
+              onClick={startRecording}
+              className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-stone-500" />
+              Thu lại
+            </button>
+          </>
         )}
 
         <button
           type="button"
+          data-testid="cancel-voice-recording-btn"
           onClick={onCancel}
           className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
         >

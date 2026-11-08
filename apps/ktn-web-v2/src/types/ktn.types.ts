@@ -49,29 +49,99 @@ export interface KtnCourse {
 }
 
 export interface KtnAudioTrack {
+  id?: string;
   name: string;
   url: string;
+  category?: 'mp3_sgk' | 'mp3_sbt' | string;
+  filename?: string;
+  size?: number;
+  mimeType?: string;
+  httpStatus?: number;
+}
+
+export interface KtnLearningMaterial {
+  id: string;
+  title: string;
+  type?: 'sgk_pdf' | 'sbt_pdf' | 'voviet_pdf' | 'vocab_pdf' | 'reference_pdf' | 'lesson_pdf' | 'lesson_doc' | 'teacher_attachment' | string;
+  category?: string;
+  url: string;
+  baseUrl?: string;
+  fileUrl?: string;
+  objectKey?: string;
+  page?: number | null;
+  bookPage?: number | null;
+  size?: number | null;
+  mime?: string;
+  mimeType?: string;
+  actionLabel?: string;
+  canView?: boolean;
+  canDownload?: boolean;
+  httpStatus?: number;
+}
+
+export interface KtnHomeworkAssignment {
+  assigned: boolean;
+  mandatory?: boolean;
+  title?: string;
+  instructions?: string;
+  relatedPages?: string | null;
+  allowedTypes?: string[];
+  maxFiles?: number;
+  deadline?: string | null;
+  completionCriteria?: string | null;
+  sampleAttachmentUrl?: string | null;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface KtnLessonVideoPart {
+  unitId: string;
+  partNumber?: string | number | null;
+  rawTitle?: string;
+  title: string;
+  videoId?: string;
+  duration?: string;
+  durationSec?: number;
+  url?: string;
+  streamUrl?: string;
+  posterUrl?: string;
 }
 
 export interface KtnLessonUnit {
   _id: string;
   id?: string;
+  unitId?: string;
+  videoUnitId?: string;
+  chapterId?: string;
   num: number;
+  lessonNumber?: number | null;
+  partNumber?: string | number | null;
+  partLabel?: string | null;
+  unitType?: 'lesson' | 'workbook' | string;
+  rawTitle?: string;
   course: string;
   title: string;
   titleZh?: string;
   titleVi?: string;
   grammar?: string;
   duration?: string;
-  sgkPage?: number;
-  sbtPage?: number;
-  voVietPage?: number;
+  durationSec?: number;
+  sgkPage?: number | null;
+  sbtPage?: number | null;
+  voVietPage?: number | null;
   type: string;
   video: string;
+  videoId?: string;
   streamUrl?: string;
   posterUrl?: string;
   audioTracks?: KtnAudioTrack[];
-  workbookTitle?: string;
+  materials?: KtnLearningMaterial[];
+  homeworkAssignment?: KtnHomeworkAssignment | null;
+  parts?: KtnLessonVideoPart[];
+  resourceIds?: string[];
+  confidence?: 'HIGH' | 'NEEDS_REVIEW' | string;
+  verified?: boolean;
+  workbookTitle?: string | null;
 }
 
 export interface ClassScheduleException {

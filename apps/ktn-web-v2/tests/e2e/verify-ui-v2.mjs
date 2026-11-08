@@ -2602,6 +2602,273 @@ async function runSuite() {
       ),
       JSON.stringify({ flashcardLinkAttrs, fcInAppStats, headerStillVisibleInApp, returnedHomeOk })
     );
+
+    // =========================================================================
+    // TEST O — COMPLETE VIDEO LESSON, LEARNING MATERIALS, VOICE RECORDING HOMEWORK & CHAT IMAGE LIGHTBOX
+    // =========================================================================
+    const testOContext = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+    });
+    const testOPage = await testOContext.newPage();
+    await testOPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await testOPage.click('[data-testid="quick-login-hoangngan@khongtunhi.com"]');
+    await testOPage.waitForSelector('[data-testid="student-dashboard-page"]', {
+      timeout: 8000,
+    });
+
+    await testOPage.goto(
+      `${baseUrl}/learning?courseId=6adadba969897b0002482ca5&lesson=1`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await testOPage.waitForSelector('[data-testid="lesson-header-banner"]', {
+      timeout: 8000,
+    });
+    const o1CourseTitle = await testOPage.textContent(
+      '[data-testid="learning-active-course-title"]'
+    );
+    const o1Lesson1Title = await testOPage.textContent(
+      '[data-testid="active-lesson-title"]'
+    );
+
+    // Click multi-part unit 13.2 in grouped sidebar
+    await testOPage.click('[data-testid="lesson-part-btn-13.2"]');
+    await testOPage.waitForTimeout(300);
+    const o1Banner13_2 = await testOPage.textContent(
+      '[data-testid="lesson-header-banner"]'
+    );
+
+    // Click Workbook unit SBT 1.1 (item 16) in sidebar workbook section
+    const hasWorkbookSection = await testOPage.isVisible(
+      '[data-testid="sidebar-workbook-section"]'
+    );
+    await testOPage.click('[data-testid="lesson-sidebar-item-16"]');
+    await testOPage.waitForTimeout(300);
+    const o1SbtUnassignedText = await testOPage.textContent(
+      '[data-testid="homework-unassigned-notice"]'
+    );
+
+    recordTest(
+      'TEST O',
+      'O1',
+      'HSK1 33-unit mapping displays verified Lesson 1 title ("AI小语，你好！ — Xin chào AI Tiểu Ngữ!"), groups sub-parts (13.1/13.2) and SBT 1.1/1.2 with honest unassigned homework state',
+      Boolean(
+        o1CourseTitle &&
+          !o1CourseTitle.includes('Kh...') &&
+          o1Lesson1Title &&
+          o1Lesson1Title.includes('AI小语，你好！') &&
+          o1Lesson1Title.includes('Xin chào AI Tiểu Ngữ!') &&
+          o1Banner13_2 &&
+          o1Banner13_2.includes('13.2') &&
+          o1Banner13_2.includes('请给我一杯茶') &&
+          hasWorkbookSection &&
+          o1SbtUnassignedText &&
+          o1SbtUnassignedText.includes('Chưa có bài tập cần nộp cho bài này.')
+      ),
+      JSON.stringify({
+        o1CourseTitle,
+        o1Lesson1Title,
+        o1Banner13_2: o1Banner13_2?.slice(0, 120),
+        o1SbtUnassignedText: o1SbtUnassignedText?.slice(0, 100),
+      })
+    );
+
+    // O2: Learning Materials ("Học liệu của bài này") with real SGK/SBT/Vở viết page links & MP3 preload="none"
+    await testOPage.click('[data-testid="lesson-sidebar-item-1"]');
+    await testOPage.waitForTimeout(250);
+    await testOPage.click('[data-testid="tab-lesson-materials"]');
+    await testOPage.waitForSelector('[data-testid="lesson-materials-section"]', {
+      timeout: 5000,
+    });
+    const materialsHeading = await testOPage.textContent(
+      '[data-testid="lesson-materials-heading"]'
+    );
+    const matLinks = await testOPage.$$eval(
+      '[data-testid^="material-open-btn-"]',
+      (els) => els.map((e) => e.getAttribute('href') || '')
+    );
+    const audioAttrs = await testOPage.$eval(
+      '[data-testid="lesson-audio-player-0"]',
+      (el) => ({
+        preload: el.getAttribute('preload'),
+        src: el.getAttribute('src'),
+      })
+    );
+    recordTest(
+      'TEST O',
+      'O2',
+      'Learning Materials tab ("Học liệu của bài này") renders verified SGK (#page=17), SBT (#page=11), Vở tập viết (#page=1) PDFs and MP3 tracks with preload="none"',
+      Boolean(
+        materialsHeading?.includes('Học liệu của bài này') &&
+          matLinks.some((h) => h.includes('HSK1_SGK.pdf#page=17')) &&
+          matLinks.some((h) => h.includes('HSK1_SBT.pdf#page=11')) &&
+          matLinks.some((h) => h.includes('HSK1_Vo_luyen_viet.pdf#page=1')) &&
+          audioAttrs.preload === 'none' &&
+          audioAttrs.src?.includes('01-1.mp3')
+      ),
+      JSON.stringify({ materialsHeading, matLinksCount: matLinks.length, audioAttrs })
+    );
+
+    // O3 (Urgent Bug 1): Student Voice Recording + Real S3 Homework Submission & Empty Guard
+    await testOPage.click('[data-testid="lesson-sidebar-item-3"]');
+    await testOPage.waitForTimeout(250);
+    await testOPage.click('[data-testid="tab-lesson-homework"]');
+    await testOPage.waitForSelector('[data-testid="homework-requirements-card"]', {
+      timeout: 5000,
+    });
+    const hwAssignmentText = await testOPage.textContent(
+      '[data-testid="homework-requirements-card"]'
+    );
+
+    // Empty submission (no file, no text) must be blocked (no fake WAV blob!)
+    await testOPage.fill('[data-testid="homework-note-input"]', '');
+    await testOPage.click('[data-testid="homework-submit-btn"]');
+    await testOPage.waitForSelector('[data-testid="homework-submit-error"]', {
+      timeout: 5000,
+    });
+    const emptyBlockedError = await testOPage.textContent(
+      '[data-testid="homework-submit-error"]'
+    );
+
+    // Record voice via MediaRecorder -> stop -> auto-attached -> submit homework
+    await testOPage.click('[data-testid="homework-start-record-btn"]');
+    await testOPage.waitForSelector('[data-testid="voice-recorder-panel"]', {
+      timeout: 5000,
+    });
+    await testOPage.waitForTimeout(800);
+    await testOPage.click('[data-testid="stop-voice-recording-btn"]');
+    await testOPage.waitForSelector('[data-testid="homework-selected-file-card"]', {
+      timeout: 5000,
+    });
+    const attachedAudioText = await testOPage.textContent(
+      '[data-testid="homework-selected-file-card"]'
+    );
+    await testOPage.fill(
+      '[data-testid="homework-note-input"]',
+      'Con nộp bài thu âm Bài 3我是中国人 ạ!'
+    );
+    await testOPage.click('[data-testid="homework-submit-btn"]');
+    await testOPage.waitForSelector('[data-testid="homework-status-submitted"]', {
+      timeout: 10000,
+    });
+    const submittedAudioSrc = await testOPage.$eval(
+      '[data-testid="homework-submitted-audio-player"]',
+      (el) => el.getAttribute('src') || ''
+    );
+    recordTest(
+      'TEST O',
+      'O3',
+      'Urgent Bug 1 Fixed: Student voice recording auto-attaches valid audio file on stop, blocks empty submissions without fake WAV, and submits homework with playable audio',
+      Boolean(
+        hwAssignmentText &&
+          !hwAssignmentText.includes('Thu âm đọc câu (30–45s)') &&
+          emptyBlockedError &&
+          attachedAudioText?.includes('ThuAm-') &&
+          submittedAudioSrc.length > 0
+      ),
+      JSON.stringify({
+        emptyBlockedError,
+        attachedAudioText: attachedAudioText?.slice(0, 80),
+        submittedAudioSrc: submittedAudioSrc.slice(0, 80),
+      })
+    );
+
+    // O4 (Urgent Bug 2): Chat Image Upload + Click-to-Zoom Lightbox Modal Surviving Polling
+    await testOPage.goto(`${baseUrl}/chat`, { waitUntil: 'domcontentloaded' });
+    await testOPage.waitForSelector('[data-testid="chat-send-btn"]', { timeout: 8000 });
+    const pngBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const pngBuffer = Buffer.from(pngBase64, 'base64');
+    await testOPage.setInputFiles('[data-testid="chat-file-input"]', {
+      name: 'bai-viet-hsk1-zoom-test.png',
+      mimeType: 'image/png',
+      buffer: pngBuffer,
+    });
+    await testOPage.waitForSelector('[data-testid="composer-staged-attachment"]', {
+      timeout: 5000,
+    });
+    await testOPage.click('[data-testid="chat-send-btn"]');
+    await testOPage.waitForSelector('[data-testid="chat-image-attachment"]', {
+      timeout: 8000,
+    });
+
+    // Click the newest zoom button to open Portal Lightbox
+    const zoomBtns = await testOPage.$$('[data-testid="chat-image-zoom-btn"]');
+    await zoomBtns[zoomBtns.length - 1].click();
+    await testOPage.waitForSelector('[data-testid="chat-image-lightbox"]', {
+      timeout: 5000,
+    });
+    await testOPage.click('[data-testid="lightbox-zoom-in-btn"]');
+    const zoomLevelBeforePoll = await testOPage.textContent(
+      '[data-testid="lightbox-zoom-reset-btn"]'
+    );
+    // Wait across a 3.5s chat polling interval to ensure portal lightbox state is never wiped
+    await testOPage.waitForTimeout(3600);
+    const lightboxStillOpen = await testOPage.isVisible(
+      '[data-testid="chat-image-lightbox"]'
+    );
+    const zoomLevelAfterPoll = await testOPage.textContent(
+      '[data-testid="lightbox-zoom-reset-btn"]'
+    );
+    await testOPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'chat-image-lightbox-zoom-desktop.png'),
+      fullPage: false,
+    });
+    await testOPage.click('[data-testid="lightbox-close-btn"]');
+    await testOPage.waitForTimeout(200);
+    const lightboxClosed = !(await testOPage.isVisible(
+      '[data-testid="chat-image-lightbox"]'
+    ));
+
+    recordTest(
+      'TEST O',
+      'O4',
+      'Urgent Bug 2 Fixed: Chat image upload renders immediately with local blob fallback and "Phóng to" opens full-screen portal lightbox that zooms (150%) and survives 3.5s polling',
+      Boolean(
+        zoomLevelBeforePoll?.includes('150%') &&
+          lightboxStillOpen &&
+          zoomLevelAfterPoll?.includes('150%') &&
+          lightboxClosed
+      ),
+      JSON.stringify({
+        zoomLevelBeforePoll,
+        lightboxStillOpen,
+        zoomLevelAfterPoll,
+        lightboxClosed,
+      })
+    );
+
+    // O5: Mobile 390x844 Layout — Expandable Drawer Accordion & Unobscured Tabs
+    await testOPage.setViewportSize({ width: 390, height: 844 });
+    await testOPage.goto(
+      `${baseUrl}/learning?courseId=6adadba969897b0002482ca5&lesson=1`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await testOPage.waitForSelector('[data-testid="mobile-lesson-drawer-toggle"]', {
+      timeout: 8000,
+    });
+    const desktopSidebarVisibleOnMobile = await testOPage.isVisible(
+      '[data-testid="curriculum-sidebar"]'
+    );
+    await testOPage.click('[data-testid="mobile-lesson-drawer-toggle"]');
+    await testOPage.waitForSelector('[data-testid="mobile-lesson-drawer"]', {
+      timeout: 5000,
+    });
+    const mobileDrawerOpenOk = await testOPage.isVisible(
+      '[data-testid="mobile-lesson-drawer"]'
+    );
+    await testOPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'learning-hsk1-mobile-drawer.png'),
+      fullPage: false,
+    });
+    await testOContext.close();
+
+    recordTest(
+      'TEST O',
+      'O5',
+      'Mobile 390x844 layout hides 33-unit sidebar above video and provides expandable lesson drawer with 3 clear tabs',
+      Boolean(!desktopSidebarVisibleOnMobile && mobileDrawerOpenOk),
+      JSON.stringify({ desktopSidebarVisibleOnMobile, mobileDrawerOpenOk })
+    );
   } finally {
     await browser.close();
     await viteServer.close();

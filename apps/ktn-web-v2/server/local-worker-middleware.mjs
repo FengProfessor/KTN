@@ -9,14 +9,20 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const WORKER_PATH = path.join(REPO_ROOT, 'cloudflare-worker-sw-proxy.js');
 const HSK1_LESSONS_PATH = path.join(REPO_ROOT, 'clean_lessons_data.json');
+const HSK1_MAPPING_PATH = path.join(REPO_ROOT, 'hsk1_33_units_mapping.json');
 const ALL_COURSES_LESSONS_PATH = path.join(REPO_ROOT, 'all_courses_lessons_data.json');
 
 export function createLocalWorkerHarness() {
   let hsk1Lessons = [];
+  let hsk1MappingTable = [];
   let allCoursesLessons = {};
   try {
     if (fs.existsSync(HSK1_LESSONS_PATH)) {
       hsk1Lessons = JSON.parse(fs.readFileSync(HSK1_LESSONS_PATH, 'utf8'));
+    }
+    if (fs.existsSync(HSK1_MAPPING_PATH)) {
+      const parsedMap = JSON.parse(fs.readFileSync(HSK1_MAPPING_PATH, 'utf8'));
+      hsk1MappingTable = Array.isArray(parsedMap?.mappingTable) ? parsedMap.mappingTable : [];
     }
     if (fs.existsSync(ALL_COURSES_LESSONS_PATH)) {
       allCoursesLessons = JSON.parse(fs.readFileSync(ALL_COURSES_LESSONS_PATH, 'utf8'));
@@ -878,32 +884,98 @@ export function createLocalWorkerHarness() {
 
       if ((p.endsWith('/prod/unit') || p.endsWith('/prod/courses/units')) && method === 'GET') {
         const cid = u.searchParams.get('course') || '6adadba969897b0002482ca5';
-        const rawLessons = cid === '6adadba969897b0002482ca5'
-          ? hsk1Lessons
-          : (allCoursesLessons[cid] || []);
-        const units = rawLessons.map((lesson, idx) => {
+        if (cid === '6adadba969897b0002482ca5') {
+          if (hsk1MappingTable.length > 0) {
+            const units = hsk1MappingTable.map((m, uIdx) => {
+              const vid = (Array.isArray(m.resourceIds) && m.resourceIds[0]) || '';
+              return {
+                _id: m.unitId,
+                id: m.unitId,
+                index: uIdx,
+                course: cid,
+                section: m.chapterId || '6adadbaf69897b0002482cb5',
+                title: m.rawTitle,
+                type: 'video',
+                video: vid,
+                videoId: vid,
+                streamUrl: vid
+                  ? `https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/${vid}/playlist.m3u8`
+                  : '',
+                duration: m.duration || '12:00'
+              };
+            });
+            return new Response(JSON.stringify(units), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          }
+          const units = [];
+          let uIdx = 0;
+          for (const lesson of hsk1Lessons) {
+            const parts = Array.isArray(lesson.parts) && lesson.parts.length > 0 ? lesson.parts : [{}];
+            for (const pt of parts) {
+              const unitId = pt.unitId || `6adadbcaf75fe5000247ca${String(uIdx + 71).padStart(2, '0')}`;
+              units.push({
+                _id: unitId,
+                id: unitId,
+                index: uIdx++,
+                course: cid,
+                section: '6adadbaf69897b0002482cb5',
+                title: pt.rawTitle || pt.title || `HSK1_Bài ${pt.partNumber || lesson.num}`,
+                type: 'video',
+                video: pt.videoId || pt.url || pt.streamUrl || '',
+                videoId: pt.videoId || '',
+                streamUrl: pt.url || pt.streamUrl || '',
+                duration: pt.duration || lesson.duration || '12:00'
+              });
+            }
+          }
+          return new Response(JSON.stringify(units), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        const rawLessons = allCoursesLessons[cid] || [];
+        const units = [];
+        let uIdx = 0;
+        for (let idx = 0; idx < rawLessons.length; idx++) {
+          const lesson = rawLessons[idx];
           const part0 = (Array.isArray(lesson.parts) && lesson.parts[0]) || {};
-          return {
-            _id: part0.unitId || `6adadbcaf75fe5000247ca${String(idx + 71).padStart(2, '0')}`,
-            id: part0.unitId || `6adadbcaf75fe5000247ca${String(idx + 71).padStart(2, '0')}`,
+          const videoUnitId = part0.videoUnitId || part0.unitId || `6adadbcaf75fe5000247ca${String(idx + 71).padStart(2, '0')}`;
+          const hwUnitId = part0.unitId || videoUnitId;
+          const syllabus = (Array.isArray(lesson.docs) ? lesson.docs : []).map((d, dIdx) => ({
+            _id: `${cid}-doc-${idx + 1}-${dIdx + 1}`,
+            title: d.name || `Tài liệu Bài ${idx + 1}`,
+            link: String(d.url || '').replace(/^https?:\/\/[^/]+\//, ''),
+            origin: { link: String(d.url || '').replace(/^https?:\/\/[^/]+\//, '') }
+          }));
+          units.push({
+            _id: videoUnitId,
+            id: videoUnitId,
+            index: uIdx++,
             num: lesson.num || idx + 1,
             course: cid,
-            title: lesson.titleZh ? `Bài ${lesson.num}: ${lesson.titleZh} (${lesson.titleVi || ''})` : (lesson.titleVi || part0.title || `Bài ${idx + 1}`),
-            titleZh: lesson.titleZh || '',
-            titleVi: lesson.titleVi || '',
-            grammar: lesson.grammar || '',
-            duration: lesson.duration || part0.duration || '12:00',
-            sgkPage: lesson.sgkPage || idx + 1,
-            sbtPage: lesson.sbtPage || idx + 1,
-            voVietPage: lesson.voVietPage || idx + 1,
+            title: lesson.titleZh || part0.title || `Bài ${idx + 1}`,
             type: 'video',
-            video: part0.streamUrl || 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-            streamUrl: part0.streamUrl || 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+            video: part0.videoId || part0.streamUrl || '',
+            videoId: part0.videoId || '',
+            streamUrl: part0.streamUrl || '',
             posterUrl: part0.posterUrl || '',
-            audioTracks: Array.isArray(lesson.audioTracks) ? lesson.audioTracks : [],
-            workbookTitle: lesson.workbookTitle || `Sách bài tập Bài ${lesson.num || idx + 1}`
-          };
-        });
+            duration: lesson.duration || part0.duration || '12:00',
+            syllabus
+          });
+          if (hwUnitId !== videoUnitId) {
+            units.push({
+              _id: hwUnitId,
+              id: hwUnitId,
+              index: uIdx++,
+              num: lesson.num || idx + 1,
+              course: cid,
+              title: `Assignment ${lesson.num || idx + 1}`,
+              type: 'homework'
+            });
+          }
+        }
         return new Response(JSON.stringify(units), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }

@@ -7,6 +7,7 @@ import type {
   KtnClassSession,
   KtnCourse,
   KtnHomework,
+  KtnHomeworkAssignment,
   KtnLessonUnit,
   KtnNotification,
   KtnOrder,
@@ -24,6 +25,26 @@ import type {
 } from '@/types/ktn.types';
 
 const SESSION_STORAGE_KEY = 'ktn_sll_persistent_auth_v2';
+
+const localUploadedBlobUrls = new Map<string, string>();
+
+export function registerLocalUploadedMediaPreview(remoteUrl: string, file: Blob): void {
+  if (!remoteUrl || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+    return;
+  }
+  try {
+    const objectUrl = URL.createObjectURL(file);
+    localUploadedBlobUrls.set(remoteUrl, objectUrl);
+  } catch {
+    // Ignore blob URL creation errors in non-browser runtimes
+  }
+}
+
+export function resolveUploadedMediaUrl(url?: string | null): string {
+  const clean = String(url || '').trim();
+  if (!clean) return '';
+  return localUploadedBlobUrls.get(clean) || clean;
+}
 
 export class KtnApiError extends Error {
   public readonly status: number;
@@ -308,7 +329,7 @@ export const ktnApi = {
       (a, b) => Number(a?.index ?? a?.num ?? 0) - Number(b?.index ?? b?.num ?? 0)
     );
     return sorted.map((u, idx) => {
-      const unitId = String(u._id || u.id || `unit-${idx + 1}`).trim();
+      const unitId = String(u.unitId || u._id || u.id || `unit-${idx + 1}`).trim();
       const resources = Array.isArray(u.resources) ? (u.resources as Array<Record<string, unknown>>) : [];
       const rawVid = String(
         u.videoId ||
@@ -330,25 +351,69 @@ export const ktnApi = {
         u.posterUrl ||
           (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/thumbnail.jpg` : '')
       );
-      const durMs = Number(resources[0]?.duration || 0);
+      const durMs = Number(u.durationMs || resources[0]?.duration || 0);
       const duration = String(
         u.duration ||
           (durMs > 0
             ? `${Math.floor(durMs / 60000)}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}`
             : '15:00')
       );
-      const num = Number(u.num) > 0 ? Number(u.num) : idx + 1;
+      const num = Number(u.lessonNumber ?? u.num) > 0 ? Number(u.lessonNumber ?? u.num) : idx + 1;
       return {
         ...(u as unknown as KtnLessonUnit),
         id: unitId,
         _id: unitId,
+        unitId,
         num,
+        lessonNumber: typeof u.lessonNumber === 'number' ? u.lessonNumber : num,
+        partNumber: typeof u.partNumber === 'number' || u.partNumber === null ? (u.partNumber as number | null) : null,
+        partLabel: typeof u.partLabel === 'string' || u.partLabel === null ? (u.partLabel as string | null) : null,
+        unitType: (u.unitType as KtnLessonUnit['unitType']) || 'lesson',
+        rawTitle: typeof u.rawTitle === 'string' ? u.rawTitle : String(u.title || `Bài ${num}`),
         title: String(u.title || `Bài ${num}`),
+        titleZh: typeof u.titleZh === 'string' ? u.titleZh : '',
+        titleVi: typeof u.titleVi === 'string' ? u.titleVi : '',
+        grammar: typeof u.grammar === 'string' ? u.grammar : '',
+        sgkPage: typeof u.sgkPage === 'number' ? u.sgkPage : null,
+        sbtPage: typeof u.sbtPage === 'number' ? u.sbtPage : null,
+        voVietPage: typeof u.voVietPage === 'number' ? u.voVietPage : null,
+        audioTracks: Array.isArray(u.audioTracks) ? (u.audioTracks as KtnLessonUnit['audioTracks']) : [],
+        materials: Array.isArray(u.materials) ? (u.materials as KtnLessonUnit['materials']) : [],
+        homeworkAssignment: (u.homeworkAssignment as KtnHomeworkAssignment | null) || null,
+        parts: Array.isArray(u.parts) ? (u.parts as KtnLessonUnit['parts']) : [],
         videoId: rawVid || undefined,
         streamUrl,
         posterUrl,
         duration
       };
+    });
+  },
+
+  async getCourseHomeworkConfigs(courseId: string): Promise<Record<string, KtnHomeworkAssignment>> {
+    const res = await ktnRequest<{ ok: boolean; configs: Record<string, KtnHomeworkAssignment> }>(
+      `/api/ktn/courses/homework-configs?courseId=${encodeURIComponent(courseId)}`
+    );
+    return res.configs || {};
+  },
+
+  async saveCourseHomeworkConfig(payload: {
+    courseId: string;
+    lessonNumber?: number | null;
+    unitId?: string | null;
+    assigned: boolean;
+    mandatory?: boolean;
+    title: string;
+    instructions: string;
+    relatedPages?: string | null;
+    allowedTypes?: Array<'audio' | 'image' | 'pdf' | 'video' | 'text'>;
+    maxFiles?: number;
+    deadline?: string | null;
+    completionCriteria?: string | null;
+    sampleMaterialUrl?: string | null;
+  }): Promise<{ ok: boolean; config: KtnHomeworkAssignment }> {
+    return ktnRequest('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      body: JSON.stringify(payload)
     });
   },
 
@@ -490,7 +555,24 @@ export const ktnApi = {
   },
 
   async uploadHomeworkFile(file: File | Blob, fileName: string): Promise<{ fileUrl: string; fileType: string; size: number }> {
-    const fileType = file.type || 'audio/wav';
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    const extMimeMap: Record<string, string> = {
+      wav: 'audio/wav',
+      webm: 'audio/webm',
+      mp3: 'audio/mpeg',
+      m4a: 'audio/mp4',
+      ogg: 'audio/ogg',
+      aac: 'audio/aac',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      pdf: 'application/pdf',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime'
+    };
+    const fileType = (file.type || extMimeMap[ext] || 'audio/wav').split(';')[0].trim() || 'audio/wav';
     const fileSize = file.size || 2048;
     const presign = await ktnRequest<{
       ok: boolean;
@@ -512,6 +594,7 @@ export const ktnApi = {
         status: uploadRes.status || 502
       });
     }
+    registerLocalUploadedMediaPreview(presign.fileUrl, file);
     return {
       fileUrl: presign.fileUrl,
       fileType,
@@ -553,7 +636,7 @@ export const ktnApi = {
       ppt: 'application/vnd.ms-powerpoint',
       pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     };
-    const fileType = file.type || extMimeMap[ext] || 'application/octet-stream';
+    const fileType = (file.type || extMimeMap[ext] || 'application/octet-stream').split(';')[0].trim() || 'application/octet-stream';
     const fileSize = file.size || 2048;
 
     if (fileSize > 100 * 1024 * 1024) {
@@ -661,6 +744,8 @@ export const ktnApi = {
       await putOnce();
     }
 
+    registerLocalUploadedMediaPreview(presign.fileUrl, file);
+
     return {
       fileUrl: presign.fileUrl,
       fileType,
@@ -674,8 +759,10 @@ export const ktnApi = {
     lessonNum: number;
     lessonTitle: string;
     unitId?: string | null;
-    fileUrl: string;
-    fileType: string;
+    fileUrl?: string;
+    fileType?: string;
+    submissionMode?: 'file' | 'text';
+    textAnswer?: string;
     studentNote?: string;
     workbookAnswers?: Record<string, unknown>;
     attachments?: Array<{ title: string; fileUrl: string; mediaType: string; size: number }>;

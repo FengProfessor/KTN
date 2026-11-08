@@ -6474,7 +6474,7 @@ export default {
             relatedPages: meta && !meta.isWorkbook
               ? `SGK trang ${meta.sgkPage} · SBT trang ${meta.sbtPage} · Vở tập viết trang ${meta.voVietPage}`
               : (meta?.sbtPage ? `SBT trang ${meta.sbtPage}` : null),
-            allowedTypes: ['audio', 'image', 'pdf', 'video'],
+            allowedTypes: ['audio', 'image', 'pdf', 'video', 'text'],
             maxFiles: 3,
             deadline: null,
             completionCriteria: meta && !meta.isWorkbook
@@ -6676,7 +6676,7 @@ export default {
             ? `Xem hết video Bài ${lNum} (${titleZh})${materials.length > 0 ? ', tải tài liệu bài học đính kèm' : ''} và nộp bản thu âm phát âm hoặc ảnh/PDF bài làm.`
             : 'Chưa có bài tập cần nộp cho bài này.',
           relatedPages: materials.length > 0 ? materials.map(m => m.title).join(' · ') : null,
-          allowedTypes: ['audio', 'image', 'pdf', 'video'],
+          allowedTypes: ['audio', 'image', 'pdf', 'video', 'text'],
           maxFiles: 3,
           deadline: null,
           completionCriteria: pairedHwUnit ? `Hoàn thành thu âm hoặc nộp bài làm Bài ${lNum}.` : null
@@ -10620,7 +10620,7 @@ export default {
           message: 'Định dạng tệp không được phép tải lên. Chỉ chấp nhận tệp âm thanh, hình ảnh, video hoặc PDF bài làm.'
         }, 400);
       }
-      const fileType = String(body.fileType || 'audio/wav');
+      const fileType = String(body.fileType || 'audio/wav').split(';')[0].trim() || 'audio/wav';
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
       const studentFolder = normalizeEmail(session.email).replace(/[^a-z0-9]/g, '_');
       const s3Key = `resource/homeworks/${vendorId}/${studentFolder}/${Date.now()}-${cleanName}`;
@@ -10659,7 +10659,7 @@ export default {
           }, 400);
         }
       }
-      const fileType = String(body.fileType || body.contentType || 'application/octet-stream');
+      const fileType = String(body.fileType || body.contentType || 'application/octet-stream').split(';')[0].trim() || 'application/octet-stream';
       const extByMime = {
         'image/png': '.png',
         'image/jpeg': '.jpg',
@@ -10781,60 +10781,66 @@ export default {
       const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
       const firstAtt = rawAttachments.find(a => a && (a.fileUrl || a.cdnUrl || a.playUrl)) || null;
       const fileUrl = String(body.fileUrl || firstAtt?.fileUrl || firstAtt?.cdnUrl || firstAtt?.playUrl || '').trim();
-      const fileType = String(body.fileType || firstAtt?.fileType || firstAtt?.mediaType || 'audio').trim();
+      const isTextOnlySubmission = !fileUrl && (body.submissionMode === 'text' || body.fileType === 'text') &&
+        String(body.textAnswer || body.studentNote || '').trim().length > 0;
+      const fileType = isTextOnlySubmission
+        ? 'text'
+        : (String(body.fileType || firstAtt?.fileType || firstAtt?.mediaType || 'audio').split(';')[0].trim() || 'audio');
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
 
-      // Chặn triệt để lỗi nộp bài thiếu fileUrl thật, tự nhét video mẫu, chèn URL ngoài hệ thống S3/CloudFront của KTN hoặc dùng đường dẫn của học sinh khác!
+      // Chặn triệt để lỗi nộp bài thiếu fileUrl thật (trừ khi bài tập cho phép nộp câu trả lời dạng chữ thuần submissionMode === 'text'), tự nhét video mẫu, chèn URL ngoài hệ thống S3/CloudFront của KTN hoặc dùng đường dẫn của học sinh khác!
       const validCdnPrefix = `https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/${vendorId}/`;
       const validS3Prefix = `https://online-learning-izteach-6-aws-source-bucket.s3-ap-southeast-1.amazonaws.com/resource/homeworks/${vendorId}/`;
       const studentFolder = normalizeEmail(session.email).replace(/[^a-z0-9]/g, '_');
 
-      const candidateUrls = [
-        fileUrl,
-        ...rawAttachments.map(a => String(a?.fileUrl || a?.cdnUrl || a?.playUrl || '').trim()).filter(Boolean)
-      ];
+      if (!isTextOnlySubmission) {
+        const candidateUrls = [
+          fileUrl,
+          ...rawAttachments.map(a => String(a?.fileUrl || a?.cdnUrl || a?.playUrl || '').trim()).filter(Boolean)
+        ];
 
-      for (const u of candidateUrls) {
-        if (
-          !u ||
-          u.includes('..') ||
-          (!u.startsWith(validCdnPrefix) && !u.startsWith(validS3Prefix)) ||
-          /hw_btvn_bai_1\.mp4|BTVN BAI 1\.mp4/i.test(u) ||
-          DANGEROUS_HW_EXT_REGEX.test(u) ||
-          !ALLOWED_HW_EXT_REGEX.test(u)
-        ) {
+        for (const u of candidateUrls) {
+          if (
+            !u ||
+            u.includes('..') ||
+            (!u.startsWith(validCdnPrefix) && !u.startsWith(validS3Prefix)) ||
+            /hw_btvn_bai_1\.mp4|BTVN BAI 1\.mp4/i.test(u) ||
+            DANGEROUS_HW_EXT_REGEX.test(u) ||
+            !ALLOWED_HW_EXT_REGEX.test(u)
+          ) {
+            return jsonResponse({
+              ok: false,
+              message: 'Tệp bài làm phải thuộc định dạng hợp lệ và được tải lên kho lưu trữ chính thức của Học Viện Khổng Tử Nhí trước khi nộp bài!'
+            }, 400);
+          }
+          const relPath = u.startsWith(validCdnPrefix) ? u.slice(validCdnPrefix.length) : u.slice(validS3Prefix.length);
+          const relParts = relPath.split('/').filter(Boolean);
+          if (relParts.length >= 2 && relParts[0] !== studentFolder) {
+            return jsonResponse({
+              ok: false,
+              message: 'Không được phép sử dụng đường dẫn tệp bài làm của học sinh khác.'
+            }, 403);
+          }
+        }
+
+        // Kiểm tra tệp bài làm thực sự tồn tại trên kho S3/CloudFront và có dung lượng > 0 byte
+        const headCheckUrl = fileUrl.startsWith(validS3Prefix)
+          ? (validCdnPrefix + fileUrl.slice(validS3Prefix.length))
+          : fileUrl;
+        const headRes = await fetch(headCheckUrl, { method: 'HEAD' }).catch(() => null);
+        const headSize = headRes ? Number(headRes.headers.get('content-length') || 0) : 0;
+        if (!headRes || !headRes.ok || headSize <= 0) {
           return jsonResponse({
             ok: false,
-            message: 'Tệp bài làm phải thuộc định dạng hợp lệ và được tải lên kho lưu trữ chính thức của Học Viện Khổng Tử Nhí trước khi nộp bài!'
+            message: 'Tệp bài làm chưa được tải lên kho lưu trữ hoặc có dung lượng 0 byte. Em vui lòng tải tệp lên trước khi nộp bài!'
           }, 400);
         }
-        const relPath = u.startsWith(validCdnPrefix) ? u.slice(validCdnPrefix.length) : u.slice(validS3Prefix.length);
-        const relParts = relPath.split('/').filter(Boolean);
-        if (relParts.length >= 2 && relParts[0] !== studentFolder) {
+        if (headSize > MAX_HOMEWORK_FILE_BYTES) {
           return jsonResponse({
             ok: false,
-            message: 'Không được phép sử dụng đường dẫn tệp bài làm của học sinh khác.'
-          }, 403);
+            message: 'Dung lượng tệp bài làm vượt quá giới hạn tối đa 50MB.'
+          }, 400);
         }
-      }
-
-      // Kiểm tra tệp bài làm thực sự tồn tại trên kho S3/CloudFront và có dung lượng > 0 byte
-      const headCheckUrl = fileUrl.startsWith(validS3Prefix)
-        ? (validCdnPrefix + fileUrl.slice(validS3Prefix.length))
-        : fileUrl;
-      const headRes = await fetch(headCheckUrl, { method: 'HEAD' }).catch(() => null);
-      const headSize = headRes ? Number(headRes.headers.get('content-length') || 0) : 0;
-      if (!headRes || !headRes.ok || headSize <= 0) {
-        return jsonResponse({
-          ok: false,
-          message: 'Tệp bài làm chưa được tải lên kho lưu trữ hoặc có dung lượng 0 byte. Em vui lòng tải tệp lên trước khi nộp bài!'
-        }, 400);
-      }
-      if (headSize > MAX_HOMEWORK_FILE_BYTES) {
-        return jsonResponse({
-          ok: false,
-          message: 'Dung lượng tệp bài làm vượt quá giới hạn tối đa 50MB.'
-        }, 400);
       }
 
       // Kiểm tra tính hợp lệ của lessonNum
@@ -12209,7 +12215,8 @@ export default {
       const targetRoomKey = access.type === 'class' ? access.classCode : access.roomId;
       const inList = (access.queryKeys || [targetRoomKey]).map(k => encodeURIComponent(k)).join(',');
 
-      const dlp = inspectDlpContent(content);
+      const dlpCheckText = content.replace(/^\[Đã (?:gửi ảnh|gửi video|gửi thu âm|đính kèm tệp): [^\]]+\]$/i, '').trim();
+      const dlp = inspectDlpContent(dlpCheckText);
       if (dlp.blocked) {
         await supabaseRequest(env, 'ktn_dlp_alerts', {
           method: 'POST',

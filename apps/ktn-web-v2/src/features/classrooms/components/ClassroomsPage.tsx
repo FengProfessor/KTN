@@ -157,8 +157,10 @@ export const ClassroomsPage: React.FC = () => {
       lessonNum: number;
       lessonTitle: string;
       studentNote: string;
-      file: File | Blob;
-      fileName: string;
+      file?: File | Blob | null;
+      fileName?: string;
+      submissionMode?: 'file' | 'text';
+      textAnswer?: string;
     }) => {
       const liveCourseId = `CLASS_${activeClassCode}`;
       if (isDemoMode) {
@@ -171,8 +173,8 @@ export const ClassroomsPage: React.FC = () => {
             course_id: liveCourseId,
             lesson_num: payload.lessonNum,
             lesson_title: payload.lessonTitle,
-            file_url: 'https://d21acfi38wn3iy.cloudfront.net/demo-live.wav',
-            file_type: 'audio/wav',
+            file_url: payload.file ? 'https://d21acfi38wn3iy.cloudfront.net/demo-live.wav' : '',
+            file_type: payload.file ? 'audio/wav' : 'text/plain',
             student_note: payload.studentNote,
             status: 'pending' as const,
             score: null,
@@ -184,7 +186,24 @@ export const ClassroomsPage: React.FC = () => {
         };
       }
 
-      const up = await ktnApi.uploadHomeworkFile(payload.file, payload.fileName);
+      if (!payload.file || payload.submissionMode === 'text') {
+        return ktnApi.submitHomework({
+          courseId: liveCourseId,
+          lessonNum: payload.lessonNum,
+          lessonTitle: payload.lessonTitle,
+          classCode: activeClassCode,
+          fileUrl: '',
+          fileType: 'text/plain',
+          studentNote: payload.studentNote,
+          textAnswer: payload.textAnswer || payload.studentNote,
+          submissionMode: 'text',
+        });
+      }
+
+      const up = await ktnApi.uploadHomeworkFile(
+        payload.file,
+        payload.fileName || `btvn-lop-${activeClassCode}-${payload.lessonNum}.dat`
+      );
       const uploadedUrl = up.fileUrl;
       const uploadedType = up.fileType;
 
@@ -196,6 +215,7 @@ export const ClassroomsPage: React.FC = () => {
         fileUrl: uploadedUrl,
         fileType: uploadedType,
         studentNote: payload.studentNote,
+        submissionMode: 'file',
       });
     },
     onSuccess: () => {
@@ -603,15 +623,34 @@ export const ClassroomsPage: React.FC = () => {
                               lessonNum={liveLessonNum}
                               lessonTitle={`Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`}
                               classCode={assignedClass.id}
+                              homeworkAssignment={{
+                                assigned: true,
+                                mandatory: true,
+                                title: ex.title,
+                                instructions:
+                                  ex.prompt ||
+                                  ex.instruction ||
+                                  'Hoàn thành bài luyện tập của buổi học.',
+                                allowedTypes: ['audio', 'image', 'pdf', 'text'],
+                                maxFiles: 3,
+                              }}
                               existingSubmission={matchedHw || null}
                               isSubmitting={submitLiveClassHwMutation.isPending}
-                              onSubmitHomework={async ({ file, fileName, note }) => {
+                              onSubmitHomework={async ({
+                                file,
+                                fileName,
+                                note,
+                                submissionMode,
+                                textAnswer,
+                              }) => {
                                 await submitLiveClassHwMutation.mutateAsync({
                                   lessonNum: liveLessonNum,
                                   lessonTitle: `Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`,
                                   studentNote: note,
                                   file,
                                   fileName,
+                                  submissionMode,
+                                  textAnswer,
                                 });
                               }}
                             />

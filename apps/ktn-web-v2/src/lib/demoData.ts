@@ -300,13 +300,19 @@ export const DEMO_LESSONS: KtnLessonUnit[] = [
   {
     _id: '6adadbcaf75fe5000247ca71',
     id: '6adadbcaf75fe5000247ca71',
+    unitId: '6adadbcaf75fe5000247ca71',
     num: 1,
+    lessonNumber: 1,
+    partNumber: null,
+    partLabel: null,
+    unitType: 'lesson',
+    rawTitle: 'HSK1_Bài 1',
     course: '6adadba969897b0002482ca5',
-    title: 'Bài 1: AI小语，你好！ (Xin chào AI Tiểu Ngữ!)',
+    title: 'Bài 1: AI小语，你好！ — Xin chào AI Tiểu Ngữ!',
     titleZh: 'AI小语，你好！',
     titleVi: 'Xin chào AI Tiểu Ngữ!',
     grammar: 'Lời chào hỏi cơ bản, Đại từ xưng hô 你 (Bạn), 我 (Tôi), 您 (Ngài)',
-    duration: '13:34',
+    duration: '13:35',
     sgkPage: 17,
     sbtPage: 11,
     voVietPage: 1,
@@ -316,22 +322,85 @@ export const DEMO_LESSONS: KtnLessonUnit[] = [
     posterUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adadc45f8c3c60002a2b3c1/thumbnail.jpg',
     audioTracks: [
       {
-        name: 'Bài khóa 1 (Xin chào)',
-        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sgk/01-1.mp3'
+        name: 'Bài khóa 1 — MP3 01-1',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sgk/01-1.mp3',
+        category: 'sgk'
       },
       {
-        name: 'Từ mới 1 (Phát âm chuẩn)',
-        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sgk/01-2.mp3'
+        name: 'Từ mới — MP3 01-2',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sgk/01-2.mp3',
+        category: 'vocab'
+      },
+      {
+        name: 'Luyện nghe SBT Bài 1 — Phần 1',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/01-1.mp3',
+        category: 'sbt'
       }
     ],
+    materials: [
+      {
+        id: 'hsk1-L1-sgk',
+        title: 'SGK HSK 1 (3.0) — Bài 1 (Trang 17)',
+        category: 'sgk_pdf',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/pdf/sgk-hsk1.pdf#page=17',
+        baseUrl: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/pdf/sgk-hsk1.pdf',
+        page: 17,
+        size: 38196973,
+        mime: 'application/pdf',
+        actionLabel: 'Xem sách (Trang 17)',
+        httpStatus: 200
+      },
+      {
+        id: 'hsk1-L1-sbt',
+        title: 'Sách Bài Tập HSK 1 (3.0) — Bài 1 (Trang 11)',
+        category: 'sbt_pdf',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/pdf/sbt-hsk1.pdf#page=11',
+        baseUrl: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/pdf/sbt-hsk1.pdf',
+        page: 11,
+        size: 16210150,
+        mime: 'application/pdf',
+        actionLabel: 'Xem bài tập (Trang 11)',
+        httpStatus: 200
+      },
+      {
+        id: 'hsk1-L1-voviet',
+        title: 'Vở tập viết chữ Hán HSK 1 — Bài 1 (Trang 1)',
+        category: 'voviet_pdf',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/pdf/vo-tap-viet-hsk1.pdf#page=1',
+        baseUrl: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/pdf/vo-tap-viet-hsk1.pdf',
+        page: 1,
+        size: 866739,
+        mime: 'application/pdf',
+        actionLabel: 'Xem / Tải vở viết (Trang 1)',
+        httpStatus: 200
+      }
+    ],
+    homeworkAssignment: {
+      assigned: true,
+      mandatory: true,
+      title: 'Bài tập Bài 1: AI小语，你好！ (Xin chào AI Tiểu Ngữ!)',
+      instructions:
+        '1. Nghe MP3 Bài khóa 1 (Trang 17 SGK) và thu âm đọc to đoạn hội thoại chào hỏi 你好 / 您好.\n2. Luyện viết chữ Hán Bài 1 trong Vở tập viết (Trang 1) hoặc làm Sách bài tập (Trang 11), chụp ảnh hoặc đính kèm tệp gửi giáo viên.',
+      relatedPages: 'SGK trang 17 • SBT trang 11 • Vở tập viết trang 1',
+      allowedTypes: ['audio', 'image', 'pdf', 'text'],
+      maxFiles: 3,
+      deadline: null,
+      completionCriteria: 'Thu âm phát âm rõ thanh điệu hoặc nộp ảnh bài viết/SBT rõ nét để giáo viên nhận xét.'
+    },
     workbookTitle: 'SBT Bài 1: AI小语，你好！'
   },
   {
     _id: '6adadc3b69897b0002482d22',
     id: '6adadc3b69897b0002482d22',
+    unitId: '6adadc3b69897b0002482d22',
     num: 2,
+    lessonNumber: 2,
+    partNumber: null,
+    partLabel: null,
+    unitType: 'lesson',
+    rawTitle: 'HSK1_Bài 2',
     course: '6adadba969897b0002482ca5',
-    title: 'Bài 2: 我叫李文 (Mình tên là Lý Văn)',
+    title: 'Bài 2: 我叫李文 — Mình tên là Lý Văn',
     titleZh: '我叫李文',
     titleVi: 'Mình tên là Lý Văn',
     grammar: 'Hỏi tên với 什么名字, Động từ 叫 (Tên là), Họ và tên tiếng Trung',
@@ -345,10 +414,37 @@ export const DEMO_LESSONS: KtnLessonUnit[] = [
     posterUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adadd60f8c3c60002a2b3c2/thumbnail.jpg',
     audioTracks: [
       {
-        name: 'Bài khóa 1 (Giới thiệu tên)',
-        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sgk/02-1.mp3'
+        name: 'Bài khóa 1 — MP3 02-1',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sgk/02-1.mp3',
+        category: 'sgk'
       }
     ],
+    materials: [
+      {
+        id: 'hsk1-L2-sgk',
+        title: 'SGK HSK 1 (3.0) — Bài 2 (Trang 23)',
+        category: 'sgk_pdf',
+        url: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/pdf/sgk-hsk1.pdf#page=23',
+        baseUrl: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/pdf/sgk-hsk1.pdf',
+        page: 23,
+        size: 38196973,
+        mime: 'application/pdf',
+        actionLabel: 'Xem sách (Trang 23)',
+        httpStatus: 200
+      }
+    ],
+    homeworkAssignment: {
+      assigned: true,
+      mandatory: true,
+      title: 'Bài tập Bài 2: 我叫李文 (Mình tên là Lý Văn)',
+      instructions:
+        '1. Thu âm tự giới thiệu họ tên bằng mẫu câu 我叫... và hỏi tên bạn bằng 你叫什么名字？\n2. Chụp ảnh trang Vở tập viết (Trang 9) hoặc Sách bài tập (Trang 17) đã hoàn thành.',
+      relatedPages: 'SGK trang 23 • SBT trang 17 • Vở tập viết trang 9',
+      allowedTypes: ['audio', 'image', 'pdf', 'text'],
+      maxFiles: 3,
+      deadline: null,
+      completionCriteria: 'Thu âm rõ ràng và viết đúng thứ tự nét chữ Hán.'
+    },
     workbookTitle: 'SBT Bài 2: 我叫李文'
   }
 ];

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatDemoScenario, ChatMessage, ChatReaction } from '@/features/chat/types/chat.types';
+import type { ChatAttachment, ChatDemoScenario, ChatMessage, ChatReaction } from '@/features/chat/types/chat.types';
 
 export type VideoDemoScenario =
   | 'live_real'
@@ -70,6 +70,9 @@ interface UiState {
   mobileChatConversationOpen: boolean;
   setMobileChatConversationOpen: (open: boolean) => void;
 
+  activeLightboxAttachment: ChatAttachment | null;
+  setActiveLightboxAttachment: (attachment: ChatAttachment | null) => void;
+
   draftByRoom: Record<string, string>;
   setRoomDraft: (roomId: string, text: string) => void;
   getRoomDraft: (roomId: string) => string;
@@ -125,6 +128,9 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   mobileChatConversationOpen: false,
   setMobileChatConversationOpen: (open) => set({ mobileChatConversationOpen: open }),
+
+  activeLightboxAttachment: null,
+  setActiveLightboxAttachment: (attachment) => set({ activeLightboxAttachment: attachment }),
 
   draftByRoom: {},
   setRoomDraft: (roomId, text) => {

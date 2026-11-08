@@ -12,7 +12,11 @@ import {
   Loader2,
 } from 'lucide-react';
 import { AttachmentKind, ChatAttachment, ChatMessage, SendMessageInput } from '../types/chat.types';
-import { VoiceRecorder } from './VoiceRecorder';
+import {
+  VoiceRecorder,
+  getAudioExtensionFromMime,
+  normalizeAudioMimeType,
+} from './VoiceRecorder';
 import { detectDlpViolation, formatFileSize } from '@/lib/utils';
 import { useUiStore } from '@/stores/useUiStore';
 
@@ -216,7 +220,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
       {/* Staged Attachment Preview */}
       {stagedAttachment && (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2">
+        <div
+          data-testid="composer-staged-attachment"
+          className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2"
+        >
           <div className="flex min-w-0 items-center gap-2.5">
             {stagedAttachment.kind === 'image' ? (
               <img
@@ -256,20 +263,28 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           onSendVoice={async (blob, durationSec, previewUrl) => {
             setShowVoiceRecorder(false);
             try {
+              const cleanMime = normalizeAudioMimeType(blob.type);
+              const ext = getAudioExtensionFromMime(cleanMime);
+              const fileName = `Thu-am-${classCode || 'KTN'}-${Date.now()}.${ext}`;
               const persistentUrl = await new Promise<string>((resolve) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(String(reader.result || previewUrl));
+                reader.onloadend = () => resolve(String(reader.result || previewUrl));
                 reader.onerror = () => resolve(previewUrl);
                 reader.readAsDataURL(blob);
               });
+              const audioFile = new File([blob], fileName, { type: cleanMime });
               await onSend({
                 roomId,
                 classCode,
                 content: `🎤 Bản thu âm luyện nói tiếng Trung (${durationSec} giây)`,
                 attachment: {
                   kind: 'audio',
-                  name: `Thu-am-${classCode || 'KTN'}-${Date.now()}.wav`,
+                  name: fileName,
                   url: persistentUrl,
+                  file: persistentUrl.length > 180 * 1024 ? audioFile : undefined,
+                  mimeType: cleanMime,
+                  sizeBytes: audioFile.size,
+                  sizeLabel: formatFileSize(audioFile.size),
                   durationSec,
                 },
               });

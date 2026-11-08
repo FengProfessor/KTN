@@ -31,6 +31,9 @@ interface HlsVideoPlayerProps {
   onMarkCompleted: () => void;
   onRetryStream: () => void;
   onRequestUnlockCourse?: () => void;
+  onWatchDemoCourse?: () => void;
+  maxDemoSeconds?: number;
+  onDemoEnded?: () => void;
 }
 
 export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
@@ -44,6 +47,9 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   onMarkCompleted,
   onRetryStream,
   onRequestUnlockCourse,
+  onWatchDemoCourse,
+  maxDemoSeconds,
+  onDemoEnded,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -196,18 +202,32 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             </h3>
             <p className="mt-1.5 max-w-md text-xs leading-relaxed text-stone-300">
               {unentitledReason ||
-                'Học viên vui lòng liên hệ Học vụ Khổng Tử Nhí hoặc chọn đúng cấp độ đã đăng ký để xem video bài giảng.'}
+                'Bạn có thể xem bài giảng học thử miễn phí hoặc đăng ký mở khóa học phần ngay tại đây.'}
             </p>
-            {onRequestUnlockCourse && (
-              <button
-                type="button"
-                onClick={onRequestUnlockCourse}
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 shadow-md transition-transform hover:scale-105 hover:bg-amber-400"
-              >
-                <Sparkles className="h-4 w-4" />
-                Nhắn Học vụ mở khóa học phần
-              </button>
-            )}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+              {onWatchDemoCourse && (
+                <button
+                  type="button"
+                  data-testid="video-guard-watch-demo-btn"
+                  onClick={onWatchDemoCourse}
+                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-stone-500 bg-stone-900/90 px-4 py-2 text-xs font-bold text-white shadow-md transition-colors hover:bg-stone-800"
+                >
+                  <Play className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                  <span>Xem học thử</span>
+                </button>
+              )}
+              {onRequestUnlockCourse && (
+                <button
+                  type="button"
+                  data-testid="video-guard-register-course-btn"
+                  onClick={onRequestUnlockCourse}
+                  className="inline-flex min-h-[38px] items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 shadow-md transition-transform hover:scale-105 hover:bg-amber-400"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  <span>Đăng ký khóa học</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -261,7 +281,15 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
           preload="metadata"
           onPlay={() => setInternalStatus('playing')}
           onPause={() => setInternalStatus('paused')}
-          onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+          onTimeUpdate={(e) => {
+            const cur = e.currentTarget.currentTime;
+            setCurrentTime(cur);
+            if (maxDemoSeconds && maxDemoSeconds > 0 && cur >= maxDemoSeconds) {
+              e.currentTarget.pause();
+              setInternalStatus('paused');
+              onDemoEnded?.();
+            }
+          }}
           onLoadedMetadata={(e) => {
             setDuration(e.currentTarget.duration || 0);
             setInternalStatus('ready');
@@ -272,6 +300,10 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
           }}
           onEnded={() => {
             setInternalStatus('paused');
+            if (maxDemoSeconds && maxDemoSeconds > 0) {
+              onDemoEnded?.();
+              return;
+            }
             if (!isCompleted) onMarkCompleted();
           }}
           poster="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='%23450a0a'/><stop offset='55%' stop-color='%237f1d1d'/><stop offset='100%' stop-color='%231c1917'/></linearGradient></defs><rect width='1280' height='720' fill='url(%23g)'/><circle cx='640' cy='320' r='68' fill='%23f59e0b' fill-opacity='0.2' stroke='%23fbbf24' stroke-width='3'/><polygon points='622,290 622,350 675,320' fill='%23fef3c7'/><text x='640' y='445' text-anchor='middle' fill='%23fef3c7' font-family='sans-serif' font-size='28' font-weight='bold'>HỌC VIỆN KHỔNG TỬ NHÍ — PHÒNG HỌC TRỰC TUYẾN</text></svg>"

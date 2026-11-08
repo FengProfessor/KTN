@@ -188,7 +188,15 @@ export const DEMO_COURSES: KtnCourse[] = [
     ageGroup: 'Mọi lứa tuổi',
     lessonsCount: 15,
     price: 890000,
-    oldPrice: 1500000
+    oldPrice: 1500000,
+    description:
+      'Chương trình HSK 3.0 chuẩn 9 cấp mới nhất với giáo trình in màu, sách bài tập và luyện phát âm AI.',
+    thumb:
+      'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adadc45f8c3c60002a2b3c1/thumbnail.jpg',
+    demoVideoUrl:
+      'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adadc45f8c3c60002a2b3c1/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài 1: AI小语，你好！ (Xin chào AI Tiểu Ngữ!)'
   },
   {
     id: '65e7704a9ea90c00080d5195',
@@ -199,7 +207,51 @@ export const DEMO_COURSES: KtnCourse[] = [
     ageGroup: '5 – 6 tuổi',
     lessonsCount: 20,
     price: 890000,
-    oldPrice: 1500000
+    oldPrice: 1500000,
+    description:
+      'Làm quen tiếng Trung qua bài hát, thẻ hình màu sắc và trò chơi phản xạ vui nhộn cho bé 5–6 tuổi.',
+    thumb:
+      'https://d21acfi38wn3iy.cloudfront.net/resource/products/3529cd2b-7af6-4fda-887c-392a79393d6a/d897c847-ccff-497c-bfeb-b495cebf2398.jpg',
+    demoVideoUrl:
+      'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/65e7dc7a8d4bf50008e77f7d/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài 1: 你好 (Xin chào)'
+  },
+  {
+    id: '65e7db908d4bf50008e77f4d',
+    code: 'YCT1-01',
+    title: 'Chinh phục YCT 1 cho học sinh Tiểu học',
+    shortTitle: 'YCT 1',
+    badge: 'TIỂU HỌC YCT 1',
+    ageGroup: '6 – 8 tuổi',
+    lessonsCount: 11,
+    price: 890000,
+    oldPrice: 1500000,
+    description:
+      'Nền tảng giao tiếp và 80 từ vựng chuẩn kỳ thi quốc tế YCT Cấp độ 1 dành cho học sinh Tiểu học.',
+    thumb:
+      'https://d21acfi38wn3iy.cloudfront.net/resource/products/3529cd2b-7af6-4fda-887c-392a79393d6a/07a5f32d-4c8f-4484-8fd2-a6df8fb5d102.jpg',
+    demoVideoUrl:
+      'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/65e81f708d4bf50008e78355/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài 1: 你好 (Xin chào thầy cô và bạn bè)'
+  },
+  {
+    id: '65f97e129f6493000825ef48',
+    code: 'HSK1-20',
+    title: 'Khóa học HSK 1 (Giáo trình chuẩn Hán ngữ)',
+    shortTitle: 'HSK1 Chuẩn',
+    badge: 'GIÁO TRÌNH CHUẨN',
+    ageGroup: 'THCS & Người lớn',
+    lessonsCount: 15,
+    price: 890000,
+    oldPrice: 1500000,
+    description:
+      'Lộ trình 15 bài Giáo trình chuẩn HSK 1 giúp nắm vững 150 từ vựng và ngữ pháp nền tảng.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: 'Bài 1: 你好 (Xin chào)'
   }
 ];
 

@@ -16,6 +16,8 @@ export interface KtnUserSession {
   code?: string;
   email: string;
   name: string;
+  phone?: string;
+  parentName?: string;
   role: UserRole;
   roles: UserRole[];
   classCode: string | null;
@@ -34,10 +36,14 @@ export interface KtnCourse {
   shortTitle: string;
   badge: string;
   ageGroup?: string;
+  description?: string;
   lessonsCount: number;
   price: number;
   oldPrice: number;
-  thumb?: string;
+  thumb?: string | null;
+  demoVideoUrl?: string | null;
+  demoDurationSeconds?: number;
+  lessonSample?: string;
   isBundle?: boolean;
   bundleCourseIds?: string[];
 }
@@ -317,21 +323,113 @@ export interface KtnTeacherRecord {
   syncStatus?: string;
 }
 
+export interface KtnVietQrPaymentInfo {
+  bankId: string;
+  bankName: string;
+  accountNo?: string;
+  accountNumber?: string;
+  accountName: string;
+  amount: number;
+  transferContent: string;
+  qrUrl: string;
+}
+
+export type OrderContactStatus =
+  | 'not_called'
+  | 'called'
+  | 'no_answer'
+  | 'callback'
+  | 'callback_scheduled';
+export type OrderPaymentDetailedStatus =
+  | 'unpaid'
+  | 'customer_reported'
+  | 'checking_tx'
+  | 'verifying_tx'
+  | 'verified_paid'
+  | 'refunded'
+  | 'mismatch'
+  | 'amount_mismatch';
+export type OrderAccountDetailedStatus =
+  | 'no_account'
+  | 'existing_account'
+  | 'pending_account_creation'
+  | 'pending_creation'
+  | 'activated'
+  | 'sync_error'
+  | 'awaiting_password_or_handoff'
+  | 'credentials_handed_off';
+export type StudentOrderTrackerStage =
+  | 'received'
+  | 'contacted'
+  | 'awaiting_payment'
+  | 'awaiting_payment_verification'
+  | 'payment_verified'
+  | 'activating'
+  | 'unlocked'
+  | 'needs_support';
+
 export interface KtnOrder {
   order_id: string;
   student_name: string;
+  parent_name?: string;
   student_email: string;
+  raw_student_email?: string;
+  has_valid_email?: boolean;
   phone: string;
+  parent_phone?: string;
+  zalo_url?: string | null;
   course_id: string;
   course_name: string;
   amount: number;
+  server_course_price?: number;
+  course_valid?: boolean;
+  amount_valid?: boolean;
   payment_method: string;
   payment_status: 'pending_verification' | 'paid' | 'refunded' | 'cancelled';
-  approval_status: 'pending' | 'approved' | 'rejected';
+  approval_status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  note?: string;
+  customer_note?: string;
+  contact_status?: OrderContactStatus;
+  contact_note?: string;
+  consultation_note?: string;
+  contact_updated_at?: string | null;
+  contact_updated_by?: string | null;
+  payment_detailed_status?: OrderPaymentDetailedStatus;
+  payment_verified_by?: string | null;
+  payment_verified_at?: string | null;
+  payment_tx_ref?: string;
+  payment_received_amount?: number | null;
+  payment_proof_auto?: boolean;
+  source?: 'website' | 'authenticated_student' | string;
+  source_label?: string;
+  can_activate?: boolean;
+  activation_block_reasons?: string[];
+  account_detailed_status?: OrderAccountDetailedStatus;
+  account_created?: boolean | null;
+  credential_handed_off?: boolean;
+  credential_handed_off_at?: string | null;
+  credential_handed_off_by?: string | null;
+  existing_student_code?: string | null;
+  existing_student_email?: string | null;
+  existing_student?: {
+    code?: string;
+    email?: string;
+    name?: string;
+    class_code?: string | null;
+    online_courses_count?: number;
+  } | null;
+  student_tracker_stage?: StudentOrderTrackerStage;
+  student_tracker_label?: string;
   provisioning_status?: string;
   provisioningStatus?: string;
   assigned_user_id?: string | null;
+  assigned_student_id?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
   created_at: string;
+  updated_at?: string;
+  paymentInfo?: KtnVietQrPaymentInfo | null;
+  payment_info?: KtnVietQrPaymentInfo | null;
 }
 
 export interface KtnSyncDriftItem {

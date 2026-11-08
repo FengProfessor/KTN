@@ -3454,6 +3454,333 @@ async function runSuite() {
     );
   }
 
+  // ============================================================================
+  // GROUP V3 (D19-D23): ORDER MANAGEMENT, WEBHOOK RECONCILIATION, POLICY-GATED
+  // ACTIVATION & IN-APP AUTHENTICATED STUDENT COURSE PURCHASE
+  // ============================================================================
+  {
+    const HSK1_ID = '6adadba969897b0002482ca5';
+    const CFK1_ID = '65e7704a9ea90c00080d5195';
+
+    // D19: Public order separates studentName & parentName, never synthesizes fake hv_<phone>@gmail.com,
+    // enforces server-side price (ignoring tampered client amount), and deduplicates idempotencyKey
+    const pubOrderNoEmail = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      body: {
+        studentName: 'Bé Trần Minh Khôi',
+        phone: '0918223344',
+        courseId: HSK1_ID,
+        amount: 1000, // tampered client price! Server price for HSK1 is 990000
+        note: 'Bé 7 tuổi muốn học từ đầu',
+        source: 'website_public',
+        idempotencyKey: 'idem-pub-mk-001'
+      }
+    });
+    const pubOrderReplay = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      body: {
+        studentName: 'Bé Trần Minh Khôi',
+        phone: '0918223344',
+        courseId: HSK1_ID,
+        amount: 1000,
+        note: 'Bé 7 tuổi muốn học từ đầu',
+        source: 'website_public',
+        idempotencyKey: 'idem-pub-mk-001'
+      }
+    });
+    const createdPubOrder = pubOrderNoEmail.data?.order;
+    const d19Passed =
+      pubOrderNoEmail.status === 200 &&
+      pubOrderNoEmail.data?.ok === true &&
+      createdPubOrder?.student_name === 'Bé Trần Minh Khôi' &&
+      createdPubOrder?.parent_name === '' && // NOT copied from student_name!
+      createdPubOrder?.student_email === '' && // NO fake hv_0918223344@gmail.com!
+      createdPubOrder?.amount === 890000 && // Server price enforced!
+      createdPubOrder?.contact_status === 'not_called' &&
+      createdPubOrder?.payment_detailed_status === 'unpaid' &&
+      createdPubOrder?.account_detailed_status === 'no_account' &&
+      pubOrderReplay.status === 200 &&
+      pubOrderReplay.data?.duplicatePrevented === true &&
+      pubOrderReplay.data?.order?.id === createdPubOrder?.id;
+
+    record(
+      'D19-PUBLIC-ORDER-SEPARATE-PARENT-NO-FAKE-GMAIL-AND-SERVER-PRICE',
+      'GROUP_V3',
+      'Public order keeps missing parent_name empty (never copies student_name), never synthesizes fake hv_<phone>@gmail.com when email omitted, enforces server-side course price over tampered client amount, and prevents duplicate creation on double-click',
+      d19Passed,
+      `orderId=${createdPubOrder?.id}, email="${createdPubOrder?.student_email}", parent="${createdPubOrder?.parent_name}", serverAmount=${createdPubOrder?.amount}, dupPrevented=${pubOrderReplay.data?.duplicatePrevented}`
+    );
+
+    // D20: Customer payment report does NOT mark paid; approval is blocked until payment verified + email set + consultation handled
+    const ordId = createdPubOrder.order_id;
+    const reportPayRes = await callApi('/api/ktn/orders/report-payment', {
+      method: 'POST',
+      body: {
+        orderId: ordId,
+        phone: '0918223344',
+        transactionRef: 'FT26311999888'
+      }
+    });
+    const approveWhileReported = await callApi('/api/ktn/orders/approve', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { orderId: ordId, confirmActivation: true }
+    });
+    const verifyUnderpaid = await callApi('/api/ktn/orders/update', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        orderId: ordId,
+        paymentDetailedStatus: 'verified_paid',
+        paymentReceivedAmount: 500000, // underpaid vs 890000!
+        paymentTxRef: 'FT26311999888'
+      }
+    });
+    const adminUpdateOrder = await callApi('/api/ktn/orders/update', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        orderId: ordId,
+        parentName: 'Chị Nguyễn Thu Trang (Mẹ Minh Khôi)',
+        studentEmail: 'minhkhoi.new2026@khongtunhi.com',
+        contactStatus: 'called',
+        consultationNote: 'Đã gọi tư vấn mẹ Trang, thống nhất học HSK1 và cấp tài khoản qua email mẹ',
+        paymentDetailedStatus: 'verified_paid',
+        paymentReceivedAmount: 890000,
+        paymentTxRef: 'FT26311999888'
+      }
+    });
+    const updatedOrd = adminUpdateOrder.data?.order;
+    const d20Passed =
+      reportPayRes.status === 200 &&
+      reportPayRes.data?.order?.payment_detailed_status === 'customer_reported' &&
+      reportPayRes.data?.order?.payment_status === 'pending_verification' && // NEVER 'paid' from customer report!
+      approveWhileReported.status === 400 &&
+      approveWhileReported.data?.error === 'ORDER_ACTIVATION_POLICY_BLOCKED' &&
+      verifyUnderpaid.status === 400 &&
+      verifyUnderpaid.data?.error === 'AMOUNT_MISMATCH' &&
+      adminUpdateOrder.status === 200 &&
+      updatedOrd?.payment_status === 'paid' &&
+      updatedOrd?.payment_detailed_status === 'verified_paid' &&
+      updatedOrd?.payment_tx_ref === 'FT26311999888' &&
+      updatedOrd?.payment_verified_by === 'hocvienkhongtunhi123@gmail.com' &&
+      updatedOrd?.contact_status === 'called' &&
+      updatedOrd?.parent_name === 'Chị Nguyễn Thu Trang (Mẹ Minh Khôi)' &&
+      updatedOrd?.student_email === 'minhkhoi.new2026@khongtunhi.com';
+
+    record(
+      'D20-ORDER-CONSULTATION-AND-PAYMENT-RECONCILIATION-POLICY-GATES',
+      'GROUP_V3',
+      'Customer payment report sets customer_reported (pending_verification, never paid); approval blocks unpaid orders (400 ORDER_ACTIVATION_POLICY_BLOCKED); manual payment verification blocks underpaid amount (400 AMOUNT_MISMATCH) and records verifier, timestamp, and transaction reference when valid',
+      d20Passed,
+      `reportedPayStatus=${reportPayRes.data?.order?.payment_status}, approveUnpaid=${approveWhileReported.status}, underpaidVerify=${verifyUnderpaid.status}, verifiedBy=${updatedOrd?.payment_verified_by}`
+    );
+
+    // D21: Webhook payment reconciliation checks amount & referenceCode and respects auto_approve_webhook=false
+    state.tables.ktn_payment_config[0].auto_approve_webhook = false;
+    const webhookOrderRes = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      body: {
+        studentName: 'Bé Lê Bảo Ngọc',
+        parentName: 'Anh Lê Văn Hùng',
+        studentEmail: 'baongoc.webhook@khongtunhi.com',
+        phone: '0977112233',
+        courseId: CFK1_ID,
+        source: 'website_public'
+      }
+    });
+    const whOrderId = webhookOrderRes.data?.order?.order_id;
+    // 1. Underpaid webhook -> mismatch (422 WEBHOOK_AMOUNT_MISMATCH), pending_verification
+    const whUnderpaid = await callApi('/api/ktn/webhook/payment', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.KTN_WEBHOOK_SECRET}` },
+      body: {
+        content: `Thanh toan ${whOrderId}`,
+        transferAmount: 200000, // CFK1 price is 890000
+        referenceCode: 'MBVCB.111222'
+      }
+    });
+    // 2. Exact amount webhook -> verified_paid, paid, but approval_status remains 'pending' because auto_approve_webhook=false
+    const whExact = await callApi('/api/ktn/webhook/payment', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.KTN_WEBHOOK_SECRET}` },
+      body: {
+        content: `Thanh toan ${whOrderId}`,
+        transferAmount: 890000,
+        referenceCode: 'MBVCB.999888'
+      }
+    });
+    const whOrdersAfter = await callApi(`/api/ktn/orders?filterPreset=PAID_WAITING_APPROVAL&q=${whOrderId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const whOrdAfter = (whOrdersAfter.data?.orders || [])[0];
+    const d21Passed =
+      whUnderpaid.status === 422 &&
+      whUnderpaid.data?.error === 'WEBHOOK_AMOUNT_MISMATCH' &&
+      whUnderpaid.data?.paymentStatus === 'mismatch' &&
+      whExact.status === 200 &&
+      whExact.data?.paymentStatus === 'paid' &&
+      whExact.data?.autoApproved === false &&
+      whOrdAfter?.order_id === whOrderId &&
+      whOrdAfter?.payment_status === 'paid' &&
+      whOrdAfter?.payment_detailed_status === 'verified_paid' &&
+      whOrdAfter?.payment_proof_source === 'webhook_auto' &&
+      whOrdAfter?.payment_tx_ref === 'MBVCB.999888' &&
+      whOrdAfter?.approval_status === 'pending';
+
+    record(
+      'D21-WEBHOOK-AMOUNT-AND-TX-RECONCILIATION-NO-SILENT-AUTO-APPROVE',
+      'GROUP_V3',
+      'Payment webhook flags underpaid transfers as mismatch (422 WEBHOOK_AMOUNT_MISMATCH) without marking paid, and on exact payment records webhook_auto proof + referenceCode while keeping approval_status=pending when auto_approve_webhook=false',
+      d21Passed,
+      `underpaidStatus=${whUnderpaid.status}, exactPayStatus=${whExact.data?.paymentStatus}, autoApproved=${whExact.data?.autoApproved}, approvalStatus=${whOrdAfter?.approval_status}`
+    );
+
+    // D22: Order approval for NEW student vs EXISTING student + explicit credential handoff tracking
+    const approveNewRes = await callApi('/api/ktn/orders/approve', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        orderId: ordId,
+        classCode: 'YCT2-04',
+        confirmActivation: true
+      }
+    });
+    const rawDbOrderAfterApprove = state.tables.ktn_orders.find(r => r.order_id === ordId);
+    const hasNoPlaintextPwdInOrderRow = !JSON.stringify(rawDbOrderAfterApprove || {}).includes(
+      approveNewRes.data?.initialPassword || 'NEVER_MATCH'
+    );
+    const handoffUpdateRes = await callApi('/api/ktn/orders/update', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        orderId: ordId,
+        credentialHandedOff: true
+      }
+    });
+
+    // Existing student order approval (e2e.hs.a@khongtunhi.com already owns HSK1, buys CFK1)
+    const existingStuOrderRes = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: CFK1_ID,
+        phone: '0900000001',
+        parentName: 'Phụ huynh HS A',
+        source: 'authenticated_student'
+      }
+    });
+    const exOrdId = existingStuOrderRes.data?.order?.id;
+    await callApi('/api/ktn/orders/update', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        orderId: exOrdId,
+        contactStatus: 'called',
+        paymentDetailedStatus: 'verified_paid',
+        paymentReceivedAmount: 890000,
+        paymentTxRef: 'FT-EXIST-001'
+      }
+    });
+    const approveExistingRes = await callApi('/api/ktn/orders/approve', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        orderId: exOrdId,
+        confirmActivation: true
+      }
+    });
+    const stuARowAfter = state.tables.ktn_students.find(s => s.email === 'e2e.hs.a@khongtunhi.com');
+    const stuACourseIdsAfter = (stuARowAfter?.online_courses || []).map(c => c.id);
+    const stuALoginStillWorks = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: { email: 'e2e.hs.a@khongtunhi.com', password: 'TestStrongPassword!2026', role: 'student' }
+    });
+
+    const d22Passed =
+      approveNewRes.status === 200 &&
+      approveNewRes.data?.accountCreated === true &&
+      Boolean(approveNewRes.data?.initialPassword) &&
+      approveNewRes.data?.order?.account_detailed_status === 'awaiting_password_or_handoff' && // NOT credentials_handed_off automatically!
+      hasNoPlaintextPwdInOrderRow === true &&
+      handoffUpdateRes.status === 200 &&
+      handoffUpdateRes.data?.order?.account_detailed_status === 'credentials_handed_off' &&
+      approveExistingRes.status === 200 &&
+      approveExistingRes.data?.accountCreated === false &&
+      approveExistingRes.data?.existingAccount === true &&
+      approveExistingRes.data?.initialPassword === null &&
+      approveExistingRes.data?.order?.account_detailed_status === 'activated' &&
+      stuACourseIdsAfter.includes(HSK1_ID) &&
+      stuACourseIdsAfter.includes(CFK1_ID) &&
+      stuALoginStillWorks.status === 200;
+
+    record(
+      'D22-ORDER-APPROVAL-NEW-VS-EXISTING-ACCOUNT-AND-CREDENTIAL-HANDOFF',
+      'GROUP_V3',
+      'Approving a new student order creates account + returns one-time initialPassword with status=awaiting_password_or_handoff (never storing password in order row) until Admin confirms handoff; approving an existing student order appends the new course without resetting password or creating a duplicate account',
+      d22Passed,
+      `newAcctStatus=${approveNewRes.data?.order?.account_detailed_status}, afterHandoff=${handoffUpdateRes.data?.order?.account_detailed_status}, existingAcctCreated=${approveExistingRes.data?.accountCreated}, stuACourses=${JSON.stringify(stuACourseIdsAfter)}`
+    );
+
+    // D23: Authenticated student in-app order binds to session email (ignoring forged body email) and isolates profile phone unless updateProfilePhone=true
+    const TTTE2_ID = '66028938bfd6c90008b816e1';
+    const stuBOriginalPhone = state.tables.ktn_students.find(s => s.email === 'e2e.hs.b@khongtunhi.com')?.phone;
+    const inAppOrderNoProfileOverwrite = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentBToken}` },
+      body: {
+        courseId: TTTE2_ID,
+        studentEmail: 'forged.other@khongtunhi.com', // forged email in request body!
+        phone: '0944556677', // temporary order contact phone
+        parentName: 'Mẹ Bé B',
+        note: 'Đăng ký thêm khóa TTTE 2',
+        updateProfilePhone: false,
+        source: 'authenticated_student',
+        idempotencyKey: 'idem-stub-ttte2-01'
+      }
+    });
+    const stuBPhoneAfterFalse = state.tables.ktn_students.find(s => s.email === 'e2e.hs.b@khongtunhi.com')?.phone;
+
+    const inAppOrderWithProfileUpdate = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentBToken}` },
+      body: {
+        courseId: HSK1_ID,
+        phone: '0933889900',
+        parentName: 'Mẹ Bé B',
+        updateProfilePhone: true,
+        source: 'authenticated_student',
+        idempotencyKey: 'idem-stub-hsk1-02'
+      }
+    });
+    const stuBPhoneAfterTrue = state.tables.ktn_students.find(s => s.email === 'e2e.hs.b@khongtunhi.com')?.phone;
+
+    const myOrdersRes = await callApi('/api/ktn/orders/my', {
+      headers: { Authorization: `Bearer ${studentBToken}` }
+    });
+    const myOrdersList = myOrdersRes.data?.orders || [];
+
+    const d23Passed =
+      inAppOrderNoProfileOverwrite.status === 200 &&
+      inAppOrderNoProfileOverwrite.data?.order?.student_email === 'e2e.hs.b@khongtunhi.com' && // Session email enforced!
+      inAppOrderNoProfileOverwrite.data?.order?.source === 'authenticated_student' &&
+      inAppOrderNoProfileOverwrite.data?.order?.phone === '0944556677' &&
+      stuBPhoneAfterFalse === stuBOriginalPhone && // Profile phone NOT overwritten when updateProfilePhone=false!
+      inAppOrderWithProfileUpdate.status === 200 &&
+      stuBPhoneAfterTrue === '0933889900' && // Profile phone updated when updateProfilePhone=true!
+      myOrdersRes.status === 200 &&
+      myOrdersList.length === 2 &&
+      myOrdersList.every(o => o.student_email === 'e2e.hs.b@khongtunhi.com' && Boolean(o.student_tracker_stage) && Boolean(o.payment_info?.qrUrl));
+
+    record(
+      'D23-AUTHENTICATED-STUDENT-IN-APP-ORDER-SESSION-BINDING-AND-PHONE-ISOLATION',
+      'GROUP_V3',
+      'In-app student order binds strictly to authenticated session identity (ignoring client-supplied email), preserves student profile phone when updateProfilePhone=false, updates profile phone only when updateProfilePhone=true, and returns VietQR + 7-stage tracker via GET /api/ktn/orders/my',
+      d23Passed,
+      `boundEmail=${inAppOrderNoProfileOverwrite.data?.order?.student_email}, phoneBefore=${stuBOriginalPhone}, phoneAfterFalse=${stuBPhoneAfterFalse}, phoneAfterTrue=${stuBPhoneAfterTrue}, myOrdersCount=${myOrdersList.length}`
+    );
+  }
+
   console.log('\n================================================================================');
   console.log(`SUMMARY: ${results.length}/${results.length} TESTS PASSED (100% PASS)`);
   console.log('================================================================================');

@@ -2035,6 +2035,438 @@ async function runSuite() {
     );
 
     await uxStudentContext.close();
+
+    // =========================================================================
+    // TEST N — ORDER MANAGEMENT UPGRADE, IN-APP COURSE PURCHASE & FLASHCARD LINK (N1..N6)
+    // =========================================================================
+    const orderAdminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const orderAdminPage = await orderAdminContext.newPage();
+    await orderAdminPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await orderAdminPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await orderAdminPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 10000 });
+
+    // N1: Admin /admin/orders table columns, "Chưa cung cấp" parent name honesty, distinct payment badges, search & 7 filters
+    await orderAdminPage.goto(`${baseUrl}/admin/orders`, { waitUntil: 'domcontentloaded' });
+    await orderAdminPage.waitForSelector('[data-testid="admin-orders-section"]', { timeout: 8000 });
+    await orderAdminPage.waitForSelector('[data-testid="admin-orders-table"]', { timeout: 8000 });
+
+    const ordersTableHeaderText = await orderAdminPage.textContent(
+      '[data-testid="admin-orders-table"] thead'
+    );
+    const parentCell261105Text = await orderAdminPage.textContent(
+      '[data-testid="admin-order-parent-ORD-261105"]'
+    );
+    const missingParentCellText = await orderAdminPage.textContent(
+      '[data-testid="admin-order-parent-ORD-261106"]'
+    );
+    const paymentBadge261105 = await orderAdminPage.textContent(
+      '[data-testid="admin-order-payment-badge-ORD-261105"]'
+    );
+    const paymentBadge261106 = await orderAdminPage.textContent(
+      '[data-testid="admin-order-payment-badge-ORD-261106"]'
+    );
+    const paymentBadge261107 = await orderAdminPage.textContent(
+      '[data-testid="admin-order-payment-badge-ORD-261107"]'
+    );
+
+    const filterIds = [
+      'all',
+      'new',
+      'not_called',
+      'called_awaiting_payment',
+      'paid_awaiting_approval',
+      'activated',
+      'needs_error_handling',
+      'cancelled_refunded',
+    ];
+    let allFiltersExist = true;
+    for (const fid of filterIds) {
+      const visible = await orderAdminPage.isVisible(`[data-testid="admin-order-filter-${fid}"]`);
+      if (!visible) allFiltersExist = false;
+    }
+
+    // Test quick search by order ID
+    await orderAdminPage.fill('[data-testid="admin-order-search-input"]', 'ORD-261106');
+    await orderAdminPage.waitForTimeout(250);
+    const row261106VisibleOnSearch = await orderAdminPage.isVisible(
+      '[data-testid="admin-order-row-ORD-261106"]'
+    );
+    const row261105HiddenOnSearch = !(await orderAdminPage.isVisible(
+      '[data-testid="admin-order-row-ORD-261105"]'
+    ));
+    await orderAdminPage.fill('[data-testid="admin-order-search-input"]', '');
+    await orderAdminPage.waitForTimeout(200);
+
+    await orderAdminPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'admin-orders-table-desktop.png'),
+      fullPage: false,
+    });
+
+    recordTest(
+      'TEST N',
+      'N1',
+      'Admin /admin/orders displays full 10-column table, shows "Chưa cung cấp" when parent_name is missing, differentiates payment badges, and supports quick search + 7 filters',
+      Boolean(
+        ordersTableHeaderText?.includes('Mã đơn') &&
+          ordersTableHeaderText?.includes('Tên học viên') &&
+          ordersTableHeaderText?.includes('Tên phụ huynh') &&
+          ordersTableHeaderText?.includes('Trạng thái chăm sóc') &&
+          ordersTableHeaderText?.includes('Trạng thái thanh toán') &&
+          ordersTableHeaderText?.includes('Trạng thái cấp TK') &&
+          parentCell261105Text?.trim() === 'Chị Phạm Thu Hà' &&
+          missingParentCellText?.trim() === 'Chưa cung cấp' &&
+          paymentBadge261105?.includes('Đã xác minh tiền thực nhận') &&
+          paymentBadge261106?.includes('Chưa thanh toán') &&
+          paymentBadge261107?.includes('Khách báo đã chuyển khoản') &&
+          allFiltersExist &&
+          row261106VisibleOnSearch &&
+          row261105HiddenOnSearch
+      ),
+      `parent261106="${missingParentCellText?.trim()}", pay261106="${paymentBadge261106?.trim()}", pay261107="${paymentBadge261107?.trim()}"`
+    );
+
+    // N2: OrderDetailDrawer policy gate blocks activation when unpaid/uncalled/missing email & warns on customer_reported
+    await orderAdminPage.click('[data-testid="admin-open-order-btn-ORD-261107"]');
+    await orderAdminPage.waitForSelector('[data-testid="order-detail-drawer"]', { timeout: 5000 });
+    const hasReportedWarning = await orderAdminPage.isVisible(
+      '[data-testid="order-payment-reported-warning"]'
+    );
+    const activateDisabledOnCustomerReported = await orderAdminPage.isDisabled(
+      '[data-testid="order-activate-course-btn"]'
+    );
+    await orderAdminPage.click('[data-testid="order-drawer-close-btn"]');
+    await orderAdminPage.waitForTimeout(200);
+
+    await orderAdminPage.click('[data-testid="admin-open-order-btn-ORD-261106"]');
+    await orderAdminPage.waitForSelector('[data-testid="order-detail-drawer"]', { timeout: 5000 });
+    const hasCallTelLink = await orderAdminPage.isVisible('[data-testid="order-call-tel-link"]');
+    const hasZaloLink = await orderAdminPage.isVisible('[data-testid="order-zalo-link"]');
+    const activateDisabledInitially = await orderAdminPage.isDisabled(
+      '[data-testid="order-activate-course-btn"]'
+    );
+    const blockReasonsText = await orderAdminPage.textContent(
+      '[data-testid="order-activation-block-reasons"]'
+    );
+
+    recordTest(
+      'TEST N',
+      'N2',
+      'OrderDetailDrawer renders Customer/Contact/Payment/Account/Activation sections, tel:/Zalo links, and disables "Xác nhận & Kích hoạt khóa học" with explicit reasons until policy gates pass',
+      hasReportedWarning &&
+        activateDisabledOnCustomerReported &&
+        hasCallTelLink &&
+        hasZaloLink &&
+        activateDisabledInitially &&
+        Boolean(
+          blockReasonsText?.includes('Chưa xác minh tiền thực nhận') &&
+            blockReasonsText?.includes('Chưa có email đăng nhập hợp lệ') &&
+            blockReasonsText?.includes('Chưa cập nhật trạng thái chăm sóc')
+        ),
+      `disabledInitial=${activateDisabledInitially}, customerReportedBlocked=${activateDisabledOnCustomerReported}`
+    );
+
+    // N3: Admin completes consultation, enters email & parent name, verifies payment, confirms modal, activates course, and confirms credential handoff
+    const n3Email = `minhtuan.order.${Date.now()}@khongtunhi.com`;
+    await orderAdminPage.fill('[data-testid="order-edit-email-input"]', n3Email);
+    await orderAdminPage.fill(
+      '[data-testid="order-edit-parent-input"]',
+      'Chị Lê Thu Trang'
+    );
+    await orderAdminPage.click('[data-testid="order-save-customer-info-btn"]');
+    await orderAdminPage.waitForTimeout(300);
+
+    await orderAdminPage.fill(
+      '[data-testid="order-consultation-note-input"]',
+      'Đã gọi xác nhận với mẹ bé Minh Tuấn, mẹ đăng ký học khóa Chinese For Kids 1.'
+    );
+    await orderAdminPage.click('[data-testid="order-contact-btn-called"]');
+    await orderAdminPage.waitForTimeout(300);
+
+    await orderAdminPage.fill(
+      '[data-testid="order-payment-tx-ref-input"]',
+      'FT2631299001'
+    );
+    await orderAdminPage.fill(
+      '[data-testid="order-payment-received-amount-input"]',
+      '890000'
+    );
+    await orderAdminPage.click('[data-testid="order-payment-btn-verified_paid"]');
+    await orderAdminPage.waitForSelector('[data-testid="order-payment-manual-proof"]', {
+      timeout: 5000,
+    });
+
+    const activateEnabledAfterChecks = !(await orderAdminPage.isDisabled(
+      '[data-testid="order-activate-course-btn"]'
+    ));
+    await orderAdminPage.click('[data-testid="order-activate-course-btn"]');
+    await orderAdminPage.waitForSelector('[data-testid="order-confirm-activation-modal"]', {
+      timeout: 5000,
+    });
+    const confirmModalSummary = await orderAdminPage.textContent(
+      '[data-testid="order-confirm-activation-summary"]'
+    );
+
+    await orderAdminPage.click('[data-testid="order-final-confirm-activation-btn"]');
+    await orderAdminPage.waitForSelector('[data-testid="order-post-activation-status"]', {
+      timeout: 10000,
+    });
+    const handoffStageBeforeConfirm = await orderAdminPage.textContent(
+      '[data-testid="order-handoff-stage-text"]'
+    );
+    const hasEphemeralPasswordBox = await orderAdminPage.isVisible(
+      '[data-testid="order-ephemeral-password-box"]'
+    );
+
+    await orderAdminPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'admin-order-drawer-desktop.png'),
+      fullPage: false,
+    });
+
+    // Confirm credential handoff explicitly
+    await orderAdminPage.click('[data-testid="order-confirm-handoff-btn"]');
+    await orderAdminPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="order-handoff-stage-text"]')
+          ?.textContent?.includes('Đã bàn giao thông tin đăng nhập'),
+      null,
+      { timeout: 5000 }
+    );
+    const handoffStageAfterConfirm = await orderAdminPage.textContent(
+      '[data-testid="order-handoff-stage-text"]'
+    );
+
+    // Verify Mobile 390x844 full-screen OrderDetailDrawer
+    await orderAdminPage.setViewportSize({ width: 390, height: 844 });
+    await orderAdminPage.waitForTimeout(250);
+    const mobileOrderBackVisible = await orderAdminPage.isVisible(
+      '[data-testid="order-drawer-back-btn"]'
+    );
+    await orderAdminPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'admin-order-drawer-mobile.png'),
+      fullPage: false,
+    });
+    await orderAdminPage.click('[data-testid="order-drawer-back-btn"]');
+    await orderAdminContext.close();
+
+    recordTest(
+      'TEST N',
+      'N3',
+      'Admin consultation + payment verification enables "Xác nhận & Kích hoạt khóa học", shows final confirmation modal, provisions account, and requires explicit credential handoff confirmation',
+      activateEnabledAfterChecks &&
+        Boolean(
+          confirmModalSummary?.includes('Bé Lê Minh Tuấn') &&
+            confirmModalSummary?.includes(n3Email)
+        ) &&
+        Boolean(
+          handoffStageBeforeConfirm?.includes(
+            'Đang chờ học viên thiết lập mật khẩu / chờ bàn giao'
+          )
+        ) &&
+        hasEphemeralPasswordBox &&
+        Boolean(handoffStageAfterConfirm?.includes('Đã bàn giao thông tin đăng nhập')) &&
+        mobileOrderBackVisible,
+      `email=${n3Email}, handoffBefore="${handoffStageBeforeConfirm?.trim()}", handoffAfter="${handoffStageAfterConfirm?.trim()}"`
+    );
+
+    // N4: Student /learning prioritizes "Khóa của em" before "Khám phá thêm", supports 90s Demo Video modal & honest "Chưa có bài học thử" fallback
+    const purchaseStudentContext = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+    });
+    const purchaseStudentPage = await purchaseStudentContext.newPage();
+    await purchaseStudentPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await purchaseStudentPage.click('[data-testid="quick-login-hoangngan@khongtunhi.com"]');
+    await purchaseStudentPage.waitForSelector('[data-testid="student-dashboard-page"]', {
+      timeout: 10000,
+    });
+    await purchaseStudentPage.goto(`${baseUrl}/learning`, { waitUntil: 'domcontentloaded' });
+    await purchaseStudentPage.waitForSelector('[data-testid="video-learning-page"]', {
+      timeout: 8000,
+    });
+    await purchaseStudentPage.waitForSelector(
+      '[data-testid="student-explore-courses-section"]',
+      { timeout: 8000 }
+    );
+
+    const sectionOrderCheck = await purchaseStudentPage.evaluate(() => {
+      const mySec = document.querySelector('[data-testid="student-my-courses-section"]');
+      const expSec = document.querySelector('[data-testid="student-explore-courses-section"]');
+      if (!mySec || !expSec) return { ok: false };
+      const myTop = mySec.getBoundingClientRect().top;
+      const expTop = expSec.getBoundingClientRect().top;
+      return { ok: myTop < expTop, myTop: Math.round(myTop), expTop: Math.round(expTop) };
+    });
+
+    // Click "Xem học thử" on Tiếng Trung Trẻ Em 3 (6638bd09a7367400085c7ab2) -> has demo video + 90s badge
+    await purchaseStudentPage.click(
+      '[data-testid="watch-demo-course-btn-6638bd09a7367400085c7ab2"]'
+    );
+    await purchaseStudentPage.waitForSelector('[data-testid="course-demo-video-modal"]', {
+      timeout: 5000,
+    });
+    const demoDurationBadgeText = await purchaseStudentPage.textContent(
+      '[data-testid="course-demo-duration-badge"]'
+    );
+    await purchaseStudentPage.click('[data-testid="close-demo-modal-btn"]');
+    await purchaseStudentPage.waitForTimeout(200);
+
+    // Click "Xem học thử" on Tiếng Trung Trẻ Em 2 (66028938bfd6c90008b816e1) -> shows "Chưa có bài học thử" without fake video
+    await purchaseStudentPage.click(
+      '[data-testid="watch-demo-course-btn-66028938bfd6c90008b816e1"]'
+    );
+    await purchaseStudentPage.waitForSelector('[data-testid="course-demo-unavailable"]', {
+      timeout: 5000,
+    });
+    const demoUnavailableText = await purchaseStudentPage.textContent(
+      '[data-testid="course-demo-unavailable"]'
+    );
+    await purchaseStudentPage.click('[data-testid="close-demo-modal-btn"]');
+    await purchaseStudentPage.waitForTimeout(200);
+
+    recordTest(
+      'TEST N',
+      'N4',
+      'Student /learning prioritizes "Khóa của em" above "Khám phá thêm", plays 90s demo video when available, and shows "Chưa có bài học thử" when no demo exists',
+      sectionOrderCheck.ok &&
+        Boolean(demoDurationBadgeText?.includes('90 giây')) &&
+        Boolean(demoUnavailableText?.includes('Chưa có bài học thử')),
+      `myTop=${sectionOrderCheck.myTop}px < expTop=${sectionOrderCheck.expTop}px, demoBadge="${demoDurationBadgeText?.trim()}"`
+    );
+
+    // N5: In-App Course Registration Popup auto-fills read-only session identity, isolates profile phone unless checked, and shows "Đơn của em đang chờ xác nhận." + 7 stages + VietQR
+    const profileBeforeOrder = await purchaseStudentPage.evaluate(async () => {
+      const raw = localStorage.getItem('ktn_v2_auth_session');
+      const token = raw ? JSON.parse(raw).token : '';
+      const res = await fetch('/api/ktn/students/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.json();
+    });
+
+    await purchaseStudentPage.click(
+      '[data-testid="register-course-btn-6638bd09a7367400085c7ab2"]'
+    );
+    await purchaseStudentPage.waitForSelector('[data-testid="course-registration-modal"]', {
+      timeout: 5000,
+    });
+
+    const regReadonlyEmail = await purchaseStudentPage.inputValue(
+      '[data-testid="reg-student-email-readonly"]'
+    );
+    const regPrefilledName = await purchaseStudentPage.inputValue(
+      '[data-testid="reg-student-name-input"]'
+    );
+
+    await purchaseStudentPage.fill('[data-testid="reg-parent-phone-input"]', '0988776655');
+    await purchaseStudentPage.fill(
+      '[data-testid="reg-parent-name-input"]',
+      'Chị Thu (Mẹ Hoàng Ngân)'
+    );
+    await purchaseStudentPage.fill(
+      '[data-testid="reg-note-input"]',
+      'Đăng ký thêm khóa Chinese For Kids 1 cho con học buổi tối.'
+    );
+    await purchaseStudentPage.click('[data-testid="reg-submit-order-btn"]');
+
+    await purchaseStudentPage.waitForSelector(
+      '[data-testid="course-order-confirmation-view"]',
+      { timeout: 8000 }
+    );
+    const pendingHeadlineText = await purchaseStudentPage.textContent(
+      '[data-testid="student-order-pending-headline"]'
+    );
+    const createdStudentOrderId = await purchaseStudentPage.textContent(
+      '[data-testid="student-created-order-id"]'
+    );
+    const hasVietQrBox = await purchaseStudentPage.isVisible(
+      '[data-testid="student-vietqr-payment-box"]'
+    );
+    const trackerListText = await purchaseStudentPage.textContent(
+      '[data-testid="student-order-7stage-list"]'
+    );
+
+    // Self-report transfer from student modal
+    await purchaseStudentPage.fill(
+      '[data-testid="student-report-tx-input"]',
+      'MB99887766'
+    );
+    await purchaseStudentPage.click('[data-testid="student-report-payment-btn"]');
+    await purchaseStudentPage.waitForTimeout(350);
+
+    await purchaseStudentPage.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'student-learning-purchase-desktop.png'),
+      fullPage: false,
+    });
+
+    await purchaseStudentPage.click('[data-testid="student-close-confirmation-btn"]');
+    await purchaseStudentPage.waitForSelector(
+      '[data-testid="student-orders-tracker-section"]',
+      { timeout: 5000 }
+    );
+
+    const profileAfterOrder = await purchaseStudentPage.evaluate(async () => {
+      const raw = localStorage.getItem('ktn_v2_auth_session');
+      const token = raw ? JSON.parse(raw).token : '';
+      const res = await fetch('/api/ktn/students/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return res.json();
+    });
+
+    recordTest(
+      'TEST N',
+      'N5',
+      'In-app course registration pre-fills session email/name, creates authenticated_student order with VietQR & 7-stage tracker ("Đơn của em đang chờ xác nhận."), and preserves original student profile phone',
+      regReadonlyEmail === 'hoangngan@khongtunhi.com' &&
+        Boolean(regPrefilledName?.includes('Hoàng Ngân')) &&
+        Boolean(pendingHeadlineText?.includes('Đơn của em đang chờ xác nhận.')) &&
+        Boolean(createdStudentOrderId?.startsWith('ORD-')) &&
+        hasVietQrBox &&
+        Boolean(
+          trackerListText?.includes('Đã tiếp nhận') &&
+            trackerListText?.includes('Đã liên hệ') &&
+            trackerListText?.includes('Chờ thanh toán') &&
+            trackerListText?.includes('Đã xác minh thanh toán') &&
+            trackerListText?.includes('Đang kích hoạt') &&
+            trackerListText?.includes('Đã mở khóa') &&
+            trackerListText?.includes('Cần hỗ trợ')
+        ) &&
+        profileBeforeOrder?.student?.phone === profileAfterOrder?.student?.phone,
+      `orderId=${createdStudentOrderId?.trim()}, profilePhoneKept=${profileAfterOrder?.student?.phone}`
+    );
+
+    // N6: StudentHome Flashcard card links to canonical https://fengprofessor.github.io/KTN/flashcards/ with target="_blank"
+    await purchaseStudentPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await purchaseStudentPage.waitForSelector('[data-testid="student-dashboard-page"]', {
+      timeout: 8000,
+    });
+    const flashcardLinkAttrs = await purchaseStudentPage.evaluate(() => {
+      const card = document.querySelector('[data-testid="discovery-card-flashcard"]');
+      const cta = document.querySelector('[data-testid="flashcard-cta-btn"]');
+      if (!card || !cta) return null;
+      return {
+        tagName: cta.tagName,
+        href: cta.getAttribute('href') || '',
+        target: cta.getAttribute('target') || '',
+        rel: cta.getAttribute('rel') || '',
+        cardText: (card.textContent || '').replace(/\s+/g, ' ').trim(),
+      };
+    });
+    await purchaseStudentContext.close();
+
+    recordTest(
+      'TEST N',
+      'N6',
+      'StudentHome Flashcard card links to canonical live URL https://fengprofessor.github.io/KTN/flashcards/ with target="_blank"',
+      Boolean(
+        flashcardLinkAttrs &&
+          flashcardLinkAttrs.tagName === 'A' &&
+          flashcardLinkAttrs.href === 'https://fengprofessor.github.io/KTN/flashcards/' &&
+          flashcardLinkAttrs.target === '_blank' &&
+          !flashcardLinkAttrs.cardText.includes('Đang tích hợp')
+      ),
+      JSON.stringify(flashcardLinkAttrs)
+    );
   } finally {
     await browser.close();
     await viteServer.close();

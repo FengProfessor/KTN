@@ -42,6 +42,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
     shortTitle: 'HSK1 3.0',
     badge: 'TIÊU CHUẨN MỚI 3.0',
+    ageGroup: 'Mọi lứa tuổi (Học sinh & Người lớn)',
+    description: '15 bài giảng chuẩn New HSK 3.0, phát âm chuẩn Pinyin, trọn bộ 5 sách PDF & 127 file nghe chất lượng cao.',
+    thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png',
+    demoVideoUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adadc45f8c3c60002a2b3c1/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài 1: AI小语，你好！ (Phát âm chuẩn Pinyin & Lời chào)',
     lessonsCount: 15,
     price: 890000,
     oldPrice: 1500000
@@ -52,6 +58,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)',
     shortTitle: 'Chinese For Kids',
     badge: 'SONG NGỮ MẦM NON',
+    ageGroup: 'Dành cho bé 5 – 6 tuổi',
+    description: 'Tiếp cận tiếng Trung qua bài hát, hoạt hình và trò chơi tương tác, kích hoạt khả năng ngôn ngữ tự nhiên ngay từ nhỏ.',
+    thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1709666936339-2023-happy-chinese-new-year-landscape-banner-320-x-180-px-4-png.png',
+    demoVideoUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/65e8a7a56036860008448c37/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Lesson 1: 第一课.mp4 (Song ngữ mầm non)',
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -62,6 +74,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Chinese For Kids 3 (Khóa Song ngữ Trẻ em Cấp độ 3)',
     shortTitle: 'Chinese For Kids 3',
     badge: 'SONG NGỮ CẤP ĐỘ 3',
+    ageGroup: 'Dành cho bé 7 – 9 tuổi',
+    description: 'Mở rộng vốn từ vựng song ngữ Trung - Anh và mẫu câu giao tiếp sinh hoạt hàng ngày cho trẻ em.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -72,6 +90,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em Mini 1 (Khóa học cho bé 4 – 6 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em Mini 1',
     badge: 'MẦM NON MINI 1',
+    ageGroup: 'Dành cho bé 4 – 6 tuổi',
+    description: 'Làm quen tiếng Trung vỡ lòng qua hình ảnh trực quan, bài đồng dao và từ vựng chủ đề gần gũi.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -82,6 +106,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em Mini 2 (Khóa học cho bé 5 – 7 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em Mini 2',
     badge: 'MẦM NON MINI 2',
+    ageGroup: 'Dành cho bé 5 – 7 tuổi',
+    description: 'Phát triển phản xạ nghe nói và nhận diện chữ Hán cơ bản qua các câu chuyện thiếu nhi sinh động.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -92,6 +122,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em Mini 3 (Khóa học cho bé 6 – 8 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em Mini 3',
     badge: 'MẦM NON MINI 3',
+    ageGroup: 'Dành cho bé 6 – 8 tuổi',
+    description: 'Hoàn thiện nền tảng phát âm, ghép câu giao tiếp tự nhiên và chuẩn bị bước vào lộ trình YCT.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -102,6 +138,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em 1 (Lộ trình 6 – 11 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em 1',
     badge: 'CẤP ĐỘ 01',
+    ageGroup: 'Dành cho bé 6 – 11 tuổi',
+    description: 'Xây dựng nền tảng ngữ âm Pinyin, nét chữ Hán cơ bản và mẫu câu giao tiếp chủ đề bản thân, gia đình.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 25,
     price: 890000,
     oldPrice: 1500000
@@ -112,6 +154,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em 2 (Lộ trình 6 – 12 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em 2',
     badge: 'CẤP ĐỘ 02',
+    ageGroup: 'Dành cho bé 6 – 12 tuổi',
+    description: 'Mở rộng mẫu câu hỏi đáp thời gian, sở thích, màu sắc và rèn luyện kỹ năng nghe hiểu chuẩn YCT 1-2.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -122,6 +170,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em 3 (Lộ trình 6 – 12 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em 3',
     badge: 'CẤP ĐỘ 03',
+    ageGroup: 'Dành cho bé 6 – 12 tuổi',
+    description: 'Phương pháp học vui nhộn, hình ảnh sinh động giúp bé nhận diện mặt chữ Hán và phát âm chuẩn tự nhiên như bản xứ.',
+    thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1711340507122-1709664536305-2023-happy-chinese-new-year-landscape-banner-320-x-180-px-1-png-png.png',
+    demoVideoUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6638bea35f32730008fb0c0b/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài giảng số 1: 1.Bài 1 Lộ 3 Trong công viên.mp4',
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -132,6 +186,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em 4 (Lộ trình 7 – 13 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em 4',
     badge: 'CẤP ĐỘ 04',
+    ageGroup: 'Dành cho bé 7 – 13 tuổi',
+    description: 'Mở rộng vốn từ vựng chủ đề trường học, gia đình, rèn luyện phản xạ giao tiếp tự tin và kỹ năng viết chữ Hán cơ bản.',
+    thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1740724600476-anh-nen-png.png',
+    demoVideoUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/67bbd77b8860310002982dc6/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Lộ 4 Bài 1: LO 4 BAI 1.mp4 (Lộ 4 - Giao tiếp phản xạ)',
     lessonsCount: 16,
     price: 890000,
     oldPrice: 1500000
@@ -142,6 +202,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em 5 (Lộ trình 8 – 14 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em 5',
     badge: 'CẤP ĐỘ 05',
+    ageGroup: 'Dành cho bé 8 – 14 tuổi',
+    description: 'Phát triển câu văn phức, mở rộng vốn từ chủ đề khoa học, xã hội và tăng cường phản xạ đối thoại lưu loát.',
+    thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1739010469647-1709664720509-2023-happy-chinese-new-year-landscape-banner-320-x-180-px-2-png-png.png',
+    demoVideoUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/67a729815277c40002c6c2c6/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài 1: Bài 1 lộ 5.mp4 (Hội thoại chuyên sâu & Ngữ pháp)',
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -152,6 +218,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Tiếng Trung Trẻ Em 6 (Lộ trình 9 – 15 tuổi)',
     shortTitle: 'Tiếng Trung Trẻ Em 6',
     badge: 'CẤP ĐỘ 06',
+    ageGroup: 'Dành cho bé 9 – 15 tuổi',
+    description: 'Làm chủ kỹ năng thuyết trình, đọc hiểu đoạn văn dài và bứt phá các kỳ thi chứng chỉ quốc tế YCT / HSK.',
+    thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1740724444452-anh-nen-png.png',
+    demoVideoUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/67a8696dc4f5400002f8ac46/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài 1: Bài 1 lộ 6.mp4 (Luyện thi chuẩn YCT/HSK)',
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -162,6 +234,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Chinese Junior 1 (Tiếng Trung Thiếu Niên Song Ngữ)',
     shortTitle: 'Chinese Junior 1',
     badge: 'CHINESE JUNIOR 1',
+    ageGroup: 'Dành cho học sinh 10 – 15 tuổi',
+    description: 'Chương trình tiếng Trung thiếu niên song ngữ, rèn luyện toàn diện 4 kỹ năng Nghe - Nói - Đọc - Viết.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 25,
     price: 990000,
     oldPrice: 1600000
@@ -172,6 +250,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Chinese Junior 3 (Tiếng Trung Thiếu Niên Cấp Độ 3)',
     shortTitle: 'Chinese Junior 3',
     badge: 'CHINESE JUNIOR 3',
+    ageGroup: 'Dành cho học sinh 11 – 16 tuổi',
+    description: 'Nâng cao ngữ pháp, từ vựng học thuật và phản xạ giao tiếp tiếng Trung chuyên sâu cho lứa tuổi thiếu niên.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 25,
     price: 990000,
     oldPrice: 1600000
@@ -182,6 +266,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Khóa học Tiếng Trung HSK 1 & Giao Tiếp Phản Xạ',
     shortTitle: 'Tiếng Trung HSK 1',
     badge: 'GIAO TIẾP & HSK 1',
+    ageGroup: 'Dành cho học sinh & người mới bắt đầu',
+    description: '20 bài học trọng tâm HSK 1 kết hợp tình huống giao tiếp phản xạ thực tế hàng ngày.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 20,
     price: 690000,
     oldPrice: 1200000
@@ -192,6 +282,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Khóa học Tiếng Trung + Luyện Thi HSK Chuẩn Quốc Tế',
     shortTitle: 'Tiếng Trung + Luyện Thi HSK',
     badge: 'LUYỆN THI HSK',
+    ageGroup: 'Dành cho học sinh ôn thi HSK',
+    description: 'Hệ thống hóa kiến thức, chiến thuật làm bài và giải đề luyện thi chứng chỉ HSK quốc tế.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 20,
     price: 890000,
     oldPrice: 1500000
@@ -202,6 +298,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Chinese + HSK Exam Preparation (Song ngữ Quốc tế)',
     shortTitle: 'Chinese + HSK Exam Prep',
     badge: 'HSK EXAM PREP',
+    ageGroup: 'Hệ song ngữ Trung - Anh',
+    description: 'Khóa luyện thi HSK giảng dạy song ngữ Trung - Anh chuẩn quốc tế dành cho học sinh trường quốc tế.',
+    thumb: null,
+    demoVideoUrl: null,
+    demoDurationSeconds: 0,
+    lessonSample: null,
     lessonsCount: 20,
     price: 990000,
     oldPrice: 1600000
@@ -212,6 +314,12 @@ const MASTER_PRODUCT_MAPPING = {
     title: 'Trọn Bộ 6 Khóa Học Trực Tuyến (Lộ trình 5 – 15 tuổi)',
     shortTitle: 'Trọn Bộ 6 Khóa',
     badge: 'COMBO ƯU ĐÃI 50%',
+    ageGroup: 'Trọn lộ trình 5 – 15 tuổi',
+    description: 'Mở khóa toàn bộ 6 khóa học trọng tâm từ vỡ lòng đến nâng cao với học phí ưu đãi tiết kiệm 50%.',
+    thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png',
+    demoVideoUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adadc45f8c3c60002a2b3c1/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài 1: AI小语，你好！ (Học thử Combo 6 khóa)',
     isBundle: true,
     bundleCourseIds: [
       '6adadba969897b0002482ca5',
@@ -4382,6 +4490,282 @@ async function logSyncEvent(env, evt) {
   return record;
 }
 
+const ORDER_META_MARKER = '<!--KTN_ORDER_META:';
+const ORDER_META_PREFIX = '\n<!--KTN_ORDER_META:';
+const ORDER_META_SUFFIX = '-->';
+
+function extractOrderMetaFromRow(ord = {}) {
+  const rawNote = String(ord.note || '');
+  let customerNote = rawNote;
+  let embedded = {};
+  const idx = rawNote.lastIndexOf(ORDER_META_MARKER);
+  if (idx !== -1 && rawNote.endsWith(ORDER_META_SUFFIX)) {
+    customerNote = rawNote.slice(0, idx).trim();
+    const jsonPart = rawNote.slice(idx + ORDER_META_MARKER.length, rawNote.length - ORDER_META_SUFFIX.length);
+    try {
+      embedded = JSON.parse(jsonPart) || {};
+    } catch {
+      embedded = {};
+    }
+  }
+  return {
+    customerNote,
+    meta: {
+      parent_name: String(ord.parent_name ?? embedded.parent_name ?? '').trim(),
+      contact_status: String(ord.contact_status ?? embedded.contact_status ?? 'not_called').trim(),
+      contact_note: String(ord.contact_note ?? embedded.contact_note ?? '').trim(),
+      contact_updated_at: ord.contact_updated_at ?? embedded.contact_updated_at ?? null,
+      contact_updated_by: ord.contact_updated_by ?? embedded.contact_updated_by ?? null,
+      payment_sub_status: String(ord.payment_sub_status ?? embedded.payment_sub_status ?? '').trim(),
+      payment_verified_by: ord.payment_verified_by ?? embedded.payment_verified_by ?? null,
+      payment_verified_at: ord.payment_verified_at ?? embedded.payment_verified_at ?? null,
+      payment_tx_ref: String(ord.payment_tx_ref ?? embedded.payment_tx_ref ?? '').trim(),
+      payment_received_amount: (ord.payment_received_amount ?? embedded.payment_received_amount) !== undefined
+        ? Number(ord.payment_received_amount ?? embedded.payment_received_amount)
+        : null,
+      payment_proof_auto: Boolean(ord.payment_proof_auto ?? embedded.payment_proof_auto),
+      processed_tx_ids: Array.isArray(ord.processed_tx_ids ?? embedded.processed_tx_ids)
+        ? (ord.processed_tx_ids ?? embedded.processed_tx_ids)
+        : [],
+      source: String(ord.source ?? embedded.source ?? 'website').trim(),
+      account_created: (ord.account_created ?? embedded.account_created) !== undefined
+        ? Boolean(ord.account_created ?? embedded.account_created)
+        : null,
+      credential_handed_off: Boolean(ord.credential_handed_off ?? embedded.credential_handed_off),
+      credential_handed_off_at: ord.credential_handed_off_at ?? embedded.credential_handed_off_at ?? null,
+      credential_handed_off_by: ord.credential_handed_off_by ?? embedded.credential_handed_off_by ?? null,
+      update_profile_phone: Boolean(ord.update_profile_phone ?? embedded.update_profile_phone),
+      v2_managed: Boolean(ord.v2_managed ?? embedded.v2_managed)
+    }
+  };
+}
+
+function serializeOrderNoteWithMeta(customerNote, meta = {}) {
+  const cleanNote = String(customerNote || '').replace(/\n?<!--KTN_ORDER_META:[\s\S]*?-->$/, '').trim();
+  const safeMeta = sanitizeAuditPayload(meta || {});
+  return `${cleanNote}${ORDER_META_PREFIX}${JSON.stringify(safeMeta)}${ORDER_META_SUFFIX}`;
+}
+
+async function resolveServerCoursePrice(env, courseId) {
+  const cid = String(courseId || DEFAULT_COURSE_ID).trim();
+  const baseCourse = MASTER_PRODUCT_MAPPING[cid] || null;
+  let configPrices = {};
+  let defaultAmount = 890000;
+  let paymentConfig = null;
+  try {
+    const cfgRes = await supabaseRequest(env, 'ktn_payment_config?id=eq.default&limit=1');
+    if (cfgRes.ok && Array.isArray(cfgRes.data) && cfgRes.data[0]) {
+      paymentConfig = cfgRes.data[0];
+      if (paymentConfig.course_prices && typeof paymentConfig.course_prices === 'object') {
+        configPrices = paymentConfig.course_prices;
+      }
+      if (Number(paymentConfig.default_amount) > 0) {
+        defaultAmount = Number(paymentConfig.default_amount);
+      }
+    }
+  } catch {}
+  let dbCourse = null;
+  try {
+    const dbRes = await supabaseRequest(env, `ktn_courses?course_id=eq.${encodeURIComponent(cid)}&limit=1`);
+    if (dbRes.ok && Array.isArray(dbRes.data) && dbRes.data[0]) {
+      dbCourse = dbRes.data[0];
+    }
+  } catch {}
+  const validCourse = Boolean(baseCourse || dbCourse);
+  const priceFromConfig = Number(configPrices[cid]);
+  const priceFromDb = Number(dbCourse?.price);
+  const priceFromMaster = Number(baseCourse?.price);
+  const authoritativePrice = (priceFromConfig > 0)
+    ? priceFromConfig
+    : ((priceFromDb > 0) ? priceFromDb : ((priceFromMaster > 0) ? priceFromMaster : defaultAmount));
+  const title = dbCourse?.title || baseCourse?.title || '';
+  const shortTitle = dbCourse?.short_title || baseCourse?.shortTitle || title;
+  return {
+    validCourse,
+    courseId: cid,
+    title,
+    shortTitle,
+    price: authoritativePrice,
+    paymentConfig
+  };
+}
+
+function isSyntheticPlaceholderEmail(email) {
+  const e = normalizeEmail(email || '');
+  if (!e) return true;
+  if (/^hv_[0-9]+@gmail\.com$/i.test(e)) return true;
+  if (/@pending\.khongtunhi\.local$/i.test(e)) return true;
+  return false;
+}
+
+function buildVietQrPaymentInfo(paymentConfig, orderId, amount) {
+  const bankId = paymentConfig?.bank_id || 'MB';
+  const bankName = paymentConfig?.bank_name || 'MBBank';
+  const accountNo = paymentConfig?.account_no || '0987654321';
+  const accountName = paymentConfig?.account_name || 'HOC VIEN KHONG TU NHI';
+  const transferContent = `KTN ${orderId}`;
+  const qrUrl = `https://img.vietqr.io/image/${encodeURIComponent(bankId)}-${encodeURIComponent(accountNo)}-compact2.png?amount=${encodeURIComponent(String(amount || 0))}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(accountName)}`;
+  return {
+    bankId,
+    bankName,
+    accountNo,
+    accountNumber: accountNo,
+    accountName,
+    amount: Number(amount) || 0,
+    transferContent,
+    qrUrl
+  };
+}
+
+function enrichOrderForResponse(ord, existingStudentMap = null) {
+  const { customerNote, meta } = extractOrderMetaFromRow(ord);
+  const isApproved = ord.approval_status === 'approved';
+  const hasAssigned = Boolean(ord.assigned_user_id);
+  const rawEmail = normalizeEmail(ord.student_email || '');
+  const hasRealEmail = Boolean(rawEmail && !isSyntheticPlaceholderEmail(rawEmail));
+  const matchedStudent = (existingStudentMap && hasRealEmail) ? existingStudentMap.get(rawEmail) : null;
+
+  const contactStatus = meta.contact_status || 'not_called';
+  let paymentDetailedStatus = meta.payment_sub_status || '';
+  if (ord.payment_status === 'paid') {
+    paymentDetailedStatus = 'verified_paid';
+  } else if (ord.payment_status === 'refunded' || paymentDetailedStatus === 'refunded') {
+    paymentDetailedStatus = 'refunded';
+  } else if (
+    paymentDetailedStatus === 'underpaid' ||
+    paymentDetailedStatus === 'mismatch' ||
+    paymentDetailedStatus === 'amount_mismatch'
+  ) {
+    paymentDetailedStatus = 'amount_mismatch';
+  } else if (paymentDetailedStatus === 'customer_reported') {
+    paymentDetailedStatus = 'customer_reported';
+  } else if (paymentDetailedStatus === 'checking_tx' || paymentDetailedStatus === 'verifying_tx') {
+    paymentDetailedStatus = 'verifying_tx';
+  } else {
+    paymentDetailedStatus = 'unpaid';
+  }
+
+  const provStatus = ord.provisioning_status || (isApproved && hasAssigned ? 'synced' : (isApproved ? 'partial_failure' : 'pending'));
+  let accountDetailedStatus = 'no_account';
+  if (provStatus === 'partial_failure' || provStatus === 'sync_failed') {
+    accountDetailedStatus = 'sync_error';
+  } else if (isApproved && hasAssigned) {
+    if (meta.credential_handed_off) {
+      accountDetailedStatus = 'credentials_handed_off';
+    } else if (meta.account_created === true) {
+      accountDetailedStatus = 'awaiting_password_or_handoff';
+    } else {
+      accountDetailedStatus = 'activated';
+    }
+  } else if (hasAssigned || matchedStudent) {
+    accountDetailedStatus = 'existing_account';
+  } else if (ord.payment_status === 'paid') {
+    accountDetailedStatus = 'pending_creation';
+  } else {
+    accountDetailedStatus = 'no_account';
+  }
+
+  let studentTrackerStage = 'received';
+  if (
+    provStatus === 'partial_failure' ||
+    provStatus === 'sync_failed' ||
+    paymentDetailedStatus === 'amount_mismatch' ||
+    paymentDetailedStatus === 'mismatch'
+  ) {
+    studentTrackerStage = 'needs_support';
+  } else if (isApproved && hasAssigned) {
+    studentTrackerStage = 'unlocked';
+  } else if (isApproved && !hasAssigned) {
+    studentTrackerStage = 'activating';
+  } else if (ord.payment_status === 'paid') {
+    studentTrackerStage = 'payment_verified';
+  } else if (
+    paymentDetailedStatus === 'customer_reported' ||
+    paymentDetailedStatus === 'verifying_tx' ||
+    paymentDetailedStatus === 'checking_tx' ||
+    contactStatus === 'called'
+  ) {
+    studentTrackerStage = 'awaiting_payment';
+  } else if (
+    contactStatus === 'no_answer' ||
+    contactStatus === 'callback' ||
+    contactStatus === 'callback_scheduled'
+  ) {
+    studentTrackerStage = 'contacted';
+  }
+
+  const STAGE_LABELS = {
+    received: 'Đã tiếp nhận',
+    contacted: 'Đã liên hệ',
+    awaiting_payment: 'Chờ thanh toán',
+    payment_verified: 'Đã xác minh thanh toán',
+    activating: 'Đang kích hoạt',
+    unlocked: 'Đã mở khóa',
+    needs_support: 'Cần hỗ trợ'
+  };
+
+  const cleanPhone = String(ord.phone || '').trim();
+  const digitsOnly = cleanPhone.replace(/\D/g, '');
+  const zaloUrl = /^0\d{9}$/.test(digitsOnly) ? `https://zalo.me/${digitsOnly}` : null;
+  const masterCourse = MASTER_PRODUCT_MAPPING[ord.course_id] || null;
+  const serverCoursePrice = Number(masterCourse?.price || ord.amount) || 890000;
+  const sourceVal = meta.source || 'website';
+
+  return {
+    ...ord,
+    id: ord.order_id || ord.id,
+    order_id: ord.order_id || ord.id,
+    note: customerNote,
+    customer_note: customerNote,
+    student_email: hasRealEmail ? rawEmail : '',
+    raw_student_email: rawEmail,
+    has_valid_email: hasRealEmail,
+    parent_name: meta.parent_name || '',
+    parent_phone: cleanPhone,
+    zalo_url: zaloUrl,
+    contact_status: contactStatus,
+    contact_note: meta.contact_note || '',
+    consultation_note: meta.contact_note || '',
+    contact_updated_at: meta.contact_updated_at || null,
+    contact_updated_by: meta.contact_updated_by || null,
+    payment_detailed_status: paymentDetailedStatus,
+    payment_verified_by: meta.payment_verified_by || null,
+    payment_verified_at: meta.payment_verified_at || null,
+    payment_tx_ref: meta.payment_tx_ref || '',
+    payment_received_amount: meta.payment_received_amount,
+    payment_proof_auto: Boolean(meta.payment_proof_auto),
+    payment_proof_source: meta.payment_proof_auto
+      ? 'webhook_auto'
+      : (meta.payment_verified_by ? 'admin_manual' : null),
+    source: sourceVal,
+    source_label: sourceVal === 'authenticated_student' ? 'Học viên đang đăng nhập' : 'Website',
+    course_valid: Boolean(masterCourse || ord.course_id),
+    amount_valid: Number(ord.amount) > 0,
+    server_course_price: serverCoursePrice,
+    account_detailed_status: accountDetailedStatus,
+    account_created: meta.account_created,
+    credential_handed_off: Boolean(meta.credential_handed_off),
+    credential_handed_off_at: meta.credential_handed_off_at || null,
+    credential_handed_off_by: meta.credential_handed_off_by || null,
+    existing_student_code: matchedStudent?.code || null,
+    existing_student_email: matchedStudent?.email || (hasAssigned ? rawEmail : null),
+    existing_student: matchedStudent
+      ? {
+          code: matchedStudent.code,
+          email: matchedStudent.email,
+          name: matchedStudent.name,
+          class_code: matchedStudent.class_code || null,
+          online_courses_count: Array.isArray(matchedStudent.online_courses)
+            ? matchedStudent.online_courses.length
+            : 0
+        }
+      : null,
+    student_tracker_stage: studentTrackerStage,
+    student_tracker_label: STAGE_LABELS[studentTrackerStage] || 'Đã tiếp nhận',
+    provisioningStatus: provStatus
+  };
+}
+
 /**
  * Orchestrator dùng chung cho cả Duyệt đơn thủ công (/api/ktn/orders/approve) và Duyệt tự động từ Webhook (/api/ktn/webhook/payment)
  * Giải quyết triệt để BUG BE-03 & BUG BE-04:
@@ -4430,6 +4814,8 @@ async function approveAndProvisionOrder(env, {
         message: 'Không tìm thấy đơn hàng ' + cleanOrderId
       };
     }
+
+    const { customerNote, meta: orderMeta } = extractOrderMetaFromRow(order);
 
     const orderIdemKey = `order_approve:${cleanOrderId}`;
     const claim = await claimProvisioningJobAtomically(env, {
@@ -4559,10 +4945,15 @@ async function approveAndProvisionOrder(env, {
 
     // Bước 3: Cập nhật ktn_orders trên Supabase và KIỂM TRA KẾT QUẢ GHI
     const nowIso = new Date().toISOString();
-    // Tách biệt trạng thái thanh toán và trạng thái kích hoạt (nếu gọi từ approve thủ công mà không truyền paymentStatusOverride thì giữ nguyên payment_status hiện có, mặc định pending_verification nếu chưa thanh toán)
     const resolvedPaymentStatus = paymentStatusOverride !== undefined
       ? paymentStatusOverride
       : (order.payment_status || order.paymentStatus || 'pending_verification');
+
+    const updatedOrderMeta = {
+      ...orderMeta,
+      account_created: Boolean(prov.accountCreated),
+      credential_handed_off: Boolean(orderMeta.credential_handed_off)
+    };
 
     const baseOrderUpdatePayload = {
       order_id: cleanOrderId,
@@ -4579,6 +4970,7 @@ async function approveAndProvisionOrder(env, {
       assigned_student_id: prov.izteachStudentId,
       approved_at: nowIso,
       approved_by: approvedBy,
+      note: serializeOrderNoteWithMeta(customerNote, updatedOrderMeta),
       updated_at: nowIso
     };
 
@@ -4608,6 +5000,8 @@ async function approveAndProvisionOrder(env, {
     }
 
     // Bước 4: Cập nhật/cộng dồn khóa học vào bảng ktn_students trên Supabase và KIỂM TRA KẾT QUẢ GHI
+    // Nếu đơn từ học viên đang đăng nhập và không chọn cập nhật SĐT hồ sơ, giữ nguyên SĐT hồ sơ hiện có (truyền undefined)
+    const shouldPreserveProfilePhone = orderMeta.source === 'authenticated_student' && !orderMeta.update_profile_phone;
     const resolvedClassCode = classCode !== undefined
       ? classCode
       : (order.class_code || order.classCode || undefined);
@@ -4615,7 +5009,8 @@ async function approveAndProvisionOrder(env, {
     const updatedStu = await mergeAndUpsertStudentCourses(env, {
       email: prov.email,
       name: prov.name,
-      phone: order.phone || '',
+      phone: shouldPreserveProfilePhone ? undefined : (order.phone || ''),
+      parentName: orderMeta.parent_name ? orderMeta.parent_name : undefined,
       cognitoUserId: prov.cognitoUserId,
       izteachStudentId: prov.izteachStudentId,
       addCourseIds: prov.allCourseIds || prov.grantedCourseIds || [prov.courseId],
@@ -4714,7 +5109,7 @@ async function approveAndProvisionOrder(env, {
       grantedCourseIds: prov.grantedCourseIds,
       allCourseIds: prov.allCourseIds,
       student: updatedStu,
-      order: ordWriteRes.data[0],
+      order: enrichOrderForResponse(ordWriteRes.data[0]),
       accountCreated: Boolean(prov.accountCreated),
       existingAccount: Boolean(prov.existingAccount),
       credentialMode: prov.credentialMode,
@@ -5559,31 +5954,50 @@ export default {
     // B2. QUẢN LÝ DANH MỤC KHÓA HỌC & ĐỒNG BỘ KHÓA HỌC MỚI TỪ IZTEACH
     // ------------------------------------------------------------------------
     if (path === '/api/ktn/courses' && request.method === 'GET') {
-      const sbRes = await supabaseRequest(env, 'ktn_courses?active=eq.true&order=sort_order.asc');
+      const [sbRes, cfgRes] = await Promise.all([
+        supabaseRequest(env, 'ktn_courses?active=eq.true&order=sort_order.asc'),
+        supabaseRequest(env, 'ktn_payment_config?id=eq.default&limit=1')
+      ]);
       const dbCourses = Array.isArray(sbRes.data) ? sbRes.data : [];
-      const catalogMap = { ...MASTER_PRODUCT_MAPPING };
+      const cfgRow = (cfgRes.ok && Array.isArray(cfgRes.data) && cfgRes.data[0]) ? cfgRes.data[0] : null;
+      const cfgPrices = (cfgRow && cfgRow.course_prices && typeof cfgRow.course_prices === 'object') ? cfgRow.course_prices : {};
+      const catalogMap = {};
+      for (const [cid, base] of Object.entries(MASTER_PRODUCT_MAPPING)) {
+        const overridePrice = Number(cfgPrices[cid]);
+        catalogMap[cid] = {
+          ...base,
+          price: overridePrice > 0 ? overridePrice : base.price
+        };
+      }
       dbCourses.forEach(c => {
         if (!c || !c.course_id) return;
+        const base = catalogMap[c.course_id] || {};
+        const overridePrice = Number(cfgPrices[c.course_id]);
         catalogMap[c.course_id] = {
-          ...(catalogMap[c.course_id] || {}),
+          ...base,
           id: c.course_id,
-          code: c.code || 'COURSE',
-          title: c.title,
-          shortTitle: c.short_title || c.title,
-          badge: c.badge || 'KHÓA HỌC CHUẨN',
-          ageGroup: c.age_group || '5 – 15 tuổi',
-          lessonsCount: Number(c.lessons_count) || 20,
-          price: Number(c.price) || 890000,
-          oldPrice: Number(c.old_price) || 1500000,
-          thumb: c.thumb_url || undefined,
-          isBundle: Boolean(c.is_bundle),
-          bundleCourseIds: Array.isArray(c.bundle_course_ids) ? c.bundle_course_ids : []
+          code: c.code || base.code || 'COURSE',
+          title: c.title || base.title,
+          shortTitle: c.short_title || base.shortTitle || c.title,
+          badge: c.badge || base.badge || 'KHÓA HỌC CHUẨN',
+          ageGroup: c.age_group || base.ageGroup || '5 – 15 tuổi',
+          description: c.description || base.description || '',
+          lessonsCount: Number(c.lessons_count) || base.lessonsCount || 20,
+          price: overridePrice > 0 ? overridePrice : (Number(c.price) || base.price || 890000),
+          oldPrice: Number(c.old_price) || base.oldPrice || 1500000,
+          thumb: c.thumb_url || base.thumb || undefined,
+          demoVideoUrl: c.demo_video_url ?? base.demoVideoUrl ?? null,
+          demoDurationSeconds: Number(c.demo_duration_seconds ?? base.demoDurationSeconds ?? 90),
+          lessonSample: c.lesson_sample || base.lessonSample || '',
+          isBundle: Boolean(c.is_bundle ?? base.isBundle),
+          bundleCourseIds: Array.isArray(c.bundle_course_ids) ? c.bundle_course_ids : (base.bundleCourseIds || [])
         };
       });
       return jsonResponse({
         ok: true,
         courses: Object.values(catalogMap),
-        catalogMap
+        catalogMap,
+        paymentInfo: buildVietQrPaymentInfo(cfgRow, 'ORD-DEMO', cfgRow?.default_amount || 890000)
       });
     }
 
@@ -7647,24 +8061,248 @@ export default {
 
     if ((path === '/api/ktn/orders' || path === '/api/izteach/orders') && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
-      const rawPhone = String(body.phone || '').trim().replace(/[\s.-]/g, '');
-      const cleanPhone = rawPhone.replace(/\D/g, '');
+      const session = await extractSessionFromRequest(request, env);
+      const isAuthenticatedStudentOrder =
+        body.source === 'authenticated_student' ||
+        (Boolean(session && session.role === 'student') && body.source !== 'website' && !body.orderId);
+
+      // 1. Luồng học viên đang đăng nhập đặt mua thêm khóa học trực tiếp trong khu vực Học video
+      if (isAuthenticatedStudentOrder) {
+        if (!session) {
+          return jsonResponse({
+            ok: false,
+            error: 'AUTH_REQUIRED',
+            message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để đăng ký khóa học.'
+          }, 401);
+        }
+
+        const stuLookup = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
+        const stuProfile = (stuLookup.ok && Array.isArray(stuLookup.data) && stuLookup.data[0]) ? stuLookup.data[0] : null;
+
+        const requestedCourseId = String(body.courseId || '').trim();
+        const coursePricing = await resolveServerCoursePrice(env, requestedCourseId);
+        if (!requestedCourseId || !coursePricing.validCourse) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_COURSE_ID',
+            message: 'Khóa học đăng ký không tồn tại hoặc không hợp lệ.'
+          }, 400);
+        }
+
+        const enrolledList = Array.isArray(stuProfile?.online_courses)
+          ? stuProfile.online_courses
+          : (Array.isArray(session.onlineCourses) ? session.onlineCourses : []);
+        const enrolledIds = new Set(
+          enrolledList.map(c => String(c?.id || c?._id || c || '').trim().toLowerCase()).filter(Boolean)
+        );
+        if (enrolledIds.has(coursePricing.courseId.toLowerCase())) {
+          return jsonResponse({
+            ok: false,
+            error: 'COURSE_ALREADY_OWNED',
+            message: 'Em đã được mở khóa học này trong tài khoản rồi.'
+          }, 409);
+        }
+
+        const rawContactPhone = String(body.phone || body.parentPhone || stuProfile?.phone || session.phone || '').trim().replace(/[\s.-]/g, '');
+        if (!/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(rawContactPhone)) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_PHONE',
+            message: 'Vui lòng nhập Số điện thoại / Zalo phụ huynh hợp lệ (10 số Việt Nam).'
+          }, 400);
+        }
+
+        const studentName = String(stuProfile?.name || session.name || body.studentName || session.email.split('@')[0]).trim();
+        const parentName = String(body.parentName ?? body.contactName ?? stuProfile?.parent_name ?? '').trim();
+        const customerNote = String(body.note || '').trim();
+        const updateProfilePhone = Boolean(body.updateProfilePhone);
+
+        // Chống bấm nhiều lần tạo trùng đơn cho cùng 1 học viên + cùng 1 khóa học đang chờ xử lý
+        const existingPendingRes = await supabaseRequest(
+          env,
+          `ktn_orders?student_email=eq.${encodeURIComponent(session.email)}&course_id=eq.${encodeURIComponent(coursePricing.courseId)}&approval_status=eq.pending&order=created_at.desc&limit=5`
+        );
+        if (existingPendingRes.ok && Array.isArray(existingPendingRes.data)) {
+          const activeDup = existingPendingRes.data.find(row => {
+            if (!row || row.payment_status === 'refunded') return false;
+            const createdMs = row.created_at ? new Date(row.created_at).getTime() : 0;
+            return !createdMs || (Date.now() - createdMs) < 24 * 60 * 60 * 1000;
+          });
+          if (activeDup) {
+            const pInfo = buildVietQrPaymentInfo(coursePricing.paymentConfig, activeDup.order_id, activeDup.amount);
+            const enrichedDup = {
+              ...enrichOrderForResponse(activeDup),
+              payment_info: pInfo,
+              paymentInfo: pInfo
+            };
+            return jsonResponse({
+              ok: true,
+              duplicatePrevented: true,
+              orderId: activeDup.order_id,
+              order: enrichedDup,
+              paymentInfo: pInfo,
+              message: 'Đơn của em đang chờ xác nhận.'
+            });
+          }
+        }
+
+        // Chỉ cập nhật SĐT hồ sơ học viên khi người dùng chủ động xác nhận (updateProfilePhone === true)
+        if (updateProfilePhone && stuProfile) {
+          await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}`, {
+            method: 'PATCH',
+            body: {
+              phone: rawContactPhone,
+              ...(parentName ? { parent_name: parentName } : {}),
+              updated_at: new Date().toISOString()
+            }
+          });
+        }
+
+        const generatedOrderId = 'ORD-' + String(Math.floor(100000 + Math.random() * 900000));
+        const orderMeta = {
+          parent_name: parentName,
+          contact_status: 'not_called',
+          contact_note: '',
+          payment_sub_status: 'unpaid',
+          source: 'authenticated_student',
+          account_created: false,
+          credential_handed_off: false,
+          update_profile_phone: updateProfilePhone,
+          v2_managed: true
+        };
+
+        const orderRecord = {
+          order_id: generatedOrderId,
+          student_name: studentName,
+          student_email: normalizeEmail(session.email),
+          phone: rawContactPhone,
+          course_id: coursePricing.courseId,
+          course_name: coursePricing.title || 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+          amount: coursePricing.price,
+          payment_method: body.paymentMethod || 'VietQR',
+          payment_status: 'pending_verification',
+          approval_status: 'pending',
+          assigned_user_id: stuProfile?.cognito_user_id || session.cognitoUserId || null,
+          assigned_student_id: stuProfile?.izteach_student_id || null,
+          note: serializeOrderNoteWithMeta(customerNote, orderMeta)
+        };
+
+        const sbRes = await supabaseRequest(env, 'ktn_orders', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=representation',
+          body: orderRecord
+        });
+
+        if (!sbRes || !sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            error: 'SUPABASE_ORDER_CREATE_FAILED',
+            message: 'Máy chủ chưa lưu được đơn đăng ký vào cơ sở dữ liệu. Em vui lòng bấm gửi lại nhé!'
+          }, 502);
+        }
+
+        const savedOrder = sbRes.data[0];
+        const pInfo = buildVietQrPaymentInfo(coursePricing.paymentConfig, savedOrder.order_id, savedOrder.amount);
+        return jsonResponse({
+          ok: true,
+          orderId: savedOrder.order_id,
+          order: {
+            ...enrichOrderForResponse(savedOrder),
+            payment_info: pInfo,
+            paymentInfo: pInfo
+          },
+          paymentInfo: pInfo,
+          message: 'Đơn của em đang chờ xác nhận.'
+        });
+      }
+
+      // 2. Luồng đăng ký khóa học từ Website công khai (hoặc bài test legacy)
+      const rawPhone = String(body.phone || body.parentPhone || '').trim().replace(/[\s.-]/g, '');
       if (!String(body.studentName || '').trim() || !/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(rawPhone)) {
         return jsonResponse({ ok: false, message: 'Vui lòng nhập đầy đủ Họ tên và Số điện thoại hợp lệ (10 số).' }, 400);
       }
 
+      const requestedCourseId = String(body.courseId || DEFAULT_COURSE_ID).trim();
+      const coursePricing = await resolveServerCoursePrice(env, requestedCourseId);
+      if (body.courseId && !coursePricing.validCourse) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_COURSE_ID',
+          message: 'Mã khóa học đăng ký không hợp lệ.'
+        }, 400);
+      }
+
+      const rawInputEmail = normalizeEmail(body.studentEmail || '');
+      const hasCleanEmail = Boolean(rawInputEmail && !isSyntheticPlaceholderEmail(rawInputEmail));
+      if (hasCleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawInputEmail)) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_EMAIL',
+          message: 'Địa chỉ Email không đúng định dạng.'
+        }, 400);
+      }
+
+      const isLegacyClientOrderId = Boolean(body.orderId && !body.source && body.parentName === undefined);
+      const parentName = String(body.parentName || '').trim();
+      const customerNote = String(body.note || '').trim();
+
+      // Chống tạo trùng đơn liên tiếp khi người dùng bấm nút nhiều lần trên website
+      if (!isLegacyClientOrderId) {
+        const recentRes = await supabaseRequest(
+          env,
+          `ktn_orders?phone=eq.${encodeURIComponent(String(body.phone || body.parentPhone).trim())}&course_id=eq.${encodeURIComponent(coursePricing.courseId)}&approval_status=eq.pending&order=created_at.desc&limit=3`
+        );
+        if (recentRes.ok && Array.isArray(recentRes.data)) {
+          const recentDup = recentRes.data.find(row => {
+            if (!row || !row.created_at) return false;
+            const ageMs = Date.now() - new Date(row.created_at).getTime();
+            return ageMs >= 0 && ageMs < 60 * 1000 && String(row.student_name || '').trim() === String(body.studentName).trim();
+          });
+          if (recentDup) {
+            const pInfo = buildVietQrPaymentInfo(coursePricing.paymentConfig, recentDup.order_id, recentDup.amount);
+            return jsonResponse({
+              ok: true,
+              duplicatePrevented: true,
+              orderId: recentDup.order_id,
+              order: {
+                ...enrichOrderForResponse(recentDup),
+                payment_info: pInfo,
+                paymentInfo: pInfo
+              },
+              paymentInfo: pInfo
+            });
+          }
+        }
+      }
+
+      const generatedOrderId = isLegacyClientOrderId
+        ? String(body.orderId).trim()
+        : ('ORD-' + String(Math.floor(100000 + Math.random() * 900000)));
+
+      const orderMeta = {
+        parent_name: parentName,
+        contact_status: 'not_called',
+        contact_note: '',
+        payment_sub_status: 'unpaid',
+        source: 'website',
+        v2_managed: !isLegacyClientOrderId
+      };
+
       const orderRecord = {
-        order_id: body.orderId || ('ORD-' + Date.now().toString().slice(-6)),
+        order_id: generatedOrderId,
         student_name: String(body.studentName).trim(),
-        student_email: normalizeEmail(body.studentEmail || `hv_${cleanPhone}@gmail.com`),
-        phone: String(body.phone).trim(),
-        course_id: body.courseId || DEFAULT_COURSE_ID,
-        course_name: body.courseName || 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
-        amount: Number(body.amount) || 890000,
+        // Không tự ghép Gmail giả từ SĐT khi thiếu email
+        student_email: hasCleanEmail ? rawInputEmail : '',
+        phone: String(body.phone || body.parentPhone).trim(),
+        course_id: coursePricing.courseId,
+        course_name: coursePricing.title || body.courseName || 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+        // Luôn lấy giá chuẩn từ server (không tin giá truyền từ frontend)
+        amount: coursePricing.price,
         payment_method: body.paymentMethod || 'VietQR',
-        payment_status: 'pending_verification', // Chuẩn sự thật: Chờ Sale gọi tư vấn / Kế toán xác nhận CK
+        payment_status: 'pending_verification',
         approval_status: 'pending',
-        note: String(body.note || '')
+        note: isLegacyClientOrderId ? customerNote : serializeOrderNoteWithMeta(customerNote, orderMeta)
       };
 
       const sbRes = await supabaseRequest(env, 'ktn_orders', {
@@ -7683,9 +8321,259 @@ export default {
         }, 502);
       }
 
+      const savedOrder = sbRes.data[0];
+      const pInfo = buildVietQrPaymentInfo(coursePricing.paymentConfig, savedOrder.order_id, savedOrder.amount);
       return jsonResponse({
         ok: true,
-        order: sbRes.data[0]
+        orderId: savedOrder.order_id,
+        order: isLegacyClientOrderId
+          ? savedOrder
+          : {
+              ...enrichOrderForResponse(savedOrder),
+              payment_info: pInfo,
+              paymentInfo: pInfo
+            },
+        paymentInfo: pInfo
+      });
+    }
+
+    if (path === '/api/ktn/orders/my' && request.method === 'GET') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để xem đơn hàng của em.' }, 401);
+      }
+      const [ordRes, cfgRes] = await Promise.all([
+        supabaseRequest(env, `ktn_orders?student_email=eq.${encodeURIComponent(session.email)}&order=created_at.desc&limit=50`),
+        supabaseRequest(env, 'ktn_payment_config?id=eq.default&limit=1')
+      ]);
+      const cfgRow = (cfgRes.ok && Array.isArray(cfgRes.data) && cfgRes.data[0]) ? cfgRes.data[0] : null;
+      const rows = (ordRes.ok && Array.isArray(ordRes.data)) ? ordRes.data : [];
+      const orders = rows.map(row => {
+        const enriched = enrichOrderForResponse(row);
+        const pInfo = buildVietQrPaymentInfo(cfgRow, row.order_id, row.amount);
+        return {
+          ...enriched,
+          payment_info: pInfo,
+          paymentInfo: pInfo
+        };
+      });
+      return jsonResponse({ ok: true, orders });
+    }
+
+    if (path === '/api/ktn/orders/report-payment' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const session = await extractSessionFromRequest(request, env);
+      const orderId = String(body.orderId || '').trim();
+      if (!orderId) {
+        return jsonResponse({ ok: false, message: 'Thiếu mã đơn hàng orderId.' }, 400);
+      }
+      const ordLookup = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}&limit=1`);
+      const existingOrd = (ordLookup.ok && Array.isArray(ordLookup.data) && ordLookup.data[0]) ? ordLookup.data[0] : null;
+      if (!existingOrd) {
+        return jsonResponse({ ok: false, message: 'Không tìm thấy đơn hàng ' + orderId }, 404);
+      }
+      if (session && session.role === 'student') {
+        if (normalizeEmail(existingOrd.student_email) !== normalizeEmail(session.email)) {
+          return jsonResponse({ ok: false, message: 'Em không có quyền cập nhật đơn hàng này.' }, 403);
+        }
+      } else if (!session || session.role !== 'admin') {
+        const cleanReqPhone = String(body.phone || '').replace(/\D/g, '');
+        const cleanOrdPhone = String(existingOrd.phone || '').replace(/\D/g, '');
+        if (!cleanReqPhone || cleanReqPhone !== cleanOrdPhone) {
+          return jsonResponse({ ok: false, message: 'Không đủ quyền xác nhận thông báo chuyển khoản cho đơn này.' }, 403);
+        }
+      }
+
+      // Tuyệt đối KHÔNG tự coi "khách báo đã chuyển khoản" là "đã nhận tiền" (payment_status giữ nguyên pending_verification)
+      const { customerNote, meta } = extractOrderMetaFromRow(existingOrd);
+      const txRef = body.transactionRef ?? body.paymentTxRef;
+      const nextMeta = {
+        ...meta,
+        payment_sub_status: existingOrd.payment_status === 'paid' ? 'verified_paid' : 'customer_reported',
+        payment_tx_ref: txRef ? String(txRef).trim() : meta.payment_tx_ref
+      };
+      const patchRes = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: {
+          note: serializeOrderNoteWithMeta(customerNote, nextMeta),
+          updated_at: new Date().toISOString()
+        }
+      });
+      if (!patchRes || !patchRes.ok || !Array.isArray(patchRes.data) || !patchRes.data[0]) {
+        return jsonResponse({ ok: false, message: 'Chưa ghi nhận được thông báo chuyển khoản. Vui lòng thử lại.' }, 502);
+      }
+      return jsonResponse({
+        ok: true,
+        order: enrichOrderForResponse(patchRes.data[0]),
+        message: 'Đã ghi nhận thông báo chuyển khoản. Trung tâm sẽ đối chiếu giao dịch và mở khóa học sớm nhất.'
+      });
+    }
+
+    if (path === '/api/ktn/orders/update' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || session.role !== 'admin') {
+        return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới được cập nhật thông tin đơn hàng.' }, 403);
+      }
+      const body = await request.json().catch(() => ({}));
+      const orderId = String(body.orderId || '').trim();
+      if (!orderId) {
+        return jsonResponse({ ok: false, message: 'Thiếu mã đơn hàng orderId.' }, 400);
+      }
+      const ordLookup = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}&limit=1`);
+      const existingOrd = (ordLookup.ok && Array.isArray(ordLookup.data) && ordLookup.data[0]) ? ordLookup.data[0] : null;
+      if (!existingOrd) {
+        return jsonResponse({ ok: false, message: 'Không tìm thấy đơn hàng ' + orderId }, 404);
+      }
+
+      const nowIso = new Date().toISOString();
+      const { customerNote: prevCustomerNote, meta: prevMeta } = extractOrderMetaFromRow(existingOrd);
+      const nextMeta = { ...prevMeta, v2_managed: true };
+      const patchPayload = { updated_at: nowIso };
+
+      if (body.studentName !== undefined && String(body.studentName).trim()) {
+        patchPayload.student_name = String(body.studentName).trim();
+      }
+      const rawPhoneParam = body.phone !== undefined ? body.phone : body.parentPhone;
+      if (rawPhoneParam !== undefined && String(rawPhoneParam).trim()) {
+        const rawPhone = String(rawPhoneParam).trim().replace(/[\s.-]/g, '');
+        if (!/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(rawPhone)) {
+          return jsonResponse({ ok: false, message: 'Số điện thoại liên hệ không hợp lệ (cần 10 số Việt Nam).' }, 400);
+        }
+        patchPayload.phone = String(rawPhoneParam).trim();
+      }
+      if (body.studentEmail !== undefined) {
+        const cleanEmail = normalizeEmail(body.studentEmail);
+        if (cleanEmail && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail) || isSyntheticPlaceholderEmail(cleanEmail))) {
+          return jsonResponse({ ok: false, message: 'Email đăng nhập không hợp lệ.' }, 400);
+        }
+        patchPayload.student_email = cleanEmail;
+      }
+      if (body.parentName !== undefined) {
+        nextMeta.parent_name = String(body.parentName).trim();
+      }
+      if (body.courseId !== undefined && String(body.courseId).trim() !== existingOrd.course_id) {
+        const coursePricing = await resolveServerCoursePrice(env, body.courseId);
+        if (!coursePricing.validCourse) {
+          return jsonResponse({ ok: false, message: 'Mã khóa học không hợp lệ.' }, 400);
+        }
+        patchPayload.course_id = coursePricing.courseId;
+        patchPayload.course_name = coursePricing.title;
+        patchPayload.amount = coursePricing.price;
+      }
+
+      if (body.contactStatus !== undefined) {
+        const allowedContact = new Set(['not_called', 'called', 'no_answer', 'callback', 'callback_scheduled']);
+        const cs = String(body.contactStatus).trim();
+        if (allowedContact.has(cs)) {
+          nextMeta.contact_status = cs;
+          nextMeta.contact_updated_at = nowIso;
+          nextMeta.contact_updated_by = session.email;
+        }
+      }
+      const incomingNote = body.contactNote !== undefined ? body.contactNote : body.consultationNote;
+      if (incomingNote !== undefined) {
+        nextMeta.contact_note = String(incomingNote).trim();
+        nextMeta.contact_updated_at = nowIso;
+        nextMeta.contact_updated_by = session.email;
+      }
+
+      if (body.paymentDetailedStatus !== undefined) {
+        const pStatus = String(body.paymentDetailedStatus).trim();
+        const orderExpectedAmount = Number(patchPayload.amount ?? existingOrd.amount) || 890000;
+        const txRef = body.paymentTxRef !== undefined ? String(body.paymentTxRef).trim() : nextMeta.payment_tx_ref;
+        const receivedAmt = body.paymentReceivedAmount !== undefined
+          ? Number(body.paymentReceivedAmount)
+          : (nextMeta.payment_received_amount ?? orderExpectedAmount);
+
+        if (pStatus === 'verified_paid') {
+          if (!txRef) {
+            return jsonResponse({
+              ok: false,
+              error: 'MISSING_TX_REF',
+              message: 'Vui lòng nhập Mã tham chiếu giao dịch (Transaction ID / Nội dung sao kê) trước khi xác nhận đã nhận tiền.'
+            }, 400);
+          }
+          if (!Number.isFinite(receivedAmt) || receivedAmt < orderExpectedAmount) {
+            return jsonResponse({
+              ok: false,
+              error: 'AMOUNT_MISMATCH',
+              message: `Số tiền thực nhận (${receivedAmt || 0}đ) nhỏ hơn giá trị đơn hàng (${orderExpectedAmount}đ). Vui lòng chọn trạng thái "Thanh toán sai/thiếu".`
+            }, 400);
+          }
+          patchPayload.payment_status = 'paid';
+          nextMeta.payment_sub_status = 'verified_paid';
+          nextMeta.payment_verified_by = session.email;
+          nextMeta.payment_verified_at = nowIso;
+          nextMeta.payment_tx_ref = txRef;
+          nextMeta.payment_received_amount = receivedAmt;
+          nextMeta.payment_proof_auto = false;
+        } else if (pStatus === 'refunded') {
+          patchPayload.payment_status = 'refunded';
+          patchPayload.approval_status = 'cancelled';
+          nextMeta.payment_sub_status = 'refunded';
+          if (txRef) nextMeta.payment_tx_ref = txRef;
+        } else if (pStatus === 'mismatch' || pStatus === 'amount_mismatch') {
+          patchPayload.payment_status = 'pending_verification';
+          nextMeta.payment_sub_status = 'amount_mismatch';
+          if (txRef !== undefined) nextMeta.payment_tx_ref = txRef;
+          if (Number.isFinite(receivedAmt)) nextMeta.payment_received_amount = receivedAmt;
+        } else if (
+          pStatus === 'customer_reported' ||
+          pStatus === 'checking_tx' ||
+          pStatus === 'verifying_tx' ||
+          pStatus === 'unpaid'
+        ) {
+          // Không bao giờ tự coi "khách báo đã chuyển khoản" là "đã nhận tiền"
+          patchPayload.payment_status = 'pending_verification';
+          nextMeta.payment_sub_status = pStatus === 'checking_tx' ? 'verifying_tx' : pStatus;
+          if (txRef !== undefined) nextMeta.payment_tx_ref = txRef;
+          if (body.paymentReceivedAmount !== undefined && Number.isFinite(receivedAmt)) {
+            nextMeta.payment_received_amount = receivedAmt;
+          }
+        }
+      } else {
+        if (body.paymentTxRef !== undefined) {
+          nextMeta.payment_tx_ref = String(body.paymentTxRef).trim();
+        }
+        if (body.paymentReceivedAmount !== undefined) {
+          nextMeta.payment_received_amount = Number(body.paymentReceivedAmount);
+        }
+      }
+
+      if (body.credentialHandedOff !== undefined) {
+        nextMeta.credential_handed_off = Boolean(body.credentialHandedOff);
+        nextMeta.credential_handed_off_at = body.credentialHandedOff ? nowIso : null;
+        nextMeta.credential_handed_off_by = body.credentialHandedOff ? session.email : null;
+      }
+
+      if (body.cancelOrder === true) {
+        patchPayload.approval_status = 'cancelled';
+      } else if (body.restoreOrder === true && existingOrd.approval_status === 'cancelled') {
+        patchPayload.approval_status = 'pending';
+      }
+
+      const nextCustomerNote = body.customerNote !== undefined ? String(body.customerNote).trim() : prevCustomerNote;
+      patchPayload.note = serializeOrderNoteWithMeta(nextCustomerNote, nextMeta);
+
+      const patchRes = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: patchPayload
+      });
+
+      if (!patchRes || !patchRes.ok || !Array.isArray(patchRes.data) || !patchRes.data[0]) {
+        return jsonResponse({
+          ok: false,
+          retryable: true,
+          message: 'Không thể lưu cập nhật đơn hàng vào cơ sở dữ liệu Supabase.'
+        }, 502);
+      }
+
+      return jsonResponse({
+        ok: true,
+        order: enrichOrderForResponse(patchRes.data[0]),
+        message: 'Đã cập nhật thông tin đơn hàng thành công.'
       });
     }
 
@@ -7697,7 +8585,12 @@ export default {
       const q = normalizeViSearchText(url.searchParams.get('q') || '');
       const paymentFilter = String(url.searchParams.get('paymentStatus') || '').trim();
       const approvalFilter = String(url.searchParams.get('approvalStatus') || '').trim();
-      const sbRes = await supabaseRequest(env, 'ktn_orders?select=*&order=created_at.desc&limit=500');
+      const filterPreset = String(url.searchParams.get('filterPreset') || '').trim();
+
+      const [sbRes, stuRes] = await Promise.all([
+        supabaseRequest(env, 'ktn_orders?select=*&order=created_at.desc&limit=500'),
+        supabaseRequest(env, 'ktn_students?select=code,email,name,phone,cognito_user_id,class_code,online_courses&limit=1000')
+      ]);
       if (!sbRes || !sbRes.ok) {
         return jsonResponse({
           ok: false,
@@ -7705,24 +8598,65 @@ export default {
           message: 'Chưa tải được danh sách đơn hàng từ cơ sở dữ liệu Supabase.'
         }, sbRes?.status || 503);
       }
-      let orders = (Array.isArray(sbRes.data) ? sbRes.data : []).map(ord => {
-        const isApproved = ord.approval_status === 'approved';
-        const hasAssigned = Boolean(ord.assigned_user_id);
-        return {
-          ...ord,
-          provisioningStatus: ord.provisioning_status || (isApproved && hasAssigned ? 'synced' : (isApproved ? 'partial_failure' : 'pending'))
-        };
-      });
+
+      const existingStudentMap = new Map();
+      if (stuRes && stuRes.ok && Array.isArray(stuRes.data)) {
+        stuRes.data.forEach(s => {
+          const em = normalizeEmail(s?.email || '');
+          if (em) existingStudentMap.set(em, s);
+        });
+      }
+
+      let orders = (Array.isArray(sbRes.data) ? sbRes.data : []).map(ord => enrichOrderForResponse(ord, existingStudentMap));
+
       if (paymentFilter && paymentFilter !== 'ALL') {
         orders = orders.filter(o => o.payment_status === paymentFilter);
       }
       if (approvalFilter && approvalFilter !== 'ALL') {
         orders = orders.filter(o => o.approval_status === approvalFilter);
       }
+      if (filterPreset && filterPreset !== 'ALL') {
+        orders = orders.filter(o => {
+          const isCancelledOrRefunded = o.approval_status === 'cancelled' || o.payment_status === 'refunded' || o.payment_detailed_status === 'refunded';
+          const isError =
+            o.provisioningStatus === 'partial_failure' ||
+            o.provisioningStatus === 'sync_failed' ||
+            o.payment_detailed_status === 'mismatch' ||
+            o.payment_detailed_status === 'amount_mismatch';
+          const isActivated = o.approval_status === 'approved' && o.provisioningStatus === 'synced';
+          switch (filterPreset) {
+            case 'NEW':
+              return !isCancelledOrRefunded && o.approval_status === 'pending' && o.contact_status === 'not_called' && o.payment_status !== 'paid';
+            case 'NOT_CALLED':
+              return !isCancelledOrRefunded && o.contact_status === 'not_called';
+            case 'CALLED_WAITING_PAYMENT':
+              return !isCancelledOrRefunded && o.approval_status === 'pending' && o.contact_status !== 'not_called' && o.payment_status !== 'paid';
+            case 'PAID_WAITING_APPROVAL':
+              return !isCancelledOrRefunded && o.payment_status === 'paid' && o.approval_status !== 'approved';
+            case 'ACTIVATED':
+              return isActivated;
+            case 'NEEDS_ERROR_HANDLING':
+              return isError;
+            case 'CANCELLED_REFUNDED':
+              return isCancelledOrRefunded;
+            default:
+              return true;
+          }
+        });
+      }
       if (q) {
         const tokens = q.split(' ').filter(Boolean);
         orders = orders.filter(o => {
-          const hay = normalizeViSearchText([o.order_id, o.student_name, o.student_email, o.phone, o.course_name].join(' '));
+          const hay = normalizeViSearchText([
+            o.order_id,
+            o.student_name,
+            o.parent_name,
+            o.student_email,
+            o.raw_student_email,
+            o.phone,
+            o.course_name,
+            o.payment_tx_ref
+          ].join(' '));
           return tokens.every(tok => hay.includes(tok));
         });
       }
@@ -7730,15 +8664,70 @@ export default {
     }
 
     if (path === '/api/ktn/orders/approve' && request.method === 'POST') {
-      // Giải quyết triệt để BUG BE-03 & BE-04: Dùng chung orchestrator approveAndProvisionOrder,
-      // kiểm tra từng bước ghi Supabase và tách bạch payment_status vs approval_status
+      // Giải quyết triệt để BUG BE-03 & BE-04 + Gác cổng kích hoạt Phase 2.3:
+      // Chỉ kích hoạt khi Đơn hợp lệ, Khóa học & số tiền đúng, Thanh toán đã được xác minh, Email đăng nhập đã xác định, và Tư vấn đã xử lý
       const session = await extractSessionFromRequest(request, env);
       if (!session || session.role !== 'admin') {
-        return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới có quyền Duyệt đơn 1 chạm.' }, 403);
+        return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới có quyền Xác nhận & Kích hoạt khóa học.' }, 403);
       }
       const body = await request.json().catch(() => ({}));
       const orderId = String(body.orderId || '').trim();
       if (!orderId) return jsonResponse({ ok: false, message: 'Thiếu mã đơn hàng orderId.' }, 400);
+
+      const ordLookup = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}&limit=1`);
+      const existingOrd = (ordLookup.ok && Array.isArray(ordLookup.data) && ordLookup.data[0]) ? ordLookup.data[0] : null;
+      const mergedOrd = existingOrd ? { ...(body.order || {}), ...existingOrd } : (body.order || null);
+      const overrideEmail = body.studentEmail ? normalizeEmail(body.studentEmail) : '';
+      if (overrideEmail && mergedOrd && (!mergedOrd.student_email || isSyntheticPlaceholderEmail(mergedOrd.student_email))) {
+        mergedOrd.student_email = overrideEmail;
+        if (existingOrd) {
+          await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
+            method: 'PATCH',
+            body: { student_email: overrideEmail, updated_at: new Date().toISOString() }
+          });
+        }
+      }
+
+      if (mergedOrd) {
+        const { meta: ordMeta } = extractOrderMetaFromRow(mergedOrd);
+        const enforcePolicyGate = Boolean(body.confirmActivation || body.enforcePolicy || ordMeta.v2_managed);
+        if (enforcePolicyGate) {
+          const blockReasons = [];
+          if (mergedOrd.approval_status === 'cancelled' || mergedOrd.payment_status === 'refunded') {
+            blockReasons.push('Đơn hàng đã hủy hoặc đã hoàn tiền.');
+          }
+          const courseCheck = await resolveServerCoursePrice(env, mergedOrd.course_id);
+          if (!courseCheck.validCourse || !(Number(mergedOrd.amount) > 0)) {
+            blockReasons.push('Khóa học hoặc số tiền đơn hàng không hợp lệ.');
+          }
+          const candidateEmail = normalizeEmail(overrideEmail || mergedOrd.student_email || '');
+          if (!candidateEmail || isSyntheticPlaceholderEmail(candidateEmail) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidateEmail)) {
+            blockReasons.push('Chưa xác định Email đăng nhập hợp lệ cho học viên.');
+          }
+          const isPaymentVerified =
+            mergedOrd.payment_status === 'paid' &&
+            ordMeta.payment_sub_status !== 'mismatch' &&
+            ordMeta.payment_sub_status !== 'amount_mismatch';
+          if (!isPaymentVerified) {
+            blockReasons.push('Thanh toán chưa được xác minh thực nhận (không tự động kích hoạt khi chưa đối chiếu tiền thực nhận).');
+          }
+          const requiresCareCheck = ordMeta.source === 'website' && !ordMeta.payment_proof_auto && body.requireConsultation !== false;
+          const consultationHandled =
+            (ordMeta.contact_status && ordMeta.contact_status !== 'not_called') ||
+            Boolean(String(ordMeta.contact_note || '').trim());
+          if (requiresCareCheck && !consultationHandled) {
+            blockReasons.push('Trạng thái tư vấn chưa được xử lý (cần liên hệ/xác nhận với phụ huynh trước khi kích hoạt).');
+          }
+          if (blockReasons.length > 0) {
+            return jsonResponse({
+              ok: false,
+              error: 'ORDER_ACTIVATION_POLICY_BLOCKED',
+              reasons: blockReasons,
+              message: blockReasons.join(' ')
+            }, 400);
+          }
+        }
+      }
 
       const paymentStatusOverride = body.paymentStatus
         ? String(body.paymentStatus).trim()
@@ -7746,7 +8735,7 @@ export default {
 
       const result = await approveAndProvisionOrder(env, {
         orderId,
-        orderInput: body.order || null,
+        orderInput: mergedOrd || body.order || null,
         approvedBy: session.email,
         paymentStatusOverride,
         classCode: body.classCode
@@ -7801,33 +8790,140 @@ export default {
     }
 
     if (path === '/api/ktn/webhook/payment' && request.method === 'POST') {
-      // Giải quyết triệt để BUG BE-04:
-      // - Cập nhật trạng thái thanh toán (payment_status = 'paid') độc lập với trạng thái cấp quyền
-      // - Khi autoApprove = true, gọi cùng hàm approveAndProvisionOrder để đồng bộ đầy đủ cả ktn_orders VÀ ktn_students
-      const secret = request.headers.get('X-KTN-Webhook-Secret') || '';
+      // Giải quyết triệt để BUG BE-04 + Phase 1.9 / 2.3:
+      // - Đối chiếu Mã đơn (orderId), Số tiền thực nhận (receivedAmount) và Mã giao dịch (transactionId)
+      // - Chống xử lý trùng cùng 1 transactionId
+      // - Nếu thanh toán thiếu/sai tiền -> đánh dấu mismatch, KHÔNG đánh dấu paid và KHÔNG kích hoạt khóa học
+      // - Chỉ tự kích hoạt khi auto_approve_webhook = true VÀ đơn có email đăng nhập thật hợp lệ
+      const authHeader = String(request.headers.get('Authorization') || '').trim();
+      const bearerSecret = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
+      const secret = request.headers.get('X-KTN-Webhook-Secret') || bearerSecret || '';
       if (!env.KTN_WEBHOOK_SECRET || secret !== env.KTN_WEBHOOK_SECRET) {
         return jsonResponse({ ok: false, message: 'Unauthorized webhook' }, 401);
       }
       const payload = await request.json().catch(() => ({}));
       const content = String(payload.content || payload.description || '');
-      const ordMatch = content.match(/ORD-\d{6}/i);
+      const ordMatch = content.match(/ORD-\d{6}/i) || String(payload.orderId || '').match(/ORD-\d{6}/i);
       if (!ordMatch) {
         return jsonResponse({ ok: true, skipped: true, reason: 'Không tìm thấy mã đơn ORD-xxxxxx trong nội dung CK' });
       }
       const orderId = ordMatch[0].toUpperCase();
-      const cfgRes = await supabaseRequest(env, 'ktn_payment_config?id=eq.default&limit=1');
+
+      const [ordLookup, cfgRes] = await Promise.all([
+        supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}&limit=1`),
+        supabaseRequest(env, 'ktn_payment_config?id=eq.default&limit=1')
+      ]);
+      const existingOrd = (ordLookup.ok && Array.isArray(ordLookup.data) && ordLookup.data[0]) ? ordLookup.data[0] : null;
+      if (!existingOrd) {
+        return jsonResponse({
+          ok: false,
+          skipped: true,
+          orderId,
+          reason: 'ORDER_NOT_FOUND',
+          message: 'Không tìm thấy đơn hàng ' + orderId
+        }, 404);
+      }
+
       const autoApprove = Boolean(Array.isArray(cfgRes.data) && cfgRes.data[0]?.auto_approve_webhook);
+      const expectedAmount = Number(existingOrd.amount) || 890000;
+
+      // Trích xuất số tiền thực nhận từ trường số hoặc từ nội dung biến động số dư ngân hàng
+      let receivedAmount = null;
+      const directAmt = payload.transferAmount ?? payload.amount ?? payload.totalAmount ?? payload.value;
+      if (directAmt !== undefined && directAmt !== null && String(directAmt).trim() !== '') {
+        const parsedDirect = Number(String(directAmt).replace(/[,.\s]/g, ''));
+        if (Number.isFinite(parsedDirect)) receivedAmount = parsedDirect;
+      }
+      if (receivedAmount === null && content) {
+        const amtMatch =
+          content.match(/(?:nhan|nhận|chuyen|chuyển|ck|so tien|số tiền|\+)\s*([0-9][0-9.,]*)\s*(?:vnd|vnđ|đ|d)\b/i) ||
+          content.match(/\b([1-9][0-9]{4,9})\s*(?:vnd|vnđ|đ|d)\b/i);
+        if (amtMatch && amtMatch[1]) {
+          const parsedContentAmt = Number(amtMatch[1].replace(/[.,\s]/g, ''));
+          if (Number.isFinite(parsedContentAmt)) receivedAmount = parsedContentAmt;
+        }
+      }
+
+      const rawTxId = String(
+        payload.transactionId || payload.id || payload.reference || payload.txId || payload.referenceCode || ''
+      ).trim();
+      const transactionId = rawTxId || `WH-${orderId}-${receivedAmount ?? 'NA'}`;
+
+      const { customerNote, meta: prevMeta } = extractOrderMetaFromRow(existingOrd);
+      const processedTxIds = Array.isArray(prevMeta.processed_tx_ids) ? prevMeta.processed_tx_ids : [];
+      if (processedTxIds.includes(transactionId) && existingOrd.payment_status === 'paid') {
+        return jsonResponse({
+          ok: true,
+          orderId,
+          transactionId,
+          duplicateTransaction: true,
+          idempotentReplay: true,
+          paymentStatus: 'paid',
+          autoApproved: existingOrd.approval_status === 'approved',
+          syncStatus: existingOrd.approval_status === 'approved' ? 'synced' : 'payment_recorded_pending_approval'
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+
+      // Kiểm tra đối chiếu số tiền thực nhận với giá trị đơn hàng
+      if (receivedAmount === null || receivedAmount < expectedAmount) {
+        const mismatchMeta = {
+          ...prevMeta,
+          payment_sub_status: 'mismatch',
+          payment_tx_ref: transactionId,
+          payment_received_amount: receivedAmount,
+          payment_proof_auto: false
+        };
+        await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: {
+            payment_status: 'pending_verification',
+            note: serializeOrderNoteWithMeta(customerNote, mismatchMeta),
+            updated_at: nowIso
+          }
+        });
+        return jsonResponse({
+          ok: false,
+          orderId,
+          transactionId,
+          paymentStatus: 'mismatch',
+          expectedAmount,
+          receivedAmount,
+          autoApproved: false,
+          error: 'WEBHOOK_AMOUNT_MISMATCH',
+          message: `Số tiền nhận được (${receivedAmount ?? 'không xác định'}) nhỏ hơn số tiền đơn hàng (${expectedAmount}). Đơn chuyển sang trạng thái Thanh toán sai/thiếu để Admin kiểm tra.`
+        }, 422);
+      }
+
+      const nextProcessedTxIds = Array.from(new Set([...processedTxIds, transactionId]));
+      const verifiedMeta = {
+        ...prevMeta,
+        payment_sub_status: 'verified_paid',
+        payment_verified_by: 'webhook:auto',
+        payment_verified_at: nowIso,
+        payment_tx_ref: transactionId,
+        payment_received_amount: receivedAmount,
+        payment_proof_auto: true,
+        processed_tx_ids: nextProcessedTxIds
+      };
 
       const paidPatchRes = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
         method: 'PATCH',
         prefer: 'return=representation',
-        body: { payment_status: 'paid', updated_at: new Date().toISOString() }
+        body: {
+          payment_status: 'paid',
+          note: serializeOrderNoteWithMeta(customerNote, verifiedMeta),
+          updated_at: nowIso
+        }
       });
 
       if (!paidPatchRes || !paidPatchRes.ok) {
         return jsonResponse({
           ok: false,
           orderId,
+          transactionId,
           retryable: true,
           syncStatus: 'payment_update_failed',
           error: 'SUPABASE_ORDER_PAYMENT_UPDATE_FAILED',
@@ -7835,17 +8931,18 @@ export default {
         }, 502);
       }
 
-      if (autoApprove) {
-        const existingOrd = (Array.isArray(paidPatchRes.data) && paidPatchRes.data[0]) || null;
-        if (existingOrd && existingOrd.approval_status === 'approved' && existingOrd.assigned_user_id) {
-          // Đảm bảo học viên cũng đã có trong ktn_students (idempotent replay)
+      const updatedOrd = (Array.isArray(paidPatchRes.data) && paidPatchRes.data[0]) || existingOrd;
+      const hasValidLoginEmail = !isSyntheticPlaceholderEmail(updatedOrd.student_email);
+
+      if (autoApprove && hasValidLoginEmail) {
+        if (updatedOrd && updatedOrd.approval_status === 'approved' && updatedOrd.assigned_user_id) {
           await mergeAndUpsertStudentCourses(env, {
-            email: existingOrd.student_email,
-            name: existingOrd.student_name,
-            phone: existingOrd.phone || '',
-            cognitoUserId: existingOrd.assigned_user_id,
-            izteachStudentId: existingOrd.assigned_student_id,
-            addCourseIds: resolveOrderCourseIds(existingOrd.course_id || DEFAULT_COURSE_ID),
+            email: updatedOrd.student_email,
+            name: updatedOrd.student_name,
+            phone: updatedOrd.phone || '',
+            cognitoUserId: updatedOrd.assigned_user_id,
+            izteachStudentId: updatedOrd.assigned_student_id,
+            addCourseIds: resolveOrderCourseIds(updatedOrd.course_id || DEFAULT_COURSE_ID),
             codeHint: 'KTN-' + orderId.replace(/^ORD-/, ''),
             accountStatus: 'active',
             syncStatus: 'synced'
@@ -7853,6 +8950,7 @@ export default {
           return jsonResponse({
             ok: true,
             orderId,
+            transactionId,
             paymentStatus: 'paid',
             autoApproved: true,
             idempotentReplay: true,
@@ -7862,7 +8960,7 @@ export default {
 
         const approveResult = await approveAndProvisionOrder(env, {
           orderId,
-          orderInput: existingOrd,
+          orderInput: updatedOrd,
           approvedBy: 'webhook:auto',
           paymentStatusOverride: 'paid'
         });
@@ -7871,6 +8969,7 @@ export default {
           return jsonResponse({
             ok: false,
             orderId,
+            transactionId,
             paymentStatus: 'paid',
             autoApproved: false,
             retryable: true,
@@ -7885,6 +8984,7 @@ export default {
         return jsonResponse({
           ok: true,
           orderId,
+          transactionId,
           paymentStatus: 'paid',
           autoApproved: true,
           syncStatus: 'synced',
@@ -7900,9 +9000,10 @@ export default {
       return jsonResponse({
         ok: true,
         orderId,
+        transactionId,
         paymentStatus: 'paid',
         autoApproved: false,
-        syncStatus: 'payment_recorded_pending_approval'
+        syncStatus: hasValidLoginEmail ? 'payment_recorded_pending_approval' : 'payment_recorded_missing_email'
       });
     }
 

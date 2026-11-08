@@ -23,6 +23,11 @@ import {
 } from '../../src/app/navigation/roleRoutes';
 import { shouldUseHashRouter } from '../../src/app/providers/AppProviders';
 import { ktnApi } from '../../src/services/api/ktnApiClient';
+import {
+  CONTACT_STATUS_META,
+  PAYMENT_STATUS_META,
+  ACCOUNT_STATUS_META,
+} from '../../src/features/admin/components/OrderDetailDrawer';
 import type { ChatMessage } from '../../src/features/chat/types/chat.types';
 
 describe('KTN UI V2 — Unit & State Machine Tests', () => {
@@ -430,6 +435,44 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       expect(typeof ktnApi.assignStudentClass).toBe('function');
       expect(typeof ktnApi.replaceAllStudentCourses).toBe('function');
       expect(typeof ktnApi.updateStudentProfile).toBe('function');
+    });
+  });
+
+  describe('8. Order Management, In-App Course Purchase & Status Taxonomy', () => {
+    it('defines distinct labels for consultation, payment, and account provisioning statuses without collapsing unpaid states', () => {
+      expect(CONTACT_STATUS_META.not_called.label).toBe('Chưa gọi');
+      expect(CONTACT_STATUS_META.called.label).toBe('Đã gọi tư vấn');
+      expect(CONTACT_STATUS_META.no_answer.label).toBe('Không nghe máy');
+      expect(CONTACT_STATUS_META.callback_scheduled.label).toBe('Hẹn gọi lại');
+
+      expect(PAYMENT_STATUS_META.unpaid.label).toBe('Chưa thanh toán');
+      expect(PAYMENT_STATUS_META.customer_reported.label).toBe('Khách báo đã chuyển khoản');
+      expect(PAYMENT_STATUS_META.verifying_tx.label).toBe('Chờ kiểm tra giao dịch');
+      expect(PAYMENT_STATUS_META.verified_paid.label).toBe('Đã xác minh tiền thực nhận');
+      expect(PAYMENT_STATUS_META.refunded.label).toBe('Hoàn tiền');
+      expect(PAYMENT_STATUS_META.amount_mismatch.label).toBe('Thanh toán sai/thiếu');
+      expect(PAYMENT_STATUS_META.unpaid.label).not.toBe(PAYMENT_STATUS_META.customer_reported.label);
+
+      expect(ACCOUNT_STATUS_META.no_account.label).toBe('Chưa có tài khoản');
+      expect(ACCOUNT_STATUS_META.existing_account.label).toBe('Tài khoản đã tồn tại');
+      expect(ACCOUNT_STATUS_META.pending_creation.label).toBe('Chờ tạo tài khoản');
+      expect(ACCOUNT_STATUS_META.activated.label).toBe('Đã kích hoạt');
+      expect(ACCOUNT_STATUS_META.sync_error.label).toBe('Đồng bộ lỗi');
+      expect(ACCOUNT_STATUS_META.awaiting_password_or_handoff.label).toBe(
+        'Đang chờ học viên thiết lập mật khẩu / đã bàn giao'
+      );
+      expect(ACCOUNT_STATUS_META.credentials_handed_off.label).toBe(
+        'Đã bàn giao thông tin đăng nhập'
+      );
+    });
+
+    it('exposes order management & in-app student course purchase API methods', () => {
+      expect(typeof ktnApi.getOrders).toBe('function');
+      expect(typeof ktnApi.updateOrder).toBe('function');
+      expect(typeof ktnApi.approveOrder).toBe('function');
+      expect(typeof ktnApi.createStudentOrder).toBe('function');
+      expect(typeof ktnApi.getMyOrders).toBe('function');
+      expect(typeof ktnApi.reportOrderPayment).toBe('function');
     });
   });
 });

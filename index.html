@@ -2362,8 +2362,12 @@
     <div class="ktn-modal-body">
       <form id="ktn-lead-form" onsubmit="event.preventDefault(); ktnSubmitRegistration(event);">
         <div style="margin-bottom:14px;">
-          <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Họ và tên của bé / phụ huynh <span style="color:#dc2626;">*</span></label>
-          <input id="lead-name" type="text" required placeholder="VD: Bé Minh Khang, Mẹ Thu Hà..." style="width:100%;padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;" />
+          <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Họ và tên học viên (bé) <span style="color:#dc2626;">*</span></label>
+          <input id="lead-name" type="text" required placeholder="VD: Bé Nguyễn Minh Khang" style="width:100%;padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;" />
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Họ và tên phụ huynh <span style="color:#dc2626;">*</span></label>
+          <input id="lead-parent-name" type="text" required placeholder="VD: Mẹ Thu Hà / Bố Minh Đức" style="width:100%;padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;" />
         </div>
         <div style="margin-bottom:14px;">
           <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Số điện thoại / Zalo phụ huynh <span style="color:#dc2626;">*</span></label>
@@ -2688,7 +2692,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
   }, true);
 
   window.__ktnPushOrderToCloudState = async function(newOrder) {
-    if (!newOrder || !newOrder.orderId) return false;
+    if (!newOrder || !newOrder.studentName) return null;
     try {
       // [SEC-01 & DATA-01 FIXED] Gửi đơn hàng qua Trạm gác cổng Cloudflare Worker vào bảng ktn_orders của Supabase
       // Tuyệt đối không nhúng mật khẩu Admin izTeach trên trình duyệt và không ghi vào ô SEO Description!
@@ -2698,9 +2702,11 @@ if (!window.ktnSwitchFromVideoToRegister) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newOrder)
       });
-      return Boolean(res && res.ok);
+      if (!res || !res.ok) return null;
+      var data = await res.json().catch(function() { return null; });
+      return (data && data.ok) ? (data.order || true) : null;
     } catch (err) {
-      return false;
+      return null;
     }
   };
 
@@ -2716,6 +2722,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
     }
 
     var name = (document.getElementById('lead-name')?.value || '').trim();
+    var parentName = (document.getElementById('lead-parent-name')?.value || '').trim();
     var phone = (document.getElementById('lead-phone')?.value || '').trim();
     var email = (document.getElementById('lead-email')?.value || '').trim().toLowerCase();
     var courseId = document.getElementById('lead-course-select')?.value;
@@ -2724,26 +2731,27 @@ if (!window.ktnSwitchFromVideoToRegister) {
     var course = (window.KTN_COURSES || []).find(function(c) { return c.id === courseId; }) || { title: 'Khóa học Tiếng Trung Khổng Tử Nhí' };
 
     var newOrder = {
-      orderId: 'ORD-' + Date.now().toString().slice(-6),
       studentName: name,
-      studentEmail: email || (phone ? ('hv_' + phone.replace(/\D/g, '') + '@gmail.com') : ('hv_' + Date.now().toString().slice(-4) + '@gmail.com')),
+      parentName: parentName,
+      // Tuyệt đối không tự ghép Gmail giả từ số điện thoại khi thiếu email
+      studentEmail: email || '',
       phone: phone,
       courseId: courseId,
       courseName: course.title,
-      amount: (window.KTN_PAYMENT_CONFIG && window.KTN_PAYMENT_CONFIG.defaultAmount) || 890000,
       paymentMethod: 'VietQR',
       paymentStatus: 'pending_verification',
       approvalStatus: 'pending',
+      source: 'website',
       note: note,
       createdAt: new Date().toISOString(),
       createdAtDisplay: new Date().toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'}) + ' · ' + new Date().toLocaleDateString('vi-VN')
     };
 
-    var pushedOk = false;
+    var savedOrder = null;
     if (typeof window.__ktnPushOrderToCloudState === 'function') {
-      pushedOk = await window.__ktnPushOrderToCloudState(newOrder);
+      savedOrder = await window.__ktnPushOrderToCloudState(newOrder);
     }
-    if (!pushedOk) {
+    if (!savedOrder) {
       isSubmitting = false;
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -2752,6 +2760,11 @@ if (!window.ktnSwitchFromVideoToRegister) {
       }
       alert('Chưa gửi được đăng ký lên máy chủ. Vui lòng thử lại nhé.');
       return;
+    }
+
+    if (typeof savedOrder === 'object' && savedOrder.order_id) {
+      newOrder.orderId = savedOrder.order_id;
+      newOrder.amount = savedOrder.amount;
     }
 
     try {
@@ -2793,7 +2806,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name,
+          name: parentName ? (parentName + ' (PH bé ' + name + ')') : name,
           phone: phone,
           email: newOrder.studentEmail,
           address: 'Đăng ký khóa học: ' + course.title,
@@ -2812,7 +2825,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
 
     if (formEl) formEl.style.display = 'none';
     if (msgEl) {
-      msgEl.innerHTML = 'Thầy/cô Học Viện Khổng Tử Nhí đã ghi nhận đăng ký khóa học <strong>' + escapeHtml(course.title) + '</strong> của bé <strong>' + escapeHtml(name) + '</strong>.<br><br>Ban giáo vụ sẽ liên hệ ngay qua SĐT/Zalo <strong>' + escapeHtml(phone) + '</strong> để xác nhận và kích hoạt tài khoản học tập cho con.';
+      msgEl.innerHTML = 'Thầy/cô Học Viện Khổng Tử Nhí đã ghi nhận đăng ký khóa học <strong>' + escapeHtml(course.title) + '</strong> của bé <strong>' + escapeHtml(name) + '</strong>' + (parentName ? (' (Phụ huynh: <strong>' + escapeHtml(parentName) + '</strong>)') : '') + '.<br><br>Ban giáo vụ sẽ liên hệ ngay qua SĐT/Zalo <strong>' + escapeHtml(phone) + '</strong> để xác nhận và kích hoạt tài khoản học tập cho con.';
     }
     if (successBox) successBox.style.display = 'block';
     if (typeof window.ktnFireLeadConversion === 'function') {

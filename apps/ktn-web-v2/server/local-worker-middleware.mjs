@@ -309,8 +309,39 @@ export function createLocalWorkerHarness() {
           payment_method: 'VietQR',
           payment_status: 'paid',
           approval_status: 'pending',
+          note: 'Đăng ký từ trang chủ<!--KTN_ORDER_META:{"parent_name":"Chị Phạm Thu Hà","contact_status":"called","contact_note":"Đã gọi tư vấn lộ trình HSK1","payment_sub_status":"verified_paid","payment_verified_by":"webhook:auto","payment_tx_ref":"FT2611058899","payment_received_amount":890000,"payment_proof_auto":true,"source":"website","v2_managed":true}-->',
           created_at: new Date(Date.now() - 1800 * 1000).toISOString(),
           updated_at: new Date(Date.now() - 1800 * 1000).toISOString()
+        },
+        {
+          order_id: 'ORD-261106',
+          student_name: 'Bé Lê Minh Tuấn',
+          student_email: '',
+          phone: '0912345688',
+          course_id: '65e7704a9ea90c00080d5195',
+          course_name: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)',
+          amount: 890000,
+          payment_method: 'VietQR',
+          payment_status: 'pending_verification',
+          approval_status: 'pending',
+          note: 'Cần tư vấn lịch học buổi tối\n<!--KTN_ORDER_META:{"parent_name":"","contact_status":"not_called","contact_note":"","payment_sub_status":"unpaid","source":"website","v2_managed":true}-->',
+          created_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+          updated_at: new Date(Date.now() - 3600 * 1000).toISOString()
+        },
+        {
+          order_id: 'ORD-261107',
+          student_name: 'Bé Vũ Minh Anh',
+          student_email: 'minhanh@khongtunhi.com',
+          phone: '0909112233',
+          course_id: '6638bd09a7367400085c7ab2',
+          course_name: 'Tiếng Trung Trẻ Em 3 (Lộ trình 6 – 12 tuổi)',
+          amount: 890000,
+          payment_method: 'VietQR',
+          payment_status: 'pending_verification',
+          approval_status: 'pending',
+          note: 'Mẹ vừa chuyển khoản qua VietQR\n<!--KTN_ORDER_META:{"parent_name":"Chị Vũ Thu Hương","contact_status":"called","contact_note":"Mẹ báo vừa CK xong","payment_sub_status":"customer_reported","source":"website","v2_managed":true}-->',
+          created_at: new Date(Date.now() - 2400 * 1000).toISOString(),
+          updated_at: new Date(Date.now() - 2400 * 1000).toISOString()
         }
       ],
       ktn_dlp_alerts: [
@@ -972,7 +1003,8 @@ export function createLocalWorkerHarness() {
     IZTEACH_ADMIN_EMAIL: 'hocvienkhongtunhi123@gmail.com',
     IZTEACH_ADMIN_PASSWORD: 'Ktn@2026!AdminPassword',
     KTN_STAFF_AND_TEST_PASSWORD: 'Ktn@2026!',
-    KTN_SESSION_SECRET: 'ktn-v2-local-hmac-secret-2026'
+    KTN_SESSION_SECRET: 'ktn-v2-local-hmac-secret-2026',
+    KTN_WEBHOOK_SECRET: 'mock-webhook-secret-2026'
   };
 
   return {

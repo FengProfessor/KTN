@@ -16,6 +16,9 @@ import type {
   KtnSyncStatusResponse,
   KtnTeacherRecord,
   KtnUserSession,
+  KtnVietQrPaymentInfo,
+  OrderContactStatus,
+  OrderPaymentDetailedStatus,
   UpcomingClassSession,
   UserNotificationSettings
 } from '@/types/ktn.types';
@@ -1002,18 +1005,67 @@ export const ktnApi = {
     });
   },
 
-  async getOrders(): Promise<KtnOrder[]> {
-    const res = await ktnRequest<{ ok: boolean; orders: KtnOrder[] }>('/api/ktn/orders');
+  async getOrders(params?: {
+    q?: string;
+    filterPreset?: string;
+    paymentStatus?: string;
+    approvalStatus?: string;
+  }): Promise<KtnOrder[]> {
+    const sp = new URLSearchParams();
+    if (params?.q) sp.set('q', params.q);
+    if (params?.filterPreset && params.filterPreset !== 'ALL') {
+      sp.set('filterPreset', params.filterPreset);
+    }
+    if (params?.paymentStatus && params.paymentStatus !== 'ALL') {
+      sp.set('paymentStatus', params.paymentStatus);
+    }
+    if (params?.approvalStatus && params.approvalStatus !== 'ALL') {
+      sp.set('approvalStatus', params.approvalStatus);
+    }
+    const qs = sp.toString();
+    const res = await ktnRequest<{ ok: boolean; orders: KtnOrder[] }>(
+      `/api/ktn/orders${qs ? `?${qs}` : ''}`
+    );
     return Array.isArray(res.orders) ? res.orders : [];
   },
 
-  async approveOrder(orderId: string, classCode?: string): Promise<{
+  async updateOrder(payload: {
+    orderId: string;
+    studentName?: string;
+    parentName?: string;
+    studentEmail?: string;
+    phone?: string;
+    parentPhone?: string;
+    courseId?: string;
+    customerNote?: string;
+    contactStatus?: OrderContactStatus;
+    contactNote?: string;
+    consultationNote?: string;
+    paymentDetailedStatus?: OrderPaymentDetailedStatus;
+    paymentTxRef?: string;
+    paymentReceivedAmount?: number;
+    credentialHandedOff?: boolean;
+    cancelOrder?: boolean;
+    restoreOrder?: boolean;
+  }): Promise<{ ok: boolean; order: KtnOrder; message: string }> {
+    return ktnRequest('/api/ktn/orders/update', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async approveOrder(
+    orderId: string,
+    classCode?: string,
+    options?: { confirmActivation?: boolean; studentEmail?: string }
+  ): Promise<{
     message: string;
     studentEmail: string;
     syncStatus?: string;
     accountCreated?: boolean;
     existingAccount?: boolean;
     initialPassword?: string | null;
+    order?: KtnOrder;
   }> {
     const res = await ktnRequest<{
       ok: boolean;
@@ -1023,14 +1075,86 @@ export const ktnApi = {
       accountCreated?: boolean;
       existingAccount?: boolean;
       initialPassword?: string | null;
-    }>(
-      '/api/ktn/orders/approve',
-      {
-        method: 'POST',
-        body: JSON.stringify({ orderId, classCode })
-      }
-    );
+      order?: KtnOrder;
+    }>('/api/ktn/orders/approve', {
+      method: 'POST',
+      body: JSON.stringify({
+        orderId,
+        classCode,
+        confirmActivation: options?.confirmActivation ?? true,
+        ...(options?.studentEmail ? { studentEmail: options.studentEmail } : {})
+      })
+    });
     return res;
+  },
+
+  async createStudentOrder(payload: {
+    courseId: string;
+    phone?: string;
+    parentPhone?: string;
+    studentName?: string;
+    parentName?: string;
+    note?: string;
+    updateProfilePhone?: boolean;
+    idempotencyKey?: string;
+  }): Promise<{
+    ok: boolean;
+    orderId?: string;
+    duplicatePrevented?: boolean;
+    order: KtnOrder;
+    paymentInfo?: KtnVietQrPaymentInfo;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        source: 'authenticated_student'
+      })
+    });
+  },
+
+  async getMyOrders(): Promise<KtnOrder[]> {
+    const res = await ktnRequest<{ ok: boolean; orders: KtnOrder[] }>('/api/ktn/orders/my');
+    return Array.isArray(res.orders) ? res.orders : [];
+  },
+
+  async reportOrderPayment(payload: {
+    orderId: string;
+    transactionRef?: string;
+    paymentTxRef?: string;
+    phone?: string;
+  }): Promise<{ ok: boolean; order: KtnOrder; message: string }> {
+    return ktnRequest('/api/ktn/orders/report-payment', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getPaymentConfig(): Promise<{
+    id?: string;
+    bank_id?: string;
+    bank_name?: string;
+    account_no?: string;
+    account_name?: string;
+    default_amount?: number;
+    auto_approve_webhook?: boolean;
+    course_prices?: Record<string, number>;
+  } | null> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      config: {
+        id?: string;
+        bank_id?: string;
+        bank_name?: string;
+        account_no?: string;
+        account_name?: string;
+        default_amount?: number;
+        auto_approve_webhook?: boolean;
+        course_prices?: Record<string, number>;
+      } | null;
+    }>('/api/ktn/payment-config');
+    return res.config || null;
   },
 
   async getSyncStatus(): Promise<KtnSyncStatusResponse> {

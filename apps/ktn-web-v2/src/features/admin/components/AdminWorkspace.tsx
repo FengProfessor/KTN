@@ -36,6 +36,12 @@ import {
 import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
 import { StudentDetailDrawer } from '@/features/admin/components/StudentDetailDrawer';
 import {
+  OrderDetailDrawer,
+  ACCOUNT_STATUS_META,
+  CONTACT_STATUS_META,
+  PAYMENT_STATUS_META,
+} from '@/features/admin/components/OrderDetailDrawer';
+import {
   KtnClassItem,
   KtnCourse,
   KtnOrder,
@@ -43,9 +49,32 @@ import {
   KtnStudentSearchResult,
   KtnSyncStatusResponse,
   KtnTeacherRecord,
+  OrderContactStatus,
+  OrderPaymentDetailedStatus,
 } from '@/types/ktn.types';
 
 const VALID_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export type AdminOrderFilterKey =
+  | 'all'
+  | 'new'
+  | 'not_called'
+  | 'called_awaiting_payment'
+  | 'paid_awaiting_approval'
+  | 'activated'
+  | 'needs_error_handling'
+  | 'cancelled_refunded';
+
+export const ORDER_FILTER_OPTIONS: Array<{ id: AdminOrderFilterKey; label: string }> = [
+  { id: 'all', label: 'Tất cả đơn' },
+  { id: 'new', label: 'Đơn mới' },
+  { id: 'not_called', label: 'Chưa gọi' },
+  { id: 'called_awaiting_payment', label: 'Đã gọi, chờ thanh toán' },
+  { id: 'paid_awaiting_approval', label: 'Đã nhận thanh toán, chờ duyệt' },
+  { id: 'activated', label: 'Đã kích hoạt' },
+  { id: 'needs_error_handling', label: 'Cần xử lý lỗi' },
+  { id: 'cancelled_refunded', label: 'Đã hủy/hoàn tiền' },
+];
 
 export const AdminWorkspace: React.FC = () => {
   const navigate = useNavigate();
@@ -67,6 +96,18 @@ export const AdminWorkspace: React.FC = () => {
   });
   const [selectedStudentSnapshot, setSelectedStudentSnapshot] =
     useState<KtnStudentRecord | null>(null);
+
+  // Selected order for OrderDetailDrawer + Search & Filter state
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(() => {
+    const rawOrderId = (searchParams.get('orderId') || '').trim();
+    return rawOrderId || null;
+  });
+  const [orderSearchInput, setOrderSearchInput] = useState('');
+  const [orderFilter, setOrderFilter] = useState<AdminOrderFilterKey>('all');
+  const [orderDrawerError, setOrderDrawerError] = useState<string | null>(null);
+  const [orderEphemeralPasswords, setOrderEphemeralPasswords] = useState<
+    Record<string, string>
+  >({});
 
   // Server-side Student Search state (250ms debounce + pagination + filters)
   const [searchInput, setSearchInput] = useState('');
@@ -129,6 +170,11 @@ export const AdminWorkspace: React.FC = () => {
   useEffect(() => {
     const rawEmail = (searchParams.get('email') || '').trim().toLowerCase();
     const hasValidEmail = VALID_EMAIL_REGEX.test(rawEmail);
+    const rawOrderId = (searchParams.get('orderId') || '').trim();
+
+    if (rawOrderId) {
+      setSelectedOrderId(rawOrderId);
+    }
 
     if (hasValidEmail) {
       setSelectedStudentEmail(rawEmail);
@@ -170,16 +216,62 @@ export const AdminWorkspace: React.FC = () => {
           {
             order_id: 'ORD-261105',
             student_name: 'Bé Phạm Gia Hân',
+            parent_name: 'Chị Phạm Thu Hương',
             student_email: 'giahan@khongtunhi.com',
             phone: '0987654321',
+            parent_phone: '0987654321',
             course_id: '6adadba969897b0002482ca5',
             course_name: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
             amount: 890000,
+            server_course_price: 890000,
+            course_valid: true,
+            amount_valid: true,
             payment_method: 'VietQR',
             payment_status: 'paid',
+            payment_detailed_status: 'verified_paid',
+            payment_tx_ref: 'FT26311009988',
+            payment_received_amount: 890000,
+            payment_proof_auto: true,
+            contact_status: 'called',
+            consultation_note: 'Đã gọi tư vấn lộ trình HSK 1 3.0 cho mẹ bé Gia Hân.',
             approval_status: 'pending',
+            account_detailed_status: 'pending_creation',
             provisioningStatus: 'pending',
+            source: 'website',
+            source_label: 'Website',
+            can_activate: true,
+            activation_block_reasons: [],
             created_at: new Date().toISOString(),
+          },
+          {
+            order_id: 'ORD-261106',
+            student_name: 'Bé Lê Minh Khôi',
+            parent_name: '',
+            student_email: '',
+            phone: '0912345678',
+            parent_phone: '0912345678',
+            course_id: '65e7704a9ea90c00080d5195',
+            course_name: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)',
+            amount: 890000,
+            server_course_price: 890000,
+            course_valid: true,
+            amount_valid: true,
+            payment_method: 'VietQR',
+            payment_status: 'pending_verification',
+            payment_detailed_status: 'unpaid',
+            contact_status: 'not_called',
+            approval_status: 'pending',
+            account_detailed_status: 'no_account',
+            provisioningStatus: 'pending',
+            source: 'website',
+            source_label: 'Website',
+            can_activate: false,
+            activation_block_reasons: [
+              'Chưa xác minh tiền thực nhận (Trạng thái thanh toán chưa phải "Đã xác minh tiền thực nhận").',
+              'Chưa có email đăng nhập hợp lệ cho học viên.',
+              'Chưa cập nhật trạng thái chăm sóc (vui lòng gọi phụ huynh và đánh dấu "Đã gọi" hoặc ghi chú tư vấn trước khi kích hoạt).',
+            ],
+            created_at: new Date(Date.now() - 1800 * 1000).toISOString(),
           },
         ];
       }
@@ -316,25 +408,82 @@ export const AdminWorkspace: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
   });
 
+  const updateOrderMutation = useMutation({
+    mutationFn: async (params: {
+      orderId: string;
+      studentName?: string;
+      parentName?: string;
+      studentEmail?: string;
+      phone?: string;
+      contactStatus?: OrderContactStatus;
+      consultationNote?: string;
+      paymentDetailedStatus?: OrderPaymentDetailedStatus;
+      paymentTxRef?: string;
+      paymentReceivedAmount?: number;
+      credentialHandedOff?: boolean;
+      cancelOrder?: boolean;
+    }) => {
+      setOrderDrawerError(null);
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 250));
+        return {
+          ok: true,
+          message: 'Đã cập nhật thông tin đơn hàng (Demo)!',
+        };
+      }
+      return ktnApi.updateOrder(params);
+    },
+    onSuccess: (res) => {
+      setOrderDrawerError(null);
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
+      addToast({
+        title: res.message || 'Đã cập nhật thông tin đơn hàng!',
+        variant: 'success',
+      });
+    },
+    onError: (err: Error) => {
+      setOrderDrawerError(err.message);
+      addToast({
+        title: 'Không thể cập nhật đơn hàng',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
   const approveOrderMutation = useMutation({
-    mutationFn: async (orderId: string) => {
+    mutationFn: async (params: {
+      orderId: string;
+      classCode?: string;
+      studentEmail?: string;
+    }) => {
+      setOrderDrawerError(null);
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 350));
         return {
           message: 'Approved',
-          studentEmail: 'giahan@khongtunhi.com',
-          accountCreated: false,
-          existingAccount: true,
-          initialPassword: null,
+          orderId: params.orderId,
+          studentEmail: params.studentEmail || 'giahan@khongtunhi.com',
+          accountCreated: true,
+          existingAccount: false,
+          initialPassword: 'KtnDemoOrder!2026',
         };
       }
-      return ktnApi.approveOrder(orderId);
+      return ktnApi.approveOrder(params.orderId, params.classCode, {
+        confirmActivation: true,
+        studentEmail: params.studentEmail,
+      });
     },
-    onSuccess: (res) => {
+    onSuccess: (res, vars) => {
+      setOrderDrawerError(null);
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-sync-status'] });
       if (res.accountCreated && res.initialPassword) {
+        setOrderEphemeralPasswords((prev) => ({
+          ...prev,
+          [vars.orderId]: res.initialPassword!,
+        }));
         setCredentialHandoff({
           name: res.studentEmail,
           email: res.studentEmail,
@@ -345,15 +494,16 @@ export const AdminWorkspace: React.FC = () => {
         });
       }
       addToast({
-        title: 'Đã duyệt đơn hàng & kích hoạt khóa học!',
+        title: 'Đã xác nhận & kích hoạt khóa học thành công!',
         variant: 'success',
       });
     },
     onError: (err: Error) => {
+      setOrderDrawerError(err.message);
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-sync-status'] });
       addToast({
-        title: 'Duyệt đơn chưa hoàn tất đồng bộ',
+        title: 'Chưa thể kích hoạt khóa học',
         description: err.message,
         variant: 'error',
       });
@@ -867,6 +1017,88 @@ export const AdminWorkspace: React.FC = () => {
     }
   };
 
+  const selectedOrder: KtnOrder | null = useMemo(() => {
+    if (!selectedOrderId) return null;
+    return ordersList.find((o) => o.order_id === selectedOrderId) || null;
+  }, [selectedOrderId, ordersList]);
+
+  const openOrderDrawer = (orderId: string) => {
+    setOrderDrawerError(null);
+    setSelectedOrderId(orderId);
+  };
+
+  const closeOrderDrawer = () => {
+    setSelectedOrderId(null);
+    setOrderDrawerError(null);
+    if (searchParams.has('orderId')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('orderId');
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
+
+  const filteredOrdersList = useMemo(() => {
+    const q = orderSearchInput.trim().toLowerCase();
+    return ordersList.filter((o) => {
+      if (q) {
+        const hay = [
+          o.order_id,
+          o.student_name,
+          o.parent_name,
+          o.student_email,
+          o.phone,
+          o.parent_phone,
+          o.course_name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+
+      const contactSt = o.contact_status || 'not_called';
+      const payDetSt =
+        o.payment_detailed_status ||
+        (o.payment_status === 'paid' ? 'verified_paid' : 'unpaid');
+      const accDetSt =
+        o.account_detailed_status ||
+        (o.approval_status === 'approved' ? 'activated' : 'no_account');
+
+      switch (orderFilter) {
+        case 'new':
+          return (
+            o.approval_status === 'pending' &&
+            contactSt === 'not_called' &&
+            payDetSt === 'unpaid'
+          );
+        case 'not_called':
+          return o.approval_status === 'pending' && contactSt === 'not_called';
+        case 'called_awaiting_payment':
+          return (
+            o.approval_status === 'pending' &&
+            contactSt !== 'not_called' &&
+            o.payment_status !== 'paid' &&
+            payDetSt !== 'refunded'
+          );
+        case 'paid_awaiting_approval':
+          return o.approval_status === 'pending' && o.payment_status === 'paid';
+        case 'activated':
+          return o.approval_status === 'approved' && accDetSt !== 'sync_error';
+        case 'needs_error_handling':
+          return (
+            accDetSt === 'sync_error' ||
+            payDetSt === 'amount_mismatch' ||
+            o.course_valid === false ||
+            o.amount_valid === false
+          );
+        case 'cancelled_refunded':
+          return o.approval_status === 'cancelled' || payDetSt === 'refunded';
+        default:
+          return true;
+      }
+    });
+  }, [ordersList, orderSearchInput, orderFilter]);
+
   const hasApiError =
     !isDemoMode &&
     (ordersQuery.isError || studentSearchQuery.isError || classesQuery.isError);
@@ -1323,9 +1555,7 @@ export const AdminWorkspace: React.FC = () => {
           {/* 3-System Sync Health & Reconciliation Tools (No duplicate student entitlement form) */}
           {showPermissions && (
             <div
-              className={`space-y-3 rounded-xl border border-stone-200 bg-white p-3.5 shadow-2xs ${
-                showOrders ? 'lg:col-span-5' : 'lg:col-span-12'
-              }`}
+              className="space-y-3 rounded-xl border border-stone-200 bg-white p-3.5 shadow-2xs lg:col-span-12"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
@@ -1461,86 +1691,300 @@ export const AdminWorkspace: React.FC = () => {
             </div>
           )}
 
-          {/* Orders Queue with Separated Payment Status & Provisioning Status */}
+          {/* Phase 2.1: Full Order Management Table, Search & 7 Filter Presets */}
           {showOrders && (
             <div
+              data-testid="admin-orders-section"
               className={`rounded-xl border border-stone-200 bg-white p-4 shadow-2xs ${
-                showPermissions ? 'lg:col-span-7' : 'lg:col-span-12'
+                showPermissions && activeTab === 'all' ? 'lg:col-span-12' : 'lg:col-span-12'
               }`}
             >
-              <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
-                <ClipboardList className="h-4 w-4 text-amber-700" />
-                Đơn đăng ký ({ordersList.length})
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
+                  <ClipboardList className="h-4 w-4 text-amber-700" />
+                  Quản lý đơn hàng ({filteredOrdersList.length}/{ordersList.length})
+                </h2>
 
-              <div className="mt-3 space-y-2.5">
-                {ordersList.map((ord) => {
-                  const provStatus =
-                    ord.provisioningStatus ||
-                    ord.provisioning_status ||
-                    (ord.approval_status === 'approved' ? 'synced' : 'pending');
-                  return (
-                    <div
-                      key={ord.order_id}
-                      className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-stone-50 p-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-xs font-bold text-red-900">
-                            {ord.order_id}
-                          </span>
-                          <span className="truncate rounded bg-stone-200 px-1.5 py-0.5 text-[10px] font-bold text-stone-800">
-                            {ord.course_name}
-                          </span>
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                              ord.payment_status === 'paid'
-                                ? 'bg-emerald-100 text-emerald-900'
-                                : 'bg-amber-100 text-amber-900'
-                            }`}
-                          >
-                            {ord.payment_status === 'paid'
-                              ? 'Đã thanh toán'
-                              : 'Chờ xác minh CK'}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 truncate text-xs font-bold text-stone-900">
-                          {ord.student_name} ({ord.student_email}) · {formatVnd(ord.amount)}
-                        </p>
-                      </div>
-
-                      {ord.approval_status === 'approved' && provStatus === 'synced' ? (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-900">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Đã kích hoạt
-                        </span>
-                      ) : provStatus === 'partial_failure' ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            retrySyncMutation.mutate({
-                              type: 'order_approve',
-                              orderId: ord.order_id,
-                            })
-                          }
-                          className="min-h-[36px] rounded-xl bg-amber-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-800"
-                        >
-                          Đồng bộ lại đơn
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          data-testid={`admin-approve-order-${ord.order_id}`}
-                          onClick={() => approveOrderMutation.mutate(ord.order_id)}
-                          className="min-h-[36px] rounded-xl bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
-                        >
-                          Duyệt đơn
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                {/* Quick Search by Name, Parent, Email, Phone, Order ID */}
+                <div className="relative min-w-[230px] flex-1 sm:max-w-sm">
+                  <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-stone-400" />
+                  <input
+                    type="search"
+                    data-testid="admin-order-search-input"
+                    value={orderSearchInput}
+                    onChange={(e) => setOrderSearchInput(e.target.value)}
+                    placeholder="Tìm mã đơn, tên HV, tên PH, SĐT, email..."
+                    className="w-full rounded-xl border border-stone-300 bg-stone-50 py-1.5 pl-8 pr-3 text-xs font-semibold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
+                  />
+                </div>
               </div>
+
+              {/* 7 Filter Presets (+ Tất cả) */}
+              <div
+                data-testid="admin-order-filter-bar"
+                className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-1"
+              >
+                {ORDER_FILTER_OPTIONS.map((flt) => (
+                  <button
+                    key={flt.id}
+                    type="button"
+                    data-testid={`admin-order-filter-${flt.id}`}
+                    onClick={() => setOrderFilter(flt.id)}
+                    className={`min-h-[30px] shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                      orderFilter === flt.id
+                        ? 'bg-red-800 text-white shadow-2xs'
+                        : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                    }`}
+                  >
+                    {flt.label}
+                  </button>
+                ))}
+              </div>
+
+              {filteredOrdersList.length === 0 ? (
+                <div
+                  data-testid="admin-orders-empty-state"
+                  className="mt-3 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-6 text-center text-xs text-stone-600"
+                >
+                  Không có đơn hàng nào khớp bộ lọc hiện tại.
+                </div>
+              ) : (
+                <>
+                  {/* Mobile Compact Order Cards (< sm) */}
+                  <div className="mt-3 space-y-2.5 sm:hidden">
+                    {filteredOrdersList.map((ord) => {
+                      const contactSt = ord.contact_status || 'not_called';
+                      const payDetSt =
+                        ord.payment_detailed_status ||
+                        (ord.payment_status === 'paid' ? 'verified_paid' : 'unpaid');
+                      const accDetSt =
+                        ord.account_detailed_status ||
+                        (ord.approval_status === 'approved' ? 'activated' : 'no_account');
+
+                      const contactMeta =
+                        CONTACT_STATUS_META[contactSt] || CONTACT_STATUS_META.not_called;
+                      const payMeta =
+                        PAYMENT_STATUS_META[payDetSt] || PAYMENT_STATUS_META.unpaid;
+                      const accMeta =
+                        ACCOUNT_STATUS_META[accDetSt] || ACCOUNT_STATUS_META.no_account;
+                      const parentNameDisplay =
+                        ord.parent_name && ord.parent_name.trim()
+                          ? ord.parent_name.trim()
+                          : 'Chưa cung cấp';
+                      const contactPhone = ord.parent_phone || ord.phone || '—';
+
+                      return (
+                        <div
+                          key={ord.order_id}
+                          data-testid={`admin-order-card-${ord.order_id}`}
+                          onClick={() => openOrderDrawer(ord.order_id)}
+                          className="cursor-pointer space-y-2 rounded-xl border border-stone-200 bg-stone-50 p-3 transition-colors hover:border-red-300"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-xs font-extrabold text-red-900">
+                              {ord.order_id}
+                            </span>
+                            <span className="font-display text-xs font-extrabold text-stone-900">
+                              {formatVnd(ord.amount)}
+                            </span>
+                          </div>
+
+                          <div className="text-xs">
+                            <p className="font-bold text-stone-900">
+                              HV: {ord.student_name}
+                            </p>
+                            <p className="text-[11px] text-stone-600">
+                              PH: <strong className="text-stone-800">{parentNameDisplay}</strong> · SĐT:{' '}
+                              <strong className="font-mono text-red-900">{contactPhone}</strong>
+                            </p>
+                            <p className="mt-0.5 truncate text-[11px] font-semibold text-stone-700">
+                              {ord.course_name}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span
+                              className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${contactMeta.badgeClass}`}
+                            >
+                              {contactMeta.label}
+                            </span>
+                            <span
+                              className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${payMeta.badgeClass}`}
+                            >
+                              {payMeta.label}
+                            </span>
+                            <span
+                              className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${accMeta.badgeClass}`}
+                            >
+                              {accMeta.label}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-end pt-1">
+                            <button
+                              type="button"
+                              data-testid={`admin-mobile-open-order-btn-${ord.order_id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openOrderDrawer(ord.order_id);
+                              }}
+                              className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-3 py-1 text-xs font-bold text-white"
+                            >
+                              <span>Xem chi tiết</span>
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Desktop Table (>= sm) */}
+                  <div className="mt-3 hidden overflow-x-auto sm:block">
+                    <table
+                      data-testid="admin-orders-table"
+                      className="w-full text-left text-xs"
+                    >
+                      <thead>
+                        <tr className="border-b border-stone-200 text-[11px] text-stone-500">
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">Mã đơn</th>
+                          <th className="pb-2 pr-2 font-bold">Tên học viên</th>
+                          <th className="pb-2 pr-2 font-bold">Tên phụ huynh</th>
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                            SĐT liên hệ
+                          </th>
+                          <th className="pb-2 pr-2 font-bold">Khóa học</th>
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">Số tiền</th>
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                            Trạng thái chăm sóc
+                          </th>
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                            Trạng thái thanh toán
+                          </th>
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                            Trạng thái cấp TK
+                          </th>
+                          <th className="whitespace-nowrap pb-2 text-right font-bold">
+                            Thao tác
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100">
+                        {filteredOrdersList.map((ord) => {
+                          const contactSt = ord.contact_status || 'not_called';
+                          const payDetSt =
+                            ord.payment_detailed_status ||
+                            (ord.payment_status === 'paid' ? 'verified_paid' : 'unpaid');
+                          const accDetSt =
+                            ord.account_detailed_status ||
+                            (ord.approval_status === 'approved' ? 'activated' : 'no_account');
+
+                          const contactMeta =
+                            CONTACT_STATUS_META[contactSt] || CONTACT_STATUS_META.not_called;
+                          const payMeta =
+                            PAYMENT_STATUS_META[payDetSt] || PAYMENT_STATUS_META.unpaid;
+                          const accMeta =
+                            ACCOUNT_STATUS_META[accDetSt] || ACCOUNT_STATUS_META.no_account;
+                          const parentNameDisplay =
+                            ord.parent_name && ord.parent_name.trim()
+                              ? ord.parent_name.trim()
+                              : 'Chưa cung cấp';
+                          const contactPhone = ord.parent_phone || ord.phone || '—';
+
+                          return (
+                            <tr
+                              key={ord.order_id}
+                              data-testid={`admin-order-row-${ord.order_id}`}
+                              onClick={() => openOrderDrawer(ord.order_id)}
+                              className="cursor-pointer transition-colors hover:bg-stone-50"
+                            >
+                              <td className="whitespace-nowrap py-2.5 pr-2 font-mono font-bold text-red-900">
+                                <div>{ord.order_id}</div>
+                                <div className="font-sans text-[10px] font-medium text-stone-400">
+                                  {ord.source_label ||
+                                    (ord.source === 'authenticated_student'
+                                      ? 'HV đăng nhập'
+                                      : 'Website')}
+                                </div>
+                              </td>
+                              <td className="py-2.5 pr-2">
+                                <div className="font-bold text-stone-900">
+                                  {ord.student_name}
+                                </div>
+                                <div className="text-[11px] text-stone-500">
+                                  {ord.student_email || 'Chưa có email'}
+                                </div>
+                              </td>
+                              <td
+                                data-testid={`admin-order-parent-${ord.order_id}`}
+                                className={`py-2.5 pr-2 font-semibold ${
+                                  parentNameDisplay === 'Chưa cung cấp'
+                                    ? 'italic text-stone-400'
+                                    : 'text-stone-800'
+                                }`}
+                              >
+                                {parentNameDisplay}
+                              </td>
+                              <td className="whitespace-nowrap py-2.5 pr-2 font-mono font-bold text-stone-800">
+                                {contactPhone}
+                              </td>
+                              <td className="max-w-[200px] py-2.5 pr-2">
+                                <div
+                                  className="truncate font-semibold text-stone-900"
+                                  title={ord.course_name}
+                                >
+                                  {ord.course_name}
+                                </div>
+                              </td>
+                              <td className="whitespace-nowrap py-2.5 pr-2 font-display font-extrabold text-red-900">
+                                {formatVnd(ord.amount)}
+                              </td>
+                              <td className="whitespace-nowrap py-2.5 pr-2">
+                                <span
+                                  data-testid={`admin-order-contact-badge-${ord.order_id}`}
+                                  className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-bold ${contactMeta.badgeClass}`}
+                                >
+                                  {contactMeta.label}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap py-2.5 pr-2">
+                                <span
+                                  data-testid={`admin-order-payment-badge-${ord.order_id}`}
+                                  className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-bold ${payMeta.badgeClass}`}
+                                >
+                                  {payMeta.label}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap py-2.5 pr-2">
+                                <span
+                                  data-testid={`admin-order-account-badge-${ord.order_id}`}
+                                  className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-bold ${accMeta.badgeClass}`}
+                                >
+                                  {accMeta.label}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap py-2.5 text-right">
+                                <button
+                                  type="button"
+                                  data-testid={`admin-open-order-btn-${ord.order_id}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openOrderDrawer(ord.order_id);
+                                  }}
+                                  className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs hover:bg-red-50"
+                                >
+                                  <span>Xem chi tiết</span>
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -2214,6 +2658,29 @@ export const AdminWorkspace: React.FC = () => {
             title: `Đã sao chép email: ${email}`,
             variant: 'success',
           });
+        }}
+      />
+
+      {/* Order Detail Drawer (Phase 2.2 & 2.3 & Phase 3) */}
+      <OrderDetailDrawer
+        order={selectedOrder}
+        open={Boolean(selectedOrder)}
+        onClose={closeOrderDrawer}
+        classesList={classesList}
+        isUpdatingOrder={updateOrderMutation.isPending}
+        isApprovingOrder={approveOrderMutation.isPending}
+        actionError={orderDrawerError}
+        ephemeralPassword={
+          selectedOrder
+            ? orderEphemeralPasswords[selectedOrder.order_id] || null
+            : null
+        }
+        onClearError={() => setOrderDrawerError(null)}
+        onUpdateOrder={(params) => updateOrderMutation.mutateAsync(params)}
+        onApproveOrder={(params) => approveOrderMutation.mutateAsync(params)}
+        onOpenStudentProfile={(email) => {
+          closeOrderDrawer();
+          setSelectedStudentEmail(email.trim().toLowerCase());
         }}
       />
     </div>

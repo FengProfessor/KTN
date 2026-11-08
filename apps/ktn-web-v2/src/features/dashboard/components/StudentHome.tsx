@@ -57,20 +57,24 @@ export const StudentHome: React.FC = () => {
     ? user?.classCode || DEMO_CLASSES[0].id
     : user?.classCode || null;
 
-  // Check if external Flashcard URL is configured & active
+  // Phase 5: Canonical Flashcard live URL (with env / window override or 'disabled' fallback)
   const flashcardUrl = useMemo(() => {
     const envUrl = import.meta.env.VITE_KTN_FLASHCARD_URL;
-    if (typeof envUrl === 'string' && /^https?:\/\//i.test(envUrl.trim())) {
-      return envUrl.trim();
+    if (typeof envUrl === 'string' && envUrl.trim()) {
+      const trimmed = envUrl.trim();
+      if (trimmed === 'disabled' || trimmed === 'none') return '';
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
     }
     if (typeof window !== 'undefined') {
       const winUrl = (window as unknown as { __KTN_FLASHCARD_URL__?: string })
         .__KTN_FLASHCARD_URL__;
-      if (typeof winUrl === 'string' && /^https?:\/\//i.test(winUrl.trim())) {
-        return winUrl.trim();
+      if (typeof winUrl === 'string' && winUrl.trim()) {
+        const trimmed = winUrl.trim();
+        if (trimmed === 'disabled' || trimmed === 'none') return '';
+        if (/^https?:\/\//i.test(trimmed)) return trimmed;
       }
     }
-    return '';
+    return 'https://fengprofessor.github.io/KTN/flashcards/';
   }, []);
 
   // 1. Live Courses Catalog from API (never fallback to DEMO_COURSES in live mode)

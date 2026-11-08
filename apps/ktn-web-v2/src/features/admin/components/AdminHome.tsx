@@ -295,39 +295,55 @@ export const AdminHome: React.FC = () => {
           />
         ) : (
           <MobileTaskList testId="admin-action-queue">
-            {ordersList.map((ord) => (
-              <CompactListItem
-                key={ord.order_id}
-                unread={ord.approval_status === 'pending'}
-                icon={
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
-                    <ClipboardList className="h-4 w-4" />
-                  </div>
-                }
-                title={`${ord.student_name} · ${ord.order_id}`}
-                subtitle={`${ord.course_name} · ${formatVnd(ord.amount)}`}
-                rightAction={
-                  ord.approval_status === 'approved' ? (
-                    <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-900">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Đã duyệt
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      data-testid={`admin-approve-order-${ord.order_id}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        approveOrderMutation.mutate(ord.order_id);
-                      }}
-                      className="min-h-[36px] rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
-                    >
-                      Duyệt đơn
-                    </button>
-                  )
-                }
-              />
-            ))}
+            {ordersList.map((ord) => {
+              const payLabel =
+                ord.payment_detailed_status === 'verified_paid' ||
+                ord.payment_status === 'paid'
+                  ? 'Đã xác minh tiền thực nhận'
+                  : ord.payment_detailed_status === 'customer_reported'
+                  ? 'Khách báo đã chuyển khoản'
+                  : ord.payment_detailed_status === 'verifying_tx'
+                  ? 'Chờ kiểm tra giao dịch'
+                  : 'Chưa thanh toán';
+              return (
+                <CompactListItem
+                  key={ord.order_id}
+                  unread={ord.approval_status === 'pending'}
+                  onClick={() =>
+                    navigate(`/admin/orders?orderId=${encodeURIComponent(ord.order_id)}`)
+                  }
+                  icon={
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
+                      <ClipboardList className="h-4 w-4" />
+                    </div>
+                  }
+                  title={`${ord.student_name} · ${ord.order_id}`}
+                  subtitle={`${ord.course_name} · ${formatVnd(ord.amount)} · ${payLabel}`}
+                  rightAction={
+                    ord.approval_status === 'approved' ? (
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-900">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Đã kích hoạt
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid={`admin-home-open-order-${ord.order_id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(
+                            `/admin/orders?orderId=${encodeURIComponent(ord.order_id)}`
+                          );
+                        }}
+                        className="min-h-[36px] rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                      >
+                        Xem chi tiết
+                      </button>
+                    )
+                  }
+                />
+              );
+            })}
 
             {unassignedStudents.slice(0, 4).map((stu) => (
               <CompactListItem

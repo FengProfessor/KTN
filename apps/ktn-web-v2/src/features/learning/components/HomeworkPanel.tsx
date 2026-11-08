@@ -73,6 +73,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
   onSubmitHomework,
 }) => {
   const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
+  const isDemoMode = useUiStore((s) => s.isDemoMode);
   const [note, setNote] = useState(existingSubmission?.student_note || '');
   const [selectedFile, setSelectedFile] = useState<{
     blob: File | Blob;
@@ -91,6 +92,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
   const [localAssignment, setLocalAssignment] = useState<KtnHomeworkAssignment | null>(null);
   const [isEditingConfig, setIsEditingConfig] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
   const [cfgAssigned, setCfgAssigned] = useState(true);
   const [cfgMandatory, setCfgMandatory] = useState(true);
   const [cfgTitle, setCfgTitle] = useState('');
@@ -117,6 +119,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     setVoluntaryOpen(false);
     setLocalAssignment(null);
     setIsEditingConfig(false);
+    setConfigError(null);
   }, [courseId, unitId, lessonNum, existingSubmission?.id]);
 
   const effectiveAssignment: KtnHomeworkAssignment = localAssignment ||
@@ -150,12 +153,14 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     setCfgMaxFiles(effectiveAssignment.maxFiles || 3);
     setCfgDeadline(effectiveAssignment.deadline || '');
     setCfgCriteria(effectiveAssignment.completionCriteria || '');
+    setConfigError(null);
     setIsEditingConfig(true);
   };
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingConfig(true);
+    setConfigError(null);
     try {
       const res = await ktnApi.saveCourseHomeworkConfig({
         courseId,
@@ -176,22 +181,29 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
         onHomeworkConfigSaved?.(res.config);
       }
       setIsEditingConfig(false);
-    } catch {
-      // Fallback local state update if offline/demo
-      const fallbackCfg: KtnHomeworkAssignment = {
-        assigned: cfgAssigned,
-        mandatory: cfgAssigned ? cfgMandatory : false,
-        title: cfgTitle.trim() || `Bài tập ${lessonTitle}`,
-        instructions: cfgInstructions.trim(),
-        relatedPages: cfgRelatedPages.trim() || null,
-        allowedTypes: cfgAllowedTypes.length > 0 ? cfgAllowedTypes : ['audio', 'image', 'pdf', 'text'],
-        maxFiles: Math.max(1, Math.min(10, Number(cfgMaxFiles) || 3)),
-        deadline: cfgDeadline.trim() || null,
-        completionCriteria: cfgCriteria.trim() || null,
-      };
-      setLocalAssignment(fallbackCfg);
-      onHomeworkConfigSaved?.(fallbackCfg);
-      setIsEditingConfig(false);
+    } catch (err) {
+      if (isDemoMode) {
+        const fallbackCfg: KtnHomeworkAssignment = {
+          assigned: cfgAssigned,
+          mandatory: cfgAssigned ? cfgMandatory : false,
+          title: cfgTitle.trim() || `Bài tập ${lessonTitle}`,
+          instructions: cfgInstructions.trim(),
+          relatedPages: cfgRelatedPages.trim() || null,
+          allowedTypes: cfgAllowedTypes.length > 0 ? cfgAllowedTypes : ['audio', 'image', 'pdf', 'text'],
+          maxFiles: Math.max(1, Math.min(10, Number(cfgMaxFiles) || 3)),
+          deadline: cfgDeadline.trim() || null,
+          completionCriteria: cfgCriteria.trim() || null,
+        };
+        setLocalAssignment(fallbackCfg);
+        onHomeworkConfigSaved?.(fallbackCfg);
+        setIsEditingConfig(false);
+      } else {
+        setConfigError(
+          err instanceof Error
+            ? err.message
+            : 'Không thể lưu cấu hình bài tập. Vui lòng kiểm tra quyền truy cập của tài khoản.'
+        );
+      }
     } finally {
       setIsSavingConfig(false);
     }
@@ -546,6 +558,16 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               ))}
             </div>
           </div>
+
+          {configError && (
+            <div
+              data-testid="homework-config-error"
+              className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-2.5 text-xs font-semibold text-red-900"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+              <span>{configError}</span>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-1">
             <button

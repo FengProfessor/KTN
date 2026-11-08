@@ -2883,8 +2883,28 @@ async function runSuite() {
       JSON.stringify({ desktopSidebarVisibleOnMobile, mobileDrawerOpenOk })
     );
 
-    // O6: Phase 4 Admin Homework Config Editor on /learning
+    // O6: Phase 1 & Phase 4 Homework Config Permissions (Student=403, Admin=200, Teacher out-of-scope=403, Teacher in-scope=200)
     await testOPage.setViewportSize({ width: 1440, height: 900 });
+    const seesEditBtn = await testOPage.isVisible('[data-testid="homework-config-edit-btn"]');
+    const studentDirectPostStatus = await testOPage.evaluate(async () => {
+      const raw = localStorage.getItem('ktn_v2_auth_session');
+      const token = raw ? JSON.parse(raw).token : '';
+      const r = await fetch('/api/ktn/courses/homework-configs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          courseId: '6adadba969897b0002482ca5',
+          lessonNum: 4,
+          assigned: false,
+          title: 'Student bypass',
+        }),
+      });
+      return r.status;
+    });
+
     await testOPage.click('[data-testid="logout-btn"]');
     await testOPage.waitForSelector('[data-testid="quick-login-quanly@khongtunhi.com"]', {
       timeout: 8000,
@@ -2914,14 +2934,89 @@ async function runSuite() {
     const savedInstrText = await testOPage.textContent(
       '[data-testid="homework-instructions-text"]'
     );
+
+    // Log in as Teacher (linh.lam@khongtunhi.com — assigned to YCT2-04/YCT3-02, not assigned to HSK1 video course)
+    await testOPage.click('[data-testid="logout-btn"]');
+    await testOPage.waitForSelector('[data-testid="quick-login-linh.lam@khongtunhi.com"]', {
+      timeout: 8000,
+    });
+    await testOPage.click('[data-testid="quick-login-linh.lam@khongtunhi.com"]');
+    await testOPage.waitForSelector('[data-testid="teacher-home-page"]', {
+      timeout: 8000,
+    });
+    await testOPage.goto(
+      `${baseUrl}/learning?courseId=6adadba969897b0002482ca5&lesson=4`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await testOPage.waitForSelector('[data-testid="role-forbidden-guard"]', {
+      timeout: 8000,
+    });
+    const teacherUnassignedSeesEditBtn = await testOPage.isVisible(
+      '[data-testid="homework-config-edit-btn"]'
+    );
+    const teacherScopeChecks = await testOPage.evaluate(async () => {
+      const raw = localStorage.getItem('ktn_v2_auth_session');
+      const token = raw ? JSON.parse(raw).token : '';
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+      const coursePost = await fetch('/api/ktn/courses/homework-configs', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          courseId: '6adadba969897b0002482ca5',
+          lessonNum: 4,
+          assigned: true,
+          title: 'Teacher unassigned course attempt',
+        }),
+      });
+      const ownClassPost = await fetch('/api/ktn/class-sessions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          classCode: 'YCT2-04',
+          sessionNum: 3,
+          title: 'Buổi 3: Ôn tập lớp cô Linh',
+          exercises: [{ num: 1, title: 'Đọc bài khóa buổi 3' }],
+        }),
+      });
+      const otherClassPost = await fetch('/api/ktn/class-sessions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          classCode: 'YCT1-01',
+          sessionNum: 3,
+          title: 'Buổi 3: Lớp cô Hà',
+        }),
+      });
+      return {
+        unassignedCourseStatus: coursePost.status,
+        ownClassStatus: ownClassPost.status,
+        otherClassStatus: otherClassPost.status,
+      };
+    });
     await testOContext.close();
 
     recordTest(
       'TEST O',
       'O6',
-      'Phase 4 Admin Homework Config Editor allows Admin to edit and persist per-lesson homework requirements on /learning',
-      Boolean(savedInstrText?.includes('Bài 4 (Đã cập nhật)')),
-      JSON.stringify({ savedInstrText })
+      'Phase 1 & 4 Homework Config RBAC: Admin edits & persists course config (200); Teacher manages own class (200) but is blocked from unassigned video course (403) & other class (403); Student is blocked (403)',
+      Boolean(
+        !seesEditBtn &&
+          studentDirectPostStatus === 403 &&
+          savedInstrText?.includes('Bài 4 (Đã cập nhật)') &&
+          !teacherUnassignedSeesEditBtn &&
+          teacherScopeChecks.unassignedCourseStatus === 403 &&
+          teacherScopeChecks.ownClassStatus === 200 &&
+          teacherScopeChecks.otherClassStatus === 403
+      ),
+      JSON.stringify({
+        studentDirectPostStatus,
+        savedInstrText: savedInstrText?.slice(0, 60),
+        teacherUnassignedSeesEditBtn,
+        teacherScopeChecks,
+      })
     );
   } finally {
     await browser.close();

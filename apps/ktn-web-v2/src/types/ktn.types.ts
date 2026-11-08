@@ -22,6 +22,7 @@ export interface KtnUserSession {
   roles: UserRole[];
   classCode: string | null;
   assignedClasses?: string[];
+  assignedCourses?: string[];
   hasLiveClass: boolean;
   hasOnlineCourses: boolean;
   onlineCourses: OnlineCourseEntitlement[];

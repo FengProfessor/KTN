@@ -2506,13 +2506,20 @@ async function extractSessionFromRequest(request, env) {
 
 function extractTeacherMetaFromRow(row) {
   if (!row || typeof row !== 'object') {
-    return { assignedClasses: [], provisioningStatus: '', cognitoUserId: null, pwdHmac: null };
+    return { assignedClasses: [], assignedCourses: [], provisioningStatus: '', cognitoUserId: null, pwdHmac: null };
   }
   const classesSet = new Set();
   if (Array.isArray(row.assigned_classes)) {
     for (const c of row.assigned_classes) {
       const clean = String(c || '').trim().toUpperCase();
       if (clean) classesSet.add(clean);
+    }
+  }
+  const coursesSet = new Set();
+  if (Array.isArray(row.assigned_courses)) {
+    for (const c of row.assigned_courses) {
+      const clean = String(c || '').trim().toLowerCase();
+      if (/^[0-9a-f]{24}$/i.test(clean)) coursesSet.add(clean);
     }
   }
   let provisioningStatus = String(row.provisioning_status || '').trim();
@@ -2525,6 +2532,9 @@ function extractTeacherMetaFromRow(row) {
       if (s.startsWith('__class:')) {
         const cls = s.slice(8).trim().toUpperCase();
         if (cls) classesSet.add(cls);
+      } else if (s.startsWith('__course:')) {
+        const cid = s.slice(9).trim().toLowerCase();
+        if (/^[0-9a-f]{24}$/i.test(cid)) coursesSet.add(cid);
       } else if (s.startsWith('__status:') && !provisioningStatus) {
         provisioningStatus = s.slice(9).trim();
       } else if (s.startsWith('__uid:') && !cognitoUserId) {
@@ -2538,6 +2548,7 @@ function extractTeacherMetaFromRow(row) {
   }
   return {
     assignedClasses: Array.from(classesSet),
+    assignedCourses: Array.from(coursesSet),
     provisioningStatus,
     cognitoUserId,
     pwdHmac,
@@ -2589,6 +2600,32 @@ async function getTeacherAssignedClassCodes(env, teacherEmail) {
     }
   }
   return Array.from(classSet);
+}
+
+async function getTeacherAssignedCourseIds(env, teacherEmail) {
+  const email = normalizeEmail(teacherEmail || '');
+  if (!email) return [];
+  const tRes = await supabaseRequest(
+    env,
+    `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`
+  );
+  const tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
+  if (!tRow || tRow.active === false) {
+    return [];
+  }
+  const meta = extractTeacherMetaFromRow(tRow);
+  const courseSet = new Set(meta.assignedCourses);
+  const cRes = await supabaseRequest(
+    env,
+    `ktn_courses?teacher_email=eq.${encodeURIComponent(email)}&active=eq.true&select=course_id`
+  );
+  if (cRes.ok && Array.isArray(cRes.data)) {
+    for (const c of cRes.data) {
+      const cid = String(c?.course_id || '').trim().toLowerCase();
+      if (/^[0-9a-f]{24}$/i.test(cid)) courseSet.add(cid);
+    }
+  }
+  return Array.from(courseSet);
 }
 
 
@@ -5942,6 +5979,7 @@ export default {
       let onlineCourses = [];
       let classCode = null;
       let assignedClasses = [];
+      let assignedCourses = [];
       if (role === 'student') {
         sbStudent = await syncStudentEntitlementFromIzTeach(env, {
           email,
@@ -5959,6 +5997,7 @@ export default {
         }
       } else if (role === 'teacher') {
         assignedClasses = await getTeacherAssignedClassCodes(env, email);
+        assignedCourses = await getTeacherAssignedCourseIds(env, email);
         if (assignedClasses.length > 0) {
           classCode = assignedClasses[0];
         }
@@ -5979,7 +6018,7 @@ export default {
         role,
         roles: [role],
         classCode,
-        ...(role === 'teacher' ? { assignedClasses } : {}),
+        ...(role === 'teacher' ? { assignedClasses, assignedCourses } : {}),
         hasLiveClass: Boolean(classCode),
         hasOnlineCourses: onlineCourses.length > 0,
         onlineCourses,
@@ -6044,6 +6083,16 @@ export default {
                   : cleanSession.hasOnlineCourses
                     ? 'video_only'
                     : 'none';
+          }
+        } catch {}
+      } else if (effectiveRole === 'teacher' && cleanSession.email) {
+        try {
+          const freshClasses = await getTeacherAssignedClassCodes(env, cleanSession.email);
+          const freshCourses = await getTeacherAssignedCourseIds(env, cleanSession.email);
+          cleanSession.assignedClasses = freshClasses;
+          cleanSession.assignedCourses = freshCourses;
+          if (freshClasses.length > 0 && !cleanSession.classCode) {
+            cleanSession.classCode = freshClasses[0];
           }
         } catch {}
       }
@@ -6743,6 +6792,9 @@ export default {
       }
       if (request.method === 'GET') {
         const courseId = String(url.searchParams.get('courseId') || DEFAULT_COURSE_ID).trim().toLowerCase();
+        if (!/^[0-9a-f]{24}$/i.test(courseId)) {
+          return jsonResponse({ ok: false, error: 'INVALID_COURSE_ID', message: 'Mã khóa học (courseId) không hợp lệ.' }, 400);
+        }
         const hwCfgRoom = `COURSE_HW_CONFIG:${courseId}`;
         const res = await supabaseRequest(env, `ktn_dlp_alerts?room_id=eq.${encodeURIComponent(hwCfgRoom)}&order=created_at.desc&limit=100`);
         const configs = {};
@@ -6758,27 +6810,64 @@ export default {
         return jsonResponse({ ok: true, courseId, configs });
       }
       if (session.role !== 'admin' && session.role !== 'teacher') {
-        return jsonResponse({ ok: false, message: 'Chỉ Quản lý hoặc Giáo viên mới có quyền thiết lập yêu cầu bài tập.' }, 403);
+        return jsonResponse({
+          ok: false,
+          error: 'HOMEWORK_CONFIG_FORBIDDEN',
+          message: 'Học viên chỉ có quyền xem yêu cầu và nộp bài tập, không được chỉnh sửa cấu hình bài tập.'
+        }, 403);
       }
       const body = await request.json().catch(() => ({}));
-      const courseId = String(body.courseId || DEFAULT_COURSE_ID).trim().toLowerCase();
-      const lessonNum = Number(body.lessonNum || body.lessonNumber || 0);
-      if (!/^[0-9a-f]{24}$/i.test(courseId) || lessonNum < 1) {
-        return jsonResponse({ ok: false, message: 'Thông tin courseId hoặc lessonNum không hợp lệ.' }, 400);
+      const rawCourseId = typeof body.courseId === 'string' ? body.courseId.trim().toLowerCase() : '';
+      const rawLessonNum = Number(body.lessonNum ?? body.lessonNumber);
+      if (!/^[0-9a-f]{24}$/i.test(rawCourseId) || !Number.isInteger(rawLessonNum) || rawLessonNum < 1 || rawLessonNum > 200) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_HOMEWORK_CONFIG_INPUT',
+          message: 'Thông tin courseId (24 ký tự hex) hoặc lessonNum (số nguyên từ 1 đến 200) không hợp lệ.'
+        }, 400);
       }
+      let isKnownCourse = Boolean(MASTER_PRODUCT_MAPPING[rawCourseId]);
+      if (!isKnownCourse) {
+        const cCheck = await supabaseRequest(env, `ktn_courses?course_id=eq.${encodeURIComponent(rawCourseId)}&select=course_id&limit=1`);
+        isKnownCourse = Boolean(cCheck.ok && Array.isArray(cCheck.data) && cCheck.data.length > 0);
+      }
+      if (!isKnownCourse) {
+        return jsonResponse({
+          ok: false,
+          error: 'UNKNOWN_COURSE_ID',
+          courseId: rawCourseId,
+          message: 'Không tìm thấy khóa học tương ứng với courseId đã cung cấp.'
+        }, 400);
+      }
+      if (session.role === 'teacher') {
+        const assignedCourses = await getTeacherAssignedCourseIds(env, session.email);
+        if (!assignedCourses.includes(rawCourseId)) {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_COURSE_SCOPE_FORBIDDEN',
+            courseId: rawCourseId,
+            message: 'Cô không nằm trong danh sách phụ trách nội dung khóa học video này. Giáo viên chỉ được chỉnh bài tập của lớp mình phụ trách hoặc khóa học được Quản lý phân công rõ ràng.'
+          }, 403);
+        }
+      }
+      const courseId = rawCourseId;
+      const lessonNum = rawLessonNum;
+      const allowedTypesInput = Array.isArray(body.allowedTypes)
+        ? body.allowedTypes.map(t => String(t || '').trim().toLowerCase()).filter(t => ['audio', 'image', 'pdf', 'video', 'text'].includes(t))
+        : [];
       const configPayload = {
         courseId,
         lessonNum,
         assigned: body.assigned !== undefined ? Boolean(body.assigned) : true,
         mandatory: body.mandatory !== undefined ? Boolean(body.mandatory) : Boolean(body.assigned !== false),
-        title: String(body.title || `Bài tập Bài ${lessonNum}`).trim(),
-        instructions: String(body.instructions || '').trim(),
-        relatedPages: body.relatedPages ? String(body.relatedPages).trim() : null,
-        allowedTypes: Array.isArray(body.allowedTypes) && body.allowedTypes.length > 0 ? body.allowedTypes : ['audio', 'image', 'pdf'],
+        title: String(body.title || `Bài tập Bài ${lessonNum}`).trim().slice(0, 240),
+        instructions: String(body.instructions || '').trim().slice(0, 4000),
+        relatedPages: body.relatedPages ? String(body.relatedPages).trim().slice(0, 240) : null,
+        allowedTypes: allowedTypesInput.length > 0 ? allowedTypesInput : ['audio', 'image', 'pdf'],
         maxFiles: Math.max(1, Math.min(5, Number(body.maxFiles) || 3)),
-        deadline: body.deadline ? String(body.deadline).trim() : null,
-        completionCriteria: body.completionCriteria ? String(body.completionCriteria).trim() : null,
-        sampleAttachmentUrl: body.sampleAttachmentUrl ? String(body.sampleAttachmentUrl).trim() : null,
+        deadline: body.deadline ? String(body.deadline).trim().slice(0, 120) : null,
+        completionCriteria: body.completionCriteria ? String(body.completionCriteria).trim().slice(0, 500) : null,
+        sampleAttachmentUrl: body.sampleAttachmentUrl ? String(body.sampleAttachmentUrl).trim().slice(0, 1000) : null,
         updatedBy: session.email,
         updatedAt: new Date().toISOString()
       };
@@ -8347,6 +8436,7 @@ export default {
           return {
             ...t,
             assigned_classes: tMeta.assignedClasses,
+            assigned_courses: tMeta.assignedCourses,
             cognito_user_id: tMeta.cognitoUserId || t.cognito_user_id || null,
             provisioningStatus: pStatus,
             readyToLogin: pStatus === 'ready_to_login' && t.active !== false,
@@ -8391,6 +8481,14 @@ export default {
                 .filter(Boolean)
             ))
           : existingMeta.assignedClasses;
+        const hasExplicitAssignedCourses = Array.isArray(body.assignedCourses) || body.courseId !== undefined;
+        const assignedCourses = hasExplicitAssignedCourses
+          ? Array.from(new Set(
+              (Array.isArray(body.assignedCourses) ? body.assignedCourses : (body.courseId ? [body.courseId] : []))
+                .map(c => String(c || '').trim().toLowerCase())
+                .filter(c => /^[0-9a-f]{24}$/i.test(c))
+            ))
+          : existingMeta.assignedCourses;
 
         let cognitoUserId = body.cognitoUserId || existingMeta.cognitoUserId || null;
         const explicitTeacherPassword = String(body.initialPassword || body.password || '').trim();
@@ -8460,7 +8558,8 @@ export default {
           ...(cognitoUserId ? [`__uid:${cognitoUserId}`] : []),
           ...(passwordHmac ? [`__pwd_hmac:${passwordHmac}`] : []),
           ...(hasCustomPassword ? ['__pwd_custom:1'] : []),
-          ...assignedClasses.map(c => `__class:${c}`)
+          ...assignedClasses.map(c => `__class:${c}`),
+          ...assignedCourses.map(c => `__course:${c}`)
         ];
 
         const isActive = body.active !== undefined ? Boolean(body.active) : (existingTeaRow?.active !== undefined ? Boolean(existingTeaRow.active) : true);
@@ -8597,6 +8696,7 @@ export default {
         const savedTeacher = sbRes.data[0];
         const savedMeta = extractTeacherMetaFromRow(savedTeacher);
         const verifiedAssignedClasses = isActive ? await getTeacherAssignedClassCodes(env, tEmail) : [];
+        const verifiedAssignedCourses = isActive ? await getTeacherAssignedCourseIds(env, tEmail) : [];
         const readyToLogin = provisioningStatus === 'ready_to_login' && isActive;
         const hasVerifiedCredential = Boolean(
           savedMeta.passwordHmac ||
@@ -8629,6 +8729,7 @@ export default {
             email: tEmail,
             name: tName,
             assignedClasses: verifiedAssignedClasses,
+            assignedCourses: verifiedAssignedCourses,
             provisioningStatus,
             readyToLogin,
             roleVerified,
@@ -8645,12 +8746,14 @@ export default {
           roleVerified,
           resolvedRole: 'teacher',
           assignedClasses: verifiedAssignedClasses,
+          assignedCourses: verifiedAssignedCourses,
           accountCreated,
           existingAccount,
           initialPassword,
           teacher: {
             ...savedTeacher,
             assigned_classes: verifiedAssignedClasses,
+            assigned_courses: verifiedAssignedCourses,
             cognito_user_id: cognitoUserId,
             provisioningStatus,
             readyToLogin,

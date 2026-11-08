@@ -1462,7 +1462,7 @@ export const LearningPage: React.FC = () => {
                                         {audio.name}
                                       </p>
                                       <span className="text-[10px] font-semibold uppercase text-stone-500">
-                                        {audio.category === 'sbt'
+                                        {audio.category === 'sbt' || audio.category === 'mp3_sbt'
                                           ? 'MP3 Luyện nghe Sách bài tập'
                                           : 'MP3 Bài khóa & Từ mới SGK'}
                                       </span>
@@ -1499,7 +1499,14 @@ export const LearningPage: React.FC = () => {
                     homeworkAssignment={activeLesson.homeworkAssignment}
                     existingSubmission={currentLessonHomework}
                     isSubmitting={submitHomeworkMutation.isPending}
-                    canManageHomeworkConfig={user?.role === 'admin' || user?.role === 'teacher'}
+                    canManageHomeworkConfig={
+                      user?.role === 'admin' ||
+                      (user?.role === 'teacher' &&
+                        Array.isArray(user?.assignedCourses) &&
+                        user.assignedCourses.some(
+                          (cid) => String(cid || '').toLowerCase() === activeCourse.id.toLowerCase()
+                        ))
+                    }
                     onHomeworkConfigSaved={() => {
                       unitsQuery.refetch();
                     }}

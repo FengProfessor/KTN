@@ -3899,6 +3899,172 @@ async function runSuite() {
       d24Passed,
       `failStatus=${approveFailIzTeach.status}, filterAccountStatus=${errOrderInFilter?.account_detailed_status}, retryStatus=${approveRetryOk.status}, afterRetryAccountStatus=${approveRetryOk.data?.order?.account_detailed_status}`
     );
+
+    // D25: Phase 1 — Homework Config & Class Session Permissions (Admin / Teacher in-scope / Teacher out-of-scope / Student / Input Validation)
+    const adminHwCfgRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        courseId: HSK1_ID,
+        lessonNum: 1,
+        assigned: true,
+        mandatory: true,
+        title: 'Bài tập Bài 1: AI小语，你好！',
+        instructions: 'Nghe đoạn hội thoại Bài 1 (SGK trang 17). Thu âm đọc to lời chào (你好, 您好, 再见) hoặc chụp ảnh trang bài tập đã hoàn thành (SBT trang 11 / Vở viết trang 1).',
+        relatedPages: 'SGK trang 17 • SBT trang 11 • Vở viết trang 1',
+        allowedTypes: ['audio', 'image', 'pdf', 'text']
+      }
+    });
+
+    // Teacher A (not assigned to video course HSK1) -> 403 on POST /api/ktn/courses/homework-configs
+    const teacherUnassignedCourseRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        courseId: HSK1_ID,
+        lessonNum: 1,
+        assigned: true,
+        title: 'Teacher unauthorized edit'
+      }
+    });
+
+    // Teacher A (assigned to class YCT2-04) -> 200 on own class session homework, 403 on other class YCT3-02
+    const teacherOwnClassHwRes = await callApi('/api/ktn/class-sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        classCode: 'YCT2-04',
+        sessionNum: 1,
+        title: 'Buổi 1 — Chào hỏi tiếng Trung',
+        summary: 'Ôn tập từ vựng buổi 1',
+        exercises: [{ id: 'ex-1', num: 1, title: 'Thu âm chào hỏi', prompt: 'Đọc to 3 câu chào hỏi', mandatory: true }]
+      }
+    });
+    const teacherOtherClassHwRes = await callApi('/api/ktn/class-sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherAToken}` },
+      body: {
+        classCode: 'YCT3-02',
+        sessionNum: 1,
+        title: 'Buổi 1 — Lớp khác'
+      }
+    });
+
+    // Explicitly assign Teacher B to HSK1_ID, verify 200 on HSK1_ID and 403 on CFK1_ID, then revoke course assignment
+    await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        email: 'thu.ha@khongtunhi.com',
+        assignedClasses: ['YCT3-02'],
+        assignedCourses: [HSK1_ID]
+      }
+    });
+    const teacherAssignedCourseRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherBToken}` },
+      body: {
+        courseId: HSK1_ID,
+        lessonNum: 2,
+        assigned: true,
+        mandatory: true,
+        title: 'Bài tập Bài 2: 我叫李文',
+        instructions: 'Nghe MP3 Bài khóa Bài 2 (SGK trang 23). Thu âm tự giới thiệu họ tên bằng tiếng Trung (我叫...) và đính kèm ảnh bài viết trang 9 nếu có.'
+      }
+    });
+    const teacherOtherCourseRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherBToken}` },
+      body: {
+        courseId: CFK1_ID,
+        lessonNum: 1,
+        assigned: true,
+        title: 'Khóa khác ngoài phân công'
+      }
+    });
+    // Restore Teacher B to no video course assignment
+    await callApi('/api/ktn/teachers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        email: 'thu.ha@khongtunhi.com',
+        assignedClasses: ['YCT3-02'],
+        assignedCourses: []
+      }
+    });
+    const teacherAfterRevokeCourseRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherBToken}` },
+      body: {
+        courseId: HSK1_ID,
+        lessonNum: 2,
+        assigned: true,
+        title: 'Sau khi thu hồi phân công khóa'
+      }
+    });
+
+    // Student A -> 403 on both homework-configs and class-sessions
+    const studentHwCfgRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: HSK1_ID,
+        lessonNum: 1,
+        assigned: false,
+        title: 'Student bypass attempt'
+      }
+    });
+    const studentClassHwRes = await callApi('/api/ktn/class-sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        classCode: 'YCT2-04',
+        sessionNum: 1,
+        title: 'Student class edit attempt'
+      }
+    });
+
+    // Input validation checks -> 400
+    const missingCourseIdRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { lessonNum: 1, assigned: true }
+    });
+    const unknownCourseIdRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { courseId: 'ffffffffffffffffffffffff', lessonNum: 1, assigned: true }
+    });
+    const invalidLessonNumRes = await callApi('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { courseId: HSK1_ID, lessonNum: 0, assigned: true }
+    });
+
+    const d25Passed =
+      adminHwCfgRes.status === 200 &&
+      adminHwCfgRes.data?.ok === true &&
+      teacherUnassignedCourseRes.status === 403 &&
+      teacherUnassignedCourseRes.data?.error === 'TEACHER_COURSE_SCOPE_FORBIDDEN' &&
+      teacherOwnClassHwRes.status === 200 &&
+      teacherOtherClassHwRes.status === 403 &&
+      teacherAssignedCourseRes.status === 200 &&
+      teacherOtherCourseRes.status === 403 &&
+      teacherAfterRevokeCourseRes.status === 403 &&
+      studentHwCfgRes.status === 403 &&
+      studentHwCfgRes.data?.error === 'HOMEWORK_CONFIG_FORBIDDEN' &&
+      studentClassHwRes.status === 403 &&
+      missingCourseIdRes.status === 400 &&
+      unknownCourseIdRes.status === 400 &&
+      invalidLessonNumRes.status === 400;
+
+    record(
+      'D25-HOMEWORK-CONFIG-AND-CLASS-SESSION-RBAC',
+      'GROUP_V3',
+      'Homework config & class session endpoints enforce strict RBAC: Admin=200; Teacher in assigned class/course=200; Teacher outside assigned class/course=403; Student=403; invalid courseId/lessonNum=400',
+      d25Passed,
+      `admin=${adminHwCfgRes.status}, teaUnassignedCourse=${teacherUnassignedCourseRes.status}, teaOwnClass=${teacherOwnClassHwRes.status}, teaOtherClass=${teacherOtherClassHwRes.status}, teaAssignedCourse=${teacherAssignedCourseRes.status}, teaOtherCourse=${teacherOtherCourseRes.status}, stuCourse=${studentHwCfgRes.status}, stuClass=${studentClassHwRes.status}, badInput=${missingCourseIdRes.status}/${unknownCourseIdRes.status}/${invalidLessonNumRes.status}`
+    );
   }
 
   console.log('\n================================================================================');

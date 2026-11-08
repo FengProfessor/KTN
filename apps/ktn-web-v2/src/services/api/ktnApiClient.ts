@@ -366,7 +366,10 @@ export const ktnApi = {
         unitId,
         num,
         lessonNumber: typeof u.lessonNumber === 'number' ? u.lessonNumber : num,
-        partNumber: typeof u.partNumber === 'number' || u.partNumber === null ? (u.partNumber as number | null) : null,
+        partNumber:
+          typeof u.partNumber === 'string' || typeof u.partNumber === 'number'
+            ? (u.partNumber as string | number)
+            : null,
         partLabel: typeof u.partLabel === 'string' || u.partLabel === null ? (u.partLabel as string | null) : null,
         unitType: (u.unitType as KtnLessonUnit['unitType']) || 'lesson',
         rawTitle: typeof u.rawTitle === 'string' ? u.rawTitle : String(u.title || `Bài ${num}`),

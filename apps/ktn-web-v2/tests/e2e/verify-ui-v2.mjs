@@ -2708,7 +2708,7 @@ async function runSuite() {
       JSON.stringify({ materialsHeading, matLinksCount: matLinks.length, audioAttrs })
     );
 
-    // O3 (Urgent Bug 1): Student Voice Recording + Real S3 Homework Submission & Empty Guard
+    // O3 (Urgent Bug 1): Student Voice Recording + Block Submit While Recording + Persistent Tab State + Real S3 Homework Submission
     await testOPage.click('[data-testid="lesson-sidebar-item-3"]');
     await testOPage.waitForTimeout(250);
     await testOPage.click('[data-testid="tab-lesson-homework"]');
@@ -2729,22 +2729,34 @@ async function runSuite() {
       '[data-testid="homework-submit-error"]'
     );
 
-    // Record voice via MediaRecorder -> stop -> auto-attached -> submit homework
+    // Start recording and type a note BEFORE stopping: clicking Submit while recording MUST be blocked (never discard audio for text-only!)
     await testOPage.click('[data-testid="homework-start-record-btn"]');
     await testOPage.waitForSelector('[data-testid="voice-recorder-panel"]', {
       timeout: 5000,
     });
-    await testOPage.waitForTimeout(800);
+    await testOPage.fill(
+      '[data-testid="homework-note-input"]',
+      'Con nộp bài thu âm Bài 3我是中国人 ạ!'
+    );
+    await testOPage.click('[data-testid="homework-submit-btn"]');
+    await testOPage.waitForSelector('[data-testid="homework-submit-error"]', {
+      timeout: 5000,
+    });
+    const recordingActiveBlockedError = await testOPage.textContent(
+      '[data-testid="homework-submit-error"]'
+    );
+
+    // Now stop recording -> auto-attaches -> switch tab and switch back -> state preserved -> submit homework
+    await testOPage.waitForTimeout(600);
     await testOPage.click('[data-testid="stop-voice-recording-btn"]');
     await testOPage.waitForSelector('[data-testid="homework-selected-file-card"]', {
       timeout: 5000,
     });
+    await testOPage.click('[data-testid="tab-lesson-overview"]');
+    await testOPage.waitForTimeout(150);
+    await testOPage.click('[data-testid="tab-lesson-homework"]');
     const attachedAudioText = await testOPage.textContent(
       '[data-testid="homework-selected-file-card"]'
-    );
-    await testOPage.fill(
-      '[data-testid="homework-note-input"]',
-      'Con nộp bài thu âm Bài 3我是中国人 ạ!'
     );
     await testOPage.click('[data-testid="homework-submit-btn"]');
     await testOPage.waitForSelector('[data-testid="homework-status-submitted"]', {
@@ -2757,29 +2769,31 @@ async function runSuite() {
     recordTest(
       'TEST O',
       'O3',
-      'Urgent Bug 1 Fixed: Student voice recording auto-attaches valid audio file on stop, blocks empty submissions without fake WAV, and submits homework with playable audio',
+      'Urgent Bug 1 Fixed: Student voice recording blocks premature submit while recording (even with note), preserves attached audio across tab switches, and submits playable audio',
       Boolean(
         hwAssignmentText &&
           !hwAssignmentText.includes('Thu âm đọc câu (30–45s)') &&
           emptyBlockedError &&
+          recordingActiveBlockedError?.includes('Dừng thu') &&
           attachedAudioText?.includes('ThuAm-') &&
           submittedAudioSrc.length > 0
       ),
       JSON.stringify({
         emptyBlockedError,
+        recordingActiveBlockedError,
         attachedAudioText: attachedAudioText?.slice(0, 80),
         submittedAudioSrc: submittedAudioSrc.slice(0, 80),
       })
     );
 
-    // O4 (Urgent Bug 2): Chat Image Upload + Click-to-Zoom Lightbox Modal Surviving Polling
+    // O4 (Urgent Bug 2): Chat Image Upload (including camera digits filename) + Click-to-Zoom Lightbox Modal Surviving Polling
     await testOPage.goto(`${baseUrl}/chat`, { waitUntil: 'domcontentloaded' });
     await testOPage.waitForSelector('[data-testid="chat-send-btn"]', { timeout: 8000 });
     const pngBase64 =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
     const pngBuffer = Buffer.from(pngBase64, 'base64');
     await testOPage.setInputFiles('[data-testid="chat-file-input"]', {
-      name: 'bai-viet-hsk1-zoom-test.png',
+      name: 'IMG_0912345678_bai-viet-hsk1.png',
       mimeType: 'image/png',
       buffer: pngBuffer,
     });
@@ -2822,7 +2836,7 @@ async function runSuite() {
     recordTest(
       'TEST O',
       'O4',
-      'Urgent Bug 2 Fixed: Chat image upload renders immediately with local blob fallback and "Phóng to" opens full-screen portal lightbox that zooms (150%) and survives 3.5s polling',
+      'Urgent Bug 2 Fixed: Chat image upload (including camera filename with digits) renders immediately and "Phóng to" opens full-screen portal lightbox that zooms (150%) and survives 3.5s polling',
       Boolean(
         zoomLevelBeforePoll?.includes('150%') &&
           lightboxStillOpen &&
@@ -2860,7 +2874,6 @@ async function runSuite() {
       path: path.join(SCREENSHOT_DIR, 'learning-hsk1-mobile-drawer.png'),
       fullPage: false,
     });
-    await testOContext.close();
 
     recordTest(
       'TEST O',
@@ -2868,6 +2881,47 @@ async function runSuite() {
       'Mobile 390x844 layout hides 33-unit sidebar above video and provides expandable lesson drawer with 3 clear tabs',
       Boolean(!desktopSidebarVisibleOnMobile && mobileDrawerOpenOk),
       JSON.stringify({ desktopSidebarVisibleOnMobile, mobileDrawerOpenOk })
+    );
+
+    // O6: Phase 4 Admin Homework Config Editor on /learning
+    await testOPage.setViewportSize({ width: 1440, height: 900 });
+    await testOPage.click('[data-testid="logout-btn"]');
+    await testOPage.waitForSelector('[data-testid="quick-login-quanly@khongtunhi.com"]', {
+      timeout: 8000,
+    });
+    await testOPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await testOPage.waitForSelector('[data-testid="admin-home-page"]', {
+      timeout: 8000,
+    });
+    await testOPage.goto(
+      `${baseUrl}/learning?courseId=6adadba969897b0002482ca5&lesson=4`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await testOPage.waitForSelector('[data-testid="homework-config-edit-btn"]', {
+      timeout: 8000,
+    });
+    await testOPage.click('[data-testid="homework-config-edit-btn"]');
+    await testOPage.waitForSelector('[data-testid="homework-config-editor-form"]', {
+      timeout: 5000,
+    });
+    const customInstr =
+      'Bài 4 (Đã cập nhật): Nghe đoạn hội thoại Bài 4, thu âm câu giới thiệu nghề nghiệp của bố mẹ và chụp trang SBT trang 26.';
+    await testOPage.fill('[data-testid="homework-config-instructions-input"]', customInstr);
+    await testOPage.click('[data-testid="homework-config-save-btn"]');
+    await testOPage.waitForSelector('[data-testid="homework-instructions-text"]', {
+      timeout: 5000,
+    });
+    const savedInstrText = await testOPage.textContent(
+      '[data-testid="homework-instructions-text"]'
+    );
+    await testOContext.close();
+
+    recordTest(
+      'TEST O',
+      'O6',
+      'Phase 4 Admin Homework Config Editor allows Admin to edit and persist per-lesson homework requirements on /learning',
+      Boolean(savedInstrText?.includes('Bài 4 (Đã cập nhật)')),
+      JSON.stringify({ savedInstrText })
     );
   } finally {
     await browser.close();

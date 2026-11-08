@@ -19,6 +19,7 @@ import {
   Calendar,
   CheckSquare,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import { KtnHomework, KtnHomeworkAssignment } from '@/types/ktn.types';
 import {
@@ -28,6 +29,7 @@ import {
 } from '@/features/chat/components/VoiceRecorder';
 import { ktnApi, resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
 import { formatChatTimestamp, formatFileSize } from '@/lib/utils';
+import { useUiStore } from '@/stores/useUiStore';
 
 interface HomeworkPanelProps {
   courseId: string;
@@ -70,6 +72,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
   onHomeworkConfigSaved,
   onSubmitHomework,
 }) => {
+  const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
   const [note, setNote] = useState(existingSubmission?.student_note || '');
   const [selectedFile, setSelectedFile] = useState<{
     blob: File | Blob;
@@ -79,6 +82,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     previewUrl?: string;
   } | null>(null);
   const [showRecorder, setShowRecorder] = useState(false);
+  const [isRecorderActive, setIsRecorderActive] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isRevising, setIsRevising] = useState(false);
   const [voluntaryOpen, setVoluntaryOpen] = useState(false);
@@ -107,6 +111,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     setNote(existingSubmission?.student_note || '');
     setSelectedFile(null);
     setShowRecorder(false);
+    setIsRecorderActive(false);
     setSubmitError(null);
     setIsRevising(false);
     setVoluntaryOpen(false);
@@ -241,6 +246,14 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     const fileToUpload = selectedFile?.blob || null;
     const fileNameToUpload = selectedFile?.name || '';
 
+    // Block submission if student is actively recording (even if note is non-empty!)
+    if (showRecorder && (isRecorderActive || !fileToUpload)) {
+      setSubmitError(
+        'Em đang mở khung thu âm. Vui lòng bấm "Dừng thu" để hoàn tất bản thu trước khi bấm Nộp bài tập.'
+      );
+      return;
+    }
+
     // Phase 5.1: NEVER create fake WAV from text note!
     if (!fileToUpload) {
       if (allowsTextOnly && note.trim()) {
@@ -252,7 +265,11 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
             submissionMode: 'text',
             textAnswer: note.trim(),
           });
+          setSelectedFile(null);
+          setShowRecorder(false);
+          setIsRecorderActive(false);
           setIsRevising(false);
+          setVoluntaryOpen(false);
         } catch (err) {
           setSubmitError(
             err instanceof Error
@@ -264,9 +281,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
       }
 
       setSubmitError(
-        showRecorder
-          ? 'Em đang mở khung thu âm. Vui lòng bấm "Dừng thu" để hoàn tất bản thu trước khi bấm Nộp bài tập.'
-          : 'Vui lòng thu âm giọng đọc hoặc chọn tệp bài làm thật (ảnh vở viết, âm thanh, PDF) trước khi nhấn Nộp bài.'
+        'Vui lòng thu âm giọng đọc hoặc chọn tệp bài làm thật (ảnh vở viết, âm thanh, PDF) trước khi nhấn Nộp bài.'
       );
       return;
     }
@@ -278,7 +293,11 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
         note: note.trim() || `Nộp bài tập ${lessonTitle}`,
         submissionMode: 'file',
       });
+      setSelectedFile(null);
+      setShowRecorder(false);
+      setIsRecorderActive(false);
       setIsRevising(false);
+      setVoluntaryOpen(false);
     } catch (err) {
       setSubmitError(
         err instanceof Error
@@ -347,16 +366,19 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     (isAssigned || voluntaryOpen) &&
     (status === 'not_submitted' || status === 'revision_requested' || isRevising);
 
-  const submittedFileUrl = existingSubmission?.file_url
-    ? resolveUploadedMediaUrl(existingSubmission.file_url)
+  const rawSubmittedFileUrl = existingSubmission?.file_url || '';
+  const submittedFileUrl = rawSubmittedFileUrl
+    ? resolveUploadedMediaUrl(rawSubmittedFileUrl)
     : '';
   const isSubmittedAudio =
     Boolean(submittedFileUrl) &&
     (String(existingSubmission?.file_type || '').startsWith('audio/') ||
+      /\.(wav|mp3|m4a|webm|ogg)(\?|$)/i.test(rawSubmittedFileUrl) ||
       /\.(wav|mp3|m4a|webm|ogg)(\?|$)/i.test(submittedFileUrl));
   const isSubmittedImage =
     Boolean(submittedFileUrl) &&
     (String(existingSubmission?.file_type || '').startsWith('image/') ||
+      /\.(png|jpe?g|webp|gif)(\?|$)/i.test(rawSubmittedFileUrl) ||
       /\.(png|jpe?g|webp|gif)(\?|$)/i.test(submittedFileUrl));
 
   return (
@@ -664,13 +686,35 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           )}
 
           {isSubmittedImage && (
-            <div className="mt-2">
+            <div className="mt-2 flex flex-wrap items-end gap-2">
               <img
                 data-testid="homework-submitted-image-preview"
                 src={submittedFileUrl}
                 alt="Ảnh bài tập đã nộp"
-                className="max-h-48 rounded-lg border border-stone-200 object-contain"
+                onClick={() =>
+                  setActiveLightboxAttachment({
+                    name: existingSubmission.attachments?.[0]?.title || 'Ảnh bài tập đã nộp',
+                    url: submittedFileUrl,
+                    kind: 'image',
+                  })
+                }
+                className="max-h-48 cursor-zoom-in rounded-lg border border-stone-200 object-contain transition-opacity hover:opacity-90"
               />
+              <button
+                type="button"
+                data-testid="homework-submitted-image-zoom-btn"
+                onClick={() =>
+                  setActiveLightboxAttachment({
+                    name: existingSubmission.attachments?.[0]?.title || 'Ảnh bài tập đã nộp',
+                    url: submittedFileUrl,
+                    kind: 'image',
+                  })
+                }
+                className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-100"
+              >
+                <ZoomIn className="h-3.5 w-3.5 text-red-800" />
+                Phóng to ảnh
+              </button>
             </div>
           )}
 
@@ -749,12 +793,20 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
             {showRecorder ? (
               <VoiceRecorder
                 submitLabel="Dùng bản thu này"
-                onCancel={() => setShowRecorder(false)}
+                onRecordingStateChange={(active) => setIsRecorderActive(active)}
+                onClearRecording={() => setSelectedFile(null)}
+                onCancel={() => {
+                  setSelectedFile(null);
+                  setIsRecorderActive(false);
+                  setShowRecorder(false);
+                }}
                 onRecordingReady={(blob, durationSec, previewUrl) => {
                   attachVoiceRecording(blob, durationSec, previewUrl);
+                  setIsRecorderActive(false);
                 }}
                 onSendVoice={(blob, durationSec, previewUrl) => {
                   attachVoiceRecording(blob, durationSec, previewUrl);
+                  setIsRecorderActive(false);
                   setShowRecorder(false);
                 }}
               />
@@ -763,7 +815,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 <button
                   type="button"
                   data-testid="homework-start-record-btn"
-                  onClick={() => setShowRecorder(true)}
+                  onClick={() => {
+                    setSubmitError(null);
+                    setShowRecorder(true);
+                  }}
                   className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-900 transition-colors hover:bg-red-100"
                 >
                   <Mic className="h-4 w-4 shrink-0 text-red-700" />
@@ -802,7 +857,14 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                     <img
                       src={selectedFile.previewUrl}
                       alt={selectedFile.name}
-                      className="h-12 w-12 shrink-0 rounded-lg border border-emerald-300 object-cover"
+                      onClick={() =>
+                        setActiveLightboxAttachment({
+                          name: selectedFile.name,
+                          url: selectedFile.previewUrl!,
+                          kind: 'image',
+                        })
+                      }
+                      className="h-12 w-12 shrink-0 cursor-zoom-in rounded-lg border border-emerald-300 object-cover"
                     />
                   ) : selectedFile.mimeType.startsWith('audio/') ? (
                     <FileAudio className="h-5 w-5 shrink-0 text-emerald-700" />

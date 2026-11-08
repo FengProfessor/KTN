@@ -6,7 +6,6 @@ import { ConversationHeader } from './ConversationHeader';
 import { PinnedMessage } from './PinnedMessage';
 import { MessageList } from './MessageList';
 import { MessageComposer } from './MessageComposer';
-import { ChatImageLightbox } from './AttachmentPreview';
 import { useChatRooms, useRoomMessages } from '../hooks/useMessages';
 import { useSendMessage } from '../hooks/useSendMessage';
 import { useChatRealtime } from '../hooks/useChatRealtime';
@@ -243,8 +242,6 @@ export const ChatLayout: React.FC = () => {
           )}
         </div>
       </div>
-
-      <ChatImageLightbox />
     </div>
   );
 };

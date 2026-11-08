@@ -653,7 +653,9 @@ export const LearningPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-homeworks'] });
       addToast({
         title: 'Đã nộp bài tập thành công!',
-        description: 'Bài làm của con đã được gửi tới Lão sư chủ nhiệm.',
+        description: user?.classCode
+          ? `Bài làm của em đã được lưu và gửi tới giáo viên phụ trách lớp ${user.classCode}.`
+          : 'Bài làm của em đã được lưu vào hệ thống và đang chờ chấm điểm.',
         variant: 'success',
       });
     },
@@ -1483,34 +1485,8 @@ export const LearningPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* Tab 3: Bài tập (Homework) */}
-                {activeTab === 'homework' && (
-                  <div className="mt-3">
-                    <HomeworkPanel
-                      key={`${activeCourse.id}:${activeLessonNumber}:${activeLesson.unitId || ''}`}
-                      courseId={activeCourse.id}
-                      lessonNum={activeLessonNumber}
-                      unitId={
-                        activeLesson.unitId || activeLesson._id || activeLesson.id || null
-                      }
-                      lessonTitle={activeLesson.title}
-                      classCode={user?.classCode || ''}
-                      homeworkAssignment={activeLesson.homeworkAssignment}
-                      existingSubmission={currentLessonHomework}
-                      isSubmitting={submitHomeworkMutation.isPending}
-                      onHomeworkConfigSaved={() => {
-                        unitsQuery.refetch();
-                      }}
-                      onSubmitHomework={async (params) => {
-                        await submitHomeworkMutation.mutateAsync(params);
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {activeTab !== 'homework' && (
-                <div className="hidden lg:block">
+                {/* Tab 3: Bài tập (Homework) — single persistent mount so switching tabs on Desktop never unmounts an active recording/file */}
+                <div className={activeTab === 'homework' ? 'mt-3' : 'mt-4 hidden lg:block'}>
                   <HomeworkPanel
                     key={`${activeCourse.id}:${activeLessonNumber}:${activeLesson.unitId || ''}`}
                     courseId={activeCourse.id}
@@ -1523,6 +1499,7 @@ export const LearningPage: React.FC = () => {
                     homeworkAssignment={activeLesson.homeworkAssignment}
                     existingSubmission={currentLessonHomework}
                     isSubmitting={submitHomeworkMutation.isPending}
+                    canManageHomeworkConfig={user?.role === 'admin' || user?.role === 'teacher'}
                     onHomeworkConfigSaved={() => {
                       unitsQuery.refetch();
                     }}
@@ -1531,7 +1508,7 @@ export const LearningPage: React.FC = () => {
                     }}
                   />
                 </div>
-              )}
+              </div>
             </>
           )}
         </div>

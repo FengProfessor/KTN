@@ -15,8 +15,9 @@ import {
   ExternalLink,
   AlertCircle,
   Calendar,
+  ZoomIn,
 } from 'lucide-react';
-import { ktnApi } from '@/services/api/ktnApiClient';
+import { ktnApi, resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_CLASS_SESSIONS, DEMO_HOMEWORKS } from '@/lib/demoData';
@@ -37,6 +38,7 @@ export const TeacherWorkspace: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const addToast = useUiStore((s) => s.addToast);
+  const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
 
   const [selectedClassId, setSelectedClassId] = useState<string>(
     () => searchParams.get('class') || user?.classCode || ''
@@ -590,27 +592,76 @@ export const TeacherWorkspace: React.FC = () => {
                           </p>
                         )}
 
-                        {hw.file_url && (
-                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                            <audio
-                              controls
-                              preload="metadata"
-                              src={hw.file_url}
-                              data-testid={`teacher-homework-audio-${hw.id}`}
-                              className="h-8 max-w-full sm:max-w-[240px]"
-                            />
-                            <a
-                              href={hw.file_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              data-testid={`teacher-homework-file-link-${hw.id}`}
-                              className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-800 hover:bg-red-50"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              <span>Tệp bài làm</span>
-                            </a>
-                          </div>
-                        )}
+                        {hw.file_url && (() => {
+                          const resolvedHwUrl = resolveUploadedMediaUrl(hw.file_url);
+                          const isHwImage =
+                            String(hw.file_type || '').startsWith('image/') ||
+                            /\.(png|jpe?g|webp|gif)(\?|$)/i.test(hw.file_url);
+                          const isHwPdf =
+                            String(hw.file_type || '').includes('pdf') ||
+                            /\.pdf(\?|$)/i.test(hw.file_url);
+                          const isHwAudio = !isHwImage && !isHwPdf;
+
+                          return (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                              {isHwImage && (
+                                <>
+                                  <img
+                                    src={resolvedHwUrl}
+                                    alt={`Bài làm ${hw.student_name || hw.student_email}`}
+                                    data-testid={`teacher-homework-image-${hw.id}`}
+                                    onClick={() =>
+                                      setActiveLightboxAttachment({
+                                        name:
+                                          hw.attachments?.[0]?.title ||
+                                          `Bài làm Bài ${hw.lesson_num} - ${hw.student_name || hw.student_email}`,
+                                        url: resolvedHwUrl,
+                                        kind: 'image',
+                                      })
+                                    }
+                                    className="h-12 w-16 cursor-zoom-in rounded-lg border border-stone-300 object-cover hover:opacity-90"
+                                  />
+                                  <button
+                                    type="button"
+                                    data-testid={`teacher-homework-zoom-btn-${hw.id}`}
+                                    onClick={() =>
+                                      setActiveLightboxAttachment({
+                                        name:
+                                          hw.attachments?.[0]?.title ||
+                                          `Bài làm Bài ${hw.lesson_num} - ${hw.student_name || hw.student_email}`,
+                                        url: resolvedHwUrl,
+                                        kind: 'image',
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-100"
+                                  >
+                                    <ZoomIn className="h-3 w-3 text-red-800" />
+                                    <span>Phóng to</span>
+                                  </button>
+                                </>
+                              )}
+                              {isHwAudio && (
+                                <audio
+                                  controls
+                                  preload="metadata"
+                                  src={resolvedHwUrl}
+                                  data-testid={`teacher-homework-audio-${hw.id}`}
+                                  className="h-8 max-w-full sm:max-w-[240px]"
+                                />
+                              )}
+                              <a
+                                href={resolvedHwUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                data-testid={`teacher-homework-file-link-${hw.id}`}
+                                className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-800 hover:bg-red-50"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                <span>Tệp bài làm</span>
+                              </a>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="flex shrink-0 items-center gap-1.5">

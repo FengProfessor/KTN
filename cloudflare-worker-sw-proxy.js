@@ -12215,7 +12215,10 @@ export default {
       const targetRoomKey = access.type === 'class' ? access.classCode : access.roomId;
       const inList = (access.queryKeys || [targetRoomKey]).map(k => encodeURIComponent(k)).join(',');
 
-      const dlpCheckText = content.replace(/^\[Đã (?:gửi ảnh|gửi video|gửi thu âm|đính kèm tệp): [^\]]+\]$/i, '').trim();
+      const dlpCheckText = content
+        .replace(/^\[Trả lời [^\]]+\]\s*/i, '')
+        .replace(/\[Đã (?:gửi ảnh|gửi video|gửi thu âm|đính kèm tệp): [^\]]+\]/gi, '')
+        .trim();
       const dlp = inspectDlpContent(dlpCheckText);
       if (dlp.blocked) {
         await supabaseRequest(env, 'ktn_dlp_alerts', {

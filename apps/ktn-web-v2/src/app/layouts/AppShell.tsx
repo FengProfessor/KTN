@@ -19,6 +19,7 @@ import { ktnApi } from '@/services/api/ktnApiClient';
 import { DEMO_HOMEWORKS, DEMO_NOTIFICATIONS } from '@/lib/demoData';
 import { formatRelativeTime, resolveNotificationLink } from '@/lib/utils';
 import { KtnHomework, KtnNotification, KtnOrder } from '@/types/ktn.types';
+import { ChatImageLightbox } from '@/features/chat/components/AttachmentPreview';
 
 export const AppShell: React.FC = () => {
   const navigate = useNavigate();
@@ -654,6 +655,9 @@ export const AppShell: React.FC = () => {
           {!isRestoringLiveSession && (
             <RoleBottomNavigation role={effectiveRole} badges={navBadges} />
           )}
+
+          {/* Global Full-Screen Image Lightbox Portal */}
+          <ChatImageLightbox />
         </div>
       </div>
     </div>

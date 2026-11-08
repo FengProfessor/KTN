@@ -138,7 +138,7 @@ export const AppRouter: React.FC = () => {
           <Route
             path="learning"
             element={
-              <RequireRole allowed={['student']}>
+              <RequireRole allowed={['student', 'admin']}>
                 <LearningPage />
               </RequireRole>
             }

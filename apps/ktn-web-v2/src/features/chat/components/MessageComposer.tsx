@@ -229,7 +229,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               <img
                 src={stagedAttachment.url}
                 alt={stagedAttachment.name}
-                className="h-10 w-10 rounded-lg object-cover border border-stone-200"
+                onClick={() => useUiStore.getState().setActiveLightboxAttachment(stagedAttachment)}
+                className="h-10 w-10 cursor-zoom-in rounded-lg object-cover border border-stone-200 hover:opacity-90"
               />
             ) : (
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-800 text-white">

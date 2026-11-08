@@ -135,11 +135,11 @@ export const ChatImageLightbox: React.FC = () => {
 
       {/* Scrollable / Zoomable Image Viewport */}
       <div
-        className="flex flex-1 items-center justify-center overflow-auto p-4"
+        className="flex flex-1 overflow-auto p-4"
         onClick={() => setActiveAttachment(null)}
       >
         <div
-          className="relative flex items-center justify-center"
+          className="relative m-auto flex items-center justify-center"
           onClick={(e) => e.stopPropagation()}
         >
           <img
@@ -147,9 +147,15 @@ export const ChatImageLightbox: React.FC = () => {
             src={resolvedUrl}
             alt={activeAttachment.name || 'Ảnh phóng to'}
             onClick={() => setZoomLevel((z) => (z < 1.8 ? 2 : 1))}
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (activeAttachment.url && target.src !== activeAttachment.url) {
+                target.src = activeAttachment.url;
+              }
+            }}
             style={{
               transform: `scale(${zoomLevel})`,
-              transformOrigin: 'center center',
+              transformOrigin: zoomLevel > 1 ? 'top center' : 'center center',
             }}
             className={`max-h-[82vh] max-w-[92vw] rounded-xl object-contain shadow-2xl transition-transform duration-150 ${
               zoomLevel < 1.8 ? 'cursor-zoom-in' : 'cursor-zoom-out'
@@ -194,7 +200,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     e.stopPropagation();
     setActiveLightboxAttachment({
       ...attachment,
-      url: resolvedUrl,
+      url: resolvedUrl || attachment.url,
     });
   };
 
@@ -211,6 +217,12 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           <img
             src={resolvedUrl}
             alt={attachment.name || 'Ảnh đính kèm'}
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (attachment.url && target.src !== attachment.url) {
+                target.src = attachment.url;
+              }
+            }}
             className="max-h-64 w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
           />
           <button

@@ -4,6 +4,8 @@ import { Mic, Square, Send, Trash2, RotateCcw } from 'lucide-react';
 interface VoiceRecorderProps {
   onSendVoice: (blob: Blob, durationSec: number, previewUrl: string) => void;
   onRecordingReady?: (blob: Blob, durationSec: number, previewUrl: string) => void;
+  onRecordingStateChange?: (isRecording: boolean) => void;
+  onClearRecording?: () => void;
   onCancel: () => void;
   submitLabel?: string;
 }
@@ -54,6 +56,8 @@ export function getAudioExtensionFromMime(rawMime?: string | null): string {
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   onSendVoice,
   onRecordingReady,
+  onRecordingStateChange,
+  onClearRecording,
   onCancel,
   submitLabel = 'Gửi thu âm',
 }) => {
@@ -66,6 +70,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   const chunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<number | null>(null);
   const durationSecRef = useRef<number>(0);
+  const sessionIdRef = useRef<number>(0);
+  const isCancelledRef = useRef<boolean>(false);
 
   const createSyntheticWavBlob = (seconds: number): Blob => {
     const sampleRate = 8000;
@@ -114,7 +120,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     }
   };
 
-  const finalizeRecording = (rawBlob: Blob | null) => {
+  const finalizeRecording = (rawBlob: Blob | null, expectedSessionId: number) => {
+    if (isCancelledRef.current || sessionIdRef.current !== expectedSessionId) {
+      return;
+    }
+    onRecordingStateChange?.(false);
     const finalDur = Math.max(2, durationSecRef.current);
     const validBlob =
       rawBlob && rawBlob.size > 44
@@ -126,18 +136,36 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     onRecordingReady?.(validBlob, finalDur, url);
   };
 
-  const startRecording = async () => {
+  const startRecording = async (isRetry = false) => {
+    const currentSessionId = sessionIdRef.current + 1;
+    sessionIdRef.current = currentSessionId;
+    isCancelledRef.current = false;
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+    mediaRecorderRef.current = null;
     cleanupMediaStream();
+
+    if (isRetry) {
+      onClearRecording?.();
+    }
+
     durationSecRef.current = 0;
     setDurationSec(0);
     setRecordedBlob(null);
     setPreviewUrl(null);
     chunksRef.current = [];
     setIsRecording(true);
+    onRecordingStateChange?.(true);
 
     timerRef.current = window.setInterval(() => {
       durationSecRef.current += 1;
@@ -153,6 +181,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         'MediaRecorder' in window
       ) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (isCancelledRef.current || sessionIdRef.current !== currentSessionId) {
+          try {
+            stream.getTracks().forEach((t) => t.stop());
+          } catch {
+            // ignore
+          }
+          return;
+        }
         streamRef.current = stream;
         const preferredMime = getPreferredSupportedAudioMime();
         const recorder = preferredMime
@@ -168,6 +204,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
         recorder.onstop = () => {
           cleanupMediaStream();
+          if (isCancelledRef.current || sessionIdRef.current !== currentSessionId) {
+            return;
+          }
           const cleanMime = normalizeAudioMimeType(
             recorder.mimeType || preferredMime || 'audio/webm'
           );
@@ -175,7 +214,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
             chunksRef.current.length > 0
               ? new Blob(chunksRef.current, { type: cleanMime })
               : null;
-          finalizeRecording(blob);
+          finalizeRecording(blob, currentSessionId);
         };
 
         recorder.start(250);
@@ -188,7 +227,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   };
 
   const stopRecording = () => {
+    const activeSessionId = sessionIdRef.current;
     setIsRecording(false);
+    onRecordingStateChange?.(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -197,6 +238,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== 'inactive') {
       try {
+        if (recorder.state === 'recording' && typeof recorder.requestData === 'function') {
+          try {
+            recorder.requestData();
+          } catch {
+            // ignore
+          }
+        }
         recorder.stop();
         return;
       } catch {
@@ -204,12 +252,37 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       }
     }
     cleanupMediaStream();
-    finalizeRecording(null);
+    finalizeRecording(null, activeSessionId);
+  };
+
+  const handleCancelClick = () => {
+    isCancelledRef.current = true;
+    sessionIdRef.current += 1;
+    setIsRecording(false);
+    onRecordingStateChange?.(false);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+    mediaRecorderRef.current = null;
+    cleanupMediaStream();
+    onClearRecording?.();
+    onCancel();
   };
 
   useEffect(() => {
-    startRecording();
+    startRecording(false);
     return () => {
+      isCancelledRef.current = true;
+      sessionIdRef.current += 1;
+      onRecordingStateChange?.(false);
       if (timerRef.current) clearInterval(timerRef.current);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         try {
@@ -293,7 +366,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
             <button
               type="button"
               data-testid="retry-voice-recording-btn"
-              onClick={startRecording}
+              onClick={() => startRecording(true)}
               className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
             >
               <RotateCcw className="h-3.5 w-3.5 text-stone-500" />
@@ -305,7 +378,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         <button
           type="button"
           data-testid="cancel-voice-recording-btn"
-          onClick={onCancel}
+          onClick={handleCancelClick}
           className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
         >
           <Trash2 className="h-3.5 w-3.5 text-stone-500" />

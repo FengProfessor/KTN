@@ -180,19 +180,69 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
   onApproveOrder,
   onOpenStudentProfile,
 }) => {
-  const [editEmail, setEditEmail] = useState('');
-  const [editParentName, setEditParentName] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [isEditingCustomerInfo, setIsEditingCustomerInfo] = useState(false);
+  const [trackedOrderId, setTrackedOrderId] = useState<string | null>(
+    () => order?.order_id || null
+  );
+  const [editEmail, setEditEmail] = useState(() => order?.student_email || '');
+  const [editParentName, setEditParentName] = useState(() => order?.parent_name || '');
+  const [editPhone, setEditPhone] = useState(
+    () => order?.parent_phone || order?.phone || ''
+  );
+  const [isEditingCustomerInfo, setIsEditingCustomerInfo] = useState(
+    () => !order?.student_email
+  );
 
-  const [consultationNote, setConsultationNote] = useState('');
-  const [txRefInput, setTxRefInput] = useState('');
-  const [receivedAmountInput, setReceivedAmountInput] = useState('');
-  const [selectedClassCode, setSelectedClassCode] = useState('');
+  const [consultationNote, setConsultationNote] = useState(
+    () => order?.consultation_note || ''
+  );
+  const [txRefInput, setTxRefInput] = useState(() => order?.payment_tx_ref || '');
+  const [receivedAmountInput, setReceivedAmountInput] = useState(() =>
+    String(
+      order?.payment_received_amount !== null &&
+        order?.payment_received_amount !== undefined
+        ? order.payment_received_amount
+        : order?.amount || 890000
+    )
+  );
+  const [selectedClassCode, setSelectedClassCode] = useState(
+    () => order?.existing_student?.class_code || ''
+  );
   const [showConfirmApproveModal, setShowConfirmApproveModal] = useState(false);
 
+  const currentOrderId = order?.order_id || null;
+  if (currentOrderId !== trackedOrderId) {
+    setTrackedOrderId(currentOrderId);
+    setEditEmail(order?.student_email || '');
+    setEditParentName(order?.parent_name || '');
+    setEditPhone(order?.parent_phone || order?.phone || '');
+    setIsEditingCustomerInfo(!order?.student_email);
+    setConsultationNote(order?.consultation_note || '');
+    setTxRefInput(order?.payment_tx_ref || '');
+    setReceivedAmountInput(
+      String(
+        order?.payment_received_amount !== null &&
+          order?.payment_received_amount !== undefined
+          ? order.payment_received_amount
+          : order?.amount || 890000
+      )
+    );
+    setSelectedClassCode(order?.existing_student?.class_code || '');
+    setShowConfirmApproveModal(false);
+  }
+
   useEffect(() => {
-    if (!order) return;
+    if (!order) {
+      setEditEmail('');
+      setEditParentName('');
+      setEditPhone('');
+      setIsEditingCustomerInfo(false);
+      setConsultationNote('');
+      setTxRefInput('');
+      setReceivedAmountInput('890000');
+      setSelectedClassCode('');
+      setShowConfirmApproveModal(false);
+      return;
+    }
     setEditEmail(order.student_email || '');
     setEditParentName(order.parent_name || '');
     setEditPhone(order.parent_phone || order.phone || '');
@@ -252,7 +302,14 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
   const accountMeta =
     ACCOUNT_STATUS_META[accountDetailedStatus] || ACCOUNT_STATUS_META.no_account;
 
-  const effectiveEmail = (order?.student_email || editEmail || '').trim().toLowerCase();
+  const isSameTrackedOrder = currentOrderId === trackedOrderId;
+  const effectiveEmail = (
+    order?.student_email ||
+    (isSameTrackedOrder ? editEmail : '') ||
+    ''
+  )
+    .trim()
+    .toLowerCase();
   const hasValidEmail = VALID_EMAIL_REGEX.test(effectiveEmail);
   const contactPhone = (order?.parent_phone || order?.phone || '').trim();
   const zaloUrl = useMemo(() => {

@@ -2663,6 +2663,7 @@ export const AdminWorkspace: React.FC = () => {
 
       {/* Order Detail Drawer (Phase 2.2 & 2.3 & Phase 3) */}
       <OrderDetailDrawer
+        key={selectedOrder?.order_id || 'closed'}
         order={selectedOrder}
         open={Boolean(selectedOrder)}
         onClose={closeOrderDrawer}

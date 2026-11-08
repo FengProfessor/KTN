@@ -4534,6 +4534,8 @@ function extractOrderMetaFromRow(ord = {}) {
       credential_handed_off: Boolean(ord.credential_handed_off ?? embedded.credential_handed_off),
       credential_handed_off_at: ord.credential_handed_off_at ?? embedded.credential_handed_off_at ?? null,
       credential_handed_off_by: ord.credential_handed_off_by ?? embedded.credential_handed_off_by ?? null,
+      provisioning_status: String(ord.provisioning_status ?? embedded.provisioning_status ?? '').trim(),
+      last_sync_error: ord.last_sync_error ?? embedded.last_sync_error ?? null,
       update_profile_phone: Boolean(ord.update_profile_phone ?? embedded.update_profile_phone),
       v2_managed: Boolean(ord.v2_managed ?? embedded.v2_managed)
     }
@@ -4645,7 +4647,10 @@ function enrichOrderForResponse(ord, existingStudentMap = null) {
     paymentDetailedStatus = 'unpaid';
   }
 
-  const provStatus = ord.provisioning_status || (isApproved && hasAssigned ? 'synced' : (isApproved ? 'partial_failure' : 'pending'));
+  const provStatus =
+    ord.provisioning_status ||
+    meta.provisioning_status ||
+    (isApproved && hasAssigned ? 'synced' : (isApproved ? 'partial_failure' : 'pending'));
   let accountDetailedStatus = 'no_account';
   if (provStatus === 'partial_failure' || provStatus === 'sync_failed') {
     accountDetailedStatus = 'sync_error';
@@ -4709,6 +4714,7 @@ function enrichOrderForResponse(ord, existingStudentMap = null) {
   const zaloUrl = /^0\d{9}$/.test(digitsOnly) ? `https://zalo.me/${digitsOnly}` : null;
   const masterCourse = MASTER_PRODUCT_MAPPING[ord.course_id] || null;
   const serverCoursePrice = Number(masterCourse?.price || ord.amount) || 890000;
+  const amountValid = Number(ord.amount) > 0 && (!masterCourse || Number(ord.amount) === Number(masterCourse.price));
   const sourceVal = meta.source || 'website';
 
   return {
@@ -4740,7 +4746,7 @@ function enrichOrderForResponse(ord, existingStudentMap = null) {
     source: sourceVal,
     source_label: sourceVal === 'authenticated_student' ? 'Học viên đang đăng nhập' : 'Website',
     course_valid: Boolean(masterCourse || ord.course_id),
-    amount_valid: Number(ord.amount) > 0,
+    amount_valid: amountValid,
     server_course_price: serverCoursePrice,
     account_detailed_status: accountDetailedStatus,
     account_created: meta.account_created,
@@ -4762,7 +4768,8 @@ function enrichOrderForResponse(ord, existingStudentMap = null) {
       : null,
     student_tracker_stage: studentTrackerStage,
     student_tracker_label: STAGE_LABELS[studentTrackerStage] || 'Đã tiếp nhận',
-    provisioningStatus: provStatus
+    provisioningStatus: provStatus,
+    last_sync_error: meta.last_sync_error || null
   };
 }
 
@@ -4911,10 +4918,11 @@ async function approveAndProvisionOrder(env, {
         completedSteps.push('izteach_account');
       }
       const failedStepName = prov.failedStep || 'izteach_provision';
+      const syncFailStatus = completedSteps.length > 0 ? 'partial_failure' : 'sync_failed';
       await saveProvisioningJobState(env, {
         operation_id: opId,
         status: completedSteps.length > 0 ? 'partial_failure' : 'failed',
-        sync_status: completedSteps.length > 0 ? 'partial_failure' : 'sync_failed',
+        sync_status: syncFailStatus,
         completed_steps: completedSteps,
         failed_step: failedStepName,
         cognito_user_id: prov.cognitoUserId || claim.cognitoUserId || null,
@@ -4926,12 +4934,38 @@ async function approveAndProvisionOrder(env, {
         error_message: prov.error || 'Lỗi cấp quyền trên izTeach',
         retryable: true
       });
+      try {
+        const failedMeta = {
+          ...orderMeta,
+          account_created: Boolean(prov.accountCreated || priorAccountCreated),
+          provisioning_status: syncFailStatus,
+          last_sync_error: prov.error || 'IZTEACH_PROVISION_FAILED'
+        };
+        const errNow = new Date().toISOString();
+        const errPatchRes = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(cleanOrderId)}`, {
+          method: 'PATCH',
+          body: {
+            provisioning_status: syncFailStatus,
+            note: serializeOrderNoteWithMeta(customerNote, failedMeta),
+            updated_at: errNow
+          }
+        });
+        if ((!errPatchRes || !errPatchRes.ok) && errPatchRes?.status === 400) {
+          await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(cleanOrderId)}`, {
+            method: 'PATCH',
+            body: {
+              note: serializeOrderNoteWithMeta(customerNote, failedMeta),
+              updated_at: errNow
+            }
+          });
+        }
+      } catch {}
       return {
         ok: false,
         httpStatus: 502,
         operationId: opId,
         orderId: cleanOrderId,
-        syncStatus: completedSteps.length > 0 ? 'partial_failure' : 'sync_failed',
+        syncStatus: syncFailStatus,
         retryable: true,
         completedSteps,
         failedStep: failedStepName,
@@ -4952,7 +4986,9 @@ async function approveAndProvisionOrder(env, {
     const updatedOrderMeta = {
       ...orderMeta,
       account_created: Boolean(prov.accountCreated),
-      credential_handed_off: Boolean(orderMeta.credential_handed_off)
+      credential_handed_off: Boolean(orderMeta.credential_handed_off),
+      provisioning_status: 'synced',
+      last_sync_error: null
     };
 
     const baseOrderUpdatePayload = {
@@ -5028,6 +5064,34 @@ async function approveAndProvisionOrder(env, {
 
     if (!orderWriteOk || !stuWriteOk) {
       const failedStep = !orderWriteOk ? 'supabase_order_update' : 'supabase_student_upsert';
+      if (!stuWriteOk && orderWriteOk) {
+        try {
+          const partialMeta = {
+            ...updatedOrderMeta,
+            provisioning_status: 'partial_failure',
+            last_sync_error: 'SUPABASE_STUDENT_UPSERT_FAILED'
+          };
+          const partialNow = new Date().toISOString();
+          const pRes = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(cleanOrderId)}`, {
+            method: 'PATCH',
+            body: {
+              provisioning_status: 'partial_failure',
+              sync_status: 'partial_failure',
+              note: serializeOrderNoteWithMeta(customerNote, partialMeta),
+              updated_at: partialNow
+            }
+          });
+          if ((!pRes || !pRes.ok) && pRes?.status === 400) {
+            await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(cleanOrderId)}`, {
+              method: 'PATCH',
+              body: {
+                note: serializeOrderNoteWithMeta(customerNote, partialMeta),
+                updated_at: partialNow
+              }
+            });
+          }
+        } catch {}
+      }
       await saveProvisioningJobState(env, {
         operation_id: opId,
         status: 'partial_failure',
@@ -5893,6 +5957,43 @@ export default {
         return jsonResponse({ ok: false, authenticated: false }, 401);
       }
       const cleanSession = { ...session, accessToken: undefined, izteachAccessToken: undefined };
+      const effectiveRole = cleanSession.role || cleanSession.roles?.[0] || 'student';
+      if (effectiveRole === 'student' && cleanSession.email) {
+        try {
+          const stuRes = await supabaseRequest(
+            env,
+            `ktn_students?email=eq.${encodeURIComponent(normalizeEmail(cleanSession.email))}&limit=1`
+          );
+          if (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) {
+            const dbStu = stuRes.data[0];
+            if (Array.isArray(dbStu.online_courses)) {
+              const authoritativeCourses = dbStu.online_courses
+                .map(c => {
+                  const cid = typeof c === 'string' ? c : c?.id;
+                  if (!cid) return null;
+                  return typeof c === 'object' && c
+                    ? { ...(MASTER_PRODUCT_MAPPING[cid] || {}), ...c, id: String(cid) }
+                    : { id: String(cid), ...(MASTER_PRODUCT_MAPPING[cid] || {}) };
+                })
+                .filter(Boolean);
+              cleanSession.onlineCourses = authoritativeCourses;
+              cleanSession.hasOnlineCourses = authoritativeCourses.length > 0;
+            }
+            if (dbStu.class_code !== undefined) {
+              cleanSession.classCode = dbStu.class_code || null;
+            }
+            cleanSession.hasLiveClass = Boolean(cleanSession.classCode);
+            cleanSession.studentCase =
+              cleanSession.hasOnlineCourses && cleanSession.hasLiveClass
+                ? 'both'
+                : cleanSession.hasLiveClass
+                  ? 'live_only'
+                  : cleanSession.hasOnlineCourses
+                    ? 'video_only'
+                    : 'none';
+          }
+        } catch {}
+      }
       const refreshedToken = await signSessionToken(cleanSession, env.KTN_SESSION_SECRET);
       const cookieVal = encodeURIComponent(refreshedToken);
       return jsonResponse({
@@ -5900,7 +6001,7 @@ export default {
         authenticated: true,
         session: cleanSession,
         token: refreshedToken,
-        redirectUrl: getRoleTargetPage(cleanSession.role || cleanSession.roles?.[0] || 'student')
+        redirectUrl: getRoleTargetPage(effectiveRole)
       }, 200, {
         'Set-Cookie': `ktn_webapp_token=${cookieVal}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`
       });
@@ -8678,13 +8779,21 @@ export default {
       const existingOrd = (ordLookup.ok && Array.isArray(ordLookup.data) && ordLookup.data[0]) ? ordLookup.data[0] : null;
       const mergedOrd = existingOrd ? { ...(body.order || {}), ...existingOrd } : (body.order || null);
       const overrideEmail = body.studentEmail ? normalizeEmail(body.studentEmail) : '';
-      if (overrideEmail && mergedOrd && (!mergedOrd.student_email || isSyntheticPlaceholderEmail(mergedOrd.student_email))) {
-        mergedOrd.student_email = overrideEmail;
-        if (existingOrd) {
-          await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
-            method: 'PATCH',
-            body: { student_email: overrideEmail, updated_at: new Date().toISOString() }
-          });
+      if (overrideEmail && mergedOrd) {
+        const { meta: preMeta } = extractOrderMetaFromRow(mergedOrd);
+        const canUpdateEmail =
+          preMeta.source !== 'authenticated_student' &&
+          mergedOrd.approval_status !== 'approved' &&
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(overrideEmail) &&
+          !isSyntheticPlaceholderEmail(overrideEmail);
+        if (canUpdateEmail && normalizeEmail(mergedOrd.student_email || '') !== overrideEmail) {
+          mergedOrd.student_email = overrideEmail;
+          if (existingOrd) {
+            await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
+              method: 'PATCH',
+              body: { student_email: overrideEmail, updated_at: new Date().toISOString() }
+            });
+          }
         }
       }
 
@@ -8697,10 +8806,15 @@ export default {
             blockReasons.push('Đơn hàng đã hủy hoặc đã hoàn tiền.');
           }
           const courseCheck = await resolveServerCoursePrice(env, mergedOrd.course_id);
-          if (!courseCheck.validCourse || !(Number(mergedOrd.amount) > 0)) {
+          const isAmountValid =
+            Number(mergedOrd.amount) > 0 &&
+            Number(mergedOrd.amount) === Number(courseCheck.price);
+          if (!courseCheck.validCourse || !isAmountValid) {
             blockReasons.push('Khóa học hoặc số tiền đơn hàng không hợp lệ.');
           }
-          const candidateEmail = normalizeEmail(overrideEmail || mergedOrd.student_email || '');
+          const candidateEmail = normalizeEmail(
+            (ordMeta.source === 'authenticated_student' ? mergedOrd.student_email : (overrideEmail || mergedOrd.student_email)) || ''
+          );
           if (!candidateEmail || isSyntheticPlaceholderEmail(candidateEmail) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidateEmail)) {
             blockReasons.push('Chưa xác định Email đăng nhập hợp lệ cho học viên.');
           }
@@ -8713,7 +8827,7 @@ export default {
           }
           const requiresCareCheck = ordMeta.source === 'website' && !ordMeta.payment_proof_auto && body.requireConsultation !== false;
           const consultationHandled =
-            (ordMeta.contact_status && ordMeta.contact_status !== 'not_called') ||
+            ordMeta.contact_status === 'called' ||
             Boolean(String(ordMeta.contact_note || '').trim());
           if (requiresCareCheck && !consultationHandled) {
             blockReasons.push('Trạng thái tư vấn chưa được xử lý (cần liên hệ/xác nhận với phụ huynh trước khi kích hoạt).');
@@ -8792,7 +8906,7 @@ export default {
     if (path === '/api/ktn/webhook/payment' && request.method === 'POST') {
       // Giải quyết triệt để BUG BE-04 + Phase 1.9 / 2.3:
       // - Đối chiếu Mã đơn (orderId), Số tiền thực nhận (receivedAmount) và Mã giao dịch (transactionId)
-      // - Chống xử lý trùng cùng 1 transactionId
+      // - Chống xử lý trùng cùng 1 transactionId (kể cả trên cùng đơn hoặc giữa các đơn khác nhau)
       // - Nếu thanh toán thiếu/sai tiền -> đánh dấu mismatch, KHÔNG đánh dấu paid và KHÔNG kích hoạt khóa học
       // - Chỉ tự kích hoạt khi auto_approve_webhook = true VÀ đơn có email đăng nhập thật hợp lệ
       const authHeader = String(request.headers.get('Authorization') || '').trim();
@@ -8808,6 +8922,19 @@ export default {
         return jsonResponse({ ok: true, skipped: true, reason: 'Không tìm thấy mã đơn ORD-xxxxxx trong nội dung CK' });
       }
       const orderId = ordMatch[0].toUpperCase();
+
+      if (payload.currency !== undefined && payload.currency !== null && String(payload.currency).trim() !== '') {
+        const normCurrency = String(payload.currency).trim().toUpperCase();
+        if (normCurrency !== 'VND' && normCurrency !== 'VNĐ') {
+          return jsonResponse({
+            ok: false,
+            orderId,
+            currency: payload.currency,
+            error: 'WEBHOOK_CURRENCY_MISMATCH',
+            message: `Đơn vị tiền tệ không hợp lệ (${payload.currency}). Hệ thống chỉ chấp nhận VND.`
+          }, 422);
+        }
+      }
 
       const [ordLookup, cfgRes] = await Promise.all([
         supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}&limit=1`),
@@ -8847,9 +8974,17 @@ export default {
       const rawTxId = String(
         payload.transactionId || payload.id || payload.reference || payload.txId || payload.referenceCode || ''
       ).trim();
+      const { customerNote, meta: prevMeta } = extractOrderMetaFromRow(existingOrd);
+      if (!rawTxId && prevMeta.v2_managed && !/\bTK\s+\d+/i.test(content)) {
+        return jsonResponse({
+          ok: false,
+          orderId,
+          error: 'MISSING_TRANSACTION_ID',
+          message: 'Webhook thiếu mã giao dịch ngân hàng (transactionId / referenceCode).'
+        }, 400);
+      }
       const transactionId = rawTxId || `WH-${orderId}-${receivedAmount ?? 'NA'}`;
 
-      const { customerNote, meta: prevMeta } = extractOrderMetaFromRow(existingOrd);
       const processedTxIds = Array.isArray(prevMeta.processed_tx_ids) ? prevMeta.processed_tx_ids : [];
       if (processedTxIds.includes(transactionId) && existingOrd.payment_status === 'paid') {
         return jsonResponse({
@@ -8862,6 +8997,33 @@ export default {
           autoApproved: existingOrd.approval_status === 'approved',
           syncStatus: existingOrd.approval_status === 'approved' ? 'synced' : 'payment_recorded_pending_approval'
         });
+      }
+
+      // Chống dùng lại cùng 1 transactionId của đơn khác (cross-order replay attack)
+      if (rawTxId) {
+        try {
+          const recentOrdersRes = await supabaseRequest(env, 'ktn_orders?order=created_at.desc&limit=200');
+          if (recentOrdersRes.ok && Array.isArray(recentOrdersRes.data)) {
+            const conflictingOrd = recentOrdersRes.data.find(row => {
+              const rowId = String(row.order_id || row.id || '').toUpperCase();
+              if (!rowId || rowId === orderId) return false;
+              const { meta: rMeta } = extractOrderMetaFromRow(row);
+              const rTxIds = Array.isArray(rMeta.processed_tx_ids) ? rMeta.processed_tx_ids : [];
+              return rTxIds.includes(rawTxId) || (row.payment_status === 'paid' && rMeta.payment_tx_ref === rawTxId);
+            });
+            if (conflictingOrd) {
+              return jsonResponse({
+                ok: false,
+                orderId,
+                transactionId: rawTxId,
+                duplicateTransaction: true,
+                conflictingOrderId: conflictingOrd.order_id || conflictingOrd.id,
+                error: 'DUPLICATE_TRANSACTION_ID',
+                message: `Mã giao dịch ${rawTxId} đã được sử dụng cho đơn hàng ${conflictingOrd.order_id || conflictingOrd.id}.`
+              }, 409);
+            }
+          }
+        } catch {}
       }
 
       const nowIso = new Date().toISOString();

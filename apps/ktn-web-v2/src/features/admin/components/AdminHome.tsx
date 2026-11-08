@@ -295,7 +295,7 @@ export const AdminHome: React.FC = () => {
           />
         ) : (
           <MobileTaskList testId="admin-action-queue">
-            {ordersList.map((ord) => {
+            {pendingOrders.slice(0, 6).map((ord) => {
               const payLabel =
                 ord.payment_detailed_status === 'verified_paid' ||
                 ord.payment_status === 'paid'
@@ -304,6 +304,11 @@ export const AdminHome: React.FC = () => {
                   ? 'Khách báo đã chuyển khoản'
                   : ord.payment_detailed_status === 'verifying_tx'
                   ? 'Chờ kiểm tra giao dịch'
+                  : ord.payment_detailed_status === 'amount_mismatch'
+                  ? 'Thanh toán sai/thiếu'
+                  : ord.payment_detailed_status === 'refunded' ||
+                    ord.payment_status === 'refunded'
+                  ? 'Hoàn tiền'
                   : 'Chưa thanh toán';
               return (
                 <CompactListItem
@@ -320,26 +325,19 @@ export const AdminHome: React.FC = () => {
                   title={`${ord.student_name} · ${ord.order_id}`}
                   subtitle={`${ord.course_name} · ${formatVnd(ord.amount)} · ${payLabel}`}
                   rightAction={
-                    ord.approval_status === 'approved' ? (
-                      <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-900">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Đã kích hoạt
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        data-testid={`admin-home-open-order-${ord.order_id}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(
-                            `/admin/orders?orderId=${encodeURIComponent(ord.order_id)}`
-                          );
-                        }}
-                        className="min-h-[36px] rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
-                      >
-                        Xem chi tiết
-                      </button>
-                    )
+                    <button
+                      type="button"
+                      data-testid={`admin-home-open-order-${ord.order_id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(
+                          `/admin/orders?orderId=${encodeURIComponent(ord.order_id)}`
+                        );
+                      }}
+                      className="min-h-[36px] rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                    >
+                      Xem chi tiết
+                    </button>
                   }
                 />
               );

@@ -304,9 +304,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
   const isSameTrackedOrder = currentOrderId === trackedOrderId;
   const effectiveEmail = (
-    order?.student_email ||
-    (isSameTrackedOrder ? editEmail : '') ||
-    ''
+    order?.source === 'authenticated_student'
+      ? order?.student_email || ''
+      : isSameTrackedOrder && isEditingCustomerInfo && editEmail.trim()
+        ? editEmail
+        : order?.student_email || (isSameTrackedOrder ? editEmail : '') || ''
   )
     .trim()
     .toLowerCase();
@@ -678,10 +680,16 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     <input
                       type="email"
                       data-testid="order-edit-email-input"
+                      readOnly={order.source === 'authenticated_student'}
+                      disabled={order.source === 'authenticated_student'}
                       value={editEmail}
                       onChange={(e) => setEditEmail(e.target.value)}
                       placeholder="phuhuynh@gmail.com"
-                      className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-900"
+                      className={`mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
+                        order.source === 'authenticated_student'
+                          ? 'cursor-not-allowed border-stone-200 bg-stone-100 text-stone-600'
+                          : 'border-stone-300 bg-white text-stone-900'
+                      }`}
                     />
                   </div>
                   <div>

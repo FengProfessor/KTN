@@ -59,6 +59,7 @@ export const LearningPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const restoreSession = useAuthStore((s) => s.restoreSession);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const videoDemoScenario = useUiStore((s) => s.videoDemoScenario);
   const setVideoDemoScenario = useUiStore((s) => s.setVideoDemoScenario);
@@ -179,11 +180,47 @@ export const LearningPage: React.FC = () => {
     return (coursesQuery.data || []).filter((c) => !c.isBundle);
   }, [isDemoMode, coursesQuery.data]);
 
+  const entitledCourseIdSet = useMemo(() => {
+    const ids = new Set<string>((user?.onlineCourses || []).map((c) => c.id).filter(Boolean));
+    if (!isDemoMode) {
+      for (const c of studentMeQuery.data?.online_courses || []) {
+        const cid = typeof c === 'string' ? c : c?.id;
+        if (cid) ids.add(cid);
+      }
+      for (const ord of myOrdersQuery.data || []) {
+        if (
+          ord.approval_status === 'approved' &&
+          ord.provisioningStatus !== 'partial_failure' &&
+          ord.provisioningStatus !== 'sync_failed' &&
+          ord.course_id
+        ) {
+          ids.add(ord.course_id);
+        }
+      }
+    }
+    return ids;
+  }, [user?.onlineCourses, isDemoMode, studentMeQuery.data?.online_courses, myOrdersQuery.data]);
+
+  // If studentMeQuery or myOrdersQuery detects a newly unlocked course not yet in user.onlineCourses, refresh session
+  useEffect(() => {
+    if (isDemoMode || !user || user.role !== 'student') return;
+    const sessionIds = new Set<string>((user.onlineCourses || []).map((c) => c.id));
+    let hasNewlyUnlocked = false;
+    for (const cid of entitledCourseIdSet) {
+      if (!sessionIds.has(cid)) {
+        hasNewlyUnlocked = true;
+        break;
+      }
+    }
+    if (hasNewlyUnlocked) {
+      restoreSession().catch(() => null);
+    }
+  }, [entitledCourseIdSet, isDemoMode, user, restoreSession]);
+
   const isCourseEntitled = (courseId: string): boolean => {
     if (user?.role === 'teacher' || user?.role === 'admin') return true;
-    const userCourseIds = (user?.onlineCourses || []).map((c) => c.id);
-    if (userCourseIds.includes(courseId)) return true;
-    if (isDemoMode && userCourseIds.length === 0) {
+    if (entitledCourseIdSet.has(courseId)) return true;
+    if (isDemoMode && entitledCourseIdSet.size === 0) {
       return courseId === DEMO_COURSES[0]?.id;
     }
     return false;
@@ -194,7 +231,7 @@ export const LearningPage: React.FC = () => {
       disambiguateCatalogCourses(
         coursesList.filter((c) => isCourseEntitled(c.id))
       ),
-    [coursesList, user, isDemoMode]
+    [coursesList, user, isDemoMode, entitledCourseIdSet]
   );
 
   const exploreUnentitledCourses = useMemo(
@@ -202,7 +239,7 @@ export const LearningPage: React.FC = () => {
       disambiguateCatalogCourses(
         coursesList.filter((c) => !isCourseEntitled(c.id))
       ),
-    [coursesList, user, isDemoMode]
+    [coursesList, user, isDemoMode, entitledCourseIdSet]
   );
 
   const activeCourse: KtnCourse = useMemo(() => {

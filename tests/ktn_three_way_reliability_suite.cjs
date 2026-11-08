@@ -3610,6 +3610,39 @@ async function runSuite() {
         referenceCode: 'MBVCB.999888'
       }
     });
+    // 3. Currency mismatch -> 422 WEBHOOK_CURRENCY_MISMATCH
+    const whWrongCurrency = await callApi('/api/ktn/webhook/payment', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.KTN_WEBHOOK_SECRET}` },
+      body: {
+        content: `Thanh toan ${whOrderId}`,
+        transferAmount: 890000,
+        currency: 'USD',
+        referenceCode: 'MBVCB.777666'
+      }
+    });
+    // 4. Cross-order duplicate transactionId replay -> 409 DUPLICATE_TRANSACTION_ID
+    const secondWhOrderRes = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      body: {
+        studentName: 'Bé Phạm Gia Bảo',
+        studentEmail: 'giabao.wh2@khongtunhi.com',
+        phone: '0977665544',
+        courseId: CFK1_ID,
+        source: 'website_public'
+      }
+    });
+    const whOrder2Id = secondWhOrderRes.data?.order?.order_id;
+    const whCrossOrderReplay = await callApi('/api/ktn/webhook/payment', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.KTN_WEBHOOK_SECRET}` },
+      body: {
+        content: `Thanh toan ${whOrder2Id}`,
+        transferAmount: 890000,
+        referenceCode: 'MBVCB.999888' // already used for whOrderId!
+      }
+    });
+
     const whOrdersAfter = await callApi(`/api/ktn/orders?filterPreset=PAID_WAITING_APPROVAL&q=${whOrderId}`, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
@@ -3621,6 +3654,11 @@ async function runSuite() {
       whExact.status === 200 &&
       whExact.data?.paymentStatus === 'paid' &&
       whExact.data?.autoApproved === false &&
+      whWrongCurrency.status === 422 &&
+      whWrongCurrency.data?.error === 'WEBHOOK_CURRENCY_MISMATCH' &&
+      whCrossOrderReplay.status === 409 &&
+      whCrossOrderReplay.data?.error === 'DUPLICATE_TRANSACTION_ID' &&
+      whCrossOrderReplay.data?.conflictingOrderId === whOrderId &&
       whOrdAfter?.order_id === whOrderId &&
       whOrdAfter?.payment_status === 'paid' &&
       whOrdAfter?.payment_detailed_status === 'verified_paid' &&
@@ -3631,12 +3669,12 @@ async function runSuite() {
     record(
       'D21-WEBHOOK-AMOUNT-AND-TX-RECONCILIATION-NO-SILENT-AUTO-APPROVE',
       'GROUP_V3',
-      'Payment webhook flags underpaid transfers as mismatch (422 WEBHOOK_AMOUNT_MISMATCH) without marking paid, and on exact payment records webhook_auto proof + referenceCode while keeping approval_status=pending when auto_approve_webhook=false',
+      'Payment webhook flags underpaid transfers as mismatch (422 WEBHOOK_AMOUNT_MISMATCH), rejects non-VND currency (422 WEBHOOK_CURRENCY_MISMATCH), blocks cross-order transactionId replay (409 DUPLICATE_TRANSACTION_ID), and on exact payment records webhook_auto proof + referenceCode while keeping approval_status=pending when auto_approve_webhook=false',
       d21Passed,
-      `underpaidStatus=${whUnderpaid.status}, exactPayStatus=${whExact.data?.paymentStatus}, autoApproved=${whExact.data?.autoApproved}, approvalStatus=${whOrdAfter?.approval_status}`
+      `underpaidStatus=${whUnderpaid.status}, wrongCurrency=${whWrongCurrency.status}, crossOrderReplay=${whCrossOrderReplay.status}, exactPayStatus=${whExact.data?.paymentStatus}, autoApproved=${whExact.data?.autoApproved}, approvalStatus=${whOrdAfter?.approval_status}`
     );
 
-    // D22: Order approval for NEW student vs EXISTING student + explicit credential handoff tracking
+    // D22: Order approval for NEW student vs EXISTING student + explicit credential handoff tracking + session course refresh
     const approveNewRes = await callApi('/api/ktn/orders/approve', {
       method: 'POST',
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -3692,6 +3730,10 @@ async function runSuite() {
     });
     const stuARowAfter = state.tables.ktn_students.find(s => s.email === 'e2e.hs.a@khongtunhi.com');
     const stuACourseIdsAfter = (stuARowAfter?.online_courses || []).map(c => c.id);
+    const stuASessionRefreshRes = await callApi('/api/ktn/auth/session', {
+      headers: { Authorization: `Bearer ${studentAToken}` }
+    });
+    const refreshedSessionCourseIds = (stuASessionRefreshRes.data?.session?.onlineCourses || []).map(c => c.id);
     const stuALoginStillWorks = await callApi('/api/ktn/auth/login', {
       method: 'POST',
       body: { email: 'e2e.hs.a@khongtunhi.com', password: 'TestStrongPassword!2026', role: 'student' }
@@ -3712,18 +3754,29 @@ async function runSuite() {
       approveExistingRes.data?.order?.account_detailed_status === 'activated' &&
       stuACourseIdsAfter.includes(HSK1_ID) &&
       stuACourseIdsAfter.includes(CFK1_ID) &&
+      refreshedSessionCourseIds.includes(HSK1_ID) &&
+      refreshedSessionCourseIds.includes(CFK1_ID) &&
       stuALoginStillWorks.status === 200;
 
     record(
       'D22-ORDER-APPROVAL-NEW-VS-EXISTING-ACCOUNT-AND-CREDENTIAL-HANDOFF',
       'GROUP_V3',
-      'Approving a new student order creates account + returns one-time initialPassword with status=awaiting_password_or_handoff (never storing password in order row) until Admin confirms handoff; approving an existing student order appends the new course without resetting password or creating a duplicate account',
+      'Approving a new student order creates account + returns one-time initialPassword with status=awaiting_password_or_handoff (never storing password in order row) until Admin confirms handoff; approving an existing student order appends the new course without resetting password or creating a duplicate account, and GET /api/ktn/auth/session immediately reflects the newly unlocked course',
       d22Passed,
-      `newAcctStatus=${approveNewRes.data?.order?.account_detailed_status}, afterHandoff=${handoffUpdateRes.data?.order?.account_detailed_status}, existingAcctCreated=${approveExistingRes.data?.accountCreated}, stuACourses=${JSON.stringify(stuACourseIdsAfter)}`
+      `newAcctStatus=${approveNewRes.data?.order?.account_detailed_status}, afterHandoff=${handoffUpdateRes.data?.order?.account_detailed_status}, existingAcctCreated=${approveExistingRes.data?.accountCreated}, sessionCourses=${JSON.stringify(refreshedSessionCourseIds)}`
     );
 
-    // D23: Authenticated student in-app order binds to session email (ignoring forged body email) and isolates profile phone unless updateProfilePhone=true
+    // D23: Authenticated student in-app order binds to session email, rejects already-owned course (409), deduplicates double-click, and isolates profile phone unless updateProfilePhone=true
     const TTTE2_ID = '66028938bfd6c90008b816e1';
+    const alreadyOwnedOrderRes = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentAToken}` },
+      body: {
+        courseId: HSK1_ID, // student A already owns HSK1_ID
+        phone: '0900000001',
+        source: 'authenticated_student'
+      }
+    });
     const stuBOriginalPhone = state.tables.ktn_students.find(s => s.email === 'e2e.hs.b@khongtunhi.com')?.phone;
     const inAppOrderNoProfileOverwrite = await callApi('/api/ktn/orders', {
       method: 'POST',
@@ -3732,6 +3785,19 @@ async function runSuite() {
         courseId: TTTE2_ID,
         studentEmail: 'forged.other@khongtunhi.com', // forged email in request body!
         phone: '0944556677', // temporary order contact phone
+        parentName: 'Mẹ Bé B',
+        note: 'Đăng ký thêm khóa TTTE 2',
+        updateProfilePhone: false,
+        source: 'authenticated_student',
+        idempotencyKey: 'idem-stub-ttte2-01'
+      }
+    });
+    const inAppOrderDupReplay = await callApi('/api/ktn/orders', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentBToken}` },
+      body: {
+        courseId: TTTE2_ID,
+        phone: '0944556677',
         parentName: 'Mẹ Bé B',
         note: 'Đăng ký thêm khóa TTTE 2',
         updateProfilePhone: false,
@@ -3761,10 +3827,15 @@ async function runSuite() {
     const myOrdersList = myOrdersRes.data?.orders || [];
 
     const d23Passed =
+      alreadyOwnedOrderRes.status === 409 &&
+      alreadyOwnedOrderRes.data?.error === 'COURSE_ALREADY_OWNED' &&
       inAppOrderNoProfileOverwrite.status === 200 &&
       inAppOrderNoProfileOverwrite.data?.order?.student_email === 'e2e.hs.b@khongtunhi.com' && // Session email enforced!
       inAppOrderNoProfileOverwrite.data?.order?.source === 'authenticated_student' &&
       inAppOrderNoProfileOverwrite.data?.order?.phone === '0944556677' &&
+      inAppOrderDupReplay.status === 200 &&
+      inAppOrderDupReplay.data?.duplicatePrevented === true &&
+      inAppOrderDupReplay.data?.order?.id === inAppOrderNoProfileOverwrite.data?.order?.id &&
       stuBPhoneAfterFalse === stuBOriginalPhone && // Profile phone NOT overwritten when updateProfilePhone=false!
       inAppOrderWithProfileUpdate.status === 200 &&
       stuBPhoneAfterTrue === '0933889900' && // Profile phone updated when updateProfilePhone=true!
@@ -3775,9 +3846,58 @@ async function runSuite() {
     record(
       'D23-AUTHENTICATED-STUDENT-IN-APP-ORDER-SESSION-BINDING-AND-PHONE-ISOLATION',
       'GROUP_V3',
-      'In-app student order binds strictly to authenticated session identity (ignoring client-supplied email), preserves student profile phone when updateProfilePhone=false, updates profile phone only when updateProfilePhone=true, and returns VietQR + 7-stage tracker via GET /api/ktn/orders/my',
+      'In-app student order blocks already-owned courses (409 COURSE_ALREADY_OWNED), deduplicates repeated clicks, binds strictly to authenticated session identity (ignoring client-supplied email), preserves student profile phone when updateProfilePhone=false, updates profile phone only when updateProfilePhone=true, and returns VietQR + 7-stage tracker via GET /api/ktn/orders/my',
       d23Passed,
-      `boundEmail=${inAppOrderNoProfileOverwrite.data?.order?.student_email}, phoneBefore=${stuBOriginalPhone}, phoneAfterFalse=${stuBPhoneAfterFalse}, phoneAfterTrue=${stuBPhoneAfterTrue}, myOrdersCount=${myOrdersList.length}`
+      `alreadyOwnedStatus=${alreadyOwnedOrderRes.status}, dupPrevented=${inAppOrderDupReplay.data?.duplicatePrevented}, boundEmail=${inAppOrderNoProfileOverwrite.data?.order?.student_email}, phoneBefore=${stuBOriginalPhone}, phoneAfterFalse=${stuBPhoneAfterFalse}, phoneAfterTrue=${stuBPhoneAfterTrue}`
+    );
+
+    // D24: Order approval failure on izTeach or Supabase persists sync_error (never falsely activated) and matches NEEDS_ERROR_HANDLING filter
+    const errTestOrdId = whOrderId; // whOrderId is already paid (890000 VND) for baongoc.webhook@khongtunhi.com
+    await callApi('/api/ktn/orders/update', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        orderId: errTestOrdId,
+        contactStatus: 'called',
+        consultationNote: 'Đã gọi xác nhận với phụ huynh Bảo Ngọc'
+      }
+    });
+    state.faults.izteachPermissionMutateFail = true;
+    const approveFailIzTeach = await callApi('/api/ktn/orders/approve', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { orderId: errTestOrdId, confirmActivation: true }
+    });
+    state.faults.izteachPermissionMutateFail = false;
+
+    const errFilterListRes = await callApi(`/api/ktn/orders?filterPreset=NEEDS_ERROR_HANDLING&q=${errTestOrdId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const errOrderInFilter = (errFilterListRes.data?.orders || [])[0];
+
+    const approveRetryOk = await callApi('/api/ktn/orders/approve', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { orderId: errTestOrdId, confirmActivation: true }
+    });
+
+    const d24Passed =
+      approveFailIzTeach.status === 502 &&
+      approveFailIzTeach.data?.ok === false &&
+      errOrderInFilter?.order_id === errTestOrdId &&
+      errOrderInFilter?.account_detailed_status === 'sync_error' &&
+      errOrderInFilter?.student_tracker_stage === 'needs_support' &&
+      approveRetryOk.status === 200 &&
+      approveRetryOk.data?.ok === true &&
+      approveRetryOk.data?.syncStatus === 'synced' &&
+      approveRetryOk.data?.order?.account_detailed_status !== 'sync_error';
+
+    record(
+      'D24-ORDER-APPROVAL-FAILURE-PERSISTS-SYNC-ERROR-AND-RETRY-RECOVERS',
+      'GROUP_V3',
+      'When izTeach or Supabase fails during order approval, the endpoint returns 502, persists sync_error onto ktn_orders (matching NEEDS_ERROR_HANDLING filter and needs_support student stage, never falsely activated), and recovers cleanly on retry',
+      d24Passed,
+      `failStatus=${approveFailIzTeach.status}, filterAccountStatus=${errOrderInFilter?.account_detailed_status}, retryStatus=${approveRetryOk.status}, afterRetryAccountStatus=${approveRetryOk.data?.order?.account_detailed_status}`
     );
   }
 

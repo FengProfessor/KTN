@@ -2350,6 +2350,18 @@ async function runSuite() {
       timeout: 5000,
     });
 
+    // Verify on mobile 390x844 that the registration modal submit button is above and not covered by mobile-bottom-nav
+    await purchaseStudentPage.setViewportSize({ width: 390, height: 844 });
+    await purchaseStudentPage.waitForTimeout(150);
+    const mobileModalZCheck = await purchaseStudentPage.evaluate(() => {
+      const modal = document.querySelector('[data-testid="course-registration-modal"]');
+      const bottomNav = document.querySelector('[data-testid="mobile-bottom-nav"]');
+      const modalZ = modal ? Number(window.getComputedStyle(modal).zIndex) || 0 : 0;
+      const navZ = bottomNav ? Number(window.getComputedStyle(bottomNav).zIndex) || 0 : 0;
+      return { ok: modalZ > navZ, modalZ, navZ };
+    });
+    await purchaseStudentPage.setViewportSize({ width: 1440, height: 900 });
+
     const regReadonlyEmail = await purchaseStudentPage.inputValue(
       '[data-testid="reg-student-email-readonly"]'
     );
@@ -2375,9 +2387,9 @@ async function runSuite() {
     const pendingHeadlineText = await purchaseStudentPage.textContent(
       '[data-testid="student-order-pending-headline"]'
     );
-    const createdStudentOrderId = await purchaseStudentPage.textContent(
-      '[data-testid="student-created-order-id"]'
-    );
+    const createdStudentOrderId = (
+      (await purchaseStudentPage.textContent('[data-testid="student-created-order-id"]')) || ''
+    ).trim();
     const hasVietQrBox = await purchaseStudentPage.isVisible(
       '[data-testid="student-vietqr-payment-box"]'
     );
@@ -2413,11 +2425,61 @@ async function runSuite() {
       return res.json();
     });
 
+    // Admin verifies payment and activates the student's in-app order -> newly unlocked course moves into "Khóa của em" on /learning
+    const adminApproveStudentOrder = await purchaseStudentPage.evaluate(async (ordId) => {
+      const loginRes = await fetch('/api/ktn/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'quanly@khongtunhi.com',
+          password: 'AdminStrongPassword!2026',
+          role: 'admin',
+        }),
+      }).then((r) => r.json());
+      const adminTok = loginRes.token;
+      await fetch('/api/ktn/orders/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminTok}`,
+        },
+        body: JSON.stringify({
+          orderId: ordId,
+          contactStatus: 'called',
+          paymentDetailedStatus: 'verified_paid',
+          paymentReceivedAmount: 890000,
+          paymentTxRef: 'MB99887766',
+        }),
+      });
+      const appRes = await fetch('/api/ktn/orders/approve', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminTok}`,
+        },
+        body: JSON.stringify({
+          orderId: ordId,
+          confirmActivation: true,
+        }),
+      });
+      return { status: appRes.status, data: await appRes.json() };
+    }, createdStudentOrderId);
+
+    await purchaseStudentPage.reload({ waitUntil: 'domcontentloaded' });
+    await purchaseStudentPage.waitForSelector(
+      '[data-testid="my-entitled-course-card-6638bd09a7367400085c7ab2"]',
+      { timeout: 8000 }
+    );
+    const unlockedCourseInMySection = await purchaseStudentPage.isVisible(
+      '[data-testid="my-entitled-course-card-6638bd09a7367400085c7ab2"]'
+    );
+
     recordTest(
       'TEST N',
       'N5',
-      'In-app course registration pre-fills session email/name, creates authenticated_student order with VietQR & 7-stage tracker ("Đơn của em đang chờ xác nhận."), and preserves original student profile phone',
-      regReadonlyEmail === 'hoangngan@khongtunhi.com' &&
+      'In-app course registration pre-fills session email/name, creates authenticated_student order with VietQR & 7-stage tracker ("Đơn của em đang chờ xác nhận."), preserves original student profile phone, and moves course into "Khóa của em" after Admin approval',
+      mobileModalZCheck.ok &&
+        regReadonlyEmail === 'hoangngan@khongtunhi.com' &&
         Boolean(regPrefilledName?.includes('Hoàng Ngân')) &&
         Boolean(pendingHeadlineText?.includes('Đơn của em đang chờ xác nhận.')) &&
         Boolean(createdStudentOrderId?.startsWith('ORD-')) &&
@@ -2431,8 +2493,10 @@ async function runSuite() {
             trackerListText?.includes('Đã mở khóa') &&
             trackerListText?.includes('Cần hỗ trợ')
         ) &&
-        profileBeforeOrder?.student?.phone === profileAfterOrder?.student?.phone,
-      `orderId=${createdStudentOrderId?.trim()}, profilePhoneKept=${profileAfterOrder?.student?.phone}`
+        profileBeforeOrder?.student?.phone === profileAfterOrder?.student?.phone &&
+        adminApproveStudentOrder.status === 200 &&
+        unlockedCourseInMySection,
+      `orderId=${createdStudentOrderId}, modalZ=${mobileModalZCheck.modalZ}>navZ=${mobileModalZCheck.navZ}, profilePhoneKept=${profileAfterOrder?.student?.phone}, unlockedInMyCourses=${unlockedCourseInMySection}`
     );
 
     // N6: StudentHome Flashcard card links to canonical https://fengprofessor.github.io/KTN/flashcards/ with target="_blank"

@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KTN Flashcard • Công Cụ Nghe Duyệt Nhanh 605 Thẻ Âm Thanh (Phase 2 Audio Audit)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Noto+Serif+SC:wght@600;700;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #FFF9EE;
+      --surface: #FFFFFF;
+      --border: #E6D5B8;
+      --red: #A81F23;
+      --red-dark: #7C1316;
+      --gold: #D97706;
+      --green: #15803D;
+      --green-bg: #DCFCE7;
+      --amber: #B45309;
+      --amber-bg: #FEF3C7;
+      --danger: #B91C1C;
+      --danger-bg: #FEE2E2;
+      --text: #271811;
+      --muted: #6B574B;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding-bottom: 48px;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: linear-gradient(135deg, #8F181C 0%, #6D0F12 100%);
+      color: #FFF8EB;
+      padding: 12px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      box-shadow: 0 4px 16px rgba(92, 16, 19, 0.2);
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .topbar-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+    .topbar-sub {
+      font-size: 0.78rem;
+      opacity: 0.9;
+    }
+    .topbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn-light {
+      background: rgba(255, 255, 255, 0.14);
+      color: #FFF8EB;
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+    .btn-light:hover { background: rgba(255, 255, 255, 0.24); }
+    .btn-gold {
+      background: #F59E0B;
+      color: #271811;
+    }
+    .btn-gold:hover { background: #FBBF24; }
+    .container {
+      max-width: 1240px;
+      margin: 18px auto 0;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+    }
+    @media (max-width: 920px) {
+      .container { grid-template-columns: 1fr; }
+    }
+    .stats-bar {
+      max-width: 1240px;
+      margin: 16px auto 0;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      box-shadow: 0 2px 6px rgba(92, 45, 20, 0.05);
+    }
+    .stat-label { font-size: 0.75rem; color: var(--muted); font-weight: 600; }
+    .stat-val { font-size: 1.35rem; font-weight: 800; margin-top: 2px; }
+    .stat-val.approved { color: var(--green); }
+    .stat-val.needs { color: var(--danger); }
+    .stat-val.pending { color: var(--amber); }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 6px 20px rgba(92, 45, 20, 0.06);
+    }
+    .stage-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 800;
+    }
+    .badge-APPROVED { background: var(--green-bg); color: var(--green); }
+    .badge-NEEDS_REPLACEMENT { background: var(--danger-bg); color: var(--danger); }
+    .badge-PENDING_REVIEW { background: var(--amber-bg); color: var(--amber); }
+    .badge-concat { background: #EDE9FE; color: #5B21B6; }
+    .badge-exact { background: #E0F2FE; color: #0369A1; }
+
+    .hanzi-stage {
+      text-align: center;
+      padding: 20px 16px;
+      background: linear-gradient(180deg, #FFFDF9 0%, #FFF5E4 100%);
+      border: 2px solid #EED9B5;
+      border-radius: 16px;
+      margin-bottom: 16px;
+    }
+    .hanzi-big {
+      font-family: 'Noto Serif SC', 'KaiTi', serif;
+      font-size: 4.5rem;
+      font-weight: 900;
+      color: var(--red);
+      line-height: 1.15;
+      letter-spacing: 0.04em;
+    }
+    .pinyin-big {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-top: 6px;
+    }
+    .meaning-big {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .audio-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 16px;
+    }
+    .btn-play-main {
+      background: var(--red);
+      color: #fff;
+      padding: 11px 20px;
+      font-size: 0.92rem;
+      border-radius: 12px;
+    }
+    .btn-play-main:hover { background: var(--red-dark); }
+    .btn-play-alt {
+      background: #0284C7;
+      color: #fff;
+      padding: 11px 18px;
+      font-size: 0.9rem;
+      border-radius: 12px;
+    }
+    .btn-play-alt[hidden] { display: none !important; }
+    .btn-auto {
+      background: #F3E8FF;
+      color: #6B21A8;
+      border: 1px solid #D8B4FE;
+      padding: 11px 16px;
+      font-size: 0.86rem;
+      border-radius: 12px;
+    }
+    .btn-auto.is-active {
+      background: #7E22CE;
+      color: #fff;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 0.8rem;
+      margin-bottom: 14px;
+      background: #FAF5EC;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #EDE0C8;
+    }
+    .meta-item strong { color: var(--text); }
+    .meta-item span { color: var(--muted); word-break: break-word; }
+
+    .decision-group {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .btn-decision {
+      padding: 12px 10px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 0.85rem;
+      border: 2px solid transparent;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .btn-dec-approved { background: #F0FDF4; color: var(--green); border-color: #BBF7D0; }
+    .btn-dec-approved.active, .btn-dec-approved:hover { background: var(--green); color: #fff; border-color: var(--green); }
+    .btn-dec-needs { background: #FEF2F2; color: var(--danger); border-color: #FECACA; }
+    .btn-dec-needs.active, .btn-dec-needs:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .btn-dec-pending { background: #FFFBEB; color: var(--amber); border-color: #FDE68A; }
+    .btn-dec-pending.active, .btn-dec-pending:hover { background: var(--amber); color: #fff; border-color: var(--amber); }
+
+    .quick-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .tag-chip {
+      background: #F5EFE6;
+      border: 1px solid #DFD2C0;
+      color: var(--text);
+      padding: 4px 9px;
+      border-radius: 8px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tag-chip:hover { background: #EADBC8; }
+
+    .note-box {
+      width: 100%;
+      min-height: 74px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-family: inherit;
+      font-size: 0.85rem;
+      margin-bottom: 12px;
+      resize: vertical;
+    }
+    .nav-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-nav {
+      background: #F5EFE6;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+    .btn-nav:hover { background: #EADBC8; }
+
+    .filter-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .filter-bar select, .filter-bar input {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-family: inherit;
+      font-size: 0.82rem;
+      background: #FFFDF9;
+    }
+    .queue-list {
+      max-height: 540px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      divide-y: 1px solid #F0E6D6;
+    }
+    .queue-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #F3EAD8;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .queue-item:hover { background: #FDF7EC; }
+    .queue-item.active { background: #FEF3C7; border-left: 4px solid var(--red); }
+    .queue-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .queue-hanzi {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--red);
+      min-width: 54px;
+    }
+    .queue-meta {
+      font-size: 0.78rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kbd-hint {
+      font-size: 0.74rem;
+      color: var(--muted);
+      margin-top: 10px;
+      text-align: center;
+    }
+    kbd {
+      background: #F3EAD8;
+      border: 1px solid #D6C5A9;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="./index.html" class="btn btn-light" id="btnBackToFlashcard">← Quay lại Flashcard</a>
+      <div>
+        <div class="topbar-title">🎧 KTN Audio Quality Audit — Duyệt Nhanh 605 Thẻ Từ Vựng</div>
+        <div class="topbar-sub">Kiểm định độc lập 484 bản thu nguyên từ (native_exact) &amp; 121 bản ghép (native_concat) • Không dùng TTS</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" class="btn btn-gold" id="btnExportCsv" data-testid="export-audit-csv">📥 Xuất audio-quality-audit.csv</button>
+      <button type="button" class="btn btn-light" id="btnExportJson" data-testid="export-audit-json">📄 Xuất JSON</button>
+      <button type="button" class="btn btn-light" id="btnExportRecordingList" data-testid="export-recording-list">🎙️ Xuất DS cần thu âm (.csv)</button>
+    </div>
+  </header>
+
+  <section class="stats-bar" aria-label="Thống kê kiểm định âm thanh">
+    <div class="stat-card">
+      <div class="stat-label">Tổng số thẻ (7 Lộ)</div>
+      <div class="stat-val" id="statTotal">605</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Phân loại nguồn (Giữ nguyên)</div>
+      <div class="stat-val" id="statTypes" style="font-size:1.05rem;margin-top:6px;">484 exact / 121 concat</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">✅ Đạt chuẩn (APPROVED)</div>
+      <div class="stat-val approved" id="statApproved">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">⚠️ Cần thu/sửa (NEEDS_REPLACEMENT)</div>
+      <div class="stat-val needs" id="statNeeds">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">⏳ Chưa xác minh (PENDING_REVIEW)</div>
+      <div class="stat-val pending" id="statPending">0</div>
+    </div>
+  </section>
+
+  <main class="container">
+    <!-- Left Column: Active Card Review Stage -->
+    <section class="panel" aria-label="Khung nghe và chấm thẻ hiện tại">
+      <div class="stage-header">
+        <div>
+          <span class="badge badge-exact" id="curLevelBadge">LO1 • #1</span>
+          <span class="badge badge-concat" id="curTypeBadge">native_concat</span>
+        </div>
+        <span class="badge badge-PENDING_REVIEW" id="curStatusBadge">PENDING_REVIEW</span>
+      </div>
+
+      <div class="hanzi-stage">
+        <div class="hanzi-big" id="curHanzi" data-testid="review-hanzi">凉爽</div>
+        <div class="pinyin-big" id="curPinyin" data-testid="review-pinyin">liáng shuǎng</div>
+        <div class="meaning-big" id="curMeaning">Mát mẻ</div>
+
+        <div class="audio-controls">
+          <button type="button" class="btn btn-play-main" id="btnPlayCurrent" data-testid="play-current-audio">
+            🔊 Nghe file hiện tại (Space)
+          </button>
+          <button type="button" class="btn btn-play-alt" id="btnPlayReplacement" data-testid="play-replacement-audio" hidden>
+            ✨ Nghe file thay thế
+          </button>
+          <button type="button" class="btn btn-auto" id="btnToggleAutoPlay" data-testid="toggle-continuous-play">
+            ▶️ Nghe liên tiếp tự động
+          </button>
+        </div>
+      </div>
+
+      <div class="meta-grid">
+        <div class="meta-item"><strong>File âm thanh:</strong> <span id="metaFile">—</span></div>
+        <div class="meta-item"><strong>Âm tiết (Kỳ vọng / Thực tế):</strong> <span id="metaSyllables">—</span></div>
+        <div class="meta-item"><strong>Nguồn thu:</strong> <span id="metaSource">—</span></div>
+        <div class="meta-item"><strong>Chỉ số âm học:</strong> <span id="metaAcoustic">—</span></div>
+        <div class="meta-item"><strong>Đặc điểm ngữ âm:</strong> <span id="metaPhonetic">—</span></div>
+        <div class="meta-item"><strong>Bản quyền &amp; Ghi công:</strong> <span id="metaLicense">—</span></div>
+      </div>
+
+      <div class="decision-group" role="group" aria-label="Chọn trạng thái kiểm định">
+        <button type="button" class="btn-decision btn-dec-approved" id="btnMarkApproved" data-status="APPROVED" data-testid="mark-approved">
+          ✅ Đạt (Phím 1)
+        </button>
+        <button type="button" class="btn-decision btn-dec-needs" id="btnMarkNeeds" data-status="NEEDS_REPLACEMENT" data-testid="mark-needs-replacement">
+          ❌ Cần sửa (Phím 2)
+        </button>
+        <button type="button" class="btn-decision btn-dec-pending" id="btnMarkPending" data-status="PENDING_REVIEW" data-testid="mark-pending-review">
+          ⏳ Chưa xác minh (Phím 3)
+        </button>
+      </div>
+
+      <div class="quick-tags" aria-label="Nhãn lỗi nhanh">
+        <button type="button" class="tag-chip" data-tag="Thiếu âm tiết">➕ Thiếu âm tiết</button>
+        <button type="button" class="tag-chip" data-tag="Sai biến điệu thanh 3">➕ Sai biến điệu thanh 3</button>
+        <button type="button" class="tag-chip" data-tag="Sai thanh nhẹ">➕ Sai thanh nhẹ</button>
+        <button type="button" class="tag-chip" data-tag="Sai chữ đa âm (多音字)">➕ Sai chữ đa âm</button>
+        <button type="button" class="tag-chip" data-tag="Đổi giọng đọc giữa từ">➕ Đổi giọng đọc giữa từ</button>
+        <button type="button" class="tag-chip" data-tag="Ngắt nhịp bất thường">➕ Ngắt nhịp bất thường</button>
+        <button type="button" class="tag-chip" data-tag="Đã nghe xác nhận đạt chuẩn tự nhiên">➕ Đã nghe đạt chuẩn</button>
+      </div>
+
+      <textarea id="noteInput" class="note-box" data-testid="audit-note-input" placeholder="Ghi chú chi tiết về phát âm, thanh điệu, khoảng ngắt hoặc yêu cầu thu âm lại..."></textarea>
+
+      <div class="nav-row">
+        <button type="button" class="btn btn-nav" id="btnPrevCard">← Từ trước (←)</button>
+        <span id="queuePosLabel" style="font-size:0.85rem;font-weight:700;color:var(--muted);">1 / 605</span>
+        <button type="button" class="btn btn-nav" id="btnNextCard">Từ tiếp theo (→) →</button>
+      </div>
+
+      <div class="kbd-hint">
+        Phím tắt duyệt nhanh: <kbd>Space</kbd> Nghe lại • <kbd>1</kbd> Đạt • <kbd>2</kbd> Cần sửa • <kbd>3</kbd> Chưa xác minh • <kbd>←</kbd>/<kbd>→</kbd> Chuyển từ
+      </div>
+    </section>
+
+    <!-- Right Column: Filter & Continuous Queue -->
+    <section class="panel" aria-label="Danh sách lọc và hàng đợi nghe">
+      <div class="filter-bar">
+        <select id="filterType" data-testid="filter-audio-type">
+          <option value="ALL">Tất cả loại nguồn (605)</option>
+          <option value="native_concat" selected>Ưu tiên: native_concat (121 bản ghép)</option>
+          <option value="native_exact">native_exact (484 bản thu nguyên từ)</option>
+        </select>
+        <select id="filterStatus" data-testid="filter-audit-status">
+          <option value="ALL">Tất cả trạng thái</option>
+          <option value="NEEDS_REPLACEMENT">❌ Cần sửa (NEEDS_REPLACEMENT)</option>
+          <option value="PENDING_REVIEW">⏳ Chưa xác minh (PENDING_REVIEW)</option>
+          <option value="APPROVED">✅ Đạt chuẩn (APPROVED)</option>
+        </select>
+        <select id="filterLevel" data-testid="filter-level">
+          <option value="ALL">Tất cả 7 Lộ</option>
+          <option value="LO1">Lộ 1 (90 thẻ)</option>
+          <option value="LO2">Lộ 2 (109 thẻ)</option>
+          <option value="LO3">Lộ 3 (96 thẻ)</option>
+          <option value="LO4">Lộ 4 (100 thẻ)</option>
+          <option value="LO5">Lộ 5 (92 thẻ)</option>
+          <option value="LO6">Lộ 6 (88 thẻ)</option>
+          <option value="LO7">Lộ 7 (30 thẻ)</option>
+        </select>
+        <input type="search" id="searchInput" data-testid="search-audit-input" placeholder="Tìm chữ Hán, Pinyin, nghĩa, #ID..." />
+      </div>
+
+      <div class="queue-list" id="queueList" role="listbox" aria-label="Danh sách thẻ âm thanh"></div>
+    </section>
+  </main>
+
+  <script src="assets/js/cards-lo1.js"></script>
+  <script src="assets/js/cards-data.js"></script>
+  <script>
+    (function () {
+      const STORAGE_KEY = 'ktn_audio_audit_overrides_v2';
+      let inventory = [];
+      let filtered = [];
+      let currentIndex = 0;
+      let autoPlayActive = false;
+      let autoPlayTimer = null;
+      const audioPlayer = new Audio();
+
+      function loadSavedOverrides() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          return raw ? JSON.parse(raw) : {};
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function saveOverride(cardKey, status, notes) {
+        try {
+          const map = loadSavedOverrides();
+          map[cardKey] = { status, notes, updatedAt: new Date().toISOString() };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+        } catch (_) {}
+      }
+
+      function buildFallbackInventoryFromWindow() {
+        const byLevel = window.FLASHCARDS_DATA_BY_LEVEL || {};
+        const list = [];
+        for (let i = 1; i <= 7; i++) {
+          const lv = 'lo' + i;
+          const cards = byLevel[lv] || [];
+          cards.forEach((c) => {
+            list.push({
+              level: lv.toUpperCase(),
+              id: c.id,
+              word: c.word,
+              pinyin: c.pinyin,
+              meaning_vi: c.meaning_vi,
+              audio_file: c.audio,
+              replacement_audio_file: c.replacement_audio || '',
+              source: (c.audio_sources || []).join(' + ') || 'Shtooka Project',
+              audio_type: c.audio_type || 'native_exact',
+              expected_syllables: (c.hanzi_chars || []).length || 1,
+              actual_syllables: (c.hanzi_chars || []).length || 1,
+              acoustic_status: 'Studio 22050Hz Mono',
+              phonetic_features: 'Thanh điệu cơ bản',
+              license_attribution: 'CC BY 2.0 fr / CC-BY-SA 3.0 — Shtooka Project',
+              audit_status: c.audio_status || (c.audio_type === 'native_exact' ? 'APPROVED' : 'PENDING_REVIEW'),
+              audit_notes: c.audio_note || ''
+            });
+          });
+        }
+        return list;
+      }
+
+      async function init() {
+        try {
+          const res = await fetch('./audio-quality-audit.json', { cache: 'no-store' });
+          if (res.ok) {
+            const data = await res.json();
+            inventory = Array.isArray(data.cards) ? data.cards : buildFallbackInventoryFromWindow();
+          } else {
+            inventory = buildFallbackInventoryFromWindow();
+          }
+        } catch (_) {
+          inventory = buildFallbackInventoryFromWindow();
+        }
+
+        const overrides = loadSavedOverrides();
+        inventory.forEach((item) => {
+          const key = item.level + '#' + item.id;
+          if (overrides[key]) {
+            item.audit_status = overrides[key].status || item.audit_status;
+            if (typeof overrides[key].notes === 'string') {
+              item.audit_notes = overrides[key].notes;
+            }
+          }
+        });
+
+        updateSummaryCounts();
+        applyFilters();
+      }
+
+      function updateSummaryCounts() {
+        const total = inventory.length;
+        let exact = 0, concat = 0, approved = 0, needs = 0, pending = 0;
+        inventory.forEach((c) => {
+          if (c.audio_type === 'native_concat') concat++;
+          else exact++;
+          if (c.audit_status === 'APPROVED') approved++;
+          else if (c.audit_status === 'NEEDS_REPLACEMENT') needs++;
+          else pending++;
+        });
+        document.getElementById('statTotal').textContent = String(total);
+        document.getElementById('statTypes').textContent = `${exact} exact / ${concat} concat`;
+        document.getElementById('statApproved').textContent = String(approved);
+        document.getElementById('statNeeds').textContent = String(needs);
+        document.getElementById('statPending').textContent = String(pending);
+      }
+
+      function applyFilters() {
+        const typeVal = document.getElementById('filterType').value;
+        const statusVal = document.getElementById('filterStatus').value;
+        const levelVal = document.getElementById('filterLevel').value;
+        const q = document.getElementById('searchInput').value.trim().toLowerCase();
+
+        filtered = inventory.filter((item) => {
+          if (typeVal !== 'ALL' && item.audio_type !== typeVal) return false;
+          if (statusVal !== 'ALL' && item.audit_status !== statusVal) return false;
+          if (levelVal !== 'ALL' && item.level !== levelVal) return false;
+          if (q) {
+            const hay = `${item.level}#${item.id} ${item.word} ${item.pinyin} ${item.meaning_vi} ${item.audit_notes}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        });
+
+        currentIndex = 0;
+        renderQueue();
+        renderActiveCard();
+      }
+
+      function renderQueue() {
+        const listEl = document.getElementById('queueList');
+        if (filtered.length === 0) {
+          listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">Không có thẻ nào khớp bộ lọc.</div>';
+          return;
+        }
+        listEl.innerHTML = filtered.map((item, idx) => {
+          const activeCls = idx === currentIndex ? 'queue-item active' : 'queue-item';
+          return `
+            <div class="${activeCls}" data-idx="${idx}" role="option" aria-selected="${idx === currentIndex}">
+              <div class="queue-left">
+                <span class="queue-hanzi">${item.word}</span>
+                <div class="queue-meta">
+                  <div><strong>${item.level} #${item.id}</strong> • /${item.pinyin}/ — ${item.meaning_vi}</div>
+                  <div>${item.source}</div>
+                </div>
+              </div>
+              <span class="badge badge-${item.audit_status}">${item.audit_status}</span>
+            </div>
+          `;
+        }).join('');
+
+        listEl.querySelectorAll('.queue-item').forEach((row) => {
+          row.addEventListener('click', () => {
+            currentIndex = Number(row.getAttribute('data-idx')) || 0;
+            renderQueue();
+            renderActiveCard();
+            playCurrentAudio();
+          });
+        });
+      }
+
+      function renderActiveCard() {
+        const item = filtered[currentIndex];
+        const posLabel = document.getElementById('queuePosLabel');
+        if (!item) {
+          posLabel.textContent = '0 / 0';
+          return;
+        }
+        posLabel.textContent = `${currentIndex + 1} / ${filtered.length}`;
+        document.getElementById('curLevelBadge').textContent = `${item.level} • #${item.id}`;
+        const typeBadge = document.getElementById('curTypeBadge');
+        typeBadge.textContent = item.audio_type;
+        typeBadge.className = 'badge ' + (item.audio_type === 'native_concat' ? 'badge-concat' : 'badge-exact');
+
+        const statusBadge = document.getElementById('curStatusBadge');
+        statusBadge.textContent = item.audit_status;
+        statusBadge.className = 'badge badge-' + item.audit_status;
+
+        document.getElementById('curHanzi').textContent = item.word;
+        document.getElementById('curPinyin').textContent = `/${item.pinyin}/`;
+        document.getElementById('curMeaning').textContent = item.meaning_vi;
+
+        document.getElementById('metaFile').textContent = item.audio_file;
+        document.getElementById('metaSyllables').textContent = `${item.expected_syllables} kỳ vọng / ${item.actual_syllables} thực tế`;
+        document.getElementById('metaSource').textContent = item.source;
+        document.getElementById('metaAcoustic').textContent = item.acoustic_status;
+        document.getElementById('metaPhonetic').textContent = item.phonetic_features;
+        document.getElementById('metaLicense').textContent = item.license_attribution;
+
+        const btnAlt = document.getElementById('btnPlayReplacement');
+        if (item.replacement_audio_file) {
+          btnAlt.hidden = false;
+          btnAlt.textContent = `✨ Nghe file thay thế (${item.replacement_audio_file.split('/').pop()})`;
+        } else {
+          btnAlt.hidden = true;
+        }
+
+        document.getElementById('noteInput').value = item.audit_notes || '';
+
+        document.querySelectorAll('.btn-decision').forEach((btn) => {
+          btn.classList.toggle('active', btn.getAttribute('data-status') === item.audit_status);
+        });
+
+        const activeRow = document.querySelector(`.queue-item[data-idx="${currentIndex}"]`);
+        if (activeRow && activeRow.scrollIntoView) {
+          activeRow.scrollIntoView({ block: 'nearest' });
+        }
+      }
+
+      function playAudioFile(relPath, onEndedCallback) {
+        if (!relPath) return;
+        clearTimeout(autoPlayTimer);
+        audioPlayer.pause();
+        audioPlayer.src = relPath;
+        audioPlayer.currentTime = 0;
+        audioPlayer.onended = () => {
+          if (typeof onEndedCallback === 'function') onEndedCallback();
+        };
+        audioPlayer.onerror = () => {
+          if (typeof onEndedCallback === 'function') onEndedCallback();
+        };
+        audioPlayer.play().catch(() => {
+          if (typeof onEndedCallback === 'function') onEndedCallback();
+        });
+      }
+
+      function playCurrentAudio() {
+        const item = filtered[currentIndex];
+        if (!item) return;
+        playAudioFile(item.audio_file, () => {
+          if (autoPlayActive) {
+            autoPlayTimer = setTimeout(() => {
+              if (!autoPlayActive) return;
+              if (currentIndex < filtered.length - 1) {
+                currentIndex++;
+                renderQueue();
+                renderActiveCard();
+                playCurrentAudio();
+              } else {
+                toggleAutoPlay(false);
+              }
+            }, 1100);
+          }
+        });
+      }
+
+      function toggleAutoPlay(forceState) {
+        autoPlayActive = typeof forceState === 'boolean' ? forceState : !autoPlayActive;
+        const btn = document.getElementById('btnToggleAutoPlay');
+        btn.classList.toggle('is-active', autoPlayActive);
+        btn.textContent = autoPlayActive ? '⏸️ Dừng nghe liên tiếp' : '▶️ Nghe liên tiếp tự động';
+        if (autoPlayActive) {
+          playCurrentAudio();
+        } else {
+          clearTimeout(autoPlayTimer);
+          audioPlayer.pause();
+        }
+      }
+
+      function setCardDecision(newStatus) {
+        const item = filtered[currentIndex];
+        if (!item) return;
+        item.audit_status = newStatus;
+        item.audit_notes = document.getElementById('noteInput').value.trim();
+        saveOverride(item.level + '#' + item.id, item.audit_status, item.audit_notes);
+        updateSummaryCounts();
+        renderQueue();
+        renderActiveCard();
+      }
+
+      function csvEscape(val) {
+        const s = String(val ?? '');
+        if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+        return s;
+      }
+
+      function downloadBlob(filename, content, mime) {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+
+      function exportAuditCsv() {
+        const cols = [
+          'level', 'id', 'word', 'pinyin', 'meaning_vi', 'audio_file', 'replacement_audio_file',
+          'source', 'audio_type', 'expected_syllables', 'actual_syllables',
+          'acoustic_status', 'phonetic_features', 'license_attribution', 'audit_status', 'audit_notes'
+        ];
+        const lines = [cols.join(',')];
+        inventory.forEach((row) => {
+          lines.push(cols.map((c) => csvEscape(row[c])).join(','));
+        });
+        downloadBlob('audio-quality-audit.csv', '\uFEFF' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+      }
+
+      function exportAuditJson() {
+        const statusSummary = { APPROVED: 0, NEEDS_REPLACEMENT: 0, PENDING_REVIEW: 0 };
+        const typeSummary = { native_exact: 0, native_concat: 0 };
+        inventory.forEach((c) => {
+          statusSummary[c.audit_status] = (statusSummary[c.audit_status] || 0) + 1;
+          typeSummary[c.audio_type] = (typeSummary[c.audio_type] || 0) + 1;
+        });
+        const payload = {
+          schema_version: '2.0',
+          exported_at: new Date().toISOString(),
+          total_cards: inventory.length,
+          type_summary: typeSummary,
+          status_summary: statusSummary,
+          cards: inventory
+        };
+        downloadBlob('audio-quality-audit.json', JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+      }
+
+      function exportRecordingNeededCsv() {
+        const cols = [
+          'priority', 'audit_status', 'level', 'id', 'word', 'pinyin', 'meaning_vi',
+          'current_audio_file', 'expected_syllables', 'actual_syllables', 'phonetic_features', 'reason_and_recording_guide'
+        ];
+        const lines = [cols.join(',')];
+        const groups = [
+          ['P0_BAT_BUOC_THU_LAI', 'NEEDS_REPLACEMENT'],
+          ['P1_CAN_DUYET_HOAC_THU_NGUYEN_TU', 'PENDING_REVIEW']
+        ];
+        groups.forEach(([prio, st]) => {
+          inventory.filter((r) => r.audit_status === st).forEach((row) => {
+            lines.push([
+              prio, row.audit_status, row.level, row.id, row.word, row.pinyin, row.meaning_vi,
+              row.audio_file, row.expected_syllables, row.actual_syllables, row.phonetic_features, row.audit_notes
+            ].map(csvEscape).join(','));
+          });
+        });
+        downloadBlob('recording-needed-list.csv', '\uFEFF' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+      }
+
+      document.getElementById('btnPlayCurrent').addEventListener('click', () => playCurrentAudio());
+      document.getElementById('btnPlayReplacement').addEventListener('click', () => {
+        const item = filtered[currentIndex];
+        if (item && item.replacement_audio_file) playAudioFile(item.replacement_audio_file);
+      });
+      document.getElementById('btnToggleAutoPlay').addEventListener('click', () => toggleAutoPlay());
+
+      document.querySelectorAll('.btn-decision').forEach((btn) => {
+        btn.addEventListener('click', () => setCardDecision(btn.getAttribute('data-status')));
+      });
+
+      document.querySelectorAll('.tag-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+          const tag = chip.getAttribute('data-tag');
+          const box = document.getElementById('noteInput');
+          box.value = box.value ? `${box.value}; ${tag}` : tag;
+          const item = filtered[currentIndex];
+          if (item) {
+            item.audit_notes = box.value;
+            saveOverride(item.level + '#' + item.id, item.audit_status, item.audit_notes);
+          }
+        });
+      });
+
+      document.getElementById('noteInput').addEventListener('change', (e) => {
+        const item = filtered[currentIndex];
+        if (item) {
+          item.audit_notes = e.target.value.trim();
+          saveOverride(item.level + '#' + item.id, item.audit_status, item.audit_notes);
+        }
+      });
+
+      document.getElementById('btnPrevCard').addEventListener('click', () => {
+        if (currentIndex > 0) {
+          currentIndex--;
+          renderQueue();
+          renderActiveCard();
+          playCurrentAudio();
+        }
+      });
+      document.getElementById('btnNextCard').addEventListener('click', () => {
+        if (currentIndex < filtered.length - 1) {
+          currentIndex++;
+          renderQueue();
+          renderActiveCard();
+          playCurrentAudio();
+        }
+      });
+
+      ['filterType', 'filterStatus', 'filterLevel'].forEach((id) => {
+        document.getElementById(id).addEventListener('change', applyFilters);
+      });
+      document.getElementById('searchInput').addEventListener('input', applyFilters);
+
+      document.getElementById('btnExportCsv').addEventListener('click', exportAuditCsv);
+      document.getElementById('btnExportJson').addEventListener('click', exportAuditJson);
+      document.getElementById('btnExportRecordingList').addEventListener('click', exportRecordingNeededCsv);
+
+      window.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
+        if (e.code === 'Space') {
+          e.preventDefault();
+          playCurrentAudio();
+        } else if (e.key === '1') {
+          setCardDecision('APPROVED');
+        } else if (e.key === '2') {
+          setCardDecision('NEEDS_REPLACEMENT');
+        } else if (e.key === '3') {
+          setCardDecision('PENDING_REVIEW');
+        } else if (e.key === 'ArrowRight') {
+          document.getElementById('btnNextCard').click();
+        } else if (e.key === 'ArrowLeft') {
+          document.getElementById('btnPrevCard').click();
+        }
+      });
+
+      init();
+    })();
+  </script>
+</body>
+</html>

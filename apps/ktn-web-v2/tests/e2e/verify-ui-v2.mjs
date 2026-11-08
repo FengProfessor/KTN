@@ -2499,7 +2499,7 @@ async function runSuite() {
       `orderId=${createdStudentOrderId}, modalZ=${mobileModalZCheck.modalZ}>navZ=${mobileModalZCheck.navZ}, profilePhoneKept=${profileAfterOrder?.student?.phone}, unlockedInMyCourses=${unlockedCourseInMySection}`
     );
 
-    // N6: StudentHome Flashcard card links to canonical https://fengprofessor.github.io/KTN/flashcards/ with target="_blank"
+    // N6: StudentHome Flashcard card opens in-app #/flashcards route (never fengprofessor.github.io or target="_blank") with working "Quay lại Trang chủ" button and 7 Lộ (605 cards)
     await purchaseStudentPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await purchaseStudentPage.waitForSelector('[data-testid="student-dashboard-page"]', {
       timeout: 8000,
@@ -2516,20 +2516,91 @@ async function runSuite() {
         cardText: (card.textContent || '').replace(/\s+/g, ' ').trim(),
       };
     });
+
+    const fcArtifactsDir = path.resolve(SCREENSHOT_DIR, '../../../flashcards/tests/artifacts/before-after');
+    fs.mkdirSync(fcArtifactsDir, { recursive: true });
+    await purchaseStudentPage.setViewportSize({ width: 390, height: 844 });
+    await purchaseStudentPage.waitForTimeout(250);
+    await purchaseStudentPage.screenshot({
+      path: path.join(fcArtifactsDir, 'pwa_before_click_flashcard_mobile_390x844.png'),
+    });
+
+    await purchaseStudentPage.click('[data-testid="flashcard-cta-btn"]');
+    await purchaseStudentPage.waitForSelector('[data-testid="flashcards-page"]', {
+      timeout: 8000,
+    });
+    await purchaseStudentPage.waitForSelector('[data-testid="flashcards-back-home-btn"]', {
+      timeout: 8000,
+    });
+    await purchaseStudentPage.waitForSelector('[data-testid="flashcards-iframe"]', {
+      timeout: 8000,
+    });
+
+    const iframeElement = await purchaseStudentPage.$('[data-testid="flashcards-iframe"]');
+    const fcFrame = await iframeElement?.contentFrame();
+    await fcFrame?.waitForSelector('#cardScene', { timeout: 8000 });
+    await fcFrame?.evaluate(async () => {
+      const btnNext = document.getElementById('btnNext');
+      if (btnNext) {
+        for (let i = 0; i < 7; i++) btnNext.click();
+      }
+      await new Promise((r) => setTimeout(r, 350));
+    });
+    await purchaseStudentPage.screenshot({
+      path: path.join(fcArtifactsDir, 'pwa_after_click_flashcard_mobile_390x844.png'),
+    });
+
+    await purchaseStudentPage.setViewportSize({ width: 1440, height: 900 });
+    await purchaseStudentPage.waitForTimeout(300);
+    await purchaseStudentPage.screenshot({
+      path: path.join(fcArtifactsDir, 'pwa_after_click_flashcard_desktop_1440x900.png'),
+    });
+
+    const fcInAppStats = await fcFrame?.evaluate(() => {
+      const levels = window.FLASHCARDS_DATA_BY_LEVEL || {};
+      const counts = Object.fromEntries(
+        Object.entries(levels).map(([k, arr]) => [k, Array.isArray(arr) ? arr.length : 0])
+      );
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      return {
+        origin: window.location.origin,
+        pathname: window.location.pathname,
+        isEmbedClass: document.documentElement.classList.contains('is-ktn-embed'),
+        counts,
+        total,
+      };
+    });
+
+    const headerStillVisibleInApp = await purchaseStudentPage.isVisible(
+      '[data-testid="compact-top-header"]'
+    );
+    await purchaseStudentPage.click('[data-testid="flashcards-back-home-btn"]');
+    await purchaseStudentPage.waitForSelector('[data-testid="student-dashboard-page"]', {
+      timeout: 8000,
+    });
+    const returnedHomeOk = await purchaseStudentPage.isVisible(
+      '[data-testid="student-dashboard-page"]'
+    );
     await purchaseStudentContext.close();
 
     recordTest(
       'TEST N',
       'N6',
-      'StudentHome Flashcard card links to canonical live URL https://fengprofessor.github.io/KTN/flashcards/ with target="_blank"',
+      'StudentHome Flashcard CTA opens in-app route #/flashcards (zero github.io link, zero target="_blank"), loads 605 cards across 7 Lộ from same-origin /flashcards/* while preserving KTN header/session, and returns home via "Quay lại Trang chủ"',
       Boolean(
         flashcardLinkAttrs &&
-          flashcardLinkAttrs.tagName === 'A' &&
-          flashcardLinkAttrs.href === 'https://fengprofessor.github.io/KTN/flashcards/' &&
-          flashcardLinkAttrs.target === '_blank' &&
-          !flashcardLinkAttrs.cardText.includes('Đang tích hợp')
+          flashcardLinkAttrs.href === '#/flashcards' &&
+          !flashcardLinkAttrs.href.includes('github.io') &&
+          flashcardLinkAttrs.target === '' &&
+          !flashcardLinkAttrs.cardText.includes('Đang tích hợp') &&
+          headerStillVisibleInApp &&
+          fcInAppStats &&
+          fcInAppStats.pathname === '/flashcards/index.html' &&
+          fcInAppStats.isEmbedClass === true &&
+          fcInAppStats.total === 605 &&
+          returnedHomeOk
       ),
-      JSON.stringify(flashcardLinkAttrs)
+      JSON.stringify({ flashcardLinkAttrs, fcInAppStats, headerStillVisibleInApp, returnedHomeOk })
     );
   } finally {
     await browser.close();

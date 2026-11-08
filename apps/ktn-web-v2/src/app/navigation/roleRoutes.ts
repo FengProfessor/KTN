@@ -20,6 +20,9 @@ export function resolveHeaderTitle(
   if (pathname.startsWith('/learning')) {
     return { title: 'Học tiếp' };
   }
+  if (pathname.startsWith('/flashcards')) {
+    return { title: 'Flashcard Từ Vựng', subtitle: '605 thẻ · 7 Lộ · Mễ Tự Cách' };
+  }
   if (pathname.startsWith('/classrooms')) {
     return { title: 'Lớp của em' };
   }

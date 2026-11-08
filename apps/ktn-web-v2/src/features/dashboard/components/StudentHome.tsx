@@ -57,13 +57,13 @@ export const StudentHome: React.FC = () => {
     ? user?.classCode || DEMO_CLASSES[0].id
     : user?.classCode || null;
 
-  // Phase 5: Canonical Flashcard live URL (with env / window override or 'disabled' fallback)
+  // Canonical in-app Flashcard route (#/flashcards inside KTN PWA, with 'disabled' fallback)
   const flashcardUrl = useMemo(() => {
     const envUrl = import.meta.env.VITE_KTN_FLASHCARD_URL;
     if (typeof envUrl === 'string' && envUrl.trim()) {
       const trimmed = envUrl.trim();
       if (trimmed === 'disabled' || trimmed === 'none') return '';
-      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      if (!trimmed.includes('github.io')) return trimmed;
     }
     if (typeof window !== 'undefined') {
       const winUrl = (window as unknown as { __KTN_FLASHCARD_URL__?: string })
@@ -71,10 +71,10 @@ export const StudentHome: React.FC = () => {
       if (typeof winUrl === 'string' && winUrl.trim()) {
         const trimmed = winUrl.trim();
         if (trimmed === 'disabled' || trimmed === 'none') return '';
-        if (/^https?:\/\//i.test(trimmed)) return trimmed;
+        if (!trimmed.includes('github.io')) return trimmed;
       }
     }
-    return 'https://fengprofessor.github.io/KTN/flashcards/';
+    return '#/flashcards';
   }, []);
 
   // 1. Live Courses Catalog from API (never fallback to DEMO_COURSES in live mode)
@@ -535,9 +535,13 @@ export const StudentHome: React.FC = () => {
               {flashcardUrl ? (
                 <a
                   href={flashcardUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   data-testid="flashcard-cta-btn"
+                  onClick={(e) => {
+                    if (flashcardUrl.startsWith('#/') || flashcardUrl.startsWith('/')) {
+                      e.preventDefault();
+                      navigate(flashcardUrl.replace(/^#/, ''));
+                    }
+                  }}
                   className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900 sm:w-full"
                 >
                   <span>Học ngay</span>

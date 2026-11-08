@@ -3529,7 +3529,7 @@ async function revokeStudentCoursesOnIzTeach(env, { email, cognitoUserId, remove
 }
 
 const COURSE_UNIT_MAP = {
-  '6adadba969897b0002482ca5': { 1: '6adadbcaf75fe5000247ca71', 2: '6adadc3b69897b0002482d22', 3: '6adae08769897b000248340a', 4: '6adf1b51e2681300028de363', 5: '6adf1fade5b2290002718df9', 6: '6adf22e9e5b22900027199e7', 7: '6adf3578b3cfe60002ab5a55', 8: '6adf3707b3cfe60002ab5fd6', 9: '6ae52ef17b101100026bb5d7', 10: '6ae546eaa1908400020410e3', 11: '6ae54a51fab31400021bee3b', 12: '6ae54f37a1908400020426c9', 13: '6ae550b3a190840002042a62', 14: '6ae558d7fab31400021c1676', 15: '6ae56d92b734640002ce863a' },
+  '6adadba969897b0002482ca5': { 1: '6adadbcaf75fe5000247ca71', 2: '6adadc3b69897b0002482d22', 3: '6adae08769897b000248340a', 4: '6adf1b51e2681300028de363', 5: '6adf1fade5b2290002718df9', 6: '6adf22e9e5b22900027199e7', 7: '6adf3578b3cfe60002ab5a55', 8: '6adf3707b3cfe60002ab5fd6', 9: '6ae52ef17b101100026bb5d7', 10: '6ae546eaa1908400020410e3', 11: '6ae54a51fab31400021bee3b', 12: '6ae54f37a1908400020426c9', 13: '6ae550b3a190840002042a62', 14: '6ae558d7fab31400021c1676', 15: '6ae56d92b734640002ce863a', 16: '6adf21c2e2681300028dfa46', 17: '6ae56c9db734640002ce8446' },
   '678d14b960eae20002ddf8fe': { 1: '678d14ef83903000028fb716', 2: '67bbd7167e21a900021ce2ce', 3: '67bbd7187e21a900021ce2e1', 4: '67bbd7197e21a900021ce2e8', 5: '67bbd7237e21a900021ce2fe', 6: '67bbd7247e21a900021ce302', 7: '67bbd7267e21a900021ce30f', 8: '67bbd728f0b1030002fa0e2f', 9: '67bbd729f0b1030002fa0e34', 10: '67bbd72af0b1030002fa0e39', 11: '67bbd72cf0b1030002fa0e40', 12: '67bbd72ef0b1030002fa0e59', 13: '67bbd730f0b1030002fa0e5e', 14: '67bbd731f0b1030002fa0e62', 15: '67bbd732f0b1030002fa0e69', 16: '67bbd735f0b1030002fa0e6e' },
   '65e7704a9ea90c00080d5195': { 1: '663e2cb2f960e80008fb905a', 2: '663e2cb3ef5f220008fee283', 3: '663e2cb6d87762000820b409', 4: '663e2cb8d87762000820b40c', 5: '663e2cba501e8b00082e04d9', 6: '663e2cbcf6e78b000877efb4', 7: '663e2cbf0710270008948856', 8: '663e2cc1501e8b00082e04eb', 9: '663e2cc3071027000894885d', 10: '663e2cc60710270008948862', 11: '663e2cc90710270008948867', 12: '663e2ccb501e8b00082e04f5', 13: '663e2ccd071027000894887c', 14: '663e2ccf501e8b00082e04fa', 15: '663e2cd2f6e78b000877efba', 16: '663e2cd4501e8b00082e0502', 17: '663e2cd6501e8b00082e0505', 18: '663e2cd807102700089488c2', 19: '663e2cdaf6e78b000877efe1', 20: '663e2cdced505f0008ed1f31' },
   '6638bd09a7367400085c7ab2': { 1: '6638bd156090c200087ed9d4', 2: '6638bd156090c200087ed9d0', 3: '6638bd146090c200087ed9cc', 4: '6638bd14a7367400085c7abc', 5: '6638bd136090c200087ed9c2', 6: '6638bd126090c200087ed9be', 7: '6638bd126090c200087ed9ba', 8: '6638bd126090c200087ed9b6', 9: '6638bd116090c200087ed9b2', 10: '6638bd116090c200087ed9ae', 11: '6638bd106090c200087ed9aa', 12: '6638bd106090c200087ed9a6', 13: '6638bd0f6090c200087ed9a2', 14: '6638bd0f6090c200087ed99e', 15: '6638bd0e6090c200087ed99a', 16: '6638bd0e6090c200087ed996', 17: '6638bd0d6090c200087ed992', 18: '6638bd0d6090c200087ed98d', 19: '6638bd0c6090c200087ed989', 20: '6638bd0c6090c200087ed985' },
@@ -3566,6 +3566,40 @@ const HSK1_LEGACY_VIDEO_UNIT_MAP = {
   15: '6ae56f7f9902f90002d5ebdc'
 };
 
+// Toàn bộ 33 unitIds của HSK 1 (3.0) theo từng bài học (gồm các phần nhỏ 3.1, 3.2, 4.1..4.4, 12.1..12.3 và SBT 1.1/1.2)
+const HSK1_LESSON_ALLOWED_UNITS = {
+  1: ['6adadbcaf75fe5000247ca71', '6adb27370ae64c00025de049', '6adb30510ae64c00025de0cd'],
+  2: ['6adadc3b69897b0002482d22'],
+  3: ['6adae08769897b000248340a', '6adf1a4fe2681300028de082'],
+  4: ['6adf1b51e2681300028de363', '6adf1c22e2681300028de711', '6adf1c491d600a0002d4010d', '6adf1d00e2681300028de9a6', '6adf1d2be2681300028dea4a', '6adf1e12e5b2290002718830'],
+  5: ['6adf1fade5b2290002718df9', '6adf2171e5b22900027194df'],
+  6: ['6adf22e9e5b22900027199e7', '6adf3932e8e0af00026814ef'],
+  7: ['6adf3578b3cfe60002ab5a55', '6adf3633b3cfe60002ab5cf4'],
+  8: ['6adf3707b3cfe60002ab5fd6', '6adf37f61d600a0002d466ae'],
+  9: ['6ae52ef17b101100026bb5d7', '6ae532927b101100026bb9f3'],
+  10: ['6ae546eaa1908400020410e3', '6ae547d1a1908400020412fd'],
+  11: ['6ae54a51fab31400021bee3b', '6ae54abdfab31400021befb0'],
+  12: ['6ae54f37a1908400020426c9', '6ae54fe0a1908400020428a5', '6ae5504aa1908400020429c9'],
+  13: ['6ae550b3a190840002042a62', '6ae550fefab31400021bff7a'],
+  14: ['6ae558d7fab31400021c1676', '6ae56b19b734640002ce823d'],
+  15: ['6ae56d92b734640002ce863a', '6ae56f7f9902f90002d5ebdc'],
+  16: ['6adf21c2e2681300028dfa46', '6aed8dd944034f00029b2b12'],
+  17: ['6ae56c9db734640002ce8446', '6aed934844034f00029b3d9e']
+};
+
+// Ánh xạ videoUnitId (type: video) cho 9 khóa học có tách riêng unit video và unit homework trên izTeach
+const COURSE_VIDEO_UNIT_MAP = {
+  '65e7704a9ea90c00080d5195': { 1: '65e8a76f7a2e2600088125b4', 2: '65e8a7b02856250008d6f6ae', 3: '65e8a7c8a87e910008f3b5e8', 4: '65e8a8782856250008d6f7e7', 5: '65e8a8907a2e2600088125f9', 6: '65e8a8a6212cff0008515866', 7: '65e8a8d28a7dda0008c3bb8b', 8: '65e8a8e02856250008d6f8a4', 9: '65e8a90f7a2e26000881262b', 10: '65e8a9297a2e26000881264f', 11: '65e8a93c212cff00085158a5', 12: '65e8a9762856250008d6f8fd', 13: '65e8a988a87e910008f3b600', 14: '65e8a9be2856250008d6f92d', 15: '65e8a9e3a87e910008f3b630', 16: '65e8a9f9a87e910008f3b68f', 17: '65e8aa45a87e910008f3b778', 18: '65e8aa597a2e260008812733', 19: '65e8aa6c7a2e260008812758', 20: '65e8aa84a87e910008f3b7c7' },
+  '6638bd09a7367400085c7ab2': { 1: '6638bd156090c200087ed9d6', 2: '6638bd156090c200087ed9d2', 3: '6638bd146090c200087ed9ce', 4: '6638bd146090c200087ed9ca', 5: '6638bd13a7367400085c7aba', 6: '6638bd136090c200087ed9c0', 7: '6638bd126090c200087ed9bc', 8: '6638bd126090c200087ed9b8', 9: '6638bd116090c200087ed9b4', 10: '6638bd116090c200087ed9b0', 11: '6638bd106090c200087ed9ac', 12: '6638bd106090c200087ed9a8', 13: '6638bd106090c200087ed9a4', 14: '6638bd0f6090c200087ed9a0', 15: '6638bd0f6090c200087ed99c', 16: '6638bd0e6090c200087ed998', 17: '6638bd0e6090c200087ed994', 18: '6638bd0d6090c200087ed98f', 19: '6638bd0d6090c200087ed98b', 20: '6638bd0c6090c200087ed987' },
+  '65e76a533f5e7c00086715d7': { 20: '65e8c0e7fcfcaf00085254be' },
+  '65e769bd637339000870618f': { 1: '65e8adcc4796480008803f7f', 2: '65e8adfc4796480008803f98', 3: '65e8ae09a7947a00080db5c2', 4: '65e8ae134796480008803fbd', 5: '65e8ae5156918200093460a6', 6: '65e8ae6356918200093460b7', 7: '65e8ae7a56918200093460c8', 8: '65e8ae8c4796480008803ff2', 9: '65e8ae9880cb9d0008b296df', 10: '65e8aeac479648000880400b', 11: '65e8aebe4796480008804042', 12: '65e8aec8479648000880407f', 13: '65e8aed280cb9d0008b296fd', 14: '65e8aee247964800088040a3', 15: '65e8af1347964800088040b5', 16: '65e8af2347964800088040c1', 17: '65e8af31d3b8e900089c443f', 18: '65e8af4347964800088040e7', 19: '65e8af4ed3b8e900089c444d', 20: '65e8af5cd3b8e900089c4457', 21: '65e8af6847964800088040f5', 22: '65e8af75d3b8e900089c446a', 23: '65e8af8ad3b8e900089c44a2', 24: '65e8af964796480008804120', 25: '65e8afbd479648000880412f' },
+  '65e7636a0a1b61000825c2ef': { 1: '65e763be6373390008705ffe', 2: '65e7d94486988f00087af4d1', 3: '65e7d95f6fe5b00008cf8632', 4: '65e7da1486988f00087af558', 5: '65e7da35c5e0f000084269e8', 6: '65e7da4fc5e0f000084269fd', 7: '65e7da66c5e0f00008426a2d', 8: '65e7da74c5e0f00008426a44', 9: '65e7daafd3efb6000825e1ec', 10: '65e7dabfd3efb6000825e1ff', 11: '65e7dad4d3efb6000825e22d', 12: '65e7dae6d3efb6000825e24b', 13: '65e7daf3c5e0f00008426a85', 14: '65e7db0486988f00087af5cc', 15: '65e7db14d3efb6000825e27e', 16: '65e7db22c5e0f00008426a9c', 17: '65e7db31c5e0f00008426af3', 18: '65e7db3e2593b40008e8b86e', 19: '65e7db4cc5e0f00008426aff', 20: '65e7db57c5e0f00008426b19' },
+  '6600fa477c18b80008c53c88': { 1: '6600fa5f7c18b80008c53ca1', 2: '660100fb92624c0008719def', 3: '660100fda1f8650008c3ed97', 4: '660100fea1f8650008c3eda0', 5: '66010100a1f8650008c3eda7', 6: '6601010192624c0008719df8', 7: '6601010ea1f8650008c3edae', 8: '6601010f92624c0008719e15', 9: '6601011192624c0008719e1a', 10: '6601011292624c0008719e1f', 11: '6601011492624c0008719e24', 12: '6601011592624c0008719e2c', 13: '6601011792624c0008719e31', 14: '6601011892624c0008719e3e', 15: '6601011a92624c0008719e47', 16: '6601011b92624c0008719e5a', 17: '6601011da56c980008124b5a', 18: '66010121a56c980008124b83', 19: '66010122ab1fb100088df626', 20: '66010124ab1fb100088df62e' },
+  '65e772a1767c56000829518e': { 1: '65e8b44e4796480008804489', 2: '65e8b4a947964800088044ab', 3: '65e8b4d647964800088044c4', 4: '65e8b4fe47964800088044e8', 5: '65e8b52847964800088044f3', 6: '65e8b55d6ff95a000866a5a0', 7: '65e8b57a4796480008804503', 8: '65e8b5ab6ff95a000866a5b1', 9: '65e8b5e7d3b8e900089c474a', 10: '65e8b61147964800088045ac', 11: '65e8b62e47964800088045b9', 12: '65e8b646d3b8e900089c4770', 13: '65e8b66a47964800088045e0', 14: '65e8b69cd3b8e900089c47c3', 15: '65e8b6e1d3b8e900089c47cf', 16: '65e8b75d7dfefa0008d819e0', 17: '65edc85ae47d3c0008e34b15', 18: '65edca8e0929320008118e95', 19: '65edcb9a0929320008118f7f', 20: '65edcba4e47d3c0008e35110', 21: '65edcbbc0929320008118ff5', 22: '65edcbd302ed97000881322e', 23: '65edd7950929320008119d3b', 24: '65edd55e222c990008eae887', 25: '65edd9a6f5b7e2000a6eab79' },
+  '6638c76dfac274000876cd13': { 1: '6638c78283319a00088e117c', 2: '6638c7813d17360007de7f62', 3: '6638c78183319a00088e1177', 4: '6638c78083319a00088e1173', 5: '6638c78083319a00088e116f', 6: '6638c77f83319a00088e116a', 7: '6638c77f83319a00088e1166', 8: '6638c77dd0d47e00085fdb48', 9: '6638c77dd0d47e00085fdb44', 10: '6638c77cd0d47e00085fdb40', 11: '6638c77cd0d47e00085fdb3c', 12: '6638c77bd0d47e00085fdb38', 13: '6638c77bfac274000876cd37', 14: '6638c77bd0d47e00085fdb34', 15: '6638c77ad0d47e00085fdb30', 16: '6638c779fac274000876cd28', 17: '6638c7793d17360007de7f53', 18: '6638c7783d17360007de7f4f', 19: '6638c7773d17360007de7f49', 20: '6638c7773d17360007de7f44', 21: '6638c7763d17360007de7f3e', 22: '6638c7750c45a9000821f4a5', 23: '6638c7733d17360007de7f36', 24: '6638c77280bf7500081844e2', 25: '6638c77154f6eb00082e04c4' },
+  '65f6d1c722106a0008ff81a3': { 1: '65f6d2276fa3c60009c579f9', 2: '65f6d4d4af683f0008c040c9', 3: '65f6d4d5af683f0008c040ce', 4: '65f6d4d7af683f0008c040d4', 5: '65f6d4d8af683f0008c040da', 6: '65f6d4daaf683f0008c040df', 7: '65f6d4dbaf683f0008c040e4', 8: '65f6d4ddaf683f0008c040ec', 9: '65f6d4deaf683f0008c040f1', 10: '65f6d4e0af683f0008c040f9', 11: '65f6d4e1af683f0008c04102', 12: '65f6d4e2ac8d740008c3ebe6', 13: '65f6d4e4af683f0008c0410d', 14: '65f6d4e5973d0c0009a62364', 15: '65f6d4e7eb240400084e6fe1', 16: '65f6d4e8973d0c0009a62369', 17: '65f6d4ea973d0c0009a62371', 18: '65f6d4eceb240400084e6ff2', 19: '65f6d4ee973d0c0009a6237c', 20: '65f6d4f1eb240400084e6ff9' }
+};
+
 const UNIT_TO_COURSE_MAP = (() => {
   const rev = {};
   for (const [cid, lessons] of Object.entries(COURSE_UNIT_MAP)) {
@@ -3573,19 +3607,26 @@ const UNIT_TO_COURSE_MAP = (() => {
       rev[String(uId).toLowerCase()] = { courseId: cid.toLowerCase(), lessonNum: Number(lNum) };
     }
   }
-  for (const [lNum, uId] of Object.entries(HSK1_LEGACY_VIDEO_UNIT_MAP)) {
-    rev[String(uId).toLowerCase()] = { courseId: DEFAULT_COURSE_ID.toLowerCase(), lessonNum: Number(lNum) };
+  for (const [cid, lessons] of Object.entries(COURSE_VIDEO_UNIT_MAP)) {
+    for (const [lNum, uId] of Object.entries(lessons)) {
+      rev[String(uId).toLowerCase()] = { courseId: cid.toLowerCase(), lessonNum: Number(lNum) };
+    }
+  }
+  for (const [lNum, uList] of Object.entries(HSK1_LESSON_ALLOWED_UNITS)) {
+    for (const uId of uList) {
+      rev[String(uId).toLowerCase()] = { courseId: DEFAULT_COURSE_ID.toLowerCase(), lessonNum: Number(lNum) };
+    }
   }
   return rev;
 })();
 
 /**
- * Phân giải chính xác Course -> Lesson -> Unit cho toàn bộ 17 khóa học (346 bài).
+ * Phân giải chính xác Course -> Lesson -> Unit cho toàn bộ 17 khóa học (346 bài + các phần nhỏ).
  * Tuyệt đối KHÔNG fallback bài lớp trực tiếp (CLASS_*) hoặc khóa khác sang HSK1.
  */
 function resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId = null) {
   const courseId = String(rawCourseId || '').trim();
-  const lessonNum = Number(rawLessonNum) || 0;
+  let lessonNum = Number(rawLessonNum) || 0;
   const cleanExplicitUnit = explicitUnitId ? String(explicitUnitId).trim() : '';
 
   if (courseId.toUpperCase().startsWith('CLASS_') || lessonNum >= 100) {
@@ -3600,6 +3641,16 @@ function resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId = null) {
     };
   }
 
+  const normCourseId = courseId.toLowerCase();
+
+  // Nếu gửi lên explicitUnitId thuộc đúng khóa học nhưng lessonNum đang là số thứ tự của sub-unit (1..33), chuẩn hóa về lessonNum thật
+  if (cleanExplicitUnit && normCourseId === DEFAULT_COURSE_ID.toLowerCase()) {
+    const owner = UNIT_TO_COURSE_MAP[cleanExplicitUnit.toLowerCase()];
+    if (owner && owner.courseId === normCourseId && (lessonNum < 1 || lessonNum > 17)) {
+      lessonNum = owner.lessonNum;
+    }
+  }
+
   if (!/^[0-9a-f]{24}$/i.test(courseId) || lessonNum < 1) {
     return {
       isLiveClass: false,
@@ -3612,7 +3663,6 @@ function resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId = null) {
     };
   }
 
-  const normCourseId = courseId.toLowerCase();
   const courseMap = COURSE_UNIT_MAP[normCourseId];
 
   if (courseMap) {
@@ -3620,9 +3670,12 @@ function resolveCourseUnitId(rawCourseId, rawLessonNum, explicitUnitId = null) {
       const canonicalUnitId = courseMap[lessonNum];
       if (cleanExplicitUnit) {
         const normExplicit = cleanExplicitUnit.toLowerCase();
-        const isLegacyHsk1Match = normCourseId === DEFAULT_COURSE_ID.toLowerCase() &&
-          HSK1_LEGACY_VIDEO_UNIT_MAP[lessonNum]?.toLowerCase() === normExplicit;
-        if (normExplicit !== canonicalUnitId.toLowerCase() && !isLegacyHsk1Match) {
+        const isHsk1SubUnitMatch = normCourseId === DEFAULT_COURSE_ID.toLowerCase() && (
+          HSK1_LEGACY_VIDEO_UNIT_MAP[lessonNum]?.toLowerCase() === normExplicit ||
+          (HSK1_LESSON_ALLOWED_UNITS[lessonNum] || []).some(id => id.toLowerCase() === normExplicit)
+        );
+        const isCourseVideoUnitMatch = COURSE_VIDEO_UNIT_MAP[normCourseId]?.[lessonNum]?.toLowerCase() === normExplicit;
+        if (normExplicit !== canonicalUnitId.toLowerCase() && !isHsk1SubUnitMatch && !isCourseVideoUnitMatch) {
           return {
             isLiveClass: false,
             valid: false,
@@ -6178,32 +6231,577 @@ export default {
       }
       const rawList = Array.isArray(rawUnits) ? rawUnits : (Array.isArray(rawUnits?.data) ? rawUnits.data : []);
       const sortedList = [...rawList].sort((a, b) => (Number(a?.index ?? a?.num ?? 0) - Number(b?.index ?? b?.num ?? 0)));
-      const units = sortedList.map((u, idx) => {
+
+      // Tải cấu hình bài tập tùy chỉnh (nếu Admin/Giáo viên đã thiết lập cho từng bài)
+      const hwCfgRoom = `COURSE_HW_CONFIG:${courseId.toLowerCase()}`;
+      const hwCfgRes = await supabaseRequest(env, `ktn_dlp_alerts?room_id=eq.${encodeURIComponent(hwCfgRoom)}&order=created_at.desc&limit=100`);
+      const hwConfigByLesson = {};
+      if (hwCfgRes.ok && Array.isArray(hwCfgRes.data)) {
+        for (const row of hwCfgRes.data) {
+          try {
+            const parsed = JSON.parse(String(row.blocked_content || '{}'));
+            const lKey = Number(parsed.lessonNum || parsed.lessonNumber || 0);
+            if (lKey > 0 && !hwConfigByLesson[lKey]) {
+              hwConfigByLesson[lKey] = parsed;
+            }
+          } catch (_) {}
+        }
+      }
+
+      const normCourseId = courseId.toLowerCase();
+      if (normCourseId === DEFAULT_COURSE_ID.toLowerCase()) {
+        const HSK1_CDN_DOC = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/hsk1-3.0/docs`;
+        const HSK1_CDN_AUDIO = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/hsk1-3.0/audio`;
+        const HSK1_SGK_AUDIO_MAP = {"1":[["01-1.mp3",282007],["01-2.mp3",286177],["01-3.mp3",334549],["01-4.mp3",472993],["01-5.mp3",332047],["01-6.mp3",367075],["01-7.mp3",455896]],"2":[["02-1.mp3",266161],["02-2.mp3",424621],["02-3.mp3",391678],["02-4.mp3",397516],["02-5.mp3",369160],["02-6.mp3",347476],["02-7.mp3",547636]],"3":[["03-1.mp3",313282],["03-2.mp3",401686],["03-3.mp3",340387],["03-4.mp3",513442],["03-5.mp3",460483],["03-6.mp3",597259],["03-7.mp3",558478]],"4":[["04-1.mp3",340804],["04-2.mp3",313282],["04-3.mp3",399601],["04-4.mp3",612271],["04-5.mp3",448390],["04-6.mp3",510940]],"5":[["05-1.mp3",335800],["05-2.mp3",555559],["05-3.mp3",390427],["05-4.mp3",490507],["05-5.mp3",383338],["05-6.mp3",474661]],"6":[["06-1.mp3",519280],["06-2.mp3",310363],["06-3.mp3",395014],["06-4.mp3",560980],["06-5.mp3",511774],["06-6.mp3",718189]],"7":[["07-1.mp3",407107],["07-2.mp3",533875],["07-3.mp3",477997],["07-4.mp3",532624],["07-5.mp3",464236],["07-6.mp3",650218]],"8":[["08-1.mp3",364156],["08-2.mp3",596425],["08-3.mp3",407524],["08-4.mp3",473827],["08-5.mp3",511357],["08-6.mp3",476329]],"9":[["09-1.mp3",441718],["09-2.mp3",453811],["09-3.mp3",547636],["09-4.mp3",511357],["09-5.mp3",624364],["09-6.mp3",613522]],"10":[["10-1.mp3",507604],["10-2.mp3",480499],["10-3.mp3",541381],["10-4.mp3",426706],["10-5.mp3",603931],["10-6.mp3",569320]],"11":[["11-1.mp3",470491],["11-2.mp3",482584],["11-3.mp3",464236],["11-4.mp3",420868],["11-5.mp3",513442],["11-6.mp3",708598]],"12":[["12-1.mp3",407524],["12-2.mp3",543049],["12-3.mp3",390010],["12-4.mp3",445471],["12-5.mp3",507187],["12-6.mp3",567235]],"13":[["13-1.mp3",469657],["13-2.mp3",467572],["13-3.mp3",527620],["13-4.mp3",660226],["13-5.mp3",564316],["13-6.mp3",304942]],"14":[["14-1.mp3",426706],["14-2.mp3",465487],["14-3.mp3",598927],["14-4.mp3",616024],["14-5.mp3",500515],["14-6.mp3",687748]],"15":[["15-1.mp3",435463],["15-2.mp3",264910],["15-3.mp3",515110],["15-4.mp3",480082],["15-5.mp3",688999],["15-6.mp3",672736]]};
+        const HSK1_SBT_AUDIO_MAP = {"1":[["听读练.mp3",6121685],["语音.mp3",4214744]],"2":[["听读练 - phần bài tập .mp3",4223918],["语音.Phần luyện nghe phát âm mp3.mp3",6871868]],"3":[["Phần bài tập.mp3",4690958],["phần luyện nghe .mp3",4472450]],"4":[["听读练.mp3",4208072],["模拟测练.mp3",8077832],["语音.mp3",3147224]],"5":[["听读练.mp3",3100103],["模拟测练.mp3",7330985],["语音.mp3",2367434]],"6":[["听读练.mp3",1987547],["模拟测练.mp3",8285498],["语音.mp3",2215646]],"7":[["模拟测练.mp3",7911449],["语音.mp3",4468280]],"8":[["模拟测练.mp3",7973582],["语音.mp3",3122204]],"9":[["模拟测练.mp3",7926044],["语音.mp3",2982509]],"10":[["模拟测练.mp3",7978169],["语音.mp3",3053399]],"11":[["模拟测练.mp3",8001521],["语音.mp3",3460391]],"12":[["模拟测练.mp3",8127038],["语音.mp3",3029630]],"13":[["模拟测练.mp3",7986926],["语音.mp3",3068411]],"14":[["模拟测练.mp3",8081168],["语音.mp3",2888684]],"15":[["模拟测练.mp3",8259227],["语音.mp3",2917457]]};
+        const HSK1_LESSON_META = {
+          1: { titleZh: 'AI小语，你好！', titleVi: 'Xin chào AI Tiểu Ngữ!', sgkPage: 17, sbtPage: 11, voVietPage: 1, grammar: 'Lời chào hỏi cơ bản, Đại từ xưng hô 你 (Bạn), 我 (Tôi), 您 (Ngài)', hwPrompt: 'Nghe đoạn hội thoại Bài 1 (SGK trang 17). Thu âm đọc to lời chào (你好, 您好, 再见) hoặc chụp ảnh trang bài tập đã hoàn thành (SBT trang 11 / Vở viết trang 1).' },
+          2: { titleZh: '我叫李文', titleVi: 'Mình tên là Lý Văn', sgkPage: 23, sbtPage: 17, voVietPage: 9, grammar: 'Hỏi tên với 什么名字, Động từ 叫 (Tên là), Họ và tên tiếng Trung', hwPrompt: 'Nghe MP3 Bài khóa Bài 2 (SGK trang 23). Thu âm tự giới thiệu họ tên bằng tiếng Trung (我叫...) và đính kèm ảnh bài viết trang 9 nếu có.' },
+          3: { titleZh: '我是中国人', titleVi: 'Tôi là người Trung Quốc', sgkPage: 29, sbtPage: 23, voVietPage: 17, grammar: 'Động từ phán đoán 是, Câu nghi vấn 吗, Tên các quốc gia', hwPrompt: 'Nghe MP3 Bài 3 (SGK trang 29). Thu âm đọc câu hỏi và trả lời quốc tịch với 是 / 吗, hoặc nộp ảnh bài tập SBT trang 23.' },
+          4: { titleZh: '这是我的一家', titleVi: 'Đây là gia đình của tôi', sgkPage: 35, sbtPage: 29, voVietPage: 25, grammar: 'Đại từ chỉ thị 这 / 那, Trợ từ sở hữu 的, Thành viên gia đình & Lượng từ 口, 个', hwPrompt: 'Nghe MP3 Bài 4 (SGK trang 35). Thu âm giới thiệu các thành viên trong gia đình (这是我的一家...) hoặc nộp ảnh vở tập viết trang 25.' },
+          5: { titleZh: '今天我休息', titleVi: 'Hôm nay tôi được nghỉ', sgkPage: 43, sbtPage: 37, voVietPage: 33, grammar: 'Các ngày trong tuần (星期), Ngày tháng, Trạng ngữ chỉ thời gian', hwPrompt: 'Nghe MP3 Bài 5 (SGK trang 43). Thu âm nói về ngày tháng và các thứ trong tuần, hoặc chụp ảnh bài tập SBT trang 37.' },
+          6: { titleZh: '你的手机号是多少？', titleVi: 'Số điện thoại của bạn là bao nhiêu?', sgkPage: 51, sbtPage: 43, voVietPage: 41, grammar: 'Đọc số đếm 0-99, Số điện thoại (yāo cho số 1), Từ hỏi 多少', hwPrompt: 'Nghe MP3 Bài 6 (SGK trang 51). Thu âm đọc dãy số đếm và mẫu câu hỏi số điện thoại với 多少, hoặc nộp ảnh Vở viết trang 41.' },
+          7: { titleZh: '我晚上六点半下班', titleVi: 'Tôi tan làm lúc sáu rưỡi tối', sgkPage: 59, sbtPage: 49, voVietPage: 49, grammar: 'Giờ giấc (点, 分, 半), Buổi trong ngày (上午, 下午, 晚上), Lịch trình hoạt động', hwPrompt: 'Nghe MP3 Bài 7 (SGK trang 59). Thu âm kể lại thời gian biểu trong ngày (点, 分, 半) hoặc nộp ảnh bài tập SBT trang 49.' },
+          8: { titleZh: '我爸爸也在医院工作', titleVi: 'Bố tôi cũng làm việc ở bệnh viện', sgkPage: 67, sbtPage: 55, voVietPage: 57, grammar: 'Phó từ 也, Giới từ 在 + Địa điểm + Động từ, Các ngành nghề phổ biến', hwPrompt: 'Nghe MP3 Bài 8 (SGK trang 67). Thu âm đặt 3 câu với cấu trúc 在 + Địa điểm + Động từ, hoặc nộp ảnh Vở viết trang 57.' },
+          9: { titleZh: '我明天上午在学校学习', titleVi: 'Sáng mai tôi học ở trường', sgkPage: 75, sbtPage: 63, voVietPage: 65, grammar: 'Trật tự Thời gian - Địa điểm - Hành động, Địa điểm trong trường học', hwPrompt: 'Nghe MP3 Bài 9 (SGK trang 75). Thu âm đọc bài khóa về lịch học ở trường hoặc chụp ảnh hoàn thành SBT trang 63.' },
+          10: { titleZh: '这儿的苹果真便宜！', titleVi: 'Táo ở đây rẻ thật đấy!', sgkPage: 83, sbtPage: 78, voVietPage: 73, grammar: 'Phó từ cảm thán 真, Mua sắm và hỏi giá (多少钱, 斤, 块)', hwPrompt: 'Nghe MP3 Bài 10 (SGK trang 83). Thu âm đoạn hội thoại hỏi giá hoa quả với 多少钱 và 真, hoặc nộp ảnh bài tập SBT trang 78.' },
+          11: { titleZh: '我读大学呢', titleVi: 'Tôi đang học đại học', sgkPage: 91, sbtPage: 87, voVietPage: 81, grammar: 'Trợ từ 呢 biểu thị hành động đang diễn ra, Cấp bậc học vấn', hwPrompt: 'Nghe MP3 Bài 11 (SGK trang 91). Thu âm đọc các câu biểu thị hành động đang diễn ra với 呢 hoặc nộp ảnh Vở viết trang 81.' },
+          12: { titleZh: '昨天下了雪了', titleVi: 'Hôm qua có tuyết rơi rồi', sgkPage: 99, sbtPage: 96, voVietPage: 89, grammar: 'Trợ từ động thái 了 (Hành động hoàn thành), Thời tiết và bốn mùa', hwPrompt: 'Nghe MP3 Bài 12 (SGK trang 99). Thu âm miêu tả thời tiết hôm qua/hôm nay với trợ từ 了, hoặc nộp ảnh SBT trang 96.' },
+          13: { titleZh: '请给我一杯茶', titleVi: 'Xin cho tôi một cốc trà', sgkPage: 107, sbtPage: 105, voVietPage: 97, grammar: 'Câu cầu khiến với 请, Động từ 给, Lượng từ đồ uống 杯, 瓶', hwPrompt: 'Nghe MP3 Bài 13 (SGK trang 107). Thu âm luyện mẫu câu gọi đồ uống với 请给我... hoặc nộp ảnh Vở viết trang 97.' },
+          14: { titleZh: '我看了一个电影', titleVi: 'Tôi đã xem một bộ phim', sgkPage: 115, sbtPage: 114, voVietPage: 105, grammar: 'Cấu trúc V + 了 + Số lượng từ + Tân ngữ, Kể lại hoạt động giải trí', hwPrompt: 'Nghe MP3 Bài 14 (SGK trang 115). Thu âm kể lại hoạt động cuối tuần với Động từ + 了 hoặc nộp ảnh bài tập SBT trang 114.' },
+          15: { titleZh: '大兴机场见！', titleVi: 'Hẹn gặp ở sân bay Đại Hưng!', sgkPage: 123, sbtPage: 123, voVietPage: 113, grammar: 'Phương tiện giao thông (飞机, 出租车), Lời hẹn gặp (见), Ôn tập tổng kết New HSK 1.0', hwPrompt: 'Nghe MP3 Bài 15 (SGK trang 123). Thu âm đoạn hội thoại hẹn gặp ở sân bay và phương tiện đi lại, hoặc nộp ảnh bài tập SBT trang 123.' },
+          16: { titleZh: 'HSK 1 练习册（上）', titleVi: 'Chữa Sách bài tập HSK 1 — Phần 1 (Trang 1–78)', sgkPage: null, sbtPage: 11, voVietPage: null, grammar: 'Hướng dẫn giải chi tiết và luyện nghe Sách bài tập New HSK 1 (3.0) — Trang 1–78.', isWorkbook: true },
+          17: { titleZh: 'HSK 1 练习册（下）', titleVi: 'Chữa Sách bài tập HSK 1 — Phần 2 (Trang 79–150)', sgkPage: null, sbtPage: 79, voVietPage: null, grammar: 'Hướng dẫn giải chi tiết và luyện nghe Sách bài tập New HSK 1 (3.0) — Trang 79–150.', isWorkbook: true }
+        };
+        const HSK1_UNIT_SPEC_BY_ID = {
+          '6adadbcaf75fe5000247ca71': { l: 1, p: '1', label: 'Bài giảng chính', vid: '6adadc45f8c3c60002a2b3c1', dur: '13:35', sec: 815 },
+          '6adb27370ae64c00025de049': { l: 1, p: '1', label: 'Bài giảng chính', vid: '6adadc45f8c3c60002a2b3c1', dur: '13:35', sec: 815 },
+          '6adadc3b69897b0002482d22': { l: 2, p: '2', label: 'Bài giảng chính', vid: '6adadd60f8c3c60002a2b3c2', dur: '12:01', sec: 721 },
+          '6adae08769897b000248340a': { l: 3, p: '3.1', label: 'Phần 3.1 — Từ mới & Bài khóa 1', vid: '6adf16b358da95000267ef60', dur: '10:50', sec: 650 },
+          '6adf1a4fe2681300028de082': { l: 3, p: '3.2', label: 'Phần 3.2 — Bài khóa 2 & Ngữ pháp', vid: '6adf188558da95000267ef62', dur: '12:51', sec: 771 },
+          '6adf1b51e2681300028de363': { l: 4, p: '4.1', label: 'Phần 4.1 — Từ mới gia đình', vid: '6adf1a87edf12a00022cde3c', dur: '07:04', sec: 424 },
+          '6adf1c22e2681300028de711': { l: 4, p: '4.2', label: 'Phần 4.2 — Bài khóa 1 & Đại từ chỉ thị', vid: '6adf1b8aedf12a00022cde3f', dur: '05:16', sec: 316 },
+          '6adf1c491d600a0002d4010d': { l: 4, p: '4.2', label: 'Phần 4.2 — Bài khóa 1 & Đại từ chỉ thị', vid: '6adf1b8aedf12a00022cde3f', dur: '05:16', sec: 316 },
+          '6adf1d00e2681300028de9a6': { l: 4, p: '4.3', label: 'Phần 4.3 — Bài khóa 2 & Lượng từ', vid: '6adf1c5cedf12a00022cde43', dur: '06:15', sec: 375 },
+          '6adf1d2be2681300028dea4a': { l: 4, p: '4.3', label: 'Phần 4.3 — Bài khóa 2 & Lượng từ', vid: '6adf1c5cedf12a00022cde43', dur: '06:15', sec: 375 },
+          '6adf1e12e5b2290002718830': { l: 4, p: '4.4', label: 'Phần 4.4 — Tổng kết & Luyện tập', vid: '6adf1d4258da95000267ef72', dur: '07:59', sec: 479 },
+          '6adf1fade5b2290002718df9': { l: 5, p: '5.1', label: 'Phần 5.1 — Từ mới & Ngày tháng', vid: '6adf1e7cedf12a00022cde53', dur: '08:49', sec: 529 },
+          '6adf2171e5b22900027194df': { l: 5, p: '5.2', label: 'Phần 5.2 — Bài khóa & Ngữ pháp', vid: '6adf2015ff3e240002282e5e', dur: '10:07', sec: 607 },
+          '6adf22e9e5b22900027199e7': { l: 6, p: '6.1', label: 'Phần 6.1 — Từ mới & Số đếm', vid: '6adf21dbff3e240002282e6c', dur: '08:37', sec: 517 },
+          '6adf3932e8e0af00026814ef': { l: 6, p: '6.2', label: 'Phần 6.2 — Bài khóa & Hỏi số điện thoại', vid: '6adf384637e34400025dfc49', dur: '12:22', sec: 742 },
+          '6adf3578b3cfe60002ab5a55': { l: 7, p: '7.1', label: 'Phần 7.1 — Từ mới & Cách nói giờ', vid: '6adf34321d93990002196230', dur: '15:31', sec: 931 },
+          '6adf3633b3cfe60002ab5cf4': { l: 7, p: '7.2', label: 'Phần 7.2 — Bài khóa & Lịch sinh hoạt', vid: '6adf359b1d9399000219623e', dur: '06:29', sec: 389 },
+          '6adf3707b3cfe60002ab5fd6': { l: 8, p: '8.1', label: 'Phần 8.1 — Từ mới nghề nghiệp & Nơi làm việc', vid: '6adf366037e34400025dfc39', dur: '06:59', sec: 419 },
+          '6adf37f61d600a0002d466ae': { l: 8, p: '8.2', label: 'Phần 8.2 — Bài khóa & Giới từ 在', vid: '6adf374337e34400025dfc3f', dur: '07:44', sec: 464 },
+          '6ae52ef17b101100026bb5d7': { l: 9, p: '9.1', label: 'Phần 9.1 — Từ mới trường học & Thời gian', vid: '6ae52a57a6947f0002b2407a', dur: '12:59', sec: 779 },
+          '6ae532927b101100026bb9f3': { l: 9, p: '9.2', label: 'Phần 9.2 — Bài khóa & Trật tự câu', vid: '6ae52f6af9f5190002993c47', dur: '06:08', sec: 368 },
+          '6ae546eaa1908400020410e3': { l: 10, p: '10.1', label: 'Phần 10.1 — Từ mới hoa quả & Mua sắm', vid: '6ae53844f133e40002a7083d', dur: '11:59', sec: 719 },
+          '6ae547d1a1908400020412fd': { l: 10, p: '10.2', label: 'Phần 10.2 — Bài khóa & Hỏi giá tiền', vid: '6ae54742f133e40002a70842', dur: '07:12', sec: 432 },
+          '6ae54a51fab31400021bee3b': { l: 11, p: '11.1', label: 'Phần 11.1 — Từ mới học tập & Trường lớp', vid: '6ae54811f133e40002a70843', dur: '09:30', sec: 570 },
+          '6ae54abdfab31400021befb0': { l: 11, p: '11.2', label: 'Phần 11.2 — Bài khóa & Trợ từ 呢', vid: '6ae54a7d238c0700028dced8', dur: '07:46', sec: 466 },
+          '6ae54f37a1908400020426c9': { l: 12, p: '12.1', label: 'Phần 12.1 — Từ mới thời tiết', vid: '6ae54af4a8aec300024f0915', dur: '12:38', sec: 758 },
+          '6ae54fe0a1908400020428a5': { l: 12, p: '12.2', label: 'Phần 12.2 — Bài khóa & Trợ từ 了', vid: '6ae54f7b4b62f10002342205', dur: '05:36', sec: 336 },
+          '6ae5504aa1908400020429c9': { l: 12, p: '12.3', label: 'Phần 12.3 — Luyện tập tổng hợp Bài 12', vid: '6ae54ffc4b62f1000234220b', dur: '05:25', sec: 325 },
+          '6ae550b3a190840002042a62': { l: 13, p: '13.1', label: 'Phần 13.1 — Từ mới đồ uống & Gọi món', vid: '6ae55062a8aec300024f0936', dur: '03:49', sec: 229 },
+          '6ae550fefab31400021bff7a': { l: 13, p: '13.2', label: 'Phần 13.2 — Bài khóa & Câu cầu khiến 请/给', vid: '6ae550d34b62f10002342211', dur: '05:25', sec: 325 },
+          '6ae558d7fab31400021c1676': { l: 14, p: '14.1', label: 'Phần 14.1 — Từ mới giải trí & Điện ảnh', vid: '6ae55149a8aec300024f0945', dur: '10:28', sec: 628 },
+          '6ae56b19b734640002ce823d': { l: 14, p: '14.2', label: 'Phần 14.2 — Bài khóa & Động từ + 了', vid: '6ae56486e8c772000259fd59', dur: '08:54', sec: 534 },
+          '6ae56d92b734640002ce863a': { l: 15, p: '15.1', label: 'Phần 15.1 — Từ mới giao thông & Sân bay', vid: '6ae56bb4e8c772000259fd66', dur: '08:30', sec: 510 },
+          '6ae56f7f9902f90002d5ebdc': { l: 15, p: '15.2', label: 'Phần 15.2 — Bài khóa & Tổng kết HSK 1', vid: '6ae56ddde8c772000259fd6d', dur: '06:46', sec: 406 },
+          '6adf21c2e2681300028dfa46': { l: 16, p: 'SBT 1.1', label: 'Chữa Sách bài tập Phần 1 (Trang 1–78)', vid: '6adf20d8e8e0af00026808bf', dur: '11:19', sec: 679, wb: true },
+          '6aed8dd944034f00029b2b12': { l: 16, p: 'SBT 1.1', label: 'Chữa Sách bài tập Phần 1 (Trang 1–78)', vid: '6aed9326b89c6d0002660e45', dur: '11:19', sec: 679, wb: true },
+          '6ae56c9db734640002ce8446': { l: 17, p: 'SBT 1.2', label: 'Chữa Sách bài tập Phần 2 (Trang 79–150)', vid: '6ae5671be8c772000259fd61', dur: '13:10', sec: 790, wb: true },
+          '6aed934844034f00029b3d9e': { l: 17, p: 'SBT 1.2', label: 'Chữa Sách bài tập Phần 2 (Trang 79–150)', vid: '6aed9347b89c6d0002660e46', dur: '13:10', sec: 790, wb: true }
+        };
+
+        const buildLessonMaterials = (lNum) => {
+          const meta = HSK1_LESSON_META[lNum];
+          if (!meta) return [];
+          if (meta.isWorkbook) {
+            const pRange = lNum === 16 ? '1–78' : '79–150';
+            return [{
+              id: `hsk1-sbt-${lNum - 15}-pdf`,
+              title: `SBT HSK 1 (3.0) — Phần ${lNum - 15} (Trang ${pRange})`,
+              type: 'sbt_pdf',
+              url: `${HSK1_CDN_DOC}/HSK1_SBT.pdf#page=${meta.sbtPage}`,
+              fileUrl: `${HSK1_CDN_DOC}/HSK1_SBT.pdf`,
+              objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_SBT.pdf`,
+              page: meta.sbtPage,
+              size: 49047337,
+              mimeType: 'application/pdf',
+              actionLabel: `Xem bài tập (Trang ${meta.sbtPage})`,
+              canView: true,
+              canDownload: true,
+              httpStatus: 200
+            }];
+          }
+          return [
+            {
+              id: `hsk1-l${lNum}-sgk-pdf`,
+              title: `SGK HSK 1 (3.0) — Bài ${lNum}: ${meta.titleZh}`,
+              type: 'sgk_pdf',
+              url: `${HSK1_CDN_DOC}/HSK1_SGK.pdf#page=${meta.sgkPage}`,
+              fileUrl: `${HSK1_CDN_DOC}/HSK1_SGK.pdf`,
+              objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_SGK.pdf`,
+              page: meta.sgkPage,
+              size: 63200770,
+              mimeType: 'application/pdf',
+              actionLabel: `Xem sách (Trang ${meta.sgkPage})`,
+              canView: true,
+              canDownload: true,
+              httpStatus: 200
+            },
+            {
+              id: `hsk1-l${lNum}-sbt-pdf`,
+              title: `SBT HSK 1 (3.0) — Bài tập Bài ${lNum}`,
+              type: 'sbt_pdf',
+              url: `${HSK1_CDN_DOC}/HSK1_SBT.pdf#page=${meta.sbtPage}`,
+              fileUrl: `${HSK1_CDN_DOC}/HSK1_SBT.pdf`,
+              objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_SBT.pdf`,
+              page: meta.sbtPage,
+              size: 49047337,
+              mimeType: 'application/pdf',
+              actionLabel: `Xem bài tập (Trang ${meta.sbtPage})`,
+              canView: true,
+              canDownload: true,
+              httpStatus: 200
+            },
+            {
+              id: `hsk1-l${lNum}-voviet-pdf`,
+              title: `Vở tập viết chữ Hán — Bài ${lNum}`,
+              type: 'voviet_pdf',
+              url: `${HSK1_CDN_DOC}/HSK1_Vo_luyen_viet.pdf#page=${meta.voVietPage}`,
+              fileUrl: `${HSK1_CDN_DOC}/HSK1_Vo_luyen_viet.pdf`,
+              objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_Vo_luyen_viet.pdf`,
+              page: meta.voVietPage,
+              size: 2324690,
+              mimeType: 'application/pdf',
+              actionLabel: `Xem / Tải vở viết (Trang ${meta.voVietPage})`,
+              canView: true,
+              canDownload: true,
+              httpStatus: 200
+            },
+            {
+              id: `hsk1-l${lNum}-vocab-pdf`,
+              title: 'Từ vựng New HSK 1 (3.0) — Bảng tổng hợp',
+              type: 'vocab_pdf',
+              url: `${HSK1_CDN_DOC}/Tu_vung_New_HSK1_HSK5.pdf`,
+              fileUrl: `${HSK1_CDN_DOC}/Tu_vung_New_HSK1_HSK5.pdf`,
+              objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/Tu_vung_New_HSK1_HSK5.pdf`,
+              size: 13231348,
+              mimeType: 'application/pdf',
+              actionLabel: 'Xem từ vựng',
+              canView: true,
+              canDownload: true,
+              httpStatus: 200
+            },
+            {
+              id: `hsk1-l${lNum}-radicals-pdf`,
+              title: 'Bảng 214 Bộ thủ tiếng Trung',
+              type: 'reference_pdf',
+              url: `${HSK1_CDN_DOC}/Bo_thu_tieng_trung.pdf`,
+              fileUrl: `${HSK1_CDN_DOC}/Bo_thu_tieng_trung.pdf`,
+              objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/Bo_thu_tieng_trung.pdf`,
+              size: 52324255,
+              mimeType: 'application/pdf',
+              actionLabel: 'Xem bộ thủ',
+              canView: true,
+              canDownload: true,
+              httpStatus: 200
+            }
+          ];
+        };
+
+        const buildLessonAudio = (lNum) => {
+          const sgkLabels = [
+            `MP3 Bài khóa 1 (Bài ${lNum})`,
+            `MP3 Từ mới 1 (Bài ${lNum})`,
+            `MP3 Bài khóa 2 (Bài ${lNum})`,
+            `MP3 Từ mới 2 (Bài ${lNum})`,
+            `MP3 Bài khóa 3 / Ngữ âm (Bài ${lNum})`,
+            `MP3 Luyện phát âm (Bài ${lNum})`,
+            `MP3 Luyện đọc mở rộng (Bài ${lNum})`
+          ];
+          const sgkTracks = (HSK1_SGK_AUDIO_MAP[String(lNum)] || []).map(([fname, sz], i) => ({
+            id: `hsk1-l${lNum}-sgk-${i + 1}`,
+            name: sgkLabels[i] || `MP3 SGK Bài ${lNum} (${fname})`,
+            category: 'mp3_sgk',
+            filename: fname,
+            url: `${HSK1_CDN_AUDIO}/sgk/${fname}`,
+            size: sz,
+            mimeType: 'audio/mpeg',
+            httpStatus: 200
+          }));
+          const buildSbtForLesson = (n) => {
+            const folder = encodeURIComponent(`第${String(n).padStart(2, '0')}课`);
+            return (HSK1_SBT_AUDIO_MAP[String(n)] || []).map(([fname, sz], i) => ({
+              id: `hsk1-l${n}-sbt-${i + 1}`,
+              name: fname.includes('听读练')
+                ? `MP3 Luyện nghe SBT Bài ${n} — Nghe & Đọc (听读练)`
+                : fname.includes('语音')
+                  ? `MP3 Luyện nghe SBT Bài ${n} — Ngữ âm (语音)`
+                  : `MP3 Luyện nghe SBT Bài ${n} (${fname})`,
+              category: 'mp3_sbt',
+              filename: fname,
+              url: `${HSK1_CDN_AUDIO}/sbt/${folder}/${encodeURIComponent(fname)}`,
+              size: sz,
+              mimeType: 'audio/mpeg',
+              httpStatus: 200
+            }));
+          };
+          if (lNum === 16) {
+            return [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap(buildSbtForLesson);
+          }
+          if (lNum === 17) {
+            return [10, 11, 12, 13, 14, 15].flatMap(buildSbtForLesson);
+          }
+          return [...sgkTracks, ...buildSbtForLesson(lNum)];
+        };
+
+        const buildHomeworkAssignment = (lNum) => {
+          const meta = HSK1_LESSON_META[lNum];
+          const custom = hwConfigByLesson[lNum];
+          const defaultAssigned = meta ? !meta.isWorkbook : false;
+          const defaultHw = {
+            assigned: defaultAssigned,
+            mandatory: defaultAssigned,
+            title: meta
+              ? (meta.isWorkbook ? `Tự luyện Sách bài tập (${lNum === 16 ? 'SBT 1.1' : 'SBT 1.2'})` : `Bài tập Bài ${lNum}: ${meta.titleZh} — ${meta.titleVi}`)
+              : `Bài tập Bài ${lNum}`,
+            instructions: meta
+              ? (meta.hwPrompt || 'Chưa có bài tập cần nộp cho bài này.')
+              : 'Chưa có bài tập cần nộp cho bài này.',
+            relatedPages: meta && !meta.isWorkbook
+              ? `SGK trang ${meta.sgkPage} · SBT trang ${meta.sbtPage} · Vở tập viết trang ${meta.voVietPage}`
+              : (meta?.sbtPage ? `SBT trang ${meta.sbtPage}` : null),
+            allowedTypes: ['audio', 'image', 'pdf', 'video'],
+            maxFiles: 3,
+            deadline: null,
+            completionCriteria: meta && !meta.isWorkbook
+              ? `Hoàn thành thu âm phát âm Bài ${lNum} hoặc đính kèm ảnh/PDF bài làm SBT trang ${meta.sbtPage}.`
+              : null
+          };
+          return custom ? { ...defaultHw, ...custom } : defaultHw;
+        };
+
+        // Lọc bỏ các unit trùng lặp chỉ có type='homework' trong mock test nếu đã có unit video cùng bài
+        const hasVideoUnit = sortedList.some(u => u && u.type !== 'homework');
+        const effectiveList = hasVideoUnit ? sortedList.filter(u => u && u.type !== 'homework') : sortedList;
+
+        const units = effectiveList.map((u, idx) => {
+          if (!u || typeof u !== 'object') return u;
+          const unitId = String(u._id || u.id || '').trim();
+          const rawTitle = String(u.title || '').trim();
+          let spec = HSK1_UNIT_SPEC_BY_ID[unitId.toLowerCase()] || null;
+          if (!spec && rawTitle) {
+            const sbtMatch = rawTitle.match(/SBT\s*1\.([12])/i);
+            const baiMatch = rawTitle.match(/B[àa]i\s*(\d+)(?:\.(\d+))?/i);
+            if (sbtMatch) {
+              const pIdx = Number(sbtMatch[1]);
+              spec = { l: pIdx === 1 ? 16 : 17, p: `SBT 1.${pIdx}`, label: `Chữa Sách bài tập Phần ${pIdx}`, vid: '', dur: '12:00', sec: 720, wb: true };
+            } else if (baiMatch) {
+              const lNum = Number(baiMatch[1]);
+              const subIdx = baiMatch[2] ? `${lNum}.${baiMatch[2]}` : String(lNum);
+              spec = { l: lNum, p: subIdx, label: `Bài giảng Bài ${subIdx}`, vid: '', dur: '13:35', sec: 815 };
+            }
+          }
+          const lessonNumber = spec ? spec.l : null;
+          const meta = lessonNumber ? HSK1_LESSON_META[lessonNumber] : null;
+          const rawVid = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || spec?.vid || '').trim();
+          const isHexVid = /^[0-9a-f]{24}$/i.test(rawVid);
+          const streamUrl = u.streamUrl || (rawVid.startsWith('http') ? rawVid : (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/playlist.m3u8` : ''));
+          const posterUrl = u.posterUrl || (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/thumbnail.jpg` : '');
+          const durMs = Number(u.resources?.[0]?.duration || 0);
+          const duration = spec?.dur || u.duration || (durMs > 0 ? `${Math.floor(durMs / 60000)}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}` : '13:35');
+
+          return {
+            ...u,
+            id: u.id || unitId,
+            _id: u._id || unitId,
+            unitId,
+            chapterId: String(u.section || '6adadbaf69897b0002482cb5'),
+            num: lessonNumber || (Number(u.num) > 0 ? Number(u.num) : idx + 1),
+            lessonNumber: lessonNumber || null,
+            partNumber: spec ? spec.p : null,
+            partLabel: spec ? spec.label : rawTitle,
+            unitType: spec?.wb ? 'workbook' : 'lesson',
+            rawTitle,
+            title: meta ? (spec?.wb ? `${spec.p}: ${meta.titleVi}` : `Bài ${lessonNumber}: ${meta.titleZh} — ${meta.titleVi}`) : rawTitle,
+            titleZh: meta ? meta.titleZh : rawTitle,
+            titleVi: meta ? meta.titleVi : '',
+            grammar: meta ? meta.grammar : '',
+            sgkPage: meta ? meta.sgkPage : null,
+            sbtPage: meta ? meta.sbtPage : null,
+            voVietPage: meta ? meta.voVietPage : null,
+            videoId: rawVid,
+            streamUrl,
+            posterUrl,
+            duration,
+            durationSec: spec?.sec || Math.round(durMs / 1000) || 815,
+            audioTracks: lessonNumber ? buildLessonAudio(lessonNumber) : [],
+            materials: lessonNumber ? buildLessonMaterials(lessonNumber) : [],
+            homeworkAssignment: lessonNumber ? buildHomeworkAssignment(lessonNumber) : { assigned: false, mandatory: false, title: 'Chưa có bài tập cần nộp cho bài này.', instructions: 'Chưa có bài tập cần nộp cho bài này.', allowedTypes: [], maxFiles: 0, deadline: null },
+            resourceIds: rawVid ? [rawVid] : [],
+            confidence: spec ? 'HIGH' : 'NEEDS_REVIEW',
+            verified: Boolean(spec)
+          };
+        });
+
+        // Gom nhóm thành các bài chính (1..15) và Sách bài tập (16..17) kèm danh sách parts để UI hiển thị chuẩn
+        const lessonsByNum = new Map();
+        for (const u of units) {
+          const lNum = u.lessonNumber || u.num;
+          if (!lessonsByNum.has(lNum)) {
+            lessonsByNum.set(lNum, {
+              ...u,
+              id: u.unitId,
+              unitId: COURSE_UNIT_MAP[normCourseId]?.[lNum] || u.unitId,
+              num: lNum,
+              lessonNumber: lNum,
+              parts: []
+            });
+          }
+          const grp = lessonsByNum.get(lNum);
+          grp.parts.push({
+            unitId: u.unitId,
+            partNumber: u.partNumber || String(lNum),
+            rawTitle: u.rawTitle,
+            title: u.partLabel || u.rawTitle,
+            videoId: u.videoId,
+            duration: u.duration,
+            durationSec: u.durationSec || 0,
+            url: u.streamUrl,
+            streamUrl: u.streamUrl,
+            posterUrl: u.posterUrl
+          });
+        }
+        const groupedLessons = Array.from(lessonsByNum.values()).map((grp) => {
+          if (grp.parts.length > 1) {
+            const totalSec = grp.parts.reduce((acc, p) => acc + (p.durationSec || 0), 0);
+            const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
+            const ss = String(totalSec % 60).padStart(2, '0');
+            grp.duration = `${mm}:${ss} (${grp.parts.length} phần)`;
+          }
+          return grp;
+        });
+
+        // Gắn mảng parts của cùng bài học vào từng unit để khi chọn 1 unit vẫn chuyển đổi mượt giữa các phần 3.1/3.2
+        const partsByLesson = new Map(groupedLessons.map(g => [g.lessonNumber, g.parts]));
+        for (const u of units) {
+          u.parts = partsByLesson.get(u.lessonNumber) || [];
+        }
+
+        const mappingTable = units.map(u => ({
+          courseId,
+          unitId: u.unitId,
+          chapterId: u.chapterId,
+          lessonNumber: u.lessonNumber,
+          partNumber: u.partNumber,
+          unitType: u.unitType,
+          rawTitle: u.rawTitle,
+          titleZh: u.titleZh,
+          titleVi: u.titleVi,
+          resourceIds: u.resourceIds,
+          confidence: u.confidence,
+          verified: u.verified
+        }));
+
+        return jsonResponse({
+          ok: unitRes.ok,
+          courseId,
+          units,
+          lessons: groupedLessons,
+          mappingTable
+        }, unitRes.ok ? 200 : unitRes.status);
+      }
+
+      // Các khóa học khác (16 khóa): ghép cặp unit video và unit homework (nếu tách đôi), trích xuất tài liệu thật từ syllabus, không giả lập trang 1 SGK
+      const videoUnitsOnly = sortedList.filter(u => u && u.type !== 'homework');
+      const homeworkUnitsOnly = sortedList.filter(u => u && u.type === 'homework');
+      const baseList = videoUnitsOnly.length > 0 ? videoUnitsOnly : sortedList;
+      const courseMeta = MASTER_PRODUCT_MAPPING[normCourseId] || null;
+      const courseShortTitle = courseMeta?.shortTitle || courseMeta?.title || 'Khóa học';
+
+      const units = baseList.map((u, idx) => {
         if (!u || typeof u !== 'object') return u;
-        const unitId = String(u._id || u.id || '').trim();
+        const lNum = Number(u.num) > 0 ? Number(u.num) : idx + 1;
+        const videoUnitId = String(u._id || u.id || '').trim();
+        const canonicalHwUnitId = COURSE_UNIT_MAP[normCourseId]?.[lNum] || homeworkUnitsOnly[idx]?._id || videoUnitId;
+        const pairedHwUnit = homeworkUnitsOnly.find(h => String(h._id || h.id) === String(canonicalHwUnitId)) || homeworkUnitsOnly[idx] || null;
         const rawVid = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || '').trim();
         const isHexVid = /^[0-9a-f]{24}$/i.test(rawVid);
         const streamUrl = u.streamUrl || (rawVid.startsWith('http') ? rawVid : (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/playlist.m3u8` : ''));
         const posterUrl = u.posterUrl || (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/thumbnail.jpg` : '');
         const durMs = Number(u.resources?.[0]?.duration || 0);
-        const duration = u.duration || (durMs > 0 ? `${Math.floor(durMs / 60000)}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}` : '15:00');
-        const num = Number(u.num) > 0 ? Number(u.num) : idx + 1;
+        const duration = u.duration || (durMs > 0 ? `${String(Math.floor(durMs / 60000)).padStart(2, '0')}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}` : '12:00');
+        const rawTitle = String(u.title || `Bài ${lNum}`).trim();
+        const resTitle = String(u.resources?.[0]?.title || '').replace(/\.(mp4|mov|mkv)$/i, '').trim();
+        const titleZh = resTitle && resTitle !== rawTitle ? `${rawTitle}: ${resTitle}` : rawTitle;
+        const titleVi = `${courseShortTitle} · Bài ${lNum}`;
+
+        const syllabusDocs = [
+          ...(Array.isArray(u.syllabus) ? u.syllabus : []),
+          ...(Array.isArray(pairedHwUnit?.syllabus) ? pairedHwUnit.syllabus : [])
+        ];
+        const materials = syllabusDocs
+          .filter(s => s && (s.link || s.origin?.link))
+          .map((s, sIdx) => {
+            const relLink = String(s.link || s.origin?.link || '').replace(/^\/+/, '');
+            const fullUrl = relLink.startsWith('http') ? relLink : `https://d21acfi38wn3iy.cloudfront.net/${relLink}`;
+            const docTitle = String(s.title || `Tài liệu Bài ${lNum}`);
+            const isPdf = docTitle.toLowerCase().endsWith('.pdf') || String(s.origin?.mimeType || '').includes('pdf');
+            return {
+              id: String(s._id || s.id || `${normCourseId}-l${lNum}-doc-${sIdx + 1}`),
+              title: docTitle,
+              type: isPdf ? 'lesson_pdf' : 'lesson_doc',
+              url: fullUrl,
+              fileUrl: fullUrl,
+              objectKey: relLink,
+              size: Number(s.size || s.origin?.size || 0) || null,
+              mimeType: s.origin?.mimeType || (isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+              actionLabel: isPdf ? 'Xem / Tải PDF bài học' : 'Tải tài liệu bài học',
+              canView: true,
+              canDownload: true,
+              httpStatus: 200
+            };
+          });
+
+        const hasHomeworkUnit = Boolean(pairedHwUnit || COURSE_UNIT_MAP[normCourseId]?.[lNum]);
+        const customHw = hwConfigByLesson[lNum];
+        const defaultHw = {
+          assigned: hasHomeworkUnit,
+          mandatory: Boolean(pairedHwUnit),
+          title: pairedHwUnit ? `Bài tập Bài ${lNum}: ${titleZh}` : `Bài tập tự luyện Bài ${lNum}`,
+          instructions: pairedHwUnit
+            ? `Xem hết video Bài ${lNum} (${titleZh})${materials.length > 0 ? ', tải tài liệu bài học đính kèm' : ''} và nộp bản thu âm phát âm hoặc ảnh/PDF bài làm.`
+            : 'Chưa có bài tập cần nộp cho bài này.',
+          relatedPages: materials.length > 0 ? materials.map(m => m.title).join(' · ') : null,
+          allowedTypes: ['audio', 'image', 'pdf', 'video'],
+          maxFiles: 3,
+          deadline: null,
+          completionCriteria: pairedHwUnit ? `Hoàn thành thu âm hoặc nộp bài làm Bài ${lNum}.` : null
+        };
+
         return {
           ...u,
-          id: u.id || unitId,
-          _id: u._id || unitId,
-          num,
-          videoId: rawVid || u.videoId || '',
+          id: canonicalHwUnitId || videoUnitId,
+          _id: canonicalHwUnitId || videoUnitId,
+          unitId: canonicalHwUnitId || videoUnitId,
+          videoUnitId,
+          chapterId: String(u.section || ''),
+          num: lNum,
+          lessonNumber: lNum,
+          partNumber: String(lNum),
+          partLabel: 'Bài giảng chính',
+          unitType: 'lesson',
+          rawTitle,
+          title: `${titleZh} — ${titleVi}`,
+          titleZh,
+          titleVi,
+          grammar: materials.length > 0
+            ? `Bài giảng video HD kèm ${materials.length} tài liệu học tập đính kèm.`
+            : `Bài giảng video HD thuộc ${courseShortTitle}.`,
+          sgkPage: null,
+          sbtPage: null,
+          voVietPage: null,
+          videoId: rawVid,
           streamUrl,
           posterUrl,
-          duration
+          duration,
+          audioTracks: [],
+          materials,
+          homeworkAssignment: customHw ? { ...defaultHw, ...customHw } : defaultHw,
+          parts: [{
+            unitId: videoUnitId,
+            partNumber: String(lNum),
+            rawTitle,
+            title: titleZh,
+            videoId: rawVid,
+            duration,
+            url: streamUrl,
+            streamUrl,
+            posterUrl
+          }],
+          resourceIds: rawVid ? [rawVid] : [],
+          confidence: 'HIGH',
+          verified: true
         };
       });
+
       return jsonResponse({
         ok: unitRes.ok,
         courseId,
-        units
+        units,
+        lessons: units
       }, unitRes.ok ? 200 : unitRes.status);
+    }
+
+    if (path === '/api/ktn/courses/homework-configs' && (request.method === 'GET' || request.method === 'POST')) {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      if (request.method === 'GET') {
+        const courseId = String(url.searchParams.get('courseId') || DEFAULT_COURSE_ID).trim().toLowerCase();
+        const hwCfgRoom = `COURSE_HW_CONFIG:${courseId}`;
+        const res = await supabaseRequest(env, `ktn_dlp_alerts?room_id=eq.${encodeURIComponent(hwCfgRoom)}&order=created_at.desc&limit=100`);
+        const configs = {};
+        if (res.ok && Array.isArray(res.data)) {
+          for (const row of res.data) {
+            try {
+              const parsed = JSON.parse(String(row.blocked_content || '{}'));
+              const lNum = Number(parsed.lessonNum || parsed.lessonNumber || 0);
+              if (lNum > 0 && !configs[lNum]) configs[lNum] = parsed;
+            } catch (_) {}
+          }
+        }
+        return jsonResponse({ ok: true, courseId, configs });
+      }
+      if (session.role !== 'admin' && session.role !== 'teacher') {
+        return jsonResponse({ ok: false, message: 'Chỉ Quản lý hoặc Giáo viên mới có quyền thiết lập yêu cầu bài tập.' }, 403);
+      }
+      const body = await request.json().catch(() => ({}));
+      const courseId = String(body.courseId || DEFAULT_COURSE_ID).trim().toLowerCase();
+      const lessonNum = Number(body.lessonNum || body.lessonNumber || 0);
+      if (!/^[0-9a-f]{24}$/i.test(courseId) || lessonNum < 1) {
+        return jsonResponse({ ok: false, message: 'Thông tin courseId hoặc lessonNum không hợp lệ.' }, 400);
+      }
+      const configPayload = {
+        courseId,
+        lessonNum,
+        assigned: body.assigned !== undefined ? Boolean(body.assigned) : true,
+        mandatory: body.mandatory !== undefined ? Boolean(body.mandatory) : Boolean(body.assigned !== false),
+        title: String(body.title || `Bài tập Bài ${lessonNum}`).trim(),
+        instructions: String(body.instructions || '').trim(),
+        relatedPages: body.relatedPages ? String(body.relatedPages).trim() : null,
+        allowedTypes: Array.isArray(body.allowedTypes) && body.allowedTypes.length > 0 ? body.allowedTypes : ['audio', 'image', 'pdf'],
+        maxFiles: Math.max(1, Math.min(5, Number(body.maxFiles) || 3)),
+        deadline: body.deadline ? String(body.deadline).trim() : null,
+        completionCriteria: body.completionCriteria ? String(body.completionCriteria).trim() : null,
+        sampleAttachmentUrl: body.sampleAttachmentUrl ? String(body.sampleAttachmentUrl).trim() : null,
+        updatedBy: session.email,
+        updatedAt: new Date().toISOString()
+      };
+      const hwCfgRoom = `COURSE_HW_CONFIG:${courseId}`;
+      const recordId = `HWCFG-${courseId.slice(-8)}-L${lessonNum}`;
+      const saveRes = await supabaseRequest(env, 'ktn_dlp_alerts', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates,return=representation',
+        body: {
+          id: recordId,
+          room_id: hwCfgRoom,
+          sender_email: session.email,
+          sender_name: session.name || session.email,
+          sender_role: session.role,
+          blocked_content: JSON.stringify(configPayload),
+          reason: 'COURSE_HOMEWORK_CONFIG',
+          created_at: new Date().toISOString()
+        }
+      });
+      if (!saveRes.ok) {
+        return jsonResponse({ ok: false, message: 'Không thể lưu cấu hình bài tập vào cơ sở dữ liệu.' }, 502);
+      }
+      return jsonResponse({ ok: true, config: configPayload });
     }
 
     if (path === '/api/ktn/courses/sync-izteach' && request.method === 'POST') {
@@ -12529,6 +13127,63 @@ export default {
         targetEmail,
         ...result
       }, result.ok ? 200 : 502);
+    }
+
+    if (path === '/flashcards' && (request.method === 'GET' || request.method === 'HEAD')) {
+      return Response.redirect(`${url.origin}/flashcards/${url.search || ''}`, 301);
+    }
+
+    if (path.startsWith('/flashcards/') && (request.method === 'GET' || request.method === 'HEAD')) {
+      let relPath = '';
+      try {
+        relPath = decodeURIComponent(path.slice('/flashcards/'.length)).replace(/^\/+/, '');
+      } catch {
+        return new Response('Bad Request', { status: 400 });
+      }
+      if (!relPath) relPath = 'index.html';
+      if (relPath.includes('..')) {
+        return new Response('Not Found', { status: 404 });
+      }
+      const vendorId = String(env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID).trim();
+      const encodedRel = relPath.split('/').map(seg => encodeURIComponent(seg)).join('/');
+      const cdnTarget = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/flashcards/${encodedRel}`;
+      const cdnRes = await fetch(cdnTarget, {
+        method: request.method,
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      if (!cdnRes.ok) {
+        return new Response('Not Found', { status: cdnRes.status });
+      }
+      const lower = relPath.toLowerCase();
+      let contentType = cdnRes.headers.get('content-type') || 'application/octet-stream';
+      if (lower.endsWith('.html')) contentType = 'text/html; charset=utf-8';
+      else if (lower.endsWith('.css')) contentType = 'text/css; charset=utf-8';
+      else if (lower.endsWith('.js') || lower.endsWith('.mjs')) contentType = 'application/javascript; charset=utf-8';
+      else if (lower.endsWith('.json')) contentType = 'application/json; charset=utf-8';
+      else if (lower.endsWith('.webp')) contentType = 'image/webp';
+      else if (lower.endsWith('.png')) contentType = 'image/png';
+      else if (lower.endsWith('.mp3')) contentType = 'audio/mpeg';
+      else if (lower.endsWith('.svg')) contentType = 'image/svg+xml';
+
+      const isMutableShell =
+        lower.endsWith('.html') ||
+        lower === 'sw.js' ||
+        lower.endsWith('style.css') ||
+        lower.endsWith('app.js');
+
+      const outHeaders = new Headers();
+      outHeaders.set('Content-Type', contentType);
+      outHeaders.set(
+        'Cache-Control',
+        isMutableShell ? 'no-cache, no-store, must-revalidate' : 'public, max-age=86400'
+      );
+      if (lower === 'sw.js') {
+        outHeaders.set('Service-Worker-Allowed', '/flashcards/');
+      }
+      return new Response(request.method === 'HEAD' ? null : cdnRes.body, {
+        status: 200,
+        headers: outHeaders
+      });
     }
 
     if (path.startsWith('/custom-page/so-lien-lac') && request.method === 'GET') {

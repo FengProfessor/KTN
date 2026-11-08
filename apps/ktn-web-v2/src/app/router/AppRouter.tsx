@@ -20,6 +20,9 @@ const TeacherWorkspace = lazy(() =>
 const AdminWorkspace = lazy(() =>
   import('@/features/admin/components/AdminWorkspace').then((m) => ({ default: m.AdminWorkspace }))
 );
+const FlashcardsPage = lazy(() =>
+  import('@/features/flashcards/components/FlashcardsPage').then((m) => ({ default: m.FlashcardsPage }))
+);
 
 const RouteLoadingFallback: React.FC = () => (
   <div className="flex min-h-[200px] items-center justify-center p-6">
@@ -137,6 +140,14 @@ export const AppRouter: React.FC = () => {
             element={
               <RequireRole allowed={['student']}>
                 <LearningPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="flashcards"
+            element={
+              <RequireRole allowed={['student', 'teacher', 'admin']}>
+                <FlashcardsPage />
               </RequireRole>
             }
           />

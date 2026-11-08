@@ -1036,6 +1036,41 @@ export function createLocalWorkerHarness() {
         return;
       }
 
+      if (url === '/flashcards' || url.startsWith('/flashcards?') || url.startsWith('/flashcards/')) {
+        const u = new URL(url, 'http://localhost');
+        if (u.pathname === '/flashcards') {
+          res.statusCode = 301;
+          res.setHeader('Location', `/flashcards/${u.search || ''}`);
+          res.end();
+          return;
+        }
+        let relPath = decodeURIComponent(u.pathname.slice('/flashcards/'.length)).replace(/^\/+/, '');
+        if (!relPath) relPath = 'index.html';
+        const flashcardsDir = path.join(REPO_ROOT, 'flashcards');
+        const targetFile = path.resolve(flashcardsDir, relPath);
+        if (!targetFile.startsWith(flashcardsDir) || !fs.existsSync(targetFile) || fs.statSync(targetFile).isDirectory()) {
+          res.statusCode = 404;
+          res.end('Not found');
+          return;
+        }
+        const ext = path.extname(targetFile).toLowerCase();
+        const mimeMap = {
+          '.html': 'text/html; charset=utf-8',
+          '.css': 'text/css; charset=utf-8',
+          '.js': 'application/javascript; charset=utf-8',
+          '.mjs': 'application/javascript; charset=utf-8',
+          '.json': 'application/json; charset=utf-8',
+          '.webp': 'image/webp',
+          '.png': 'image/png',
+          '.mp3': 'audio/mpeg',
+          '.svg': 'image/svg+xml'
+        };
+        res.statusCode = 200;
+        res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+        fs.createReadStream(targetFile).pipe(res);
+        return;
+      }
+
       if (!url.startsWith('/api/ktn/')) {
         return next();
       }

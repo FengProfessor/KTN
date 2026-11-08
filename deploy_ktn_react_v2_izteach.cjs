@@ -223,7 +223,7 @@ div.flex-1.justify-center > div:has(#ktn-react-v2-root) {
 `.trim();
 
   const entryUrlsJsonAttr = JSON.stringify(entryJsAssets.map((a) => a.cdnUrl)).replace(/"/g, '&quot;');
-  const onloadBootstrap = `(function(){window.__ktnSllAuthHookedV8=true;window.__ktnSllAuthHookedV9=true;window.__ktnSllAuthHookedV10=true;window.__ktnAllowLogout=true;window.__KTN_EMBED_MODE__=true;window.__KTN_FLASHCARD_URL__='https://fengprofessor.github.io/KTN/flashcards/';window.__KTN_RELEASE_VERSION__='${manifest.releaseTag}';window.__KTN_RELEASE_COMMIT__='${manifest.gitCommit}';try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}var urls=${entryUrlsJsonAttr};urls.forEach(function(u){if(document.querySelector('script[src=&quot;'+u+'&quot;]'))return;var s=document.createElement('script');s.type='module';s.crossOrigin='anonymous';s.src=u;document.head.appendChild(s);});})();`;
+  const onloadBootstrap = `(function(){window.__ktnSllAuthHookedV8=true;window.__ktnSllAuthHookedV9=true;window.__ktnSllAuthHookedV10=true;window.__ktnAllowLogout=true;window.__KTN_EMBED_MODE__=true;window.__KTN_FLASHCARD_URL__='#/flashcards';window.__KTN_RELEASE_VERSION__='${manifest.releaseTag}';window.__KTN_RELEASE_COMMIT__='${manifest.gitCommit}';try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}var urls=${entryUrlsJsonAttr};urls.forEach(function(u){if(document.querySelector('script[src=&quot;'+u+'&quot;]'))return;var s=document.createElement('script');s.type='module';s.crossOrigin='anonymous';s.src=u;document.head.appendChild(s);});})();`;
 
   const embedHtml = `
 <!-- KTN React V2 Custom Page Mount (${manifest.releaseTag} / ${manifest.gitCommit}) -->
@@ -240,7 +240,7 @@ ${modulePreloads}
   window.__ktnSllAuthHookedV10 = true;
   window.__ktnAllowLogout = true;
   window.__KTN_EMBED_MODE__ = true;
-  window.__KTN_FLASHCARD_URL__ = 'https://fengprofessor.github.io/KTN/flashcards/';
+  window.__KTN_FLASHCARD_URL__ = '#/flashcards';
   window.__KTN_RELEASE_VERSION__ = ${JSON.stringify(manifest.releaseTag)};
   window.__KTN_RELEASE_COMMIT__ = ${JSON.stringify(manifest.gitCommit)};
   try {
@@ -270,7 +270,7 @@ ${modulePreloads}
   ${modulePreloads}
 </head>
 <body>
-  <script>window.__KTN_EMBED_MODE__ = true; window.__KTN_FLASHCARD_URL__ = 'https://fengprofessor.github.io/KTN/flashcards/';</script>
+  <script>window.__KTN_EMBED_MODE__ = true; window.__KTN_FLASHCARD_URL__ = '#/flashcards';</script>
   <div id="ktn-react-v2-root" data-ktn-router="hash" data-ktn-release="${manifest.releaseTag}" data-ktn-commit="${manifest.gitCommit}"></div>
   ${scriptTags}
 </body>

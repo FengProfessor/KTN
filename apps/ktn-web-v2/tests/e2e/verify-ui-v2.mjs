@@ -2790,10 +2790,10 @@ async function runSuite() {
     await testOPage.waitForSelector('[data-testid="chat-image-attachment"]', {
       timeout: 8000,
     });
+    await testOPage.waitForTimeout(300);
 
-    // Click the newest zoom button to open Portal Lightbox
-    const zoomBtns = await testOPage.$$('[data-testid="chat-image-zoom-btn"]');
-    await zoomBtns[zoomBtns.length - 1].click();
+    // Click the newest zoom button using a live Locator so optimistic-to-server swap never detaches handle
+    await testOPage.locator('[data-testid="chat-image-zoom-btn"]').last().click();
     await testOPage.waitForSelector('[data-testid="chat-image-lightbox"]', {
       timeout: 5000,
     });

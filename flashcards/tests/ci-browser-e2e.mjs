@@ -424,9 +424,11 @@ async function main() {
       });
       await new Promise(r => setTimeout(r, 400));
 
-      const audit = await page.evaluate(() => {
+      const audit = await page.evaluate(async () => {
         const scene = document.getElementById('cardScene').getBoundingClientRect();
+        const frontWrap = document.querySelector('.card-front .card-img-wrap').getBoundingClientRect();
         const frontImg = document.getElementById('cardFrontImg');
+        const frontImgRect = frontImg.getBoundingClientRect();
         const backImg = document.getElementById('cardBackImg');
         const frontCanvas = document.getElementById('cardFrontCanvas');
         const toolbar = document.querySelector('.app-toolbar').getBoundingClientRect();
@@ -434,11 +436,30 @@ async function main() {
         const tapHint = document.querySelector('.tap-hint');
         const footerDirectChildren = document.querySelectorAll('.app-toolbar > *').length;
         const writeInUtilBar = Boolean(document.querySelector('.card-utility-bar #btnOpenWrite'));
+        const frontContained =
+          frontImgRect.top >= frontWrap.top - 1 &&
+          frontImgRect.bottom <= frontWrap.bottom + 1 &&
+          frontImgRect.left >= frontWrap.left - 1 &&
+          frontImgRect.right <= frontWrap.right + 1;
+
+        document.getElementById('btnFlip').click();
+        await new Promise(r => setTimeout(r, 560));
+        const backWrap = document.querySelector('.card-back .card-img-wrap').getBoundingClientRect();
+        const backImgRect = backImg.getBoundingClientRect();
+        const backContained =
+          backImgRect.top >= backWrap.top - 1 &&
+          backImgRect.bottom <= backWrap.bottom + 1 &&
+          backImgRect.left >= backWrap.left - 1 &&
+          backImgRect.right <= backWrap.right + 1;
+        document.getElementById('btnFlip').click();
+
         return {
           idxText: document.getElementById('currentCardIndexText')?.textContent || '',
           frontObjectFit: window.getComputedStyle(frontImg).objectFit,
           backObjectFit: window.getComputedStyle(backImg).objectFit,
           frontCanvasReady: Boolean(frontCanvas && frontCanvas.classList.contains('is-ready')),
+          frontContained,
+          backContained,
           aspectRatioDiff: Math.abs((scene.width / scene.height) - (660 / 940)),
           overlapToolbar: scene.bottom > toolbar.top + 1,
           overlapUtilBar: scene.top < utilBar.bottom - 1,
@@ -452,6 +473,8 @@ async function main() {
       assert.equal(audit.frontObjectFit, 'contain', `Front image must use object-fit: contain at ${vp.width}x${vp.height}`);
       assert.equal(audit.backObjectFit, 'contain', `Back image must use object-fit: contain at ${vp.width}x${vp.height}`);
       assert.equal(audit.frontCanvasReady, true, `Card #8 (是) front illustration canvas must restore full unclipped art at ${vp.width}x${vp.height}`);
+      assert.equal(audit.frontContained, true, `Front image must be 100% contained inside .card-img-wrap at ${vp.width}x${vp.height}`);
+      assert.equal(audit.backContained, true, `Back image must be 100% contained inside .card-img-wrap at ${vp.width}x${vp.height}`);
       assert.ok(audit.aspectRatioDiff < 0.015, `Card scene must preserve 660:940 aspect ratio at ${vp.width}x${vp.height}`);
       assert.equal(audit.overlapToolbar, false, `Card scene must not overlap bottom toolbar at ${vp.width}x${vp.height}`);
       assert.equal(audit.overlapUtilBar, false, `Card scene must not overlap top utility bar at ${vp.width}x${vp.height}`);
@@ -460,7 +483,54 @@ async function main() {
       assert.equal(audit.footerDirectChildren, 1, 'Footer must only contain the single status row (Quên rồi / Nhớ rồi)');
       assert.equal(audit.writeInUtilBar, true, 'Luyện viết button must live in .card-utility-bar');
     }
-    console.log('✓ [16] Non-clipping Card #8 (是), minimalist footer, and all 6 viewports (360x640..1440x900) verified.');
+
+    // Verify tall (400x1000) and wide (1000x500) dynamic aspect-ratio cards display without clipping or stale canvas overlay
+    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+    const aspectAudit = await page.evaluate(async () => {
+      const frontImg = document.getElementById('cardFrontImg');
+      const frontCanvas = document.getElementById('cardFrontCanvas');
+      const sceneEl = document.getElementById('cardScene');
+
+      const loadSvgDim = async (w, h) => {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#fff"/></svg>`;
+        const uri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        await new Promise(resolve => {
+          const origOnload = frontImg.onload;
+          frontImg.onload = e => {
+            if (typeof origOnload === 'function') origOnload(e);
+            resolve();
+          };
+          frontImg.src = uri;
+        });
+        await new Promise(r => setTimeout(r, 80));
+        const sRect = sceneEl.getBoundingClientRect();
+        const iRect = frontImg.getBoundingClientRect();
+        const wRect = document.querySelector('.card-front .card-img-wrap').getBoundingClientRect();
+        return {
+          naturalW: frontImg.naturalWidth,
+          naturalH: frontImg.naturalHeight,
+          sceneRatio: sRect.width / sRect.height,
+          expectedRatio: w / h,
+          canvasReady: frontCanvas.classList.contains('is-ready'),
+          contained:
+            iRect.top >= wRect.top - 1 &&
+            iRect.bottom <= wRect.bottom + 1 &&
+            iRect.left >= wRect.left - 1 &&
+            iRect.right <= wRect.right + 1,
+        };
+      };
+
+      const tall = await loadSvgDim(400, 1000);
+      const wide = await loadSvgDim(1000, 500);
+      return { tall, wide };
+    });
+    assert.equal(aspectAudit.tall.canvasReady, false, 'Non-660x940 tall image must clear .is-ready on front canvas');
+    assert.equal(aspectAudit.tall.contained, true, 'Tall (400x1000) image must be 100% contained without clipping');
+    assert.ok(Math.abs(aspectAudit.tall.sceneRatio - aspectAudit.tall.expectedRatio) < 0.02, 'Tall card scene must match 400:1000 aspect ratio');
+    assert.equal(aspectAudit.wide.canvasReady, false, 'Non-660x940 wide image must clear .is-ready on front canvas');
+    assert.equal(aspectAudit.wide.contained, true, 'Wide (1000x500) image must be 100% contained without clipping');
+    assert.ok(Math.abs(aspectAudit.wide.sceneRatio - aspectAudit.wide.expectedRatio) < 0.02, 'Wide card scene must match 1000:500 aspect ratio');
+    console.log('✓ [16] Non-clipping Card #8 (是) front & back, minimalist footer, all 6 viewports (360x640..1440x900), and tall/wide aspect ratios verified.');
 
     // 11. Verify Phase 2 Fast Audio Review Page (audio-review.html) loads & filters 121 native_concat cards
     await page.goto(`${baseOrigin}/audio-review.html`, { waitUntil: 'networkidle0' });

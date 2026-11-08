@@ -13144,9 +13144,19 @@ export default {
       if (relPath.includes('..')) {
         return new Response('Not Found', { status: 404 });
       }
+      const lower = relPath.toLowerCase();
+      const isVersionedV4Shell =
+        lower === 'index.html' ||
+        lower === 'sw.js' ||
+        lower === 'assets/css/style.css' ||
+        lower === 'assets/js/app.js';
+      const isMutableShell =
+        isVersionedV4Shell ||
+        lower.endsWith('.html');
       const vendorId = String(env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID).trim();
       const encodedRel = relPath.split('/').map(seg => encodeURIComponent(seg)).join('/');
-      const cdnTarget = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/flashcards/${encodedRel}`;
+      const s3SubPrefix = isVersionedV4Shell ? 'flashcards/v4' : 'flashcards';
+      const cdnTarget = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/${s3SubPrefix}/${encodedRel}`;
       const cdnRes = await fetch(cdnTarget, {
         method: request.method,
         headers: { 'Cache-Control': 'no-cache' }
@@ -13154,7 +13164,6 @@ export default {
       if (!cdnRes.ok) {
         return new Response('Not Found', { status: cdnRes.status });
       }
-      const lower = relPath.toLowerCase();
       let contentType = cdnRes.headers.get('content-type') || 'application/octet-stream';
       if (lower.endsWith('.html')) contentType = 'text/html; charset=utf-8';
       else if (lower.endsWith('.css')) contentType = 'text/css; charset=utf-8';
@@ -13164,12 +13173,6 @@ export default {
       else if (lower.endsWith('.png')) contentType = 'image/png';
       else if (lower.endsWith('.mp3')) contentType = 'audio/mpeg';
       else if (lower.endsWith('.svg')) contentType = 'image/svg+xml';
-
-      const isMutableShell =
-        lower.endsWith('.html') ||
-        lower === 'sw.js' ||
-        lower.endsWith('style.css') ||
-        lower.endsWith('app.js');
 
       const outHeaders = new Headers();
       outHeaders.set('Content-Type', contentType);

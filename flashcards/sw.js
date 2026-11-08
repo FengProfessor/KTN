@@ -5,7 +5,7 @@
  * Progressively caches viewed card WebP images & native audio on demand (bounded cache).
  */
 
-const SHELL_CACHE = 'ktn-flashcards-shell-v3-2';
+const SHELL_CACHE = 'ktn-flashcards-shell-v3-4';
 const MEDIA_CACHE = 'ktn-flashcards-media-v3';
 const MAX_MEDIA_ITEMS = 300;
 
@@ -14,13 +14,13 @@ const CORE_ASSETS = [
   './index.html',
   './manifest.json',
   './assets/css/style.css',
-  './assets/css/style.css?v=2',
+  './assets/css/style.css?v=4',
   './assets/js/hanzi-writer.min.js',
   './assets/js/strokes-data.js',
   './assets/js/cards-lo1.js',
   './assets/js/cards-data.js',
   './assets/js/app.js',
-  './assets/js/app.js?v=2',
+  './assets/js/app.js?v=4',
   './assets/images/chibi/chibi_1.png',
   './assets/images/cards/lo1/card_1_front.webp',
   './assets/images/cards/lo1/card_1_back.webp',

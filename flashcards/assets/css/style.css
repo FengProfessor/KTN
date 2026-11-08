@@ -694,10 +694,11 @@ body {
 }
 
 .flashcard-scene {
-  --avail-h: clamp(260px, calc(100dvh - 238px), 540px);
+  --card-aspect: calc(660 / 940);
+  --avail-h: clamp(260px, calc(100dvh - 234px), 540px);
   --avail-w: min(100%, calc(100vw - 20px));
-  width: min(var(--avail-w), calc(var(--avail-h) * 660 / 940));
-  aspect-ratio: 660 / 940;
+  width: min(var(--avail-w), calc(var(--avail-h) * var(--card-aspect)));
+  aspect-ratio: var(--card-aspect);
   height: auto;
   perspective: 1200px;
   cursor: pointer;
@@ -823,16 +824,43 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   cursor: pointer;
   transition: all 0.18s ease;
   padding: 0 8px;
+  white-space: nowrap;
+}
+
+.status-btn .btn-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.status-btn .btn-text {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .status-btn .btn-sub {
   font-size: 10px;
   font-weight: 600;
-  opacity: 0.82;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 400px) {
+  .status-btn {
+    padding: 0 6px;
+    gap: 4px;
+  }
+  .status-btn .btn-text {
+    font-size: 12px;
+  }
+  .status-btn .btn-sub {
+    font-size: 9.5px;
+  }
 }
 
 .status-btn:active {
@@ -1506,7 +1534,7 @@ body {
   .flashcard-scene {
     --avail-h: clamp(300px, calc(100dvh - 280px), 550px);
     --avail-w: min(100%, 440px);
-    width: min(var(--avail-w), calc(var(--avail-h) * 660 / 940));
+    width: min(var(--avail-w), calc(var(--avail-h) * var(--card-aspect)));
   }
 
   .write-modal-backdrop {
@@ -1520,7 +1548,7 @@ body {
 
   html.is-ktn-embed body {
     padding: 0;
-    background: var(--bg-rice-paper);
+    background: var(--bg-rice);
   }
 
   html.is-ktn-embed .app-container {
@@ -1530,6 +1558,10 @@ body {
     border: none;
     box-shadow: none;
   }
+}
+
+html.is-ktn-embed .portal-back-btn {
+  display: none !important;
 }
 
 @media (max-width: 640px) {
@@ -1558,11 +1590,11 @@ body {
   }
 
   html.is-ktn-embed .flashcard-scene {
-    --avail-h: clamp(200px, calc(100dvh - 246px), 440px);
+    --avail-h: clamp(190px, calc(100dvh - 280px), 410px);
   }
 
   html.is-ktn-embed .app-toolbar {
-    padding: 6px 10px;
+    padding: 5px 10px 6px;
   }
 
   html.is-ktn-embed .action-btn {
@@ -1571,14 +1603,13 @@ body {
     gap: 5px;
   }
 
-  html.is-ktn-embed .status-btn .btn-label {
-    font-size: 13px;
+  html.is-ktn-embed .status-btn .btn-text {
+    font-size: 12.5px;
     white-space: nowrap;
   }
 
-  html.is-ktn-embed .btn-sub-hint {
-    font-size: 10px;
-    padding: 1px 5px;
+  html.is-ktn-embed .status-btn .btn-sub {
+    font-size: 9.5px;
     white-space: nowrap;
   }
 }

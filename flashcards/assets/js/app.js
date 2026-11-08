@@ -629,7 +629,10 @@
 
   function syncFrontCardFullIllustration(card) {
     if (!dom.cardFrontCanvas || !dom.cardFrontImg || !dom.cardBackImg) return;
-    if (!card || !['lo1', 'lo2', 'lo3'].includes(state.activeLevel)) {
+    if (dom.cardScene) {
+      dom.cardScene.style.setProperty('--card-aspect', 'calc(660 / 940)');
+    }
+    if (!card) {
       dom.cardFrontCanvas.classList.remove('is-ready');
       return;
     }
@@ -639,7 +642,19 @@
       if (!current || current.id !== card.id) return;
       const imF = dom.cardFrontImg;
       const imB = dom.cardBackImg;
-      if (!imF.complete || !imB.complete || imF.naturalWidth !== 660 || imF.naturalHeight !== 940 || imB.naturalWidth !== 660 || imB.naturalHeight !== 940) {
+      if (imF.complete && imF.naturalWidth > 0 && imF.naturalHeight > 0 && dom.cardScene) {
+        dom.cardScene.style.setProperty('--card-aspect', `${imF.naturalWidth} / ${imF.naturalHeight}`);
+      }
+      if (
+        !['lo1', 'lo2', 'lo3'].includes(state.activeLevel) ||
+        !imF.complete ||
+        !imB.complete ||
+        imF.naturalWidth !== 660 ||
+        imF.naturalHeight !== 940 ||
+        imB.naturalWidth !== 660 ||
+        imB.naturalHeight !== 940
+      ) {
+        dom.cardFrontCanvas.classList.remove('is-ready');
         return;
       }
 

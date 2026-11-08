@@ -400,7 +400,69 @@ async function main() {
     await page.setOfflineMode(false);
     console.log('✓ [13] Service Worker cache & offline reload verified in Chromium.');
 
-    // 9. Verify Phase 2 Fast Audio Review Page (audio-review.html) loads & filters 121 native_concat cards
+    // 10. Verify Image Non-Clipping, Card #8 是, Minimalist Footer, and Multi-Viewport Layout (360x640..1440x900)
+    const targetViewports = [
+      { width: 360, height: 640 },
+      { width: 375, height: 667 },
+      { width: 390, height: 844 },
+      { width: 430, height: 932 },
+      { width: 1366, height: 768 },
+      { width: 1440, height: 900 },
+    ];
+    for (const vp of targetViewports) {
+      await page.setViewport({ width: vp.width, height: vp.height, deviceScaleFactor: 2 });
+      await page.goto(baseUrl, { waitUntil: 'networkidle0' });
+      await page.evaluate(async () => {
+        const sel = document.getElementById('levelSelect');
+        if (sel && sel.value !== 'lo1') {
+          sel.value = 'lo1';
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          await new Promise(r => setTimeout(r, 150));
+        }
+        const btnNext = document.getElementById('btnNext');
+        for (let i = 0; i < 7; i++) btnNext.click();
+      });
+      await new Promise(r => setTimeout(r, 400));
+
+      const audit = await page.evaluate(() => {
+        const scene = document.getElementById('cardScene').getBoundingClientRect();
+        const frontImg = document.getElementById('cardFrontImg');
+        const backImg = document.getElementById('cardBackImg');
+        const frontCanvas = document.getElementById('cardFrontCanvas');
+        const toolbar = document.querySelector('.app-toolbar').getBoundingClientRect();
+        const utilBar = document.querySelector('.card-utility-bar').getBoundingClientRect();
+        const tapHint = document.querySelector('.tap-hint');
+        const footerDirectChildren = document.querySelectorAll('.app-toolbar > *').length;
+        const writeInUtilBar = Boolean(document.querySelector('.card-utility-bar #btnOpenWrite'));
+        return {
+          idxText: document.getElementById('currentCardIndexText')?.textContent || '',
+          frontObjectFit: window.getComputedStyle(frontImg).objectFit,
+          backObjectFit: window.getComputedStyle(backImg).objectFit,
+          frontCanvasReady: Boolean(frontCanvas && frontCanvas.classList.contains('is-ready')),
+          aspectRatioDiff: Math.abs((scene.width / scene.height) - (660 / 940)),
+          overlapToolbar: scene.bottom > toolbar.top + 1,
+          overlapUtilBar: scene.top < utilBar.bottom - 1,
+          horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+          hasTapHint: Boolean(tapHint),
+          footerDirectChildren,
+          writeInUtilBar,
+        };
+      });
+      assert.equal(audit.idxText, 'Từ 8 / 90', `Must navigate to Lộ 1 Card #8 (是) at ${vp.width}x${vp.height}`);
+      assert.equal(audit.frontObjectFit, 'contain', `Front image must use object-fit: contain at ${vp.width}x${vp.height}`);
+      assert.equal(audit.backObjectFit, 'contain', `Back image must use object-fit: contain at ${vp.width}x${vp.height}`);
+      assert.equal(audit.frontCanvasReady, true, `Card #8 (是) front illustration canvas must restore full unclipped art at ${vp.width}x${vp.height}`);
+      assert.ok(audit.aspectRatioDiff < 0.015, `Card scene must preserve 660:940 aspect ratio at ${vp.width}x${vp.height}`);
+      assert.equal(audit.overlapToolbar, false, `Card scene must not overlap bottom toolbar at ${vp.width}x${vp.height}`);
+      assert.equal(audit.overlapUtilBar, false, `Card scene must not overlap top utility bar at ${vp.width}x${vp.height}`);
+      assert.equal(audit.horizontalOverflow, false, `Must have zero horizontal scroll at ${vp.width}x${vp.height}`);
+      assert.equal(audit.hasTapHint, false, 'Must not render overlapping .tap-hint on card image');
+      assert.equal(audit.footerDirectChildren, 1, 'Footer must only contain the single status row (Quên rồi / Nhớ rồi)');
+      assert.equal(audit.writeInUtilBar, true, 'Luyện viết button must live in .card-utility-bar');
+    }
+    console.log('✓ [16] Non-clipping Card #8 (是), minimalist footer, and all 6 viewports (360x640..1440x900) verified.');
+
+    // 11. Verify Phase 2 Fast Audio Review Page (audio-review.html) loads & filters 121 native_concat cards
     await page.goto(`${baseOrigin}/audio-review.html`, { waitUntil: 'networkidle0' });
     const reviewPageStats = await page.evaluate(() => ({
       total: document.getElementById('statTotal')?.textContent,
@@ -417,7 +479,7 @@ async function main() {
     console.log('✓ [Phase 2] Fast Audio Review tool (audio-review.html) verified in Chromium.');
 
     assert.equal(pageErrors.length, 0, `Unexpected page errors: ${pageErrors.join('; ')}`);
-    console.log('=== [KTN Flashcards Browser E2E] ALL 15 ACCEPTANCE SCENARIOS PASSED ===');
+    console.log('=== [KTN Flashcards Browser E2E] ALL 16 ACCEPTANCE SCENARIOS PASSED ===');
   } finally {
     await browser.close();
     server.close();

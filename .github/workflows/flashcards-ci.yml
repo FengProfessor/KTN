@@ -2,12 +2,12 @@ name: KTN Flashcards & Hanzi Writing Quality Gate
 
 on:
   push:
-    branches: [feat/flashcards-review, main]
+    branches: [feat/flashcards-review, feat/ktn-react-ui-v2, main]
     paths:
       - "flashcards/**"
       - ".github/workflows/flashcards-ci.yml"
   pull_request:
-    branches: [main, feat/flashcards-review]
+    branches: [main, feat/flashcards-review, feat/ktn-react-ui-v2]
     paths:
       - "flashcards/**"
       - ".github/workflows/flashcards-ci.yml"

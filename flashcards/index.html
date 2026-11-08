@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Noto+Serif+SC:wght@600;700;900&display=swap" rel="stylesheet">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/style.css?v=2">
 </head>
 <body>
   <div class="app-container" id="app">
@@ -42,9 +42,24 @@
           </div>
         </div>
         <div class="header-actions">
-          <a href="https://khongtunhi.com/custom-page/so-lien-lac-test" id="btnBackToPortal" data-testid="back-to-portal-link" class="portal-back-btn" title="Quay lại Sổ liên lạc Khổng Tử Nhí">
-            <span>← Sổ liên lạc</span>
+          <a href="https://khongtunhi.com/custom-page/so-lien-lac-test" id="btnBackToPortal" data-testid="back-to-portal-link" class="portal-back-btn" title="Quay lại Trang chủ Khổng Tử Nhí">
+            <span>← Trang chủ</span>
           </a>
+          <div class="help-popover-wrap">
+            <button type="button" id="btnShortcutsHelp" class="icon-btn help-btn" title="Hướng dẫn thao tác & phím tắt" aria-label="Trợ giúp phím tắt" aria-expanded="false">
+              <span>?</span>
+            </button>
+            <div class="shortcuts-popover" id="shortcutsHelpPopover" role=" region" aria-label="Hướng dẫn thao tác" hidden>
+              <div class="shortcuts-popover-title">💡 Hướng dẫn học nhanh</div>
+              <ul class="shortcuts-list">
+                <li><strong>Chạm vào thẻ:</strong> Lật mặt trước / mặt sau</li>
+                <li><strong>Vuốt trái / phải:</strong> Chuyển thẻ tiếp / trước</li>
+                <li><strong>Phím <kbd>←</kbd> <kbd>→</kbd>:</strong> Chuyển thẻ trước / tiếp</li>
+                <li><strong>Phím <kbd>Space</kbd>:</strong> Lật thẻ</li>
+                <li><strong>Phím <kbd>1</kbd> / <kbd>2</kbd>:</strong> Quên rồi / Nhớ rồi</li>
+              </ul>
+            </div>
+          </div>
           <button id="btnDrawerOpen" class="icon-btn" title="Danh sách từ vựng" aria-label="Mở danh sách từ">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -84,96 +99,91 @@
         <!-- Populated dynamically via JS -->
       </nav>
 
-      <!-- Progress Indicator Bar -->
+      <!-- Slim Progress Bar -->
       <div class="progress-bar-container">
         <div class="progress-bar-track">
           <div class="progress-bar-fill" id="progressBarFill" style="width: 1.1%;"></div>
         </div>
-        <div class="progress-info">
-          <span id="currentCardIndexText">Từ 1 / 90</span>
-          <span class="status-chip" id="currentCardStatus">Chưa học</span>
-        </div>
       </div>
 
       <!-- Main Flashcard Area -->
-      <main class="card-arena">
+      <main class="card-arena" id="cardArena">
+        <!-- Compact Top Control Strip (Outside Card Image — Zero Overlap) -->
+        <div class="card-utility-bar" aria-label="Thanh công cụ thẻ từ">
+          <div class="card-nav-compact">
+            <button type="button" id="btnPrev" class="mini-ctrl-btn mini-nav-btn" title="Từ trước (Phím ←)" aria-label="Từ trước">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <div class="card-progress-meta">
+              <span id="currentCardIndexText" class="card-index-text">Từ 1 / 90</span>
+              <span class="status-chip" id="currentCardStatus">Chưa học</span>
+            </div>
+            <button type="button" id="btnNext" class="mini-ctrl-btn mini-nav-btn" title="Từ tiếp theo (Phím →)" aria-label="Từ tiếp">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+
+          <div class="card-tools-compact">
+            <button type="button" class="mini-ctrl-btn floating-audio-btn" id="btnAudioFront" title="Phát âm tiếng Trung bản xứ" aria-label="Nghe phát âm">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              </svg>
+              <span class="audio-pending-label" id="audioFrontLabel" hidden>Đang cập nhật phát âm</span>
+            </button>
+
+            <button type="button" class="mini-ctrl-btn back-audio-btn" id="btnAudioBack" title="Bấm vào để nghe phát âm tiếng Trung chuẩn" aria-label="Nghe cách đọc">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+              <span id="audioBackLabel">Cách đọc</span>
+            </button>
+
+            <button type="button" id="btnFlip" class="mini-ctrl-btn mini-flip-btn" title="Lật mặt trước/sau (Phím Space)" aria-label="Lật thẻ">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+            </button>
+
+            <button type="button" id="btnOpenWrite" class="mini-ctrl-btn btn-write-cta" title="Tập viết chữ Hán trên ô Mễ Tự Cách" aria-label="Luyện viết">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+              </svg>
+              <span>Luyện viết</span>
+            </button>
+          </div>
+        </div>
+
         <div class="flashcard-scene" id="cardScene">
           <div class="flashcard" id="flashcard">
-            <!-- Card Front Face -->
+            <!-- Card Front Face (100% Image Content, Zero Overlay) -->
             <div class="card-face card-front">
               <div class="card-img-wrap">
                 <img id="cardFrontImg" src="assets/images/cards/lo1/card_1_front.webp" alt="Flashcard mặt trước" loading="eager" decoding="async">
-              </div>
-              <button type="button" class="floating-audio-btn" id="btnAudioFront" title="Phát âm tiếng Trung bản xứ" aria-label="Nghe phát âm">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-                </svg>
-                <span class="audio-pending-label" id="audioFrontLabel" hidden>Đang cập nhật phát âm</span>
-              </button>
-              <div class="tap-hint">
-                <span>Chạm thẻ để lật xem nghĩa 🔄</span>
+                <canvas id="cardFrontCanvas" class="card-front-canvas" width="660" height="940" aria-hidden="true"></canvas>
               </div>
             </div>
 
-            <!-- Card Back Face -->
+            <!-- Card Back Face (100% Image Content, Zero Overlay) -->
             <div class="card-face card-back">
               <div class="card-img-wrap">
                 <img id="cardBackImg" src="assets/images/cards/lo1/card_1_back.webp" alt="Flashcard mặt sau" loading="eager" decoding="async">
-              </div>
-              <button type="button" class="back-audio-btn" id="btnAudioBack" title="Bấm vào để nghe phát âm tiếng Trung chuẩn" aria-label="Nghe cách đọc">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M11 5L6 9H2v6h4l5 4V5z"/>
-                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-                </svg>
-                <span id="audioBackLabel">Cách đọc</span>
-              </button>
-              <div class="tap-hint back-hint">
-                <span>Chạm để lật lại mặt chữ 🔄</span>
               </div>
             </div>
           </div>
         </div>
       </main>
 
-      <!-- Bottom Action Toolbar -->
+      <!-- Minimalist Bottom Review Footer: ONLY "Quên rồi" & "Nhớ rồi" -->
       <footer class="app-toolbar">
-        <div class="toolbar-nav-row">
-          <button type="button" id="btnPrev" class="action-btn btn-nav" title="Từ trước (Phím ←)" aria-label="Từ trước">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
-            <span>Trước</span>
-          </button>
-
-          <button type="button" id="btnFlip" class="action-btn btn-flip" title="Lật mặt trước/sau (Phím Space)" aria-label="Lật thẻ">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-            </svg>
-            <span>Lật thẻ</span>
-          </button>
-
-          <button type="button" id="btnOpenWrite" class="action-btn btn-write-cta" title="Tập viết chữ Hán trên ô Mễ Tự Cách" aria-label="Luyện viết">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
-              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
-              <path d="M2 2l7.586 7.586"></path>
-              <circle cx="11" cy="11" r="2"></circle>
-            </svg>
-            <span>Luyện viết</span>
-          </button>
-
-          <button type="button" id="btnNext" class="action-btn btn-nav" title="Từ tiếp theo (Phím →)" aria-label="Từ tiếp">
-            <span>Tiếp</span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Phase 2 Simple Review Row: "Quên rồi" & "Nhớ rồi" -->
         <div class="toolbar-status-row">
           <button type="button" id="btnMarkReview" data-testid="btn-forgot" class="status-btn btn-review" title="Chưa nhớ từ này — sẽ xuất hiện lại sau 3–5 thẻ và ôn lại vào ngày mai">
             <span class="btn-icon">🔄</span>
@@ -185,10 +195,6 @@
             <span class="btn-text">Nhớ rồi</span>
             <small class="btn-sub" id="rememberedSubHint">+1 ngày</small>
           </button>
-        </div>
-
-        <div class="desktop-shortcuts-hint" aria-hidden="true">
-          <span>⌨️ Phím tắt: <kbd>←</kbd><kbd>→</kbd> chuyển thẻ · <kbd>Space</kbd> lật thẻ · <kbd>1</kbd> Quên rồi · <kbd>2</kbd> Nhớ rồi</span>
         </div>
       </footer>
     </div>
@@ -347,6 +353,6 @@
   <script src="assets/js/strokes-data.js"></script>
   <script src="assets/js/cards-lo1.js"></script>
   <script src="assets/js/cards-data.js"></script>
-  <script src="assets/js/app.js"></script>
+  <script src="assets/js/app.js?v=2"></script>
 </body>
 </html>

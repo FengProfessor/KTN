@@ -93,15 +93,19 @@
     statDueCount: document.getElementById('statDueCount'),
     statRememberedCount: document.getElementById('statRememberedCount'),
     statRelearnCount: document.getElementById('statRelearnCount'),
+    cardArena: document.getElementById('cardArena'),
     cardScene: document.getElementById('cardScene'),
     flashcard: document.getElementById('flashcard'),
     cardFrontImg: document.getElementById('cardFrontImg'),
+    cardFrontCanvas: document.getElementById('cardFrontCanvas'),
     cardBackImg: document.getElementById('cardBackImg'),
     btnAudioFront: document.getElementById('btnAudioFront'),
     btnAudioBack: document.getElementById('btnAudioBack'),
     audioFrontLabel: document.getElementById('audioFrontLabel'),
     audioBackLabel: document.getElementById('audioBackLabel'),
     btnBackToPortal: document.getElementById('btnBackToPortal'),
+    btnShortcutsHelp: document.getElementById('btnShortcutsHelp'),
+    shortcutsHelpPopover: document.getElementById('shortcutsHelpPopover'),
     btnPrev: document.getElementById('btnPrev'),
     btnNext: document.getElementById('btnNext'),
     btnFlip: document.getElementById('btnFlip'),
@@ -620,12 +624,224 @@
     }
   }
 
+  let scratchFrontCanvas = null;
+  let scratchBackCanvas = null;
+
+  function syncFrontCardFullIllustration(card) {
+    if (!dom.cardFrontCanvas || !dom.cardFrontImg || !dom.cardBackImg) return;
+    if (!card || !['lo1', 'lo2', 'lo3'].includes(state.activeLevel)) {
+      dom.cardFrontCanvas.classList.remove('is-ready');
+      return;
+    }
+
+    const tryComposite = () => {
+      const current = getCurrentCard();
+      if (!current || current.id !== card.id) return;
+      const imF = dom.cardFrontImg;
+      const imB = dom.cardBackImg;
+      if (!imF.complete || !imB.complete || imF.naturalWidth !== 660 || imF.naturalHeight !== 940 || imB.naturalWidth !== 660 || imB.naturalHeight !== 940) {
+        return;
+      }
+
+      try {
+        if (!scratchFrontCanvas) {
+          scratchFrontCanvas = document.createElement('canvas');
+          scratchFrontCanvas.width = 660;
+          scratchFrontCanvas.height = 940;
+          scratchBackCanvas = document.createElement('canvas');
+          scratchBackCanvas.width = 660;
+          scratchBackCanvas.height = 940;
+        }
+        const fCtx = scratchFrontCanvas.getContext('2d', { willReadFrequently: true });
+        const bCtx = scratchBackCanvas.getContext('2d', { willReadFrequently: true });
+        fCtx.clearRect(0, 0, 660, 940);
+        bCtx.clearRect(0, 0, 660, 940);
+        fCtx.drawImage(imF, 0, 0, 660, 940);
+        bCtx.drawImage(imB, 0, 0, 660, 940);
+
+        const fData = fCtx.getImageData(0, 0, 660, 940).data;
+        const bData = bCtx.getImageData(0, 0, 660, 940).data;
+
+        const isNonWhite = (data, x, y) => {
+          const i = (y * 660 + x) * 4;
+          return data[i] < 242 || data[i + 1] < 242 || data[i + 2] < 242;
+        };
+
+        // 1. Find right character min_x in imF (y=150..840, x=260..360)
+        let charMinX = 310;
+        for (let x = 260; x < 360; x++) {
+          let hitRed = false;
+          for (let y = 150; y < 840; y++) {
+            const i = (y * 660 + x) * 4;
+            if (fData[i] > 180 && fData[i + 1] < 100 && fData[i + 2] < 95) {
+              hitRed = true;
+              break;
+            }
+          }
+          if (hitRed) {
+            charMinX = x;
+            break;
+          }
+        }
+        const leftLimit = Math.max(255, charMinX - 6);
+
+        // 2. Find front left illustration bbox in x=48..leftLimit, y=160..780
+        let fx0 = 660, fy0 = 940, fx1 = 0, fy1 = 0;
+        for (let y = 160; y < 780; y++) {
+          for (let x = 48; x < leftLimit; x++) {
+            if (isNonWhite(fData, x, y)) {
+              if (x < fx0) fx0 = x;
+              if (x > fx1) fx1 = x;
+              if (y < fy0) fy0 = y;
+              if (y > fy1) fy1 = y;
+            }
+          }
+        }
+
+        // Check for isolated stray red fragment near bottom-left (x=48..335, y=846..876 when y=838..844 is white)
+        let hasStrayBottomFragment = false;
+        let gapAboveBottom = true;
+        for (let y = 838; y <= 844; y++) {
+          for (let x = 48; x < 335; x++) {
+            if (isNonWhite(fData, x, y)) {
+              gapAboveBottom = false;
+              break;
+            }
+          }
+        }
+        if (gapAboveBottom) {
+          for (let y = 846; y <= 876; y++) {
+            for (let x = 48; x < 335; x++) {
+              if (isNonWhite(fData, x, y)) {
+                hasStrayBottomFragment = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (fx1 <= fx0 || fy1 <= fy0) {
+          dom.cardFrontCanvas.classList.remove('is-ready');
+          return;
+        }
+        const fw = Math.max(1, fx1 - fx0 + 1);
+        const fh = Math.max(1, fy1 - fy0 + 1);
+
+        let topEdgeCount = 0;
+        let botEdgeCount = 0;
+        for (let x = fx0; x <= fx1; x++) {
+          if (isNonWhite(fData, x, fy0) || isNonWhite(fData, x, Math.min(779, fy0 + 1))) topEdgeCount++;
+          if (isNonWhite(fData, x, fy1) || isNonWhite(fData, x, Math.max(160, fy1 - 1))) botEdgeCount++;
+        }
+
+        // 3. Find back top illustration bbox in x=62..598, y=68..gapY
+        let gapY = 490;
+        let run = 0;
+        for (let y = 220; y < 515; y++) {
+          let rowActive = false;
+          for (let x = 65; x < 595; x++) {
+            if (isNonWhite(bData, x, y)) {
+              rowActive = true;
+              break;
+            }
+          }
+          if (!rowActive) {
+            run++;
+            if (run >= 8 && y > 250) {
+              gapY = y - 3;
+            }
+          } else {
+            if (run >= 8 && y > 340) break;
+            run = 0;
+          }
+        }
+
+        let bx0 = 660, by0 = 940, bx1 = 0, by1 = 0;
+        for (let y = 68; y <= gapY; y++) {
+          for (let x = 62; x < 598; x++) {
+            if (isNonWhite(bData, x, y)) {
+              if (x < bx0) bx0 = x;
+              if (x > bx1) bx1 = x;
+              if (y < by0) by0 = y;
+              if (y > by1) by1 = y;
+            }
+          }
+        }
+        if (bx1 <= bx0 || by1 <= by0) {
+          dom.cardFrontCanvas.classList.remove('is-ready');
+          return;
+        }
+        const bw = Math.max(1, bx1 - bx0 + 1);
+        const bh = Math.max(1, by1 - by0 + 1);
+
+        const hitsTopCropBox = fy0 >= 366 && fy0 <= 384 && topEdgeCount >= 8;
+        const hitsBotCropBox = fy1 >= 604 && fy1 <= 622 && botEdgeCount >= 8;
+        const isClippedVertically = (hitsTopCropBox || hitsBotCropBox) && (bh / bw > (fh / fw) * 1.06);
+
+        if (!isClippedVertically && !hasStrayBottomFragment) {
+          dom.cardFrontCanvas.classList.remove('is-ready');
+          return;
+        }
+
+        const outCtx = dom.cardFrontCanvas.getContext('2d');
+        outCtx.clearRect(0, 0, 660, 940);
+        outCtx.drawImage(imF, 0, 0, 660, 940);
+        outCtx.fillStyle = '#FFFFFF';
+
+        if (hasStrayBottomFragment) {
+          outCtx.fillRect(48, 842, 290, 36);
+        }
+
+        if (isClippedVertically) {
+          // Erase old clipped left illustration cleanly
+          const clearX = Math.max(48, fx0 - 4);
+          const clearY = Math.max(156, fy0 - 4);
+          const clearW = Math.min(leftLimit + 4, fx1 + 4) - clearX;
+          const clearH = Math.min(790, fy1 + 4) - clearY;
+          outCtx.fillRect(clearX, clearY, clearW, clearH);
+
+          // Draw full unclipped illustration from back card into left illustration slot
+          const cropX = Math.max(58, bx0 - 4);
+          const cropY = Math.max(64, by0 - 4);
+          const cropW = Math.min(602, bx1 + 4) - cropX;
+          const cropH = Math.min(gapY + 2, by1 + 4) - cropY;
+
+          const slotX = 52;
+          const slotY = 215;
+          const slotW = Math.max(180, leftLimit - slotX);
+          const slotH = 545;
+          const scale = Math.min(slotW / cropW, slotH / cropH);
+          const drawW = Math.round(cropW * scale);
+          const drawH = Math.round(cropH * scale);
+          const drawX = slotX + Math.round((slotW - drawW) / 2);
+          const drawY = slotY + Math.round((slotH - drawH) / 2);
+
+          outCtx.imageSmoothingEnabled = true;
+          outCtx.imageSmoothingQuality = 'high';
+          outCtx.drawImage(imB, cropX, cropY, cropW, cropH, drawX, drawY, drawW, drawH);
+        }
+        dom.cardFrontCanvas.classList.add('is-ready');
+      } catch (err) {
+        dom.cardFrontCanvas.classList.remove('is-ready');
+      }
+    };
+
+    dom.cardFrontCanvas.classList.remove('is-ready');
+    if (dom.cardFrontImg.complete && dom.cardBackImg.complete) {
+      tryComposite();
+    } else {
+      dom.cardFrontImg.onload = tryComposite;
+      dom.cardBackImg.onload = tryComposite;
+    }
+  }
+
   function renderCurrentCard() {
     const card = getCurrentCard();
     if (!card) return;
 
     state.isFlipped = false;
     if (dom.flashcard) dom.flashcard.classList.remove('is-flipped');
+    if (dom.cardArena) dom.cardArena.classList.remove('is-flipped');
 
     if (dom.cardFrontImg) {
       if (dom.cardFrontImg.getAttribute('src') !== card.front_img) {
@@ -640,6 +856,7 @@
       dom.cardBackImg.alt = `${card.word} (${card.meaning_vi}) - Mặt sau`;
     }
 
+    syncFrontCardFullIllustration(card);
     updateAudioButtonsForCard(card);
 
     const currentNum = state.currentIndex + 1;
@@ -714,6 +931,7 @@
   function toggleFlip() {
     state.isFlipped = !state.isFlipped;
     if (dom.flashcard) dom.flashcard.classList.toggle('is-flipped', state.isFlipped);
+    if (dom.cardArena) dom.cardArena.classList.toggle('is-flipped', state.isFlipped);
   }
 
   function clearAudioPlayingVisual() {
@@ -1367,9 +1585,40 @@
       });
     });
 
+    if (dom.btnShortcutsHelp && dom.shortcutsHelpPopover) {
+      dom.btnShortcutsHelp.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isHidden = dom.shortcutsHelpPopover.hasAttribute('hidden');
+        if (isHidden) {
+          dom.shortcutsHelpPopover.removeAttribute('hidden');
+          dom.btnShortcutsHelp.setAttribute('aria-expanded', 'true');
+          dom.btnShortcutsHelp.classList.add('is-open');
+        } else {
+          dom.shortcutsHelpPopover.setAttribute('hidden', '');
+          dom.btnShortcutsHelp.setAttribute('aria-expanded', 'false');
+          dom.btnShortcutsHelp.classList.remove('is-open');
+        }
+      });
+      document.addEventListener('click', (e) => {
+        if (!dom.shortcutsHelpPopover.hasAttribute('hidden') && !e.target.closest('.help-popover-wrap')) {
+          dom.shortcutsHelpPopover.setAttribute('hidden', '');
+          dom.btnShortcutsHelp.setAttribute('aria-expanded', 'false');
+          dom.btnShortcutsHelp.classList.remove('is-open');
+        }
+      });
+    }
+
     window.addEventListener('keydown', (e) => {
       if (dom.writeModal.classList.contains('open')) return;
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
+      if (e.key === 'Escape' && dom.shortcutsHelpPopover && !dom.shortcutsHelpPopover.hasAttribute('hidden')) {
+        dom.shortcutsHelpPopover.setAttribute('hidden', '');
+        if (dom.btnShortcutsHelp) {
+          dom.btnShortcutsHelp.setAttribute('aria-expanded', 'false');
+          dom.btnShortcutsHelp.classList.remove('is-open');
+        }
+        return;
+      }
       if (e.key === 'ArrowRight') nextCard();
       else if (e.key === 'ArrowLeft') prevCard();
       else if (e.key === ' ') {
@@ -1392,14 +1641,30 @@
     if (!dom.btnBackToPortal) return;
     try {
       const params = new URLSearchParams(window.location.search);
+      const isEmbed = params.get('embed') === 'ktn-react-v2' || (window.parent && window.parent !== window);
+      if (isEmbed) {
+        document.documentElement.classList.add('is-ktn-embed');
+        dom.btnBackToPortal.href = '#/';
+      }
       const ret = params.get('returnUrl') || '';
       if (/^https?:\/\/(www\.)?khongtunhi\.com(\/|$)/i.test(ret) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(ret)) {
         dom.btnBackToPortal.href = ret;
-        return;
-      }
-      if (document.referrer && (/^https?:\/\/(www\.)?khongtunhi\.com(\/|$)/i.test(document.referrer) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(document.referrer))) {
+      } else if (document.referrer && (/^https?:\/\/(www\.)?khongtunhi\.com(\/|$)/i.test(document.referrer) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(document.referrer))) {
         dom.btnBackToPortal.href = document.referrer;
       }
+      dom.btnBackToPortal.addEventListener('click', (e) => {
+        if (window.parent && window.parent !== window) {
+          e.preventDefault();
+          try {
+            window.parent.postMessage({ type: 'KTN_FLASHCARD_BACK_HOME' }, '*');
+          } catch (_) {}
+          try {
+            if (window.top && window.top.location.origin === window.location.origin) {
+              window.top.location.hash = '#/';
+            }
+          } catch (_) {}
+        }
+      });
     } catch (_) {}
   }
 

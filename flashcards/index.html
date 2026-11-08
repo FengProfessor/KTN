@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Khổng Tử Nhí • Flashcard & Luyện Viết Chữ Hán (Lộ 1 – Lộ 7)</title>
+  <meta name="theme-color" content="#9E2A2B">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%239E2A2B'/%3E%3Ctext x='50' y='68' font-size='60' text-anchor='middle' fill='%23FFFFFF' font-family='serif'%3E孔%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Noto+Serif+SC:wght@600;700;900&display=swap" rel="stylesheet">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="assets/css/style.css?v=4">
+</head>
+<body>
+  <div class="app-container" id="app">
+    <!-- Left / Main Learning Workspace -->
+    <div class="workspace-main">
+      <!-- Header -->
+      <header class="app-header">
+        <div class="header-brand">
+          <div class="seal-icon">孔</div>
+          <div class="brand-text">
+            <div class="brand-title-row">
+              <h1 class="brand-title">Khổng Tử Nhí</h1>
+              <span class="network-badge" id="networkBadge" title="Trạng thái kết nối">● Online</span>
+            </div>
+            <div class="level-selector-wrap">
+              <select id="levelSelect" class="level-select-pill" aria-label="Chọn Lộ bài học">
+                <option value="lo1" selected>🌱 Lộ 1 (90 thẻ)</option>
+                <option value="lo2">🌿 Lộ 2 (109 thẻ)</option>
+                <option value="lo3">🌳 Lộ 3 (96 thẻ)</option>
+                <option value="lo4">🌸 Lộ 4 (100 thẻ)</option>
+                <option value="lo5">🏮 Lộ 5 (92 thẻ)</option>
+                <option value="lo6">🐉 Lộ 6 (88 thẻ)</option>
+                <option value="lo7">🦁 Lộ 7 (30 thẻ)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <a href="https://khongtunhi.com/custom-page/so-lien-lac-test" id="btnBackToPortal" data-testid="back-to-portal-link" class="portal-back-btn" title="Quay lại Trang chủ Khổng Tử Nhí">
+            <span>← Trang chủ</span>
+          </a>
+          <div class="help-popover-wrap">
+            <button type="button" id="btnShortcutsHelp" class="icon-btn help-btn" title="Hướng dẫn thao tác & phím tắt" aria-label="Trợ giúp phím tắt" aria-expanded="false">
+              <span>?</span>
+            </button>
+            <div class="shortcuts-popover" id="shortcutsHelpPopover" role="region" aria-label="Hướng dẫn thao tác" hidden>
+              <div class="shortcuts-popover-title">💡 Hướng dẫn học nhanh</div>
+              <ul class="shortcuts-list">
+                <li><strong>Chạm vào thẻ:</strong> Lật mặt trước / mặt sau</li>
+                <li><strong>Vuốt trái / phải:</strong> Chuyển thẻ tiếp / trước</li>
+                <li><strong>Phím <kbd>←</kbd> <kbd>→</kbd>:</strong> Chuyển thẻ trước / tiếp</li>
+                <li><strong>Phím <kbd>Space</kbd>:</strong> Lật thẻ</li>
+                <li><strong>Phím <kbd>1</kbd> / <kbd>2</kbd>:</strong> Quên rồi / Nhớ rồi</li>
+              </ul>
+            </div>
+          </div>
+          <button id="btnDrawerOpen" class="icon-btn" title="Danh sách từ vựng" aria-label="Mở danh sách từ">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+            <span class="badge-count" id="headerWordCount">1/90</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Màn hình / Thanh "Ôn hôm nay" (Phase 2) -->
+      <section class="today-review-bar" id="todayReviewBanner" aria-label="Ôn tập hôm nay">
+        <div class="today-review-top">
+          <p class="today-review-msg" id="todayReviewMessage">
+            🌱 Hôm nay em có <strong id="dueTodayBannerNum">0</strong> từ cần ôn — Học trong vài phút nhé!
+          </p>
+          <button type="button" class="today-cta-btn" id="btnStartTodayReview">
+            Bắt đầu ôn
+          </button>
+        </div>
+        <div class="today-stats-row">
+          <span class="today-stat-pill stat-due" id="statDuePill" title="Số từ đến lịch ôn hôm nay">
+            📅 Cần ôn: <strong id="statDueCount">0</strong>
+          </span>
+          <span class="today-stat-pill stat-remembered" id="statRememberedPill" title="Số từ đã nhớ và đang giãn lịch">
+            ✅ Đã nhớ: <strong id="statRememberedCount">0</strong>
+          </span>
+          <span class="today-stat-pill stat-relearn" id="statRelearnPill" title="Số từ bấm Quên cần học lại">
+            🔄 Cần học lại: <strong id="statRelearnCount">0</strong>
+          </span>
+        </div>
+      </section>
+
+      <!-- Category / Filter Tabs -->
+      <nav class="category-nav" id="categoryNav" aria-label="Chọn nhóm từ">
+        <!-- Populated dynamically via JS -->
+      </nav>
+
+      <!-- Slim Progress Bar -->
+      <div class="progress-bar-container">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressBarFill" style="width: 1.1%;"></div>
+        </div>
+      </div>
+
+      <!-- Main Flashcard Area -->
+      <main class="card-arena" id="cardArena">
+        <!-- Compact Top Control Strip (Outside Card Image — Zero Overlap) -->
+        <div class="card-utility-bar" aria-label="Thanh công cụ thẻ từ">
+          <div class="card-nav-compact">
+            <button type="button" id="btnPrev" class="mini-ctrl-btn mini-nav-btn" title="Từ trước (Phím ←)" aria-label="Từ trước">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <div class="card-progress-meta">
+              <span id="currentCardIndexText" class="card-index-text">Từ 1 / 90</span>
+              <span class="status-chip" id="currentCardStatus">Chưa học</span>
+            </div>
+            <button type="button" id="btnNext" class="mini-ctrl-btn mini-nav-btn" title="Từ tiếp theo (Phím →)" aria-label="Từ tiếp">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+
+          <div class="card-tools-compact">
+            <button type="button" class="mini-ctrl-btn floating-audio-btn" id="btnAudioFront" title="Phát âm tiếng Trung bản xứ" aria-label="Nghe phát âm">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              </svg>
+              <span class="audio-pending-label" id="audioFrontLabel" hidden>Đang cập nhật phát âm</span>
+            </button>
+
+            <button type="button" class="mini-ctrl-btn back-audio-btn" id="btnAudioBack" title="Bấm vào để nghe phát âm tiếng Trung chuẩn" aria-label="Nghe cách đọc">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+              <span id="audioBackLabel">Cách đọc</span>
+            </button>
+
+            <button type="button" id="btnFlip" class="mini-ctrl-btn mini-flip-btn" title="Lật mặt trước/sau (Phím Space)" aria-label="Lật thẻ">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+            </button>
+
+            <button type="button" id="btnOpenWrite" class="mini-ctrl-btn btn-write-cta" title="Tập viết chữ Hán trên ô Mễ Tự Cách" aria-label="Luyện viết">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+              </svg>
+              <span>Luyện viết</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flashcard-scene" id="cardScene">
+          <div class="flashcard" id="flashcard">
+            <!-- Card Front Face (100% Image Content, Zero Overlay) -->
+            <div class="card-face card-front">
+              <div class="card-img-wrap">
+                <img id="cardFrontImg" src="assets/images/cards/lo1/card_1_front.webp" alt="Flashcard mặt trước" loading="eager" decoding="async">
+                <canvas id="cardFrontCanvas" class="card-front-canvas" width="660" height="940" aria-hidden="true"></canvas>
+              </div>
+            </div>
+
+            <!-- Card Back Face (100% Image Content, Zero Overlay) -->
+            <div class="card-face card-back">
+              <div class="card-img-wrap">
+                <img id="cardBackImg" src="assets/images/cards/lo1/card_1_back.webp" alt="Flashcard mặt sau" loading="eager" decoding="async">
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Minimalist Bottom Review Footer: ONLY "Quên rồi" & "Nhớ rồi" -->
+      <footer class="app-toolbar">
+        <div class="toolbar-status-row">
+          <button type="button" id="btnMarkReview" data-testid="btn-forgot" class="status-btn btn-review" title="Chưa nhớ từ này — sẽ xuất hiện lại sau 3–5 thẻ và ôn lại vào ngày mai">
+            <span class="btn-icon">🔄</span>
+            <span class="btn-text">Quên rồi</span>
+            <small class="btn-sub" id="forgotSubHint">Lặp lại sau 3–5 thẻ</small>
+          </button>
+          <button type="button" id="btnMarkMastered" data-testid="btn-remembered" class="status-btn btn-mastered" title="Đã nhớ từ này — giãn lịch ôn tập 1 → 3 → 7 → 14 → 30 ngày">
+            <span class="btn-icon">✅</span>
+            <span class="btn-text">Nhớ rồi</span>
+            <small class="btn-sub" id="rememberedSubHint">+1 ngày</small>
+          </button>
+        </div>
+      </footer>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- SIDEBAR (DESKTOP) / DRAWER (MOBILE): DANH SÁCH TỪ & TIẾN ĐỘ    -->
+    <!-- ============================================================== -->
+    <aside class="drawer-backdrop" id="wordDrawerBackdrop" aria-label="Kho thẻ từ vựng">
+      <div class="word-drawer">
+        <div class="drawer-header">
+          <div class="drawer-title-wrap">
+            <h3 class="drawer-title">Kho Thẻ Từ Vựng</h3>
+            <span class="drawer-subtitle" id="drawerSubtitle">Lộ 1 • Khổng Tử Nhí</span>
+          </div>
+          <button type="button" id="btnDrawerClose" class="icon-btn close-btn mobile-only-close" title="Đóng danh sách" aria-label="Đóng">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Search input -->
+        <div class="drawer-search-wrap">
+          <input type="search" id="drawerSearchInput" class="drawer-search-input" placeholder="🔍 Tìm chữ Hán, Pinyin, nghĩa Việt..." autocomplete="off">
+        </div>
+
+        <!-- Filter in Drawer -->
+        <div class="drawer-filter-chips">
+          <button type="button" class="drawer-chip active" data-drawer-filter="all">Tất cả (90)</button>
+          <button type="button" class="drawer-chip" data-drawer-filter="due">🌱 Hôm nay</button>
+          <button type="button" class="drawer-chip" data-drawer-filter="review">🔄 Học lại</button>
+          <button type="button" class="drawer-chip" data-drawer-filter="mastered">✅ Đã nhớ</button>
+        </div>
+
+        <!-- Word List Items -->
+        <div class="drawer-list" id="drawerWordList">
+          <!-- Rendered dynamically via JS with lazy thumbnails -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============================================================== -->
+    <!-- MODAL: LUYỆN VIẾT HANZI Ô MỄ TỰ CÁCH (米字格)               -->
+    <!-- ============================================================== -->
+    <div class="write-modal-backdrop" id="writeModal">
+      <div class="write-modal-content">
+        <div class="write-modal-header">
+          <div class="write-header-left">
+            <span class="write-badge">米字格 • Mễ Tự Cách</span>
+            <h2 class="write-word-title" id="writeWordTitle">你</h2>
+            <span class="write-pinyin-title" id="writePinyinTitle">/nǐ/</span>
+          </div>
+          <div class="write-header-right">
+            <button type="button" id="btnWriteAudio" class="icon-btn write-audio-btn" title="Nghe phát âm" aria-label="Phát âm">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              </svg>
+            </button>
+            <button type="button" id="btnCloseWrite" class="icon-btn close-btn" title="Đóng khung viết" aria-label="Đóng">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Hanzi Multi-Character Tabs -->
+        <div class="write-char-tabs" id="writeCharTabs"></div>
+
+        <!-- Calligraphy Box: Mễ Tự Cách (米字格) -->
+        <div class="meizi-box-wrapper" id="meiziBoxWrapper">
+          <div id="singleMeiziContainer">
+            <div class="meizi-box" id="meiziBoxSingle">
+              <svg class="meizi-grid-svg" viewBox="0 0 100 100">
+                <line x1="0" y1="50" x2="100" y2="50" class="grid-line" />
+                <line x1="50" y1="0" x2="50" y2="100" class="grid-line" />
+                <line x1="0" y1="0" x2="100" y2="100" class="grid-line" />
+                <line x1="100" y1="0" x2="0" y2="100" class="grid-line" />
+                <path d="M 6 14 L 6 6 L 14 6" class="corner-bracket" />
+                <path d="M 86 6 L 94 6 L 94 14" class="corner-bracket" />
+                <path d="M 6 86 L 6 94 L 14 94" class="corner-bracket" />
+                <path d="M 86 94 L 94 94 L 94 86" class="corner-bracket" />
+              </svg>
+              <div id="hanziWriterTarget" class="hanzi-writer-canvas"></div>
+            </div>
+          </div>
+
+          <div id="compoundMeiziContainer" class="meizi-compound-row" style="display: none;"></div>
+
+          <div class="stroke-offline-notice" id="strokeOfflineNotice" style="display: none;"></div>
+
+          <div class="quiz-success-overlay" id="quizSuccessOverlay">
+            <div class="success-icon-wrap">
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#2D7F58" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+            </div>
+            <h3 class="success-title">Xuất Sắc!</h3>
+            <p class="success-subtitle" id="quizMistakeFeedback">Bé đã viết đúng thứ tự bút thuận!</p>
+            <button type="button" class="action-btn btn-write-next" id="btnNextCharOrClose">Viết chữ tiếp theo ➔</button>
+          </div>
+        </div>
+
+        <!-- HanziWriter Controls Bar (Xem nét / Tập viết / Viết lại / Gợi ý) -->
+        <div class="write-controls-row">
+          <button type="button" id="btnAnimateStroke" class="write-ctrl-btn btn-animate" title="Xem thứ tự nét viết">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>Xem nét</span>
+          </button>
+
+          <button type="button" id="btnQuizStroke" class="write-ctrl-btn btn-quiz primary" title="Tập ngón tay vẽ theo nét trên màn hình">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+            </svg>
+            <span>Tập viết</span>
+          </button>
+
+          <button type="button" id="btnResetStroke" class="write-ctrl-btn btn-reset" title="Xóa trạng thái bài viết và bắt đầu lại" aria-label="Viết lại">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+            </svg>
+            <span>Viết lại</span>
+          </button>
+
+          <button type="button" id="btnToggleOutline" class="write-ctrl-btn icon-only active" title="Bật/Tắt nét mờ gợi ý" aria-label="Gợi ý nét mờ">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+
+        <div class="write-tip" id="writeTipText">
+          💡 Bé dùng ngón tay tô theo nét trên ô Mễ Tự Cách để tập viết chuẩn bút thuận nhé!
+        </div>
+      </div>
+    </div>
+
+    <!-- Global Floating Toast Notification -->
+    <div class="toast-message" id="toastMessage" role="status" aria-live="polite"></div>
+
+    <!-- Hidden Audio Player for 100% Native Real Person Pronunciation -->
+    <audio id="nativeAudioPlayer" preload="none"></audio>
+  </div>
+
+  <!-- Scripts -->
+  <script src="assets/js/hanzi-writer.min.js"></script>
+  <script src="assets/js/strokes-data.js"></script>
+  <script src="assets/js/cards-lo1.js"></script>
+  <script src="assets/js/cards-data.js"></script>
+  <script src="assets/js/app.js?v=4"></script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+name: KTN Flashcards & Hanzi Writing Quality Gate
+
+on:
+  push:
+    branches: [feat/flashcards-review, feat/ktn-react-ui-v2, main]
+    paths:
+      - "flashcards/**"
+      - ".github/workflows/flashcards-ci.yml"
+  pull_request:
+    branches: [main, feat/flashcards-review, feat/ktn-react-ui-v2]
+    paths:
+      - "flashcards/**"
+      - ".github/workflows/flashcards-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  flashcards-verification:
+    name: Flashcard 7 Lộ Assets, Simple SRS & Browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: JS Syntax Check (Flashcard App, 7 Lộ Data, Offline Strokes & Service Worker)
+        run: |
+          node --check flashcards/assets/js/app.js
+          node --check flashcards/assets/js/cards-lo1.js
+          node --check flashcards/assets/js/cards-data.js
+          node --check flashcards/assets/js/strokes-data.js
+          node --check flashcards/sw.js
+          node --check flashcards/tests/verify-flashcards.mjs
+          node --check flashcards/tests/ci-browser-e2e.mjs
+
+      - name: Run 7 Lộ Data, WebP Image, Human Audio & Offline Stroke Integrity Suite
+        run: |
+          node flashcards/tests/verify-flashcards.mjs
+
+      - name: Run Headless Chromium Browser E2E Suite (Mobile 390x844, Desktop 1280x800, 1-3-7-14-30 SRS)
+        env:
+          PUPPETEER_EXECUTABLE_PATH: "/usr/bin/google-chrome"
+        run: |
+          mkdir -p /tmp/ktn-fc-deps
+          npm --prefix /tmp/ktn-fc-deps install --no-save puppeteer-core
+          node flashcards/tests/ci-browser-e2e.mjs

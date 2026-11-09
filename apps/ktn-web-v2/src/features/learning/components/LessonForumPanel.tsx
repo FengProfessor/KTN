@@ -61,10 +61,13 @@ interface LessonForumPanelProps {
   unitId: string;
   lessonNumber: number;
   lessonTitle: string;
+  currentUser?: any;
+  onClose?: () => void;
   initialTimestampSeconds?: number | null;
   highlightQuestionId?: string | null;
   onClearInitialTimestamp?: () => void;
   onSeekVideoTimestamp?: (seconds: number) => void;
+  onSeekToTimestamp?: (seconds: number) => void;
 }
 
 export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
@@ -73,10 +76,13 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
   unitId,
   lessonNumber,
   lessonTitle,
+  currentUser: _currentUser,
+  onClose: _onClose,
   initialTimestampSeconds,
   highlightQuestionId,
   onClearInitialTimestamp,
   onSeekVideoTimestamp,
+  onSeekToTimestamp,
 }) => {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
@@ -483,7 +489,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         description: res.isFollowing
           ? 'Khi giáo viên trả lời, hệ thống sẽ gửi thông báo trực tiếp cho em.'
           : undefined,
-        variant: 'info',
+        variant: 'success',
       });
     },
   });
@@ -774,7 +780,9 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                             type="button"
                             data-testid={`forum-seek-timestamp-${q.id}`}
                             onClick={() =>
-                              onSeekVideoTimestamp?.(Number(q.video_timestamp_seconds))
+                              (onSeekVideoTimestamp || onSeekToTimestamp)?.(
+                                Number(q.video_timestamp_seconds)
+                              )
                             }
                             className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 font-mono text-[11px] font-bold text-red-900 ring-1 ring-red-200 hover:bg-red-100"
                             title="Bấm để tua video bài giảng tới đúng đoạn này"

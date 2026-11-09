@@ -1109,11 +1109,20 @@ export const ktnApi = {
     });
   },
 
+  async uploadFileWithProgress(
+    file: File | Blob,
+    onProgress?: (percent: number) => void
+  ): Promise<{ fileUrl: string; fileType: string; size: number }> {
+    const fileName = (file as File).name || `upload-${Date.now()}.bin`;
+    return this.uploadChatFile(file, fileName, onProgress);
+  },
+
   async teacherCreateStudent(payload: {
     name: string;
     email: string;
     phone?: string;
     parentName?: string;
+    parentPhone?: string;
     classCode: string;
     note?: string;
     initialPassword?: string;
@@ -1165,17 +1174,24 @@ export const ktnApi = {
     studentName?: string;
     studentId?: string;
     classCode?: string;
-    courseId: string;
+    courseId?: string;
+    requestedCourseId?: string;
     courseTitle?: string;
+    requestedCourseTitle?: string;
     reason: string;
   }): Promise<{
     ok: boolean;
     request: KtnCourseGrantRequest;
     message: string;
   }> {
+    const normalizedPayload = {
+      ...payload,
+      courseId: payload.courseId || payload.requestedCourseId || '',
+      courseTitle: payload.courseTitle || payload.requestedCourseTitle
+    };
     return ktnRequest('/api/ktn/course-requests', {
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify(normalizedPayload)
     });
   },
 
@@ -1209,7 +1225,7 @@ export const ktnApi = {
   async manageStudentLifecycle(payload: {
     email: string;
     action: 'suspend' | 'archive' | 'restore' | 'delete';
-    reason: string;
+    reason?: string;
     confirmDelete?: boolean;
   }): Promise<{
     ok: boolean;
@@ -1223,7 +1239,10 @@ export const ktnApi = {
   }> {
     return ktnRequest('/api/ktn/admin/students/lifecycle', {
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...payload,
+        reason: payload.reason || ''
+      })
     });
   },
 
@@ -1232,30 +1251,57 @@ export const ktnApi = {
     unitId?: string;
     status?: string;
     q?: string;
+    search?: string;
   }): Promise<{
     ok: boolean;
     questions: KtnForumQuestion[];
     totalCount: number;
     openCount: number;
+    summary: {
+      total: number;
+      openCount: number;
+      claimedCount: number;
+      answeredCount: number;
+      resolvedCount: number;
+    };
   }> {
     const sp = new URLSearchParams();
     if (params?.courseId) sp.set('courseId', params.courseId);
     if (params?.unitId) sp.set('unitId', params.unitId);
     if (params?.status && params.status !== 'all') sp.set('status', params.status);
-    if (params?.q) sp.set('q', params.q);
+    const searchVal = params?.q || params?.search;
+    if (searchVal) sp.set('q', searchVal);
     const qs = sp.toString();
     const res = await ktnRequest<{
       ok: boolean;
       questions: KtnForumQuestion[];
       totalCount?: number;
       openCount?: number;
+      summary?: {
+        total: number;
+        openCount: number;
+        claimedCount: number;
+        answeredCount: number;
+        resolvedCount: number;
+      };
     }>(`/api/ktn/forum/questions${qs ? `?${qs}` : ''}`);
     const list = Array.isArray(res.questions) ? res.questions : [];
+    const openCount = res.openCount ?? list.filter((item) => item.status === 'open').length;
+    const claimedCount = list.filter((item) => item.status === 'claimed' || Boolean(item.claimed_by_email)).length;
+    const answeredCount = list.filter((item) => item.status === 'answered').length;
+    const resolvedCount = list.filter((item) => item.status === 'resolved').length;
     return {
       ok: true,
       questions: list,
       totalCount: res.totalCount ?? list.length,
-      openCount: res.openCount ?? list.filter((item) => item.status === 'open').length
+      openCount,
+      summary: res.summary || {
+        total: res.totalCount ?? list.length,
+        openCount,
+        claimedCount,
+        answeredCount,
+        resolvedCount
+      }
     };
   },
 
@@ -1356,7 +1402,7 @@ export const ktnApi = {
   },
 
   async adjustTeacherForumPoints(payload: {
-    teacherEmail: string;
+    teacherEmail?: string;
     teacherId?: string;
     pointsDelta: number;
     reason: string;
@@ -1369,7 +1415,10 @@ export const ktnApi = {
   }> {
     return ktnRequest('/api/ktn/forum/points/adjust', {
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...payload,
+        teacherEmail: payload.teacherEmail || payload.teacherId || ''
+      })
     });
   },
 

@@ -408,6 +408,7 @@ export const TeacherWorkspace: React.FC = () => {
             has_live_class: true,
             has_online_courses: false,
             online_courses: [],
+            studentCase: 'sll_only',
           } as KtnStudentRecord,
           initialPassword: 'Ktn@123456',
           classCode: chosenClass,
@@ -419,7 +420,7 @@ export const TeacherWorkspace: React.FC = () => {
         email: newStuEmail.trim().toLowerCase(),
         parentPhone: newStuParentPhone.trim() || undefined,
         classCode: chosenClass,
-        notes: newStuNotes.trim() || undefined,
+        note: newStuNotes.trim() || undefined,
       });
     },
     onSuccess: (res) => {
@@ -428,8 +429,8 @@ export const TeacherWorkspace: React.FC = () => {
         name: res.student.name,
         email: res.student.email,
         code: res.student.code,
-        classCode: res.classCode || res.student.class_code,
-        initialPassword: res.initialPassword,
+        classCode: res.classCode || res.student.class_code || '',
+        initialPassword: res.initialPassword || '',
       });
       setNewStuName('');
       setNewStuEmail('');
@@ -529,7 +530,7 @@ export const TeacherWorkspace: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-course-grant-requests'] });
       addToast({
         title: 'Đã hủy đề nghị mở khóa học',
-        variant: 'info',
+        variant: 'success',
       });
     },
   });

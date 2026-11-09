@@ -1600,11 +1600,12 @@ export const LearningPage: React.FC = () => {
                           activeLesson.id ||
                           `lesson-${activeLessonNumber}`
                       )}
-                      lessonNum={activeLessonNumber}
+                      lessonNumber={activeLessonNumber}
                       lessonTitle={activeLesson.title}
                       initialTimestampSeconds={forumDraftTimestamp}
                       onClearInitialTimestamp={() => setForumDraftTimestamp(null)}
-                      onSeekToTimestamp={(seconds) => setSeekVideoTimestamp(seconds)}
+                      onSeekVideoTimestamp={(seconds: number) => setSeekVideoTimestamp(seconds)}
+                      onSeekToTimestamp={(seconds: number) => setSeekVideoTimestamp(seconds)}
                     />
                   </div>
                 )}

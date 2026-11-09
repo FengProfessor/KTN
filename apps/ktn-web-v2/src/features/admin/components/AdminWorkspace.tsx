@@ -23,6 +23,8 @@ import {
   Clock,
   ChevronRight,
   AlertTriangle,
+  Award,
+  BookOpen,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -35,6 +37,7 @@ import {
 } from '@/lib/utils';
 import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
 import { StudentDetailDrawer } from '@/features/admin/components/StudentDetailDrawer';
+import { TeacherDetailDrawer } from '@/features/admin/components/TeacherDetailDrawer';
 import {
   OrderDetailDrawer,
   ACCOUNT_STATUS_META,
@@ -44,6 +47,7 @@ import {
 import {
   KtnClassItem,
   KtnCourse,
+  KtnCourseGrantRequest,
   KtnOrder,
   KtnStudentRecord,
   KtnStudentSearchResult,
@@ -86,8 +90,12 @@ export const AdminWorkspace: React.FC = () => {
   const addToast = useUiStore((s) => s.addToast);
 
   const [activeTab, setActiveTab] = useState<
-    'all' | 'students' | 'classes' | 'orders' | 'more'
+    'all' | 'students' | 'teachers' | 'classes' | 'orders' | 'more'
   >('all');
+
+  // Selected teacher for TeacherDetailDrawer
+  const [selectedTeacherKey, setSelectedTeacherKey] = useState<string | null>(null);
+  const [teacherSearchInput, setTeacherSearchInput] = useState<string>('');
 
   // Selected student for StudentDetailDrawer (neutral by default — only opened by explicit click or valid ?email= param)
   const [selectedStudentEmail, setSelectedStudentEmail] = useState<string | null>(() => {
@@ -115,6 +123,7 @@ export const AdminWorkspace: React.FC = () => {
   const [classFilter, setClassFilter] = useState('ALL');
   const [courseFilter, setCourseFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [accountStatusFilter, setAccountStatusFilter] = useState('ALL');
   const [pageOffset, setPageOffset] = useState(0);
   const pageLimit = 20;
 
@@ -189,6 +198,7 @@ export const AdminWorkspace: React.FC = () => {
 
     if (
       section === 'students' ||
+      section === 'teachers' ||
       section === 'classes' ||
       section === 'orders' ||
       section === 'more'
@@ -290,6 +300,7 @@ export const AdminWorkspace: React.FC = () => {
       classFilter,
       courseFilter,
       statusFilter,
+      accountStatusFilter,
       pageOffset,
     ],
     queryFn: async ({ signal }) => {
@@ -346,6 +357,7 @@ export const AdminWorkspace: React.FC = () => {
           classCode: classFilter !== 'ALL' ? classFilter : undefined,
           courseId: courseFilter !== 'ALL' ? courseFilter : undefined,
           syncStatus: statusFilter !== 'ALL' ? statusFilter : undefined,
+          accountStatus: accountStatusFilter !== 'ALL' ? accountStatusFilter : undefined,
           limit: pageLimit,
           offset: pageOffset,
         },
@@ -378,10 +390,33 @@ export const AdminWorkspace: React.FC = () => {
             active: true,
             provisioningStatus: 'ready_to_login',
             syncStatus: 'synced',
+            managedStudentsCount: 12,
+            scheduledSessionsCount: 8,
+            recordedClassSessionsCount: 4,
+            attendanceConfirmedSessionsCount: 0,
+            teachingVerificationStatus: 'unverified',
+            gradedHomeworksCount: 15,
+            pendingHomeworksCount: 1,
+            avgGradingTurnaroundHours: 2.4,
+            forumAnswersCount: 3,
+            forumVideoAnswersCount: 1,
+            forumAcceptedAnswersCount: 2,
+            totalContributionPoints: 40,
+            monthlyContributionPoints: 23,
           },
         ];
       }
       return ktnApi.getTeachers();
+    },
+    enabled: Boolean(user) || isDemoMode,
+  });
+
+  const courseGrantRequestsQuery = useQuery<KtnCourseGrantRequest[]>({
+    queryKey: ['ktn-admin-course-grant-requests', user?.email, isDemoMode],
+    queryFn: async () => {
+      if (isDemoMode) return [];
+      const res = await ktnApi.getCourseGrantRequests();
+      return res.requests || [];
     },
     enabled: Boolean(user) || isDemoMode,
   });
@@ -908,6 +943,162 @@ export const AdminWorkspace: React.FC = () => {
     },
   });
 
+  const manageLifecycleMutation = useMutation({
+    mutationFn: async (params: {
+      email: string;
+      action: 'suspend' | 'archive' | 'restore' | 'delete';
+      reason?: string;
+    }) => {
+      setDrawerActionError(null);
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 300));
+        return {
+          ok: true,
+          action: params.action,
+          student: selectedStudent
+            ? {
+                ...selectedStudent,
+                accountStatus:
+                  params.action === 'suspend'
+                    ? ('suspended' as const)
+                    : params.action === 'archive'
+                    ? ('archived' as const)
+                    : params.action === 'delete'
+                    ? ('deleted' as const)
+                    : ('ready_to_login' as const),
+              }
+            : undefined,
+          message: 'Đã cập nhật trạng thái tài khoản học viên!',
+        };
+      }
+      return ktnApi.manageStudentLifecycle(params);
+    },
+    onSuccess: (res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-sync-status'] });
+      if (vars.action === 'delete') {
+        closeStudentDrawer();
+      } else if (res.student) {
+        setSelectedStudentSnapshot(res.student);
+      }
+      addToast({
+        title: res.message || 'Đã cập nhật trạng thái tài khoản học viên!',
+        variant: 'success',
+      });
+    },
+    onError: (err: Error) => {
+      setDrawerActionError(err.message);
+      addToast({
+        title: 'Không thể cập nhật trạng thái tài khoản',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
+  const reviewCourseRequestMutation = useMutation({
+    mutationFn: async (params: {
+      requestId: string;
+      decision: 'approve' | 'reject';
+      reviewNote?: string;
+    }) => {
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 300));
+        return {
+          ok: true,
+          request: null as unknown as KtnCourseGrantRequest,
+          message:
+            params.decision === 'approve'
+              ? 'Đã phê duyệt & kích hoạt khóa học video cho học viên!'
+              : 'Đã từ chối đề nghị mở khóa học.',
+        };
+      }
+      return ktnApi.reviewCourseGrantRequest(params);
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-course-grant-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
+      addToast({
+        title: res.message || 'Đã xử lý đề nghị mở khóa học của giáo viên!',
+        variant: 'success',
+      });
+    },
+    onError: (err: Error) => {
+      addToast({
+        title: 'Không thể xử lý yêu cầu',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
+  const updateTeacherDetailMutation = useMutation({
+    mutationFn: async (payload: {
+      code: string;
+      name: string;
+      email: string;
+      phone?: string;
+      specialization?: string;
+      bio?: string;
+      notes?: string;
+      active?: boolean;
+      password?: string;
+      assignedClasses: string[];
+      assignedCourses: string[];
+    }) => {
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 300));
+        return { ok: true, message: 'Đã cập nhật hồ sơ giáo viên!' };
+      }
+      return ktnApi.saveTeacher(payload);
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+      addToast({
+        title: res.message || 'Đã cập nhật hồ sơ & phân công giáo viên!',
+        variant: 'success',
+      });
+    },
+    onError: (err: Error) => {
+      addToast({
+        title: 'Không thể cập nhật giáo viên',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
+  const adjustTeacherPointsMutation = useMutation({
+    mutationFn: async (payload: {
+      teacherId: string;
+      pointsDelta: number;
+      reason: string;
+    }) => {
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 300));
+        return { ok: true };
+      }
+      return ktnApi.adjustTeacherForumPoints(payload);
+    },
+    onSuccess: (_res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-forum-leaderboard'] });
+      addToast({
+        title: `Đã ghi nhận ${vars.pointsDelta > 0 ? `+${vars.pointsDelta}` : vars.pointsDelta} điểm đóng góp!`,
+        description: `Lý do: ${vars.reason}`,
+        variant: 'success',
+      });
+    },
+    onError: (err: Error) => {
+      addToast({
+        title: 'Không thể điều chỉnh điểm đóng góp',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
   const retrySyncMutation = useMutation({
     mutationFn: async (payload: {
       type: 'student_provision' | 'student_sync' | 'teacher_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
@@ -954,6 +1145,33 @@ export const AdminWorkspace: React.FC = () => {
   const studentsList = studentSearchQuery.data?.items || [];
   const totalStudentsCount = studentSearchQuery.data?.totalCount ?? studentsList.length;
   const teachersList = teachersQuery.data || [];
+  const courseGrantRequestsList = courseGrantRequestsQuery.data || [];
+  const pendingCourseRequestsCount = useMemo(
+    () => courseGrantRequestsList.filter((r) => r.status === 'pending').length,
+    [courseGrantRequestsList]
+  );
+  const selectedTeacher: KtnTeacherRecord | null = useMemo(() => {
+    if (!selectedTeacherKey) return null;
+    const norm = selectedTeacherKey.toLowerCase();
+    return (
+      teachersList.find(
+        (t) =>
+          String(t.code || '').toLowerCase() === norm ||
+          String(t.email || '').toLowerCase() === norm
+      ) || null
+    );
+  }, [selectedTeacherKey, teachersList]);
+  const filteredTeachersList = useMemo(() => {
+    const q = teacherSearchInput.trim().toLowerCase();
+    if (!q) return teachersList;
+    return teachersList.filter((t) =>
+      [t.code, t.name, t.email, t.phone, ...(t.assigned_classes || [])]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [teachersList, teacherSearchInput]);
   const syncStatus = syncStatusQuery.data;
 
   const studentInCurrentPage = useMemo(() => {
@@ -1110,6 +1328,7 @@ export const AdminWorkspace: React.FC = () => {
   const showOrders = activeTab === 'all' || activeTab === 'orders';
   const showPermissions = activeTab === 'all' || activeTab === 'more';
   const showStudents = activeTab === 'all' || activeTab === 'students';
+  const showTeachers = activeTab === 'all' || activeTab === 'teachers';
   const showClasses = activeTab === 'all' || activeTab === 'classes';
 
   const copyCredentialText = (info: NonNullable<typeof credentialHandoff>) => {
@@ -1141,6 +1360,13 @@ export const AdminWorkspace: React.FC = () => {
                 id: 'students',
                 label: `Học viên (${totalStudentsCount})`,
                 to: '/admin/students',
+              },
+              {
+                id: 'teachers',
+                label: `Giáo viên (${teachersList.length})${
+                  pendingCourseRequestsCount > 0 ? ` · ${pendingCourseRequestsCount} YC` : ''
+                }`,
+                to: '/admin/teachers',
               },
               { id: 'classes', label: `Lớp (${classesList.length})`, to: '/admin/classes' },
               { id: 'orders', label: `Đơn hàng (${ordersList.length})`, to: '/admin/orders' },
@@ -2172,6 +2398,300 @@ export const AdminWorkspace: React.FC = () => {
         }}
       />
 
+      {/* Teacher Roster, Performance Metrics & Course Grant Requests Approval Inbox (Agent F + Agent E) */}
+      {showTeachers && (
+        <div className="space-y-4">
+          <div
+            data-testid="admin-teachers-section"
+            className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
+                <Award className="h-4 w-4 text-red-800" />
+                Quản lý giáo viên & Hiệu suất ({filteredTeachersList.length})
+                {teachersQuery.isFetching && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-stone-400" />
+                )}
+              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[200px]">
+                  <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-stone-400" />
+                  <input
+                    type="search"
+                    data-testid="admin-teacher-search-input"
+                    value={teacherSearchInput}
+                    onChange={(e) => setTeacherSearchInput(e.target.value)}
+                    placeholder="Tìm tên, email, mã GV, lớp..."
+                    className="w-full rounded-xl border border-stone-300 bg-stone-50 py-1.5 pl-8 pr-3 text-xs font-semibold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateTeacherModal(true)}
+                  className="inline-flex min-h-[32px] items-center gap-1 rounded-xl bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <span>+ Tạo giáo viên</span>
+                </button>
+              </div>
+            </div>
+
+            {filteredTeachersList.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-6 text-center text-xs text-stone-600">
+                Chưa có giáo viên phù hợp.
+              </div>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-stone-200 text-stone-500">
+                      <th className="pb-2 pr-2 font-bold">Giáo viên</th>
+                      <th className="pb-2 pr-2 font-bold">Lớp phụ trách</th>
+                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Lịch / Thực dạy</th>
+                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Bài đã chấm</th>
+                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Diễn đàn</th>
+                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Điểm đóng góp</th>
+                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Trạng thái</th>
+                      <th className="whitespace-nowrap pb-2 text-right font-bold">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {filteredTeachersList.map((teacher) => {
+                      const stats = teacher.stats || {
+                        scheduledSessionsCount: teacher.scheduledSessionsCount || 0,
+                        confirmedTaughtSessionsCount: teacher.confirmedSessionsCount || 0,
+                        cancelledOrSubstituteSessionsCount: 0,
+                        unverifiedTeachingLog:
+                          teacher.teachingVerificationStatus !== 'verified',
+                        submissionsReviewedCount: teacher.gradedHomeworksCount || 0,
+                        pendingGradingCount: teacher.pendingHomeworksCount || 0,
+                        avgGradingHours: teacher.avgGradingTurnaroundHours ?? null,
+                        forumAnswersCount: teacher.forumAnswersCount || 0,
+                        acceptedAnswersCount: teacher.acceptedAnswersCount || 0,
+                        videoAnswersCount: teacher.videoGuidesCount || 0,
+                        totalContributionPoints: teacher.totalContributionPoints || 0,
+                      };
+                      const classes = Array.isArray(teacher.assigned_classes)
+                        ? teacher.assigned_classes
+                        : [];
+                      const isLocked =
+                        teacher.active === false ||
+                        teacher.status === 'locked' ||
+                        teacher.status === 'inactive';
+
+                      return (
+                        <tr
+                          key={teacher.email}
+                          data-testid={`admin-teacher-row-${teacher.email}`}
+                          onClick={() => setSelectedTeacherKey(teacher.email)}
+                          className="cursor-pointer transition-colors hover:bg-stone-50"
+                        >
+                          <td className="py-2.5 pr-2">
+                            <div className="font-bold text-stone-900">{teacher.name}</div>
+                            <div className="text-[11px] text-stone-500">
+                              {teacher.email}
+                              {teacher.code ? ` · ${teacher.code}` : ''}
+                            </div>
+                          </td>
+                          <td className="py-2.5 pr-2">
+                            {classes.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {classes.map((cls) => (
+                                  <span
+                                    key={cls}
+                                    className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900"
+                                  >
+                                    {cls}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-stone-400">Chưa phân công</span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pr-2">
+                            <div className="font-bold text-stone-800">
+                              Lịch: {stats.scheduledSessionsCount} · Thực dạy:{' '}
+                              <span className="text-emerald-700">
+                                {stats.confirmedTaughtSessionsCount}
+                              </span>
+                            </div>
+                            {stats.unverifiedTeachingLog && (
+                              <span
+                                data-testid={`teacher-unverified-badge-${teacher.email}`}
+                                className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900"
+                              >
+                                Chưa xác minh số buổi thực dạy
+                              </span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pr-2">
+                            <span className="font-bold text-stone-900">
+                              {stats.submissionsReviewedCount}
+                            </span>
+                            {stats.pendingGradingCount > 0 && (
+                              <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                                Tồn: {stats.pendingGradingCount}
+                              </span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pr-2">
+                            <span className="font-bold text-stone-900">
+                              {stats.forumAnswersCount} trả lời
+                            </span>
+                            {stats.acceptedAnswersCount > 0 && (
+                              <span className="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-900">
+                                {stats.acceptedAnswersCount} hữu ích
+                              </span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pr-2">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+                              <Award className="h-3 w-3" />
+                              {stats.totalContributionPoints} điểm
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pr-2">
+                            <span
+                              className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
+                                isLocked
+                                  ? 'bg-red-100 text-red-900'
+                                  : 'bg-emerald-100 text-emerald-900'
+                              }`}
+                            >
+                              {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 text-right">
+                            <button
+                              type="button"
+                              data-testid={`admin-open-teacher-btn-${teacher.email}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedTeacherKey(teacher.email);
+                              }}
+                              className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs hover:bg-red-50"
+                            >
+                              <span>Hồ sơ & Hiệu suất</span>
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Course Grant Requests Inbox (Teacher requests for Student Online Course access) */}
+          <div
+            data-testid="admin-course-requests-inbox"
+            className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
+                <BookOpen className="h-4 w-4 text-red-800" />
+                Yêu cầu cấp khóa học online từ Giáo viên ({courseGrantRequestsList.length})
+              </h3>
+            </div>
+
+            {courseGrantRequestsList.length === 0 ? (
+              <p className="mt-2 text-xs text-stone-500">
+                Chưa có yêu cầu cấp khóa học online nào từ giáo viên.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {courseGrantRequestsList.map((req) => (
+                  <div
+                    key={req.id}
+                    data-testid={`admin-course-request-item-${req.id}`}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50/70 p-3 text-xs"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-bold text-stone-900">
+                          HV: {req.student_name || req.student_email}
+                        </span>
+                        <span className="text-stone-500">({req.student_email})</span>
+                        {req.class_code && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
+                            Lớp {req.class_code}
+                          </span>
+                        )}
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                            req.status === 'approved'
+                              ? 'bg-emerald-100 text-emerald-900'
+                              : req.status === 'rejected'
+                              ? 'bg-red-100 text-red-900'
+                              : 'bg-amber-100 text-amber-900'
+                          }`}
+                        >
+                          {req.status === 'approved'
+                            ? 'Đã duyệt'
+                            : req.status === 'rejected'
+                            ? 'Đã từ chối'
+                            : 'Chờ duyệt'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-semibold text-stone-700">
+                        Khóa đề nghị:{' '}
+                        {(req.requested_course_titles && req.requested_course_titles.length > 0
+                          ? req.requested_course_titles
+                          : req.requested_course_ids && req.requested_course_ids.length > 0
+                          ? req.requested_course_ids
+                          : [req.course_title || req.course_id]
+                        ).join(', ')}
+                      </p>
+                      <p className="text-[11px] text-stone-500">
+                        Giáo viên đề nghị: {req.teacher_name || req.teacher_email} · Lý do:{' '}
+                        {req.reason || 'Không ghi chú'}
+                      </p>
+                    </div>
+
+                    {req.status === 'pending' && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          data-testid={`admin-approve-course-request-${req.id}`}
+                          disabled={reviewCourseRequestMutation.isPending}
+                          onClick={() =>
+                            reviewCourseRequestMutation.mutate({
+                              requestId: req.id,
+                              decision: 'approve',
+                            })
+                          }
+                          className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                        >
+                          Duyệt & Mở khóa
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`admin-reject-course-request-${req.id}`}
+                          disabled={reviewCourseRequestMutation.isPending}
+                          onClick={() =>
+                            reviewCourseRequestMutation.mutate({
+                              requestId: req.id,
+                              decision: 'reject',
+                              reviewNote: 'Quản lý từ chối yêu cầu',
+                            })
+                          }
+                          className="rounded-lg border border-red-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-red-800 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Từ chối
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Student Roster with Ultra-Fast Server-Side Search, Filters & Unified Detail Drawer */}
       {showStudents && (
         <div
@@ -2253,10 +2773,26 @@ export const AdminWorkspace: React.FC = () => {
                 }}
                 className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
               >
-                <option value="ALL">Mọi trạng thái</option>
+                <option value="ALL">Mọi đồng bộ</option>
                 <option value="synced">Đã đồng bộ</option>
                 <option value="pending_activation">Chờ kích hoạt</option>
                 <option value="needs_resync">Cần đồng bộ lại</option>
+              </select>
+
+              <select
+                aria-label="Lọc theo vòng đời tài khoản"
+                data-testid="admin-filter-account-status"
+                value={accountStatusFilter}
+                onChange={(e) => {
+                  setAccountStatusFilter(e.target.value);
+                  setPageOffset(0);
+                }}
+                className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
+              >
+                <option value="ACTIVE">Đang học (ẩn Lưu trữ)</option>
+                <option value="ALL">Mọi tài khoản</option>
+                <option value="locked">Tạm khóa</option>
+                <option value="archived">Đã lưu trữ</option>
               </select>
 
               <button
@@ -2637,11 +3173,13 @@ export const AdminWorkspace: React.FC = () => {
         isReplacingCourses={replaceAllCoursesMutation.isPending}
         isUpdatingProfile={updateProfileMutation.isPending}
         isResyncing={retrySyncMutation.isPending}
+        isManagingLifecycle={manageLifecycleMutation.isPending}
         onGrantCourses={(params) => grantCoursesMutation.mutateAsync(params)}
         onRevokeCourse={(params) => revokeCourseMutation.mutateAsync(params)}
         onAssignClass={(params) => assignClassMutation.mutateAsync(params)}
         onReplaceAllCourses={(params) => replaceAllCoursesMutation.mutateAsync(params)}
         onUpdateProfile={(params) => updateProfileMutation.mutateAsync(params)}
+        onManageLifecycle={(params) => manageLifecycleMutation.mutateAsync(params)}
         onResyncStudent={(stu) => {
           const rawAcc = String(stu.accountStatus || stu.account_status || '').toLowerCase();
           const rawSyn = String(stu.syncStatus || stu.sync_status || '').toLowerCase();
@@ -2663,6 +3201,20 @@ export const AdminWorkspace: React.FC = () => {
             variant: 'success',
           });
         }}
+      />
+
+      {/* Teacher Profile & Performance Drawer (Agent F) */}
+      <TeacherDetailDrawer
+        teacher={selectedTeacher}
+        open={Boolean(selectedTeacherKey)}
+        isOpen={Boolean(selectedTeacherKey)}
+        onClose={() => setSelectedTeacherKey(null)}
+        classesList={classesList}
+        catalogCourses={coursesList}
+        isSaving={updateTeacherDetailMutation.isPending}
+        isAdjustingPoints={adjustTeacherPointsMutation.isPending}
+        onSaveTeacher={(payload) => updateTeacherDetailMutation.mutateAsync(payload)}
+        onAdjustForumPoints={(payload) => adjustTeacherPointsMutation.mutateAsync(payload)}
       />
 
       {/* Order Detail Drawer (Phase 2.2 & 2.3 & Phase 3) */}

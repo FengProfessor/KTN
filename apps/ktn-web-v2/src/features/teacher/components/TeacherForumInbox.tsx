@@ -139,27 +139,29 @@ export const TeacherForumInbox: React.FC = () => {
 
   const leaderboardQuery = useQuery<KtnForumLeaderboardResponse>({
     queryKey: ['ktn-forum-leaderboard', selectedMonth, isDemoMode],
-    queryFn: async () => {
+    queryFn: async (): Promise<KtnForumLeaderboardResponse> => {
       if (isDemoMode) {
         return {
           ok: true,
           month: selectedMonth,
           leaderboard: [
             {
-              teacherKey: user?.code || user?.email || 'GV-KTN',
               teacherId: user?.code || 'GV-KTN',
               teacherEmail: user?.email || 'teacher@khongtunhi.com',
               teacherName: user?.name || 'Giáo viên KTN',
+              title: 'Giáo viên',
+              avatar: null,
+              active: true,
               totalPoints: 23,
-              firstAnswersCount: 2,
-              videoAnswersCount: 1,
+              monthlyPoints: 23,
+              answersCount: 2,
               acceptedAnswersCount: 1,
-              fastReplyBonusCount: 1,
-              helpfulVotesPoints: 0,
-              manualAdjustmentsPoints: 0,
+              helpfulVotesCount: 0,
+              videoGuidesCount: 1,
+              longPendingResolvedCount: 0,
+              recentEvents: [],
             },
           ],
-          events: [],
         };
       }
       return ktnApi.getForumLeaderboard(selectedMonth);
@@ -261,13 +263,10 @@ export const TeacherForumInbox: React.FC = () => {
     setIsUploadingVideo(true);
     setVideoUploadProgress(1);
     try {
-      const uploadedUrl = await ktnApi.uploadFileWithProgress(file, {
-        scope: 'forum_answer_video',
-        courseId: question.course_id,
-        unitId: question.unit_id,
-        onProgress: (pct) => setVideoUploadProgress(pct),
+      const uploadRes = await ktnApi.uploadFileWithProgress(file, (pct: number) => {
+        setVideoUploadProgress(pct);
       });
-      setAnswerVideoUrl(uploadedUrl);
+      setAnswerVideoUrl(uploadRes.fileUrl);
       addToast({
         title: 'Tải lên video hướng dẫn thành công!',
         description: 'Video đã được lưu trên S3 và đính kèm vào câu trả lời (+5 điểm đóng góp).',
@@ -300,11 +299,7 @@ export const TeacherForumInbox: React.FC = () => {
     }
     setIsUploadingAttachment(true);
     try {
-      const uploadedUrl = await ktnApi.uploadFileWithProgress(file, {
-        scope: 'forum_answer_attachment',
-        courseId: question.course_id,
-        unitId: question.unit_id,
-      });
+      const uploadRes = await ktnApi.uploadFileWithProgress(file);
       const kind: 'image' | 'audio' | 'file' = file.type.startsWith('image/')
         ? 'image'
         : file.type.startsWith('audio/')
@@ -314,7 +309,7 @@ export const TeacherForumInbox: React.FC = () => {
         ...prev,
         {
           id: `att-${Date.now()}`,
-          url: uploadedUrl,
+          url: uploadRes.fileUrl,
           name: file.name,
           type: file.type,
           size: file.size,
@@ -390,13 +385,13 @@ export const TeacherForumInbox: React.FC = () => {
             <div className="rounded-lg border border-stone-200/80 bg-white/90 p-2">
               <p className="text-[11px] font-semibold text-stone-500">Trả lời đầu</p>
               <p className="mt-0.5 font-display text-sm font-bold text-stone-900">
-                {myLeaderboardEntry?.firstAnswersCount || 0}
+                {myLeaderboardEntry?.answersCount || 0}
               </p>
             </div>
             <div className="rounded-lg border border-stone-200/80 bg-white/90 p-2">
               <p className="text-[11px] font-semibold text-stone-500">Có Video</p>
               <p className="mt-0.5 font-display text-sm font-bold text-red-800">
-                {myLeaderboardEntry?.videoAnswersCount || 0}
+                {myLeaderboardEntry?.videoGuidesCount || 0}
               </p>
             </div>
             <div className="rounded-lg border border-stone-200/80 bg-white/90 p-2">
@@ -435,7 +430,7 @@ export const TeacherForumInbox: React.FC = () => {
             <div className="mt-2.5 divide-y divide-stone-100">
               {(leaderboardQuery.data?.leaderboard || []).slice(0, 5).map((row, idx) => (
                 <div
-                  key={row.teacherKey}
+                  key={row.teacherId || row.teacherEmail || idx}
                   className="flex items-center justify-between gap-2 py-2 text-xs"
                 >
                   <div className="flex min-w-0 items-center gap-2.5">
@@ -457,7 +452,7 @@ export const TeacherForumInbox: React.FC = () => {
                         {row.teacherName}
                       </p>
                       <p className="truncate text-[11px] text-stone-500">
-                        {row.firstAnswersCount} câu trả lời · {row.videoAnswersCount} video ·{' '}
+                        {row.answersCount} câu trả lời · {row.videoGuidesCount} video ·{' '}
                         {row.acceptedAnswersCount} giải đáp chuẩn
                       </p>
                     </div>

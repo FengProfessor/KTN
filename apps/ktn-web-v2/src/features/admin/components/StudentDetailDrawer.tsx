@@ -19,6 +19,9 @@ import {
   Edit3,
   Copy,
   Layers,
+  Lock,
+  Archive,
+  RotateCcw,
 } from 'lucide-react';
 import {
   disambiguateCatalogCourses,
@@ -47,6 +50,7 @@ export interface StudentDetailDrawerProps {
   isReplacingCourses: boolean;
   isUpdatingProfile: boolean;
   isResyncing: boolean;
+  isManagingLifecycle?: boolean;
   onGrantCourses: (params: { email: string; courseIds: string[] }) => Promise<unknown>;
   onRevokeCourse: (params: { email: string; courseId: string }) => Promise<unknown>;
   onAssignClass: (params: { email: string; classCode: string | null }) => Promise<unknown>;
@@ -58,6 +62,11 @@ export interface StudentDetailDrawerProps {
     parentName?: string;
   }) => Promise<unknown>;
   onResyncStudent: (student: KtnStudentRecord) => void;
+  onManageLifecycle?: (params: {
+    email: string;
+    action: 'suspend' | 'archive' | 'restore' | 'delete';
+    reason?: string;
+  }) => Promise<unknown>;
   onCopyEmail?: (email: string) => void;
 }
 
@@ -78,12 +87,14 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   isReplacingCourses,
   isUpdatingProfile,
   isResyncing,
+  isManagingLifecycle = false,
   onGrantCourses,
   onRevokeCourse,
   onAssignClass,
   onReplaceAllCourses,
   onUpdateProfile,
   onResyncStudent,
+  onManageLifecycle,
   onCopyEmail,
 }) => {
   // Section A: Profile edit state
@@ -105,6 +116,13 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   const [selectedClassCode, setSelectedClassCode] = useState('');
   const [showUnassignConfirm, setShowUnassignConfirm] = useState(false);
 
+  // Section E: Account Lifecycle state
+  const [pendingLifecycleAction, setPendingLifecycleAction] = useState<
+    'suspend' | 'archive' | 'restore' | 'delete' | null
+  >(null);
+  const [lifecycleReason, setLifecycleReason] = useState('');
+  const [deleteConfirmChecked, setDeleteConfirmChecked] = useState(false);
+
   // Reset form states to neutral whenever student changes
   useEffect(() => {
     if (!student) return;
@@ -121,6 +139,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     setReplaceConfirmedCheck(false);
     setSelectedClassCode('');
     setShowUnassignConfirm(false);
+    setPendingLifecycleAction(null);
+    setLifecycleReason('');
+    setDeleteConfirmChecked(false);
   }, [student?.email]);
 
   // Handle Escape key to close drawer
@@ -244,7 +265,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     // 1. Account login status
     let accountLabel = 'Hoạt động';
     let accountTone: 'emerald' | 'amber' | 'red' = 'emerald';
-    if (rawAcc === 'error' || rawAcc === 'sync_error') {
+    if (rawAcc === 'deleted') {
+      accountLabel = 'Đã xóa';
+      accountTone = 'red';
+    } else if (rawAcc === 'suspended') {
+      accountLabel = 'Tạm khóa';
+      accountTone = 'amber';
+    } else if (rawAcc === 'archived') {
+      accountLabel = 'Đã lưu trữ';
+      accountTone = 'amber';
+    } else if (rawAcc === 'error' || rawAcc === 'sync_error') {
       accountLabel = 'Lỗi tài khoản';
       accountTone = 'red';
     } else if (
@@ -313,7 +343,8 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     isAssigningClass ||
     isReplacingCourses ||
     isUpdatingProfile ||
-    isResyncing;
+    isResyncing ||
+    isManagingLifecycle;
 
   const handleDropdownCourseChange = (val: string) => {
     setCourseDropdownId(val);
@@ -1402,6 +1433,201 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               </p>
             )}
           </section>
+
+          {/* =============================================================== */}
+          {/* KHU VỰC E: QUẢN LÝ TÀI KHOẢN (KHÓA / LƯU TRỮ / KHÔI PHỤC / XÓA) */}
+          {/* =============================================================== */}
+          {onManageLifecycle && (
+            <section
+              data-testid="student-lifecycle-section"
+              className="rounded-xl border border-stone-200 bg-white p-3.5 shadow-2xs"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-stone-700">
+                  <Lock className="h-3.5 w-3.5 text-red-800" />
+                  <span>E. Quản lý tài khoản</span>
+                </h3>
+                <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-600">
+                  Vòng đời học viên
+                </span>
+              </div>
+
+              <p className="mt-1.5 text-[11px] text-stone-600">
+                Quản lý trạng thái đăng nhập, lưu trữ hồ sơ nghỉ học hoặc xóa vĩnh viễn có điều kiện (vẫn giữ nguyên dữ liệu đơn hàng tài chính <code className="font-mono">ktn_orders</code>).
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <button
+                  type="button"
+                  data-testid="drawer-lifecycle-suspend-btn"
+                  disabled={isManagingLifecycle}
+                  onClick={() => {
+                    setPendingLifecycleAction('suspend');
+                    setLifecycleReason('Tạm khóa tài khoản học viên');
+                  }}
+                  className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>Tạm khóa tài khoản</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="drawer-lifecycle-archive-btn"
+                  disabled={isManagingLifecycle}
+                  onClick={() => {
+                    setPendingLifecycleAction('archive');
+                    setLifecycleReason('Học viên đã hoàn thành khóa học / lưu trữ hồ sơ');
+                  }}
+                  className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl border border-stone-300 bg-stone-100 px-2.5 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-200 disabled:opacity-50"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  <span>Lưu trữ học viên</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="drawer-lifecycle-restore-btn"
+                  disabled={isManagingLifecycle}
+                  onClick={() => {
+                    setPendingLifecycleAction('restore');
+                    setLifecycleReason('Khôi phục hoạt động tài khoản học viên');
+                  }}
+                  className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Khôi phục</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="drawer-lifecycle-delete-btn"
+                  disabled={isManagingLifecycle}
+                  onClick={() => {
+                    setPendingLifecycleAction('delete');
+                    setLifecycleReason('');
+                    setDeleteConfirmChecked(false);
+                  }}
+                  className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Xóa vĩnh viễn có điều kiện</span>
+                </button>
+              </div>
+
+              {pendingLifecycleAction && (
+                <div
+                  data-testid="drawer-lifecycle-confirm-box"
+                  className={`mt-3 space-y-2.5 rounded-xl border p-3 text-xs ${
+                    pendingLifecycleAction === 'delete'
+                      ? 'border-red-300 bg-red-50/90 text-red-950'
+                      : 'border-stone-300 bg-stone-50 text-stone-900'
+                  }`}
+                >
+                  <p className="font-bold">
+                    {pendingLifecycleAction === 'suspend' &&
+                      `Xác nhận TẠM KHÓA tài khoản ${student.name} (${student.email})`}
+                    {pendingLifecycleAction === 'archive' &&
+                      `Xác nhận LƯU TRỮ học viên ${student.name} (${student.email})`}
+                    {pendingLifecycleAction === 'restore' &&
+                      `Xác nhận KHÔI PHỤC tài khoản ${student.name} (${student.email})`}
+                    {pendingLifecycleAction === 'delete' &&
+                      `CẢNH BÁO: Xóa vĩnh viễn có điều kiện học viên ${student.name} (${student.email})`}
+                  </p>
+
+                  {pendingLifecycleAction === 'delete' && (
+                    <div className="space-y-1 rounded-lg bg-white/90 p-2.5 text-[11px] text-red-900">
+                      <p>
+                        • Gỡ học viên khỏi lớp trực tiếp, thu hồi khóa học video, ẩn khỏi danh sách hoạt động và chặn đồng bộ ngược từ izTeach tự tạo lại tài khoản.
+                      </p>
+                      <p>
+                        • Dữ liệu đơn hàng tài chính (<code className="font-mono">ktn_orders</code>) được <strong>giữ nguyên</strong> để đối soát kế toán.
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[11px] font-bold">
+                      Lý do thực hiện {pendingLifecycleAction === 'delete' ? '*' : ''}:
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="drawer-lifecycle-reason-input"
+                      value={lifecycleReason}
+                      onChange={(e) => setLifecycleReason(e.target.value)}
+                      placeholder="Nhập lý do (lưu vào nhật ký kiểm toán Quản lý)..."
+                      className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs text-stone-900"
+                    />
+                  </div>
+
+                  {pendingLifecycleAction === 'delete' && (
+                    <label className="flex cursor-pointer items-start gap-2 text-[11px] font-bold text-red-900">
+                      <input
+                        type="checkbox"
+                        data-testid="drawer-lifecycle-delete-confirm-checkbox"
+                        checked={deleteConfirmChecked}
+                        onChange={(e) => setDeleteConfirmChecked(e.target.checked)}
+                        className="mt-0.5 rounded border-red-400"
+                      />
+                      <span>
+                        Tôi xác nhận xóa tài khoản {student.email} và hiểu rằng thao tác này sẽ thu hồi toàn bộ quyền truy cập.
+                      </span>
+                    </label>
+                  )}
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingLifecycleAction(null);
+                        setLifecycleReason('');
+                        setDeleteConfirmChecked(false);
+                      }}
+                      className="rounded-lg border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="drawer-lifecycle-confirm-submit-btn"
+                      disabled={
+                        isManagingLifecycle ||
+                        (pendingLifecycleAction === 'delete' &&
+                          (!deleteConfirmChecked || !lifecycleReason.trim()))
+                      }
+                      onClick={async () => {
+                        onClearError();
+                        try {
+                          await onManageLifecycle({
+                            email: student.email,
+                            action: pendingLifecycleAction,
+                            reason: lifecycleReason.trim() || undefined,
+                          });
+                          setPendingLifecycleAction(null);
+                          setLifecycleReason('');
+                          setDeleteConfirmChecked(false);
+                        } catch {
+                          // Error displayed via actionError
+                        }
+                      }}
+                      className={`inline-flex items-center gap-1 rounded-lg px-3 py-1 text-xs font-bold text-white disabled:opacity-50 ${
+                        pendingLifecycleAction === 'delete'
+                          ? 'bg-red-800 hover:bg-red-900'
+                          : pendingLifecycleAction === 'restore'
+                          ? 'bg-emerald-700 hover:bg-emerald-800'
+                          : 'bg-stone-900 hover:bg-stone-800'
+                      }`}
+                    >
+                      {isManagingLifecycle && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      )}
+                      <span>Xác nhận thực hiện</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
         </div>
       </aside>
     </div>

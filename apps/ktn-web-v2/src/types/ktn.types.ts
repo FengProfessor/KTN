@@ -415,12 +415,30 @@ export interface KtnTeacherContributionEvent {
   created_at: string;
 }
 
+export interface KtnTeacherPerformanceStats {
+  scheduledSessionsCount: number;
+  confirmedTaughtSessionsCount: number;
+  cancelledOrSubstituteSessionsCount: number;
+  unverifiedTeachingLog: boolean;
+  submissionsReviewedCount: number;
+  pendingGradingCount: number;
+  avgGradingHours: number | null;
+  forumAnswersCount: number;
+  acceptedAnswersCount: number;
+  videoAnswersCount: number;
+  totalContributionPoints: number;
+}
+
 export interface KtnTeacherRecord {
   code: string;
   name: string;
   email: string;
   phone?: string;
   specialty?: string;
+  specialization?: string;
+  bio?: string;
+  notes?: string;
+  status?: 'active' | 'locked' | 'inactive' | string;
   assigned_classes: string[];
   assigned_courses?: string[];
   active: boolean;
@@ -430,21 +448,27 @@ export interface KtnTeacherRecord {
   syncStatus?: string;
   managedStudentsCount?: number;
   scheduledSessionsCount?: number;
+  recordedClassSessionsCount?: number;
   activitySessionsCount?: number;
   confirmedSessionsCount?: number;
+  attendanceConfirmedSessionsCount?: number;
   teachingVerificationStatus?: 'verified' | 'unverified';
   teachingVerificationLabel?: string;
   gradedHomeworksCount?: number;
   pendingHomeworksCount?: number;
+  avgGradingTurnaroundHours?: number | null;
   forumAnswersCount?: number;
   acceptedAnswersCount?: number;
+  forumAcceptedAnswersCount?: number;
   helpfulVotesCount?: number;
   videoGuidesCount?: number;
+  forumVideoAnswersCount?: number;
   monthlyContributionPoints?: number;
   totalContributionPoints?: number;
   recentContributionEvents?: KtnTeacherContributionEvent[];
   courseRequestsCount?: number;
   pendingCourseRequestsCount?: number;
+  stats?: KtnTeacherPerformanceStats;
 }
 
 export interface KtnForumAttachment {
@@ -452,6 +476,7 @@ export interface KtnForumAttachment {
   name: string;
   url: string;
   type: 'image' | 'audio' | 'video' | 'pdf' | 'file' | string;
+  kind?: 'image' | 'audio' | 'video' | 'pdf' | 'file' | string;
   size?: number;
 }
 
@@ -462,6 +487,8 @@ export interface KtnForumAnswer {
   author_name: string;
   author_role: 'teacher' | 'admin' | 'student' | string;
   teacher_id?: string | null;
+  teacher_email?: string | null;
+  teacher_name?: string;
   teacher_title?: string;
   content: string;
   attachments?: KtnForumAttachment[];
@@ -483,6 +510,7 @@ export interface KtnForumQuestion {
   course_title?: string;
   unit_id: string;
   lesson_number?: number;
+  lesson_num?: number;
   lesson_title_snapshot: string;
   student_id: string;
   student_email?: string;
@@ -493,12 +521,15 @@ export interface KtnForumQuestion {
   video_timestamp_seconds?: number | null;
   video_timestamp_label?: string | null;
   attachments?: KtnForumAttachment[];
-  status: 'open' | 'answered' | 'resolved' | 'hidden';
+  status: 'open' | 'claimed' | 'answered' | 'resolved' | 'hidden';
   claimed_by_email?: string | null;
   claimed_by_name?: string | null;
+  claimed_by_teacher_id?: string | null;
+  claimed_by_teacher_name?: string | null;
   claimed_at?: string | null;
   accepted_answer_id?: string | null;
   answers_count?: number;
+  answer_count?: number;
   answersCount?: number;
   answers?: KtnForumAnswer[];
   isFollowing?: boolean;
@@ -525,6 +556,12 @@ export interface KtnForumLeaderboardEntry {
   recentEvents: KtnTeacherContributionEvent[];
 }
 
+export interface KtnForumLeaderboardResponse {
+  ok: boolean;
+  month?: string;
+  leaderboard: KtnForumLeaderboardEntry[];
+}
+
 export interface KtnCourseGrantRequest {
   id: string;
   teacher_id: string;
@@ -536,6 +573,10 @@ export interface KtnCourseGrantRequest {
   class_code: string;
   course_id: string;
   course_title: string;
+  requested_course_id?: string;
+  requested_course_title?: string;
+  requested_course_ids?: string[];
+  requested_course_titles?: string[];
   reason: string;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   reviewed_by_email?: string | null;

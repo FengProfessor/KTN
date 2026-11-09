@@ -934,11 +934,15 @@ export const ktnApi = {
     courseIds?: string[];
     note?: string;
     idempotencyKey?: string;
+    operationId?: string;
   }): Promise<KtnProvisionStudentResponse> {
     return ktnRequest<KtnProvisionStudentResponse>(
       '/api/ktn/admin/students/provision',
       {
         method: 'POST',
+        headers: payload.idempotencyKey
+          ? { 'Idempotency-Key': payload.idempotencyKey }
+          : undefined,
         body: JSON.stringify(payload)
       }
     );

@@ -494,6 +494,25 @@ function loadWorkerInstance(sharedState = null) {
             type: 'student'
           }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
+        if (
+          u.pathname.includes('/student/') &&
+          state.izteach.createdStudentsByEmail &&
+          state.izteach.createdStudentsByEmail[email] &&
+          state.izteach.studentPasswordsByEmail &&
+          state.izteach.studentPasswordsByEmail[email] === decodedPwd
+        ) {
+          const createdStu = state.izteach.createdStudentsByEmail[email];
+          return new Response(JSON.stringify({
+            accessToken: `mock-student-jwt-${createdStu.dynamoId || createdStu.userId}`,
+            id: createdStu.dynamoId || createdStu.userId,
+            userId: createdStu.dynamoId || createdStu.userId,
+            studentId: createdStu._id,
+            email,
+            name: createdStu.name || email,
+            roles: ['student'],
+            type: 'student'
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
         return new Response(JSON.stringify({ message: 'Invalid credentials' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
       }
 
@@ -591,19 +610,48 @@ function loadWorkerInstance(sharedState = null) {
           }
           const body = init.body ? JSON.parse(init.body) : {};
           const em = String(body.email || '').toLowerCase();
+          const reqPhone = String(body.phone || '').trim();
           if (!state.izteach.createdStudentsByEmail) state.izteach.createdStudentsByEmail = {};
+          if (!state.izteach.studentPasswordsByEmail) state.izteach.studentPasswordsByEmail = {};
+          if (!state.izteach.studentPostCallsByEmail) state.izteach.studentPostCallsByEmail = {};
+          state.izteach.studentPostCallsByEmail[em] = (state.izteach.studentPostCallsByEmail[em] || 0) + 1;
+
+          if (state.izteach.createdStudentsByEmail[em]) {
+            return new Response(
+              JSON.stringify({ code: 409, data: 'Email đã tồn tại trong hệ thống' }),
+              { status: 409, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+
+          if (state.faults.izteachTakenPhones && state.faults.izteachTakenPhones.has(reqPhone)) {
+            return new Response(
+              JSON.stringify({ code: 500, data: 'Số điện thoại đã tồn tại trong hệ thống' }),
+              { status: 500, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+
           const seq = Object.keys(state.izteach.createdStudentsByEmail).length + 100;
           const generatedCognitoUid = body.dynamoId || body.userId || `aaaa1111-2222-3333-4444-${String(seq).padStart(12, '0')}`;
+          const crmId = '66fb0000000000000000' + String(seq).padStart(4, '0');
           const stuObj = {
-            _id: '66fb0000000000000000' + String(seq).padStart(4, '0'),
-            id: '66fb0000000000000000' + String(seq).padStart(4, '0'),
+            _id: crmId,
+            id: crmId,
             userId: generatedCognitoUid,
             dynamoId: generatedCognitoUid,
             email: em,
             name: body.name || em,
-            phone: body.phone || ''
+            phone: reqPhone
           };
           state.izteach.createdStudentsByEmail[em] = stuObj;
+          if (body.password) {
+            state.izteach.studentPasswordsByEmail[em] = Buffer.from(body.password, 'base64').toString('utf8');
+          }
+          if (state.faults.izteachStudentPost201MissingUuid) {
+            return new Response(
+              JSON.stringify({ _id: crmId, id: crmId, email: em, name: stuObj.name, phone: reqPhone }),
+              { status: 201, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
           return new Response(JSON.stringify(stuObj), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         const email = (u.searchParams.get('email') || '').toLowerCase();
@@ -622,8 +670,19 @@ function loadWorkerInstance(sharedState = null) {
         if (!email && Array.isArray(state.izteach.studentList)) {
           return new Response(JSON.stringify(state.izteach.studentList), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
+        if (state.faults.izteachStudentLookupMissOnceForEmail && state.faults.izteachStudentLookupMissOnceForEmail === email) {
+          state.faults.izteachStudentLookupMissOnceForEmail = null;
+          return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
         if (state.izteach.createdStudentsByEmail && state.izteach.createdStudentsByEmail[email]) {
-          return new Response(JSON.stringify([state.izteach.createdStudentsByEmail[email]]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          const rec = state.izteach.createdStudentsByEmail[email];
+          if (state.faults.izteachStudentLookupNestedShape) {
+            return new Response(
+              JSON.stringify({ data: { items: [rec] } }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          return new Response(JSON.stringify([rec]), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         const hit = state.tables.ktn_students.find(s => s.email.toLowerCase() === email);
         if (hit && hit.cognito_user_id) {
@@ -4076,6 +4135,317 @@ async function runSuite() {
       'Homework config & class session endpoints enforce strict RBAC: Admin=200; Teacher in assigned class/course=200; Teacher outside assigned class/course=403; Student=403; invalid courseId/lessonNum=400',
       d25Passed,
       `admin=${adminHwCfgRes.status}, teaUnassignedCourse=${teacherUnassignedCourseRes.status}, teaOwnClass=${teacherOwnClassHwRes.status}, teaOtherClass=${teacherOtherClassHwRes.status}, teaAssignedCourse=${teacherAssignedCourseRes.status}, teaOtherCourse=${teacherOtherCourseRes.status}, teaCourseHwList=${teacherAssignedCourseHwListRes.status}/${teacherOtherCourseHwListRes.status}/${teacherAfterRevokeCourseHwListRes.status}, stuCourse=${studentHwCfgRes.status}, stuClass=${studentClassHwRes.status}, badInput=${missingCourseIdRes.status}/${unknownCourseIdRes.status}/${invalidLessonNumRes.status}`
+    );
+
+    // ------------------------------------------------------------------------
+    // D26. P0 HOTFIX: STUDENT PROVISIONING ON IZTEACH (ALL 10 REQUIRED CASES)
+    // ------------------------------------------------------------------------
+    // Case 1: Brand new email with class + course -> created once, synced to Supabase, and able to log in on React V2
+    const c1Email = 'new.hotfix.stu@khongtunhi.com';
+    const c1Res = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên Hotfix 1',
+        email: c1Email,
+        phone: '0912345601',
+        parentName: 'Phụ Huynh Hotfix 1',
+        classCode: 'YCT2-04',
+        courseIds: [HSK1_ID],
+        idempotencyKey: 'IDEM-P0-C1:new.hotfix.stu@khongtunhi.com'
+      }
+    });
+    const c1LoginRes = await callApi('/api/ktn/auth/login', {
+      method: 'POST',
+      body: {
+        email: c1Email,
+        password: c1Res.data?.initialPassword || '',
+        role: 'student'
+      }
+    });
+    const c1Ok =
+      c1Res.status === 200 &&
+      c1Res.data?.ok === true &&
+      c1Res.data?.accountCreated === true &&
+      c1Res.data?.existingAccount === false &&
+      Boolean(c1Res.data?.initialPassword) &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(c1Res.data?.cognitoUserId || '') &&
+      c1Res.data?.student?.class_code === 'YCT2-04' &&
+      Array.isArray(c1Res.data?.student?.online_courses) &&
+      c1Res.data.student.online_courses.some(c => c.id === HSK1_ID) &&
+      state.izteach.studentPostCallsByEmail[c1Email] === 1 &&
+      c1LoginRes.status === 200 &&
+      c1LoginRes.data?.ok === true;
+
+    // Case 2: Existing izTeach email -> no duplicate creation, existing password & existing class/courses preserved
+    const c1OriginalPwd = state.izteach.studentPasswordsByEmail[c1Email];
+    const c2Res = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên Hotfix 1',
+        email: c1Email,
+        phone: '0912345601',
+        courseIds: [CFK1_ID],
+        idempotencyKey: 'IDEM-P0-C2:new.hotfix.stu@khongtunhi.com'
+      }
+    });
+    const c2CourseIds = (c2Res.data?.student?.online_courses || []).map(c => c.id);
+    const c2Ok =
+      c2Res.status === 200 &&
+      c2Res.data?.ok === true &&
+      c2Res.data?.accountCreated === false &&
+      c2Res.data?.existingAccount === true &&
+      c2Res.data?.initialPassword === null &&
+      state.izteach.studentPostCallsByEmail[c1Email] === 1 &&
+      state.izteach.studentPasswordsByEmail[c1Email] === c1OriginalPwd &&
+      c2Res.data?.student?.class_code === 'YCT2-04' &&
+      c2CourseIds.includes(HSK1_ID) &&
+      c2CourseIds.includes(CFK1_ID);
+
+    // Case 3: Nested CRM response structure ({ data: { items: [...] } }) -> reads dynamoId UUID, never confuses 24-hex _id/id with Cognito UUID
+    const c3Email = 'nested.crm.stu@khongtunhi.com';
+    const c3Uuid = 'bbbb1111-2222-3333-4444-000000000777';
+    const c3CrmId = '66fb00000000000000000777';
+    state.izteach.createdStudentsByEmail[c3Email] = {
+      _id: c3CrmId,
+      id: c3CrmId,
+      dynamoId: c3Uuid,
+      email: c3Email,
+      name: 'Học Viên Nested CRM',
+      phone: '0912345603'
+    };
+    state.faults.izteachStudentLookupNestedShape = true;
+    const c3Res = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên Nested CRM',
+        email: c3Email,
+        phone: '0912345603',
+        courseIds: [],
+        idempotencyKey: 'IDEM-P0-C3:nested.crm.stu@khongtunhi.com'
+      }
+    });
+    state.faults.izteachStudentLookupNestedShape = false;
+    const c3Ok =
+      c3Res.status === 200 &&
+      c3Res.data?.cognitoUserId === c3Uuid &&
+      c3Res.data?.izteachStudentId === c3CrmId &&
+      c3Res.data?.cognitoUserId !== c3CrmId;
+
+    // Case 4: POST /prod/student returns 201 without UUID -> re-queries CRM and resolves valid UUID
+    const c4Email = 'post201.nouuid@khongtunhi.com';
+    state.faults.izteachStudentPost201MissingUuid = true;
+    const c4Res = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên 201 Missing UUID',
+        email: c4Email,
+        phone: '0912345604',
+        courseIds: [HSK1_ID],
+        idempotencyKey: 'IDEM-P0-C4:post201.nouuid@khongtunhi.com'
+      }
+    });
+    state.faults.izteachStudentPost201MissingUuid = false;
+    const c4Ok =
+      c4Res.status === 200 &&
+      c4Res.data?.ok === true &&
+      c4Res.data?.accountCreated === true &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(c4Res.data?.cognitoUserId || '') &&
+      state.izteach.studentPostCallsByEmail[c4Email] === 1;
+
+    // Case 5: izTeach returns 409 Conflict on POST /prod/student -> switches to existing account reconciliation
+    const c5Email = 'conflict409.stu@khongtunhi.com';
+    const c5Uuid = 'cccc1111-2222-3333-4444-000000000888';
+    state.izteach.createdStudentsByEmail[c5Email] = {
+      _id: '66fb00000000000000000888',
+      id: '66fb00000000000000000888',
+      dynamoId: c5Uuid,
+      email: c5Email,
+      name: 'Học Viên 409 Conflict',
+      phone: '0912345605'
+    };
+    state.faults.izteachStudentLookupMissOnceForEmail = c5Email;
+    const c5Res = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên 409 Conflict',
+        email: c5Email,
+        phone: '0912345605',
+        courseIds: [HSK1_ID],
+        idempotencyKey: 'IDEM-P0-C5:conflict409.stu@khongtunhi.com'
+      }
+    });
+    const c5Ok =
+      c5Res.status === 200 &&
+      c5Res.data?.ok === true &&
+      c5Res.data?.cognitoUserId === c5Uuid &&
+      c5Res.data?.existingAccount === true &&
+      c5Res.data?.accountCreated === false &&
+      c5Res.data?.initialPassword === null;
+
+    // Case 6: Phone collision on izTeach ("Số điện thoại đã tồn tại trong hệ thống") -> retries CRM with deterministic fallback phone while saving real phone in Supabase
+    const c6Email = 'longhaiktn.test@gmail.com';
+    const takenPhone = '0855196309';
+    state.faults.izteachTakenPhones = new Set([takenPhone]);
+    const c6Res = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Long Hải',
+        email: c6Email,
+        phone: takenPhone,
+        parentName: 'Huyền',
+        classCode: 'YCT2-04',
+        courseIds: [],
+        idempotencyKey: 'IDEM-P0-C6:longhaiktn.test@gmail.com'
+      }
+    });
+    state.faults.izteachTakenPhones = null;
+    const c6Ok =
+      c6Res.status === 200 &&
+      c6Res.data?.ok === true &&
+      c6Res.data?.accountCreated === true &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(c6Res.data?.cognitoUserId || '') &&
+      c6Res.data?.student?.phone === takenPhone &&
+      c6Res.data?.student?.parent_name === 'Huyền' &&
+      c6Res.data?.student?.class_code === 'YCT2-04' &&
+      Array.isArray(c6Res.data?.student?.online_courses) &&
+      c6Res.data.student.online_courses.length === 0;
+
+    // Case 7: Transient izTeach outage -> Retry preserves idempotencyKey and operationId and creates account once
+    const c7Email = 'transient.iz.stu@khongtunhi.com';
+    const c7Idem = 'IDEM-P0-C7:transient.iz.stu@khongtunhi.com';
+    state.faults.izteachUserCreateFail = true;
+    const c7FailRes = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên Transient Iz',
+        email: c7Email,
+        phone: '0912345607',
+        courseIds: [HSK1_ID],
+        idempotencyKey: c7Idem
+      }
+    });
+    state.faults.izteachUserCreateFail = false;
+    const c7RetryRes = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên Transient Iz',
+        email: c7Email,
+        phone: '0912345607',
+        courseIds: [HSK1_ID],
+        idempotencyKey: c7Idem
+      }
+    });
+    const c7Ok =
+      c7FailRes.status === 502 &&
+      c7FailRes.data?.syncStatus === 'sync_failed' &&
+      c7FailRes.data?.retryable === true &&
+      c7RetryRes.status === 200 &&
+      c7RetryRes.data?.ok === true &&
+      c7RetryRes.data?.operationId === c7FailRes.data?.operationId &&
+      state.izteach.studentPostCallsByEmail[c7Email] === 1;
+
+    // Case 8: Supabase outage after izTeach creation -> keeps partial_failure, Retry resumes without re-creating on izTeach and preserves initialPassword
+    const c8Email = 'sb.outage.stu@khongtunhi.com';
+    const c8Idem = 'IDEM-P0-C8:sb.outage.stu@khongtunhi.com';
+    state.faults.supabaseFailOnTable = 'ktn_students';
+    state.faults.supabaseFailMethod = 'POST';
+    const c8FailRes = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên SB Outage',
+        email: c8Email,
+        phone: '0912345608',
+        classCode: 'YCT2-04',
+        courseIds: [HSK1_ID],
+        idempotencyKey: c8Idem
+      }
+    });
+    state.faults.supabaseFailOnTable = null;
+    state.faults.supabaseFailMethod = null;
+    const c8RetryRes = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên SB Outage',
+        email: c8Email,
+        phone: '0912345608',
+        classCode: 'YCT2-04',
+        courseIds: [HSK1_ID],
+        idempotencyKey: c8Idem
+      }
+    });
+    const c8Ok =
+      c8FailRes.status === 502 &&
+      c8FailRes.data?.syncStatus === 'partial_failure' &&
+      c8FailRes.data?.failedStep === 'supabase_student_upsert' &&
+      c8RetryRes.status === 200 &&
+      c8RetryRes.data?.ok === true &&
+      c8RetryRes.data?.operationId === c8FailRes.data?.operationId &&
+      c8RetryRes.data?.cognitoUserId === c8FailRes.data?.cognitoUserId &&
+      c8RetryRes.data?.accountCreated === true &&
+      c8RetryRes.data?.initialPassword === c8FailRes.data?.initialPassword &&
+      state.izteach.studentPostCallsByEmail[c8Email] === 1;
+
+    // Case 9: Admin creates student with NO courses -> does NOT auto-grant HSK1
+    const c9Email = 'nocourse.stu@khongtunhi.com';
+    const c9Res = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên Không Khóa Video',
+        email: c9Email,
+        phone: '0912345609',
+        classCode: 'YCT2-04',
+        courseIds: [],
+        idempotencyKey: 'IDEM-P0-C9:nocourse.stu@khongtunhi.com'
+      }
+    });
+    const c9Ok =
+      c9Res.status === 200 &&
+      c9Res.data?.ok === true &&
+      Array.isArray(c9Res.data?.grantedCourseIds) &&
+      c9Res.data.grantedCourseIds.length === 0 &&
+      Array.isArray(c9Res.data?.allCourseIds) &&
+      c9Res.data.allCourseIds.length === 0 &&
+      c9Res.data?.student?.has_online_courses === false &&
+      Array.isArray(c9Res.data?.student?.online_courses) &&
+      c9Res.data.student.online_courses.length === 0;
+
+    // Case 10: Cross-email idempotency key isolation -> reusing the same raw idempotencyKey with a different email never replays or assigns another student's UUID
+    const c10Email = 'cross.email.stu@khongtunhi.com';
+    const c10Res = await callApi('/api/ktn/admin/students/provision', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'Học Viên Cross Email',
+        email: c10Email,
+        phone: '0912345610',
+        courseIds: [],
+        idempotencyKey: 'IDEM-P0-C9:nocourse.stu@khongtunhi.com'
+      }
+    });
+    const c10Ok =
+      c10Res.status === 200 &&
+      c10Res.data?.ok === true &&
+      !c10Res.data?.idempotentReplay &&
+      c10Res.data?.cognitoUserId !== c9Res.data?.cognitoUserId &&
+      c10Res.data?.student?.email === c10Email;
+
+    record(
+      'D26-P0-STUDENT-PROVISIONING-HOTFIX-ALL-CASES',
+      'GROUP_V3',
+      'P0 student provisioning hotfix passes all 10 required cases: new email + login, existing email non-duplication, nested CRM UUID, 201 missing UUID re-query, 409 reconciliation, phone collision fallback, transient retry, Supabase partial_failure resume, no auto-HSK1, and cross-email idempotency isolation',
+      c1Ok && c2Ok && c3Ok && c4Ok && c5Ok && c6Ok && c7Ok && c8Ok && c9Ok && c10Ok,
+      `c1=${c1Ok}, c2=${c2Ok}, c3=${c3Ok}, c4=${c4Ok}, c5=${c5Ok}, c6=${c6Ok}, c7=${c7Ok}, c8=${c8Ok}, c9=${c9Ok}, c10=${c10Ok}`
     );
   }
 

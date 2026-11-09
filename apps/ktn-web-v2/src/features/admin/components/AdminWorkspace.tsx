@@ -798,14 +798,18 @@ export const AdminWorkspace: React.FC = () => {
           message: 'Đã tạo học viên mới thành công!',
         };
       }
+      const normalizedEmail = newStuEmail.trim().toLowerCase();
+      const scopedIdempotencyKey = normalizedEmail
+        ? `${newStuIdempotencyKey}:${normalizedEmail}`
+        : newStuIdempotencyKey;
       return ktnApi.provisionStudent({
         name: newStuName.trim(),
-        email: newStuEmail.trim(),
+        email: normalizedEmail,
         phone: newStuPhone.trim() || undefined,
         parentName: newStuParent.trim() || undefined,
         classCode: newStuClassCode ? newStuClassCode : null,
         courseIds: newStuCourseIds,
-        idempotencyKey: newStuIdempotencyKey,
+        idempotencyKey: scopedIdempotencyKey,
       });
     },
     onSuccess: (res) => {

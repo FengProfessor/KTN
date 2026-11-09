@@ -3982,6 +3982,12 @@ async function runSuite() {
         title: 'Khóa khác ngoài phân công'
       }
     });
+    const teacherAssignedCourseHwListRes = await callApi(`/api/ktn/homeworks?courseId=${HSK1_ID}`, {
+      headers: { Authorization: `Bearer ${teacherBToken}` }
+    });
+    const teacherOtherCourseHwListRes = await callApi(`/api/ktn/homeworks?courseId=${CFK1_ID}`, {
+      headers: { Authorization: `Bearer ${teacherBToken}` }
+    });
     // Restore Teacher B to no video course assignment
     await callApi('/api/ktn/teachers', {
       method: 'POST',
@@ -4001,6 +4007,9 @@ async function runSuite() {
         assigned: true,
         title: 'Sau khi thu hồi phân công khóa'
       }
+    });
+    const teacherAfterRevokeCourseHwListRes = await callApi(`/api/ktn/homeworks?courseId=${HSK1_ID}`, {
+      headers: { Authorization: `Bearer ${teacherBToken}` }
     });
 
     // Student A -> 403 on both homework-configs and class-sessions
@@ -4050,7 +4059,10 @@ async function runSuite() {
       teacherOtherClassHwRes.status === 403 &&
       teacherAssignedCourseRes.status === 200 &&
       teacherOtherCourseRes.status === 403 &&
+      teacherAssignedCourseHwListRes.status === 200 &&
+      teacherOtherCourseHwListRes.status === 403 &&
       teacherAfterRevokeCourseRes.status === 403 &&
+      teacherAfterRevokeCourseHwListRes.status === 403 &&
       studentHwCfgRes.status === 403 &&
       studentHwCfgRes.data?.error === 'HOMEWORK_CONFIG_FORBIDDEN' &&
       studentClassHwRes.status === 403 &&
@@ -4063,7 +4075,7 @@ async function runSuite() {
       'GROUP_V3',
       'Homework config & class session endpoints enforce strict RBAC: Admin=200; Teacher in assigned class/course=200; Teacher outside assigned class/course=403; Student=403; invalid courseId/lessonNum=400',
       d25Passed,
-      `admin=${adminHwCfgRes.status}, teaUnassignedCourse=${teacherUnassignedCourseRes.status}, teaOwnClass=${teacherOwnClassHwRes.status}, teaOtherClass=${teacherOtherClassHwRes.status}, teaAssignedCourse=${teacherAssignedCourseRes.status}, teaOtherCourse=${teacherOtherCourseRes.status}, stuCourse=${studentHwCfgRes.status}, stuClass=${studentClassHwRes.status}, badInput=${missingCourseIdRes.status}/${unknownCourseIdRes.status}/${invalidLessonNumRes.status}`
+      `admin=${adminHwCfgRes.status}, teaUnassignedCourse=${teacherUnassignedCourseRes.status}, teaOwnClass=${teacherOwnClassHwRes.status}, teaOtherClass=${teacherOtherClassHwRes.status}, teaAssignedCourse=${teacherAssignedCourseRes.status}, teaOtherCourse=${teacherOtherCourseRes.status}, teaCourseHwList=${teacherAssignedCourseHwListRes.status}/${teacherOtherCourseHwListRes.status}/${teacherAfterRevokeCourseHwListRes.status}, stuCourse=${studentHwCfgRes.status}, stuClass=${studentClassHwRes.status}, badInput=${missingCourseIdRes.status}/${unknownCourseIdRes.status}/${invalidLessonNumRes.status}`
     );
   }
 

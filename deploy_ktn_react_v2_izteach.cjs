@@ -223,7 +223,7 @@ div.flex-1.justify-center > div:has(#ktn-react-v2-root) {
 `.trim();
 
   const entryUrlsJsonAttr = JSON.stringify(entryJsAssets.map((a) => a.cdnUrl)).replace(/"/g, '&quot;');
-  const onloadBootstrap = `(function(){window.__ktnSllAuthHookedV8=true;window.__ktnSllAuthHookedV9=true;window.__ktnSllAuthHookedV10=true;window.__ktnAllowLogout=true;window.__KTN_EMBED_MODE__=true;window.__KTN_FLASHCARD_URL__='#/flashcards';window.__KTN_RELEASE_VERSION__='${manifest.releaseTag}';window.__KTN_RELEASE_COMMIT__='${manifest.gitCommit}';try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}var urls=${entryUrlsJsonAttr};urls.forEach(function(u){if(document.querySelector('script[src=&quot;'+u+'&quot;]'))return;var s=document.createElement('script');s.type='module';s.crossOrigin='anonymous';s.src=u;document.head.appendChild(s);});})();`;
+  const onloadBootstrap = `(function(){window.__ktnSllAuthHookedV8=true;window.__ktnSllAuthHookedV9=true;window.__ktnSllAuthHookedV10=true;window.__ktnAllowLogout=true;window.__KTN_EMBED_MODE__=true;window.__KTN_FLASHCARD_URL__='#/flashcards';window.__KTN_FLASHCARD_ASSET_BASE__='/flashcards';window.__KTN_RELEASE_VERSION__='${manifest.releaseTag}';window.__KTN_RELEASE_COMMIT__='${manifest.gitCommit}';try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}var urls=${entryUrlsJsonAttr};urls.forEach(function(u){if(document.querySelector('script[src=&quot;'+u+'&quot;]'))return;var s=document.createElement('script');s.type='module';s.crossOrigin='anonymous';s.src=u;document.head.appendChild(s);});})();`;
 
   const embedHtml = `
 <!-- KTN React V2 Custom Page Mount (${manifest.releaseTag} / ${manifest.gitCommit}) -->
@@ -241,6 +241,7 @@ ${modulePreloads}
   window.__ktnAllowLogout = true;
   window.__KTN_EMBED_MODE__ = true;
   window.__KTN_FLASHCARD_URL__ = '#/flashcards';
+  window.__KTN_FLASHCARD_ASSET_BASE__ = '/flashcards';
   window.__KTN_RELEASE_VERSION__ = ${JSON.stringify(manifest.releaseTag)};
   window.__KTN_RELEASE_COMMIT__ = ${JSON.stringify(manifest.gitCommit)};
   try {
@@ -814,9 +815,13 @@ async function main() {
 
   fs.mkdirSync(REPORT_DIR, { recursive: true });
   const reportManifestPath = path.join(REPORT_DIR, 'v3-release-manifest.json');
+  const readinessReportDir = path.join(__dirname, 'reports', 'ktn-v3-production-readiness');
+  fs.mkdirSync(readinessReportDir, { recursive: true });
+  const readinessReportManifestPath = path.join(readinessReportDir, 'v3-release-manifest.json');
 
   if (args.dryRun) {
     fs.writeFileSync(reportManifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+    fs.writeFileSync(readinessReportManifestPath, JSON.stringify(manifest, null, 2), 'utf8');
     console.log(`\n[KTN-DEPLOY-V3] Wrote release manifest: ${distManifestPath}`);
     console.log(`[KTN-DEPLOY-V3] Wrote report manifest:  ${reportManifestPath}`);
     console.log(`[KTN-DEPLOY-V3] Wrote embed preview:    ${distEmbedPath}`);
@@ -873,6 +878,7 @@ async function main() {
   manifest.customPageVerifiedAt = new Date().toISOString();
   fs.writeFileSync(distManifestPath, JSON.stringify(manifest, null, 2), 'utf8');
   fs.writeFileSync(reportManifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+  fs.writeFileSync(readinessReportManifestPath, JSON.stringify(manifest, null, 2), 'utf8');
 
   console.log('\n[KTN-DEPLOY-V3] ✅ LIVE STATIC UPLOAD, CDN VERIFICATION & CUSTOM PAGE UPDATE COMPLETED.');
 }

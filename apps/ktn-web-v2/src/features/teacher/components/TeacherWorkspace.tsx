@@ -43,6 +43,9 @@ export const TeacherWorkspace: React.FC = () => {
   const [selectedClassId, setSelectedClassId] = useState<string>(
     () => searchParams.get('class') || user?.classCode || ''
   );
+  const [hasManualClassSelection, setHasManualClassSelection] = useState<boolean>(() =>
+    Boolean(searchParams.get('class'))
+  );
   const [activeSubTab, setActiveSubTab] = useState<'grading' | 'sessions' | 'students'>('grading');
   const [gradingFilter, setGradingFilter] = useState<'all' | 'pending' | 'graded'>('all');
   const [scheduleModalOpen, setScheduleModalOpen] = useState<boolean>(false);
@@ -70,6 +73,7 @@ export const TeacherWorkspace: React.FC = () => {
     const clsParam = searchParams.get('class');
     if (clsParam) {
       setSelectedClassId(clsParam);
+      setHasManualClassSelection(true);
     }
     if (hwIdParam) {
       setActiveSubTab('grading');
@@ -109,18 +113,25 @@ export const TeacherWorkspace: React.FC = () => {
 
   useEffect(() => {
     if (!selectedClassId && classesList.length > 0) {
-      setSelectedClassId(classesList[0].id);
+      const preferred =
+        (user?.classCode && classesList.find((c) => c.id === user.classCode)?.id) ||
+        classesList[0].id;
+      setSelectedClassId(preferred);
     }
-  }, [selectedClassId, classesList]);
+  }, [selectedClassId, classesList, user?.classCode]);
 
   const effectiveClassId = selectedClassId || classesList[0]?.id || '';
+  const homeworkClassFilter =
+    user?.role === 'teacher' && !hasManualClassSelection
+      ? undefined
+      : effectiveClassId || undefined;
 
-  // 2. Fetch Homeworks for Class
+  // 2. Fetch Homeworks for Class (or all assigned classes when teacher has not filtered to a single class)
   const homeworksQuery = useQuery<KtnHomework[]>({
-    queryKey: ['ktn-homeworks', effectiveClassId, user?.email, isDemoMode],
+    queryKey: ['ktn-homeworks', homeworkClassFilter || 'teacher-all', user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) return DEMO_HOMEWORKS;
-      return ktnApi.getHomeworks(effectiveClassId || undefined);
+      return ktnApi.getHomeworks(homeworkClassFilter);
     },
     enabled: Boolean(user) || isDemoMode,
     refetchInterval: isDemoMode ? false : 3500,
@@ -360,7 +371,10 @@ export const TeacherWorkspace: React.FC = () => {
               aria-label="Chọn lớp phụ trách"
               data-testid="teacher-class-select"
               value={effectiveClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
+              onChange={(e) => {
+                setSelectedClassId(e.target.value);
+                setHasManualClassSelection(true);
+              }}
               className="min-h-[36px] min-w-0 flex-1 rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none sm:max-w-xs"
             >
               {classesList.map((cls) => (

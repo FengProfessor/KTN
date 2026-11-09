@@ -2996,12 +2996,86 @@ async function runSuite() {
         otherClassStatus: otherClassPost.status,
       };
     });
+    // Now Admin assigns HSK1 course ('6adadba969897b0002482ca5') to Teacher Linh, then Teacher Linh logs in and edits HSK1 homework config in the UI while remaining blocked on unassigned courses
+    await testOPage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await testOPage.click('[data-testid="logout-btn"]');
+    await testOPage.waitForSelector('[data-testid="quick-login-quanly@khongtunhi.com"]', {
+      timeout: 8000,
+    });
+    await testOPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await testOPage.waitForSelector('[data-testid="admin-home-page"]', {
+      timeout: 8000,
+    });
+    await testOPage.evaluate(async () => {
+      const raw = localStorage.getItem('ktn_v2_auth_session');
+      const token = raw ? JSON.parse(raw).token : '';
+      await fetch('/api/ktn/teachers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          email: 'linh.lam@khongtunhi.com',
+          name: 'Lão Sư Lâm Linh',
+          code: 'GV-KTN-08',
+          assignedClasses: ['YCT2-04', 'YCT3-02'],
+          assignedCourses: ['6adadba969897b0002482ca5'],
+          provisionOnIzTeach: false,
+        }),
+      });
+    });
+
+    await testOPage.click('[data-testid="logout-btn"]');
+    await testOPage.waitForSelector('[data-testid="quick-login-linh.lam@khongtunhi.com"]', {
+      timeout: 8000,
+    });
+    await testOPage.click('[data-testid="quick-login-linh.lam@khongtunhi.com"]');
+    await testOPage.waitForSelector('[data-testid="teacher-home-page"]', {
+      timeout: 8000,
+    });
+    await testOPage.goto(
+      `${baseUrl}/learning?courseId=6adadba969897b0002482ca5&lesson=4`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await testOPage.waitForSelector('[data-testid="homework-config-edit-btn"]', {
+      timeout: 8000,
+    });
+    const teacherAssignedSeesEditBtn = await testOPage.isVisible(
+      '[data-testid="homework-config-edit-btn"]'
+    );
+    await testOPage.click('[data-testid="homework-config-edit-btn"]');
+    await testOPage.waitForSelector('[data-testid="homework-config-editor-form"]', {
+      timeout: 5000,
+    });
+    const teacherAssignedInstr =
+      'Bài 4 (GV phụ trách khóa cập nhật): Đọc bài khóa Bài 4 và thu âm gửi cô Linh.';
+    await testOPage.fill('[data-testid="homework-config-instructions-input"]', teacherAssignedInstr);
+    await testOPage.click('[data-testid="homework-config-save-btn"]');
+    await testOPage.waitForSelector('[data-testid="homework-instructions-text"]', {
+      timeout: 5000,
+    });
+    const teacherSavedInstrText = await testOPage.textContent(
+      '[data-testid="homework-instructions-text"]'
+    );
+
+    // Navigating to an unassigned course ('65e7704a9ea90c00080d5195') still blocks Teacher Linh with role-forbidden-guard
+    await testOPage.goto(
+      `${baseUrl}/learning?courseId=65e7704a9ea90c00080d5195&lesson=1`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await testOPage.waitForSelector('[data-testid="role-forbidden-guard"]', {
+      timeout: 8000,
+    });
+    const teacherBlockedOnOtherCourseUi = await testOPage.isVisible(
+      '[data-testid="role-forbidden-guard"]'
+    );
     await testOContext.close();
 
     recordTest(
       'TEST O',
       'O6',
-      'Phase 1 & 4 Homework Config RBAC: Admin edits & persists course config (200); Teacher manages own class (200) but is blocked from unassigned video course (403) & other class (403); Student is blocked (403)',
+      'Phase 1 & 4 Homework Config RBAC: Admin edits & persists course config (200); Teacher manages own class (200) and assigned video course in UI (200) but is blocked from unassigned video course (403) & other class (403); Student is blocked (403)',
       Boolean(
         !seesEditBtn &&
           studentDirectPostStatus === 403 &&
@@ -3009,13 +3083,19 @@ async function runSuite() {
           !teacherUnassignedSeesEditBtn &&
           teacherScopeChecks.unassignedCourseStatus === 403 &&
           teacherScopeChecks.ownClassStatus === 200 &&
-          teacherScopeChecks.otherClassStatus === 403
+          teacherScopeChecks.otherClassStatus === 403 &&
+          teacherAssignedSeesEditBtn &&
+          teacherSavedInstrText?.includes('GV phụ trách khóa cập nhật') &&
+          teacherBlockedOnOtherCourseUi
       ),
       JSON.stringify({
         studentDirectPostStatus,
         savedInstrText: savedInstrText?.slice(0, 60),
         teacherUnassignedSeesEditBtn,
         teacherScopeChecks,
+        teacherAssignedSeesEditBtn,
+        teacherSavedInstrText: teacherSavedInstrText?.slice(0, 60),
+        teacherBlockedOnOtherCourseUi,
       })
     );
   } finally {

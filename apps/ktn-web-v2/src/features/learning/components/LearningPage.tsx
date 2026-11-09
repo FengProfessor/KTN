@@ -158,15 +158,19 @@ export const LearningPage: React.FC = () => {
 
   // Sync default course to user's entitled course when logging in (unless explicitly specified via URL)
   useEffect(() => {
-    if (
-      !searchParams.get('courseId') &&
-      !isDemoMode &&
-      user?.onlineCourses &&
-      user.onlineCourses.length > 0
-    ) {
-      const hasCurrent = user.onlineCourses.some((c) => c.id === selectedCourseId);
-      if (!hasCurrent) {
-        setSelectedCourseId(user.onlineCourses[0].id);
+    if (!searchParams.get('courseId') && !isDemoMode) {
+      if (user?.role === 'teacher' && Array.isArray(user.assignedCourses) && user.assignedCourses.length > 0) {
+        const hasAssigned = user.assignedCourses.some(
+          (cid) => String(cid || '').toLowerCase() === selectedCourseId.toLowerCase()
+        );
+        if (!hasAssigned) {
+          setSelectedCourseId(user.assignedCourses[0]);
+        }
+      } else if (user?.onlineCourses && user.onlineCourses.length > 0) {
+        const hasCurrent = user.onlineCourses.some((c) => c.id === selectedCourseId);
+        if (!hasCurrent) {
+          setSelectedCourseId(user.onlineCourses[0].id);
+        }
       }
     }
   }, [user, isDemoMode, selectedCourseId, searchParams]);
@@ -244,7 +248,15 @@ export const LearningPage: React.FC = () => {
   }, [entitledCourseIdSet, isDemoMode, user, restoreSession]);
 
   const isCourseEntitled = (courseId: string): boolean => {
-    if (user?.role === 'teacher' || user?.role === 'admin') return true;
+    if (user?.role === 'admin') return true;
+    if (user?.role === 'teacher') {
+      return (
+        Array.isArray(user.assignedCourses) &&
+        user.assignedCourses.some(
+          (cid) => String(cid || '').toLowerCase() === courseId.toLowerCase()
+        )
+      );
+    }
     if (entitledCourseIdSet.has(courseId)) return true;
     if (isDemoMode && entitledCourseIdSet.size === 0) {
       return courseId === DEMO_COURSES[0]?.id;

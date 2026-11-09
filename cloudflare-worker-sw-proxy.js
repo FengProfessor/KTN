@@ -2591,7 +2591,7 @@ async function getTeacherAssignedClassCodes(env, teacherEmail) {
   const classSet = new Set(meta.assignedClasses);
   const res = await supabaseRequest(
     env,
-    `ktn_classes?teacher_email=eq.${encodeURIComponent(email)}&active=eq.true&select=id`
+    `ktn_classes?teacher_email=eq.${encodeURIComponent(email)}&active=eq.true&select=id&order=created_at.asc,id.asc`
   );
   if (res.ok && Array.isArray(res.data)) {
     for (const c of res.data) {
@@ -7938,7 +7938,7 @@ export default {
       if (request.method === 'GET') {
         const session = await extractSessionFromRequest(request, env);
         const [sbRes, tRes, scheduleMap] = await Promise.all([
-          supabaseRequest(env, 'ktn_classes?active=eq.true&order=id.asc'),
+          supabaseRequest(env, 'ktn_classes?active=eq.true&order=created_at.asc,id.asc'),
           supabaseRequest(env, 'ktn_teachers?active=eq.true'),
           loadAllClassScheduleConfigs(env)
         ]);
@@ -10844,11 +10844,13 @@ export default {
       // - Học sinh chỉ lấy được đúng bài tập của chính mình
       // - Giáo viên chỉ lấy được bài tập của các lớp mình chủ nhiệm (trả 403 nếu mở lớp của GV khác)
       const reqClass = String(url.searchParams.get('classCode') || '').trim().toUpperCase();
+      const reqCourseId = String(url.searchParams.get('courseId') || '').trim().toLowerCase();
       let query = 'ktn_homeworks?select=*&order=submitted_at.desc&limit=200';
       if (session.role === 'student') {
         query = `ktn_homeworks?student_email=eq.${encodeURIComponent(session.email)}&order=submitted_at.desc`;
       } else if (session.role === 'teacher') {
         const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+        const assignedCourses = await getTeacherAssignedCourseIds(env, session.email);
         if (reqClass) {
           if (!assignedClasses.includes(reqClass)) {
             return jsonResponse({
@@ -10857,11 +10859,24 @@ export default {
             }, 403);
           }
           query = `ktn_homeworks?class_code=eq.${encodeURIComponent(reqClass)}&order=submitted_at.desc`;
+        } else if (reqCourseId) {
+          if (!assignedCourses.includes(reqCourseId)) {
+            return jsonResponse({
+              ok: false,
+              error: 'TEACHER_COURSE_SCOPE_FORBIDDEN',
+              message: 'Cô không phụ trách khóa học video này nên không có quyền xem bài tập của khóa này.'
+            }, 403);
+          }
+          query = `ktn_homeworks?course_id=eq.${encodeURIComponent(reqCourseId)}&order=submitted_at.desc`;
         } else {
-          if (assignedClasses.length === 0) {
+          if (assignedClasses.length === 0 && assignedCourses.length === 0) {
             return jsonResponse({ ok: true, homeworks: [] });
           }
-          query = `ktn_homeworks?class_code=in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')})&order=submitted_at.desc`;
+          if (assignedClasses.length > 0) {
+            query = `ktn_homeworks?class_code=in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')})&order=submitted_at.desc`;
+          } else {
+            query = `ktn_homeworks?course_id=in.(${assignedCourses.map(c => encodeURIComponent(c)).join(',')})&order=submitted_at.desc`;
+          }
         }
       } else if (reqClass) {
         query = `ktn_homeworks?class_code=eq.${encodeURIComponent(reqClass)}&order=submitted_at.desc`;
@@ -10870,7 +10885,15 @@ export default {
       if (!sbRes.ok) {
         return jsonResponse({ ok: false, message: 'Chưa tải được danh sách bài tập từ cơ sở dữ liệu.' }, sbRes.status || 503);
       }
-      return jsonResponse({ ok: true, homeworks: sbRes.data || [] });
+      let rows = Array.isArray(sbRes.data) ? sbRes.data : [];
+      if (session.role === 'teacher' && !reqClass) {
+        const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+        rows = rows.filter(r => {
+          const rCls = String(r?.class_code || '').trim().toUpperCase();
+          return !rCls || assignedClasses.includes(rCls);
+        });
+      }
+      return jsonResponse({ ok: true, homeworks: rows });
     }
 
     if (path === '/api/ktn/homeworks' && request.method === 'POST') {
@@ -11341,13 +11364,15 @@ export default {
           }
         }
 
-        // Nếu là Giáo viên: kiểm tra bài tập này có thuộc lớp cô chủ nhiệm hay không (trả 403 nếu chấm lớp của GV khác)
+        // Nếu là Giáo viên: kiểm tra bài tập này có thuộc lớp cô chủ nhiệm hoặc khóa học được phân công (trả 403 nếu ngoài phạm vi)
         if (session.role === 'teacher') {
           if (!existingHw && !body.allowUpsertFromIzTeach) {
             return jsonResponse({ ok: false, message: 'Không tìm thấy bài nộp tương ứng trong cơ sở dữ liệu để cập nhật.' }, 404);
           }
           const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+          const assignedCourses = await getTeacherAssignedCourseIds(env, session.email);
           let hwClass = String(existingHw?.class_code || body.classCode || '').trim().toUpperCase();
+          const hwCourseId = String(existingHw?.course_id || courseIdHint || '').trim().toLowerCase();
           if (!hwClass && (existingHw?.student_email || studentEmailHint)) {
             const targetEm = normalizeEmail(existingHw?.student_email || studentEmailHint);
             const stuClsRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(targetEm)}&select=class_code&limit=1`);
@@ -11355,7 +11380,9 @@ export default {
               hwClass = String(stuClsRes.data[0].class_code).trim().toUpperCase();
             }
           }
-          if (!hwClass || !assignedClasses.includes(hwClass)) {
+          const canGradeByClass = Boolean(hwClass && assignedClasses.includes(hwClass));
+          const canGradeByCourse = Boolean(!hwClass && hwCourseId && assignedCourses.includes(hwCourseId));
+          if (!canGradeByClass && !canGradeByCourse) {
             return jsonResponse({
               ok: false,
               message: 'Cô không phụ trách lớp của bài nộp này nên không có quyền chấm điểm.'

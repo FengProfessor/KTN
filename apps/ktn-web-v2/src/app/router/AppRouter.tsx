@@ -30,11 +30,13 @@ const RouteLoadingFallback: React.FC = () => (
   </div>
 );
 
-const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> = ({
-  allowed,
-  children,
-}) => {
+const RequireRole: React.FC<{
+  allowed: UserRole[];
+  allowAssignedCourseTeacher?: boolean;
+  children: React.ReactNode;
+}> = ({ allowed, allowAssignedCourseTeacher = false, children }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const isRestoring = useAuthStore((s) => s.isRestoring);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
@@ -48,8 +50,19 @@ const RequireRole: React.FC<{ allowed: UserRole[]; children: React.ReactNode }> 
   }
 
   const role: UserRole = user?.role || 'student';
+  const targetCourseId = (searchParams.get('courseId') || '').trim().toLowerCase();
+  const teacherAssignedCourses = Array.isArray(user?.assignedCourses)
+    ? user.assignedCourses
+        .map((c) => String(c || '').trim().toLowerCase())
+        .filter(Boolean)
+    : [];
+  const isAssignedCourseTeacherAllowed =
+    allowAssignedCourseTeacher &&
+    role === 'teacher' &&
+    teacherAssignedCourses.length > 0 &&
+    (!targetCourseId || teacherAssignedCourses.includes(targetCourseId));
 
-  if (!allowed.includes(role)) {
+  if (!allowed.includes(role) && !isAssignedCourseTeacherAllowed) {
     return (
       <div
         data-testid="role-forbidden-guard"
@@ -138,7 +151,7 @@ export const AppRouter: React.FC = () => {
           <Route
             path="learning"
             element={
-              <RequireRole allowed={['student', 'admin']}>
+              <RequireRole allowed={['student', 'admin']} allowAssignedCourseTeacher>
                 <LearningPage />
               </RequireRole>
             }

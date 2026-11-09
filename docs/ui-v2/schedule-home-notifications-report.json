@@ -9,91 +9,91 @@
       "title": "Nhấn chuông mở dropdown thông báo (aria-expanded=true, hiển thị thông báo mới nhất, Đánh dấu tất cả đã đọc & Xem tất cả)",
       "passed": true,
       "details": "aria-expanded: false -> true",
-      "timestamp": "2026-11-09T19:08:23.230Z"
+      "timestamp": "2026-11-09T19:15:54.202Z"
     },
     {
       "id": "CASE-02",
       "title": "Nhấn ra ngoài đóng dropdown ngay lập tức (nhấn bên trong vùng cuộn không tự đóng ngoài ý muốn)",
       "passed": true,
       "details": "insideKeptOpen=true, outsideClosed=true",
-      "timestamp": "2026-11-09T19:08:23.288Z"
+      "timestamp": "2026-11-09T19:15:54.263Z"
     },
     {
       "id": "CASE-03",
       "title": "Nhấn phím Escape đóng dropdown và trả focus về nút chuông",
       "passed": true,
       "details": "focusRestoredToBell=true",
-      "timestamp": "2026-11-09T19:08:23.346Z"
+      "timestamp": "2026-11-09T19:15:54.295Z"
     },
     {
       "id": "CASE-04",
       "title": "Nhấn vào thông báo trong dropdown tự đóng popup và điều hướng đúng trang đích",
       "passed": true,
       "details": "navigatedUrl=http://127.0.0.1:5173/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework",
-      "timestamp": "2026-11-09T19:08:23.689Z"
+      "timestamp": "2026-11-09T19:15:54.647Z"
     },
     {
       "id": "CASE-05",
       "title": "Admin tạo lớp mới và xác nhận lịch học chính thức có cấu trúc (không tự lấy text cũ làm lịch thật khi chưa xác nhận)",
       "passed": true,
       "details": "officialText=\"Lớp YCT2-04 — Thứ 3 & Thứ 6 — 19:30–20:30\"",
-      "timestamp": "2026-11-09T19:08:25.511Z"
+      "timestamp": "2026-11-09T19:15:56.185Z"
     },
     {
       "id": "CASE-06",
       "title": "Giáo viên chỉnh giờ học của lớp mình phụ trách (YCT2-04) và hệ thống ghi nhật ký updatedBy/updatedAt",
       "passed": true,
       "details": "endTime=20:45, updatedBy=linh.lam@khongtunhi.com",
-      "timestamp": "2026-11-09T19:08:26.697Z"
+      "timestamp": "2026-11-09T19:15:57.153Z"
     },
     {
       "id": "CASE-07",
       "title": "Giáo viên bị chặn (HTTP 403) khi chỉnh lịch lớp người khác hoặc tạo lớp mới; Học sinh bị chặn (HTTP 403) khi sửa lịch",
       "passed": true,
       "details": "teacherOtherClass=403, teacherCreateClass=403, studentEdit=403",
-      "timestamp": "2026-11-09T19:08:26.707Z"
+      "timestamp": "2026-11-09T19:15:57.161Z"
     },
     {
       "id": "CASE-08",
       "title": "Học sinh thấy lịch học chính thức chính xác trên Trang chủ & Lớp học (lớp chưa cài lịch hiển thị \"Chưa có lịch học chính thức\")",
       "passed": true,
       "details": "nextClassCard=\"Lớp học tiếp theoYCT2-04Lớp YCT 2 — Ca tối Thứ 3 & Thứ 6GV: Cô Lâm Mỹ LinhThứ 3, 2026-11-1\"",
-      "timestamp": "2026-11-09T19:08:26.959Z"
+      "timestamp": "2026-11-09T19:15:57.405Z"
     },
     {
       "id": "CASE-12",
       "title": "StudentHome hiển thị đúng ô Flashcard (\"Flashcard — Học từ vựng\", nút \"Học ngay\") và 2 ô \"Sắp ra mắt\" (Video ngắn tiếng Trung, Trò chơi tiếng Trung, không có nút giả)",
       "passed": true,
       "details": "All 3 discovery cards verified",
-      "timestamp": "2026-11-09T19:08:26.959Z"
+      "timestamp": "2026-11-09T19:15:57.405Z"
     },
     {
       "id": "CASE-09",
       "title": "Scheduler tự động gửi thông báo nhắc trước giờ học 30 phút cho học viên và giáo viên thuộc lớp",
       "passed": true,
       "details": "dispatchedCount=2, notifTitle=\"Sắp đến giờ học tiếng Trung!\"",
-      "timestamp": "2026-11-09T19:08:28.213Z"
+      "timestamp": "2026-11-09T19:15:58.562Z"
     },
     {
       "id": "CASE-10",
       "title": "Scheduler chạy lại (cron retry) không gửi trùng thông báo (idempotent theo class + sessionDate + reminderOffset + recipient)",
       "passed": true,
       "details": "dispatchedOnRetry=0, skippedDuplicates=2",
-      "timestamp": "2026-11-09T19:08:28.216Z"
+      "timestamp": "2026-11-09T19:15:58.565Z"
     },
     {
       "id": "CASE-11",
       "title": "Buổi học đã hoãn/hủy/đổi ngày không phát nhắc giờ sai ở ngày cũ, phát đúng ở ngày mới (kể cả ca học qua nửa đêm 23:30–00:30), hỗ trợ chế độ custom_sessions và deep-link giáo viên",
       "passed": true,
       "details": "exactStart=0, postponed=0, reschedOld=0, reschedNew=1, customModeOk=true, teacherDeepLinkOk=true",
-      "timestamp": "2026-11-09T19:08:29.345Z"
+      "timestamp": "2026-11-09T19:15:59.681Z"
     },
     {
       "id": "CASE-13",
       "title": "Hệ thống Web Push (VAPID, subscribe, chat/homework/announcement) hoạt động ổn định, gộp tin nhắn nhóm chống spam và bảo vệ quyền nhận Thông báo quan trọng",
       "passed": true,
       "details": "vapidOk=true, subOk=true, importantLockedTrue=true, coalescedCount=4",
-      "timestamp": "2026-11-09T19:08:29.363Z"
+      "timestamp": "2026-11-09T19:15:59.699Z"
     }
   ]
 }

@@ -10,6 +10,7 @@ import {
   Loader2,
   Volume2,
   Sparkles,
+  MessageSquare,
 } from 'lucide-react';
 
 export type VideoPlayerStatus =
@@ -34,6 +35,8 @@ interface HlsVideoPlayerProps {
   onWatchDemoCourse?: () => void;
   maxDemoSeconds?: number;
   onDemoEnded?: () => void;
+  onAskAtTimestamp?: (seconds: number) => void;
+  seekToTimestampSeconds?: number | null;
 }
 
 export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
@@ -50,6 +53,8 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   onWatchDemoCourse,
   maxDemoSeconds,
   onDemoEnded,
+  onAskAtTimestamp,
+  seekToTimestampSeconds,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -58,6 +63,23 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    if (
+      seekToTimestampSeconds !== null &&
+      seekToTimestampSeconds !== undefined &&
+      Number.isFinite(seekToTimestampSeconds) &&
+      seekToTimestampSeconds >= 0 &&
+      videoRef.current
+    ) {
+      try {
+        videoRef.current.currentTime = seekToTimestampSeconds;
+        setCurrentTime(seekToTimestampSeconds);
+      } catch {
+        // Ignore seek errors before metadata is loaded
+      }
+    }
+  }, [seekToTimestampSeconds]);
 
   const effectiveStatus = statusOverride || internalStatus;
 
@@ -376,6 +398,27 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               </button>
             ))}
           </div>
+
+          {onAskAtTimestamp && effectiveStatus !== 'unentitled' && (
+            <button
+              type="button"
+              data-testid="ask-video-timestamp-btn"
+              onClick={() => {
+                const sec = Math.max(
+                  0,
+                  Math.floor(videoRef.current?.currentTime ?? currentTime ?? 0)
+                );
+                if (videoRef.current && !videoRef.current.paused) {
+                  videoRef.current.pause();
+                }
+                onAskAtTimestamp(sec);
+              }}
+              className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-amber-500/50 bg-amber-500/20 px-2.5 py-1 text-xs font-bold text-amber-200 transition-colors hover:bg-amber-500/30"
+            >
+              <MessageSquare className="h-3.5 w-3.5 text-amber-300" />
+              <span>Hỏi về đoạn này</span>
+            </button>
+          )}
 
           <button
             type="button"

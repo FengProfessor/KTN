@@ -292,7 +292,11 @@ export type NotificationType =
   | 'course_granted'
   | 'class_announcement'
   | 'announcement_pinned'
-  | 'order_pending';
+  | 'order_pending'
+  | 'forum_question_created'
+  | 'forum_answer_posted'
+  | 'forum_answer_accepted'
+  | 'course_request_reviewed';
 
 export interface KtnNotification {
   id: string;
@@ -302,6 +306,8 @@ export interface KtnNotification {
   messageId?: string;
   homeworkId?: string;
   courseId?: string;
+  unitId?: string;
+  questionId?: string;
   lessonNum?: number;
   sessionDate?: string;
   title: string;
@@ -321,10 +327,11 @@ export interface UserNotificationSettings {
   schedule: boolean;
   important: boolean;
   reminder10Min: boolean;
+  forumPushMode?: 'immediate' | 'digest' | 'off';
   updatedAt?: string | null;
 }
 
-export type AccountStatus = 'ready_to_login' | 'pending_activation' | 'error';
+export type AccountStatus = 'ready_to_login' | 'pending_activation' | 'error' | 'active' | 'suspended' | 'archived' | 'deleted';
 export type SyncStatus = 'synced' | 'pending_activation' | 'partial_failure' | 'sync_failed' | 'drift_detected';
 
 export interface KtnStudentRecord {
@@ -344,6 +351,10 @@ export interface KtnStudentRecord {
   syncStatus?: SyncStatus | string;
   account_status?: AccountStatus | string;
   sync_status?: SyncStatus | string;
+  lifecycleStatus?: 'active' | 'suspended' | 'archived' | 'deleted' | string;
+  lifecycleReason?: string | null;
+  lifecycleUpdatedAt?: string | null;
+  lifecycleUpdatedBy?: string | null;
   readyToLogin?: boolean;
   fullySynced?: boolean;
   last_sync_error?: string | null;
@@ -381,6 +392,29 @@ export interface KtnProvisionStudentResponse {
   message: string;
 }
 
+export interface KtnTeacherContributionEvent {
+  event_id: string;
+  teacher_id: string;
+  teacher_email: string;
+  teacher_name?: string;
+  question_id?: string | null;
+  answer_id?: string | null;
+  event_type:
+    | 'answer_created'
+    | 'helpful_vote'
+    | 'accepted_answer'
+    | 'video_attached'
+    | 'long_pending_resolved'
+    | 'admin_adjust'
+    | 'admin_revoke'
+    | string;
+  points_delta: number;
+  reason?: string;
+  verified_at?: string | null;
+  created_by_email?: string | null;
+  created_at: string;
+}
+
 export interface KtnTeacherRecord {
   code: string;
   name: string;
@@ -388,10 +422,128 @@ export interface KtnTeacherRecord {
   phone?: string;
   specialty?: string;
   assigned_classes: string[];
+  assigned_courses?: string[];
   active: boolean;
   cognito_user_id?: string | null;
   provisioningStatus?: string;
+  readyToLogin?: boolean;
   syncStatus?: string;
+  managedStudentsCount?: number;
+  scheduledSessionsCount?: number;
+  activitySessionsCount?: number;
+  confirmedSessionsCount?: number;
+  teachingVerificationStatus?: 'verified' | 'unverified';
+  teachingVerificationLabel?: string;
+  gradedHomeworksCount?: number;
+  pendingHomeworksCount?: number;
+  forumAnswersCount?: number;
+  acceptedAnswersCount?: number;
+  helpfulVotesCount?: number;
+  videoGuidesCount?: number;
+  monthlyContributionPoints?: number;
+  totalContributionPoints?: number;
+  recentContributionEvents?: KtnTeacherContributionEvent[];
+  courseRequestsCount?: number;
+  pendingCourseRequestsCount?: number;
+}
+
+export interface KtnForumAttachment {
+  id?: string;
+  name: string;
+  url: string;
+  type: 'image' | 'audio' | 'video' | 'pdf' | 'file' | string;
+  size?: number;
+}
+
+export interface KtnForumAnswer {
+  id: string;
+  question_id: string;
+  author_email?: string;
+  author_name: string;
+  author_role: 'teacher' | 'admin' | 'student' | string;
+  teacher_id?: string | null;
+  teacher_title?: string;
+  content: string;
+  attachments?: KtnForumAttachment[];
+  video_url?: string | null;
+  video_duration_seconds?: number | null;
+  video_file_size?: number | null;
+  video_verified?: boolean;
+  is_accepted: boolean;
+  helpful_count: number;
+  viewerHasVotedHelpful?: boolean;
+  status?: 'visible' | 'hidden' | string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface KtnForumQuestion {
+  id: string;
+  course_id: string;
+  course_title?: string;
+  unit_id: string;
+  lesson_number?: number;
+  lesson_title_snapshot: string;
+  student_id: string;
+  student_email?: string;
+  student_name: string;
+  class_code?: string | null;
+  title: string;
+  content: string;
+  video_timestamp_seconds?: number | null;
+  video_timestamp_label?: string | null;
+  attachments?: KtnForumAttachment[];
+  status: 'open' | 'answered' | 'resolved' | 'hidden';
+  claimed_by_email?: string | null;
+  claimed_by_name?: string | null;
+  claimed_at?: string | null;
+  accepted_answer_id?: string | null;
+  answers_count?: number;
+  answersCount?: number;
+  answers?: KtnForumAnswer[];
+  isFollowing?: boolean;
+  followCount?: number;
+  isOwnQuestion?: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface KtnForumLeaderboardEntry {
+  teacherId: string;
+  teacherEmail: string;
+  teacherName: string;
+  title: string;
+  avatar?: string | null;
+  active: boolean;
+  totalPoints: number;
+  monthlyPoints: number;
+  answersCount: number;
+  acceptedAnswersCount: number;
+  helpfulVotesCount: number;
+  videoGuidesCount: number;
+  longPendingResolvedCount: number;
+  recentEvents: KtnTeacherContributionEvent[];
+}
+
+export interface KtnCourseGrantRequest {
+  id: string;
+  teacher_id: string;
+  teacher_email: string;
+  teacher_name: string;
+  student_id: string;
+  student_email: string;
+  student_name: string;
+  class_code: string;
+  course_id: string;
+  course_title: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  reviewed_by_email?: string | null;
+  reviewed_at?: string | null;
+  review_note?: string;
+  entitlement_result?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface KtnVietQrPaymentInfo {

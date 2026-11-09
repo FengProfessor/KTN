@@ -16,19 +16,26 @@ import {
   AlertCircle,
   Calendar,
   ZoomIn,
+  UserPlus,
+  BookOpen,
+  Copy,
+  X,
 } from 'lucide-react';
-import { ktnApi, resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
+import { KtnApiError, ktnApi, resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
-import { DEMO_CLASSES, DEMO_CLASS_SESSIONS, DEMO_HOMEWORKS } from '@/lib/demoData';
+import { DEMO_CLASSES, DEMO_CLASS_SESSIONS, DEMO_COURSES, DEMO_HOMEWORKS } from '@/lib/demoData';
 import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
+import { TeacherForumInbox } from './TeacherForumInbox';
 import {
   KtnClassItem,
   KtnClassSession,
+  KtnCourse,
+  KtnCourseGrantRequest,
   KtnHomework,
   KtnStudentRecord,
 } from '@/types/ktn.types';
-import { formatChatTimestamp } from '@/lib/utils';
+import { formatChatTimestamp, formatRelativeTime } from '@/lib/utils';
 
 export const TeacherWorkspace: React.FC = () => {
   const navigate = useNavigate();
@@ -46,10 +53,35 @@ export const TeacherWorkspace: React.FC = () => {
   const [hasManualClassSelection, setHasManualClassSelection] = useState<boolean>(() =>
     Boolean(searchParams.get('class'))
   );
-  const [activeSubTab, setActiveSubTab] = useState<'grading' | 'sessions' | 'students'>('grading');
+  const [activeSubTab, setActiveSubTab] = useState<
+    'grading' | 'sessions' | 'students' | 'forum'
+  >('grading');
   const [gradingFilter, setGradingFilter] = useState<'all' | 'pending' | 'graded'>('all');
   const [scheduleModalOpen, setScheduleModalOpen] = useState<boolean>(false);
   const [isSavingSchedule, setIsSavingSchedule] = useState<boolean>(false);
+
+  // Agent E: Teacher Create Student Modal state
+  const [createStudentModalOpen, setCreateStudentModalOpen] = useState<boolean>(false);
+  const [newStuName, setNewStuName] = useState<string>('');
+  const [newStuEmail, setNewStuEmail] = useState<string>('');
+  const [newStuParentPhone, setNewStuParentPhone] = useState<string>('');
+  const [newStuClassCode, setNewStuClassCode] = useState<string>('');
+  const [newStuNotes, setNewStuNotes] = useState<string>('');
+  const [createStudentError, setCreateStudentError] = useState<string | null>(null);
+  const [createdStudentResult, setCreatedStudentResult] = useState<{
+    name: string;
+    email: string;
+    code: string;
+    classCode: string;
+    initialPassword: string;
+  } | null>(null);
+
+  // Agent E: Teacher Request Online Course Access Modal state
+  const [courseRequestModalOpen, setCourseRequestModalOpen] = useState<boolean>(false);
+  const [reqStudentEmail, setReqStudentEmail] = useState<string>('');
+  const [reqCourseId, setReqCourseId] = useState<string>('');
+  const [reqReason, setReqReason] = useState<string>('');
+  const [courseRequestError, setCourseRequestError] = useState<string | null>(null);
 
   const [activeHomeworkId, setActiveHomeworkId] = useState<string | null>(() =>
     searchParams.get('hwId')
@@ -84,6 +116,8 @@ export const TeacherWorkspace: React.FC = () => {
       setActiveSubTab('students');
     } else if (section === 'assign') {
       setActiveSubTab('sessions');
+    } else if (section === 'forum') {
+      setActiveSubTab('forum');
     } else if (section === 'grading') {
       setActiveSubTab('grading');
     }
@@ -329,6 +363,177 @@ export const TeacherWorkspace: React.FC = () => {
     },
   });
 
+  // 8. Agent E: Courses catalog & Teacher Course Grant Requests + Student Creation
+  const coursesQuery = useQuery<KtnCourse[]>({
+    queryKey: ['ktn-courses-catalog', isDemoMode],
+    queryFn: async () => {
+      if (isDemoMode) return DEMO_COURSES;
+      return ktnApi.getCourses();
+    },
+    enabled: Boolean(user) || isDemoMode,
+  });
+
+  const courseGrantRequestsQuery = useQuery<KtnCourseGrantRequest[]>({
+    queryKey: ['ktn-course-grant-requests', user?.email, isDemoMode],
+    queryFn: async () => {
+      if (isDemoMode) return [];
+      const res = await ktnApi.getCourseGrantRequests();
+      return res.requests || [];
+    },
+    enabled: Boolean(user) || isDemoMode,
+  });
+
+  const teacherCreateStudentMutation = useMutation({
+    mutationFn: async () => {
+      setCreateStudentError(null);
+      if (classesList.length === 0) {
+        throw new Error('Bạn chưa được phân công lớp. Vui lòng liên hệ Quản lý.');
+      }
+      const chosenClass = newStuClassCode || effectiveClassId || classesList[0]?.id || '';
+      if (!chosenClass) {
+        throw new Error('Vui lòng chọn lớp học trực tiếp được phân công.');
+      }
+      if (!newStuName.trim() || !newStuEmail.trim()) {
+        throw new Error('Vui lòng nhập đầy đủ họ tên và email học viên.');
+      }
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 400));
+        return {
+          ok: true,
+          student: {
+            code: `KTN-2026-${Math.floor(100 + Math.random() * 899)}`,
+            name: newStuName.trim(),
+            email: newStuEmail.trim().toLowerCase(),
+            class_code: chosenClass,
+            has_live_class: true,
+            has_online_courses: false,
+            online_courses: [],
+          } as KtnStudentRecord,
+          initialPassword: 'Ktn@123456',
+          classCode: chosenClass,
+          message: 'Đã tạo học viên mới.',
+        };
+      }
+      return ktnApi.teacherCreateStudent({
+        name: newStuName.trim(),
+        email: newStuEmail.trim().toLowerCase(),
+        parentPhone: newStuParentPhone.trim() || undefined,
+        classCode: chosenClass,
+        notes: newStuNotes.trim() || undefined,
+      });
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-class-students'] });
+      setCreatedStudentResult({
+        name: res.student.name,
+        email: res.student.email,
+        code: res.student.code,
+        classCode: res.classCode || res.student.class_code,
+        initialPassword: res.initialPassword,
+      });
+      setNewStuName('');
+      setNewStuEmail('');
+      setNewStuParentPhone('');
+      setNewStuNotes('');
+      addToast({
+        title: `Đã tạo học viên ${res.student.name} vào lớp ${res.classCode || res.student.class_code}`,
+        description:
+          'Tài khoản đã được tạo và xếp vào nhóm chat lớp trực tiếp (chưa cấp khóa học video).',
+        variant: 'success',
+      });
+    },
+    onError: (err: unknown) => {
+      const msg =
+        err instanceof KtnApiError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : 'Không thể tạo học viên mới.';
+      setCreateStudentError(msg);
+    },
+  });
+
+  const createCourseRequestMutation = useMutation({
+    mutationFn: async () => {
+      setCourseRequestError(null);
+      if (!reqStudentEmail.trim()) {
+        throw new Error('Vui lòng chọn học viên trong lớp phụ trách.');
+      }
+      if (!reqCourseId.trim()) {
+        throw new Error('Vui lòng chọn khóa học video đề xuất mở.');
+      }
+      const stObj = studentsList.find(
+        (s) => s.email.toLowerCase() === reqStudentEmail.trim().toLowerCase()
+      );
+      const courseObj = (coursesQuery.data || DEMO_COURSES).find(
+        (c) => c.id === reqCourseId.trim()
+      );
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 300));
+        return {
+          ok: true,
+          request: {
+            id: `req-${Date.now()}`,
+            student_id: stObj?.code || reqStudentEmail,
+            student_email: reqStudentEmail,
+            student_name: stObj?.name || reqStudentEmail,
+            class_code: stObj?.class_code || effectiveClassId,
+            requested_course_id: reqCourseId,
+            requested_course_title: courseObj?.title || reqCourseId,
+            requested_by_teacher_id: user?.code || 'GV',
+            reason: reqReason.trim(),
+            status: 'pending' as const,
+            created_at: new Date().toISOString(),
+          },
+        };
+      }
+      return ktnApi.createCourseGrantRequest({
+        studentEmail: reqStudentEmail.trim(),
+        studentId: stObj?.code,
+        studentName: stObj?.name,
+        classCode: stObj?.class_code || effectiveClassId,
+        requestedCourseId: reqCourseId.trim(),
+        requestedCourseTitle: courseObj?.title,
+        reason: reqReason.trim() || 'Giáo viên phụ trách đề xuất mở khóa video bổ trợ',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-course-grant-requests'] });
+      setCourseRequestModalOpen(false);
+      setReqReason('');
+      addToast({
+        title: 'Đã gửi đề nghị mở khóa học online!',
+        description: 'Quản lý sẽ xem xét và phê duyệt cấp khóa học cho học viên.',
+        variant: 'success',
+      });
+    },
+    onError: (err: unknown) => {
+      const msg =
+        err instanceof KtnApiError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : 'Không thể gửi đề nghị mở khóa học.';
+      setCourseRequestError(msg);
+    },
+  });
+
+  const cancelCourseRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      if (isDemoMode) {
+        return { ok: true, request: null as unknown as KtnCourseGrantRequest };
+      }
+      return ktnApi.cancelCourseGrantRequest(requestId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ktn-course-grant-requests'] });
+      addToast({
+        title: 'Đã hủy đề nghị mở khóa học',
+        variant: 'info',
+      });
+    },
+  });
+
   const homeworks = homeworksQuery.data || [];
   const filteredHomeworks = useMemo(() => {
     return homeworks.filter((hw) => {
@@ -489,7 +694,7 @@ export const TeacherWorkspace: React.FC = () => {
       )}
 
       {/* Compact Sub-Navigation Tabs */}
-      <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:items-center">
+      <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center">
         <button
           type="button"
           data-testid="teacher-tab-grading"
@@ -535,6 +740,20 @@ export const TeacherWorkspace: React.FC = () => {
         >
           <Users className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">Học viên ({studentsList.length})</span>
+        </button>
+
+        <button
+          type="button"
+          data-testid="teacher-tab-forum"
+          onClick={() => setActiveSubTab('forum')}
+          className={`inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+            activeSubTab === 'forum'
+              ? 'bg-red-800 text-white shadow-2xs'
+              : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+          }`}
+        >
+          <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Hỏi đáp bài học</span>
         </button>
       </div>
 
@@ -897,85 +1116,596 @@ export const TeacherWorkspace: React.FC = () => {
         </div>
       )}
 
-      {/* SubTab 3: Student Roster & Attendance */}
+      {/* SubTab 3: Student Roster, Attendance, Create Student & Course Grant Requests */}
       {activeSubTab === 'students' && (
-        <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-3">
-            <h2 className="font-display text-sm font-bold text-stone-900">
-              Học viên & Điểm danh lớp {effectiveClassId} ({studentsList.length})
-            </h2>
+        <div className="space-y-4">
+          <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-3">
+              <div>
+                <h2 className="font-display text-sm font-bold text-stone-900">
+                  Học viên & Điểm danh lớp {effectiveClassId} ({studentsList.length})
+                </h2>
+                <p className="mt-0.5 text-[11px] text-stone-500">
+                  Giáo viên được tạo học viên mới trong lớp mình phụ trách. Khóa học video cần gửi đề nghị để Quản lý phê duyệt.
+                </p>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-stone-600">Buổi:</label>
-              <input
-                type="number"
-                min={1}
-                aria-label="Buổi điểm danh"
-                data-testid="teacher-attendance-session-input"
-                value={attendanceSessionNum}
-                onChange={(e) => setAttendanceSessionNum(Math.max(1, Number(e.target.value) || 1))}
-                className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-xs font-bold text-stone-900"
-              />
-              <button
-                type="button"
-                data-testid="teacher-save-attendance-btn"
-                disabled={saveAttendanceMutation.isPending || studentsList.length === 0}
-                onClick={() => saveAttendanceMutation.mutate()}
-                className="inline-flex min-h-[34px] items-center gap-1 rounded-xl bg-emerald-700 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Lưu điểm danh</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="teacher-create-student-btn"
+                  onClick={() => {
+                    setCreateStudentError(null);
+                    setCreatedStudentResult(null);
+                    setNewStuClassCode(effectiveClassId || classesList[0]?.id || '');
+                    setCreateStudentModalOpen(true);
+                  }}
+                  className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <span>+ Tạo học viên</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="teacher-request-course-btn"
+                  onClick={() => {
+                    setCourseRequestError(null);
+                    if (!reqStudentEmail && studentsList[0]?.email) {
+                      setReqStudentEmail(studentsList[0].email);
+                    }
+                    if (!reqCourseId && (coursesQuery.data || DEMO_COURSES)[0]?.id) {
+                      setReqCourseId((coursesQuery.data || DEMO_COURSES)[0].id);
+                    }
+                    setCourseRequestModalOpen(true);
+                  }}
+                  className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
+                >
+                  <BookOpen className="h-3.5 w-3.5 text-amber-800" />
+                  <span>Đề nghị mở khóa học online</span>
+                </button>
+
+                <div className="flex items-center gap-1.5 border-l border-stone-200 pl-2">
+                  <label className="text-xs font-bold text-stone-600">Buổi:</label>
+                  <input
+                    type="number"
+                    min={1}
+                    aria-label="Buổi điểm danh"
+                    data-testid="teacher-attendance-session-input"
+                    value={attendanceSessionNum}
+                    onChange={(e) =>
+                      setAttendanceSessionNum(Math.max(1, Number(e.target.value) || 1))
+                    }
+                    className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-xs font-bold text-stone-900"
+                  />
+                  <button
+                    type="button"
+                    data-testid="teacher-save-attendance-btn"
+                    disabled={saveAttendanceMutation.isPending || studentsList.length === 0}
+                    onClick={() => saveAttendanceMutation.mutate()}
+                    className="inline-flex min-h-[34px] items-center gap-1 rounded-xl bg-emerald-700 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>Lưu điểm danh</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-2.5 divide-y divide-stone-100">
+              {studentsList.length === 0 ? (
+                <p className="py-6 text-center text-xs text-stone-500">
+                  Lớp {effectiveClassId || 'này'} chưa có học viên. Bấm &ldquo;+ Tạo học viên&rdquo; để thêm học viên mới.
+                </p>
+              ) : (
+                studentsList.map((st) => {
+                  const attStatus = attendanceMap[st.email] || 'present';
+                  return (
+                    <div
+                      key={st.code || st.email}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="truncate text-xs font-bold text-stone-900 sm:text-sm">
+                            {st.name}
+                          </p>
+                          <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-600">
+                            {st.code}
+                          </span>
+                          {st.has_online_courses ? (
+                            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                              Có khóa video ({st.online_courses?.length || 1})
+                            </span>
+                          ) : (
+                            <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-500">
+                              Chỉ học lớp trực tiếp
+                            </span>
+                          )}
+                        </div>
+                        <p className="truncate text-[11px] text-stone-500">{st.email}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          aria-label={`Điểm danh ${st.name}`}
+                          data-testid={`teacher-attendance-select-${st.email}`}
+                          value={attStatus}
+                          onChange={(e) =>
+                            setAttendanceMap((prev) => ({
+                              ...prev,
+                              [st.email]: e.target.value as
+                                | 'present'
+                                | 'late'
+                                | 'absent_excused'
+                                | 'absent_unexcused',
+                            }))
+                          }
+                          className="min-h-[34px] rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1 text-xs font-bold text-stone-800"
+                        >
+                          <option value="present">Có mặt</option>
+                          <option value="late">Đi muộn</option>
+                          <option value="absent_excused">Vắng có phép</option>
+                          <option value="absent_unexcused">Vắng không phép</option>
+                        </select>
+
+                        <button
+                          type="button"
+                          data-testid={`teacher-request-course-for-${st.email}`}
+                          onClick={() => {
+                            setCourseRequestError(null);
+                            setReqStudentEmail(st.email);
+                            if (!reqCourseId && (coursesQuery.data || DEMO_COURSES)[0]?.id) {
+                              setReqCourseId((coursesQuery.data || DEMO_COURSES)[0].id);
+                            }
+                            setCourseRequestModalOpen(true);
+                          }}
+                          className="min-h-[34px] rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-100"
+                        >
+                          Đề nghị cấp khóa
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/chat?room=student:${st.email}`)}
+                          className="min-h-[34px] rounded-xl border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-900 hover:bg-red-100"
+                        >
+                          Nhắn tin
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
-          <div className="mt-2.5 divide-y divide-stone-100">
-            {studentsList.map((st) => {
-              const attStatus = attendanceMap[st.email] || 'present';
-              return (
-                <div
-                  key={st.code || st.email}
-                  className="flex flex-wrap items-center justify-between gap-2 py-2.5"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-bold text-stone-900 sm:text-sm">
-                      {st.name}
-                    </p>
-                    <p className="truncate text-[11px] text-stone-500">{st.email}</p>
+          {/* Teacher's Course Grant Requests List */}
+          <div
+            data-testid="teacher-course-requests-list"
+            className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
+              <h3 className="font-display text-sm font-bold text-stone-900">
+                Đề nghị mở khóa học online đã gửi (
+                {(courseGrantRequestsQuery.data || []).length})
+              </h3>
+              <span className="text-[11px] font-semibold text-stone-500">
+                Quản lý phê duyệt để kích hoạt trên hệ thống video
+              </span>
+            </div>
+
+            {(courseGrantRequestsQuery.data || []).length === 0 ? (
+              <p className="py-5 text-center text-xs text-stone-500">
+                Chưa có đề nghị mở khóa học online nào.
+              </p>
+            ) : (
+              <div className="mt-2.5 divide-y divide-stone-100">
+                {(courseGrantRequestsQuery.data || []).map((req) => (
+                  <div
+                    key={req.id}
+                    data-testid={`teacher-course-request-item-${req.id}`}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-xs"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-bold text-stone-900">
+                          {req.student_name || req.student_email}
+                        </span>
+                        <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-700">
+                          Lớp {req.class_code}
+                        </span>
+                        <span className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-900">
+                          {req.requested_course_title || req.requested_course_id}
+                        </span>
+                      </div>
+                      {req.reason && (
+                        <p className="mt-0.5 text-[11px] text-stone-600">
+                          Lý do: {req.reason}
+                        </p>
+                      )}
+                      {req.review_note && (
+                        <p className="mt-0.5 text-[11px] font-semibold text-stone-700">
+                          Phản hồi Quản lý: {req.review_note}
+                        </p>
+                      )}
+                      <p className="mt-0.5 text-[10px] text-stone-400">
+                        Gửi {formatRelativeTime(req.created_at)}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {req.status === 'approved' ? (
+                        <span className="rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-900">
+                          Đã duyệt ✓
+                        </span>
+                      ) : req.status === 'rejected' ? (
+                        <span className="rounded-lg bg-red-100 px-2.5 py-1 text-[11px] font-bold text-red-900">
+                          Từ chối
+                        </span>
+                      ) : req.status === 'cancelled' ? (
+                        <span className="rounded-lg bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">
+                          Đã hủy
+                        </span>
+                      ) : (
+                        <>
+                          <span className="rounded-lg bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-900">
+                            Chờ Quản lý duyệt
+                          </span>
+                          <button
+                            type="button"
+                            data-testid={`teacher-cancel-course-request-${req.id}`}
+                            disabled={cancelCourseRequestMutation.isPending}
+                            onClick={() => cancelCourseRequestMutation.mutate(req.id)}
+                            className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-100"
+                          >
+                            Hủy yêu cầu
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      aria-label={`Điểm danh ${st.name}`}
-                      data-testid={`teacher-attendance-select-${st.email}`}
-                      value={attStatus}
-                      onChange={(e) =>
-                        setAttendanceMap((prev) => ({
-                          ...prev,
-                          [st.email]: e.target.value as
-                            | 'present'
-                            | 'late'
-                            | 'absent_excused'
-                            | 'absent_unexcused',
-                        }))
-                      }
-                      className="min-h-[34px] rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1 text-xs font-bold text-stone-800"
-                    >
-                      <option value="present">Có mặt</option>
-                      <option value="late">Đi muộn</option>
-                      <option value="absent_excused">Vắng có phép</option>
-                      <option value="absent_unexcused">Vắng không phép</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/chat?room=student:${st.email}`)}
-                      className="min-h-[36px] rounded-xl border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-900 hover:bg-red-100"
-                    >
-                      Nhắn tin
-                    </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SubTab 4: Per-Lesson Forum Inbox & Leaderboard */}
+      {activeSubTab === 'forum' && <TeacherForumInbox />}
+
+      {/* Modal 1: Teacher Create Student (Agent E) */}
+      {createStudentModalOpen && (
+        <div
+          data-testid="teacher-create-student-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-4 shadow-xl sm:p-5">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div>
+                <h3 className="font-display text-base font-bold text-stone-900">
+                  Tạo học viên mới (Lớp phụ trách)
+                </h3>
+                <p className="text-[11px] text-stone-500">
+                  Chỉ xếp vào lớp bạn phụ trách · Không tự động mở khóa học video
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateStudentModalOpen(false)}
+                className="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {classesList.length === 0 ? (
+              <div
+                data-testid="teacher-no-assigned-classes-warning"
+                className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs font-semibold text-amber-950"
+              >
+                Bạn chưa được phân công lớp. Vui lòng liên hệ Quản lý.
+              </div>
+            ) : createdStudentResult ? (
+              <div
+                data-testid="teacher-created-student-credentials"
+                className="mt-4 space-y-3"
+              >
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-950">
+                  <p className="font-bold">
+                    ✓ Đã tạo tài khoản học viên và xếp vào lớp {createdStudentResult.classCode}
+                  </p>
+                  <div className="mt-2 space-y-1 rounded-lg bg-white p-2.5 text-stone-800">
+                    <p>
+                      Họ tên: <strong>{createdStudentResult.name}</strong>
+                    </p>
+                    <p>
+                      Mã HV: <strong>{createdStudentResult.code}</strong>
+                    </p>
+                    <p>
+                      Email đăng nhập: <strong>{createdStudentResult.email}</strong>
+                    </p>
+                    <p>
+                      Mật khẩu khởi tạo:{' '}
+                      <strong className="text-red-800">
+                        {createdStudentResult.initialPassword}
+                      </strong>
+                    </p>
+                    <p>
+                      Khóa học video: <strong>Chưa cấp (0 khóa)</strong>
+                    </p>
                   </div>
                 </div>
-              );
-            })}
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const text = `Thông tin đăng nhập Sổ Liên Lạc Khổng Tử Nhí:\n- Học viên: ${createdStudentResult.name} (${createdStudentResult.code})\n- Lớp: ${createdStudentResult.classCode}\n- Email: ${createdStudentResult.email}\n- Mật khẩu: ${createdStudentResult.initialPassword}`;
+                      navigator.clipboard?.writeText(text);
+                      addToast({
+                        title: 'Đã sao chép thông tin đăng nhập!',
+                        variant: 'success',
+                      });
+                    }}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-100"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Sao chép thông tin</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreatedStudentResult(null);
+                      setCreateStudentModalOpen(false);
+                    }}
+                    className="min-h-[36px] rounded-xl bg-red-800 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                  >
+                    Hoàn tất
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  teacherCreateStudentMutation.mutate();
+                }}
+                className="mt-3.5 space-y-3"
+              >
+                {createStudentError && (
+                  <div
+                    role="alert"
+                    data-testid="teacher-create-student-error"
+                    className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-900"
+                  >
+                    {createStudentError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-800">
+                    Lớp học trực tiếp (chỉ lớp bạn phụ trách):
+                  </label>
+                  <select
+                    data-testid="teacher-create-student-class-select"
+                    value={newStuClassCode || effectiveClassId || classesList[0]?.id || ''}
+                    onChange={(e) => setNewStuClassCode(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-900"
+                  >
+                    {classesList.map((cls) => (
+                      <option key={cls.id} value={cls.id}>
+                        {cls.id} · {cls.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-800">
+                    Họ và tên học viên *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    data-testid="teacher-create-student-name-input"
+                    value={newStuName}
+                    onChange={(e) => setNewStuName(e.target.value)}
+                    placeholder="VD: Bé Trần Minh Khôi"
+                    className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-800">
+                    Email đăng nhập học viên *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    data-testid="teacher-create-student-email-input"
+                    value={newStuEmail}
+                    onChange={(e) => setNewStuEmail(e.target.value)}
+                    placeholder="VD: minhkhoi@khongtunhi.com"
+                    className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-800">
+                    Số điện thoại phụ huynh
+                  </label>
+                  <input
+                    type="tel"
+                    data-testid="teacher-create-student-phone-input"
+                    value={newStuParentPhone}
+                    onChange={(e) => setNewStuParentPhone(e.target.value)}
+                    placeholder="VD: 0912345678"
+                    className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-800">
+                    Ghi chú
+                  </label>
+                  <input
+                    type="text"
+                    value={newStuNotes}
+                    onChange={(e) => setNewStuNotes(e.target.value)}
+                    placeholder="Ghi chú trình độ hoặc lịch học của con..."
+                    className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-[11px] text-stone-600">
+                  Lưu ý: Học viên do giáo viên tạo mặc định <strong>chưa có khóa học video</strong>. Nếu cần cấp khóa học video, hãy dùng chức năng &ldquo;Đề nghị mở khóa học online&rdquo; để Quản lý phê duyệt.
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setCreateStudentModalOpen(false)}
+                    className="min-h-[36px] rounded-xl border border-stone-300 px-3.5 py-1.5 text-xs font-semibold text-stone-700"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    data-testid="teacher-submit-create-student-btn"
+                    disabled={teacherCreateStudentMutation.isPending}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-900 disabled:opacity-50"
+                  >
+                    {teacherCreateStudentMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <UserPlus className="h-3.5 w-3.5" />
+                    )}
+                    <span>Tạo học viên</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Teacher Request Online Course Access (Agent E) */}
+      {courseRequestModalOpen && (
+        <div
+          data-testid="teacher-request-course-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-4 shadow-xl sm:p-5">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div>
+                <h3 className="font-display text-base font-bold text-stone-900">
+                  Đề nghị mở khóa học online
+                </h3>
+                <p className="text-[11px] text-stone-500">
+                  Gửi yêu cầu để Quản lý duyệt và cấp quyền khóa học video cho học viên
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCourseRequestModalOpen(false)}
+                className="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                createCourseRequestMutation.mutate();
+              }}
+              className="mt-3.5 space-y-3"
+            >
+              {courseRequestError && (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-900"
+                >
+                  {courseRequestError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-stone-800">
+                  Chọn học viên trong lớp phụ trách *
+                </label>
+                <select
+                  data-testid="teacher-request-course-student-select"
+                  value={reqStudentEmail}
+                  onChange={(e) => setReqStudentEmail(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-900"
+                >
+                  <option value="">-- Chọn học viên --</option>
+                  {studentsList.map((st) => (
+                    <option key={st.email} value={st.email}>
+                      {st.name} ({st.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-800">
+                  Khóa học video đề xuất mở *
+                </label>
+                <select
+                  data-testid="teacher-request-course-select"
+                  value={reqCourseId}
+                  onChange={(e) => setReqCourseId(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-900"
+                >
+                  <option value="">-- Chọn khóa học video --</option>
+                  {(coursesQuery.data || DEMO_COURSES).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-800">
+                  Lý do đề xuất
+                </label>
+                <textarea
+                  rows={2}
+                  data-testid="teacher-request-course-reason-input"
+                  value={reqReason}
+                  onChange={(e) => setReqReason(e.target.value)}
+                  placeholder="VD: Học viên đã đóng học phí combo lớp trực tiếp + khóa video bổ trợ..."
+                  className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setCourseRequestModalOpen(false)}
+                  className="min-h-[36px] rounded-xl border border-stone-300 px-3.5 py-1.5 text-xs font-semibold text-stone-700"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  data-testid="teacher-submit-course-request-btn"
+                  disabled={createCourseRequestMutation.isPending}
+                  className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-900 disabled:opacity-50"
+                >
+                  {createCourseRequestMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                  <span>Gửi đề nghị</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

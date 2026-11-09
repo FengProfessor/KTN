@@ -202,6 +202,13 @@ export const roleNavigation: Record<UserRole, RoleNavigationDef> = {
         matchPrefix: ['/teacher/assign'],
       },
       {
+        to: '/teacher/forum',
+        label: 'Hỏi đáp',
+        icon: MessageSquare,
+        testId: 'nav-teacher-forum',
+        matchPrefix: ['/teacher/forum'],
+      },
+      {
         to: '/chat',
         label: 'Tin nhắn',
         icon: MessageSquare,
@@ -262,7 +269,7 @@ export const roleNavigation: Record<UserRole, RoleNavigationDef> = {
         icon: MoreHorizontal,
         testId: 'nav-admin-more',
         mobileTestId: 'mobile-nav-more',
-        matchPrefix: ['/admin/more'],
+        matchPrefix: ['/admin/more', '/admin/teachers'],
       },
     ],
     desktop: [
@@ -286,6 +293,13 @@ export const roleNavigation: Record<UserRole, RoleNavigationDef> = {
         icon: GraduationCap,
         testId: 'nav-admin-classes',
         matchPrefix: ['/admin/classes'],
+      },
+      {
+        to: '/admin/teachers',
+        label: 'Giáo viên',
+        icon: Users,
+        testId: 'nav-admin-teachers',
+        matchPrefix: ['/admin/teachers'],
       },
       {
         to: '/admin/orders',

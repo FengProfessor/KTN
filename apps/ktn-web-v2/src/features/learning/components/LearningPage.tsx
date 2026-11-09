@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { HlsVideoPlayer, VideoPlayerStatus } from './HlsVideoPlayer';
 import { HomeworkPanel } from './HomeworkPanel';
+import { LessonForumPanel } from './LessonForumPanel';
 import { KtnApiError, ktnApi } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -89,12 +90,15 @@ export const LearningPage: React.FC = () => {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(
     () => searchParams.get('unitId') || null
   );
-  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'homework'>(() => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'homework' | 'forum'>(() => {
     const t = searchParams.get('tab');
+    if (t === 'forum' || t === 'qa') return 'forum';
     if (t === 'homework') return 'homework';
     if (t === 'materials' || t === 'audio') return 'materials';
     return 'overview';
   });
+  const [forumDraftTimestamp, setForumDraftTimestamp] = useState<number | null>(null);
+  const [seekVideoTimestamp, setSeekVideoTimestamp] = useState<number | null>(null);
   const [mobileLessonDrawerOpen, setMobileLessonDrawerOpen] = useState(false);
 
   // Phase 4.2: Demo Video Modal state
@@ -123,7 +127,7 @@ export const LearningPage: React.FC = () => {
   const syncUrlParams = (
     nextCourseId: string,
     nextLessonNum: number,
-    nextTab?: 'overview' | 'materials' | 'homework',
+    nextTab?: 'overview' | 'materials' | 'homework' | 'forum',
     nextUnitId?: string | null
   ) => {
     const next = new URLSearchParams(searchParams);
@@ -138,7 +142,7 @@ export const LearningPage: React.FC = () => {
     setSearchParams(next, { replace: true });
   };
 
-  // Sync deep-link query params (?courseId=...&lesson=...&tab=homework)
+  // Sync deep-link query params (?courseId=...&lesson=...&tab=homework|forum)
   useEffect(() => {
     const cid = searchParams.get('courseId');
     const lnum = Number(searchParams.get('lesson'));
@@ -147,7 +151,9 @@ export const LearningPage: React.FC = () => {
     if (cid) setSelectedCourseId(cid);
     if (Number.isFinite(lnum) && lnum > 0) setSelectedLessonNum(lnum);
     if (uid !== null) setSelectedUnitId(uid || null);
-    if (tab === 'homework') {
+    if (tab === 'forum' || tab === 'qa') {
+      setActiveTab('forum');
+    } else if (tab === 'homework') {
       setActiveTab('homework');
     } else if (tab === 'materials' || tab === 'audio') {
       setActiveTab('materials');
@@ -975,6 +981,17 @@ export const LearningPage: React.FC = () => {
             }}
             onWatchDemoCourse={() => openDemoVideoModal(activeCourse)}
             onRequestUnlockCourse={() => openRegistrationModal(activeCourse)}
+            seekToTimestampSeconds={seekVideoTimestamp}
+            onAskAtTimestamp={(seconds) => {
+              setForumDraftTimestamp(seconds);
+              setActiveTab('forum');
+              syncUrlParams(
+                activeCourse.id,
+                activeLessonNumber,
+                'forum',
+                selectedUnitId
+              );
+            }}
           />
 
           {/* Sub-part Video Switcher (When a lesson has multiple video parts like 3.1/3.2 or 13.1/13.2) */}
@@ -1255,22 +1272,57 @@ export const LearningPage: React.FC = () => {
                         </span>
                       ) : null}
                     </button>
+
+                    <button
+                      type="button"
+                      data-testid="tab-lesson-forum"
+                      onClick={() => {
+                        setActiveTab('forum');
+                        syncUrlParams(
+                          activeCourse.id,
+                          activeLessonNumber,
+                          'forum',
+                          selectedUnitId
+                        );
+                      }}
+                      className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                        activeTab === 'forum'
+                          ? 'bg-red-800 text-white shadow-2xs'
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                      }`}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>Hỏi đáp</span>
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigate(
-                        user?.classCode
-                          ? `/chat?room=class:${user.classCode}`
-                          : `/chat?room=course:${activeCourse.id}`
-                      )
-                    }
-                    className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    <span>Hỏi GV</span>
-                  </button>
+                  {user?.classCode ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/chat?room=class:${user.classCode}`)}
+                      className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-100"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5 text-red-800" />
+                      <span>Nhóm lớp {user.classCode}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('forum');
+                        syncUrlParams(
+                          activeCourse.id,
+                          activeLessonNumber,
+                          'forum',
+                          selectedUnitId
+                        );
+                      }}
+                      className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>Hỏi GV bài này</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Tab 1: Nội dung (Overview & Quick Real Material Links) */}
@@ -1498,7 +1550,15 @@ export const LearningPage: React.FC = () => {
                 )}
 
                 {/* Tab 3: Bài tập (Homework) — single persistent mount so switching tabs on Desktop never unmounts an active recording/file */}
-                <div className={activeTab === 'homework' ? 'mt-3' : 'mt-4 hidden lg:block'}>
+                <div
+                  className={
+                    activeTab === 'homework'
+                      ? 'mt-3'
+                      : activeTab === 'forum'
+                      ? 'hidden'
+                      : 'mt-4 hidden lg:block'
+                  }
+                >
                   <HomeworkPanel
                     key={`${activeCourse.id}:${activeLessonNumber}:${activeLesson.unitId || ''}`}
                     courseId={activeCourse.id}
@@ -1527,6 +1587,27 @@ export const LearningPage: React.FC = () => {
                     }}
                   />
                 </div>
+
+                {/* Tab 4: Hỏi đáp (Per-Lesson Forum) */}
+                {activeTab === 'forum' && (
+                  <div className="mt-3">
+                    <LessonForumPanel
+                      courseId={activeCourse.id}
+                      courseTitle={activeCourse.title}
+                      unitId={String(
+                        activeLesson.unitId ||
+                          activeLesson._id ||
+                          activeLesson.id ||
+                          `lesson-${activeLessonNumber}`
+                      )}
+                      lessonNum={activeLessonNumber}
+                      lessonTitle={activeLesson.title}
+                      initialTimestampSeconds={forumDraftTimestamp}
+                      onClearInitialTimestamp={() => setForumDraftTimestamp(null)}
+                      onSeekToTimestamp={(seconds) => setSeekVideoTimestamp(seconds)}
+                    />
+                  </div>
+                )}
               </div>
             </>
           )}

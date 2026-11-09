@@ -32,11 +32,13 @@ export function resolveHeaderTitle(
   if (pathname.startsWith('/teacher')) {
     if (pathname.includes('/grading')) return { title: 'Chấm bài' };
     if (pathname.includes('/assign')) return { title: 'Giao bài' };
+    if (pathname.includes('/forum')) return { title: 'Hỏi đáp bài học', subtitle: 'Giải đáp & tích điểm đóng góp' };
     return { title: 'Lớp của tôi' };
   }
   if (pathname.startsWith('/admin')) {
     if (pathname.includes('/students')) return { title: 'Học viên' };
     if (pathname.includes('/classes')) return { title: 'Lớp học' };
+    if (pathname.includes('/teachers')) return { title: 'Giáo viên', subtitle: 'Hồ sơ, hiệu suất & phê duyệt' };
     if (pathname.includes('/orders')) return { title: 'Đơn hàng' };
     if (pathname.includes('/more')) return { title: 'Đối soát & Đồng bộ' };
     return { title: 'Tổng quan học vụ' };

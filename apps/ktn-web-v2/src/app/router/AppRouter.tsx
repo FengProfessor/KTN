@@ -56,11 +56,14 @@ const RequireRole: React.FC<{
         .map((c) => String(c || '').trim().toLowerCase())
         .filter(Boolean)
     : [];
+  const isForumDirectView =
+    searchParams.get('tab') === 'forum' || Boolean(searchParams.get('questionId'));
   const isAssignedCourseTeacherAllowed =
     allowAssignedCourseTeacher &&
     role === 'teacher' &&
-    teacherAssignedCourses.length > 0 &&
-    (!targetCourseId || teacherAssignedCourses.includes(targetCourseId));
+    (isForumDirectView ||
+      (teacherAssignedCourses.length > 0 &&
+        (!targetCourseId || teacherAssignedCourses.includes(targetCourseId))));
 
   if (!allowed.includes(role) && !isAssignedCourseTeacherAllowed) {
     return (

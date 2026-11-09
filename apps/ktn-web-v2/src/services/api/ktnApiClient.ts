@@ -6,6 +6,11 @@ import type {
   KtnClassItem,
   KtnClassSession,
   KtnCourse,
+  KtnCourseGrantRequest,
+  KtnForumAnswer,
+  KtnForumAttachment,
+  KtnForumLeaderboardEntry,
+  KtnForumQuestion,
   KtnHomework,
   KtnHomeworkAssignment,
   KtnLessonUnit,
@@ -15,6 +20,7 @@ import type {
   KtnStudentRecord,
   KtnStudentSearchResult,
   KtnSyncStatusResponse,
+  KtnTeacherContributionEvent,
   KtnTeacherRecord,
   KtnUserSession,
   KtnVietQrPaymentInfo,
@@ -1083,6 +1089,10 @@ export const ktnApi = {
     phone?: string;
     specialty?: string;
     assignedClasses?: string[];
+    assignedCourses?: string[];
+    active?: boolean;
+    initialPassword?: string;
+    provisionOnIzTeach?: boolean;
   }): Promise<{
     ok: boolean;
     teacher: KtnTeacherRecord;
@@ -1097,6 +1107,281 @@ export const ktnApi = {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  },
+
+  async teacherCreateStudent(payload: {
+    name: string;
+    email: string;
+    phone?: string;
+    parentName?: string;
+    classCode: string;
+    note?: string;
+    initialPassword?: string;
+  }): Promise<{
+    ok: boolean;
+    operationId: string;
+    student: KtnStudentRecord;
+    classCode: string;
+    onlineCourses: Array<{ id: string; title: string }>;
+    cognitoUserId?: string | null;
+    izteachStudentId?: string | null;
+    accountCreated?: boolean;
+    initialPassword?: string | null;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/teacher/students/create', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getCourseGrantRequests(params?: {
+    status?: string;
+    studentEmail?: string;
+  }): Promise<{
+    ok: boolean;
+    requests: KtnCourseGrantRequest[];
+    pendingCount: number;
+  }> {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set('status', params.status);
+    if (params?.studentEmail) sp.set('studentEmail', params.studentEmail);
+    const qs = sp.toString();
+    const res = await ktnRequest<{
+      ok: boolean;
+      requests: KtnCourseGrantRequest[];
+      pendingCount?: number;
+    }>(`/api/ktn/course-requests${qs ? `?${qs}` : ''}`);
+    const list = Array.isArray(res.requests) ? res.requests : [];
+    return {
+      ok: true,
+      requests: list,
+      pendingCount: res.pendingCount ?? list.filter((r) => r.status === 'pending').length
+    };
+  },
+
+  async createCourseGrantRequest(payload: {
+    studentEmail: string;
+    studentName?: string;
+    studentId?: string;
+    classCode?: string;
+    courseId: string;
+    courseTitle?: string;
+    reason: string;
+  }): Promise<{
+    ok: boolean;
+    request: KtnCourseGrantRequest;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/course-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async cancelCourseGrantRequest(requestId: string, reason?: string): Promise<{
+    ok: boolean;
+    request: KtnCourseGrantRequest;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/course-requests', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'cancel', requestId, reason })
+    });
+  },
+
+  async reviewCourseGrantRequest(payload: {
+    requestId: string;
+    decision: 'approve' | 'reject';
+    reviewNote?: string;
+  }): Promise<{
+    ok: boolean;
+    request: KtnCourseGrantRequest;
+    student?: KtnStudentRecord | null;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/course-requests/review', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async manageStudentLifecycle(payload: {
+    email: string;
+    action: 'suspend' | 'archive' | 'restore' | 'delete';
+    reason: string;
+    confirmDelete?: boolean;
+  }): Promise<{
+    ok: boolean;
+    email: string;
+    action: string;
+    status: 'active' | 'suspended' | 'archived' | 'deleted';
+    student?: KtnStudentRecord | null;
+    reverseSyncBlocked?: boolean;
+    preservedOrders?: boolean;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/admin/students/lifecycle', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getForumQuestions(params?: {
+    courseId?: string;
+    unitId?: string;
+    status?: string;
+    q?: string;
+  }): Promise<{
+    ok: boolean;
+    questions: KtnForumQuestion[];
+    totalCount: number;
+    openCount: number;
+  }> {
+    const sp = new URLSearchParams();
+    if (params?.courseId) sp.set('courseId', params.courseId);
+    if (params?.unitId) sp.set('unitId', params.unitId);
+    if (params?.status && params.status !== 'all') sp.set('status', params.status);
+    if (params?.q) sp.set('q', params.q);
+    const qs = sp.toString();
+    const res = await ktnRequest<{
+      ok: boolean;
+      questions: KtnForumQuestion[];
+      totalCount?: number;
+      openCount?: number;
+    }>(`/api/ktn/forum/questions${qs ? `?${qs}` : ''}`);
+    const list = Array.isArray(res.questions) ? res.questions : [];
+    return {
+      ok: true,
+      questions: list,
+      totalCount: res.totalCount ?? list.length,
+      openCount: res.openCount ?? list.filter((item) => item.status === 'open').length
+    };
+  },
+
+  async createForumQuestion(payload: {
+    courseId: string;
+    unitId: string;
+    lessonNumber?: number;
+    lessonTitle?: string;
+    title: string;
+    content: string;
+    videoTimestampSeconds?: number | null;
+    attachments?: KtnForumAttachment[];
+  }): Promise<{
+    ok: boolean;
+    question: KtnForumQuestion;
+  }> {
+    return ktnRequest('/api/ktn/forum/questions', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async claimForumQuestion(questionId: string, action: 'claim' | 'unclaim' = 'claim'): Promise<{
+    ok: boolean;
+    question: KtnForumQuestion;
+  }> {
+    return ktnRequest('/api/ktn/forum/questions/claim', {
+      method: 'POST',
+      body: JSON.stringify({ questionId, action })
+    });
+  },
+
+  async createForumAnswer(payload: {
+    questionId: string;
+    content: string;
+    attachments?: KtnForumAttachment[];
+    videoUrl?: string | null;
+    videoDurationSeconds?: number | null;
+    videoFileSize?: number | null;
+  }): Promise<{
+    ok: boolean;
+    answer: KtnForumAnswer;
+    question: KtnForumQuestion;
+    pointsAwarded: number;
+    awardedEvents: KtnTeacherContributionEvent[];
+  }> {
+    return ktnRequest('/api/ktn/forum/answers', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async voteForumAnswerHelpful(payload: {
+    answerId: string;
+    questionId?: string;
+    markAccepted?: boolean;
+  }): Promise<{
+    ok: boolean;
+    alreadyVoted: boolean;
+    pointsAwarded: number;
+    question: KtnForumQuestion;
+  }> {
+    return ktnRequest('/api/ktn/forum/answers/helpful', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async toggleForumFollow(payload: {
+    questionId: string;
+    following: boolean;
+    notifyMode?: 'immediate' | 'digest' | 'off';
+  }): Promise<{
+    ok: boolean;
+    questionId: string;
+    isFollowing: boolean;
+    notifyMode: string;
+  }> {
+    return ktnRequest('/api/ktn/forum/follows', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async moderateForumItem(payload: {
+    targetType: 'question' | 'answer';
+    targetId: string;
+    action: 'resolve' | 'reopen' | 'hide' | 'unhide' | 'delete';
+  }): Promise<{
+    ok: boolean;
+    question?: KtnForumQuestion;
+    answer?: KtnForumAnswer;
+  }> {
+    return ktnRequest('/api/ktn/forum/moderate', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async adjustTeacherForumPoints(payload: {
+    teacherEmail: string;
+    teacherId?: string;
+    pointsDelta: number;
+    reason: string;
+    questionId?: string;
+    answerId?: string;
+  }): Promise<{
+    ok: boolean;
+    event: KtnTeacherContributionEvent;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/forum/points/adjust', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getForumLeaderboard(month?: string): Promise<{
+    ok: boolean;
+    month: string;
+    openQuestionsCount: number;
+    totalQuestionsCount: number;
+    leaderboard: KtnForumLeaderboardEntry[];
+  }> {
+    const qs = month ? `?month=${encodeURIComponent(month)}` : '';
+    return ktnRequest(`/api/ktn/forum/leaderboard${qs}`);
   },
 
   async getOrders(params?: {

@@ -117,6 +117,8 @@ export interface NotificationLinkInput {
   roomId?: string;
   classCode?: string;
   courseId?: string;
+  unitId?: string;
+  questionId?: string;
   lessonNum?: number;
   homeworkId?: string;
   sessionNum?: number;
@@ -132,6 +134,25 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
     return actionUrl;
   }
 
+  // 0.5. Teacher Forum Inbox or Course Request notification
+  if (
+    actionUrl.startsWith('/teacher/forum') ||
+    actionUrl.startsWith('#/teacher/forum') ||
+    actionUrl.includes('tab=forum_inbox')
+  ) {
+    const qIdx = actionUrl.indexOf('?');
+    const qs = qIdx >= 0 ? actionUrl.slice(qIdx) : '';
+    return `/teacher/forum${qs}`;
+  }
+
+  if (
+    type === 'course_request_reviewed' ||
+    actionUrl.startsWith('#/teacher?tab=students') ||
+    actionUrl.startsWith('/teacher?tab=students')
+  ) {
+    return '/teacher/classes';
+  }
+
   // 1. Teacher homework grading notification
   if (type === 'homework_submitted' || actionUrl.includes('view=grade')) {
     let hwId = String(notif.homeworkId || '').trim();
@@ -142,7 +163,10 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
     return hwId ? `/teacher?hwId=${encodeURIComponent(hwId)}` : '/teacher';
   }
 
-  // 2. Admin order notification
+  // 2. Admin order or teacher approval notification
+  if (actionUrl.startsWith('/admin/teachers') || actionUrl.startsWith('#/admin/teachers')) {
+    return '/admin/teachers';
+  }
   if (
     type === 'order_pending' ||
     actionUrl.includes('view=orders') ||
@@ -155,7 +179,10 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
   const isCourseOrLearningAction =
     actionUrl.includes('/khoa/') ||
     actionUrl.includes('/learning') ||
-    actionUrl.includes('courseId=');
+    actionUrl.includes('courseId=') ||
+    type === 'forum_question_created' ||
+    type === 'forum_answer_posted' ||
+    type === 'forum_answer_accepted';
 
   if (
     !isCourseOrLearningAction &&
@@ -187,11 +214,17 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
   // 4. Class schedule reminders, schedule changes, session cancellations, live classroom session / live class homework
   let queryCourseId = '';
   let queryLesson = '';
+  let queryUnitId = '';
+  let queryTab = '';
+  let queryQuestionId = '';
   const qIndex = actionUrl.indexOf('?');
   if (qIndex >= 0) {
     const sp = new URLSearchParams(actionUrl.slice(qIndex + 1));
     queryCourseId = sp.get('courseId') || '';
     queryLesson = sp.get('lesson') || '';
+    queryUnitId = sp.get('unitId') || '';
+    queryTab = sp.get('tab') || '';
+    queryQuestionId = sp.get('questionId') || '';
   }
   const khoaMatch = actionUrl.match(/^#\/khoa\/([^/]+)(?:\/bai\/(\d+))?/i);
   const learningMatch = actionUrl.match(/^\/learning\/([^/]+)\/lesson\/(\d+)/i);
@@ -250,10 +283,18 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
     return qs ? `/classrooms?${qs}` : '/classrooms';
   }
 
-  // 5. Video course lesson / graded homework / course granted
+  // 5. Video course lesson / graded homework / course granted / lesson forum Q&A
+  const isForumType =
+    type === 'forum_question_created' ||
+    type === 'forum_answer_posted' ||
+    type === 'forum_answer_accepted' ||
+    queryTab === 'forum' ||
+    Boolean(notif.questionId || queryQuestionId);
+
   if (
     type === 'homework_graded' ||
     type === 'course_granted' ||
+    isForumType ||
     khoaMatch ||
     learningMatch ||
     actionUrl.startsWith('/learning') ||
@@ -262,12 +303,16 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
     const courseId = rawCourseId;
     const lessonNum =
       Number(notif.lessonNum || queryLesson || khoaMatch?.[2] || learningMatch?.[2] || 1) || 1;
+    const unitId = String(notif.unitId || queryUnitId || '').trim();
+    const questionId = String(notif.questionId || queryQuestionId || '').trim();
     const params = new URLSearchParams();
     if (courseId) params.set('courseId', courseId);
+    if (unitId) params.set('unitId', unitId);
     if (type !== 'course_granted') {
       params.set('lesson', String(lessonNum));
-      params.set('tab', 'homework');
+      params.set('tab', isForumType ? 'forum' : (queryTab || 'homework'));
     }
+    if (questionId) params.set('questionId', questionId);
     const qs = params.toString();
     return qs ? `/learning?${qs}` : '/learning';
   }

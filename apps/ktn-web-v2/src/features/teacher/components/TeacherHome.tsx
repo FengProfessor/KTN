@@ -71,6 +71,19 @@ export const TeacherHome: React.FC = () => {
     [chatRooms]
   );
 
+  const forumSummaryQuery = useQuery({
+    queryKey: ['ktn-teacher-forum-summary', user?.email, isDemoMode],
+    queryFn: async () => {
+      if (isDemoMode) {
+        return { openCount: 1 };
+      }
+      const res = await ktnApi.getForumQuestions({ status: 'open' });
+      return { openCount: Number(res.summary?.openCount || res.questions?.length || 0) };
+    },
+    enabled: Boolean(user) || isDemoMode,
+  });
+  const openForumCount = forumSummaryQuery.data?.openCount || 0;
+
   const assignedClassIds = useMemo(
     () => new Set(assignedClasses.map((c) => c.id)),
     [assignedClasses]
@@ -184,10 +197,10 @@ export const TeacherHome: React.FC = () => {
         }
       />
 
-      {/* Quick Actions 2x2 Grid */}
+      {/* Quick Actions Grid */}
       <section
         data-testid="teacher-quick-actions"
-        className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-3"
       >
         <QuickActionTile
           icon={Users}
@@ -210,6 +223,18 @@ export const TeacherHome: React.FC = () => {
           accent="emerald"
           testId="teacher-quick-grading"
           onClick={() => navigate('/teacher/grading')}
+        />
+
+        <QuickActionTile
+          icon={MessageSquare}
+          label="Hỏi đáp bài học"
+          status={
+            openForumCount > 0 ? `${openForumCount} câu chờ giải đáp` : 'Cộng đồng bài học'
+          }
+          badgeCount={openForumCount}
+          accent="amber"
+          testId="teacher-quick-forum"
+          onClick={() => navigate('/teacher/forum')}
         />
 
         <QuickActionTile

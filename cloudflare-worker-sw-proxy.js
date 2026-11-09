@@ -4501,6 +4501,9 @@ async function mergeAndUpsertStudentCourses(env, {
   const resolvedCognito = cognitoUserId || existingRow?.cognito_user_id || null;
   const resolvedIzStuId = izteachStudentId || existingRow?.izteach_student_id || null;
   const resolvedPhone = phone !== undefined ? String(phone).trim() : (existingRow?.phone || '');
+  const resolvedParentName = parentName !== undefined
+    ? String(parentName).trim()
+    : (existingRow?.parent_name || '');
   const basePayload = {
     code: studentCode,
     email: cleanEmail,
@@ -4514,14 +4517,11 @@ async function mergeAndUpsertStudentCourses(env, {
     online_courses: onlineCoursesJson,
     updated_at: nowIso
   };
+  const v2Payload = (parentName !== undefined || resolvedParentName)
+    ? { ...basePayload, parent_name: resolvedParentName }
+    : basePayload;
 
-  const extendedPayload = { ...basePayload };
-  const resolvedParentName = parentName !== undefined
-    ? String(parentName).trim()
-    : (existingRow?.parent_name || '');
-  if (parentName !== undefined || resolvedParentName) {
-    extendedPayload.parent_name = resolvedParentName;
-  }
+  const extendedPayload = { ...v2Payload };
   if (accountStatus !== undefined) extendedPayload.account_status = accountStatus;
   if (syncStatus !== undefined) {
     extendedPayload.sync_status = syncStatus;
@@ -4536,14 +4536,30 @@ async function mergeAndUpsertStudentCourses(env, {
   let sbRes = await supabaseRequest(env, 'ktn_students', {
     method: 'POST',
     prefer: 'resolution=merge-duplicates,return=representation',
-    body: Object.keys(extendedPayload).length > Object.keys(basePayload).length ? extendedPayload : basePayload
+    body: Object.keys(extendedPayload).length > Object.keys(v2Payload).length ? extendedPayload : v2Payload
   });
-  // Fallback an toàn nếu bảng ktn_students chưa chạy kịp migration V3 (tránh lỗi 400 column does not exist)
-  if ((!sbRes || !sbRes.ok) && sbRes?.status === 400 && Object.keys(extendedPayload).length > Object.keys(basePayload).length) {
+  // Fallback an toàn nếu bảng ktn_students chưa chạy kịp migration V3 (tránh lỗi 400 column does not exist nhưng vẫn giữ parent_name)
+  if ((!sbRes || !sbRes.ok) && sbRes?.status === 400 && Object.keys(extendedPayload).length > Object.keys(v2Payload).length) {
+    sbRes = await supabaseRequest(env, 'ktn_students', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=representation',
+      body: v2Payload
+    });
+  }
+  if ((!sbRes || !sbRes.ok) && sbRes?.status === 400 && Object.keys(v2Payload).length > Object.keys(basePayload).length) {
     sbRes = await supabaseRequest(env, 'ktn_students', {
       method: 'POST',
       prefer: 'resolution=merge-duplicates,return=representation',
       body: basePayload
+    });
+  }
+  // Nếu xung đột unique email (23505 ktn_students_email_key) do bản ghi vừa được tạo đồng thời với mã code khác, cập nhật trực tiếp theo email
+  if ((!sbRes || !sbRes.ok) && sbRes?.status === 409 && String(sbRes?.data?.code || '') === '23505') {
+    const { code: _omitCode, ...patchV2 } = v2Payload;
+    sbRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(cleanEmail)}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: patchV2
     });
   }
   if (!sbRes || !sbRes.ok || !Array.isArray(sbRes.data) || sbRes.data.length === 0) {

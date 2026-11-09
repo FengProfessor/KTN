@@ -220,25 +220,30 @@ export function useRoomMessages(roomId: string | null) {
     }
 
     const byKey = new Map<string, ChatMessage>();
-    const clientIdSet = new Set<string>();
+    const clientIdToKey = new Map<string, string>();
 
     const allServer = [...olderMessages, ...serverMessages];
     for (const msg of allServer) {
       const key = String(msg.id);
+      if (msg.clientMessageId) {
+        const existingKey = clientIdToKey.get(msg.clientMessageId);
+        if (existingKey && existingKey !== key) {
+          byKey.delete(existingKey);
+        }
+        clientIdToKey.set(msg.clientMessageId, key);
+      }
       const localReactions = reactionsByMessageId[key];
       byKey.set(key, {
         ...msg,
         status: msg.status || 'sent',
         reactions: localReactions || msg.reactions || [],
       });
-      if (msg.clientMessageId) {
-        clientIdSet.add(msg.clientMessageId);
-      }
     }
 
     for (const pending of [...sendingList, ...failedList, ...demoExtra]) {
       const cId = pending.clientMessageId || pending.id;
-      if (clientIdSet.has(cId) || byKey.has(cId)) continue;
+      if (clientIdToKey.has(cId) || byKey.has(cId)) continue;
+      clientIdToKey.set(cId, cId);
       byKey.set(cId, pending);
     }
 

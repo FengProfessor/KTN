@@ -139,6 +139,11 @@ export function encodeAttachmentUrl(att: ChatAttachment): string {
   return `${baseUrl}#${params.toString()}`;
 }
 
+export function extractClientMessageIdFromServerId(serverId: string): string | undefined {
+  const match = String(serverId || '').match(/^MSG-IDEM-[a-z0-9-]+__([a-zA-Z0-9_.-]+)$/);
+  return match ? match[1] : undefined;
+}
+
 export function normalizeServerMessage(raw: Record<string, unknown>): ChatMessage {
   const attUrl = typeof raw.attachment_url === 'string' ? raw.attachment_url : '';
   const rawContent = String(raw.content || raw.text || '').trim();
@@ -155,9 +160,17 @@ export function normalizeServerMessage(raw: Record<string, unknown>): ChatMessag
     cleanContent = replyMatch[3];
   }
 
+  const serverId = String(raw.id || '');
+  const resolvedClientMsgId =
+    typeof raw.clientMessageId === 'string' && raw.clientMessageId.trim()
+      ? raw.clientMessageId.trim()
+      : typeof raw.client_message_id === 'string' && raw.client_message_id.trim()
+      ? raw.client_message_id.trim()
+      : extractClientMessageIdFromServerId(serverId);
+
   return {
-    id: String(raw.id || ''),
-    clientMessageId: typeof raw.clientMessageId === 'string' ? raw.clientMessageId : undefined,
+    id: serverId,
+    clientMessageId: resolvedClientMsgId,
     room_id: String(raw.room_id || raw.class_code || ''),
     class_code: typeof raw.class_code === 'string' ? raw.class_code : undefined,
     sender_email: String(raw.sender_email || ''),

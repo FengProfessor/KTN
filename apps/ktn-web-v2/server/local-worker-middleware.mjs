@@ -688,6 +688,15 @@ export function createLocalWorkerHarness() {
               );
             }
           }
+          if (table === 'ktn_messages' && item.id && !isUpsert) {
+            const dupMsg = rows.find(r => r.id && String(r.id) === String(item.id));
+            if (dupMsg) {
+              return new Response(
+                JSON.stringify({ code: '23505', message: 'duplicate key value violates unique constraint "ktn_messages_pkey"' }),
+                { status: 409, headers: { 'Content-Type': 'application/json' } }
+              );
+            }
+          }
           let existingIdx = -1;
           if (onConflict) {
             const keys = onConflict.split(',').map(s => s.trim());

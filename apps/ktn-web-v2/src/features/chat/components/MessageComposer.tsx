@@ -49,6 +49,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const [uploadProgress, setUploadProgress] = useState<{ fileName: string; percent: number } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const submittingRef = useRef<boolean>(false);
 
   const dlpCheck = detectDlpViolation(draft);
 
@@ -114,8 +115,11 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (submittingRef.current || isSending) return;
 
-    const trimmed = draft.trim();
+    const latestStoreDraft = useUiStore.getState().getRoomDraft(roomId);
+    const effectiveDraft = latestStoreDraft !== undefined ? latestStoreDraft : draft;
+    const trimmed = effectiveDraft.trim();
     if (!trimmed && !stagedAttachment) return;
 
     if (dlpCheck.blocked) {
@@ -126,6 +130,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       });
       return;
     }
+
+    submittingRef.current = true;
 
     const messageText =
       trimmed ||
@@ -159,13 +165,16 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       });
     } catch {
       // Handled inside useSendMessage (retains draft & adds failed message bubble with retry button)
+    } finally {
+      submittingRef.current = false;
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      if (submittingRef.current || isSending) return;
+      void handleSubmit();
     }
   };
 
@@ -385,7 +394,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             <button
               type="submit"
               data-testid="chat-send-btn"
-              disabled={(!draft.trim() && !stagedAttachment) || dlpCheck.blocked}
+              disabled={isSending || (!draft.trim() && !stagedAttachment) || dlpCheck.blocked}
               className="inline-flex h-[38px] shrink-0 items-center justify-center gap-1 rounded-2xl bg-red-800 px-3.5 text-xs font-bold text-white shadow-2xs transition-all hover:bg-red-900 disabled:cursor-not-allowed disabled:opacity-45"
             >
               {isSending ? (

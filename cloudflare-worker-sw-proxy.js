@@ -1308,11 +1308,14 @@ const DEFAULT_USER_NOTIFICATION_PREFS = {
   grades: true,
   schedule: true,
   important: true,
-  reminder10Min: false
+  reminder10Min: false,
+  forumPushMode: 'immediate'
 };
 
 function sanitizeUserNotificationPrefs(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
+  const rawForumMode = String(src.forumPushMode || 'immediate').toLowerCase();
+  const forumPushMode = ['immediate', 'digest', 'off'].includes(rawForumMode) ? rawForumMode : 'immediate';
   return {
     chat: src.chat !== false,
     homework: src.homework !== false,
@@ -1320,20 +1323,33 @@ function sanitizeUserNotificationPrefs(raw) {
     schedule: src.schedule !== false,
     // Thông báo quan trọng từ quản lý luôn được bật, không bao giờ bị tắt khi tắt tin nhắn thông thường
     important: true,
-    reminder10Min: Boolean(src.reminder10Min)
+    reminder10Min: Boolean(src.reminder10Min),
+    forumPushMode
   };
 }
 
-function isEventTypeAllowedByUserPrefs(eventType, rawPrefs) {
+function isEventTypeAllowedByUserPrefs(eventType, rawPrefs, options = {}) {
   const prefs = sanitizeUserNotificationPrefs(rawPrefs);
   const t = String(eventType || '').toLowerCase();
   if (
     t === 'announcement_pinned' ||
     t === 'important_announcement' ||
     t === 'order_pending' ||
+    t === 'course_request_pending' ||
+    t === 'course_request_reviewed' ||
     t === 'direct_push' ||
     t === 'web_push'
   ) {
+    return true;
+  }
+  if (t === 'forum_question') {
+    // In-app inbox luôn hiển thị câu hỏi mới cho giáo viên; Push di động tôn trọng forumPushMode (immediate | digest | off)
+    if (options.channel === 'push') {
+      return prefs.forumPushMode === 'immediate';
+    }
+    return true;
+  }
+  if (t === 'forum_answer') {
     return true;
   }
   if (t.startsWith('chat_') || t === 'chat_message') {
@@ -1492,7 +1508,7 @@ async function dispatchWebPushForQuery(env, queryFilter, payloadObj, meta = {}) 
       if (senderEmail && rowEmail === senderEmail) continue;
       if (recipientSet && !recipientSet.has(rowEmail)) continue;
       const mergedPrefs = userPrefsMap.get(rowEmail) || row?.notify_settings || DEFAULT_USER_NOTIFICATION_PREFS;
-      if (!isEventTypeAllowedByUserPrefs(eventType, mergedPrefs)) {
+      if (!isEventTypeAllowedByUserPrefs(eventType, mergedPrefs, { channel: 'push' })) {
         mutedByPreferenceCount += 1;
         continue;
       }
@@ -6232,6 +6248,596 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
   } catch (err) {
     return { ok: false, syncedCount, error: err?.message || 'SYNC_ERROR' };
   }
+}
+
+// ============================================================================
+// HỆ THỐNG VÒNG ĐỜI HỌC VIÊN, ĐỀ NGHỊ MỞ KHÓA & DIỄN ĐÀN HỎI ĐÁP THEO BÀI HỌC
+// Dual-persistence: Bảng SQL chuyên biệt + ktn_dlp_alerts (tương thích 100% Live V2/V3)
+// ============================================================================
+const FORUM_POINTS_CONFIG = {
+  substantive_answer: 1,
+  marked_helpful: 2,
+  accepted_answer: 3,
+  verified_guidance_video: 5,
+  long_pending_resolved: 2,
+  daily_substantive_cap: 30,
+  long_pending_threshold_ms: 12 * 3600 * 1000
+};
+
+async function upsertStructuredAlertRecord(env, { id, roomId, senderEmail, senderName, senderRole, payload, reason }) {
+  const nowIso = new Date().toISOString();
+  const row = {
+    id,
+    room_id: roomId,
+    sender_email: normalizeEmail(senderEmail || 'system@khongtunhi.com'),
+    sender_name: String(senderName || senderEmail || 'KTN System').trim(),
+    sender_role: ['student', 'teacher', 'admin', 'system'].includes(senderRole) ? senderRole : 'system',
+    blocked_content: JSON.stringify(payload),
+    reason: reason || roomId,
+    resolved: true,
+    created_at: payload?.createdAt || payload?.created_at || nowIso
+  };
+  let res = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=representation',
+    body: row
+  });
+  if (!res || !res.ok) {
+    res = await supabaseRequest(env, `ktn_dlp_alerts?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        sender_email: row.sender_email,
+        sender_name: row.sender_name,
+        blocked_content: row.blocked_content,
+        reason: row.reason
+      }
+    });
+  }
+  if (!res || !res.ok || (Array.isArray(res.data) && res.data.length === 0)) {
+    const postRes = await supabaseRequest(env, 'ktn_dlp_alerts', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: row
+    });
+    if (postRes && postRes.ok) res = postRes;
+  }
+  return { ok: Boolean(res && res.ok), status: res?.status || 500, payload };
+}
+
+async function loadAllStudentLifecycleStates(env) {
+  const map = new Map();
+  const res = await supabaseRequest(
+    env,
+    'ktn_dlp_alerts?room_id=eq.STUDENT_LIFECYCLE&order=created_at.desc&limit=1000'
+  );
+  if (res.ok && Array.isArray(res.data)) {
+    for (const row of res.data) {
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        const em = normalizeEmail(parsed.email || row.sender_email || String(row.id || '').replace(/^STU_LIFE_/, ''));
+        if (em && !map.has(em)) {
+          map.set(em, parsed);
+        }
+      } catch {}
+    }
+  }
+  return map;
+}
+
+async function getStudentLifecycleState(env, email) {
+  const cleanEmail = normalizeEmail(email || '');
+  if (!cleanEmail) return null;
+  const id = `STU_LIFE_${cleanEmail}`;
+  const res = await supabaseRequest(
+    env,
+    `ktn_dlp_alerts?id=eq.${encodeURIComponent(id)}&room_id=eq.STUDENT_LIFECYCLE&limit=1`
+  );
+  if (res.ok && Array.isArray(res.data) && res.data[0]) {
+    try {
+      return JSON.parse(res.data[0].blocked_content || '{}');
+    } catch {}
+  }
+  return null;
+}
+
+async function saveStudentLifecycleState(env, email, stateObj, actorSession) {
+  const cleanEmail = normalizeEmail(email || '');
+  const id = `STU_LIFE_${cleanEmail}`;
+  const nowIso = new Date().toISOString();
+  const payload = {
+    ...stateObj,
+    email: cleanEmail,
+    updatedAt: nowIso,
+    updatedBy: actorSession?.email || 'admin@khongtunhi.com'
+  };
+  const saved = await upsertStructuredAlertRecord(env, {
+    id,
+    roomId: 'STUDENT_LIFECYCLE',
+    senderEmail: cleanEmail,
+    senderName: actorSession?.name || actorSession?.email || 'Quản lý KTN',
+    senderRole: 'admin',
+    payload,
+    reason: `STUDENT_LIFECYCLE_${String(payload.status || 'active').toUpperCase()}`
+  });
+  // Thử đồng bộ thêm lên cột account_status của bảng ktn_students nếu schema V3 đã mở cột
+  if (payload.status !== 'deleted') {
+    await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(cleanEmail)}`, {
+      method: 'PATCH',
+      prefer: 'return=minimal',
+      body: {
+        account_status: payload.status,
+        updated_at: nowIso
+      }
+    }).catch(() => null);
+  }
+  return saved;
+}
+
+async function loadAllCourseGrantRequests(env) {
+  const byId = new Map();
+  const [tblRes, alertRes] = await Promise.all([
+    supabaseRequest(env, 'ktn_course_grant_requests?order=created_at.desc&limit=500').catch(() => ({ ok: false })),
+    supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.COURSE_GRANT_REQUEST&order=created_at.desc&limit=500')
+  ]);
+  if (tblRes && tblRes.ok && Array.isArray(tblRes.data)) {
+    for (const r of tblRes.data) {
+      if (r && r.id) byId.set(String(r.id), r);
+    }
+  }
+  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
+    for (const row of alertRes.data) {
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        const id = String(parsed.id || row.id || '').trim();
+        if (id && !byId.has(id)) {
+          byId.set(id, parsed);
+        } else if (id && byId.has(id)) {
+          const prev = byId.get(id);
+          if ((Date.parse(parsed.updated_at || parsed.updatedAt || '') || 0) >= (Date.parse(prev.updated_at || prev.updatedAt || '') || 0)) {
+            byId.set(id, { ...prev, ...parsed });
+          }
+        }
+      } catch {}
+    }
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => (Date.parse(b.created_at || b.createdAt || '') || 0) - (Date.parse(a.created_at || a.createdAt || '') || 0)
+  );
+}
+
+async function saveCourseGrantRequest(env, reqObj, actorSession) {
+  const id = String(reqObj.id || `CREQ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`).trim();
+  const nowIso = new Date().toISOString();
+  const normalized = {
+    id,
+    teacher_id: reqObj.teacher_id || reqObj.teacherId || actorSession?.code || actorSession?.email || '',
+    teacher_email: normalizeEmail(reqObj.teacher_email || reqObj.teacherEmail || actorSession?.email || ''),
+    teacher_name: String(reqObj.teacher_name || reqObj.teacherName || actorSession?.name || '').trim(),
+    student_id: String(reqObj.student_id || reqObj.studentId || '').trim(),
+    student_email: normalizeEmail(reqObj.student_email || reqObj.studentEmail || ''),
+    student_name: String(reqObj.student_name || reqObj.studentName || '').trim(),
+    class_code: String(reqObj.class_code || reqObj.classCode || '').trim().toUpperCase(),
+    course_id: String(reqObj.course_id || reqObj.courseId || '').trim().toLowerCase(),
+    course_title: String(reqObj.course_title || reqObj.courseTitle || '').trim(),
+    reason: String(reqObj.reason || '').trim(),
+    status: reqObj.status || 'pending',
+    reviewed_by_email: reqObj.reviewed_by_email || reqObj.reviewedByEmail || null,
+    reviewed_at: reqObj.reviewed_at || reqObj.reviewedAt || null,
+    review_note: String(reqObj.review_note || reqObj.reviewNote || '').trim(),
+    entitlement_result: reqObj.entitlement_result || reqObj.entitlementResult || null,
+    created_at: reqObj.created_at || reqObj.createdAt || nowIso,
+    updated_at: nowIso
+  };
+  await supabaseRequest(env, 'ktn_course_grant_requests?on_conflict=id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=minimal',
+    body: normalized
+  }).catch(() => null);
+  const alertSave = await upsertStructuredAlertRecord(env, {
+    id,
+    roomId: 'COURSE_GRANT_REQUEST',
+    senderEmail: normalized.teacher_email,
+    senderName: normalized.teacher_name || normalized.teacher_email,
+    senderRole: actorSession?.role || 'teacher',
+    payload: normalized,
+    reason: `COURSE_GRANT_${String(normalized.status).toUpperCase()}`
+  });
+  return { ok: alertSave.ok, request: normalized };
+}
+
+async function loadAllForumQuestions(env, filters = {}) {
+  const byId = new Map();
+  const [tblRes, alertRes] = await Promise.all([
+    supabaseRequest(env, 'ktn_forum_questions?order=created_at.desc&limit=500').catch(() => ({ ok: false })),
+    supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.FORUM_QUESTION&order=created_at.desc&limit=500')
+  ]);
+  if (tblRes && tblRes.ok && Array.isArray(tblRes.data)) {
+    for (const r of tblRes.data) {
+      if (r && r.id) byId.set(String(r.id), r);
+    }
+  }
+  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
+    for (const row of alertRes.data) {
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        const id = String(parsed.id || row.id || '').trim();
+        if (!id) continue;
+        const prev = byId.get(id);
+        if (!prev || (Date.parse(parsed.updated_at || '') || 0) >= (Date.parse(prev.updated_at || '') || 0)) {
+          byId.set(id, { ...(prev || {}), ...parsed });
+        }
+      } catch {}
+    }
+  }
+  let list = Array.from(byId.values());
+  if (filters.courseId) {
+    const rawCid = String(filters.courseId).trim().toLowerCase();
+    const canonicalCid = COURSE_CHAT_ALIASES[rawCid] || rawCid;
+    list = list.filter(q => {
+      const qCid = String(q.course_id || q.courseId || '').trim().toLowerCase();
+      return (COURSE_CHAT_ALIASES[qCid] || qCid) === canonicalCid;
+    });
+  }
+  if (filters.unitId) {
+    const cleanUid = String(filters.unitId).trim().toLowerCase();
+    list = list.filter(q => String(q.unit_id || q.unitId || '').trim().toLowerCase() === cleanUid);
+  }
+  if (!filters.includeHidden) {
+    list = list.filter(q => q.status !== 'hidden');
+  }
+  if (filters.status && filters.status !== 'all') {
+    if (filters.status === 'unanswered' || filters.status === 'open') {
+      list = list.filter(q => q.status === 'open' || Number(q.answer_count || 0) === 0);
+    } else if (filters.status === 'answered' || filters.status === 'resolved') {
+      list = list.filter(q => q.status === 'answered' || q.status === 'resolved' || Number(q.answer_count || 0) > 0);
+    } else {
+      list = list.filter(q => q.status === filters.status);
+    }
+  }
+  if (filters.q) {
+    const normQ = normalizeViSearchText(filters.q);
+    if (normQ) {
+      list = list.filter(q => {
+        const hay = normalizeViSearchText(`${q.title || ''} ${q.content || ''} ${q.lesson_title_snapshot || ''} ${q.student_name || ''}`);
+        return hay.includes(normQ);
+      });
+    }
+  }
+  list.sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
+  return list;
+}
+
+async function saveForumQuestion(env, qObj, actorSession) {
+  const id = String(qObj.id || `FQ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`).trim();
+  const nowIso = new Date().toISOString();
+  const rawCid = String(qObj.course_id || qObj.courseId || '').trim().toLowerCase();
+  const canonicalCourseId = COURSE_CHAT_ALIASES[rawCid] || rawCid;
+  const normalized = {
+    id,
+    course_id: canonicalCourseId,
+    unit_id: String(qObj.unit_id || qObj.unitId || '').trim(),
+    lesson_num: Number(qObj.lesson_num || qObj.lessonNum) || 1,
+    lesson_title_snapshot: String(qObj.lesson_title_snapshot || qObj.lessonTitleSnapshot || qObj.lessonTitle || '').trim(),
+    student_id: String(qObj.student_id || qObj.studentId || actorSession?.code || actorSession?.id || '').trim(),
+    student_email: normalizeEmail(qObj.student_email || qObj.studentEmail || actorSession?.email || ''),
+    student_name: String(qObj.student_name || qObj.studentName || actorSession?.name || 'Học viên KTN').trim(),
+    title: String(qObj.title || '').trim(),
+    content: String(qObj.content || '').trim(),
+    video_timestamp_seconds:
+      qObj.video_timestamp_seconds !== undefined && qObj.video_timestamp_seconds !== null && Number.isFinite(Number(qObj.video_timestamp_seconds))
+        ? Math.max(0, Math.floor(Number(qObj.video_timestamp_seconds)))
+        : null,
+    attachments: Array.isArray(qObj.attachments) ? qObj.attachments : [],
+    status: qObj.status || 'open',
+    claimed_by_teacher_id: qObj.claimed_by_teacher_id ?? null,
+    claimed_by_teacher_email: qObj.claimed_by_teacher_email ?? null,
+    claimed_by_teacher_name: qObj.claimed_by_teacher_name ?? null,
+    claimed_at: qObj.claimed_at ?? null,
+    assigned_teacher_id: qObj.assigned_teacher_id ?? null,
+    skipped_by_emails: Array.isArray(qObj.skipped_by_emails) ? qObj.skipped_by_emails : [],
+    answer_count: Number(qObj.answer_count) || 0,
+    helpful_count: Number(qObj.helpful_count) || 0,
+    first_answered_at: qObj.first_answered_at || null,
+    created_at: qObj.created_at || nowIso,
+    updated_at: nowIso
+  };
+  const { lesson_num, skipped_by_emails, ...sqlRow } = normalized;
+  await supabaseRequest(env, 'ktn_forum_questions?on_conflict=id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=minimal',
+    body: sqlRow
+  }).catch(() => null);
+  const alertSave = await upsertStructuredAlertRecord(env, {
+    id,
+    roomId: 'FORUM_QUESTION',
+    senderEmail: normalized.student_email,
+    senderName: normalized.student_name,
+    senderRole: actorSession?.role || 'student',
+    payload: normalized,
+    reason: `FORUM_Q_${normalized.course_id}_${normalized.unit_id}`
+  });
+  return { ok: alertSave.ok, question: normalized };
+}
+
+async function loadAllForumAnswers(env, questionIds = null) {
+  const byId = new Map();
+  const [tblRes, alertRes] = await Promise.all([
+    supabaseRequest(env, 'ktn_forum_answers?order=created_at.asc&limit=1000').catch(() => ({ ok: false })),
+    supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.FORUM_ANSWER&order=created_at.asc&limit=1000')
+  ]);
+  if (tblRes && tblRes.ok && Array.isArray(tblRes.data)) {
+    for (const r of tblRes.data) {
+      if (r && r.id) byId.set(String(r.id), r);
+    }
+  }
+  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
+    for (const row of alertRes.data) {
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        const id = String(parsed.id || row.id || '').trim();
+        if (!id) continue;
+        const prev = byId.get(id);
+        if (!prev || (Date.parse(parsed.updated_at || '') || 0) >= (Date.parse(prev.updated_at || '') || 0)) {
+          byId.set(id, { ...(prev || {}), ...parsed });
+        }
+      } catch {}
+    }
+  }
+  let list = Array.from(byId.values());
+  if (Array.isArray(questionIds) && questionIds.length > 0) {
+    const qSet = new Set(questionIds.map(id => String(id)));
+    list = list.filter(a => qSet.has(String(a.question_id || a.questionId || '')));
+  }
+  list.sort((a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0));
+  return list;
+}
+
+async function saveForumAnswer(env, aObj, actorSession) {
+  const id = String(aObj.id || `FA-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`).trim();
+  const nowIso = new Date().toISOString();
+  const normalized = {
+    id,
+    question_id: String(aObj.question_id || aObj.questionId || '').trim(),
+    author_id: String(aObj.author_id || aObj.authorId || actorSession?.code || actorSession?.id || '').trim(),
+    author_email: normalizeEmail(aObj.author_email || aObj.authorEmail || actorSession?.email || ''),
+    author_name: String(aObj.author_name || aObj.authorName || actorSession?.name || 'Giáo viên KTN').trim(),
+    author_role: ['teacher', 'admin', 'student'].includes(aObj.author_role || actorSession?.role)
+      ? (aObj.author_role || actorSession?.role)
+      : 'teacher',
+    teacher_id: (aObj.author_role || actorSession?.role) !== 'student'
+      ? String(aObj.teacher_id || aObj.teacherId || actorSession?.code || actorSession?.email || '').trim()
+      : null,
+    content: String(aObj.content || '').trim(),
+    attachments: Array.isArray(aObj.attachments) ? aObj.attachments : [],
+    video_url: aObj.video_url || aObj.videoUrl || null,
+    video_key: aObj.video_key || aObj.videoKey || null,
+    video_duration_seconds: Number(aObj.video_duration_seconds || aObj.videoDurationSeconds) || null,
+    video_size_bytes: Number(aObj.video_size_bytes || aObj.videoSizeBytes) || null,
+    video_verified: Boolean(aObj.video_verified ?? aObj.videoVerified),
+    is_accepted: Boolean(aObj.is_accepted ?? aObj.isAccepted),
+    helpful_count: Number(aObj.helpful_count ?? aObj.helpfulCount) || 0,
+    helpful_voter_emails: Array.isArray(aObj.helpful_voter_emails) ? aObj.helpful_voter_emails : [],
+    status: aObj.status || 'visible',
+    created_at: aObj.created_at || nowIso,
+    updated_at: nowIso
+  };
+  await supabaseRequest(env, 'ktn_forum_answers?on_conflict=id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=minimal',
+    body: normalized
+  }).catch(() => null);
+  const alertSave = await upsertStructuredAlertRecord(env, {
+    id,
+    roomId: 'FORUM_ANSWER',
+    senderEmail: normalized.author_email,
+    senderName: normalized.author_name,
+    senderRole: normalized.author_role,
+    payload: normalized,
+    reason: `FORUM_A_${normalized.question_id}`
+  });
+  return { ok: alertSave.ok, answer: normalized };
+}
+
+async function loadAllForumFollows(env, questionId = null) {
+  const byKey = new Map();
+  const alertRes = await supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.FORUM_FOLLOW&order=created_at.desc&limit=1000');
+  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
+    for (const row of alertRes.data) {
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        const qid = String(parsed.question_id || '').trim();
+        const em = normalizeEmail(parsed.user_email || row.sender_email || '');
+        if (!qid || !em) continue;
+        const k = `${qid}|${em}`;
+        if (!byKey.has(k)) byKey.set(k, parsed);
+      } catch {}
+    }
+  }
+  let list = Array.from(byKey.values()).filter(f => f.following !== false);
+  if (questionId) {
+    list = list.filter(f => String(f.question_id) === String(questionId));
+  }
+  return list;
+}
+
+async function saveForumFollow(env, { questionId, userId, userEmail, userRole, notifyMode = 'immediate', following = true }) {
+  const cleanQid = String(questionId || '').trim();
+  const cleanEmail = normalizeEmail(userEmail || '');
+  const id = `FFOL-${cleanQid}-${fnv1aHex(cleanEmail)}`;
+  const nowIso = new Date().toISOString();
+  const payload = {
+    id,
+    question_id: cleanQid,
+    user_id: String(userId || cleanEmail),
+    user_email: cleanEmail,
+    user_role: userRole || 'student',
+    notify_mode: ['immediate', 'digest', 'off'].includes(notifyMode) ? notifyMode : 'immediate',
+    following: Boolean(following),
+    created_at: nowIso
+  };
+  if (following) {
+    await supabaseRequest(env, 'ktn_forum_follows?on_conflict=question_id,user_id', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=minimal',
+      body: {
+        question_id: cleanQid,
+        user_id: payload.user_id,
+        user_email: cleanEmail,
+        user_role: payload.user_role,
+        notify_mode: payload.notify_mode,
+        created_at: nowIso
+      }
+    }).catch(() => null);
+  }
+  await upsertStructuredAlertRecord(env, {
+    id,
+    roomId: 'FORUM_FOLLOW',
+    senderEmail: cleanEmail,
+    senderName: cleanEmail,
+    senderRole: payload.user_role,
+    payload,
+    reason: following ? 'FORUM_FOLLOW_ACTIVE' : 'FORUM_FOLLOW_UNSUBSCRIBED'
+  });
+  return payload;
+}
+
+async function loadAllTeacherContributionEvents(env) {
+  const byId = new Map();
+  const [tblRes, alertRes] = await Promise.all([
+    supabaseRequest(env, 'ktn_teacher_contribution_events?order=created_at.desc&limit=1000').catch(() => ({ ok: false })),
+    supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.TEACHER_CONTRIBUTION&order=created_at.desc&limit=1000')
+  ]);
+  if (tblRes && tblRes.ok && Array.isArray(tblRes.data)) {
+    for (const r of tblRes.data) {
+      const eid = String(r?.event_id || r?.id || '').trim();
+      if (eid) byId.set(eid, { ...r, event_id: eid });
+    }
+  }
+  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
+    for (const row of alertRes.data) {
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        const eid = String(parsed.event_id || parsed.id || row.id || '').trim();
+        if (eid && !byId.has(eid)) {
+          byId.set(eid, { ...parsed, event_id: eid });
+        }
+      } catch {}
+    }
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0)
+  );
+}
+
+async function recordTeacherContributionEvent(env, evt) {
+  const eventId = String(evt.event_id || evt.eventId || `CONTRIB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`).trim();
+  const existingEvents = await loadAllTeacherContributionEvents(env);
+  const dup = existingEvents.find(e => String(e.event_id) === eventId);
+  if (dup) {
+    return { ok: true, idempotent: true, event: dup };
+  }
+  const nowIso = new Date().toISOString();
+  const teacherEmail = normalizeEmail(evt.teacher_email || evt.teacherEmail || '');
+  const normalized = {
+    event_id: eventId,
+    teacher_id: String(evt.teacher_id || evt.teacherId || teacherEmail).trim(),
+    teacher_email: teacherEmail,
+    teacher_name: String(evt.teacher_name || evt.teacherName || teacherEmail).trim(),
+    question_id: evt.question_id || evt.questionId || null,
+    answer_id: evt.answer_id || evt.answerId || null,
+    event_type: evt.event_type || evt.eventType || 'substantive_answer',
+    points_delta: Number(evt.points_delta ?? evt.pointsDelta) || 0,
+    reason: String(evt.reason || '').trim(),
+    actor_email: normalizeEmail(evt.actor_email || evt.actorEmail || teacherEmail),
+    verified_at: evt.verified_at || nowIso,
+    created_at: evt.created_at || nowIso
+  };
+  await supabaseRequest(env, 'ktn_teacher_contribution_events?on_conflict=event_id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=minimal',
+    body: normalized
+  }).catch(() => null);
+  await upsertStructuredAlertRecord(env, {
+    id: eventId,
+    roomId: 'TEACHER_CONTRIBUTION',
+    senderEmail: teacherEmail,
+    senderName: normalized.teacher_name,
+    senderRole: 'teacher',
+    payload: normalized,
+    reason: `CONTRIB_${normalized.event_type.toUpperCase()}`
+  });
+  return { ok: true, idempotent: false, event: normalized };
+}
+
+function sanitizeForumQuestionForViewer(q, answers, follows, viewerSession) {
+  const isStaff = viewerSession?.role === 'teacher' || viewerSession?.role === 'admin';
+  const myEmail = normalizeEmail(viewerSession?.email || '');
+  const isOwnQuestion = Boolean(myEmail && normalizeEmail(q.student_email || '') === myEmail);
+  const myFollow = follows.find(f => normalizeEmail(f.user_email || '') === myEmail && f.following !== false);
+  const courseMeta = MASTER_PRODUCT_MAPPING[q.course_id] || null;
+
+  const cleanAnswers = (Array.isArray(answers) ? answers : [])
+    .filter(a => isStaff || a.status !== 'hidden')
+    .map(a => {
+      const voters = Array.isArray(a.helpful_voter_emails) ? a.helpful_voter_emails.map(e => normalizeEmail(e)) : [];
+      const isOwnAnswer = Boolean(myEmail && normalizeEmail(a.author_email || '') === myEmail);
+      return {
+        id: a.id,
+        questionId: a.question_id,
+        authorId: a.author_id,
+        authorName: a.author_name,
+        authorRole: a.author_role,
+        ...(isStaff || isOwnAnswer ? { authorEmail: a.author_email } : {}),
+        teacherId: a.teacher_id || null,
+        content: a.content,
+        attachments: Array.isArray(a.attachments) ? a.attachments : [],
+        videoUrl: a.video_url || null,
+        videoDurationSeconds: a.video_duration_seconds || null,
+        videoSizeBytes: a.video_size_bytes || null,
+        videoVerified: Boolean(a.video_verified),
+        isAccepted: Boolean(a.is_accepted),
+        helpfulCount: Number(a.helpful_count) || 0,
+        hasVotedHelpful: Boolean(myEmail && voters.includes(myEmail)),
+        isOwnAnswer,
+        status: a.status || 'visible',
+        createdAt: a.created_at,
+        updatedAt: a.updated_at
+      };
+    });
+
+  return {
+    id: q.id,
+    courseId: q.course_id,
+    courseTitle: courseMeta?.shortTitle || courseMeta?.title || 'Khóa học Video KTN',
+    unitId: q.unit_id,
+    lessonNum: Number(q.lesson_num) || 1,
+    lessonTitleSnapshot: q.lesson_title_snapshot || `Bài ${q.lesson_num || 1}`,
+    studentId: q.student_id || ('HS-' + fnv1aHex(q.student_email || q.id).slice(0, 6).toUpperCase()),
+    studentName: q.student_name || 'Học viên KTN',
+    // Bảo vệ quyền riêng tư: Học sinh không nhìn thấy email/SĐT cá nhân của học sinh khác
+    ...(isStaff || isOwnQuestion ? { studentEmail: q.student_email } : {}),
+    isOwnQuestion,
+    title: q.title,
+    content: q.content,
+    videoTimestampSeconds: q.video_timestamp_seconds,
+    attachments: Array.isArray(q.attachments) ? q.attachments : [],
+    status: q.status || 'open',
+    claimedByTeacherId: q.claimed_by_teacher_id || null,
+    claimedByTeacherEmail: isStaff ? (q.claimed_by_teacher_email || null) : undefined,
+    claimedByTeacherName: q.claimed_by_teacher_name || null,
+    claimedAt: q.claimed_at || null,
+    assignedTeacherId: q.assigned_teacher_id || null,
+    answerCount: cleanAnswers.length,
+    helpfulCount: cleanAnswers.reduce((acc, a) => acc + (Number(a.helpfulCount) || 0), 0),
+    hasAcceptedAnswer: cleanAnswers.some(a => a.isAccepted),
+    hasVideoAnswer: cleanAnswers.some(a => Boolean(a.videoUrl)),
+    isFollowing: Boolean(myFollow || isOwnQuestion),
+    followNotifyMode: myFollow?.notify_mode || (isOwnQuestion ? 'immediate' : 'off'),
+    answers: cleanAnswers,
+    createdAt: q.created_at,
+    updatedAt: q.updated_at
+  };
 }
 
 export default {
@@ -11469,7 +12075,7 @@ export default {
       });
     }
 
-    if ((path === '/api/ktn/upload-url' || path === '/api/ktn/chat/upload-url' || path === '/api/ktn/upload-audio') && request.method === 'POST') {
+    if ((path === '/api/ktn/upload-url' || path === '/api/ktn/chat/upload-url' || path === '/api/ktn/forum/upload-url' || path === '/api/ktn/upload-audio') && request.method === 'POST') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để tải tệp đính kèm lên.' }, 401);
       const body = await request.json().catch(() => ({}));
@@ -11532,7 +12138,8 @@ export default {
       }
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
       const userFolder = normalizeEmail(session.email).replace(/[^a-z0-9]/g, '_');
-      const s3Key = `resource/chat/${vendorId}/${userFolder}/${Date.now()}-${cleanName}`;
+      const s3Folder = path === '/api/ktn/forum/upload-url' ? 'forum' : 'chat';
+      const s3Key = `resource/${s3Folder}/${vendorId}/${userFolder}/${Date.now()}-${cleanName}`;
       const adminToken = await getIzTeachAdminToken(env);
       if (!adminToken) return jsonResponse({ ok: false, message: 'Chưa cấu hình token kho lưu trữ S3.' }, 503);
 
@@ -13739,6 +14346,113 @@ export default {
         }
       }
 
+      // Bổ sung thông báo Diễn đàn Hỏi đáp bài học & Yêu cầu cấp khóa học online
+      const [forumQs, forumAns, forumFollows, courseReqs] = await Promise.all([
+        loadAllForumQuestions(env).catch(() => []),
+        loadAllForumAnswers(env).catch(() => []),
+        loadAllForumFollows(env).catch(() => []),
+        loadAllCourseGrantRequests(env).catch(() => [])
+      ]);
+
+      if (session.role === 'student') {
+        const myFollowedQIds = new Set(
+          forumFollows
+            .filter(f => normalizeEmail(f.user_email) === myEmail && f.following !== false && f.notify_mode !== 'off')
+            .map(f => f.question_id)
+        );
+        const qById = new Map(forumQs.map(q => [q.id, q]));
+        for (const ans of forumAns) {
+          if (ans.status === 'hidden') continue;
+          if (normalizeEmail(ans.author_email) === myEmail) continue;
+          const q = qById.get(ans.question_id);
+          if (!q || q.status === 'hidden') continue;
+          const isQuestionOwner = normalizeEmail(q.student_email) === myEmail;
+          if (!isQuestionOwner && !myFollowedQIds.has(q.id)) continue;
+          items.push({
+            id: `NOTIF-FORUM-ANS-${ans.id}`,
+            type: 'forum_answer',
+            priority: 'high',
+            courseId: q.course_id,
+            unitId: q.unit_id,
+            lessonNum: q.lesson_num || 1,
+            questionId: q.id,
+            answerId: ans.id,
+            title: ans.video_url
+              ? 'Cô giáo vừa gửi video giải đáp câu hỏi bài học!'
+              : 'Cô giáo vừa trả lời câu hỏi bài học của em.',
+            body: `${ans.author_name || 'Cô giáo'} (${q.lesson_title_snapshot || ('Bài ' + (q.lesson_num || 1))}): ${String(ans.content || '').slice(0, 75)}`,
+            actionUrl: `#/khoa/${encodeURIComponent(q.course_id)}/bai/${q.lesson_num || 1}?tab=forum&questionId=${encodeURIComponent(q.id)}`,
+            createdAt: ans.created_at
+          });
+        }
+      } else if (session.role === 'teacher') {
+        // Giáo viên luôn thấy thông báo trong hệ thống (in-app) cho câu hỏi mới/mở hoặc câu hỏi chính mình đang nhận xử lý
+        for (const q of forumQs.slice(0, 15)) {
+          if (q.status === 'hidden') continue;
+          const claimedEmail = normalizeEmail(q.claimed_by_teacher_email || '');
+          if (q.status === 'open' || (q.status === 'claimed' && claimedEmail === myEmail)) {
+            items.push({
+              id: `NOTIF-FORUM-Q-${q.id}`,
+              type: 'forum_question',
+              priority: 'normal',
+              courseId: q.course_id,
+              unitId: q.unit_id,
+              lessonNum: q.lesson_num || 1,
+              questionId: q.id,
+              title: q.status === 'claimed'
+                ? `Câu hỏi đang nhận xử lý (${q.lesson_title_snapshot || ('Bài ' + (q.lesson_num || 1))})`
+                : `Học sinh vừa hỏi trong ${q.lesson_title_snapshot || ('Bài ' + (q.lesson_num || 1))}`,
+              body: `${q.student_name || 'Học viên'}: ${q.title}`,
+              actionUrl: `#/teacher?tab=forum&questionId=${encodeURIComponent(q.id)}`,
+              createdAt: q.created_at
+            });
+          }
+        }
+        for (const r of courseReqs) {
+          if (normalizeEmail(r.teacher_email) !== myEmail) continue;
+          if (r.status === 'approved' || r.status === 'rejected') {
+            items.push({
+              id: `NOTIF-CREQ-REV-${r.id}-${r.status}`,
+              type: 'course_request_reviewed',
+              priority: 'normal',
+              title: r.status === 'approved'
+                ? 'Đề nghị mở khóa học online đã được Quản lý duyệt.'
+                : 'Đề nghị mở khóa học online chưa được duyệt.',
+              body: `${r.student_name || r.student_email} · ${(r.course_titles || []).join(', ') || 'Khóa học online'}`,
+              actionUrl: '#/teacher?tab=students',
+              createdAt: r.reviewed_at || r.updated_at
+            });
+          }
+        }
+      } else if (session.role === 'admin') {
+        for (const r of courseReqs.filter(x => x.status === 'pending').slice(0, 10)) {
+          items.push({
+            id: `NOTIF-CREQ-PEND-${r.id}`,
+            type: 'course_request_pending',
+            priority: 'high',
+            title: 'Yêu cầu cấp khóa học online từ giáo viên chờ duyệt.',
+            body: `${r.teacher_name || r.teacher_email} đề nghị cho ${r.student_name || r.student_email} · ${(r.course_titles || []).join(', ')}`,
+            actionUrl: '#/admin/orders',
+            createdAt: r.created_at
+          });
+        }
+        for (const q of forumQs.filter(x => x.status === 'open').slice(0, 8)) {
+          items.push({
+            id: `NOTIF-FORUM-ADM-${q.id}`,
+            type: 'forum_question',
+            priority: 'normal',
+            courseId: q.course_id,
+            unitId: q.unit_id,
+            lessonNum: q.lesson_num || 1,
+            questionId: q.id,
+            title: `Câu hỏi bài học mới (${q.lesson_title_snapshot || ('Bài ' + (q.lesson_num || 1))})`,
+            body: `${q.student_name || 'Học viên'}: ${q.title}`,
+            actionUrl: `#/teacher?tab=forum&questionId=${encodeURIComponent(q.id)}`,
+            createdAt: q.created_at
+          });
+        }
+      }
+
       // Bổ sung thông báo nhắc giờ học tự động (class_reminder) và đổi/hoãn lịch (schedule_changed / session_cancelled) từ nguồn thật
       const [reminderLogRes, scheduleEvtRes, readStateRes] = await Promise.all([
         supabaseRequest(
@@ -14076,6 +14790,951 @@ export default {
         targetEmail,
         ...result
       }, result.ok ? 200 : 502);
+    }
+
+    // ========================================================================
+    // G. DIỄN ĐÀN HỎI ĐÁP THEO TỪNG BÀI HỌC (LESSON FORUM) & ĐIỂM ĐÓNG GÓP GIÁO VIÊN
+    // ========================================================================
+    if (path === '/api/ktn/forum/questions' && (request.method === 'GET' || request.method === 'POST')) {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để tham gia diễn đàn bài học.' }, 401);
+      }
+      const myEmail = normalizeEmail(session.email);
+
+      if (request.method === 'GET') {
+        const rawCourseId = String(url.searchParams.get('courseId') || '').trim().toLowerCase();
+        const canonicalCourseId = rawCourseId ? (COURSE_CHAT_ALIASES[rawCourseId] || rawCourseId) : '';
+        const unitIdFilter = String(url.searchParams.get('unitId') || '').trim();
+        const lessonNumFilter = url.searchParams.get('lessonNum') ? Number(url.searchParams.get('lessonNum')) : null;
+        const statusFilter = String(url.searchParams.get('status') || 'all').trim().toLowerCase();
+        const searchQ = normalizeViSearchText(url.searchParams.get('q') || url.searchParams.get('search') || '');
+        const hasVideoOnly = url.searchParams.get('hasVideo') === '1' || url.searchParams.get('hasVideo') === 'true';
+        const mineOnly = url.searchParams.get('mine') === '1' || url.searchParams.get('mine') === 'true';
+        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 60)));
+
+        // Học sinh bắt buộc phải truy vấn theo khóa học mình được cấp quyền (hoặc chỉ xem câu hỏi của chính mình)
+        if (session.role === 'student') {
+          if (!canonicalCourseId && !mineOnly) {
+            return jsonResponse({
+              ok: false,
+              error: 'COURSE_ID_REQUIRED',
+              message: 'Vui lòng chọn bài học cụ thể để xem diễn đàn hỏi đáp.'
+            }, 400);
+          }
+          if (canonicalCourseId && !canonicalCourseId.toUpperCase().startsWith('CLASS_')) {
+            const access = await evaluateRoomAccess(env, session, `course:${canonicalCourseId}`);
+            if (!access.allowed) {
+              return jsonResponse({
+                ok: false,
+                error: access.error || 'COURSE_NOT_ENTITLED',
+                message: 'Em chưa đăng ký khóa học này nên chưa thể truy cập diễn đàn hỏi đáp của bài.'
+              }, 403);
+            }
+          }
+        } else if (session.role === 'teacher') {
+          if (!(await isActiveTeacherSession(env, session))) {
+            return jsonResponse({ ok: false, message: 'Tài khoản giáo viên đã bị tạm khóa.' }, 403);
+          }
+        }
+
+        const [allQs, allAns, allFollows] = await Promise.all([
+          loadAllForumQuestions(env),
+          loadAllForumAnswers(env),
+          loadAllForumFollows(env)
+        ]);
+
+        const ansByQ = new Map();
+        for (const a of allAns) {
+          if (!ansByQ.has(a.question_id)) ansByQ.set(a.question_id, []);
+          ansByQ.get(a.question_id).push(a);
+        }
+        const followsByQ = new Map();
+        for (const f of allFollows) {
+          if (!followsByQ.has(f.question_id)) followsByQ.set(f.question_id, []);
+          followsByQ.get(f.question_id).push(f);
+        }
+
+        const isStaff = session.role === 'teacher' || session.role === 'admin';
+        const scopedQs = allQs.filter(q => {
+          if (!isStaff && q.status === 'hidden') return false;
+          if (canonicalCourseId && String(q.course_id || '').toLowerCase() !== canonicalCourseId) return false;
+          if (unitIdFilter) {
+            const qUnit = String(q.unit_id || '').trim();
+            const matchUnit = qUnit === unitIdFilter || (lessonNumFilter && Number(q.lesson_num) === lessonNumFilter);
+            if (!matchUnit) return false;
+          } else if (lessonNumFilter && Number(q.lesson_num) !== lessonNumFilter) {
+            return false;
+          }
+          if (mineOnly && normalizeEmail(q.student_email) !== myEmail) return false;
+          return true;
+        });
+
+        const hydratedAll = scopedQs.map(q =>
+          sanitizeForumQuestionForViewer(q, ansByQ.get(q.id) || [], followsByQ.get(q.id) || [], session)
+        );
+
+        const summary = {
+          total: hydratedAll.length,
+          unansweredCount: hydratedAll.filter(q => q.answerCount === 0 && q.status !== 'resolved').length,
+          answeredCount: hydratedAll.filter(q => q.answerCount > 0 || q.status === 'answered' || q.status === 'resolved').length,
+          resolvedCount: hydratedAll.filter(q => q.status === 'resolved' || q.hasAcceptedAnswer).length,
+          claimedCount: hydratedAll.filter(q => q.status === 'claimed').length,
+          videoAnswerCount: hydratedAll.filter(q => q.hasVideoAnswer).length
+        };
+
+        const filtered = hydratedAll.filter(q => {
+          if (statusFilter === 'unanswered' || statusFilter === 'open') {
+            if (q.answerCount > 0 || q.status === 'resolved' || q.status === 'answered') return false;
+          } else if (statusFilter === 'answered') {
+            if (q.answerCount === 0 && q.status !== 'answered' && q.status !== 'resolved') return false;
+          } else if (statusFilter === 'resolved') {
+            if (q.status !== 'resolved' && !q.hasAcceptedAnswer) return false;
+          } else if (statusFilter === 'claimed') {
+            if (q.status !== 'claimed') return false;
+          }
+          if (hasVideoOnly && !q.hasVideoAnswer) return false;
+          if (searchQ) {
+            const hay = normalizeViSearchText(
+              `${q.title} ${q.content} ${q.lessonTitleSnapshot} ${q.studentName} ${q.courseTitle}`
+            );
+            if (!hay.includes(searchQ)) return false;
+          }
+          return true;
+        });
+
+        return jsonResponse({
+          ok: true,
+          courseId: canonicalCourseId || null,
+          unitId: unitIdFilter || null,
+          summary,
+          questions: filtered.slice(0, limit)
+        });
+      }
+
+      // POST /api/ktn/forum/questions — Đặt câu hỏi mới theo bài học
+      const body = await request.json().catch(() => ({}));
+      const rawCourseId = String(body.courseId || '').trim().toLowerCase();
+      const canonicalCourseId = COURSE_CHAT_ALIASES[rawCourseId] || rawCourseId;
+      const lessonNum = Math.max(1, Number(body.lessonNum || 1));
+      const unitId = String(body.unitId || `unit-l${lessonNum}`).trim();
+      const lessonTitleSnapshot = String(body.lessonTitleSnapshot || body.lessonTitle || `Bài ${lessonNum}`).trim();
+      const title = String(body.title || '').trim();
+      const content = String(body.content || '').trim();
+      const clientRequestId = String(body.clientRequestId || body.clientMessageId || '').trim().slice(0, 96);
+
+      if (!canonicalCourseId || !unitId) {
+        return jsonResponse({
+          ok: false,
+          error: 'MISSING_LESSON_SCOPE',
+          message: 'Thiếu thông tin khóa học (courseId) hoặc bài học (unitId).'
+        }, 400);
+      }
+      if (!title || title.length < 3) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_QUESTION_TITLE',
+          message: 'Vui lòng nhập tiêu đề ngắn cho câu hỏi (tối thiểu 3 ký tự).'
+        }, 400);
+      }
+      if (!content || content.length < 3) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_QUESTION_CONTENT',
+          message: 'Vui lòng mô tả chi tiết nội dung câu hỏi.'
+        }, 400);
+      }
+
+      if (session.role === 'student' && !canonicalCourseId.toUpperCase().startsWith('CLASS_')) {
+        const access = await evaluateRoomAccess(env, session, `course:${canonicalCourseId}`);
+        if (!access.allowed) {
+          return jsonResponse({
+            ok: false,
+            error: access.error || 'COURSE_NOT_ENTITLED',
+            message: 'Em chưa được cấp quyền khóa học này nên chưa thể đặt câu hỏi.'
+          }, 403);
+        }
+      }
+
+      const dlp = inspectDlpContent(`${title} ${content}`);
+      if (dlp.blocked) {
+        return jsonResponse({
+          ok: false,
+          dlpBlocked: true,
+          error: 'DLP_BLOCKED',
+          message: `Nội dung câu hỏi bị chặn vì lý do an toàn: ${dlp.reason}.`
+        }, 400);
+      }
+
+      const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+      const cleanAttachments = [];
+      for (const att of rawAttachments.slice(0, 5)) {
+        const u = String(att?.fileUrl || att?.url || '').trim();
+        if (!u) continue;
+        if (u.startsWith('blob:') || u.startsWith('data:')) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_ATTACHMENT_URL',
+            message: 'Tệp đính kèm phải được tải lên kho lưu trữ S3 hoàn tất trước khi gửi câu hỏi (không chấp nhận blob: hoặc data: URL).'
+          }, 400);
+        }
+        cleanAttachments.push({
+          title: String(att?.title || att?.fileName || 'Đính kèm').trim(),
+          fileUrl: u,
+          fileType: String(att?.fileType || att?.mediaType || 'image/jpeg').trim(),
+          size: Number(att?.size || 0)
+        });
+      }
+
+      let videoTs = null;
+      if (body.videoTimestampSeconds !== undefined && body.videoTimestampSeconds !== null && body.videoTimestampSeconds !== '') {
+        const parsedTs = Math.floor(Number(body.videoTimestampSeconds));
+        if (Number.isFinite(parsedTs) && parsedTs >= 0 && parsedTs <= 36000) {
+          videoTs = parsedTs;
+        }
+      }
+
+      const qId = clientRequestId
+        ? `FQ-IDEM-${fnv1aHex(`${myEmail}|${canonicalCourseId}|${unitId}|${clientRequestId}`)}`
+        : `FQ-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+      const [existingQs, existingAns, existingFollows] = await Promise.all([
+        loadAllForumQuestions(env),
+        loadAllForumAnswers(env),
+        loadAllForumFollows(env)
+      ]);
+      const foundExisting = existingQs.find(x => x.id === qId);
+      if (foundExisting) {
+        return jsonResponse({
+          ok: true,
+          idempotent: true,
+          idempotentReplay: true,
+          question: sanitizeForumQuestionForViewer(
+            foundExisting,
+            existingAns.filter(a => a.question_id === foundExisting.id),
+            existingFollows.filter(f => f.question_id === foundExisting.id),
+            session
+          )
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      const studentCode = session.code || ('HS-' + fnv1aHex(myEmail).slice(0, 6).toUpperCase());
+      const qRecord = {
+        id: qId,
+        course_id: canonicalCourseId,
+        unit_id: unitId,
+        lesson_num: lessonNum,
+        lesson_title_snapshot: lessonTitleSnapshot,
+        student_id: studentCode,
+        student_email: myEmail,
+        student_name: session.name || myEmail.split('@')[0],
+        title,
+        content,
+        video_timestamp_seconds: videoTs,
+        attachments: cleanAttachments,
+        status: 'open',
+        claimed_by_teacher_id: null,
+        claimed_by_teacher_email: null,
+        claimed_by_teacher_name: null,
+        claimed_at: null,
+        assigned_teacher_id: null,
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+
+      const savedQ = await saveForumQuestion(env, qRecord);
+      await saveForumFollow(env, {
+        id: `FF-${qId}-${fnv1aHex(myEmail)}`,
+        question_id: qId,
+        user_email: myEmail,
+        user_role: session.role || 'student',
+        notify_mode: 'immediate',
+        following: true,
+        created_at: nowIso
+      });
+
+      // Thông báo cho tất cả giáo viên đang hoạt động (in-app luôn hiển thị; push di động tôn trọng forumPushMode)
+      // Tuyệt đối KHÔNG gửi thông báo đẩy hàng loạt cho toàn bộ học viên của khóa học!
+      let teacherPushDispatch = null;
+      try {
+        const teachers = await loadTeacherDirectory(env);
+        const activeTeacherEmails = teachers
+          .filter(t => t && t.active !== false && t.status !== 'locked' && t.status !== 'suspended')
+          .map(t => normalizeEmail(t.email))
+          .filter(em => em && em !== myEmail);
+        if (activeTeacherEmails.length > 0) {
+          const courseMeta = MASTER_PRODUCT_MAPPING[canonicalCourseId];
+          const courseLabel = courseMeta?.shortTitle || courseMeta?.title || 'Khóa học KTN';
+          const eventId = `FORUM-Q-${qId}`;
+          teacherPushDispatch = await dispatchWebPushForQuery(
+            env,
+            '',
+            {
+              id: eventId,
+              eventId,
+              eventType: 'forum_question',
+              title: `Học sinh vừa hỏi trong ${lessonTitleSnapshot}`,
+              body: `${qRecord.student_name} (${courseLabel}): ${title}`,
+              action_url: `/custom-page/so-lien-lac-test#/teacher?tab=forum&questionId=${encodeURIComponent(qId)}`
+            },
+            {
+              eventId,
+              eventType: 'forum_question',
+              recipientEmails: activeTeacherEmails,
+              senderEmail: myEmail
+            }
+          );
+        }
+      } catch {}
+
+      return jsonResponse({
+        ok: true,
+        idempotent: false,
+        question: sanitizeForumQuestionForViewer(savedQ, [], [{ user_email: myEmail, notify_mode: 'immediate', following: true }], session),
+        teacherNotification: {
+          inAppCreatedForAllActiveTeachers: true,
+          pushDispatch: teacherPushDispatch
+        }
+      });
+    }
+
+    if (path === '/api/ktn/forum/questions/claim' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || (session.role !== 'teacher' && session.role !== 'admin')) {
+        return jsonResponse({ ok: false, message: 'Chỉ Giáo viên hoặc Quản lý mới được nhận xử lý câu hỏi.' }, 403);
+      }
+      if (session.role === 'teacher' && !(await isActiveTeacherSession(env, session))) {
+        return jsonResponse({ ok: false, message: 'Tài khoản giáo viên đã bị khóa.' }, 403);
+      }
+      const body = await request.json().catch(() => ({}));
+      const questionId = String(body.questionId || body.id || '').trim();
+      const action = String(body.action || 'claim').trim().toLowerCase();
+      if (!questionId) {
+        return jsonResponse({ ok: false, message: 'Thiếu mã câu hỏi (questionId).' }, 400);
+      }
+      const allQs = await loadAllForumQuestions(env);
+      const q = allQs.find(x => x.id === questionId);
+      if (!q) {
+        return jsonResponse({ ok: false, message: 'Không tìm thấy câu hỏi này.' }, 404);
+      }
+      const teachers = await loadTeacherDirectory(env);
+      const myTeacher = teachers.find(t => normalizeEmail(t.email) === normalizeEmail(session.email));
+      const teacherId = myTeacher?.id || session.id || ('GV-' + fnv1aHex(session.email).slice(0, 6).toUpperCase());
+      const nowIso = new Date().toISOString();
+
+      const updatedQ = action === 'unclaim'
+        ? {
+            ...q,
+            status: q.status === 'claimed' ? 'open' : q.status,
+            claimed_by_teacher_id: null,
+            claimed_by_teacher_email: null,
+            claimed_by_teacher_name: null,
+            claimed_at: null,
+            updated_at: nowIso
+          }
+        : {
+            ...q,
+            status: q.status === 'open' ? 'claimed' : q.status,
+            claimed_by_teacher_id: teacherId,
+            claimed_by_teacher_email: normalizeEmail(session.email),
+            claimed_by_teacher_name: myTeacher?.name || session.name || session.email,
+            claimed_at: nowIso,
+            updated_at: nowIso
+          };
+
+      await saveForumQuestion(env, updatedQ);
+      const [allAns, allFollows] = await Promise.all([
+        loadAllForumAnswers(env),
+        loadAllForumFollows(env)
+      ]);
+      return jsonResponse({
+        ok: true,
+        question: sanitizeForumQuestionForViewer(
+          updatedQ,
+          allAns.filter(a => a.question_id === questionId),
+          allFollows.filter(f => f.question_id === questionId),
+          session
+        )
+      });
+    }
+
+    if (path === '/api/ktn/forum/answers' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để gửi câu trả lời.' }, 401);
+      }
+      if (session.role === 'teacher' && !(await isActiveTeacherSession(env, session))) {
+        return jsonResponse({ ok: false, message: 'Tài khoản giáo viên đã bị tạm khóa.' }, 403);
+      }
+      const myEmail = normalizeEmail(session.email);
+      const body = await request.json().catch(() => ({}));
+      const questionId = String(body.questionId || '').trim();
+      const content = String(body.content || '').trim();
+      const rawVideoUrl = String(body.videoUrl || '').trim();
+      const videoDurationSeconds = body.videoDurationSeconds ? Math.max(1, Math.round(Number(body.videoDurationSeconds))) : null;
+      const videoSizeBytes = body.videoSizeBytes ? Math.max(0, Math.round(Number(body.videoSizeBytes))) : null;
+      const clientRequestId = String(body.clientRequestId || body.clientMessageId || '').trim().slice(0, 96);
+
+      if (!questionId) {
+        return jsonResponse({ ok: false, message: 'Thiếu mã câu hỏi (questionId).' }, 400);
+      }
+      if (!content && !rawVideoUrl) {
+        return jsonResponse({ ok: false, message: 'Vui lòng nhập nội dung giải đáp hoặc đính kèm video hướng dẫn.' }, 400);
+      }
+
+      // Kiểm tra nghiêm ngặt URL video hướng dẫn (chặn blob:, chặn data: lớn, chặn vượt 100MB)
+      let videoVerified = false;
+      if (rawVideoUrl) {
+        if (rawVideoUrl.startsWith('blob:')) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_VIDEO_URL_BLOB',
+            message: 'Không được lưu đường dẫn tạm blob: vào cơ sở dữ liệu. Vui lòng đợi video tải lên S3 hoàn tất 100%.'
+          }, 400);
+        }
+        if (rawVideoUrl.startsWith('data:')) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_VIDEO_URL_DATA_URI',
+            message: 'Không được lưu video dạng base64/data URI vào cơ sở dữ liệu. Vui lòng tải tệp video lên S3.'
+          }, 400);
+        }
+        if (!/^https:\/\//i.test(rawVideoUrl)) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_VIDEO_URL_SCHEME',
+            message: 'Đường dẫn video hướng dẫn phải là liên kết HTTPS hợp lệ từ kho lưu trữ S3/CloudFront.'
+          }, 400);
+        }
+        if (videoSizeBytes !== null && videoSizeBytes > FORUM_POINTS_CONFIG.MAX_VIDEO_BYTES) {
+          return jsonResponse({
+            ok: false,
+            error: 'VIDEO_SIZE_EXCEEDED',
+            message: 'Dung lượng video hướng dẫn vượt quá giới hạn tối đa 100MB.'
+          }, 400);
+        }
+        videoVerified = true;
+      }
+
+      const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+      const cleanAttachments = [];
+      for (const att of rawAttachments.slice(0, 5)) {
+        const u = String(att?.fileUrl || att?.url || '').trim();
+        if (!u) continue;
+        if (u.startsWith('blob:') || u.startsWith('data:')) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_ATTACHMENT_URL',
+            message: 'Tệp đính kèm phải được tải lên kho lưu trữ S3 hoàn tất trước khi gửi.'
+          }, 400);
+        }
+        cleanAttachments.push({
+          title: String(att?.title || att?.fileName || 'Đính kèm').trim(),
+          fileUrl: u,
+          fileType: String(att?.fileType || att?.mediaType || 'image/jpeg').trim(),
+          size: Number(att?.size || 0)
+        });
+      }
+
+      const [allQs, allAns, allFollows, allEvents, teachers] = await Promise.all([
+        loadAllForumQuestions(env),
+        loadAllForumAnswers(env),
+        loadAllForumFollows(env),
+        loadAllTeacherContributionEvents(env),
+        loadTeacherDirectory(env)
+      ]);
+      const q = allQs.find(x => x.id === questionId);
+      if (!q) {
+        return jsonResponse({ ok: false, message: 'Không tìm thấy câu hỏi cần trả lời.' }, 404);
+      }
+
+      // Học sinh chỉ được phản hồi tiếp vào câu hỏi trong khóa học mình có quyền
+      if (session.role === 'student' && normalizeEmail(q.student_email) !== myEmail) {
+        const access = await evaluateRoomAccess(env, session, `course:${q.course_id}`);
+        if (!access.allowed) {
+          return jsonResponse({ ok: false, message: 'Em không có quyền trả lời câu hỏi này.' }, 403);
+        }
+      }
+
+      const ansId = clientRequestId
+        ? `FA-IDEM-${fnv1aHex(`${myEmail}|${questionId}|${clientRequestId}`)}`
+        : `FA-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+      const existingAns = allAns.find(a => a.id === ansId);
+      if (existingAns) {
+        return jsonResponse({
+          ok: true,
+          idempotent: true,
+          idempotentReplay: true,
+          answer: existingAns,
+          question: sanitizeForumQuestionForViewer(
+            q,
+            allAns.filter(a => a.question_id === questionId),
+            allFollows.filter(f => f.question_id === questionId),
+            session
+          ),
+          pointsAwarded: 0
+        });
+      }
+
+      const myTeacher = teachers.find(t => normalizeEmail(t.email) === myEmail);
+      const isTeacherOrStaff = session.role === 'teacher' || session.role === 'admin' || Boolean(myTeacher);
+      const teacherId = isTeacherOrStaff
+        ? (myTeacher?.id || session.id || ('GV-' + fnv1aHex(myEmail).slice(0, 6).toUpperCase()))
+        : null;
+      const authorName = myTeacher?.name || session.name || myEmail.split('@')[0];
+      const nowIso = new Date().toISOString();
+
+      const priorTeacherAnswers = allAns.filter(
+        a => a.question_id === questionId && (a.author_role === 'teacher' || a.author_role === 'admin') && a.status !== 'hidden'
+      );
+
+      const ansRecord = {
+        id: ansId,
+        question_id: questionId,
+        author_id: teacherId || session.id || myEmail,
+        author_email: myEmail,
+        author_name: authorName,
+        author_role: session.role || 'teacher',
+        teacher_id: teacherId,
+        content: content || (videoVerified ? 'Cô gửi video hướng dẫn chi tiết cho câu hỏi của em nhé.' : ''),
+        attachments: cleanAttachments,
+        video_url: rawVideoUrl || null,
+        video_duration_seconds: videoDurationSeconds,
+        video_size_bytes: videoSizeBytes,
+        video_verified: videoVerified,
+        is_accepted: Boolean(body.markResolved && isTeacherOrStaff),
+        helpful_count: 0,
+        helpful_voter_emails: [],
+        status: 'visible',
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+
+      await saveForumAnswer(env, ansRecord);
+
+      let nextQStatus = q.status;
+      if (isTeacherOrStaff) {
+        nextQStatus = body.markResolved ? 'resolved' : (q.status === 'resolved' ? 'resolved' : 'answered');
+      }
+      const updatedQ = {
+        ...q,
+        status: nextQStatus,
+        claimed_by_teacher_id: q.claimed_by_teacher_id || teacherId,
+        claimed_by_teacher_email: q.claimed_by_teacher_email || (isTeacherOrStaff ? myEmail : null),
+        claimed_by_teacher_name: q.claimed_by_teacher_name || (isTeacherOrStaff ? authorName : null),
+        claimed_at: q.claimed_at || (isTeacherOrStaff ? nowIso : null),
+        updated_at: nowIso
+      };
+      await saveForumQuestion(env, updatedQ);
+
+      // Cộng điểm đóng góp giáo viên theo cơ chế Event-Sourcing chống gian lận
+      const awardedEvents = [];
+      if (isTeacherOrStaff && teacherId && normalizeEmail(q.student_email) !== myEmail) {
+        const isSubstantive = content.length >= FORUM_POINTS_CONFIG.MIN_ANSWER_LENGTH || videoVerified || cleanAttachments.length > 0;
+        const alreadyAwardedAnswerForQ = allEvents.some(
+          ev => ev.question_id === questionId && normalizeEmail(ev.teacher_email) === myEmail && ev.event_type === 'answer_created'
+        );
+        if (isSubstantive && !alreadyAwardedAnswerForQ) {
+          const evRes = await recordTeacherContributionEvent(env, {
+            event_id: `PTEVT-ANS-${questionId}-${teacherId}`,
+            teacher_id: teacherId,
+            teacher_email: myEmail,
+            teacher_name: authorName,
+            question_id: questionId,
+            answer_id: ansId,
+            event_type: 'answer_created',
+            points_delta: FORUM_POINTS_CONFIG.ANSWER_CREATED,
+            reason: `Trả lời câu hỏi bài học (${q.lesson_title_snapshot || 'Bài ' + q.lesson_num})`,
+            created_at: nowIso
+          });
+          if (evRes.ok && !evRes.idempotent && !evRes.capped) awardedEvents.push(evRes.event);
+        }
+
+        if (videoVerified) {
+          const alreadyAwardedVideoForQ = allEvents.some(
+            ev => ev.question_id === questionId && normalizeEmail(ev.teacher_email) === myEmail && ev.event_type === 'video_attached'
+          );
+          if (!alreadyAwardedVideoForQ) {
+            const vidEvRes = await recordTeacherContributionEvent(env, {
+              event_id: `PTEVT-VID-${questionId}-${teacherId}`,
+              teacher_id: teacherId,
+              teacher_email: myEmail,
+              teacher_name: authorName,
+              question_id: questionId,
+              answer_id: ansId,
+              event_type: 'video_attached',
+              points_delta: FORUM_POINTS_CONFIG.VIDEO_ATTACHED,
+              reason: `Quay/tải video hướng dẫn giải đáp bài học (${q.lesson_title_snapshot || 'Bài ' + q.lesson_num})`,
+              created_at: nowIso
+            });
+            if (vidEvRes.ok && !vidEvRes.idempotent && !vidEvRes.capped) awardedEvents.push(vidEvRes.event);
+          }
+        }
+
+        const qCreatedMs = Date.parse(q.created_at || '') || 0;
+        const isLongPending = qCreatedMs > 0 && (Date.now() - qCreatedMs >= FORUM_POINTS_CONFIG.LONG_PENDING_HOURS * 3600 * 1000);
+        if (priorTeacherAnswers.length === 0 && isLongPending && isSubstantive) {
+          const lpEvRes = await recordTeacherContributionEvent(env, {
+            event_id: `PTEVT-LP-${questionId}-${teacherId}`,
+            teacher_id: teacherId,
+            teacher_email: myEmail,
+            teacher_name: authorName,
+            question_id: questionId,
+            answer_id: ansId,
+            event_type: 'long_pending_resolved',
+            points_delta: FORUM_POINTS_CONFIG.LONG_PENDING_RESOLVED,
+            reason: `Giải quyết câu hỏi tồn đọng > ${FORUM_POINTS_CONFIG.LONG_PENDING_HOURS} giờ`,
+            created_at: nowIso
+          });
+          if (lpEvRes.ok && !lpEvRes.idempotent && !lpEvRes.capped) awardedEvents.push(lpEvRes.event);
+        }
+      }
+
+      // Chỉ gửi thông báo cho học viên đặt câu hỏi và những người bấm Theo dõi câu hỏi đó (không spam toàn khóa!)
+      let studentPushDispatch = null;
+      if (isTeacherOrStaff) {
+        const qFollowers = allFollows
+          .filter(f => f.question_id === questionId && f.following !== false && f.notify_mode !== 'off')
+          .map(f => normalizeEmail(f.user_email));
+        const targetRecipients = Array.from(
+          new Set([normalizeEmail(q.student_email), ...qFollowers].filter(em => em && em !== myEmail))
+        );
+        if (targetRecipients.length > 0) {
+          const eventId = `FORUM-ANS-${ansId}`;
+          studentPushDispatch = await dispatchWebPushForQuery(
+            env,
+            '',
+            {
+              id: eventId,
+              eventId,
+              eventType: 'forum_answer',
+              title: videoVerified
+                ? `${authorName} vừa gửi video giải đáp câu hỏi của em!`
+                : `${authorName} vừa trả lời câu hỏi bài học của em.`,
+              body: `${q.lesson_title_snapshot || ('Bài ' + q.lesson_num)}: ${String(ansRecord.content || '').slice(0, 80)}`,
+              action_url: `/custom-page/so-lien-lac-test#/khoa/${encodeURIComponent(q.course_id)}/bai/${q.lesson_num || 1}?tab=forum&questionId=${encodeURIComponent(questionId)}`
+            },
+            {
+              eventId,
+              eventType: 'forum_answer',
+              recipientEmails: targetRecipients,
+              senderEmail: myEmail
+            }
+          ).catch(() => null);
+        }
+      }
+
+      const updatedAnswers = [...allAns.filter(a => a.question_id === questionId), ansRecord];
+      const totalPointsAwarded = awardedEvents.reduce((acc, ev) => acc + (Number(ev.points_delta) || 0), 0);
+
+      return jsonResponse({
+        ok: true,
+        idempotent: false,
+        question: sanitizeForumQuestionForViewer(
+          updatedQ,
+          updatedAnswers,
+          allFollows.filter(f => f.question_id === questionId),
+          session
+        ),
+        pointsAwarded: totalPointsAwarded,
+        awardedEvents,
+        studentNotification: studentPushDispatch
+      });
+    }
+
+    if (path === '/api/ktn/forum/answers/helpful' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      const myEmail = normalizeEmail(session.email);
+      const body = await request.json().catch(() => ({}));
+      const answerId = String(body.answerId || '').trim();
+      const markAccepted = Boolean(body.accept);
+      const voteHelpful = body.helpful !== false;
+
+      if (!answerId) {
+        return jsonResponse({ ok: false, message: 'Thiếu mã câu trả lời (answerId).' }, 400);
+      }
+
+      const [allQs, allAns, allFollows, teachers] = await Promise.all([
+        loadAllForumQuestions(env),
+        loadAllForumAnswers(env),
+        loadAllForumFollows(env),
+        loadTeacherDirectory(env)
+      ]);
+      const ans = allAns.find(a => a.id === answerId);
+      if (!ans) {
+        return jsonResponse({ ok: false, message: 'Không tìm thấy câu trả lời.' }, 404);
+      }
+      const q = allQs.find(x => x.id === ans.question_id);
+      if (!q) {
+        return jsonResponse({ ok: false, message: 'Không tìm thấy câu hỏi gốc.' }, 404);
+      }
+
+      // Chống tự vote: Tác giả câu trả lời không được tự bầu chọn hữu ích cho chính mình
+      if (voteHelpful && normalizeEmail(ans.author_email) === myEmail) {
+        return jsonResponse({
+          ok: false,
+          error: 'SELF_VOTE_FORBIDDEN',
+          message: 'Bạn không thể tự bầu chọn hữu ích cho câu trả lời của chính mình.'
+        }, 400);
+      }
+
+      const prevVoters = Array.isArray(ans.helpful_voter_emails)
+        ? ans.helpful_voter_emails.map(e => normalizeEmail(e)).filter(Boolean)
+        : [];
+      const alreadyVoted = prevVoters.includes(myEmail);
+      const nowIso = new Date().toISOString();
+      const awardedEvents = [];
+
+      let nextVoters = [...prevVoters];
+      let nextHelpfulCount = Number(ans.helpful_count) || 0;
+      if (voteHelpful && !alreadyVoted) {
+        nextVoters.push(myEmail);
+        nextHelpfulCount = Math.max(nextHelpfulCount + 1, nextVoters.length);
+      }
+
+      const isQuestionOwner = normalizeEmail(q.student_email) === myEmail;
+      const isStaff = session.role === 'teacher' || session.role === 'admin';
+      const nextAccepted = markAccepted && (isQuestionOwner || isStaff) ? true : Boolean(ans.is_accepted);
+
+      const updatedAns = {
+        ...ans,
+        helpful_count: nextHelpfulCount,
+        helpful_voter_emails: nextVoters,
+        is_accepted: nextAccepted,
+        updated_at: nowIso
+      };
+      await saveForumAnswer(env, updatedAns);
+
+      let updatedQ = q;
+      if (nextAccepted && q.status !== 'resolved') {
+        updatedQ = { ...q, status: 'resolved', updated_at: nowIso };
+        await saveForumQuestion(env, updatedQ);
+      }
+
+      const ansTeacher = teachers.find(t => normalizeEmail(t.email) === normalizeEmail(ans.author_email));
+      const teacherId = ans.teacher_id || ansTeacher?.id || null;
+      const isTeacherAnswer = Boolean(teacherId && (ans.author_role === 'teacher' || ans.author_role === 'admin' || ansTeacher));
+
+      if (isTeacherAnswer && voteHelpful && !alreadyVoted) {
+        const evRes = await recordTeacherContributionEvent(env, {
+          event_id: `PTEVT-HELPFUL-${ans.id}-${fnv1aHex(myEmail)}`,
+          teacher_id: teacherId,
+          teacher_email: normalizeEmail(ans.author_email),
+          teacher_name: ans.author_name,
+          question_id: q.id,
+          answer_id: ans.id,
+          voter_email: myEmail,
+          event_type: 'helpful_vote',
+          points_delta: FORUM_POINTS_CONFIG.HELPFUL_VOTE,
+          reason: `Học viên đánh dấu "Câu trả lời giúp em hiểu bài" (${q.lesson_title_snapshot || 'Bài ' + q.lesson_num})`,
+          created_at: nowIso
+        });
+        if (evRes.ok && !evRes.idempotent && !evRes.capped) awardedEvents.push(evRes.event);
+      }
+
+      if (isTeacherAnswer && nextAccepted && !ans.is_accepted && normalizeEmail(ans.author_email) !== myEmail) {
+        const accRes = await recordTeacherContributionEvent(env, {
+          event_id: `PTEVT-ACCEPT-${q.id}-${teacherId}`,
+          teacher_id: teacherId,
+          teacher_email: normalizeEmail(ans.author_email),
+          teacher_name: ans.author_name,
+          question_id: q.id,
+          answer_id: ans.id,
+          voter_email: myEmail,
+          event_type: 'accepted_answer',
+          points_delta: FORUM_POINTS_CONFIG.ACCEPTED_ANSWER,
+          reason: `Câu trả lời giải quyết đúng thắc mắc bài học (${q.lesson_title_snapshot || 'Bài ' + q.lesson_num})`,
+          created_at: nowIso
+        });
+        if (accRes.ok && !accRes.idempotent && !accRes.capped) awardedEvents.push(accRes.event);
+      }
+
+      const updatedAnswersForQ = allAns
+        .filter(a => a.question_id === q.id)
+        .map(a => (a.id === ans.id ? updatedAns : a));
+      const totalPointsAwarded = awardedEvents.reduce((acc, ev) => acc + (Number(ev.points_delta) || 0), 0);
+
+      return jsonResponse({
+        ok: true,
+        alreadyVoted,
+        pointsAwarded: totalPointsAwarded,
+        awardedEvents,
+        question: sanitizeForumQuestionForViewer(
+          updatedQ,
+          updatedAnswersForQ,
+          allFollows.filter(f => f.question_id === q.id),
+          session
+        )
+      });
+    }
+
+    if (path === '/api/ktn/forum/follows' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      const myEmail = normalizeEmail(session.email);
+      const body = await request.json().catch(() => ({}));
+      const questionId = String(body.questionId || '').trim();
+      if (!questionId) {
+        return jsonResponse({ ok: false, message: 'Thiếu mã câu hỏi (questionId).' }, 400);
+      }
+      const following = body.following !== false;
+      const notifyMode = ['immediate', 'digest', 'off'].includes(String(body.notifyMode || '').toLowerCase())
+        ? String(body.notifyMode).toLowerCase()
+        : (following ? 'immediate' : 'off');
+      const followRecord = await saveForumFollow(env, {
+        id: `FF-${questionId}-${fnv1aHex(myEmail)}`,
+        question_id: questionId,
+        user_email: myEmail,
+        user_role: session.role || 'student',
+        notify_mode: notifyMode,
+        following,
+        created_at: new Date().toISOString()
+      });
+      return jsonResponse({
+        ok: true,
+        questionId,
+        isFollowing: followRecord.following,
+        notifyMode: followRecord.notify_mode
+      });
+    }
+
+    if (path === '/api/ktn/forum/moderate' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || (session.role !== 'teacher' && session.role !== 'admin')) {
+        return jsonResponse({ ok: false, message: 'Chỉ Giáo viên hoặc Quản lý mới có quyền điều phối diễn đàn.' }, 403);
+      }
+      const body = await request.json().catch(() => ({}));
+      const targetType = String(body.targetType || 'question').toLowerCase();
+      const targetId = String(body.targetId || body.questionId || body.answerId || '').trim();
+      const action = String(body.action || 'resolve').toLowerCase();
+      if (!targetId) {
+        return jsonResponse({ ok: false, message: 'Thiếu mã đối tượng cần điều phối (targetId).' }, 400);
+      }
+      const nowIso = new Date().toISOString();
+
+      if (targetType === 'answer') {
+        const allAns = await loadAllForumAnswers(env);
+        const ans = allAns.find(a => a.id === targetId);
+        if (!ans) return jsonResponse({ ok: false, message: 'Không tìm thấy câu trả lời.' }, 404);
+        const nextStatus = action === 'hide' || action === 'delete' ? 'hidden' : 'visible';
+        const updatedAns = await saveForumAnswer(env, { ...ans, status: nextStatus, updated_at: nowIso });
+        return jsonResponse({ ok: true, answer: updatedAns });
+      }
+
+      const allQs = await loadAllForumQuestions(env);
+      const q = allQs.find(x => x.id === targetId);
+      if (!q) return jsonResponse({ ok: false, message: 'Không tìm thấy câu hỏi.' }, 404);
+      let nextStatus = q.status;
+      if (action === 'resolve') nextStatus = 'resolved';
+      else if (action === 'reopen') nextStatus = 'open';
+      else if (action === 'hide' || action === 'delete') nextStatus = 'hidden';
+      else if (action === 'unhide') nextStatus = 'open';
+      const updatedQ = await saveForumQuestion(env, { ...q, status: nextStatus, updated_at: nowIso });
+      return jsonResponse({ ok: true, question: updatedQ });
+    }
+
+    if (path === '/api/ktn/forum/points/adjust' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || session.role !== 'admin') {
+        return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới được điều chỉnh hoặc thu hồi điểm đóng góp giáo viên.' }, 403);
+      }
+      const body = await request.json().catch(() => ({}));
+      const teacherEmail = normalizeEmail(body.teacherEmail || '');
+      const pointsDelta = Math.round(Number(body.pointsDelta || 0));
+      const reason = String(body.reason || '').trim();
+      if (!teacherEmail || !pointsDelta || !reason) {
+        return jsonResponse({
+          ok: false,
+          message: 'Vui lòng cung cấp đầy đủ email giáo viên, số điểm điều chỉnh (khác 0) và lý do minh bạch.'
+        }, 400);
+      }
+      const teachers = await loadTeacherDirectory(env);
+      const targetTeacher = teachers.find(t => normalizeEmail(t.email) === teacherEmail);
+      const teacherId = body.teacherId || targetTeacher?.id || ('GV-' + fnv1aHex(teacherEmail).slice(0, 6).toUpperCase());
+      const evRes = await recordTeacherContributionEvent(env, {
+        event_id: `PTEVT-ADM-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        teacher_id: teacherId,
+        teacher_email: teacherEmail,
+        teacher_name: targetTeacher?.name || teacherEmail,
+        question_id: body.questionId || null,
+        answer_id: body.answerId || null,
+        event_type: pointsDelta >= 0 ? 'admin_adjust' : 'admin_revoke',
+        points_delta: pointsDelta,
+        reason,
+        created_by_email: normalizeEmail(session.email),
+        created_at: new Date().toISOString()
+      });
+      await recordAdminAuditLog(env, {
+        actorEmail: session.email,
+        actorName: session.name,
+        actorRole: session.role,
+        action: pointsDelta >= 0 ? 'teacher_points_adjust' : 'teacher_points_revoke',
+        targetType: 'teacher',
+        targetEmail: teacherEmail,
+        detail: { teacherId, pointsDelta, reason }
+      });
+      return jsonResponse({
+        ok: true,
+        event: evRes.event,
+        message: `Đã ${pointsDelta >= 0 ? 'cộng' : 'thu hồi'} ${Math.abs(pointsDelta)} điểm đóng góp của ${targetTeacher?.name || teacherEmail}.`
+      });
+    }
+
+    if (path === '/api/ktn/forum/leaderboard' && request.method === 'GET') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      const monthParam = String(url.searchParams.get('month') || new Date().toISOString().slice(0, 7)).trim();
+      const [teachers, allEvents, allAns, allQs] = await Promise.all([
+        loadTeacherDirectory(env),
+        loadAllTeacherContributionEvents(env),
+        loadAllForumAnswers(env),
+        loadAllForumQuestions(env)
+      ]);
+
+      const leaderboard = teachers.map(t => {
+        const tEmail = normalizeEmail(t.email);
+        const tEvents = allEvents.filter(e => normalizeEmail(e.teacher_email) === tEmail || e.teacher_id === t.id);
+        const monthEvents = monthParam && monthParam !== 'all'
+          ? tEvents.filter(e => String(e.created_at || '').startsWith(monthParam))
+          : tEvents;
+        const tAnswers = allAns.filter(a => normalizeEmail(a.author_email) === tEmail && a.status !== 'hidden');
+        const totalPoints = tEvents.reduce((acc, e) => acc + (Number(e.points_delta) || 0), 0);
+        const monthlyPoints = monthEvents.reduce((acc, e) => acc + (Number(e.points_delta) || 0), 0);
+        return {
+          teacherId: t.id,
+          teacherEmail: tEmail,
+          teacherName: t.name,
+          title: t.title || 'Giáo viên',
+          avatar: t.avatar || null,
+          active: t.active !== false && t.status !== 'locked',
+          totalPoints: Math.max(0, totalPoints),
+          monthlyPoints: Math.max(0, monthlyPoints),
+          answersCount: tAnswers.length,
+          acceptedAnswersCount: tAnswers.filter(a => a.is_accepted).length,
+          helpfulVotesCount: tAnswers.reduce((acc, a) => acc + (Number(a.helpful_count) || 0), 0),
+          videoGuidesCount: tAnswers.filter(a => a.video_verified && a.video_url).length,
+          longPendingResolvedCount: tEvents.filter(e => e.event_type === 'long_pending_resolved').length,
+          recentEvents: tEvents.slice(0, 15)
+        };
+      }).sort((a, b) => (b.monthlyPoints - a.monthlyPoints) || (b.totalPoints - a.totalPoints) || (b.answersCount - a.answersCount));
+
+      return jsonResponse({
+        ok: true,
+        month: monthParam,
+        openQuestionsCount: allQs.filter(q => q.status === 'open').length,
+        totalQuestionsCount: allQs.filter(q => q.status !== 'hidden').length,
+        pointsConfig: FORUM_POINTS_CONFIG,
+        leaderboard
+      });
     }
 
     if (path === '/flashcards' && (request.method === 'GET' || request.method === 'HEAD')) {

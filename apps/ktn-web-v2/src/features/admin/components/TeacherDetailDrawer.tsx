@@ -46,6 +46,7 @@ export interface TeacherDetailDrawerProps {
   }) => Promise<unknown>;
   onAdjustForumPoints?: (payload: {
     teacherId: string;
+    teacherEmail?: string;
     pointsDelta: number;
     reason: string;
   }) => Promise<unknown>;
@@ -64,6 +65,7 @@ export interface TeacherDetailDrawerProps {
   }) => Promise<unknown>;
   onAdjustPoints?: (payload: {
     teacherId: string;
+    teacherEmail?: string;
     pointsDelta: number;
     reason: string;
   }) => Promise<unknown>;
@@ -476,7 +478,7 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                     2. Buổi đã tạo nội dung
                   </p>
                   <p className="mt-1 font-display text-lg font-extrabold text-blue-900">
-                    {teacher.recordedClassSessionsCount ?? 0} buổi
+                    {(teacher.activitySessionsCount || teacher.scheduledSessionsCount || 0)} buổi
                   </p>
                   <p className="mt-0.5 text-[10px] text-stone-500">
                     Có lưu nội dung/bài tập trên <code className="font-mono">ktn_class_sessions</code>
@@ -488,7 +490,7 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                     3. Buổi có điểm danh xác nhận
                   </p>
                   <p className="mt-1 font-display text-lg font-extrabold text-emerald-900">
-                    {teacher.attendanceConfirmedSessionsCount ?? 0} buổi
+                    {(teacher.confirmedSessionsCount ?? 0)} buổi
                   </p>
                   <p className="mt-0.5 text-[10px] text-emerald-800">
                     Xác thực qua dữ liệu điểm danh <code className="font-mono">ktn_attendance</code>
@@ -618,6 +620,7 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                   if (!adjustFn) return;
                   await adjustFn({
                     teacherId: teacher.code || teacher.email,
+                    teacherEmail: teacher.email,
                     pointsDelta: delta,
                     reason: pointsReasonInput.trim(),
                   });

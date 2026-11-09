@@ -64,6 +64,8 @@ export const TeacherWorkspace: React.FC = () => {
   const [createStudentModalOpen, setCreateStudentModalOpen] = useState<boolean>(false);
   const [newStuName, setNewStuName] = useState<string>('');
   const [newStuEmail, setNewStuEmail] = useState<string>('');
+  const [newStuPhone, setNewStuPhone] = useState<string>('');
+  const [newStuParentName, setNewStuParentName] = useState<string>('');
   const [newStuParentPhone, setNewStuParentPhone] = useState<string>('');
   const [newStuClassCode, setNewStuClassCode] = useState<string>('');
   const [newStuNotes, setNewStuNotes] = useState<string>('');
@@ -418,6 +420,8 @@ export const TeacherWorkspace: React.FC = () => {
       return ktnApi.teacherCreateStudent({
         name: newStuName.trim(),
         email: newStuEmail.trim().toLowerCase(),
+        phone: newStuPhone.trim() || undefined,
+        parentName: newStuParentName.trim() || undefined,
         parentPhone: newStuParentPhone.trim() || undefined,
         classCode: chosenClass,
         note: newStuNotes.trim() || undefined,
@@ -434,6 +438,8 @@ export const TeacherWorkspace: React.FC = () => {
       });
       setNewStuName('');
       setNewStuEmail('');
+      setNewStuPhone('');
+      setNewStuParentName('');
       setNewStuParentPhone('');
       setNewStuNotes('');
       addToast({
@@ -1534,11 +1540,39 @@ export const TeacherWorkspace: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-stone-800">
-                    Số điện thoại phụ huynh
+                    Số điện thoại học viên
                   </label>
                   <input
                     type="tel"
                     data-testid="teacher-create-student-phone-input"
+                    value={newStuPhone}
+                    onChange={(e) => setNewStuPhone(e.target.value)}
+                    placeholder="VD: 0987654321"
+                    className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-800">
+                    Họ tên phụ huynh
+                  </label>
+                  <input
+                    type="text"
+                    data-testid="teacher-create-student-parent-name-input"
+                    value={newStuParentName}
+                    onChange={(e) => setNewStuParentName(e.target.value)}
+                    placeholder="VD: Chị Nguyễn Lan Anh"
+                    className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-800">
+                    Số điện thoại phụ huynh
+                  </label>
+                  <input
+                    type="tel"
+                    data-testid="teacher-create-student-parent-phone-input"
                     value={newStuParentPhone}
                     onChange={(e) => setNewStuParentPhone(e.target.value)}
                     placeholder="VD: 0912345678"
@@ -1552,6 +1586,7 @@ export const TeacherWorkspace: React.FC = () => {
                   </label>
                   <input
                     type="text"
+                    data-testid="teacher-create-student-note-input"
                     value={newStuNotes}
                     onChange={(e) => setNewStuNotes(e.target.value)}
                     placeholder="Ghi chú trình độ hoặc lịch học của con..."

@@ -3083,7 +3083,7 @@ async function getIzTeachAdminToken(env, forceRefresh = false) {
 // ============================================================================
 function inspectDlpContent(text) {
   const s = String(text || '');
-  const phoneRegex = /(?<!\d)(?:\+?84|0)(?:3|5|7|8|9)(?:[\s.-]*\d){8}(?!\d)/;
+  const phoneRegex = /(?<!\d)(?:\+?84|0)\s*(?:3|5|7|8|9)(?:[\s.-]*\d){8}(?!\d)/;
   const linkRegex = /\b(?:zalo\.me|fb\.com|facebook\.com|t\.me)\b/i;
   if (phoneRegex.test(s)) {
     return { blocked: true, reason: 'Phát hiện số điện thoại cá nhân trong tin nhắn lớp học' };
@@ -9881,8 +9881,10 @@ export default {
             const clsObj = classRows.find(c => String(c?.id || '').trim().toUpperCase() === clsId);
             const rawSched = String(clsObj?.schedule || '').trim();
             if (rawSched && !rawSched.toLowerCase().includes('đang cập nhật')) {
-              const cfg = parseScheduleTextToConfig(rawSched, clsId);
-              if (cfg && Array.isArray(cfg.weeklySlots) && cfg.weeklySlots.length > 0) {
+              const cfg = parseLegacyScheduleSuggestion(rawSched);
+              if (cfg && Array.isArray(cfg.daysOfWeek) && cfg.daysOfWeek.length > 0) {
+                scheduledSessionsCount += cfg.daysOfWeek.length * 4;
+              } else if (cfg && Array.isArray(cfg.weeklySlots) && cfg.weeklySlots.length > 0) {
                 scheduledSessionsCount += cfg.weeklySlots.length * 4;
               } else {
                 scheduledSessionsCount += 1;
@@ -14230,17 +14232,23 @@ export default {
             msgEventType = 'chat_course_message';
             const senderNorm = normalizeEmail(session.email);
             const courseRecipSet = new Set();
-            const stuCourseRes = await supabaseRequest(env, 'ktn_students?select=email,online_courses&limit=500');
-            if (stuCourseRes.ok && Array.isArray(stuCourseRes.data)) {
-              for (const s of stuCourseRes.data) {
-                const em = normalizeEmail(s?.email || '');
-                if (!em || em === senderNorm) continue;
-                const cList = Array.isArray(s?.online_courses) ? s.online_courses : [];
-                const hasCourse = cList.some((c) => {
-                  const cid = String(c?.id || c?._id || c || '').trim().toLowerCase();
-                  return (COURSE_CHAT_ALIASES[cid] || cid) === access.courseId || cid === access.rawCourseId;
-                });
-                if (hasCourse) courseRecipSet.add(em);
+            const isStaffOrTeacher = session.role === 'teacher' || session.role === 'admin' || session.role === 'staff';
+            const isExplicitlyUrgent = Boolean(body.isUrgent || body.urgent);
+            const shouldBroadcastToStudents = session.role !== 'student' && (isStaffOrTeacher || isExplicitlyUrgent);
+
+            if (shouldBroadcastToStudents) {
+              const stuCourseRes = await supabaseRequest(env, 'ktn_students?select=email,online_courses&limit=500');
+              if (stuCourseRes.ok && Array.isArray(stuCourseRes.data)) {
+                for (const s of stuCourseRes.data) {
+                  const em = normalizeEmail(s?.email || '');
+                  if (!em || em === senderNorm) continue;
+                  const cList = Array.isArray(s?.online_courses) ? s.online_courses : [];
+                  const hasCourse = cList.some((c) => {
+                    const cid = String(c?.id || c?._id || c || '').trim().toLowerCase();
+                    return (COURSE_CHAT_ALIASES[cid] || cid) === access.courseId || cid === access.rawCourseId;
+                  });
+                  if (hasCourse) courseRecipSet.add(em);
+                }
               }
             }
             if (session.role === 'student') {
@@ -15157,7 +15165,7 @@ export default {
             }, 400);
           }
           if (canonicalCourseId && !canonicalCourseId.toUpperCase().startsWith('CLASS_')) {
-            const access = await evaluateRoomAccess(env, session, `course:${canonicalCourseId}`);
+            const access = await canAccessChatRoom(env, session, `course:${canonicalCourseId}`);
             if (!access.allowed) {
               return jsonResponse({
                 ok: false,
@@ -15280,7 +15288,7 @@ export default {
       }
 
       if (session.role === 'student' && !canonicalCourseId.toUpperCase().startsWith('CLASS_')) {
-        const access = await evaluateRoomAccess(env, session, `course:${canonicalCourseId}`);
+        const access = await canAccessChatRoom(env, session, `course:${canonicalCourseId}`);
         if (!access.allowed) {
           return jsonResponse({
             ok: false,
@@ -15425,7 +15433,7 @@ export default {
       return jsonResponse({
         ok: true,
         idempotent: false,
-        question: sanitizeForumQuestionForViewer(savedQ, [], [{ user_email: myEmail, notify_mode: 'immediate', following: true }], session),
+        question: sanitizeForumQuestionForViewer(savedQ?.question || savedQ, [], [{ user_email: myEmail, notify_mode: 'immediate', following: true }], session),
         teacherNotification: {
           inAppCreatedForAllActiveTeachers: true,
           pushDispatch: teacherPushDispatch
@@ -15585,7 +15593,7 @@ export default {
 
       // Học sinh chỉ được phản hồi tiếp vào câu hỏi trong khóa học mình có quyền
       if (session.role === 'student' && normalizeEmail(q.student_email) !== myEmail) {
-        const access = await evaluateRoomAccess(env, session, `course:${q.course_id}`);
+        const access = await canAccessChatRoom(env, session, `course:${q.course_id}`);
         if (!access.allowed) {
           return jsonResponse({ ok: false, message: 'Em không có quyền trả lời câu hỏi này.' }, 403);
         }
@@ -15971,16 +15979,28 @@ export default {
       else if (action === 'hide' || action === 'delete') nextStatus = 'hidden';
       else if (action === 'unhide') nextStatus = 'open';
       const updatedQ = await saveForumQuestion(env, { ...q, status: nextStatus, updated_at: nowIso });
-      return jsonResponse({ ok: true, question: updatedQ });
+      return jsonResponse({ ok: true, question: updatedQ?.question || updatedQ });
     }
 
-    if (path === '/api/ktn/forum/points/adjust' && request.method === 'POST') {
+    if ((path === '/api/ktn/forum/points/adjust' || path === '/api/ktn/admin/teachers/points') && request.method === 'POST') {
       const session = await extractSessionFromRequest(request, env);
       if (!session || session.role !== 'admin') {
         return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới được điều chỉnh hoặc thu hồi điểm đóng góp giáo viên.' }, 403);
       }
       const body = await request.json().catch(() => ({}));
-      const teacherEmail = normalizeEmail(body.teacherEmail || '');
+      let teacherEmail = normalizeEmail(body.teacherEmail || '');
+      if (!teacherEmail && body.teacherId) {
+        const rawId = String(body.teacherId).trim();
+        if (rawId.includes('@')) {
+          teacherEmail = normalizeEmail(rawId);
+        } else {
+          const teachers = await loadTeacherDirectory(env);
+          const found = teachers.find(t => String(t.code || t.id || '').toUpperCase() === rawId.toUpperCase());
+          if (found && found.email) {
+            teacherEmail = normalizeEmail(found.email);
+          }
+        }
+      }
       const pointsDelta = Math.round(Number(body.pointsDelta || 0));
       const reason = String(body.reason || '').trim();
       if (!teacherEmail || !pointsDelta || !reason) {

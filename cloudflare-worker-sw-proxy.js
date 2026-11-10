@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ============================================================================
  * KHỔNG TỬ NHÍ — TRẠM GÁC CỔNG CLOUDFLARE WORKERS (BFF PROXY + PWA PUSH + CRON)
  * ============================================================================
@@ -2820,9 +2820,9 @@ async function canAccessChatRoom(env, session, rawRoomId) {
     }
     const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
     const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
-    const dbCourses = Array.isArray(stuRow?.online_courses) ? stuRow.online_courses : [];
-    const sessCourses = Array.isArray(session.onlineCourses) ? session.onlineCourses : [];
-    const onlineList = [...dbCourses, ...sessCourses];
+    const onlineList = (stuRow && Array.isArray(stuRow.online_courses))
+      ? stuRow.online_courses
+      : (Array.isArray(session.onlineCourses) ? session.onlineCourses : []);
     let enrolledIds = new Set(
       onlineList
         .map(c => {

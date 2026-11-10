@@ -229,6 +229,24 @@ function loadWorkerWithPostgresBridge(db) {
       });
     }
 
+    if (u.pathname.endsWith('/rest/v1/rpc/ktn_get_rooms_latest_messages') && method === 'POST') {
+      const p = bodyObj || {};
+      try {
+        const res = await db.query(
+          `SELECT * FROM public.ktn_get_rooms_latest_messages($1::text[], $2::text)`,
+          [Array.isArray(p.p_room_ids) ? p.p_room_ids : null, p.p_room_prefix ?? null]
+        );
+        return new Response(JSON.stringify(res.rows), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch {}
+      return new Response(JSON.stringify({ message: 'ktn_get_rooms_latest_messages RPC fallback to PostgREST' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     if (
       (u.pathname.endsWith('/rest/v1/ktn_teachers') ||
         u.pathname.endsWith('/rest/v1/ktn_classes') ||
@@ -1403,6 +1421,46 @@ async function run() {
       `sqlNameP50=${sqlAccentInsensitive.sqlP50Ms}ms/P95=${sqlAccentInsensitive.sqlP95Ms}ms, sqlEmailP95=${sqlEmailLookup.sqlP95Ms}ms, sqlPageP95=${sqlDeepPage.sqlP95Ms}ms, workerE2eP50=${workerAccentInsensitive.e2eP50Ms}ms/P95=${workerAccentInsensitive.e2eP95Ms}ms`
     );
   }
+
+  // 12. Verify SQL RPC ktn_get_rooms_latest_messages on PostgreSQL 18.6 under 500+ message room saturation
+  await db.exec(`
+    DELETE FROM public.ktn_messages WHERE id LIKE 'PG-RPC-MSG-%';
+    INSERT INTO public.ktn_messages (id, room_id, class_code, sender_email, sender_name, sender_role, content, created_at)
+    VALUES
+      ('PG-RPC-MSG-OLD-YCT2', 'class:YCT2-04', 'YCT2-04', 'linh.lam@khongtunhi.com', 'Cô Linh', 'teacher', 'Tin cuối thực sự của YCT2-04', '2026-10-01T08:00:00Z'),
+      ('PG-RPC-MSG-PRIV-1', 'student:minhkhang@khongtunhi.com', NULL, 'minhkhang@khongtunhi.com', 'Minh Khang', 'student', 'Tin riêng 1-1 của Minh Khang', '2026-10-05T09:00:00Z');
+    INSERT INTO public.ktn_messages (id, room_id, class_code, sender_email, sender_name, sender_role, content, created_at)
+    SELECT
+      'PG-RPC-MSG-FLOOD-' || LPAD(i::text, 4, '0'),
+      'class:YCT3-02',
+      'YCT3-02',
+      'thu.ha@khongtunhi.com',
+      'Cô Thu Hà',
+      'teacher',
+      'Tin nhắn flood số ' || i::text,
+      ('2026-11-01T00:00:00Z'::timestamptz + (i || ' minutes')::interval)
+    FROM generate_series(1, 520) AS g(i);
+  `);
+
+  const rpcGroupLatestRes = await db.query(
+    `SELECT * FROM public.ktn_get_rooms_latest_messages($1::text[], NULL)`,
+    [['class:YCT2-04', 'class:YCT3-02']]
+  );
+  const rpcPrivLatestRes = await db.query(
+    `SELECT * FROM public.ktn_get_rooms_latest_messages(NULL, 'student:')`
+  );
+  const yct2LatestRow = rpcGroupLatestRes.rows.find((r) => r.room_id === 'class:YCT2-04');
+  const yct3LatestRow = rpcGroupLatestRes.rows.find((r) => r.room_id === 'class:YCT3-02');
+  const privLatestRow = rpcPrivLatestRes.rows.find((r) => r.room_id === 'student:minhkhang@khongtunhi.com');
+
+  record(
+    'PG-RPC-ROOMS-LATEST-MESSAGES',
+    'PostgreSQL 18.6 ktn_get_rooms_latest_messages RPC returns exact latest message per room even when another room has 520+ newer messages',
+    yct2LatestRow?.id === 'PG-RPC-MSG-OLD-YCT2' &&
+      yct3LatestRow?.id === 'PG-RPC-MSG-FLOOD-0520' &&
+      privLatestRow?.id === 'PG-RPC-MSG-PRIV-1',
+    `yct2Latest=${yct2LatestRow?.id}, yct3Latest=${yct3LatestRow?.id}, privLatest=${privLatestRow?.id}`
+  );
 
   const reportDir = path.join(ROOT_DIR, 'reports', 'ktn-three-way-reliability');
   fs.mkdirSync(reportDir, { recursive: true });

@@ -1734,15 +1734,25 @@ export const AdminWorkspace: React.FC = () => {
     if (isDemoMode) {
       return teachersQuery.data || getDemoTeachersList();
     }
-    const legacyItems = teachersQuery.data;
-    const searchItems = teacherSearchQuery.data?.items;
-    if (Array.isArray(legacyItems) && legacyItems.length > 0 && (!searchItems || searchItems.length === 0)) {
-      return legacyItems;
+    const legacyItems = Array.isArray(teachersQuery.data) ? teachersQuery.data : [];
+    const searchItems = Array.isArray(teacherSearchQuery.data?.items)
+      ? teacherSearchQuery.data.items
+      : [];
+    if (legacyItems.length === 0) return searchItems;
+    if (searchItems.length === 0) return legacyItems;
+    const byKey = new Map<string, KtnTeacherRecord>();
+    for (const item of legacyItems) {
+      const k = String(item.email || item.code || '').toLowerCase();
+      if (k) byKey.set(k, item);
     }
-    if (Array.isArray(searchItems) && searchItems.length > 0) {
-      return searchItems;
+    for (const item of searchItems) {
+      const k = String(item.email || item.code || '').toLowerCase();
+      if (k) {
+        const prev = byKey.get(k);
+        byKey.set(k, prev ? { ...prev, ...item } : item);
+      }
     }
-    return legacyItems || searchItems || [];
+    return Array.from(byKey.values());
   }, [isDemoMode, teachersQuery.data, teacherSearchQuery.data?.items]);
 
   const getClassActiveStudentCount = (cls: KtnClassWithCounts): number => {

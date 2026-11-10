@@ -831,20 +831,53 @@ export const ktnApi = {
     signedUrl: string;
     fileUrl: string;
   }> {
+    const folder = payload.folder || 'homework-assignments';
+    const isSessionAssignmentUpload =
+      Boolean(payload.classCode) &&
+      folder !== 'chat' &&
+      folder !== 'forum';
+    const primaryPath = isSessionAssignmentUpload
+      ? '/api/ktn/class-sessions/upload-url'
+      : '/api/ktn/upload-url';
+
     try {
       return await ktnRequest<{
         ok: boolean;
         signedUrl: string;
         fileUrl: string;
-      }>('/api/ktn/upload-url', {
+      }>(primaryPath, {
         method: 'POST',
         body: JSON.stringify({
           ...payload,
-          folder: payload.folder || 'homework-assignments'
+          folder
         })
       });
     } catch (err) {
       if (err instanceof KtnApiError && (err.status === 404 || err.status === 405)) {
+        if (primaryPath !== '/api/ktn/upload-url') {
+          try {
+            return await ktnRequest<{
+              ok: boolean;
+              signedUrl: string;
+              fileUrl: string;
+            }>('/api/ktn/upload-url', {
+              method: 'POST',
+              body: JSON.stringify({
+                ...payload,
+                folder
+              })
+            });
+          } catch (fallbackErr) {
+            if (
+              !(
+                fallbackErr instanceof KtnApiError &&
+                (fallbackErr.status === 404 || fallbackErr.status === 405)
+              )
+            ) {
+              throw fallbackErr;
+            }
+          }
+        }
         return ktnRequest<{
           ok: boolean;
           signedUrl: string;
@@ -854,7 +887,9 @@ export const ktnApi = {
           body: JSON.stringify({
             fileName: payload.fileName,
             fileType: payload.fileType,
-            fileSize: payload.fileSize
+            fileSize: payload.fileSize,
+            classCode: payload.classCode,
+            sessionNum: payload.sessionNum
           })
         });
       }
@@ -1510,9 +1545,17 @@ export const ktnApi = {
   },
 
   async getTeachers(q?: string): Promise<KtnTeacherRecord[]> {
-    const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+    const cleanQ = String(q || '').trim();
+    const sp = new URLSearchParams();
+    if (cleanQ) {
+      sp.set('q', cleanQ);
+      if (cleanQ.includes('@') && !cleanQ.includes(' ')) {
+        sp.set('teacherEmail', cleanQ.toLowerCase());
+      }
+    }
+    const qs = sp.toString();
     const res = await ktnRequest<{ ok: boolean; teachers: KtnTeacherRecord[] }>(
-      `/api/ktn/teachers${qs}`
+      `/api/ktn/teachers${qs ? `?${qs}` : ''}`
     );
     return Array.isArray(res.teachers) ? res.teachers : [];
   },

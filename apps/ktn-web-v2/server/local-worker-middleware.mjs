@@ -742,6 +742,36 @@ export function createLocalWorkerHarness() {
         });
       }
 
+      if (table === 'rpc/ktn_get_rooms_latest_messages' && method === 'POST') {
+        const rpcBody = init.body ? JSON.parse(init.body) : {};
+        const roomIds = Array.isArray(rpcBody.p_room_ids)
+          ? new Set(rpcBody.p_room_ids.map(r => String(r || '').trim()).filter(Boolean))
+          : null;
+        const roomPrefix = String(rpcBody.p_room_prefix || '').trim().toLowerCase();
+        const latestByRoom = new Map();
+        for (const m of state.tables.ktn_messages || []) {
+          if (!m) continue;
+          const rid = String(m.room_id || m.class_code || '').trim();
+          if (!rid) continue;
+          if (roomIds && !roomIds.has(rid)) continue;
+          if (roomPrefix && !rid.toLowerCase().startsWith(roomPrefix)) continue;
+          const prev = latestByRoom.get(rid);
+          if (!prev) {
+            latestByRoom.set(rid, { ...m, room_id: rid });
+          } else {
+            const prevTs = Date.parse(prev.created_at || '') || 0;
+            const curTs = Date.parse(m.created_at || '') || 0;
+            if (curTs > prevTs || (curTs === prevTs && String(m.id || '') > String(prev.id || ''))) {
+              latestByRoom.set(rid, { ...m, room_id: rid });
+            }
+          }
+        }
+        return new Response(JSON.stringify(Array.from(latestByRoom.values())), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       if (table === 'ktn_messages' && method === 'POST' && state.faults.failMessagesPost) {
         return new Response(JSON.stringify({ message: 'Simulated database error' }), {
           status: 503,

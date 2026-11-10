@@ -559,6 +559,18 @@ export const TeacherWorkspace: React.FC = () => {
         };
       } else {
         const apiRes = await ktnApi.saveClassSession(payload);
+        const serverExercises =
+          Array.isArray(apiRes?.exercises) && apiRes.exercises.length > 0
+            ? apiRes.exercises
+            : updatedExercises;
+        if (saveMode === 'append_exercise' && serverExercises.length > 0) {
+          const matchedOrLast =
+            serverExercises.find((ex) => ex.id === targetExercise.id) ||
+            serverExercises[serverExercises.length - 1];
+          if (matchedOrLast) {
+            targetExercise = matchedOrLast;
+          }
+        }
         savedSession = {
           ...(existingSession || {}),
           ...(apiRes || {}),
@@ -567,10 +579,7 @@ export const TeacherWorkspace: React.FC = () => {
           sessionNum: numSession,
           session_title: apiRes?.session_title || apiRes?.title || payload.title,
           title: apiRes?.title || payload.title,
-          exercises:
-            Array.isArray(apiRes?.exercises) && apiRes.exercises.length >= updatedExercises.length
-              ? apiRes.exercises
-              : updatedExercises,
+          exercises: serverExercises,
         };
       }
 

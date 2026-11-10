@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-11-10T19:34:44.853Z",
+  "generatedAt": "2026-11-10T20:03:22.586Z",
   "suite": "KTN_UX_AND_PERFORMANCE_UPGRADE_SUITE",
   "allPassed": true,
-  "totalChecks": 22,
-  "passedChecks": 22,
+  "totalChecks": 23,
+  "passedChecks": 23,
   "failedChecks": 0,
   "teacherSearchBenchmarks": {
     "workerHandler": {
@@ -11,8 +11,8 @@
         "scale": 1000,
         "nameSearch": {
           "runs": 15,
-          "p50Ms": 3.62,
-          "p95Ms": 9.97,
+          "p50Ms": 3.14,
+          "p95Ms": 7.14,
           "totalCount": 1,
           "returnedRows": 1,
           "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
@@ -20,8 +20,8 @@
         },
         "emailSearch": {
           "runs": 15,
-          "p50Ms": 3.53,
-          "p95Ms": 5.99,
+          "p50Ms": 2.82,
+          "p95Ms": 3.62,
           "totalCount": 1,
           "returnedRows": 1,
           "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
@@ -29,8 +29,8 @@
         },
         "deepPagination": {
           "runs": 15,
-          "p50Ms": 2.66,
-          "p95Ms": 4.26,
+          "p50Ms": 2.1,
+          "p95Ms": 2.91,
           "totalCount": 1000,
           "returnedRows": 20,
           "topMatchName": "Thầy Phạm Thanh Mai 553",
@@ -41,8 +41,8 @@
         "scale": 10000,
         "nameSearch": {
           "runs": 15,
-          "p50Ms": 22.29,
-          "p95Ms": 36.46,
+          "p50Ms": 17.05,
+          "p95Ms": 20.89,
           "totalCount": 1,
           "returnedRows": 1,
           "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
@@ -50,8 +50,8 @@
         },
         "emailSearch": {
           "runs": 15,
-          "p50Ms": 15.24,
-          "p95Ms": 18.23,
+          "p50Ms": 14.7,
+          "p95Ms": 16.78,
           "totalCount": 1,
           "returnedRows": 1,
           "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
@@ -59,8 +59,8 @@
         },
         "deepPagination": {
           "runs": 15,
-          "p50Ms": 6.82,
-          "p95Ms": 10.36,
+          "p50Ms": 8.57,
+          "p95Ms": 35.05,
           "totalCount": 10000,
           "returnedRows": 20,
           "topMatchName": "Thầy Vũ Phương Tùng 2775",
@@ -73,22 +73,22 @@
         "scale": 1000,
         "nameSearch": {
           "runs": 20,
-          "p50Ms": 2.12,
-          "p95Ms": 3.83,
+          "p50Ms": 2.03,
+          "p95Ms": 3.49,
           "returnedRows": 1,
           "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
         },
         "emailSearch": {
           "runs": 20,
-          "p50Ms": 0.86,
-          "p95Ms": 1.31,
+          "p50Ms": 0.78,
+          "p95Ms": 1.42,
           "returnedRows": 1,
           "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
         },
         "deepPagination": {
           "runs": 20,
-          "p50Ms": 2.12,
-          "p95Ms": 3.44,
+          "p50Ms": 2.61,
+          "p95Ms": 3.56,
           "returnedRows": 20,
           "topMatchName": "Thầy Hồ Hoàng Lan 499"
         },
@@ -98,22 +98,22 @@
         "scale": 10000,
         "nameSearch": {
           "runs": 20,
-          "p50Ms": 1.15,
-          "p95Ms": 1.44,
+          "p50Ms": 1.23,
+          "p95Ms": 2.9,
           "returnedRows": 1,
           "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
         },
         "emailSearch": {
           "runs": 20,
-          "p50Ms": 0.66,
-          "p95Ms": 1.14,
+          "p50Ms": 0.7,
+          "p95Ms": 1.42,
           "returnedRows": 1,
           "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
         },
         "deepPagination": {
           "runs": 20,
-          "p50Ms": 8.18,
-          "p95Ms": 13.07,
+          "p50Ms": 8.54,
+          "p95Ms": 9.81,
           "returnedRows": 20,
           "topMatchName": "Thầy Hồ Hoàng Lan 2499"
         },
@@ -169,7 +169,7 @@
       "category": "TEACHER_SEARCH",
       "title": "1,000 and 10,000 synthetic teachers benchmark measured on both Worker /api/ktn/admin/teachers/search and PostgreSQL 18.6 pg_trgm + ktn_search_teachers RPC",
       "passed": true,
-      "detail": "1k Worker p50=3.62ms/p95=9.97ms (PG SQL p50=2.12ms/p95=3.83ms); 10k Worker p50=22.29ms/p95=36.46ms (PG SQL p50=1.15ms/p95=1.44ms)"
+      "detail": "1k Worker p50=3.14ms/p95=7.14ms (PG SQL p50=2.03ms/p95=3.49ms); 10k Worker p50=17.05ms/p95=20.89ms (PG SQL p50=1.23ms/p95=2.9ms)"
     },
     {
       "id": "C01_EMPTY_1_1_REMOVED_AND_DRAFT_LEAVE_NO_JUNK_THREAD",
@@ -232,7 +232,7 @@
       "category": "FILE_ASSIGNMENT",
       "title": "Teacher obtains presigned upload URLs for PDF, Word (.docx), Image (.png), Audio (.m4a), and Video (.mp4 <= 50MB)",
       "passed": true,
-      "detail": "uploadedCount=5, sampleUrl=https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/linh_lam_khongtunhi_com/1794339284809-Giao-trinh-YCT2-Buoi-3.pdf"
+      "detail": "uploadedCount=5, sampleUrl=https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/linh_lam_khongtunhi_com/1794341002525-Giao-trinh-YCT2-Buoi-3.pdf"
     },
     {
       "id": "F02_REJECT_OVERSIZED_AND_DANGEROUS_MIME_400",
@@ -275,6 +275,13 @@
       "title": "Student submits homework for Session 3 Exercise #1 (lessonNum=301) and Teacher grades it (9.5/10) while session exercise attachments remain isolated and intact",
       "passed": true,
       "detail": "submitStatus=200, gradeStatus=200, score=9.5, sessionExercises=2"
+    },
+    {
+      "id": "F08_MULTI_TAB_CONCURRENT_APPEND_AND_UPDATE_SAFETY",
+      "category": "FILE_ASSIGNMENT",
+      "title": "Concurrent two-tab append_exercise (with colliding client IDs and stale exercises arrays) and stale-tab update_exercise preserve all 4 exercises and attachments without overwriting",
+      "passed": true,
+      "detail": "totalExercises=4, ids=[YCT2-04-B3-E1, YCT2-04-B3-E2, ex_YCT2-04_3_3, YCT2-04-B3-E4]"
     }
   ]
 }

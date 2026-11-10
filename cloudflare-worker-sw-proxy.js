@@ -11844,8 +11844,12 @@ export default {
         if (!session || (session.role !== 'admin' && session.role !== 'teacher')) {
           return jsonResponse({ ok: false, message: 'Chỉ Quản lý hoặc Giáo viên mới được xem danh sách giáo viên.' }, 403);
         }
-        const q = normalizeViSearchText(url.searchParams.get('q') || '');
-        const singleTeacherEmail = normalizeEmail(url.searchParams.get('teacherEmail') || url.searchParams.get('email') || '');
+        const rawQ = String(url.searchParams.get('q') || '').trim();
+        const q = normalizeViSearchText(rawQ);
+        const inferredEmailFromQ = (!url.searchParams.get('teacherEmail') && !url.searchParams.get('email') && rawQ.includes('@') && !rawQ.includes(' '))
+          ? normalizeEmail(rawQ)
+          : '';
+        const singleTeacherEmail = normalizeEmail(url.searchParams.get('teacherEmail') || url.searchParams.get('email') || inferredEmailFromQ || '');
         const singleTeacherCode = String(url.searchParams.get('code') || '').trim().toUpperCase();
         const activeOnly = url.searchParams.get('activeOnly') === '1' || session.role !== 'admin';
         let teacherQuery = activeOnly ? 'ktn_teachers?active=eq.true&order=code.asc' : 'ktn_teachers?order=code.asc';
@@ -16006,11 +16010,36 @@ export default {
         let newlyPublishedCount = 0;
         let newlyAddedDraftCount = 0;
         let updatedExistingCount = 0;
-        const targetExerciseId = body.exercise && typeof body.exercise === 'object' && body.exercise.id
+        const hasSingleTargetExercise = Boolean(body.exercise && typeof body.exercise === 'object');
+        const targetExerciseId = hasSingleTargetExercise && body.exercise.id
           ? String(body.exercise.id).trim()
           : '';
 
-        incomingRawList.forEach((rawEx, idx) => {
+        let effectiveIncomingList = incomingRawList;
+        if (!isReplaceAll && hasSingleTargetExercise) {
+          if (mergedList.length === 0 && Array.isArray(body.exercises) && body.exercises.length > 1) {
+            body.exercises.forEach((seedEx, seedIdx) => {
+              const seedId = seedEx?.id ? String(seedEx.id).trim() : '';
+              if (seedEx === body.exercise || (targetExerciseId && seedId === targetExerciseId)) {
+                return;
+              }
+              if (seedId && deletedIds.has(seedId)) return;
+              const normSeed = normalizeSessionExerciseItem(
+                seedEx,
+                mergedList.length || seedIdx,
+                classCode,
+                sessionNum
+              );
+              mergedList.push(normSeed);
+              if (normSeed.status !== 'draft') {
+                prevPublishedIds.add(String(normSeed.id || '').trim());
+              }
+            });
+          }
+          effectiveIncomingList = [body.exercise];
+        }
+
+        effectiveIncomingList.forEach((rawEx, idx) => {
           const explicitId = rawEx?.id ? String(rawEx.id).trim() : '';
           const existingIdx = explicitId
             ? mergedList.findIndex(e => String(e.id || '').trim() === explicitId)
@@ -16018,7 +16047,7 @@ export default {
 
           const topLevelStatus = body.status ? String(body.status).trim().toLowerCase() : '';
           const isTargetOrSingle =
-            incomingRawList.length === 1 ||
+            effectiveIncomingList.length === 1 ||
             (targetExerciseId && explicitId === targetExerciseId) ||
             existingIdx < 0;
           const exWithStatus = {
@@ -16032,8 +16061,8 @@ export default {
               String(prevEx.title || '').trim() === String(rawEx.title || '').trim() &&
               String(prevEx.prompt || '').trim() === String(rawEx.prompt || rawEx.instruction || '').trim();
 
-            if (isAppendMode && incomingRawList.length === 1 && !isSameContentAsPrev) {
-              // Caller requested append_exercise with a colliding default ID -> allocate a new non-colliding ID
+            if (isAppendMode && !isSameContentAsPrev) {
+              // Caller requested append_exercise with a colliding ID (e.g. concurrent multi-tab create) -> allocate a new non-colliding ID
               let nextNum = mergedList.length + 1;
               let newId = `${classCode}-B${sessionNum}-E${nextNum}`;
               while (mergedList.some(e => String(e.id || '').trim() === newId)) {
@@ -16449,17 +16478,37 @@ export default {
             queryKeys.add(`class:${r.classCode}`);
           }
         }
-        const inParam = Array.from(queryKeys).map(k => encodeURIComponent(k)).join(',');
+        const queryKeyArray = Array.from(queryKeys);
+        const inParam = queryKeyArray.map(k => encodeURIComponent(k)).join(',');
         if (!inParam) return roomsList;
-        const recentRes = await supabaseRequest(
-          env,
-          `ktn_messages?room_id=in.(${inParam})&order=created_at.desc&limit=1000`
-        );
-        let recentMsgs = (recentRes.ok && Array.isArray(recentRes.data)) ? recentRes.data : [];
 
-        // If high-volume rooms saturated the batch window, fetch remaining uncovered rooms in bounded follow-up passes
+        const [rpcLatestRes, recentRes] = await Promise.all([
+          supabaseRequest(env, 'rpc/ktn_get_rooms_latest_messages', {
+            method: 'POST',
+            body: { p_room_ids: queryKeyArray, p_room_prefix: null }
+          }).catch(() => ({ ok: false, data: null })),
+          supabaseRequest(
+            env,
+            `ktn_messages?room_id=in.(${inParam})&order=created_at.desc&limit=1000`
+          ).catch(() => ({ ok: false, data: [] }))
+        ]);
+
+        let recentMsgs = (recentRes.ok && Array.isArray(recentRes.data)) ? [...recentRes.data] : [];
+        const hasRpcLatest = Boolean(rpcLatestRes.ok && Array.isArray(rpcLatestRes.data));
+        if (hasRpcLatest) {
+          const seenMsgIds = new Set(recentMsgs.map(m => String(m?.id || '').trim()).filter(Boolean));
+          for (const rm of rpcLatestRes.data) {
+            if (!rm) continue;
+            const mid = String(rm.id || '').trim();
+            if (mid && seenMsgIds.has(mid)) continue;
+            if (mid) seenMsgIds.add(mid);
+            recentMsgs.push(rm);
+          }
+        }
+
+        // Fallback when SQL RPC is not deployed and high-volume rooms saturated the batch window: fetch remaining uncovered rooms in bounded follow-up passes
         let lastBatchLen = recentMsgs.length;
-        for (let pass = 0; pass < 3 && lastBatchLen >= 200 && roomsList.length > 1; pass++) {
+        for (let pass = 0; !hasRpcLatest && pass < 3 && lastBatchLen >= 200 && roomsList.length > 1; pass++) {
           const coveredKeys = new Set(recentMsgs.map(m => String(m?.room_id || m?.class_code || '').trim()).filter(Boolean));
           const missingRoomKeys = new Set();
           for (const r of roomsList) {
@@ -16748,15 +16797,31 @@ export default {
         assignedClasses.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
       );
 
-      const [privMsgRes, enrichedGroupRooms] = await Promise.all([
+      const [rpcPrivRes, privMsgRes, enrichedGroupRooms] = await Promise.all([
+        supabaseRequest(env, 'rpc/ktn_get_rooms_latest_messages', {
+          method: 'POST',
+          body: { p_room_ids: null, p_room_prefix: 'student:' }
+        }).catch(() => ({ ok: false, data: null })),
         supabaseRequest(env, 'ktn_messages?room_id=like.student:*&order=created_at.desc&limit=2000'),
         enrichRoomsWithStats(rawGroupRooms)
       ]);
       const groupRooms = sortRoomsByActivity(enrichedGroupRooms);
 
       // Group saved 1-1 messages by student email (only students with >= 1 saved message appear in privateThreads!)
-      let allPrivMsgs = (privMsgRes.ok && Array.isArray(privMsgRes.data)) ? privMsgRes.data : [];
-      if (allPrivMsgs.length >= 2000) {
+      let allPrivMsgs = (privMsgRes.ok && Array.isArray(privMsgRes.data)) ? [...privMsgRes.data] : [];
+      const hasRpcPrivLatest = Boolean(rpcPrivRes.ok && Array.isArray(rpcPrivRes.data));
+      if (hasRpcPrivLatest) {
+        const seenPrivMsgIds = new Set(allPrivMsgs.map(m => String(m?.id || '').trim()).filter(Boolean));
+        for (const pm of rpcPrivRes.data) {
+          if (!pm) continue;
+          const mid = String(pm.id || '').trim();
+          if (mid && seenPrivMsgIds.has(mid)) continue;
+          if (mid) seenPrivMsgIds.add(mid);
+          allPrivMsgs.push(pm);
+        }
+      }
+
+      if (!hasRpcPrivLatest && allPrivMsgs.length >= 2000) {
         // Bounded follow-up queries excluding already-seen student rooms so one 2,000+ msg room cannot starve others
         const discoveredRoomIds = new Set(
           allPrivMsgs.map(m => String(m?.room_id || '').trim()).filter(r => r.toLowerCase().startsWith('student:'))

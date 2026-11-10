@@ -2030,6 +2030,93 @@ async function runSuite() {
     `submitStatus=${submitHwRes.status}, gradeStatus=${gradeHwRes.status}, score=${gradeHwRes.data?.homework?.score}, sessionExercises=${s3Verify?.exercises?.length}`
   );
 
+  // F08: Multi-tab concurrent session exercise append & update (two tabs open on Session 3 with stale local snapshots)
+  const staleTwoExerciseSnapshot = (s3Verify?.exercises || []).slice(0, 2);
+  // Tab A appends Exercise 3 using local snapshot of 2 exercises (generating colliding ID ex_YCT2-04_3_3)
+  const tabAEx = {
+    id: 'ex_YCT2-04_3_3',
+    num: 3,
+    title: 'Bài 3 (Tab A): Đặt câu với từ mới',
+    prompt: 'Con viết 3 câu tiếng Trung về gia đình.',
+    type: 'image',
+    status: 'published',
+    attachments: ex2Attachment
+  };
+  const tabASaveRes = await callApi('/api/ktn/class-sessions', {
+    method: 'POST',
+    token: teacherLinhToken,
+    body: {
+      classCode: 'YCT2-04',
+      sessionNum: 3,
+      title: 'Buổi 3: Gia đình & Số đếm',
+      mode: 'append_exercise',
+      exercise: tabAEx,
+      exercises: [...staleTwoExerciseSnapshot, tabAEx]
+    }
+  });
+
+  // Tab B (still holding the pre-Tab-A 2-exercise snapshot!) also appends a new exercise with colliding ID ex_YCT2-04_3_3
+  const tabBEx = {
+    id: 'ex_YCT2-04_3_3',
+    num: 3,
+    title: 'Bài 4 (Tab B): Nghe và nhắc lại hội thoại',
+    prompt: 'Con nghe đoạn hội thoại mẫu rồi thu âm lại.',
+    type: 'audio',
+    status: 'published',
+    attachments: []
+  };
+  const tabBSaveRes = await callApi('/api/ktn/class-sessions', {
+    method: 'POST',
+    token: teacherLinhToken,
+    body: {
+      classCode: 'YCT2-04',
+      sessionNum: 3,
+      title: 'Buổi 3: Gia đình & Số đếm',
+      mode: 'append_exercise',
+      exercise: tabBEx,
+      exercises: [...staleTwoExerciseSnapshot, tabBEx]
+    }
+  });
+
+  // Tab B (still with stale snapshot!) edits Exercise #1 (mode: 'update_exercise')
+  const tabBEditedEx1 = {
+    ...staleTwoExerciseSnapshot[0],
+    title: 'Bài 1: Đọc to từ vựng & làm phiếu PDF (Cập nhật từ Tab B)'
+  };
+  const tabBUpdateEx1Res = await callApi('/api/ktn/class-sessions', {
+    method: 'POST',
+    token: teacherLinhToken,
+    body: {
+      classCode: 'YCT2-04',
+      sessionNum: 3,
+      title: 'Buổi 3: Gia đình & Số đếm',
+      mode: 'update_exercise',
+      exercise: tabBEditedEx1,
+      exercises: [tabBEditedEx1, staleTwoExerciseSnapshot[1]]
+    }
+  });
+
+  const verifyMultiTabGet = await callApi('/api/ktn/class-sessions?classCode=YCT2-04', { token: studentAToken });
+  const s3MultiTab = (verifyMultiTabGet.data?.sessions || []).find(
+    (s) => Number(s.session_num || s.sessionNum) === 3
+  );
+  const multiTabExercises = s3MultiTab?.exercises || [];
+
+  record(
+    'F08_MULTI_TAB_CONCURRENT_APPEND_AND_UPDATE_SAFETY',
+    'FILE_ASSIGNMENT',
+    'Concurrent two-tab append_exercise (with colliding client IDs and stale exercises arrays) and stale-tab update_exercise preserve all 4 exercises and attachments without overwriting',
+    tabASaveRes.status === 200 &&
+      tabBSaveRes.status === 200 &&
+      tabBUpdateEx1Res.status === 200 &&
+      multiTabExercises.length === 4 &&
+      multiTabExercises.some((e) => e.title.includes('Cập nhật từ Tab B') && e.attachments?.length === 5) &&
+      multiTabExercises.some((e) => e.title.includes('Bài 2: Viết chữ Hán') && e.attachments?.length === 1) &&
+      multiTabExercises.some((e) => e.title.includes('Bài 3 (Tab A)') && e.attachments?.length === 1) &&
+      multiTabExercises.some((e) => e.title.includes('Bài 4 (Tab B)')),
+    `totalExercises=${multiTabExercises.length}, ids=[${multiTabExercises.map((e) => e.id).join(', ')}]`
+  );
+
   const reportPayload = {
     generatedAt: new Date().toISOString(),
     suite: 'KTN_UX_AND_PERFORMANCE_UPGRADE_SUITE',

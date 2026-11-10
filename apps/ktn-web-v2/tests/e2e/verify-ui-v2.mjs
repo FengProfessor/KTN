@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -2928,9 +2928,14 @@ async function runSuite() {
       'Bài 4 (Đã cập nhật): Nghe đoạn hội thoại Bài 4, thu âm câu giới thiệu nghề nghiệp của bố mẹ và chụp trang SBT trang 26.';
     await testOPage.fill('[data-testid="homework-config-instructions-input"]', customInstr);
     await testOPage.click('[data-testid="homework-config-save-btn"]');
-    await testOPage.waitForSelector('[data-testid="homework-instructions-text"]', {
-      timeout: 5000,
+    await testOPage.waitForSelector('[data-testid="homework-config-editor-form"]', {
+      state: 'detached',
+      timeout: 8000,
     });
+    await testOPage.waitForFunction(
+      () => document.querySelector('[data-testid="homework-instructions-text"]')?.textContent?.includes('Bài 4 (Đã cập nhật)'),
+      { timeout: 8000 }
+    );
     const savedInstrText = await testOPage.textContent(
       '[data-testid="homework-instructions-text"]'
     );
@@ -3052,9 +3057,14 @@ async function runSuite() {
       'Bài 4 (GV phụ trách khóa cập nhật): Đọc bài khóa Bài 4 và thu âm gửi cô Linh.';
     await testOPage.fill('[data-testid="homework-config-instructions-input"]', teacherAssignedInstr);
     await testOPage.click('[data-testid="homework-config-save-btn"]');
-    await testOPage.waitForSelector('[data-testid="homework-instructions-text"]', {
-      timeout: 5000,
+    await testOPage.waitForSelector('[data-testid="homework-config-editor-form"]', {
+      state: 'detached',
+      timeout: 8000,
     });
+    await testOPage.waitForFunction(
+      () => document.querySelector('[data-testid="homework-instructions-text"]')?.textContent?.includes('GV phụ trách khóa cập nhật'),
+      { timeout: 8000 }
+    );
     const teacherSavedInstrText = await testOPage.textContent(
       '[data-testid="homework-instructions-text"]'
     );

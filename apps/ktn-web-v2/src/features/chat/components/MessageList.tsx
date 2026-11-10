@@ -65,6 +65,10 @@ export const MessageList: React.FC<MessageListProps> = ({
     scrollHeight: 0,
   });
   const prependAnchorRef = useRef<PrependScrollAnchor | null>(null);
+  const prevSearchActiveRef = useRef<boolean>(false);
+  const preSearchScrollRef = useRef<{ scrollTop: number; wasNearBottom: boolean } | null>(null);
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
   const cancelPendingRaf = useCallback(() => {
     if (rafIdRef.current !== null && typeof cancelAnimationFrame === 'function') {
@@ -82,6 +86,16 @@ export const MessageList: React.FC<MessageListProps> = ({
   const checkScrollPosition = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
+    if (normalizedSearchQuery.length > 0) return;
+
+    if (
+      prependAnchorRef.current &&
+      !prependAnchorRef.current.active &&
+      Math.abs(el.scrollTop - prependAnchorRef.current.scrollTop) > 8
+    ) {
+      prependAnchorRef.current = null;
+    }
+
     lastKnownScrollMetricsRef.current = {
       scrollTop: el.scrollTop,
       scrollHeight: el.scrollHeight,
@@ -93,7 +107,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     if (near) {
       setUnreadBelowCount((prev) => (prev === 0 ? prev : 0));
     }
-  }, []);
+  }, [normalizedSearchQuery]);
 
   const scrollToBottom = useCallback(
     (behavior: ScrollBehavior = 'smooth') => {
@@ -139,7 +153,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         scrollTop: el.scrollTop,
         anchorMsgId,
         anchorOffsetTop,
-        settledUntil: Date.now() + 1200,
+        settledUntil: Date.now() + 10000,
       };
     }
     onLoadOlder();
@@ -184,12 +198,43 @@ export const MessageList: React.FC<MessageListProps> = ({
       prevFirstMsgKeyRef.current = '';
       prevLastMsgKeyRef.current = '';
       prependAnchorRef.current = null;
+      prevSearchActiveRef.current = false;
+      preSearchScrollRef.current = null;
       isNearBottomRef.current = true;
       setIsNearBottom(true);
       setUnreadBelowCount(0);
     }
 
     if (isLoading) return;
+
+    const el = scrollContainerRef.current;
+
+    if (normalizedSearchQuery.length > 0) {
+      if (!prevSearchActiveRef.current) {
+        preSearchScrollRef.current = {
+          scrollTop: lastKnownScrollMetricsRef.current.scrollTop,
+          wasNearBottom: isNearBottomRef.current,
+        };
+        prevSearchActiveRef.current = true;
+      }
+    } else if (prevSearchActiveRef.current) {
+      prevSearchActiveRef.current = false;
+      const saved = preSearchScrollRef.current;
+      preSearchScrollRef.current = null;
+      if (saved?.wasNearBottom) {
+        scrollToBottom('auto');
+      } else if (el && saved) {
+        el.scrollTop = saved.scrollTop;
+        lastKnownScrollMetricsRef.current = {
+          scrollTop: el.scrollTop,
+          scrollHeight: el.scrollHeight,
+        };
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const near = distanceFromBottom < 120;
+        isNearBottomRef.current = near;
+        setIsNearBottom(near);
+      }
+    }
 
     const newCount = messages.length;
     const prevCount = prevCountRef.current;
@@ -205,8 +250,6 @@ export const MessageList: React.FC<MessageListProps> = ({
     prevLastMsgKeyRef.current = lastMsgKey;
 
     if (newCount === 0) return;
-
-    const el = scrollContainerRef.current;
 
     // 1. Initial room load: jump immediately to bottom
     if (needsInitialRoomScrollRef.current || prevCount === 0) {
@@ -256,7 +299,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         anchor.active = false;
         anchor.scrollHeight = el.scrollHeight;
         anchor.scrollTop = el.scrollTop;
-        anchor.settledUntil = Date.now() + 800;
+        anchor.settledUntil = Date.now() + 10000;
       }
       lastKnownScrollMetricsRef.current = {
         scrollTop: el.scrollTop,
@@ -290,7 +333,15 @@ export const MessageList: React.FC<MessageListProps> = ({
         prevIdx >= 0 ? Math.max(1, newCount - 1 - prevIdx) : Math.max(1, newCount - prevCount);
       setUnreadBelowCount((c) => c + addedCount);
     }
-  }, [roomId, isLoading, messages, currentUserEmail, scrollToBottom, cancelPendingRaf]);
+  }, [
+    roomId,
+    isLoading,
+    messages,
+    currentUserEmail,
+    normalizedSearchQuery,
+    scrollToBottom,
+    cancelPendingRaf,
+  ]);
 
   const filteredMessages = searchQuery.trim()
     ? messages.filter(

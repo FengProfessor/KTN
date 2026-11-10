@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   inspectDlpClient,
@@ -694,6 +694,134 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       await waitFor(() => {
         expect(result.current.messages.map((m) => m.id)).toEqual(['MSG-B-1']);
       });
+
+      getMessagesSpy.mockRestore();
+    });
+
+    it('isolates olderByScope across demo/live modes and guards concurrent loadOlderMessages calls', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      useAuthStore.setState({
+        user: {
+          id: 'student-1',
+          email: 'hoangngan@khongtunhi.com',
+          name: 'Bé Nguyễn Hoàng Ngân',
+          role: 'student',
+          roles: ['student'],
+          classCode: 'YCT2-04',
+          hasLiveClass: true,
+          hasOnlineCourses: true,
+          onlineCourses: [],
+        },
+      });
+      useUiStore.setState({ isDemoMode: true, chatDemoScenario: 'demo_rich' });
+
+      const getMessagesSpy = vi.spyOn(chatApi, 'getMessages').mockImplementation(async (_roomId, opts) => {
+        if (opts?.before) {
+          await new Promise((r) => setTimeout(r, 40));
+          return {
+            roomId: 'class:YCT2-04',
+            pinnedMessage: null,
+            messages: [
+              {
+                id: 'MSG-LIVE-OLDER-1',
+                room_id: 'class:YCT2-04',
+                sender_email: 'linh.lam@khongtunhi.com',
+                sender_name: 'Cô Lâm Mỹ Linh',
+                sender_role: 'teacher',
+                content: 'Tin nhắn cũ live #1',
+                created_at: '2026-11-01T08:00:00.000Z',
+                status: 'sent',
+              },
+            ],
+            pagination: {
+              hasMore: false,
+              nextCursor: null,
+              oldestCreatedAt: '2026-11-01T08:00:00.000Z',
+              limit: 50,
+              totalAvailable: 61,
+            },
+          };
+        }
+        return {
+          roomId: 'class:YCT2-04',
+          pinnedMessage: null,
+          messages: [
+            {
+              id: 'MSG-LIVE-61',
+              room_id: 'class:YCT2-04',
+              sender_email: 'linh.lam@khongtunhi.com',
+              sender_name: 'Cô Lâm Mỹ Linh',
+              sender_role: 'teacher',
+              content: 'Tin nhắn live #61',
+              created_at: '2026-11-05T09:00:00.000Z',
+              status: 'sent',
+            },
+          ],
+          pagination: {
+            hasMore: true,
+            nextCursor: '2026-11-05T09:00:00.000Z',
+            oldestCreatedAt: '2026-11-05T09:00:00.000Z',
+            limit: 60,
+            totalAvailable: 61,
+          },
+        };
+      });
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      const { result, rerender } = renderHook(() => useRoomMessages('class:YCT2-04'), {
+        wrapper,
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages.length).toBeGreaterThan(0);
+      });
+
+      // Load older in demo_rich
+      await act(async () => {
+        await result.current.loadOlderMessages();
+      });
+      await waitFor(() => {
+        expect(result.current.hasMoreOlder).toBe(false);
+      });
+
+      // Switch to demo_empty -> must be completely empty (no leak from demo_rich older messages)
+      act(() => {
+        useUiStore.setState({ isDemoMode: true, chatDemoScenario: 'demo_empty' });
+      });
+      rerender();
+      await waitFor(() => {
+        expect(result.current.messages).toHaveLength(0);
+      });
+
+      // Switch to Live mode -> must not inherit demo_rich older messages or hasMoreOlder=false
+      act(() => {
+        useUiStore.setState({ isDemoMode: false });
+      });
+      rerender();
+      await waitFor(() => {
+        expect(result.current.messages.map((m) => m.id)).toEqual(['MSG-LIVE-61']);
+      });
+      expect(result.current.hasMoreOlder).toBe(true);
+
+      // Fire two concurrent loadOlderMessages calls in the same tick -> only 1 before-fetch should execute
+      await act(async () => {
+        await Promise.all([
+          result.current.loadOlderMessages(),
+          result.current.loadOlderMessages(),
+        ]);
+      });
+      await waitFor(() => {
+        expect(result.current.messages.map((m) => m.id)).toEqual([
+          'MSG-LIVE-OLDER-1',
+          'MSG-LIVE-61',
+        ]);
+      });
+      const beforeCalls = getMessagesSpy.mock.calls.filter(([, opts]) => Boolean(opts?.before));
+      expect(beforeCalls).toHaveLength(1);
 
       getMessagesSpy.mockRestore();
     });

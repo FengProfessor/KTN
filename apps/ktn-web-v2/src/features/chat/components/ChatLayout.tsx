@@ -136,6 +136,7 @@ export const ChatLayout: React.FC = () => {
     setActiveRoomId(roomId);
     setMobileChatConversationOpen(true);
     setReplyingTo(null);
+    setSearchOpen(false);
     setSearchQuery('');
     setSearchParams({ room: roomId }, { replace: true });
   };
@@ -210,7 +211,15 @@ export const ChatLayout: React.FC = () => {
                 connectionState={connectionState}
                 searchOpen={searchOpen}
                 searchQuery={searchQuery}
-                onToggleSearch={() => setSearchOpen((prev) => !prev)}
+                onToggleSearch={() => {
+                  setSearchOpen((prev) => {
+                    const next = !prev;
+                    if (!next) {
+                      setSearchQuery('');
+                    }
+                    return next;
+                  });
+                }}
                 onSearchChange={setSearchQuery}
                 onMobileBack={() => {
                   setMobileChatConversationOpen(false);

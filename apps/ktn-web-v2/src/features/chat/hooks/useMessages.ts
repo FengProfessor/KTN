@@ -192,6 +192,8 @@ function buildMessagesSignature(list: ChatMessage[]): string {
     .join('~');
 }
 
+const MAX_RETAINED_SERVER_MESSAGES = 1000;
+
 export function useRoomMessages(roomId: string | null) {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
@@ -202,14 +204,15 @@ export function useRoomMessages(roomId: string | null) {
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
 
-  const [olderByRoom, setOlderByRoom] = useState<Record<string, RoomOlderHistoryState>>({});
-  const [loadingOlderRoomId, setLoadingOlderRoomId] = useState<string | null>(null);
+  const [olderByScope, setOlderByScope] = useState<Record<string, RoomOlderHistoryState>>({});
+  const [loadingOlderScopeKey, setLoadingOlderScopeKey] = useState<string | null>(null);
+  const loadingOlderScopeRef = useRef<string | null>(null);
   const retainedServerByScopeRef = useRef<Record<string, Map<string, ChatMessage>>>({});
   const initialPaginationByScopeRef = useRef<
     Record<string, { cursor: string | null; hasMore: boolean }>
   >({});
-  const prevMergedRef = useRef<{ roomId: string | null; sig: string; list: ChatMessage[] }>({
-    roomId: null,
+  const prevMergedRef = useRef<{ scopeKey: string; sig: string; list: ChatMessage[] }>({
+    scopeKey: '',
     sig: '',
     list: EMPTY_MESSAGES,
   });
@@ -281,14 +284,20 @@ export function useRoomMessages(roomId: string | null) {
     staleTime: 1000,
   });
 
-  if (roomScopeKey && query.data?.pagination && !initialPaginationByScopeRef.current[roomScopeKey]) {
-    initialPaginationByScopeRef.current[roomScopeKey] = {
-      cursor: query.data.pagination.nextCursor || null,
-      hasMore: Boolean(query.data.pagination.hasMore),
-    };
+  if (roomScopeKey && query.data?.pagination) {
+    const existingInit = initialPaginationByScopeRef.current[roomScopeKey];
+    if (!existingInit || (!existingInit.hasMore && query.data.pagination.hasMore)) {
+      const retainedOldest = retainedServerByScopeRef.current[roomScopeKey]
+        ? Array.from(retainedServerByScopeRef.current[roomScopeKey].values())[0]?.created_at
+        : null;
+      initialPaginationByScopeRef.current[roomScopeKey] = {
+        cursor: retainedOldest || query.data.pagination.nextCursor || null,
+        hasMore: Boolean(query.data.pagination.hasMore),
+      };
+    }
   }
 
-  const currentRoomOlder = roomId ? olderByRoom[roomId] : undefined;
+  const currentRoomOlder = roomScopeKey ? olderByScope[roomScopeKey] : undefined;
   const olderMessages = currentRoomOlder?.messages ?? EMPTY_MESSAGES;
   const initialPag = roomScopeKey ? initialPaginationByScopeRef.current[roomScopeKey] : undefined;
   const hasMoreOlder =
@@ -301,12 +310,22 @@ export function useRoomMessages(roomId: string | null) {
     currentRoomOlder && currentRoomOlder.messages.length > 0
       ? currentRoomOlder.cursor
       : initialPag?.cursor || query.data?.pagination?.nextCursor || null;
-  const isLoadingOlder = Boolean(roomId && loadingOlderRoomId === roomId);
+  const isLoadingOlder = Boolean(roomScopeKey && loadingOlderScopeKey === roomScopeKey);
 
   const loadOlderMessages = useCallback(async () => {
     const targetRoomId = roomId;
-    if (!targetRoomId || loadingOlderRoomId === targetRoomId || !hasMoreOlder) return;
-    setLoadingOlderRoomId(targetRoomId);
+    const targetScopeKey = roomScopeKey;
+    if (
+      !targetRoomId ||
+      !targetScopeKey ||
+      loadingOlderScopeRef.current === targetScopeKey ||
+      loadingOlderScopeKey === targetScopeKey ||
+      !hasMoreOlder
+    ) {
+      return;
+    }
+    loadingOlderScopeRef.current = targetScopeKey;
+    setLoadingOlderScopeKey(targetScopeKey);
     try {
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 300));
@@ -324,11 +343,11 @@ export function useRoomMessages(roomId: string | null) {
             status: 'seen',
           },
         ];
-        setOlderByRoom((prev) => {
-          const existing = prev[targetRoomId]?.messages || [];
+        setOlderByScope((prev) => {
+          const existing = prev[targetScopeKey]?.messages || [];
           return {
             ...prev,
-            [targetRoomId]: {
+            [targetScopeKey]: {
               messages: [...syntheticOlder, ...existing],
               cursor: null,
               hasMore: false,
@@ -343,21 +362,28 @@ export function useRoomMessages(roomId: string | null) {
       const fetched = (res.messages || []).filter((m) =>
         doesMessageBelongToRoom(m, targetRoomId, false)
       );
-      setOlderByRoom((prev) => {
-        const existing = prev[targetRoomId]?.messages || [];
+      setOlderByScope((prev) => {
+        const existing = prev[targetScopeKey]?.messages || [];
+        const deduped = new Map<string, ChatMessage>();
+        for (const item of [...fetched, ...existing]) {
+          deduped.set(String(item.id), item);
+        }
         return {
           ...prev,
-          [targetRoomId]: {
-            messages: [...fetched, ...existing],
+          [targetScopeKey]: {
+            messages: Array.from(deduped.values()),
             cursor: res.pagination?.nextCursor || null,
             hasMore: Boolean(res.pagination?.hasMore),
           },
         };
       });
     } finally {
-      setLoadingOlderRoomId((curr) => (curr === targetRoomId ? null : curr));
+      if (loadingOlderScopeRef.current === targetScopeKey) {
+        loadingOlderScopeRef.current = null;
+      }
+      setLoadingOlderScopeKey((curr) => (curr === targetScopeKey ? null : curr));
     }
-  }, [roomId, hasMoreOlder, isDemoMode, loadingOlderRoomId, olderCursor]);
+  }, [roomId, roomScopeKey, hasMoreOlder, isDemoMode, loadingOlderScopeKey, olderCursor]);
 
   const mergedMessages = useMemo(() => {
     if (!roomId) return EMPTY_MESSAGES;
@@ -378,6 +404,11 @@ export function useRoomMessages(roomId: string | null) {
           if (doesMessageBelongToRoom(sm, roomId, isDemoMode)) {
             retainedMap.set(String(sm.id), sm);
           }
+        }
+        while (retainedMap.size > MAX_RETAINED_SERVER_MESSAGES) {
+          const oldestKey = retainedMap.keys().next().value;
+          if (oldestKey === undefined) break;
+          retainedMap.delete(oldestKey);
         }
       }
     }
@@ -422,7 +453,10 @@ export function useRoomMessages(roomId: string | null) {
     const byKey = new Map<string, ChatMessage>();
     const clientIdToKey = new Map<string, string>();
 
-    const allServer = [...olderMessages, ...accumulatedServerMessages];
+    const allServer =
+      isDemoMode && effectiveScenario === 'demo_empty'
+        ? EMPTY_MESSAGES
+        : [...olderMessages, ...accumulatedServerMessages];
     for (const msg of allServer) {
       if (!doesMessageBelongToRoom(msg, roomId, isDemoMode)) continue;
       const key = String(msg.id);
@@ -457,15 +491,16 @@ export function useRoomMessages(roomId: string | null) {
 
     const nextSig = buildMessagesSignature(sorted);
     if (
-      prevMergedRef.current.roomId === roomId &&
+      prevMergedRef.current.scopeKey === roomScopeKey &&
       prevMergedRef.current.sig === nextSig
     ) {
       return prevMergedRef.current.list;
     }
-    prevMergedRef.current = { roomId, sig: nextSig, list: sorted };
+    prevMergedRef.current = { scopeKey: roomScopeKey, sig: nextSig, list: sorted };
     return sorted;
   }, [
     roomId,
+    roomScopeKey,
     query.data?.messages,
     olderMessages,
     sendingMessagesByRoom,

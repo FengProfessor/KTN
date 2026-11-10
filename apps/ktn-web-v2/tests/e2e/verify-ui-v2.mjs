@@ -3707,15 +3707,33 @@ async function runSuite() {
       () => document.querySelectorAll('[data-testid="chat-message-item"]').length
     );
     await scrollTeacherPage.click('button[aria-label="Tìm kiếm trong hội thoại"]');
+    await scrollTeacherPage.waitForTimeout(150);
+    const afterCloseSearch = await scrollTeacherPage.evaluate(() => {
+      const msg = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      return {
+        count: document.querySelectorAll('[data-testid="chat-message-item"]').length,
+        scrollTop: Math.round(msg?.scrollTop || 0),
+        jumpBtnVisible: Boolean(document.querySelector('[data-testid="jump-to-latest-msg-btn"]')),
+      };
+    });
     recordTest(
       'TEST S',
       'S12',
-      'Reactions, pinning announcements, and in-room message search work accurately without causing scroll jump',
+      'Reactions, pinning announcements, and in-room message search/close work accurately while preserving scrollTop=450',
       Math.abs(topAfterReact - 450) <= 5 &&
         Math.abs(topAfterPin - 450) <= 5 &&
         pinnedBannerStillVisible &&
-        searchMatchCount === 1,
-      JSON.stringify({ topAfterReact, topAfterPin, pinnedBannerStillVisible, searchMatchCount })
+        searchMatchCount === 1 &&
+        afterCloseSearch.count >= 60 &&
+        Math.abs(afterCloseSearch.scrollTop - 450) <= 5 &&
+        afterCloseSearch.jumpBtnVisible,
+      JSON.stringify({
+        topAfterReact,
+        topAfterPin,
+        pinnedBannerStillVisible,
+        searchMatchCount,
+        afterCloseSearch,
+      })
     );
 
     await scrollAdminCtx.close();

@@ -350,6 +350,33 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
     });
 
+    it('synchronously clears room drafts in localStorage and memory as soon as logout() begins (before async ktnApi.logout resolves)', async () => {
+      let resolveLogoutApi!: () => void;
+      const logoutSpy = vi.spyOn(ktnApi, 'logout').mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveLogoutApi = resolve;
+          })
+      );
+
+      useUiStore.getState().setRoomDraft('class:YCT2-04', 'Bản nháp riêng của Hoàng Ngân');
+      expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBe(
+        'Bản nháp riêng của Hoàng Ngân'
+      );
+
+      const logoutPromise = useAuthStore.getState().logout();
+
+      // Even before ktnApi.logout() resolves, draft keys must already be purged
+      expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
+      expect(useUiStore.getState().draftByRoom).toEqual({});
+      expect(useAuthStore.getState().user).toBeNull();
+
+      resolveLogoutApi();
+      await logoutPromise;
+      expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
+      logoutSpy.mockRestore();
+    });
+
     it('T09: switching from Demo to Live mode does not leak cached Demo ktn-classes (Cô Lâm Mỹ Linh) into Live useChatRooms', async () => {
       const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false } },

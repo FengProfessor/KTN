@@ -95,7 +95,7 @@ export const DEMO_USERS: Record<string, KtnUserSession> = {
   }
 };
 
-import { isDemoAllowedInEnv } from './useUiStore';
+import { isDemoAllowedInEnv, useUiStore } from './useUiStore';
 
 const storedTokenExists = Boolean(getStoredSession()?.token);
 const initialIsDemo =
@@ -144,6 +144,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     ++authEpoch;
     restoreInFlight = null;
     clearStoredSession();
+    useUiStore.getState().resetSessionUiState();
     set({
       user: null,
       authUser: null,
@@ -155,6 +156,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await ktnApi.logout();
     } finally {
       clearStoredSession();
+      useUiStore.getState().resetSessionUiState();
       set({
         user: null,
         authUser: null,

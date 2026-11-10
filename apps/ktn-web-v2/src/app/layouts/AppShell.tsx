@@ -424,15 +424,18 @@ export const AppShell: React.FC = () => {
 
   const handleLogout = async () => {
     setDemoMode(false);
-    navigate('/login', { replace: true });
-    await logout();
-    queryClient.clear();
     resetSessionUiState();
+    queryClient.clear();
     try {
       sessionStorage.removeItem('ktn_post_login_redirect');
     } catch {
       // ignore
     }
+    const logoutPromise = logout();
+    navigate('/login', { replace: true });
+    await logoutPromise;
+    queryClient.clear();
+    resetSessionUiState();
     navigate('/login', { replace: true });
   };
 

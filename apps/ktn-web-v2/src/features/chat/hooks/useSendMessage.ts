@@ -206,6 +206,12 @@ export function useSendMessage(
               ? err.message
               : 'Chưa gửi được tin nhắn. Vui lòng kiểm tra kết nối và thử lại.';
 
+          const isStillAuthenticated =
+            Boolean(useAuthStore.getState().user) || useUiStore.getState().isDemoMode;
+          if (!isStillAuthenticated) {
+            throw err;
+          }
+
           // Step 4: Server failed -> Transition to FAILED, retain draft in composer if empty, allow 1-click retry
           markMessageFailed(input.roomId, optimisticMessage, errorReason);
 

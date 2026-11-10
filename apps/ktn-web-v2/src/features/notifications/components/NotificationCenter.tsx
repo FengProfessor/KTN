@@ -22,7 +22,11 @@ import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { DEMO_NOTIFICATIONS } from '@/lib/demoData';
 import { KtnNotification, UserNotificationSettings } from '@/types/ktn.types';
-import { formatRelativeTime, resolveNotificationLink } from '@/lib/utils';
+import {
+  formatRelativeTime,
+  isTeacherUnassignedNotification,
+  resolveNotificationLink,
+} from '@/lib/utils';
 
 const DEFAULT_VAPID_PUBLIC_KEY =
   'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
@@ -263,7 +267,10 @@ export const NotificationCenter: React.FC = () => {
         return (
           n.type === 'class_reminder' ||
           n.type === 'schedule_changed' ||
-          n.type === 'session_cancelled'
+          n.type === 'session_cancelled' ||
+          n.type === 'class_created' ||
+          n.type === 'class_joined' ||
+          n.type === 'class_teacher_changed'
         );
       }
       if (filterTab === 'homework') {
@@ -274,25 +281,42 @@ export const NotificationCenter: React.FC = () => {
         );
       }
       if (filterTab === 'chat') {
-        return n.type === 'chat_message';
+        return (
+          n.type === 'chat_message' ||
+          n.type === 'chat_group_message' ||
+          n.type === 'chat_private_message' ||
+          n.type === 'chat_course_message'
+        );
       }
       if (filterTab === 'important') {
         return (
           n.type === 'announcement_pinned' ||
           n.type === 'class_announcement' ||
           n.type === 'order_pending' ||
-          n.type === 'course_granted'
+          n.type === 'course_granted' ||
+          n.type === 'class_created' ||
+          n.type === 'class_joined' ||
+          n.type === 'class_teacher_changed'
         );
       }
       return true;
     });
   }, [notifications, filterTab]);
 
-  const handleOpenNotification = async (item: KtnNotification) => {
+  const handleOpenNotification = async (item: KtnNotification, customTarget?: string) => {
     if (!item.read) {
       await markReadMutation.mutateAsync([item.id]);
     }
-    const target = resolveNotificationLink(item);
+    if (
+      item.type === 'class_created' ||
+      item.type === 'class_joined' ||
+      item.type === 'class_teacher_changed' ||
+      item.type === 'schedule_changed'
+    ) {
+      queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+      queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+    }
+    const target = customTarget || resolveNotificationLink(item, user?.role);
     if (/^https:\/\//i.test(target)) {
       window.open(target, '_blank', 'noopener,noreferrer');
     } else {
@@ -508,7 +532,13 @@ export const NotificationCenter: React.FC = () => {
         </div>
       );
     }
-    if (type === 'schedule_changed' || type === 'session_cancelled') {
+    if (
+      type === 'schedule_changed' ||
+      type === 'session_cancelled' ||
+      type === 'class_created' ||
+      type === 'class_joined' ||
+      type === 'class_teacher_changed'
+    ) {
       return (
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-800">
           <Calendar className="h-4 w-4" />
@@ -522,7 +552,12 @@ export const NotificationCenter: React.FC = () => {
         </div>
       );
     }
-    if (type === 'chat_message') {
+    if (
+      type === 'chat_message' ||
+      type === 'chat_group_message' ||
+      type === 'chat_private_message' ||
+      type === 'chat_course_message'
+    ) {
       return (
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-800">
           <MessageSquare className="h-4 w-4" />
@@ -915,7 +950,7 @@ export const NotificationCenter: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                   {!item.read && (
                     <button
                       type="button"
@@ -928,14 +963,61 @@ export const NotificationCenter: React.FC = () => {
                     </button>
                   )}
 
-                  {item.actionUrl && (
+                  {(item.type === 'class_created' ||
+                    item.type === 'class_joined' ||
+                    (item.type === 'class_teacher_changed' &&
+                      !isTeacherUnassignedNotification(item))) &&
+                    (item.classCode || item.roomId) && (
+                      <button
+                        type="button"
+                        data-testid={`open-notif-chat-${item.id}`}
+                        onClick={() => {
+                          const room =
+                            item.roomId || `class:${String(item.classCode || '').trim().toUpperCase()}`;
+                          handleOpenNotification(
+                            item,
+                            `/chat?room=${encodeURIComponent(room)}`
+                          );
+                        }}
+                        className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-800 hover:bg-red-100"
+                      >
+                        <MessageSquare className="h-3 w-3" />
+                        <span>Nhóm lớp</span>
+                      </button>
+                    )}
+
+                  {Boolean(
+                    item.actionUrl ||
+                      item.classCode ||
+                      item.roomId ||
+                      item.courseId ||
+                      item.type === 'class_created' ||
+                      item.type === 'class_joined' ||
+                      item.type === 'class_teacher_changed' ||
+                      item.type === 'schedule_changed' ||
+                      item.type === 'class_reminder' ||
+                      item.type === 'chat_group_message' ||
+                      item.type === 'homework_assigned'
+                  ) && (
                     <button
                       type="button"
                       data-testid={`open-notif-target-${item.id}`}
                       onClick={() => handleOpenNotification(item)}
                       className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-900"
                     >
-                      <span>{item.actionLabel || 'Mở'}</span>
+                      <span>
+                        {item.actionLabel ||
+                          (item.type === 'class_created' ||
+                          item.type === 'class_joined' ||
+                          item.type === 'class_teacher_changed'
+                            ? 'Mở lớp'
+                            : item.type === 'chat_group_message' ||
+                              item.type === 'chat_message'
+                            ? 'Mở nhóm chat'
+                            : item.type === 'homework_assigned'
+                            ? 'Làm bài tập'
+                            : 'Mở')}
+                      </span>
                       <ExternalLink className="h-3 w-3" />
                     </button>
                   )}

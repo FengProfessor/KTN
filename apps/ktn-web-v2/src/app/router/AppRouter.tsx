@@ -1,5 +1,5 @@
 import React, { useEffect, Suspense, lazy } from 'react';
-import { Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { ShieldAlert, ArrowLeft, Loader2 } from 'lucide-react';
 import { AppShell } from '../layouts/AppShell';
 import { RoleHome } from '../navigation/RoleHome';
@@ -9,6 +9,7 @@ import { NotificationCenter } from '@/features/notifications/components/Notifica
 import { LoginPage } from '@/features/auth/components/LoginPage';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
+import { resolveNotificationLink } from '@/lib/utils';
 import type { UserRole } from '@/types/ktn.types';
 
 const LearningPage = lazy(() =>
@@ -30,12 +31,36 @@ const RouteLoadingFallback: React.FC = () => (
   </div>
 );
 
+function buildLoginRedirectUrl(pathname: string, search: string): string {
+  const fullPath = `${pathname || '/'}${search || ''}`;
+  if (fullPath && fullPath !== '/' && !fullPath.startsWith('/login')) {
+    try {
+      sessionStorage.setItem('ktn_post_login_redirect', fullPath);
+    } catch {
+      // ignore storage errors
+    }
+    return `/login?redirect=${encodeURIComponent(fullPath)}`;
+  }
+  return '/login';
+}
+
+const LegacyNotificationRedirect: React.FC = () => {
+  const location = useLocation();
+  const user = useAuthStore((s) => s.user);
+  const target = resolveNotificationLink(
+    { actionUrl: `${location.pathname}${location.search}` },
+    user?.role
+  );
+  return <Navigate to={target} replace />;
+};
+
 const RequireRole: React.FC<{
   allowed: UserRole[];
   allowAssignedCourseTeacher?: boolean;
   children: React.ReactNode;
 }> = ({ allowed, allowAssignedCourseTeacher = false, children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const isRestoring = useAuthStore((s) => s.isRestoring);
@@ -46,7 +71,7 @@ const RequireRole: React.FC<{
   }
 
   if (!user && !isDemoMode) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={buildLoginRedirectUrl(location.pathname, location.search)} replace />;
   }
 
   const role: UserRole = user?.role || 'student';
@@ -99,6 +124,7 @@ const RequireRole: React.FC<{
 };
 
 export const AppRouter: React.FC = () => {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const isRestoring = useAuthStore((s) => s.isRestoring);
@@ -144,13 +170,24 @@ export const AppRouter: React.FC = () => {
           path="/"
           element={
             !user && !isRestoring && !isDemoMode ? (
-              <Navigate to="/login" replace />
+              <Navigate to={buildLoginRedirectUrl(location.pathname, location.search)} replace />
             ) : (
               <AppShell />
             )
           }
         >
-          <Route index element={<RoleHome />} />
+          <Route
+            index
+            element={
+              searchParams.get('view') === 'groups' ||
+              searchParams.get('view') === 'grade' ||
+              searchParams.get('view') === 'orders' ? (
+                <LegacyNotificationRedirect />
+              ) : (
+                <RoleHome />
+              )
+            }
+          />
           <Route
             path="learning"
             element={
@@ -209,6 +246,12 @@ export const AppRouter: React.FC = () => {
               </RequireRole>
             }
           />
+          <Route path="lop/*" element={<LegacyNotificationRedirect />} />
+          <Route path="khoa/*" element={<LegacyNotificationRedirect />} />
+          <Route path="nhom-lop" element={<LegacyNotificationRedirect />} />
+          <Route path="messages" element={<LegacyNotificationRedirect />} />
+          <Route path="messages/*" element={<LegacyNotificationRedirect />} />
+          <Route path="dashboard" element={<RoleHome />} />
           <Route path="demo" element={<RoleHome />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

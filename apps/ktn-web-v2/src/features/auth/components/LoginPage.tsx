@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
+import { sanitizePostLoginRedirect } from '@/lib/utils';
 
 const loginSchema = z.object({
   email: z.string().trim().min(1, 'Vui lòng nhập email hoặc mã học viên'),
@@ -75,11 +76,26 @@ export const LoginPage: React.FC = () => {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const consumeRedirectTarget = React.useCallback(
+    (role?: 'student' | 'teacher' | 'admin' | string | null) => {
+      const fromQuery = searchParams.get('redirect') || searchParams.get('next') || '';
+      let fromStorage = '';
+      try {
+        fromStorage = sessionStorage.getItem('ktn_post_login_redirect') || '';
+        sessionStorage.removeItem('ktn_post_login_redirect');
+      } catch {
+        // ignore storage errors
+      }
+      return sanitizePostLoginRedirect(fromQuery || fromStorage, role);
+    },
+    [searchParams]
+  );
+
   React.useEffect(() => {
     if (user && !isRestoring && !isSubmitting) {
-      navigate('/', { replace: true });
+      navigate(consumeRedirectTarget(user.role), { replace: true });
     }
-  }, [user, isRestoring, isSubmitting, navigate]);
+  }, [user, isRestoring, isSubmitting, navigate, consumeRedirectTarget]);
 
   const showDevTools =
     isDemoAllowedInEnv() &&
@@ -114,7 +130,7 @@ export const LoginPage: React.FC = () => {
         title: `Chào ${loggedInUser.name}!`,
         variant: 'success',
       });
-      navigate('/', { replace: true });
+      navigate(consumeRedirectTarget(loggedInUser.role), { replace: true });
     } catch {
       // Error is displayed via authError; never fallback to demo identity
     } finally {

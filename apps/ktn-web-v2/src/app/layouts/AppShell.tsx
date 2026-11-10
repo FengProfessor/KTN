@@ -268,17 +268,20 @@ export const AppShell: React.FC = () => {
     const onSwMessage = (event: MessageEvent) => {
       const payload = event.data || {};
       if (payload.type === 'KTN_NOTIFICATION_CLICKED') {
-        const rawUrl = String(payload.data?.url || payload.data?.action_url || '');
-        const hashIdx = rawUrl.indexOf('#');
-        if (hashIdx >= 0) {
-          const targetRoute = rawUrl.slice(hashIdx + 1);
-          navigate(targetRoute.startsWith('/') ? targetRoute : `/${targetRoute}`);
-        } else if (payload.data?.type || payload.data?.roomId || payload.data?.homeworkId) {
-          navigate(resolveNotificationLink(payload.data));
-        } else if (rawUrl.startsWith('/') && !rawUrl.startsWith('/custom-page')) {
-          navigate(rawUrl);
+        const rawUrl = String(
+          payload.data?.url || payload.data?.action_url || payload.data?.actionUrl || ''
+        );
+        const target = resolveNotificationLink(
+          {
+            ...(payload.data || {}),
+            actionUrl: rawUrl || payload.data?.actionUrl,
+          },
+          user?.role
+        );
+        if (/^https:\/\//i.test(target)) {
+          window.open(target, '_blank', 'noopener,noreferrer');
         } else {
-          navigate('/notifications');
+          navigate(target);
         }
       } else if (payload.type === 'KTN_PUSH_SUBSCRIPTION_CHANGED' && payload.subscription) {
         if (!isDemoMode && user?.email) {
@@ -303,6 +306,17 @@ export const AppShell: React.FC = () => {
       } else if (payload.type === 'KTN_PUSH_RECEIVED') {
         queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
         queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
+        const pushType = String(payload.data?.type || payload.data?.eventType || '').trim();
+        if (
+          pushType === 'class_created' ||
+          pushType === 'class_joined' ||
+          pushType === 'class_teacher_changed' ||
+          pushType === 'schedule_changed'
+        ) {
+          queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+          queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+          queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
+        }
       }
     };
     navigator.serviceWorker.addEventListener('message', onSwMessage);
@@ -311,7 +325,7 @@ export const AppShell: React.FC = () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       navigator.serviceWorker.removeEventListener('message', onSwMessage);
     };
-  }, [navigate, isDemoMode, user?.email, queryClient]);
+  }, [navigate, isDemoMode, user?.email, user?.role, queryClient]);
 
   // Alert user via in-app toast when unread notifications arrive in foreground
   useEffect(() => {
@@ -410,10 +424,16 @@ export const AppShell: React.FC = () => {
 
   const handleLogout = async () => {
     setDemoMode(false);
+    navigate('/login', { replace: true });
     await logout();
     queryClient.clear();
     resetSessionUiState();
-    navigate('/login');
+    try {
+      sessionStorage.removeItem('ktn_post_login_redirect');
+    } catch {
+      // ignore
+    }
+    navigate('/login', { replace: true });
   };
 
   const headerInfo = isRestoringLiveSession
@@ -555,8 +575,17 @@ export const AppShell: React.FC = () => {
                               if (!n.read) {
                                 markSingleReadMutation.mutate(n.id);
                               }
+                              if (
+                                n.type === 'class_created' ||
+                                n.type === 'class_joined' ||
+                                n.type === 'class_teacher_changed' ||
+                                n.type === 'schedule_changed'
+                              ) {
+                                queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+                                queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+                              }
                               setNotifDropdownOpen(false);
-                              const target = resolveNotificationLink(n);
+                              const target = resolveNotificationLink(n, user?.role);
                               if (/^https:\/\//i.test(target)) {
                                 window.open(target, '_blank', 'noopener,noreferrer');
                               } else {

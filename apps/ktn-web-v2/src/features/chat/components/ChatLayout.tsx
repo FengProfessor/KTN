@@ -31,11 +31,28 @@ export const ChatLayout: React.FC = () => {
 
   const { data: rooms = [], isLoading: isRoomsLoading } = useChatRooms();
 
+  const rawRoomParam = (
+    searchParams.get('room') ||
+    searchParams.get('roomId') ||
+    searchParams.get('classCode') ||
+    searchParams.get('class') ||
+    ''
+  ).trim();
+  const roomParam =
+    rawRoomParam &&
+    !rawRoomParam.includes(':') &&
+    (searchParams.get('classCode') || searchParams.get('class'))
+      ? `class:${rawRoomParam.toUpperCase()}`
+      : rawRoomParam;
+
   useEffect(() => {
-    const roomParam = searchParams.get('room');
     if (roomParam) {
+      const normParam = roomParam.toUpperCase();
+      const normClassParam = normParam.replace(/^CLASS:/, '');
       const matched = rooms.find(
-        (r) => r.roomId === roomParam || r.classCode === roomParam
+        (r) =>
+          String(r.roomId || '').trim().toUpperCase() === normParam ||
+          String(r.classCode || '').trim().toUpperCase() === normClassParam
       );
       if (matched) {
         if (activeRoomId !== matched.roomId) {
@@ -46,23 +63,41 @@ export const ChatLayout: React.FC = () => {
         }
         return;
       }
+      if (!isRoomsLoading && rooms.length > 0) {
+        if (activeRoomId) {
+          setActiveRoomId('');
+        }
+        return;
+      }
+      return;
     }
     if (rooms.length > 0 && (!activeRoomId || !rooms.some((r) => r.roomId === activeRoomId))) {
       setActiveRoomId(rooms[0].roomId);
     }
   }, [
     rooms,
-    searchParams,
+    roomParam,
+    isRoomsLoading,
     activeRoomId,
     mobileChatConversationOpen,
     setActiveRoomId,
     setMobileChatConversationOpen,
   ]);
 
-  const activeRoom = useMemo(
-    () => rooms.find((r) => r.roomId === activeRoomId) || rooms[0] || null,
-    [rooms, activeRoomId]
-  );
+  const activeRoom = useMemo(() => {
+    if (roomParam) {
+      const normParam = roomParam.toUpperCase();
+      const normClassParam = normParam.replace(/^CLASS:/, '');
+      return (
+        rooms.find(
+          (r) =>
+            String(r.roomId || '').trim().toUpperCase() === normParam ||
+            String(r.classCode || '').trim().toUpperCase() === normClassParam
+        ) || null
+      );
+    }
+    return rooms.find((r) => r.roomId === activeRoomId) || rooms[0] || null;
+  }, [rooms, activeRoomId, roomParam]);
 
   const resolvedRoomId = activeRoom?.roomId || null;
 
@@ -230,13 +265,20 @@ export const ChatLayout: React.FC = () => {
               />
             </>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center bg-[#F3EFEA] p-8 text-center">
+            <div
+              data-testid={roomParam ? 'chat-room-unavailable-notice' : 'chat-room-empty-state'}
+              className="flex flex-1 flex-col items-center justify-center bg-[#F3EFEA] p-8 text-center"
+            >
               <MessageSquareOff className="h-10 w-10 text-stone-400" />
               <h3 className="mt-3 font-display text-base font-bold text-stone-800">
-                Chưa chọn phòng trao đổi lớp học
+                {roomParam && !isRoomsLoading
+                  ? `Nhóm lớp "${roomParam.replace(/^class:/i, '')}" không còn hoạt động hoặc bạn không có quyền truy cập`
+                  : 'Chưa chọn phòng trao đổi lớp học'}
               </h3>
               <p className="mt-1 max-w-sm text-xs text-stone-500">
-                Vui lòng chọn một lớp học hoặc kênh hỗ trợ ở danh sách bên trái để bắt đầu nhắn tin.
+                {roomParam && !isRoomsLoading
+                  ? 'Lớp học có thể đã được lưu trữ hoặc tài khoản hiện tại không thuộc danh sách thành viên lớp.'
+                  : 'Vui lòng chọn một lớp học hoặc kênh hỗ trợ ở danh sách bên trái để bắt đầu nhắn tin.'}
               </p>
             </div>
           )}

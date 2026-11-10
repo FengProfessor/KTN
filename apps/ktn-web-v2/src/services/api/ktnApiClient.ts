@@ -428,17 +428,25 @@ export const ktnApi = {
 
   async getClasses(): Promise<KtnClassItem[]> {
     const res = await ktnRequest<{ ok: boolean; classes: KtnClassItem[] }>('/api/ktn/classes');
-    return Array.isArray(res.classes) ? res.classes : [];
+    return (Array.isArray(res.classes) ? res.classes : []).filter((c) => c.active !== false);
   },
 
   async saveClass(payload: {
     id: string;
+    classCode?: string;
     name: string;
+    mode?: 'create' | 'update';
+    isNew?: boolean;
+    clientRequestId?: string;
     teacher_code?: string;
+    teacherCode?: string;
     teacher_email?: string;
+    teacherEmail?: string;
     schedule?: string;
     total_lessons?: number;
+    totalLessons?: number;
     current_lesson?: number;
+    currentLesson?: number;
     active?: boolean;
     scheduleConfig?: Partial<ClassScheduleConfig> & {
       daysOfWeek?: number[];
@@ -448,16 +456,128 @@ export const ktnApi = {
       effectiveFrom?: string;
       effectiveUntil?: string | null;
       mode?: 'weekly' | 'custom_sessions';
+      scheduleMode?: 'weekly' | 'custom_sessions';
       customSessions?: CustomClassSession[];
       exceptions?: ClassScheduleException[];
       meetingUrl?: string;
       status?: 'confirmed' | 'unconfirmed' | 'paused';
+      notifyMembers?: boolean;
     };
-  }): Promise<{ ok: boolean; classItem: KtnClassItem; scheduleConfig?: ClassScheduleConfig | null }> {
+  }): Promise<{
+    ok: boolean;
+    classItem: KtnClassItem;
+    roomId?: string;
+    chatRoom?: Record<string, unknown>;
+    scheduleConfig?: ClassScheduleConfig | null;
+    idempotentReplay?: boolean;
+    message?: string;
+  }> {
+    const cleanCode = String(payload.id || payload.classCode || '')
+      .trim()
+      .toUpperCase();
     return ktnRequest('/api/ktn/classes', {
       method: 'POST',
-      body: JSON.stringify(payload)
+      headers: payload.clientRequestId
+        ? { 'Idempotency-Key': payload.clientRequestId }
+        : undefined,
+      body: JSON.stringify({
+        ...payload,
+        id: cleanCode,
+        classCode: cleanCode,
+      })
     });
+  },
+
+  async createClass(payload: {
+    id?: string;
+    classCode?: string;
+    name: string;
+    clientRequestId?: string;
+    teacher_code?: string;
+    teacherCode?: string;
+    teacher_email?: string;
+    teacherEmail?: string;
+    schedule?: string;
+    total_lessons?: number;
+    totalLessons?: number;
+    scheduleConfig?: Partial<ClassScheduleConfig> & {
+      daysOfWeek?: number[];
+      startTime?: string;
+      endTime?: string;
+      timezone?: string;
+      effectiveFrom?: string;
+      effectiveUntil?: string | null;
+      mode?: 'weekly' | 'custom_sessions';
+      scheduleMode?: 'weekly' | 'custom_sessions';
+      customSessions?: CustomClassSession[];
+      exceptions?: ClassScheduleException[];
+      meetingUrl?: string;
+      status?: 'confirmed' | 'unconfirmed' | 'paused';
+      notifyMembers?: boolean;
+    };
+  }) {
+    const cleanCode = String(payload.id || payload.classCode || '')
+      .trim()
+      .toUpperCase();
+    return this.saveClass({
+      ...payload,
+      id: cleanCode,
+      classCode: cleanCode,
+      mode: 'create',
+      isNew: true,
+    });
+  },
+
+  async deleteClass(
+    classCodeOrPayload:
+      | string
+      | {
+          id?: string;
+          classCode?: string;
+          confirmClassCode?: string;
+          reason?: string;
+        }
+  ): Promise<{
+    ok: boolean;
+    deletedClassId?: string;
+    classCode?: string;
+    active?: boolean;
+    studentCount?: number;
+    message?: string;
+  }> {
+    const rawCode =
+      typeof classCodeOrPayload === 'string'
+        ? classCodeOrPayload
+        : classCodeOrPayload.classCode || classCodeOrPayload.id || '';
+    const cleanCode = String(rawCode || '').trim().toUpperCase();
+    if (!cleanCode) {
+      throw new KtnApiError({
+        message: 'Thiếu mã lớp cần xóa.',
+        status: 400,
+        code: 'MISSING_CLASS_CODE',
+      });
+    }
+    const confirmCode =
+      typeof classCodeOrPayload === 'object' && classCodeOrPayload.confirmClassCode
+        ? String(classCodeOrPayload.confirmClassCode).trim().toUpperCase()
+        : cleanCode;
+    const reason =
+      typeof classCodeOrPayload === 'object' && classCodeOrPayload.reason
+        ? String(classCodeOrPayload.reason).trim()
+        : undefined;
+    return ktnRequest(
+      `/api/ktn/classes?classCode=${encodeURIComponent(cleanCode)}&id=${encodeURIComponent(cleanCode)}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({
+          id: cleanCode,
+          classCode: cleanCode,
+          confirmClassCode: confirmCode,
+          confirmDelete: true,
+          ...(reason ? { reason } : {}),
+        }),
+      }
+    );
   },
 
   async getClassSchedule(classCode: string): Promise<{

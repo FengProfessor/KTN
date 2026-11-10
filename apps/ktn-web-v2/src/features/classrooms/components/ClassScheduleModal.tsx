@@ -69,6 +69,7 @@ export interface ClassScheduleModalProps {
   onClose: () => void;
   onSaveClassAndSchedule: (payload: {
     isCreateClass: boolean;
+    clientRequestId?: string;
     classCode: string;
     className: string;
     teacherCode?: string;
@@ -107,6 +108,11 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
   const isAdmin = role === 'admin';
   const isCreateMode = mode === 'create_class' && isAdmin;
 
+  // Idempotency seed per modal open session
+  const [clientRequestIdSeed, setClientRequestIdSeed] = useState<string>(
+    () => `CLS-REQ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
+
   // Class identity fields (for create_class or admin editing teacher)
   const [classCode, setClassCode] = useState('');
   const [className, setClassName] = useState('');
@@ -123,6 +129,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
   const [effectiveUntil, setEffectiveUntil] = useState<string>('');
   const [meetingUrl, setMeetingUrl] = useState<string>('');
   const [status, setStatus] = useState<'confirmed' | 'unconfirmed' | 'paused'>('confirmed');
+  const [statusManuallyChanged, setStatusManuallyChanged] = useState<boolean>(false);
   const [notifyMembers, setNotifyMembers] = useState<boolean>(true);
 
   // Custom sessions (when scheduleMode === 'custom_sessions')
@@ -139,14 +146,40 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
   const [formError, setFormError] = useState<string>('');
 
+  const selectableTeachers = useMemo(() => {
+    const currentEmailNorm = (selectedTeacherEmail || classItem?.teacher_email || '')
+      .trim()
+      .toLowerCase();
+    return teachers.filter((t) => {
+      if ((t.email || '').trim().toLowerCase() === currentEmailNorm && currentEmailNorm) {
+        return true;
+      }
+      if (t.active === false) return false;
+      const st = String(t.status || '').toLowerCase();
+      if (st === 'locked' || st === 'suspended' || st === 'inactive') return false;
+      return true;
+    });
+  }, [teachers, selectedTeacherEmail, classItem?.teacher_email]);
+
   useEffect(() => {
     if (!open) return;
     setFormError('');
+    setStatusManuallyChanged(false);
+    setClientRequestIdSeed(
+      `CLS-REQ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    );
 
     if (isCreateMode || !classItem) {
+      const firstActiveTeacher = teachers.find(
+        (t) =>
+          t.active !== false &&
+          t.status !== 'locked' &&
+          t.status !== 'suspended' &&
+          t.status !== 'inactive'
+      );
       setClassCode('');
       setClassName('');
-      setSelectedTeacherEmail(teachers[0]?.email || '');
+      setSelectedTeacherEmail(firstActiveTeacher?.email || '');
       setTotalLessons(25);
       setScheduleMode('weekly');
       setDaysOfWeek([]);
@@ -191,7 +224,11 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       setEffectiveFrom(todayStr);
       setEffectiveUntil('');
       setMeetingUrl('');
-      setStatus('confirmed');
+      setStatus(
+        cfg?.status === 'paused' || classItem.scheduleStatus === 'paused'
+          ? 'paused'
+          : 'unconfirmed'
+      );
       setCustomSessions([]);
       setExceptions([]);
     }
@@ -199,11 +236,21 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
   }, [open, isCreateMode, classItem?.id, classItem?.scheduleConfig?.updatedAt, todayStr]);
 
   const toggleDayOfWeek = (day: number) => {
-    setDaysOfWeek((prev) =>
-      prev.includes(day)
+    setDaysOfWeek((prev) => {
+      const next = prev.includes(day)
         ? prev.filter((d) => d !== day)
-        : [...prev, day].sort((a, b) => (DAY_SORT_ORDER[a] || 9) - (DAY_SORT_ORDER[b] || 9))
-    );
+        : [...prev, day].sort((a, b) => (DAY_SORT_ORDER[a] || 9) - (DAY_SORT_ORDER[b] || 9));
+      if (!statusManuallyChanged) {
+        if (next.length > 0) {
+          if (!startTime) setStartTime('19:30');
+          if (!endTime) setEndTime('20:30');
+          setStatus('confirmed');
+        } else {
+          setStatus('unconfirmed');
+        }
+      }
+      return next;
+    });
   };
 
   const handleApplyLegacySuggestion = () => {
@@ -228,6 +275,9 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
         title: `Buổi học ${prev.length + 1}`,
       },
     ]);
+    if (isCreateMode && !statusManuallyChanged) {
+      setStatus('confirmed');
+    }
   };
 
   const handleAddException = () => {
@@ -389,19 +439,35 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       return;
     }
 
-    const matchedTeacher = teachers.find(
-      (t) =>
-        t.email.toLowerCase() === selectedTeacherEmail.toLowerCase() ||
-        t.code === selectedTeacherEmail
-    );
+    const cleanSelectedTeacher = selectedTeacherEmail.trim();
+    const matchedTeacher = cleanSelectedTeacher
+      ? teachers.find(
+          (t) =>
+            (t.email || '').trim().toLowerCase() === cleanSelectedTeacher.toLowerCase() ||
+            (t.code || '').trim() === cleanSelectedTeacher
+        )
+      : undefined;
+
+    const resolvedSubmitTeacherCode = isAdmin
+      ? cleanSelectedTeacher
+        ? matchedTeacher?.code || ''
+        : ''
+      : matchedTeacher?.code || classItem?.teacher_code;
+
+    const resolvedSubmitTeacherEmail = isAdmin
+      ? cleanSelectedTeacher
+        ? matchedTeacher?.email || cleanSelectedTeacher
+        : ''
+      : matchedTeacher?.email || cleanSelectedTeacher || classItem?.teacher_email;
 
     try {
       await onSaveClassAndSchedule({
         isCreateClass: isCreateMode,
+        clientRequestId: `${clientRequestIdSeed}:${cleanCode}`,
         classCode: cleanCode,
         className: (className || `Lớp ${cleanCode}`).trim(),
-        teacherCode: matchedTeacher?.code || classItem?.teacher_code,
-        teacherEmail: matchedTeacher?.email || selectedTeacherEmail || classItem?.teacher_email,
+        teacherCode: resolvedSubmitTeacherCode,
+        teacherEmail: resolvedSubmitTeacherEmail,
         totalLessons,
         schedulePayload: {
           classCode: cleanCode,
@@ -550,7 +616,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                     className="w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-900"
                   >
                     <option value="">-- Chọn giáo viên phụ trách --</option>
-                    {teachers.map((t) => (
+                    {selectableTeachers.map((t) => (
                       <option key={t.code || t.email} value={t.email}>
                         {t.name} ({t.email})
                       </option>
@@ -587,9 +653,10 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                 <select
                   data-testid="schedule-status-select"
                   value={status}
-                  onChange={(e) =>
-                    setStatus(e.target.value as 'confirmed' | 'unconfirmed' | 'paused')
-                  }
+                  onChange={(e) => {
+                    setStatusManuallyChanged(true);
+                    setStatus(e.target.value as 'confirmed' | 'unconfirmed' | 'paused');
+                  }}
                   className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-800"
                 >
                   <option value="confirmed">Đã xác nhận lịch chính thức</option>
@@ -652,11 +719,20 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                       data-testid="schedule-start-time-input"
                       value={startTime}
                       onChange={(e) => {
-                        setStartTime(e.target.value);
-                        if (!endTime && /^\d{2}:\d{2}$/.test(e.target.value)) {
-                          const [hh, mm] = e.target.value.split(':').map(Number);
+                        const val = e.target.value;
+                        setStartTime(val);
+                        if (!endTime && /^\d{2}:\d{2}$/.test(val)) {
+                          const [hh, mm] = val.split(':').map(Number);
                           const nextH = String((hh + 1) % 24).padStart(2, '0');
                           setEndTime(`${nextH}:${String(mm).padStart(2, '0')}`);
+                        }
+                        if (
+                          isCreateMode &&
+                          !statusManuallyChanged &&
+                          daysOfWeek.length > 0 &&
+                          /^\d{2}:\d{2}$/.test(val)
+                        ) {
+                          setStatus('confirmed');
                         }
                       }}
                       className="w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-900"
@@ -1051,7 +1127,13 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
               className="inline-flex items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900 disabled:opacity-50"
             >
               <CheckCircle2 className="h-4 w-4" />
-              <span>{isSubmitting ? 'Đang lưu...' : 'Lưu lịch học'}</span>
+              <span>
+                {isSubmitting
+                  ? 'Đang lưu...'
+                  : isCreateMode
+                  ? 'Tạo lớp & Lưu lịch học'
+                  : 'Lưu lịch học'}
+              </span>
             </button>
           </div>
         </form>

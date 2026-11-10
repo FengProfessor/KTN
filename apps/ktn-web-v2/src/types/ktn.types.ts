@@ -282,10 +282,16 @@ export interface KtnHomework {
 }
 
 export type NotificationType =
+  | 'class_created'
+  | 'class_joined'
+  | 'class_teacher_changed'
   | 'homework_graded'
   | 'homework_submitted'
   | 'homework_assigned'
   | 'chat_message'
+  | 'chat_group_message'
+  | 'chat_private_message'
+  | 'chat_course_message'
   | 'class_reminder'
   | 'schedule_changed'
   | 'session_cancelled'
@@ -293,13 +299,17 @@ export type NotificationType =
   | 'class_announcement'
   | 'announcement_pinned'
   | 'order_pending'
+  | 'forum_question'
   | 'forum_question_created'
+  | 'forum_answer'
   | 'forum_answer_posted'
   | 'forum_answer_accepted'
+  | 'course_request_pending'
   | 'course_request_reviewed';
 
 export interface KtnNotification {
   id: string;
+  eventId?: string;
   type: NotificationType;
   classCode?: string;
   roomId?: string;
@@ -309,7 +319,9 @@ export interface KtnNotification {
   unitId?: string;
   questionId?: string;
   lessonNum?: number;
+  sessionNum?: number;
   sessionDate?: string;
+  teacherName?: string;
   title: string;
   body: string;
   actionUrl: string;

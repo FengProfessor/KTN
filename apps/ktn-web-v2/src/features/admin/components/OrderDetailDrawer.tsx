@@ -1228,11 +1228,13 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-bold text-stone-800"
                   >
                     <option value="">— Không đổi / Chưa xếp lớp trực tiếp —</option>
-                    {classesList.map((cls) => (
-                      <option key={cls.id} value={cls.id}>
-                        {cls.id} · {cls.name}
-                      </option>
-                    ))}
+                    {classesList
+                      .filter((cls) => cls.active !== false)
+                      .map((cls) => (
+                        <option key={cls.id} value={cls.id}>
+                          {cls.id} · {cls.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
               )}

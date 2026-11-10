@@ -459,6 +459,401 @@ async function run() {
     `admin=${adminSearchRbac.status}, unassignedCount=${adminUnassignedClass.data?.totalCount}, onlineOnlyCount=${adminOnlineOnlyCase.data?.totalCount}, teacherOwn=${teacherOwnClass.status} (internal_note=${teacherFirstItem.internal_note}), teacherOther=${teacherOtherClass.status}, student=${studentForbidden.status}`
   );
 
+  // 9b. Execute & Verify Master Upgrade Delta Migration (20261109_ktn_master_upgrade.sql) — B1/B2/B3/B4 Gate
+  // Seed pre-upgrade legacy messages INCLUDING duplicate retry messages (same room_id after backfill + case-insensitive sender_email + client_message_id)
+  await db.exec(`
+    ALTER TABLE public.ktn_messages
+      ADD COLUMN IF NOT EXISTS client_message_id TEXT;
+
+    INSERT INTO public.ktn_messages (id, room_id, class_code, sender_email, sender_name, sender_role, content, client_message_id, created_at)
+    VALUES
+      ('MSG-LEGACY-001', '', 'YCT2-04', 'linh.lam@khongtunhi.com', 'Cô Lâm Vũ Mỹ Linh', 'teacher', 'Thông báo bài tập buổi 3 trước khi nâng cấp', 'legacy-dup-cmsg-1', NOW() - INTERVAL '10 minutes'),
+      ('MSG-LEGACY-002', '   ', 'YCT2-04', 'LINH.LAM@KHONGTUNHI.COM', 'Cô Lâm Vũ Mỹ Linh', 'teacher', 'Thông báo bài tập buổi 3 trước khi nâng cấp (retry dup)', 'legacy-dup-cmsg-1', NOW() - INTERVAL '9 minutes');
+  `);
+
+  // Simulate legacy/dirty account_status values in ktn_students prior to master upgrade constraint
+  await db.exec(`
+    ALTER TABLE public.ktn_students DROP CONSTRAINT IF EXISTS ktn_students_account_status_check;
+    UPDATE public.ktn_students SET account_status = 'verified' WHERE email = 'minhkhang@khongtunhi.com';
+    UPDATE public.ktn_students SET account_status = '  LOCKED ' WHERE email = 'baochau@khongtunhi.com';
+    UPDATE public.ktn_students SET account_status = 'legacy_unknown_state' WHERE email = 'taphong2002vip@gmail.com';
+  `);
+
+  // Simulate pre-fix table without 'claimed' status to prove delta migration upgrades existing constraint idempotently
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS public.ktn_forum_questions (
+      id TEXT PRIMARY KEY,
+      course_id TEXT NOT NULL,
+      unit_id TEXT NOT NULL,
+      lesson_title_snapshot TEXT NOT NULL DEFAULT '',
+      student_id TEXT NOT NULL,
+      student_email TEXT NOT NULL DEFAULT '',
+      student_name TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      video_timestamp_seconds INTEGER,
+      attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'answered', 'resolved', 'hidden')),
+      claimed_by_teacher_id TEXT,
+      claimed_by_teacher_email TEXT,
+      claimed_by_teacher_name TEXT,
+      claimed_at TIMESTAMPTZ,
+      assigned_teacher_id TEXT,
+      answer_count INTEGER NOT NULL DEFAULT 0,
+      helpful_count INTEGER NOT NULL DEFAULT 0,
+      first_answered_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  const masterUpgradeSql = fs.readFileSync(
+    path.join(ROOT_DIR, 'supabase', 'migrations', '20261109_ktn_master_upgrade.sql'),
+    'utf8'
+  );
+  // Run #1 (applies delta migration over base + v3 + legacy forum table + dirty/duplicate rows)
+  await db.exec(masterUpgradeSql);
+  // Run #2 (verifies full idempotency on second execution)
+  await db.exec(masterUpgradeSql);
+
+  const legacyMsgAfterUpgrade = await db.query(`
+    SELECT id, class_code, room_id, content
+    FROM public.ktn_messages
+    WHERE client_message_id = 'legacy-dup-cmsg-1'
+  `);
+  const normalizedStatuses = (
+    await db.query(`
+      SELECT email, account_status
+      FROM public.ktn_students
+      WHERE email IN ('minhkhang@khongtunhi.com', 'baochau@khongtunhi.com', 'taphong2002vip@gmail.com')
+    `)
+  ).rows.reduce((acc, row) => ({ ...acc, [row.email]: row.account_status }), {});
+  // Restore seed account_status values after verifying dirty normalization
+  await db.exec(`
+    UPDATE public.ktn_students SET account_status = 'ready_to_login'
+    WHERE email IN ('minhkhang@khongtunhi.com', 'baochau@khongtunhi.com', 'taphong2002vip@gmail.com');
+  `);
+
+  const stuCountAfterMasterUpgrade = (await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_students`)).rows[0].cnt;
+  const attCountAfterMasterUpgrade = (await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_attendance`)).rows[0].cnt;
+
+  record(
+    'PG-09-MASTER-UPGRADE-MIGRATION-AND-IDEMPOTENCY',
+    '20261109_ktn_master_upgrade.sql executes cleanly twice over supabase_schema.sql + supabase_migration_v3.sql, deduplicates historical retry messages, normalizes dirty account_status rows, backfills ktn_messages.room_id, and preserves all historical data',
+    legacyMsgAfterUpgrade.rows.length === 1 &&
+      legacyMsgAfterUpgrade.rows[0].id === 'MSG-LEGACY-001' &&
+      legacyMsgAfterUpgrade.rows[0].room_id === 'YCT2-04' &&
+      normalizedStatuses['minhkhang@khongtunhi.com'] === 'active' &&
+      normalizedStatuses['baochau@khongtunhi.com'] === 'suspended' &&
+      normalizedStatuses['taphong2002vip@gmail.com'] === 'ready_to_login' &&
+      stuCountAfterMasterUpgrade === 5 &&
+      attCountAfterMasterUpgrade === 2,
+    `legacyDupRemaining=${legacyMsgAfterUpgrade.rows.length} (kept=${legacyMsgAfterUpgrade.rows[0]?.id}, roomId=${legacyMsgAfterUpgrade.rows[0]?.room_id}), normalizedStatuses=${JSON.stringify(normalizedStatuses)}, students=${stuCountAfterMasterUpgrade}, attendance=${attCountAfterMasterUpgrade}`
+  );
+
+  // Verify Chat Idempotency & Course Room Support (NULL class_code + duplicate client_message_id blocked)
+  await db.query(`
+    INSERT INTO public.ktn_messages (class_code, room_id, sender_email, sender_name, sender_role, content, client_message_id)
+    VALUES (NULL, 'course:6adadba969897b0002482ca5', 'hoangngan@khongtunhi.com', 'Nguyễn Hoàng Ngân', 'student', 'Em hỏi bài HSK1 ạ', 'cmsg-001')
+  `);
+  let duplicateChatBlocked = false;
+  try {
+    await db.query(`
+      INSERT INTO public.ktn_messages (class_code, room_id, sender_email, sender_name, sender_role, content, client_message_id)
+      VALUES (NULL, 'course:6adadba969897b0002482ca5', 'HOANGNGAN@KHONGTUNHI.COM', 'Nguyễn Hoàng Ngân', 'student', 'Em hỏi bài HSK1 ạ (retry)', 'cmsg-001')
+    `);
+  } catch (err) {
+    duplicateChatBlocked = err?.code === '23505' || String(err?.message || '').includes('idx_ktn_messages_idempotent_client_msg');
+  }
+  // Multiple messages without client_message_id must still be allowed
+  await db.query(`
+    INSERT INTO public.ktn_messages (class_code, room_id, sender_email, sender_name, sender_role, content, client_message_id)
+    VALUES
+      (NULL, 'course:6adadba969897b0002482ca5', 'hoangngan@khongtunhi.com', 'Nguyễn Hoàng Ngân', 'student', 'Tin không có client id 1', NULL),
+      (NULL, 'course:6adadba969897b0002482ca5', 'hoangngan@khongtunhi.com', 'Nguyễn Hoàng Ngân', 'student', 'Tin không có client id 2', '')
+  `);
+  const idempotentChatCount = await db.query(`
+    SELECT COUNT(*)::int AS cnt FROM public.ktn_messages
+    WHERE room_id = 'course:6adadba969897b0002482ca5' AND client_message_id = 'cmsg-001'
+  `);
+  record(
+    'PG-10-CHAT-IDEMPOTENCY-AND-COURSE-ROOMS',
+    'ktn_messages supports NULL class_code for course:* rooms and enforces case-insensitive (room_id, LOWER(sender_email), client_message_id) idempotency',
+    duplicateChatBlocked && idempotentChatCount.rows[0].cnt === 1,
+    `duplicateChatBlocked=${duplicateChatBlocked}, storedCount=${idempotentChatCount.rows[0].cnt}`
+  );
+
+  // Verify Forum Question Lifecycle: open -> claimed -> answered -> resolved -> hidden, plus invalid status rejection & FK cascade
+  await db.query(`
+    INSERT INTO public.ktn_forum_questions (
+      id, course_id, unit_id, lesson_num, lesson_title_snapshot,
+      student_id, student_email, student_name, title, content, status
+    ) VALUES (
+      'FQ-TEST-001', '6adadba969897b0002482ca5', 'unit-1', 1, 'Bài 1: Xin chào',
+      'KTN-2026-089', 'hoangngan@khongtunhi.com', 'Nguyễn Hoàng Ngân',
+      'Cách phát âm thanh 3', 'Thầy cô chỉ giúp con biến điệu thanh 3 ạ', 'open'
+    )
+  `);
+  const statusHistory = ['open'];
+  for (const nextStatus of ['claimed', 'answered', 'resolved', 'hidden']) {
+    const upd = await db.query(
+      `UPDATE public.ktn_forum_questions SET status = $1, updated_at = NOW() WHERE id = 'FQ-TEST-001' RETURNING status`,
+      [nextStatus]
+    );
+    statusHistory.push(upd.rows[0]?.status);
+  }
+  let invalidForumStatusBlocked = false;
+  try {
+    await db.query(`UPDATE public.ktn_forum_questions SET status = 'invalid_status' WHERE id = 'FQ-TEST-001'`);
+  } catch (err) {
+    invalidForumStatusBlocked = err?.code === '23514' || String(err?.message || '').includes('ktn_forum_questions_status_check');
+  }
+
+  // Test Forum Answers + Forum Follows upsert (including id column) + FK cascade
+  await db.query(`
+    INSERT INTO public.ktn_forum_answers (
+      id, question_id, author_id, author_email, author_name, author_role, teacher_id, content, video_key, video_verified
+    ) VALUES (
+      'FA-TEST-001', 'FQ-TEST-001', 'T-001', 'linh.lam@khongtunhi.com', 'Cô Lâm Vũ Mỹ Linh', 'teacher', 'T-001',
+      'Khi hai thanh 3 đi liền nhau, âm tiết đầu đọc thành thanh 2 con nhé!', 'forum-videos/FQ-TEST-001/FA-TEST-001.mp4', TRUE
+    )
+  `);
+  await db.query(`
+    INSERT INTO public.ktn_forum_follows (id, question_id, user_id, user_email, user_role, notify_mode, following)
+    VALUES ('FF-TEST-001', 'FQ-TEST-001', 'hoangngan@khongtunhi.com', 'hoangngan@khongtunhi.com', 'student', 'immediate', TRUE)
+    ON CONFLICT (question_id, user_id) DO UPDATE
+      SET notify_mode = EXCLUDED.notify_mode, following = EXCLUDED.following, updated_at = NOW()
+  `);
+  await db.query(`
+    INSERT INTO public.ktn_forum_follows (id, question_id, user_id, user_email, user_role, notify_mode, following)
+    VALUES ('FF-TEST-001', 'FQ-TEST-001', 'hoangngan@khongtunhi.com', 'hoangngan@khongtunhi.com', 'student', 'off', FALSE)
+    ON CONFLICT (question_id, user_id) DO UPDATE
+      SET notify_mode = EXCLUDED.notify_mode, following = EXCLUDED.following, updated_at = NOW()
+  `);
+  const followAfterToggle = (
+    await db.query(`SELECT id, notify_mode, following FROM public.ktn_forum_follows WHERE question_id = 'FQ-TEST-001'`)
+  ).rows;
+
+  await db.query(`DELETE FROM public.ktn_forum_questions WHERE id = 'FQ-TEST-001'`);
+  const orphanedAnswers = (await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_forum_answers WHERE question_id = 'FQ-TEST-001'`)).rows[0].cnt;
+  const orphanedFollows = (await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_forum_follows WHERE question_id = 'FQ-TEST-001'`)).rows[0].cnt;
+
+  record(
+    'PG-11-FORUM-CLAIMED-LIFECYCLE-AND-CASCADE',
+    'ktn_forum_questions supports open -> claimed -> answered -> resolved -> hidden transitions, rejects invalid statuses, supports follow/unfollow upsert, and cascades deletes to answers/follows',
+    statusHistory.join('->') === 'open->claimed->answered->resolved->hidden' &&
+      invalidForumStatusBlocked &&
+      followAfterToggle.length === 1 &&
+      followAfterToggle[0].id === 'FF-TEST-001' &&
+      followAfterToggle[0].notify_mode === 'off' &&
+      followAfterToggle[0].following === false &&
+      orphanedAnswers === 0 &&
+      orphanedFollows === 0,
+    `transitions=${statusHistory.join('->')}, invalidBlocked=${invalidForumStatusBlocked}, followAfterToggle=${JSON.stringify(followAfterToggle[0])}, orphaned=${orphanedAnswers}/${orphanedFollows}`
+  );
+
+  // Verify Teacher Contribution Events (all Worker event_type values + voter_email / created_by_email) + Course Grant Requests + Admin Audit Logs
+  const workerEventTypes = [
+    'substantive_answer',
+    'answer_created',
+    'marked_helpful',
+    'helpful_vote',
+    'accepted_answer',
+    'verified_guidance_video',
+    'video_attached',
+    'long_pending_resolved',
+    'admin_adjustment',
+    'admin_adjust',
+    'admin_revoke',
+  ];
+  for (let idx = 0; idx < workerEventTypes.length; idx += 1) {
+    const evtType = workerEventTypes[idx];
+    await db.query(
+      `INSERT INTO public.ktn_teacher_contribution_events (
+        event_id, teacher_id, teacher_email, teacher_name, question_id, answer_id, event_type, points_delta, reason, actor_email, voter_email, created_by_email
+      ) VALUES ($1, 'T-001', 'linh.lam@khongtunhi.com', 'Cô Lâm Vũ Mỹ Linh', 'FQ-TEST-001', 'FA-TEST-001', $2, $3, 'Test event', 'admin@khongtunhi.com', 'hoangngan@khongtunhi.com', 'admin@khongtunhi.com')`,
+      [`EVT-TEST-${idx + 1}`, evtType, evtType === 'admin_revoke' ? -5 : 10]
+    );
+  }
+  let invalidEventTypeBlocked = false;
+  try {
+    await db.query(`
+      INSERT INTO public.ktn_teacher_contribution_events (
+        event_id, teacher_id, teacher_email, event_type, points_delta
+      ) VALUES ('EVT-INVALID', 'T-001', 'linh.lam@khongtunhi.com', 'bogus_event_type', 5)
+    `);
+  } catch (err) {
+    invalidEventTypeBlocked = err?.code === '23514' || String(err?.message || '').includes('ktn_teacher_contribution_events_event_type_check');
+  }
+  const insertedEventsCount = (await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_teacher_contribution_events`)).rows[0].cnt;
+
+  await db.query(`
+    INSERT INTO public.ktn_course_grant_requests (
+      id, teacher_id, teacher_email, teacher_name, student_id, student_email, student_name,
+      class_code, course_id, course_title, reason, status, entitlement_result
+    ) VALUES (
+      'CGR-001', 'T-001', 'linh.lam@khongtunhi.com', 'Cô Lâm Vũ Mỹ Linh',
+      'KTN-2026-089', 'hoangngan@khongtunhi.com', 'Nguyễn Hoàng Ngân',
+      'YCT2-04', '6adadba969897b0002482ca5', 'HSK 1 Chuẩn', 'Học viên đăng ký combo', 'pending', NULL
+    )
+  `);
+  await db.query(`UPDATE public.ktn_course_grant_requests SET status = 'approved', reviewed_by_email = 'hocvienkhongtunhi123@gmail.com' WHERE id = 'CGR-001'`);
+  await db.query(`
+    INSERT INTO public.ktn_admin_audit_logs (id, actor_email, actor_role, action_type, target_type, target_id, reason)
+    VALUES ('AUD-001', 'hocvienkhongtunhi123@gmail.com', 'admin', 'student_suspend', 'student', 'hoangngan@khongtunhi.com', 'Kiểm tra audit log')
+  `);
+  const grantStatus = (await db.query(`SELECT status FROM public.ktn_course_grant_requests WHERE id = 'CGR-001'`)).rows[0]?.status;
+  const auditCount = (await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_admin_audit_logs WHERE id = 'AUD-001'`)).rows[0].cnt;
+
+  record(
+    'PG-12-TEACHER-CONTRIBUTION-EVENTS-AND-GRANT-REQUESTS',
+    'ktn_teacher_contribution_events accepts all 11 Worker event_type values (plus voter_email & created_by_email), rejects invalid event types, and supports ktn_course_grant_requests + ktn_admin_audit_logs',
+    insertedEventsCount === workerEventTypes.length &&
+      invalidEventTypeBlocked &&
+      grantStatus === 'approved' &&
+      auditCount === 1,
+    `events=${insertedEventsCount}/${workerEventTypes.length}, invalidBlocked=${invalidEventTypeBlocked}, grantStatus=${grantStatus}, auditCount=${auditCount}`
+  );
+
+  // Verify Student Lifecycle Alignment (B3), Onboarding Columns (parent_phone, notes), and parent_phone Search Indexing
+  const defaultCheck = await db.query(`
+    SELECT column_default
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ktn_students' AND column_name = 'account_status'
+  `);
+  const allowedLifecycleStatuses = [
+    'active',
+    'ready_to_login',
+    'pending_activation',
+    'suspended',
+    'archived',
+    'deleted',
+    'sync_error',
+    'awaiting_password_or_handoff',
+    'unassigned',
+  ];
+  const testedLifecycleStatuses = [];
+  for (const st of allowedLifecycleStatuses) {
+    const res = await db.query(
+      `UPDATE public.ktn_students
+       SET account_status = $1,
+           parent_phone = '0988777666',
+           notes = 'Ghi chú giáo viên chủ nhiệm',
+           created_by_teacher_email = 'linh.lam@khongtunhi.com'
+       WHERE email = 'hoangngan@khongtunhi.com'
+       RETURNING account_status, parent_phone, notes`,
+      [st]
+    );
+    testedLifecycleStatuses.push(res.rows[0]?.account_status);
+  }
+  // Restore Hoang Ngan to ready_to_login and verify parent_phone search via ktn_search_students
+  await db.query(`UPDATE public.ktn_students SET account_status = 'ready_to_login' WHERE email = 'hoangngan@khongtunhi.com'`);
+  const parentPhoneSearch = await db.query(`SELECT email, name FROM public.ktn_search_students('0988777666')`);
+
+  let invalidStudentStatusBlocked = false;
+  try {
+    await db.query(`UPDATE public.ktn_students SET account_status = 'invalid_lifecycle_state' WHERE email = 'hoangngan@khongtunhi.com'`);
+  } catch (err) {
+    invalidStudentStatusBlocked = err?.code === '23514' || String(err?.message || '').includes('ktn_students_account_status_check');
+  }
+
+  record(
+    'PG-13-STUDENT-LIFECYCLE-ALIGNMENT-AND-ONBOARDING-COLUMNS',
+    'ktn_students.account_status default is aligned to ready_to_login, supports all 9 lifecycle statuses, rejects invalid statuses, persists parent_phone + notes, and indexes parent_phone in ktn_search_students',
+    String(defaultCheck.rows[0]?.column_default || '').includes('ready_to_login') &&
+      testedLifecycleStatuses.length === allowedLifecycleStatuses.length &&
+      invalidStudentStatusBlocked &&
+      parentPhoneSearch.rows.length === 1 &&
+      parentPhoneSearch.rows[0].email === 'hoangngan@khongtunhi.com',
+    `default=${defaultCheck.rows[0]?.column_default}, statusesTested=${testedLifecycleStatuses.length}, invalidBlocked=${invalidStudentStatusBlocked}, parentPhoneMatch=${parentPhoneSearch.rows[0]?.email}`
+  );
+
+  // Verify RLS Isolation on all Master Upgrade tables
+  const masterTables = [
+    'ktn_forum_questions',
+    'ktn_forum_answers',
+    'ktn_forum_follows',
+    'ktn_teacher_contribution_events',
+    'ktn_course_grant_requests',
+    'ktn_admin_audit_logs',
+  ];
+  let anonBlockedAll = true;
+  let authBlockedAll = true;
+  for (const tbl of masterTables) {
+    try {
+      await db.exec(`BEGIN; SET LOCAL ROLE anon; SELECT COUNT(*) FROM public.${tbl}; COMMIT;`);
+      anonBlockedAll = false;
+    } catch {
+      await db.exec(`ROLLBACK;`);
+    }
+    try {
+      await db.exec(`BEGIN; SET LOCAL ROLE authenticated; SELECT COUNT(*) FROM public.${tbl}; COMMIT;`);
+      authBlockedAll = false;
+    } catch {
+      await db.exec(`ROLLBACK;`);
+    }
+  }
+  await db.exec(`BEGIN; SET LOCAL ROLE service_role;`);
+  const srEvents = await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_teacher_contribution_events`);
+  await db.exec(`COMMIT;`);
+
+  record(
+    'PG-14-MASTER-UPGRADE-RLS-ISOLATION',
+    'All 6 Master Upgrade tables enforce RLS: anon and authenticated roles are denied while service_role has full access',
+    anonBlockedAll && authBlockedAll && srEvents.rows[0].cnt === workerEventTypes.length,
+    `anonBlockedAll=${anonBlockedAll}, authBlockedAll=${authBlockedAll}, serviceRoleEvents=${srEvents.rows[0].cnt}`
+  );
+
+  // Verify Rollback Safety on an isolated PostgreSQL snapshot instance
+  const dbRollback = new PGlite({ extensions: { pg_trgm } });
+  await dbRollback.exec(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN BYPASSRLS; END IF;
+    END $$;
+    GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+  `);
+  await dbRollback.exec(baseSchemaSql);
+  await dbRollback.exec(`
+    INSERT INTO public.ktn_students (code, name, email, phone, parent_name, class_code, has_live_class, has_online_courses, online_courses)
+    VALUES
+      ('KTN-2026-003', 'Lê Bảo Châu', 'baochau@khongtunhi.com', '0903456789', 'Chị Hương', 'YCT3-02', true, true, '["65e7704a9ea90c00080d5195"]'::jsonb)
+    ON CONFLICT (email) DO NOTHING;
+
+    INSERT INTO public.ktn_attendance (class_code, lesson_num, student_code, status, teacher_note, recorded_by)
+    VALUES
+      ('YCT2-04', 3, 'KTN-2026-089', 'present', 'Đi học đúng giờ, thuộc từ vựng', 'linh.lam@khongtunhi.com'),
+      ('YCT2-04', 3, 'KTN-2026-102', 'absent_excused', 'Mẹ xin phép nghỉ ốm', 'linh.lam@khongtunhi.com'),
+      ('YCT3-02', 5, 'KTN-2026-003', 'late', 'Vào muộn 5 phút', 'thu.ha@khongtunhi.com')
+    ON CONFLICT (class_code, student_code, lesson_num) DO NOTHING;
+  `);
+  await dbRollback.exec(migrationV3Sql);
+  await dbRollback.exec(masterUpgradeSql);
+  await dbRollback.exec(`
+    DROP INDEX IF EXISTS public.idx_ktn_messages_idempotent_client_msg;
+    DROP INDEX IF EXISTS public.idx_ktn_messages_room_created_at;
+    DROP TABLE IF EXISTS public.ktn_admin_audit_logs;
+    DROP TABLE IF EXISTS public.ktn_course_grant_requests;
+    DROP TABLE IF EXISTS public.ktn_teacher_contribution_events;
+    DROP TABLE IF EXISTS public.ktn_forum_follows;
+    DROP TABLE IF EXISTS public.ktn_forum_answers;
+    DROP TABLE IF EXISTS public.ktn_forum_questions;
+  `);
+  const rbStudents = (await dbRollback.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_students`)).rows[0].cnt;
+  const rbAttendance = (await dbRollback.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_attendance`)).rows[0].cnt;
+  const rbForumTable = await dbRollback.query(`SELECT to_regclass('public.ktn_forum_questions') AS reg`);
+  await dbRollback.close();
+
+  record(
+    'PG-15-MASTER-UPGRADE-ROLLBACK-SAFETY',
+    'Rollback DDL cleanly removes delta tables/indexes on a test snapshot while preserving 100% of ktn_students and ktn_attendance data',
+    rbStudents === 5 && rbAttendance === 3 && rbForumTable.rows[0]?.reg === null,
+    `studentsAfterRollback=${rbStudents}, attendanceAfterRollback=${rbAttendance}, forumTable=${rbForumTable.rows[0]?.reg}`
+  );
+
   // 10. Real PostgreSQL 1,000 / 10,000 / 50,000 Benchmark with EXPLAIN (ANALYZE, BUFFERS)
   const benchmarkSummary = {};
 

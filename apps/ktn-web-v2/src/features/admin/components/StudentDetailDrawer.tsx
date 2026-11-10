@@ -66,7 +66,9 @@ export interface StudentDetailDrawerProps {
     email: string;
     action: 'suspend' | 'archive' | 'restore' | 'delete';
     reason?: string;
+    confirmDelete?: boolean;
   }) => Promise<unknown>;
+  hasExistingOrders?: boolean;
   onCopyEmail?: (email: string) => void;
 }
 
@@ -95,6 +97,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   onUpdateProfile,
   onResyncStudent,
   onManageLifecycle,
+  hasExistingOrders = false,
   onCopyEmail,
 }) => {
   // Section A: Profile edit state
@@ -122,6 +125,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   >(null);
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [deleteConfirmChecked, setDeleteConfirmChecked] = useState(false);
+  const [lastLifecycleFeedback, setLastLifecycleFeedback] = useState<{
+    action: 'suspend' | 'archive' | 'restore' | 'delete';
+    status: string;
+    upstreamVerified: boolean;
+    cognitoVerified: boolean;
+    izteachVerified: boolean;
+    preservedOrders: boolean;
+    reverseSyncBlocked: boolean;
+    summaryText: string;
+  } | null>(null);
 
   // Reset form states to neutral whenever student changes
   useEffect(() => {
@@ -142,6 +155,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     setPendingLifecycleAction(null);
     setLifecycleReason('');
     setDeleteConfirmChecked(false);
+    setLastLifecycleFeedback(null);
   }, [student?.email]);
 
   // Handle Escape key to close drawer
@@ -158,12 +172,18 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
           setShowUnassignConfirm(false);
           return;
         }
+        if (pendingLifecycleAction) {
+          setPendingLifecycleAction(null);
+          setLifecycleReason('');
+          setDeleteConfirmChecked(false);
+          return;
+        }
         onClose();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, coursePendingRevokeId, showUnassignConfirm, onClose]);
+  }, [open, coursePendingRevokeId, showUnassignConfirm, pendingLifecycleAction, onClose]);
 
   const entitledCourses = useMemo(
     () => resolveStudentOnlineCourses(student?.online_courses, catalogCourses),
@@ -226,10 +246,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     currentClassCode && classesList.length > 0 && !matchedClassItem
   );
 
-  // Derive 3-part Account & Sync statuses for Section D
+  // Derive 3-part Account & Sync statuses for Section D & Section E
   const syncBreakdown = useMemo(() => {
     if (!student) {
       return {
+        effectiveAccountStatus: 'pending_activation',
         accountLabel: 'Chờ kích hoạt',
         accountTone: 'amber' as const,
         coursesLabel: 'Đã đồng bộ',
@@ -241,7 +262,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     }
 
     const rawAcc = String(
-      student.accountStatus ||
+      lastLifecycleFeedback?.status ||
+        student.lifecycleStatus ||
+        student.accountStatus ||
         (student as unknown as Record<string, unknown>).account_status ||
         ''
     ).toLowerCase();
@@ -268,7 +291,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     if (rawAcc === 'deleted') {
       accountLabel = 'Đã xóa';
       accountTone = 'red';
-    } else if (rawAcc === 'suspended') {
+    } else if (rawAcc === 'suspended' || rawAcc === 'locked') {
       accountLabel = 'Tạm khóa';
       accountTone = 'amber';
     } else if (rawAcc === 'archived') {
@@ -325,6 +348,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
       classTone === 'amber';
 
     return {
+      effectiveAccountStatus: rawAcc || 'ready_to_login',
       accountLabel,
       accountTone,
       coursesLabel,
@@ -333,7 +357,13 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
       classTone,
       needsAttention,
     };
-  }, [student, entitledCourses.length, currentClassCode, isLegacyUnknownClassCode]);
+  }, [
+    student,
+    lastLifecycleFeedback?.status,
+    entitledCourses.length,
+    currentClassCode,
+    isLegacyUnknownClassCode,
+  ]);
 
   if (!open || !student) return null;
 
@@ -1270,18 +1300,20 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   className="flex-1 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
                 >
                   <option value="">— Chưa xếp lớp —</option>
-                  {classesList.map((cls) => (
-                    <option
-                      key={cls.id}
-                      value={cls.id}
-                      disabled={cls.id.toUpperCase() === currentClassCode.toUpperCase()}
-                    >
-                      {cls.id} · {cls.name}
-                      {cls.id.toUpperCase() === currentClassCode.toUpperCase()
-                        ? ' (Lớp hiện tại)'
-                        : ''}
-                    </option>
-                  ))}
+                  {classesList
+                    .filter((cls) => cls.active !== false)
+                    .map((cls) => (
+                      <option
+                        key={cls.id}
+                        value={cls.id}
+                        disabled={cls.id.toUpperCase() === currentClassCode.toUpperCase()}
+                      >
+                        {cls.id} · {cls.name}
+                        {cls.id.toUpperCase() === currentClassCode.toUpperCase()
+                          ? ' (Lớp hiện tại)'
+                          : ''}
+                      </option>
+                    ))}
                 </select>
 
                 <button
@@ -1453,8 +1485,92 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               </div>
 
               <p className="mt-1.5 text-[11px] text-stone-600">
-                Quản lý trạng thái đăng nhập, lưu trữ hồ sơ nghỉ học hoặc xóa vĩnh viễn có điều kiện (vẫn giữ nguyên dữ liệu đơn hàng tài chính <code className="font-mono">ktn_orders</code>).
+                Quản lý trạng thái đăng nhập, lưu trữ hồ sơ nghỉ học hoặc xóa có điều kiện. Hệ thống <strong>bảo toàn tuyệt đối dữ liệu đơn hàng (<code className="font-mono">ktn_orders</code>), thanh toán và lịch sử học tập</strong> theo chính sách lưu trữ.
               </p>
+
+              {/* Multi-System Sync Status (Supabase / Cognito / izTeach) */}
+              <div
+                data-testid="drawer-lifecycle-multisystem-status"
+                className="mt-2.5 grid grid-cols-1 gap-2 rounded-xl border border-stone-200 bg-stone-50/80 p-2.5 text-[11px] sm:grid-cols-3"
+              >
+                <div className="rounded-lg bg-white p-2 border border-stone-200/80">
+                  <span className="block text-[10px] font-bold uppercase text-stone-500">
+                    1. Supabase (ktn_students)
+                  </span>
+                  <span
+                    data-testid="drawer-lifecycle-supabase-state"
+                    className="mt-0.5 block font-bold text-stone-900"
+                  >
+                    {syncBreakdown.accountLabel} ({syncBreakdown.effectiveAccountStatus})
+                  </span>
+                </div>
+
+                <div className="rounded-lg bg-white p-2 border border-stone-200/80">
+                  <span className="block text-[10px] font-bold uppercase text-stone-500">
+                    2. Cognito (Auth Upstream)
+                  </span>
+                  <span
+                    data-testid="drawer-lifecycle-cognito-state"
+                    className="mt-0.5 block font-bold text-stone-800"
+                  >
+                    {student.cognito_user_id
+                      ? `Đã liên kết (${student.cognito_user_id.slice(0, 8)}…) · Chưa hỗ trợ xóa cứng tự động`
+                      : 'Chưa liên kết Cognito UUID'}
+                  </span>
+                </div>
+
+                <div className="rounded-lg bg-white p-2 border border-stone-200/80">
+                  <span className="block text-[10px] font-bold uppercase text-stone-500">
+                    3. izTeach (LMS Upstream)
+                  </span>
+                  <span
+                    data-testid="drawer-lifecycle-izteach-state"
+                    className="mt-0.5 block font-bold text-stone-800"
+                  >
+                    {student.izteach_student_id || entitledCourses.length > 0
+                      ? `Có dữ liệu (${entitledCourses.length} khóa) · Chỉ chặn đồng bộ ngược, chưa xóa cứng upstream`
+                      : 'Chưa phát sinh khóa học izTeach'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Honest Post-Lifecycle Multi-System Feedback Banner */}
+              {lastLifecycleFeedback && (
+                <div
+                  role="status"
+                  data-testid="drawer-lifecycle-result-banner"
+                  className={`mt-2.5 rounded-xl border p-3 text-xs ${
+                    lastLifecycleFeedback.action === 'delete' &&
+                    !lastLifecycleFeedback.upstreamVerified
+                      ? 'border-amber-300 bg-amber-50 text-amber-950'
+                      : 'border-emerald-300 bg-emerald-50 text-emerald-950'
+                  }`}
+                >
+                  <p className="font-bold">
+                    {lastLifecycleFeedback.action === 'delete' &&
+                    !lastLifecycleFeedback.upstreamVerified
+                      ? 'Cảnh báo: Mới xử lý cục bộ trên Supabase — Chưa xác minh xóa tài khoản gốc trên Cognito/izTeach'
+                      : 'Đã cập nhật trạng thái vòng đời học viên'}
+                  </p>
+                  <p className="mt-1 text-[11px]">{lastLifecycleFeedback.summaryText}</p>
+                  {lastLifecycleFeedback.action === 'delete' && (
+                    <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-[11px]">
+                      <li>
+                        <strong>Supabase:</strong> Đã chuyển trạng thái <code className="font-mono">deleted</code> & chặn đồng bộ ngược (<code className="font-mono">reverseSyncBlocked: {lastLifecycleFeedback.reverseSyncBlocked ? 'true' : 'false'}</code>).
+                      </li>
+                      <li>
+                        <strong>Cognito & izTeach:</strong>{' '}
+                        {lastLifecycleFeedback.upstreamVerified
+                          ? 'Đã xác minh vô hiệu hóa/xóa trên Cognito và izTeach.'
+                          : 'Chưa xác minh xóa/vô hiệu hóa tài khoản gốc trên Cognito/izTeach (hệ thống không báo xóa thành công toàn cục khi upstream chưa xác nhận).'}
+                      </li>
+                      <li>
+                        <strong>Chính sách lưu trữ:</strong> Dữ liệu đơn hàng (<code className="font-mono">ktn_orders</code>), thanh toán và lịch sử học tập được giữ nguyên (<code className="font-mono">preservedOrders: {lastLifecycleFeedback.preservedOrders ? 'true' : 'false'}</code>).
+                      </li>
+                    </ul>
+                  )}
+                </div>
+              )}
 
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <button
@@ -1532,23 +1648,39 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     {pendingLifecycleAction === 'restore' &&
                       `Xác nhận KHÔI PHỤC tài khoản ${student.name} (${student.email})`}
                     {pendingLifecycleAction === 'delete' &&
-                      `CẢNH BÁO: Xóa vĩnh viễn có điều kiện học viên ${student.name} (${student.email})`}
+                      `CẢNH BÁO P0: Xóa có điều kiện học viên ${student.name} (${student.email}) — Chưa xóa cứng Cognito/izTeach`}
                   </p>
 
                   {pendingLifecycleAction === 'delete' && (
-                    <div className="space-y-1 rounded-lg bg-white/90 p-2.5 text-[11px] text-red-900">
-                      <p>
-                        • Gỡ học viên khỏi lớp trực tiếp, thu hồi khóa học video, ẩn khỏi danh sách hoạt động và chặn đồng bộ ngược từ izTeach tự tạo lại tài khoản.
+                    <div
+                      data-testid="drawer-lifecycle-retention-warning"
+                      className="space-y-1.5 rounded-lg border border-red-200 bg-white/95 p-2.5 text-[11px] text-red-900"
+                    >
+                      <p className="font-bold text-red-950">
+                        Trạng thái đồng bộ xóa đa hệ thống & Chính sách lưu trữ bắt buộc:
                       </p>
                       <p>
-                        • Dữ liệu đơn hàng tài chính (<code className="font-mono">ktn_orders</code>) được <strong>giữ nguyên</strong> để đối soát kế toán.
+                        • <strong>Supabase (<code className="font-mono">ktn_students</code>):</strong> Gỡ bản ghi khỏi danh sách hoạt động và bật cờ chặn đồng bộ ngược (<code className="font-mono">reverseSyncBlocked</code>) để izTeach không tự tạo lại hồ sơ.
+                      </p>
+                      <p>
+                        • <strong>Cognito & izTeach Upstream (Chưa nghiệm thu xóa cứng):</strong> Worker hiện <strong>chưa chứng minh xóa/vô hiệu hóa hoàn toàn tài khoản gốc trên Cognito/izTeach</strong>. Hệ thống sẽ ghi nhận trạng thái xóa cục bộ có kiểm soát và không báo cáo gây hiểu lầm là đã xóa sạch trên mọi hệ thống.
+                      </p>
+                      <p>
+                        • <strong>Bảo toàn dữ liệu tài chính & học tập:</strong> Tài khoản đã có đơn hàng (<code className="font-mono">ktn_orders</code>), lịch sử thanh toán hoặc lịch sử nộp bài/học tập <strong>không được xóa trắng trái chính sách lưu trữ</strong>.
+                        {(hasExistingOrders || entitledCourses.length > 0 || Boolean(currentClassCode)) && (
+                          <span className="mt-1 block rounded bg-amber-100 px-2 py-1 font-bold text-amber-950">
+                            Lưu ý: Học viên này đang có dữ liệu liên kết ({entitledCourses.length} khóa học
+                            {currentClassCode ? `, lớp ${currentClassCode}` : ''}
+                            {hasExistingOrders ? ', có đơn hàng thanh toán' : ''}). Khuyến nghị dùng Tạm khóa hoặc Lưu trữ; không xóa thật trong giai đoạn Pilot.
+                          </span>
+                        )}
                       </p>
                     </div>
                   )}
 
                   <div>
                     <label className="block text-[11px] font-bold">
-                      Lý do thực hiện {pendingLifecycleAction === 'delete' ? '*' : ''}:
+                      Lý do thực hiện {pendingLifecycleAction === 'delete' ? '* (tối thiểu 3 ký tự)' : ''}:
                     </label>
                     <input
                       type="text"
@@ -1570,7 +1702,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                         className="mt-0.5 rounded border-red-400"
                       />
                       <span>
-                        Tôi xác nhận xóa tài khoản {student.email} và hiểu rằng thao tác này sẽ thu hồi toàn bộ quyền truy cập.
+                        Tôi hiểu rõ thao tác này chỉ xóa/ẩn hồ sơ hoạt động trên Supabase (chưa xóa cứng Cognito/izTeach) và giữ nguyên toàn bộ đơn hàng, thanh toán, lịch sử học tập của {student.email}.
                       </span>
                     </label>
                   )}
@@ -1593,16 +1725,57 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       disabled={
                         isManagingLifecycle ||
                         (pendingLifecycleAction === 'delete' &&
-                          (!deleteConfirmChecked || !lifecycleReason.trim()))
+                          (!deleteConfirmChecked || lifecycleReason.trim().length < 3))
                       }
                       onClick={async () => {
                         onClearError();
                         try {
-                          await onManageLifecycle({
+                          const actionToRun = pendingLifecycleAction;
+                          const res = (await onManageLifecycle({
                             email: student.email,
-                            action: pendingLifecycleAction,
+                            action: actionToRun,
                             reason: lifecycleReason.trim() || undefined,
+                            ...(actionToRun === 'delete' ? { confirmDelete: true } : {}),
+                          })) as Record<string, unknown> | undefined;
+
+                          const cognitoVerified = Boolean(
+                            res?.cognitoDeleted === true || res?.cognitoDisabled === true
+                          );
+                          const izteachVerified = Boolean(
+                            res?.izteachDeleted === true || res?.izteachRevoked === true
+                          );
+                          const upstreamVerified = Boolean(
+                            res?.upstreamVerified === true ||
+                              (cognitoVerified && izteachVerified)
+                          );
+                          const preservedOrders = res?.preservedOrders !== false;
+                          const reverseSyncBlocked = res?.reverseSyncBlocked !== false;
+
+                          const defaultTargetStatus =
+                            actionToRun === 'suspend'
+                              ? 'suspended'
+                              : actionToRun === 'archive'
+                              ? 'archived'
+                              : actionToRun === 'delete'
+                              ? 'deleted'
+                              : 'active';
+
+                          setLastLifecycleFeedback({
+                            action: actionToRun,
+                            status: String(res?.status || defaultTargetStatus).toLowerCase(),
+                            upstreamVerified,
+                            cognitoVerified,
+                            izteachVerified,
+                            preservedOrders,
+                            reverseSyncBlocked,
+                            summaryText:
+                              actionToRun === 'delete' && !upstreamVerified
+                                ? `Đã gỡ ${student.email} khỏi danh sách hoạt động Supabase và chặn đồng bộ ngược. Chưa xác minh xóa tài khoản gốc trên Cognito/izTeach; dữ liệu đơn hàng & lịch sử học tập vẫn được bảo toàn.`
+                                : typeof res?.message === 'string' && res.message
+                                ? res.message
+                                : `Đã cập nhật trạng thái (${actionToRun}) cho học viên ${student.email}.`,
                           });
+
                           setPendingLifecycleAction(null);
                           setLifecycleReason('');
                           setDeleteConfirmChecked(false);
@@ -1621,7 +1794,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       {isManagingLifecycle && (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       )}
-                      <span>Xác nhận thực hiện</span>
+                      <span>
+                        {pendingLifecycleAction === 'delete'
+                          ? 'Xác nhận xóa có điều kiện (Supabase)'
+                          : 'Xác nhận thực hiện'}
+                      </span>
                     </button>
                   </div>
                 </div>

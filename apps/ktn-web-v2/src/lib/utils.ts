@@ -112,8 +112,15 @@ export function generateClientMessageId(prefix = 'cmsg'): string {
 export const generateClientId = generateClientMessageId;
 
 export interface NotificationLinkInput {
+  id?: string;
+  eventId?: string;
+  title?: string;
+  body?: string;
   type?: string;
+  eventType?: string;
   actionUrl?: string;
+  action_url?: string;
+  url?: string;
   roomId?: string;
   classCode?: string;
   courseId?: string;
@@ -122,35 +129,200 @@ export interface NotificationLinkInput {
   lessonNum?: number;
   homeworkId?: string;
   sessionNum?: number;
+  role?: string;
+  userRole?: string;
 }
 
-export function resolveNotificationLink(notif?: NotificationLinkInput | null): string {
+export function isTeacherUnassignedNotification(
+  notif?: NotificationLinkInput | null
+): boolean {
+  if (!notif) return false;
+  const type = String(notif.type || notif.eventType || '').trim();
+  if (type !== 'class_teacher_changed') return false;
+  const idToken = String(notif.id || notif.eventId || '').toLowerCase();
+  const textToken = `${notif.title || ''} ${notif.body || ''}`;
+  return (
+    idToken.includes(':removed') ||
+    idToken.includes('_removed') ||
+    idToken.includes(':unassigned') ||
+    /chuyển sang giáo viên khác|không còn phụ trách|ngừng phụ trách|thu hồi phân công|đã chuyển quyền chủ nhiệm/i.test(
+      textToken
+    )
+  );
+}
+
+export function resolveNotificationLink(
+  notif?: NotificationLinkInput | null,
+  userRole?: string | null
+): string {
   if (!notif) return '/';
-  const type = String(notif.type || '').trim();
-  const actionUrl = String(notif.actionUrl || '').trim();
+  const type = String(notif.type || notif.eventType || '').trim();
+  const rawActionUrl = String(notif.actionUrl || notif.action_url || notif.url || '').trim();
+  const effectiveRole = String(userRole || notif.userRole || notif.role || '')
+    .trim()
+    .toLowerCase();
 
-  // 0. Valid external meeting room URL (for class_reminder with online room)
-  if (/^https:\/\//i.test(actionUrl)) {
-    return actionUrl;
+  let actionUrl = rawActionUrl;
+  // 0. Valid external meeting room URL (for class_reminder with online room like Zoom/Meet)
+  if (/^https?:\/\//i.test(rawActionUrl)) {
+    try {
+      const parsedUrl = new URL(rawActionUrl);
+      const host = parsedUrl.hostname.toLowerCase();
+      const isInternalPortal =
+        host === 'khongtunhi.com' ||
+        host === 'www.khongtunhi.com' ||
+        host === 'localhost' ||
+        host === '127.0.0.1';
+      if (!isInternalPortal) {
+        return rawActionUrl;
+      }
+      actionUrl = `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+    } catch {
+      return rawActionUrl;
+    }
   }
 
-  // 0.5. Teacher Forum Inbox or Course Request notification
-  if (
-    actionUrl.startsWith('/teacher/forum') ||
-    actionUrl.startsWith('#/teacher/forum') ||
-    actionUrl.includes('tab=forum_inbox')
-  ) {
-    const qIdx = actionUrl.indexOf('?');
-    const qs = qIdx >= 0 ? actionUrl.slice(qIdx) : '';
-    return `/teacher/forum${qs}`;
+  // Normalize /custom-page/so-lien-lac-test#/route or #/route into cleanRoute starting with '/'
+  let cleanRoute = actionUrl;
+  const hashRouteIdx = actionUrl.indexOf('#/');
+  if (hashRouteIdx >= 0) {
+    cleanRoute = actionUrl.slice(hashRouteIdx + 1);
+  } else if (actionUrl.startsWith('#')) {
+    const strippedHash = actionUrl.slice(1);
+    cleanRoute = strippedHash.startsWith('/') ? strippedHash : `/${strippedHash}`;
+  } else if (/^\/custom-page\/so-lien-lac(?:-test)?/i.test(actionUrl)) {
+    const rest = actionUrl.replace(/^\/custom-page\/so-lien-lac(?:-test)?/i, '');
+    cleanRoute = rest.startsWith('/') ? rest : rest ? `/${rest}` : '/';
   }
 
+  const normalizeClassCodeValue = (val?: string | null): string => {
+    const s = String(val || '')
+      .replace(/^class:/i, '')
+      .trim()
+      .toUpperCase();
+    return s;
+  };
+
+  // Extract common query parameters from cleanRoute or actionUrl
+  let queryCourseId = '';
+  let queryLesson = '';
+  let queryUnitId = '';
+  let queryTab = '';
+  let queryQuestionId = '';
+  let queryClass = '';
+  let queryRoom = '';
+  const qIndex = cleanRoute.indexOf('?');
+  const fallbackQIndex = actionUrl.indexOf('?');
+  const rawQueryString =
+    qIndex >= 0
+      ? cleanRoute.slice(qIndex + 1)
+      : fallbackQIndex >= 0
+      ? actionUrl.slice(fallbackQIndex + 1).split('#')[0]
+      : '';
+  if (rawQueryString) {
+    const sp = new URLSearchParams(rawQueryString);
+    queryCourseId = sp.get('courseId') || '';
+    queryLesson = sp.get('lesson') || '';
+    queryUnitId = sp.get('unitId') || '';
+    queryTab = sp.get('tab') || '';
+    queryQuestionId = sp.get('questionId') || '';
+    queryClass = sp.get('class') || sp.get('classCode') || '';
+    queryRoom = sp.get('room') || sp.get('roomId') || '';
+  }
+
+  const applyRoleSafety = (targetRoute: string): string => {
+    if (effectiveRole === 'student') {
+      if (targetRoute.startsWith('/admin') || targetRoute.startsWith('/teacher')) {
+        const fallbackRoom = String(notif.roomId || queryRoom || '').trim();
+        if (fallbackRoom) {
+          const normRoom = /^(?:class:|course:|student:)/i.test(fallbackRoom)
+            ? fallbackRoom
+            : `class:${fallbackRoom.toUpperCase()}`;
+          return `/chat?room=${encodeURIComponent(normRoom)}`;
+        }
+        const fallbackCls = normalizeClassCodeValue(notif.classCode || queryClass);
+        if (fallbackCls) {
+          return `/classrooms?class=${encodeURIComponent(fallbackCls)}`;
+        }
+        const fallbackCourse = String(notif.courseId || queryCourseId || '').trim();
+        if (fallbackCourse) {
+          return `/learning?courseId=${encodeURIComponent(fallbackCourse)}`;
+        }
+        return '/notifications';
+      }
+    } else if (effectiveRole === 'teacher') {
+      if (targetRoute.startsWith('/admin')) {
+        const fallbackCls = normalizeClassCodeValue(notif.classCode || queryClass);
+        return fallbackCls
+          ? `/teacher/classes?class=${encodeURIComponent(fallbackCls)}`
+          : '/teacher/classes';
+      }
+    }
+    return targetRoute;
+  };
+
+  // 0.5. Teacher Forum Inbox notification
   if (
-    type === 'course_request_reviewed' ||
-    actionUrl.startsWith('#/teacher?tab=students') ||
-    actionUrl.startsWith('/teacher?tab=students')
+    cleanRoute.startsWith('/teacher/forum') ||
+    actionUrl.includes('tab=forum_inbox') ||
+    (cleanRoute.startsWith('/teacher') && queryTab === 'forum') ||
+    (type === 'forum_question' && (cleanRoute.startsWith('/teacher') || effectiveRole === 'teacher'))
   ) {
-    return '/teacher/classes';
+    const qId = String(notif.questionId || queryQuestionId || '').trim();
+    const qs = qId
+      ? `?questionId=${encodeURIComponent(qId)}`
+      : qIndex >= 0
+      ? cleanRoute.slice(qIndex)
+      : '';
+    return applyRoleSafety(`/teacher/forum${qs}`);
+  }
+
+  // 0.6. Class Created / Teacher Reassigned / Course Request Reviewed / Teacher Classes
+  const isExplicitChatTarget =
+    cleanRoute.startsWith('/chat') ||
+    cleanRoute.startsWith('/messages') ||
+    cleanRoute.startsWith('/nhom-lop') ||
+    actionUrl.startsWith('#/messages') ||
+    actionUrl.startsWith('#/nhom-lop') ||
+    actionUrl.includes('view=groups');
+
+  if (
+    !isExplicitChatTarget &&
+    (type === 'class_created' ||
+      type === 'class_teacher_changed' ||
+      (type === 'schedule_changed' &&
+        effectiveRole === 'teacher' &&
+        !cleanRoute.startsWith('/classrooms')) ||
+      type === 'course_request_reviewed' ||
+      cleanRoute.startsWith('/teacher/classes') ||
+      (cleanRoute.startsWith('/teacher') && (queryTab === 'students' || queryTab === 'classes')))
+  ) {
+    if (isTeacherUnassignedNotification(notif)) {
+      return applyRoleSafety('/teacher/classes');
+    }
+    const cls = normalizeClassCodeValue(
+      notif.classCode ||
+        queryClass ||
+        (/^class:/i.test(String(notif.roomId || '')) ? notif.roomId : '')
+    );
+    if (cls && type !== 'course_request_reviewed') {
+      return applyRoleSafety(`/teacher/classes?class=${encodeURIComponent(cls)}`);
+    }
+    return applyRoleSafety('/teacher/classes');
+  }
+
+  // 0.7. Student Joined Class (class_joined) -> opens /classrooms?class=<CODE> unless actionUrl explicitly targets /chat
+  if (type === 'class_joined' && !isExplicitChatTarget) {
+    const lopJoinMatch = cleanRoute.match(/^\/lop\/([^/?#]+)/i);
+    const classroomJoinMatch = cleanRoute.match(/^\/classrooms\/([^/?#]+)/i);
+    const cls = normalizeClassCodeValue(
+      notif.classCode ||
+        queryClass ||
+        lopJoinMatch?.[1] ||
+        classroomJoinMatch?.[1] ||
+        (/^class:/i.test(String(notif.roomId || '')) ? notif.roomId : '')
+    );
+    return applyRoleSafety(cls ? `/classrooms?class=${encodeURIComponent(cls)}` : '/classrooms');
   }
 
   // 1. Teacher homework grading notification
@@ -160,46 +332,53 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
       const m = actionUrl.match(/[?&]hwId=([^&#]+)/);
       if (m?.[1]) hwId = decodeURIComponent(m[1]);
     }
-    return hwId ? `/teacher?hwId=${encodeURIComponent(hwId)}` : '/teacher';
+    return applyRoleSafety(hwId ? `/teacher?hwId=${encodeURIComponent(hwId)}` : '/teacher');
   }
 
   // 2. Admin order or teacher approval notification
-  if (actionUrl.startsWith('/admin/teachers') || actionUrl.startsWith('#/admin/teachers')) {
-    return '/admin/teachers';
+  if (cleanRoute.startsWith('/admin/teachers')) {
+    return applyRoleSafety('/admin/teachers');
   }
   if (
     type === 'order_pending' ||
+    type === 'course_request_pending' ||
     actionUrl.includes('view=orders') ||
+    cleanRoute.startsWith('/admin') ||
     actionUrl.includes('/admin')
   ) {
-    return '/admin';
+    return applyRoleSafety('/admin');
   }
 
   // 3. Chat message or pinned announcement notification (unless actionUrl explicitly points to a video course / learning page)
   const isCourseOrLearningAction =
+    cleanRoute.includes('/khoa/') ||
+    cleanRoute.includes('/learning') ||
     actionUrl.includes('/khoa/') ||
     actionUrl.includes('/learning') ||
-    actionUrl.includes('courseId=') ||
+    Boolean(queryCourseId) ||
+    type === 'forum_question' ||
     type === 'forum_question_created' ||
+    type === 'forum_answer' ||
     type === 'forum_answer_posted' ||
     type === 'forum_answer_accepted';
 
   if (
     !isCourseOrLearningAction &&
     (type === 'chat_message' ||
+      type === 'chat_group_message' ||
+      type === 'chat_private_message' ||
+      type === 'chat_course_message' ||
       type === 'announcement_pinned' ||
       type === 'class_announcement' ||
-      actionUrl.startsWith('/chat') ||
-      actionUrl.startsWith('#/nhom-lop') ||
-      actionUrl.includes('view=groups'))
+      isExplicitChatTarget)
   ) {
-    let room = String(notif.roomId || '').trim();
-    if (!room && actionUrl.includes('room=')) {
-      const m = actionUrl.match(/[?&]room=([^&#]+)/);
+    let room = String(notif.roomId || queryRoom || '').trim();
+    if (!room && /(?:[?&])(?:room|roomId)=([^&#]+)/.test(actionUrl)) {
+      const m = actionUrl.match(/(?:[?&])(?:room|roomId)=([^&#]+)/);
       if (m?.[1]) room = decodeURIComponent(m[1]);
     }
-    if (!room && notif.classCode) {
-      const rawCls = String(notif.classCode).trim();
+    if (!room && (notif.classCode || queryClass)) {
+      const rawCls = String(notif.classCode || queryClass).trim();
       room = /^(?:class:|course:|(?:direct:)?student:)/i.test(rawCls)
         ? rawCls.replace(/^direct:student:/i, 'student:')
         : `class:${rawCls.toUpperCase()}`;
@@ -207,61 +386,60 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
       room = room.replace(/^direct:student:/i, 'student:');
     } else if (room && !/^(?:class:|course:|student:)/i.test(room)) {
       room = `class:${room.toUpperCase()}`;
+    } else if (room && /^class:/i.test(room)) {
+      room = `class:${room.slice(6).trim().toUpperCase()}`;
     }
-    return room ? `/chat?room=${encodeURIComponent(room)}` : '/chat';
+    return applyRoleSafety(room ? `/chat?room=${encodeURIComponent(room)}` : '/chat');
   }
 
   // 4. Class schedule reminders, schedule changes, session cancellations, live classroom session / live class homework
-  let queryCourseId = '';
-  let queryLesson = '';
-  let queryUnitId = '';
-  let queryTab = '';
-  let queryQuestionId = '';
-  const qIndex = actionUrl.indexOf('?');
-  if (qIndex >= 0) {
-    const sp = new URLSearchParams(actionUrl.slice(qIndex + 1));
-    queryCourseId = sp.get('courseId') || '';
-    queryLesson = sp.get('lesson') || '';
-    queryUnitId = sp.get('unitId') || '';
-    queryTab = sp.get('tab') || '';
-    queryQuestionId = sp.get('questionId') || '';
-  }
-  const khoaMatch = actionUrl.match(/^#\/khoa\/([^/]+)(?:\/bai\/(\d+))?/i);
-  const learningMatch = actionUrl.match(/^\/learning\/([^/]+)\/lesson\/(\d+)/i);
+  const khoaMatch = cleanRoute.match(/^\/khoa\/([^/?#]+)(?:\/bai\/(\d+))?/i);
+  const learningMatch = cleanRoute.match(/^\/learning\/([^/?#]+)\/lesson\/(\d+)/i);
   const rawCourseId = String(
     notif.courseId || queryCourseId || khoaMatch?.[1] || learningMatch?.[1] || ''
   ).trim();
   const isLiveClassCourse = rawCourseId.toUpperCase().startsWith('CLASS_');
-  const lopMatch = actionUrl.match(/^#\/lop\/([^/]+)(?:\/buoi\/(\d+))?/i);
-  const classroomMatch = actionUrl.match(/^(?:#)?\/classrooms(?:\/([^/?#]+))?(?:\?(.*))?/i);
+  const lopMatch = cleanRoute.match(/^\/lop\/([^/?#]+)(?:\/buoi\/(\d+))?/i);
+  const classroomMatch = cleanRoute.match(/^\/classrooms(?:\/([^/?#]+))?(?:\?(.*))?/i);
+
+  const isOnlineVideoCourseHwAssigned =
+    type === 'homework_assigned' &&
+    Boolean(rawCourseId) &&
+    !isLiveClassCourse &&
+    !notif.classCode &&
+    !queryClass &&
+    !lopMatch &&
+    !classroomMatch;
 
   if (
-    type === 'class_reminder' ||
-    type === 'schedule_changed' ||
-    type === 'session_cancelled' ||
-    type === 'homework_assigned' ||
-    isLiveClassCourse ||
-    lopMatch ||
-    classroomMatch ||
-    actionUrl.startsWith('/classrooms') ||
-    actionUrl.startsWith('#/classrooms')
+    !isOnlineVideoCourseHwAssigned &&
+    (type === 'class_reminder' ||
+      type === 'schedule_changed' ||
+      type === 'session_cancelled' ||
+      type === 'homework_assigned' ||
+      type === 'class_joined' ||
+      isLiveClassCourse ||
+      lopMatch ||
+      classroomMatch ||
+      cleanRoute.startsWith('/classrooms'))
   ) {
-    let queryCls = '';
+    let queryCls = queryClass;
     let querySession = '';
     let queryExercise = '';
     if (classroomMatch?.[2]) {
       const sp = new URLSearchParams(classroomMatch[2]);
-      queryCls = sp.get('class') || '';
+      queryCls = sp.get('class') || sp.get('classCode') || queryCls;
       querySession = sp.get('session') || '';
       queryExercise = sp.get('exercise') || '';
     }
-    const cls =
+    const cls = normalizeClassCodeValue(
       (isLiveClassCourse ? rawCourseId.slice(6) : '') ||
-      notif.classCode ||
-      queryCls ||
-      lopMatch?.[1] ||
-      classroomMatch?.[1] ||
-      '';
+        notif.classCode ||
+        queryCls ||
+        lopMatch?.[1] ||
+        classroomMatch?.[1] ||
+        (/^class:/i.test(String(notif.roomId || '')) ? notif.roomId : '')
+    );
     const rawNum = Number(
       notif.sessionNum ||
         notif.lessonNum ||
@@ -276,16 +454,18 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
     const sessionNum = rawNum >= 100 ? Math.floor(rawNum / 100) : rawNum > 0 ? rawNum : 0;
     const exerciseNum = rawNum >= 100 ? rawNum : Number(queryExercise || 0);
     const params = new URLSearchParams();
-    if (cls) params.set('class', cls.toUpperCase());
+    if (cls) params.set('class', cls);
     if (sessionNum > 0) params.set('session', String(sessionNum));
     if (exerciseNum >= 100) params.set('exercise', String(exerciseNum));
     const qs = params.toString();
-    return qs ? `/classrooms?${qs}` : '/classrooms';
+    return applyRoleSafety(qs ? `/classrooms?${qs}` : '/classrooms');
   }
 
   // 5. Video course lesson / graded homework / course granted / lesson forum Q&A
   const isForumType =
+    type === 'forum_question' ||
     type === 'forum_question_created' ||
+    type === 'forum_answer' ||
     type === 'forum_answer_posted' ||
     type === 'forum_answer_accepted' ||
     queryTab === 'forum' ||
@@ -294,11 +474,11 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
   if (
     type === 'homework_graded' ||
     type === 'course_granted' ||
+    isOnlineVideoCourseHwAssigned ||
     isForumType ||
     khoaMatch ||
     learningMatch ||
-    actionUrl.startsWith('/learning') ||
-    actionUrl.startsWith('#/learning')
+    cleanRoute.startsWith('/learning')
   ) {
     const courseId = rawCourseId;
     const lessonNum =
@@ -310,15 +490,57 @@ export function resolveNotificationLink(notif?: NotificationLinkInput | null): s
     if (unitId) params.set('unitId', unitId);
     if (type !== 'course_granted') {
       params.set('lesson', String(lessonNum));
-      params.set('tab', isForumType ? 'forum' : (queryTab || 'homework'));
+      params.set('tab', isForumType ? 'forum' : queryTab || 'homework');
     }
     if (questionId) params.set('questionId', questionId);
     const qs = params.toString();
-    return qs ? `/learning?${qs}` : '/learning';
+    return applyRoleSafety(qs ? `/learning?${qs}` : '/learning');
   }
 
-  if (actionUrl.startsWith('/teacher')) return '/teacher';
+  if (cleanRoute.startsWith('/teacher')) {
+    return applyRoleSafety(cleanRoute);
+  }
   return '/notifications';
+}
+
+export function sanitizePostLoginRedirect(
+  rawRedirect?: string | null,
+  userRole?: string | null
+): string {
+  const raw = String(rawRedirect || '').trim();
+  if (!raw) return '/';
+  let cleaned = raw;
+  if (cleaned.includes('#/')) {
+    cleaned = cleaned.slice(cleaned.indexOf('#/') + 1);
+  } else if (cleaned.startsWith('#')) {
+    cleaned = cleaned.slice(1);
+  }
+  cleaned = cleaned.replace(/^\/custom-page\/so-lien-lac(?:-test)?/i, '');
+  if (!cleaned.startsWith('/') || cleaned.startsWith('//') || cleaned.startsWith('/login')) {
+    return '/';
+  }
+  if (cleaned === '/dashboard' || cleaned.startsWith('/dashboard?')) {
+    return '/';
+  }
+  if (
+    cleaned.startsWith('/lop/') ||
+    cleaned.startsWith('/khoa/') ||
+    cleaned.startsWith('/nhom-lop') ||
+    cleaned.startsWith('/messages') ||
+    cleaned.includes('view=groups') ||
+    cleaned.includes('view=grade') ||
+    cleaned.includes('view=orders')
+  ) {
+    cleaned = resolveNotificationLink({ actionUrl: `#${cleaned}` }, userRole);
+  }
+  const role = String(userRole || '').trim().toLowerCase();
+  if (role === 'student' && (cleaned.startsWith('/admin') || cleaned.startsWith('/teacher'))) {
+    return resolveNotificationLink({ actionUrl: cleaned }, 'student');
+  }
+  if (role === 'teacher' && cleaned.startsWith('/admin')) {
+    return resolveNotificationLink({ actionUrl: cleaned }, 'teacher');
+  }
+  return cleaned || '/';
 }
 
 export function resolveHomeworkLink(hw: {

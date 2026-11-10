@@ -37,10 +37,12 @@ export interface TeacherDetailDrawerProps {
     email: string;
     phone?: string;
     specialization?: string;
+    specialty?: string;
     bio?: string;
     notes?: string;
     active?: boolean;
     password?: string;
+    initialPassword?: string;
     assignedClasses: string[];
     assignedCourses: string[];
   }) => Promise<unknown>;
@@ -56,10 +58,12 @@ export interface TeacherDetailDrawerProps {
     email: string;
     phone?: string;
     specialization?: string;
+    specialty?: string;
     bio?: string;
     notes?: string;
     active?: boolean;
     password?: string;
+    initialPassword?: string;
     assignedClasses: string[];
     assignedCourses: string[];
   }) => Promise<unknown>;
@@ -106,7 +110,7 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
     if (!teacher) return;
     setName(teacher.name || '');
     setPhone(teacher.phone || '');
-    setSpecialization(teacher.specialization || '');
+    setSpecialization(teacher.specialization || teacher.specialty || '');
     setBio(teacher.bio || '');
     setNotes(teacher.notes || '');
     setAssignedClasses(
@@ -124,7 +128,95 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
 
   if (!isDrawerOpen || !teacher) return null;
 
-  const isActive = teacher.active !== false && teacher.status !== 'suspended';
+  const isActive =
+    teacher.active !== false &&
+    teacher.status !== 'suspended' &&
+    teacher.status !== 'locked' &&
+    teacher.status !== 'inactive';
+
+  // Strict 3-tier session metrics: NEVER fall back to scheduledSessionsCount for recorded or confirmed taught counts!
+  const scheduledSessionsCount =
+    teacher.scheduledSessionsCount ??
+    teacher.stats?.scheduledSessionsCount ??
+    0;
+  const recordedClassSessionsCount =
+    teacher.activitySessionsCount ??
+    teacher.recordedClassSessionsCount ??
+    0;
+  const confirmedTaughtSessionsCount =
+    teacher.confirmedSessionsCount ??
+    teacher.attendanceConfirmedSessionsCount ??
+    teacher.stats?.confirmedTaughtSessionsCount ??
+    0;
+  const isTeachingVerified =
+    confirmedTaughtSessionsCount > 0 &&
+    teacher.teachingVerificationStatus !== 'unverified' &&
+    teacher.stats?.unverifiedTeachingLog !== true;
+
+  const gradedHomeworksCount =
+    teacher.gradedHomeworksCount ??
+    teacher.stats?.submissionsReviewedCount ??
+    0;
+  const pendingHomeworksCount =
+    teacher.pendingHomeworksCount ??
+    teacher.stats?.pendingGradingCount ??
+    0;
+  const avgGradingHours =
+    teacher.avgGradingTurnaroundHours ??
+    teacher.stats?.avgGradingHours ??
+    null;
+
+  const monthlyContributionPoints = teacher.monthlyContributionPoints ?? 0;
+  const totalContributionPoints =
+    teacher.totalContributionPoints ??
+    teacher.stats?.totalContributionPoints ??
+    0;
+  const forumAnswersCount =
+    teacher.forumAnswersCount ??
+    teacher.stats?.forumAnswersCount ??
+    0;
+  const videoGuidesCount =
+    teacher.videoGuidesCount ??
+    teacher.forumVideoAnswersCount ??
+    teacher.stats?.videoAnswersCount ??
+    0;
+  const acceptedAnswersCount =
+    teacher.acceptedAnswersCount ??
+    teacher.forumAcceptedAnswersCount ??
+    teacher.stats?.acceptedAnswersCount ??
+    0;
+  const helpfulVotesCount = teacher.helpfulVotesCount ?? 0;
+
+  const assignedClassDetails = assignedClasses.map((clsId) => {
+    const matched = classesList.find(
+      (c) => c.id.toUpperCase() === String(clsId).toUpperCase()
+    );
+    const rawOfficial = String(matched?.officialScheduleText || '').trim();
+    const hasOfficialSchedule =
+      Boolean(rawOfficial) && rawOfficial !== 'Chưa có lịch học chính thức';
+    const rawFallback = String(
+      matched?.schedule || matched?.legacyScheduleText || ''
+    ).trim();
+    const hasFallbackSchedule =
+      Boolean(rawFallback) && rawFallback !== 'Chưa có lịch học chính thức';
+    const scheduleText = hasOfficialSchedule
+      ? rawOfficial
+      : hasFallbackSchedule
+      ? rawFallback
+      : 'Chưa xác nhận lịch giảng dạy chính thức';
+    const isScheduleConfirmed =
+      matched?.scheduleStatus === 'confirmed'
+        ? hasOfficialSchedule || hasFallbackSchedule
+        : !matched?.scheduleStatus && hasOfficialSchedule;
+    return {
+      id: clsId,
+      name: matched?.name || `Lớp ${clsId}`,
+      scheduleText,
+      isScheduleConfirmed,
+      currentLesson: matched?.current_lesson ?? 0,
+      totalLessons: matched?.total_lessons ?? 0,
+    };
+  });
 
   const toggleClass = (clsId: string) => {
     setAssignedClasses((prev) =>
@@ -141,20 +233,28 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
   const handleSave = async (overrideActive?: boolean, overridePassword?: string) => {
     const saveFn = onSaveTeacher || onUpdateTeacher;
     if (!saveFn) return;
-    await saveFn({
-      code: teacher.code,
-      name: name.trim() || teacher.name,
-      email: teacher.email,
-      phone: phone.trim(),
-      specialization: specialization.trim(),
-      bio: bio.trim(),
-      notes: notes.trim(),
-      active: overrideActive !== undefined ? overrideActive : isActive,
-      password: overridePassword?.trim() || undefined,
-      assignedClasses,
-      assignedCourses,
-    });
-    if (overridePassword) setNewPassword('');
+    const cleanSpecialty = specialization.trim();
+    const cleanPwd = overridePassword?.trim() || undefined;
+    try {
+      await saveFn({
+        code: teacher.code,
+        name: name.trim() || teacher.name,
+        email: teacher.email,
+        phone: phone.trim(),
+        specialization: cleanSpecialty,
+        specialty: cleanSpecialty,
+        bio: bio.trim(),
+        notes: notes.trim(),
+        active: overrideActive !== undefined ? overrideActive : isActive,
+        password: cleanPwd,
+        initialPassword: cleanPwd,
+        assignedClasses,
+        assignedCourses,
+      });
+      if (overridePassword) setNewPassword('');
+    } catch {
+      // Error is handled by caller toast/mutation handler
+    }
   };
 
   return (
@@ -353,9 +453,11 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                 </p>
 
                 <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {classesList.map((cls) => {
-                    const checked = assignedClasses.includes(cls.id);
-                    return (
+                  {classesList
+                    .filter((cls) => cls.active !== false)
+                    .map((cls) => {
+                      const checked = assignedClasses.includes(cls.id);
+                      return (
                       <label
                         key={cls.id}
                         className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2.5 text-xs ${
@@ -433,7 +535,7 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
             </div>
           )}
 
-          {/* TAB 3: DẠY HỌC (3-TIER TEACHING SESSION STATS) */}
+          {/* TAB 3: DẠY HỌC (3-TIER TEACHING SESSION STATS & SCHEDULE) */}
           {activeTab === 'teaching' && (
             <div
               data-testid="teacher-drawer-teaching-panel"
@@ -444,10 +546,13 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                   Thống kê buổi dạy thực tế (3 tầng đối chiếu)
                 </h3>
 
-                {teacher.teachingVerificationStatus === 'verified' ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-900">
+                {isTeachingVerified ? (
+                  <span
+                    data-testid="teacher-verified-sessions-badge"
+                    className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-900"
+                  >
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Đã xác minh qua điểm danh
+                    Đã xác minh qua điểm danh ({confirmedTaughtSessionsCount} buổi)
                   </span>
                 ) : (
                   <span
@@ -455,42 +560,51 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                     className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-900"
                   >
                     <AlertTriangle className="h-3.5 w-3.5" />
-                    Chưa xác minh số buổi thực dạy
+                    Chưa xác minh số buổi thực dạy (Buổi có lịch ≠ Buổi thực dạy)
                   </span>
                 )}
               </div>
 
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                <div
+                  data-testid="teacher-drawer-scheduled-sessions"
+                  className="rounded-xl border border-stone-200 bg-stone-50 p-3"
+                >
                   <p className="text-[11px] font-semibold text-stone-500">
-                    1. Số buổi theo lịch
+                    1. Số buổi theo lịch (Dự kiến)
                   </p>
                   <p className="mt-1 font-display text-lg font-extrabold text-stone-900">
-                    {teacher.scheduledSessionsCount ?? 0} buổi
+                    {scheduledSessionsCount} buổi
                   </p>
                   <p className="mt-0.5 text-[10px] text-stone-500">
-                    Tổng tiến độ buổi theo lịch các lớp phụ trách
+                    Tổng buổi dự kiến theo lịch lớp phụ trách (không tự tính là đã dạy)
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                <div
+                  data-testid="teacher-drawer-recorded-sessions"
+                  className="rounded-xl border border-stone-200 bg-stone-50 p-3"
+                >
                   <p className="text-[11px] font-semibold text-stone-500">
                     2. Buổi đã tạo nội dung
                   </p>
                   <p className="mt-1 font-display text-lg font-extrabold text-blue-900">
-                    {(teacher.activitySessionsCount || teacher.scheduledSessionsCount || 0)} buổi
+                    {recordedClassSessionsCount} buổi
                   </p>
                   <p className="mt-0.5 text-[10px] text-stone-500">
                     Có lưu nội dung/bài tập trên <code className="font-mono">ktn_class_sessions</code>
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                <div
+                  data-testid="teacher-drawer-confirmed-sessions"
+                  className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3"
+                >
                   <p className="text-[11px] font-semibold text-emerald-900">
-                    3. Buổi có điểm danh xác nhận
+                    3. Buổi thực dạy có xác nhận
                   </p>
                   <p className="mt-1 font-display text-lg font-extrabold text-emerald-900">
-                    {(teacher.confirmedSessionsCount ?? 0)} buổi
+                    {confirmedTaughtSessionsCount} buổi
                   </p>
                   <p className="mt-0.5 text-[10px] text-emerald-800">
                     Xác thực qua dữ liệu điểm danh <code className="font-mono">ktn_attendance</code>
@@ -498,13 +612,64 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3 text-xs text-stone-700">
-                <p>
-                  Tổng học viên thuộc các lớp phụ trách:{' '}
-                  <strong>{teacher.managedStudentsCount ?? 0} học viên</strong>
-                </p>
-                <p className="mt-1 text-[11px] text-stone-500">
-                  Lưu ý: Hệ thống không tự suy diễn số buổi thực dạy từ thời khóa biểu nếu giáo viên chưa lưu điểm danh buổi học.
+              {/* Teaching Schedule List for Assigned Classes */}
+              <div
+                data-testid="teacher-drawer-teaching-schedule-list"
+                className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/80 p-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-stone-800">
+                    Lịch giảng dạy các lớp phụ trách ({assignedClassDetails.length} lớp · {assignedCourses.length} khóa video)
+                  </p>
+                  <span
+                    data-testid="teacher-drawer-managed-students"
+                    className="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-stone-700 border border-stone-200"
+                  >
+                    {teacher.managedStudentsCount ?? 0} học viên
+                  </span>
+                </div>
+
+                {assignedClassDetails.length === 0 ? (
+                  <p className="text-[11px] text-stone-500">
+                    Giáo viên hiện chưa được phân công lớp trực tiếp nào.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {assignedClassDetails.map((cls) => (
+                      <div
+                        key={cls.id}
+                        data-testid={`teacher-drawer-class-schedule-${cls.id}`}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs"
+                      >
+                        <div>
+                          <span className="font-bold text-stone-900">
+                            {cls.id} · {cls.name}
+                          </span>
+                          <p className="text-[11px] text-stone-600">
+                            Lịch học: <strong>{cls.scheduleText}</strong>
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-700">
+                            Buổi {cls.currentLesson}/{cls.totalLessons}
+                          </span>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                              cls.isScheduleConfirmed
+                                ? 'bg-emerald-100 text-emerald-900'
+                                : 'bg-amber-100 text-amber-900'
+                            }`}
+                          >
+                            {cls.isScheduleConfirmed ? 'Lịch chính thức' : 'Chưa xác nhận lịch'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-[11px] text-stone-500">
+                  Lưu ý nguyên tắc đối soát: <strong>Buổi có lịch ≠ Buổi thực dạy</strong>. Hệ thống tuyệt đối không tự động quy đổi buổi có lịch thành buổi thực dạy khi chưa có xác nhận điểm danh.
                 </p>
               </div>
             </div>
@@ -521,21 +686,27 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
               </h3>
 
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                <div
+                  data-testid="teacher-drawer-graded-homeworks"
+                  className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3"
+                >
                   <p className="text-[11px] font-semibold text-emerald-900">
                     Đã chấm điểm
                   </p>
                   <p className="mt-1 font-display text-lg font-extrabold text-emerald-900">
-                    {teacher.gradedHomeworksCount ?? 0} bài
+                    {gradedHomeworksCount} bài
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                <div
+                  data-testid="teacher-drawer-pending-homeworks"
+                  className="rounded-xl border border-amber-200 bg-amber-50/70 p-3"
+                >
                   <p className="text-[11px] font-semibold text-amber-900">
                     Đang chờ chấm
                   </p>
                   <p className="mt-1 font-display text-lg font-extrabold text-amber-900">
-                    {teacher.pendingHomeworksCount ?? 0} bài
+                    {pendingHomeworksCount} bài
                   </p>
                 </div>
 
@@ -544,9 +715,8 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                     Thời gian phản hồi TB
                   </p>
                   <p className="mt-1 font-display text-lg font-extrabold text-stone-900">
-                    {teacher.avgGradingTurnaroundHours !== null &&
-                    teacher.avgGradingTurnaroundHours !== undefined
-                      ? `${teacher.avgGradingTurnaroundHours} giờ`
+                    {avgGradingHours !== null && avgGradingHours !== undefined
+                      ? `${avgGradingHours} giờ`
                       : 'Chưa có dữ liệu'}
                   </p>
                 </div>
@@ -566,45 +736,69 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                 </h3>
 
                 <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-2.5">
+                  <div
+                    data-testid="teacher-drawer-monthly-points"
+                    className="rounded-xl border border-amber-200 bg-amber-50/70 p-2.5"
+                  >
                     <p className="text-[10px] font-semibold text-amber-900">
-                      Điểm tháng này
+                      Điểm đóng góp tháng này
                     </p>
                     <p className="mt-0.5 font-display text-base font-extrabold text-amber-950">
-                      {teacher.monthlyContributionPoints ?? 0} đ
+                      {monthlyContributionPoints} đ
                     </p>
                   </div>
 
-                  <div className="rounded-xl border border-red-200 bg-red-50/70 p-2.5">
+                  <div
+                    data-testid="teacher-drawer-total-points"
+                    className="rounded-xl border border-red-200 bg-red-50/70 p-2.5"
+                  >
                     <p className="text-[10px] font-semibold text-red-900">
                       Tổng điểm tích lũy
                     </p>
                     <p className="mt-0.5 font-display text-base font-extrabold text-red-950">
-                      {teacher.totalContributionPoints ?? 0} đ
+                      {totalContributionPoints} đ
                     </p>
                   </div>
 
-                  <div className="rounded-xl border border-stone-200 bg-stone-50 p-2.5">
+                  <div
+                    data-testid="teacher-drawer-forum-answers-video"
+                    className="rounded-xl border border-stone-200 bg-stone-50 p-2.5"
+                  >
                     <p className="text-[10px] font-semibold text-stone-600">
-                      Câu trả lời / Video
+                      Câu trả lời / Video giải đáp
                     </p>
                     <p className="mt-0.5 font-display text-base font-extrabold text-stone-900">
-                      {teacher.forumAnswersCount ?? 0} /{' '}
+                      {forumAnswersCount} /{' '}
                       <span className="text-red-800">
-                        {teacher.forumVideoAnswersCount ?? 0} video
+                        {videoGuidesCount} video
                       </span>
                     </p>
                   </div>
 
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5">
+                  <div
+                    data-testid="teacher-drawer-forum-resolved"
+                    className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5"
+                  >
                     <p className="text-[10px] font-semibold text-emerald-900">
-                      HV xác nhận hiểu bài
+                      Câu hỏi đã giải quyết
                     </p>
                     <p className="mt-0.5 font-display text-base font-extrabold text-emerald-900">
-                      {teacher.forumAcceptedAnswersCount ?? 0} câu
+                      {acceptedAnswersCount} câu
                     </p>
+                    {helpfulVotesCount > 0 && (
+                      <p className="text-[10px] font-semibold text-emerald-800">
+                        {helpfulVotesCount} lượt hữu ích
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                <p
+                  data-testid="teacher-drawer-points-policy-note"
+                  className="mt-2.5 rounded-lg bg-stone-50 px-2.5 py-1.5 text-[11px] text-stone-600"
+                >
+                  Chính sách điểm đóng góp: Điểm thưởng chỉ dùng để đánh giá chuyên môn và vinh danh giáo viên hỗ trợ học viên theo tháng, <strong>không tự quy đổi thành lương hoặc phụ cấp tự động</strong>.
+                </p>
               </div>
 
               {/* Admin manual point adjustment / revocation */}
@@ -618,13 +812,17 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                   }
                   const adjustFn = onAdjustForumPoints || onAdjustPoints;
                   if (!adjustFn) return;
-                  await adjustFn({
-                    teacherId: teacher.code || teacher.email,
-                    teacherEmail: teacher.email,
-                    pointsDelta: delta,
-                    reason: pointsReasonInput.trim(),
-                  });
-                  setPointsReasonInput('');
+                  try {
+                    await adjustFn({
+                      teacherId: teacher.code || teacher.email,
+                      teacherEmail: teacher.email,
+                      pointsDelta: delta,
+                      reason: pointsReasonInput.trim(),
+                    });
+                    setPointsReasonInput('');
+                  } catch {
+                    // Error handled by caller mutation handler
+                  }
                 }}
                 className="space-y-3 rounded-xl border border-stone-200 bg-white p-4 shadow-2xs"
               >
@@ -672,7 +870,12 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                   <button
                     type="submit"
                     data-testid="admin-submit-adjust-points-btn"
-                    disabled={isAdjustingPoints || !pointsReasonInput.trim()}
+                    disabled={
+                      isAdjustingPoints ||
+                      !pointsReasonInput.trim() ||
+                      !Number.isFinite(Number(pointsDeltaInput)) ||
+                      Number(pointsDeltaInput) === 0
+                    }
                     className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl bg-stone-900 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50"
                   >
                     {isAdjustingPoints && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

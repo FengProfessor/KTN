@@ -136,7 +136,7 @@ export const AdminHome: React.FC = () => {
 
   const ordersList = ordersQuery.data || [];
   const studentsList = studentsQuery.data?.items || [];
-  const classesList = isDemoMode ? DEMO_CLASSES : classesQuery.data || [];
+  const classesList = classesQuery.data ?? (isDemoMode ? DEMO_CLASSES : []);
 
   const pendingOrders = ordersList.filter((o) => o.approval_status === 'pending');
   const unassignedStudents = studentsList.filter((s) => !s.class_code);
@@ -248,7 +248,7 @@ export const AdminHome: React.FC = () => {
         <QuickActionTile
           icon={GraduationCap}
           label="Lớp học"
-          status={`${classesList.length} lớp`}
+          status={`${activeClasses.length} lớp`}
           accent="blue"
           testId="admin-quick-classes"
           onClick={() => navigate('/admin/classes')}

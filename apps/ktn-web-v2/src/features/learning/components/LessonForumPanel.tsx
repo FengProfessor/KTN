@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   MessageSquare,
@@ -22,10 +22,16 @@ import {
   Volume2,
   Award,
 } from 'lucide-react';
-import { ktnApi, KtnApiError } from '@/services/api/ktnApiClient';
+import { ktnApi, KtnApiError, resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { formatRelativeTimeVi } from '@/lib/utils';
+import {
+  detectAttachmentKind,
+  normalizeForumAttachmentRecord,
+  normalizeForumAnswerRecord,
+  normalizeForumQuestionRecord,
+} from '@/features/teacher/components/TeacherForumInbox';
 import type {
   KtnForumAttachment,
   KtnForumQuestion,
@@ -85,7 +91,8 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
   onSeekToTimestamp,
 }) => {
   const queryClient = useQueryClient();
-  const user = useAuthStore((s) => s.user);
+  const storeUser = useAuthStore((s) => s.user);
+  const user = storeUser || _currentUser || null;
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const addToast = useUiStore((s) => s.addToast);
 
@@ -101,6 +108,20 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
   const [timestampInput, setTimestampInput] = useState<string>('');
   const [questionAttachments, setQuestionAttachments] = useState<KtnForumAttachment[]>([]);
   const [isUploadingQuestionAttachment, setIsUploadingQuestionAttachment] = useState(false);
+
+  // Local optimistic/deterministic patches so claim, follow, answer, and create reflect immediately
+  const [localCreatedQuestions, setLocalCreatedQuestions] = useState<KtnForumQuestion[]>([]);
+  const [localQuestionPatches, setLocalQuestionPatches] = useState<
+    Record<string, Partial<KtnForumQuestion>>
+  >({});
+
+  // Stable clientRequestId refs to prevent duplicate submissions on retry
+  const createQuestionRequestRef = useRef<{ signature: string; clientRequestId: string } | null>(
+    null
+  );
+  const answerRequestRef = useRef<
+    Record<string, { signature: string; clientRequestId: string }>
+  >({});
 
   // Expanded question & answer composer states
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(
@@ -220,31 +241,138 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
     },
   });
 
-  const questions = questionsQuery.data?.questions || [];
+  const questions = useMemo(() => {
+    const rawFromQuery = (questionsQuery.data?.questions || []).map((q: any) =>
+      normalizeForumQuestionRecord(q)
+    );
+    const mergedMap = new Map<string, KtnForumQuestion>();
+    for (const q of localCreatedQuestions) {
+      mergedMap.set(q.id, normalizeForumQuestionRecord(q));
+    }
+    for (const q of rawFromQuery) {
+      mergedMap.set(q.id, q);
+    }
+
+    const viewerEmail = String(user?.email || '').trim().toLowerCase();
+    const viewerId = String(user?.id || '').trim();
+
+    return Array.from(mergedMap.values())
+      .map((base) => {
+        const patch = localQuestionPatches[base.id];
+        const combined = patch
+          ? ({
+              ...base,
+              ...patch,
+              answers: patch.answers !== undefined ? patch.answers : base.answers,
+            } as KtnForumQuestion)
+          : base;
+        const isOwn =
+          Boolean(combined.isOwnQuestion) ||
+          Boolean(viewerEmail && String(combined.student_email || '').toLowerCase() === viewerEmail) ||
+          Boolean(viewerId && String(combined.student_id || '') === viewerId);
+        return {
+          ...combined,
+          isOwnQuestion: isOwn,
+        };
+      })
+      .filter((q) => {
+        // Strict lesson & course scoping: ensure student questions display under the exact lesson
+        if (courseId && q.course_id && q.course_id !== courseId) {
+          return false;
+        }
+        if (unitId && q.unit_id && q.unit_id !== unitId) {
+          return false;
+        }
+        if (
+          !q.unit_id &&
+          Number.isFinite(lessonNumber) &&
+          Number(q.lesson_number || 0) > 0 &&
+          Number(q.lesson_number) !== Number(lessonNumber)
+        ) {
+          return false;
+        }
+
+        const ansCount = Math.max(Number(q.answersCount || 0), (q.answers || []).length);
+        const isResolvedOrAnswered =
+          q.status === 'answered' || q.status === 'resolved' || ansCount > 0;
+        if (statusFilter === 'unanswered' && isResolvedOrAnswered) {
+          return false;
+        }
+        if (statusFilter === 'answered' && !isResolvedOrAnswered) {
+          return false;
+        }
+
+        const cleanQ = searchQuery.trim().toLowerCase();
+        if (cleanQ) {
+          const haystack = `${q.title} ${q.content} ${q.student_name}`.toLowerCase();
+          if (!haystack.includes(cleanQ)) return false;
+        }
+        return true;
+      });
+  }, [
+    questionsQuery.data?.questions,
+    localCreatedQuestions,
+    localQuestionPatches,
+    user?.email,
+    user?.id,
+    courseId,
+    unitId,
+    lessonNumber,
+    statusFilter,
+    searchQuery,
+  ]);
 
   const handleUploadQuestionAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
 
+    const mediaCategory = detectAttachmentKind(file.type, file.name);
+    const maxBytes = mediaCategory === 'video' ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      addToast({
+        title:
+          mediaCategory === 'video'
+            ? 'Video vượt quá giới hạn 100MB'
+            : 'Tệp đính kèm vượt quá 20MB',
+        description: 'Vui lòng chọn tệp nhẹ hơn để tải lên nhanh hơn.',
+        variant: 'error',
+      });
+      return;
+    }
+
     setIsUploadingQuestionAttachment(true);
     try {
-      const uploaded = await ktnApi.uploadChatFile(file, file.name);
-      const mediaCategory = file.type.startsWith('image/')
-        ? 'image'
-        : file.type.startsWith('audio/')
-        ? 'audio'
-        : 'file';
-      setQuestionAttachments((prev) => [
-        ...prev,
-        {
-          id: `att-${Date.now()}`,
-          name: file.name,
-          url: uploaded.fileUrl,
-          type: mediaCategory,
-          size: uploaded.size,
-        },
-      ]);
+      if (isDemoMode) {
+        const localUrl =
+          typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+            ? URL.createObjectURL(file)
+            : `https://cdn.khongtunhi.com/demo/${encodeURIComponent(file.name)}`;
+        setQuestionAttachments((prev) => [
+          ...prev,
+          normalizeForumAttachmentRecord({
+            id: `att-${Date.now()}`,
+            name: file.name,
+            url: localUrl,
+            type: mediaCategory,
+            fileType: file.type,
+            size: file.size,
+          }),
+        ]);
+      } else {
+        const uploaded = await ktnApi.uploadChatFile(file, file.name);
+        setQuestionAttachments((prev) => [
+          ...prev,
+          normalizeForumAttachmentRecord({
+            id: `att-${Date.now()}`,
+            name: file.name,
+            url: uploaded.fileUrl,
+            type: mediaCategory,
+            fileType: uploaded.fileType || file.type,
+            size: uploaded.size ?? file.size,
+          }),
+        ]);
+      }
       addToast({
         title: 'Đã đính kèm tệp vào câu hỏi',
         description: file.name,
@@ -269,25 +397,97 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         throw new Error('Vui lòng nhập tiêu đề ngắn và nội dung câu hỏi chi tiết (tối thiểu 5 ký tự).');
       }
       const parsedSec = parseTimestampToSeconds(timestampInput);
+      const normalizedAttachments = questionAttachments.map((att, idx) =>
+        normalizeForumAttachmentRecord(att, idx)
+      );
+
+      const signature = `${courseId}|${unitId}|${lessonNumber}|${cleanTitle}|${cleanContent}`;
+      if (
+        !createQuestionRequestRef.current ||
+        createQuestionRequestRef.current.signature !== signature
+      ) {
+        createQuestionRequestRef.current = {
+          signature,
+          clientRequestId: `fq-req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        };
+      }
+      const clientRequestId = createQuestionRequestRef.current.clientRequestId;
+
+      if (isDemoMode) {
+        const createdQuestion = normalizeForumQuestionRecord({
+          id: `demo-fq-${Date.now()}`,
+          course_id: courseId,
+          course_title: courseTitle,
+          unit_id: unitId,
+          lesson_number: lessonNumber,
+          lesson_title_snapshot: lessonTitle,
+          student_id: user?.id || 'KTN-STU-DEMO',
+          student_name: user?.name || 'Học viên',
+          student_email: user?.email || 'student@khongtunhi.com',
+          title: cleanTitle,
+          content: cleanContent,
+          video_timestamp_seconds: parsedSec,
+          video_timestamp_label:
+            parsedSec !== null ? formatSecondsToTimestamp(parsedSec) : null,
+          attachments: normalizedAttachments,
+          status: 'open',
+          answersCount: 0,
+          isFollowing: true,
+          followCount: 1,
+          isOwnQuestion: true,
+          created_at: new Date().toISOString(),
+          answers: [],
+        });
+        return {
+          ok: true,
+          question: createdQuestion,
+          notifiedTeachersCount: 3,
+        };
+      }
+
       return ktnApi.createForumQuestion({
         courseId,
         unitId,
         lessonNumber,
+        lessonNum: lessonNumber,
         lessonTitle,
+        lessonTitleSnapshot: lessonTitle,
         title: cleanTitle,
         content: cleanContent,
         videoTimestampSeconds: parsedSec,
-        attachments: questionAttachments,
-      });
+        attachments: normalizedAttachments,
+        clientRequestId,
+      } as any);
     },
     onSuccess: (res) => {
+      createQuestionRequestRef.current = null;
+      const normalizedCreated = normalizeForumQuestionRecord({
+        ...res?.question,
+        course_id: res?.question?.course_id || (res?.question as any)?.courseId || courseId,
+        course_title:
+          res?.question?.course_title || (res?.question as any)?.courseTitle || courseTitle,
+        unit_id: res?.question?.unit_id || (res?.question as any)?.unitId || unitId,
+        lesson_number:
+          res?.question?.lesson_number || (res?.question as any)?.lessonNum || lessonNumber,
+        lesson_title_snapshot:
+          res?.question?.lesson_title_snapshot ||
+          (res?.question as any)?.lessonTitleSnapshot ||
+          lessonTitle,
+        isFollowing: true,
+        followCount: Math.max(1, Number(res?.question?.followCount || 1)),
+        isOwnQuestion: true,
+      });
+      setLocalCreatedQuestions((prev) => [
+        normalizedCreated,
+        ...prev.filter((item) => item.id !== normalizedCreated.id),
+      ]);
       setQuestionTitle('');
       setQuestionContent('');
       setTimestampInput('');
       setQuestionAttachments([]);
       setShowAskForm(false);
       onClearInitialTimestamp?.();
-      setExpandedQuestionId(res.question.id);
+      setExpandedQuestionId(normalizedCreated.id);
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
       addToast({
         title: 'Đã gửi câu hỏi thành công!',
@@ -323,22 +523,34 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
 
     setUploadingVideoProgressMap((prev) => ({ ...prev, [questionId]: 1 }));
     try {
-      const uploaded = await ktnApi.uploadChatFile(file, file.name, (pct) => {
-        setUploadingVideoProgressMap((prev) => ({ ...prev, [questionId]: pct }));
-      });
       const localPreview =
         typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
           ? URL.createObjectURL(file)
           : undefined;
-      setAnswerVideoMap((prev) => ({
-        ...prev,
-        [questionId]: {
-          url: uploaded.fileUrl,
-          fileName: file.name,
-          fileSize: uploaded.size,
-          previewUrl: localPreview,
-        },
-      }));
+      if (isDemoMode) {
+        setAnswerVideoMap((prev) => ({
+          ...prev,
+          [questionId]: {
+            url: localPreview || `https://cdn.khongtunhi.com/demo/${encodeURIComponent(file.name)}`,
+            fileName: file.name,
+            fileSize: file.size,
+            previewUrl: localPreview,
+          },
+        }));
+      } else {
+        const uploaded = await ktnApi.uploadChatFile(file, file.name, (pct) => {
+          setUploadingVideoProgressMap((prev) => ({ ...prev, [questionId]: pct }));
+        });
+        setAnswerVideoMap((prev) => ({
+          ...prev,
+          [questionId]: {
+            url: uploaded.fileUrl,
+            fileName: file.name,
+            fileSize: uploaded.size ?? file.size,
+            previewUrl: localPreview,
+          },
+        }));
+      }
       addToast({
         title: 'Đã tải lên video hướng dẫn!',
         description: `${file.name} đã sẵn sàng đính kèm (+5 điểm đóng góp khi gửi câu trả lời).`,
@@ -363,27 +575,58 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
     e.target.value = '';
     if (!file) return;
 
+    const mediaCategory = detectAttachmentKind(file.type, file.name);
+    const maxBytes = mediaCategory === 'video' ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      addToast({
+        title:
+          mediaCategory === 'video'
+            ? 'Video vượt quá giới hạn 100MB'
+            : 'Tệp đính kèm vượt quá 20MB',
+        description: 'Vui lòng chọn tệp nhẹ hơn để tải lên nhanh hơn.',
+        variant: 'error',
+      });
+      return;
+    }
+
     setUploadingAnswerAttachmentFor(questionId);
     try {
-      const uploaded = await ktnApi.uploadChatFile(file, file.name);
-      const mediaCategory = file.type.startsWith('image/')
-        ? 'image'
-        : file.type.startsWith('audio/')
-        ? 'audio'
-        : 'file';
-      setAnswerAttachmentsMap((prev) => ({
-        ...prev,
-        [questionId]: [
-          ...(prev[questionId] || []),
-          {
-            id: `ans-att-${Date.now()}`,
-            name: file.name,
-            url: uploaded.fileUrl,
-            type: mediaCategory,
-            size: uploaded.size,
-          },
-        ],
-      }));
+      if (isDemoMode) {
+        const localUrl =
+          typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+            ? URL.createObjectURL(file)
+            : `https://cdn.khongtunhi.com/demo/${encodeURIComponent(file.name)}`;
+        setAnswerAttachmentsMap((prev) => ({
+          ...prev,
+          [questionId]: [
+            ...(prev[questionId] || []),
+            normalizeForumAttachmentRecord({
+              id: `ans-att-${Date.now()}`,
+              name: file.name,
+              url: localUrl,
+              type: mediaCategory,
+              fileType: file.type,
+              size: file.size,
+            }),
+          ],
+        }));
+      } else {
+        const uploaded = await ktnApi.uploadChatFile(file, file.name);
+        setAnswerAttachmentsMap((prev) => ({
+          ...prev,
+          [questionId]: [
+            ...(prev[questionId] || []),
+            normalizeForumAttachmentRecord({
+              id: `ans-att-${Date.now()}`,
+              name: file.name,
+              url: uploaded.fileUrl,
+              type: mediaCategory,
+              fileType: uploaded.fileType || file.type,
+              size: uploaded.size ?? file.size,
+            }),
+          ],
+        }));
+      }
     } catch (err) {
       addToast({
         title: 'Chưa tải được tệp minh họa',
@@ -399,32 +642,127 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
     mutationFn: async (questionId: string) => {
       const text = (answerContentMap[questionId] || '').trim();
       const vid = answerVideoMap[questionId];
-      const atts = answerAttachmentsMap[questionId] || [];
+      const atts = (answerAttachmentsMap[questionId] || []).map((att, idx) =>
+        normalizeForumAttachmentRecord(att, idx)
+      );
       if (text.length < 2 && !vid && atts.length === 0) {
-        throw new Error('Vui lòng nhập nội dung giải đáp hoặc đính kèm video hướng dẫn.');
+        throw new Error('Vui lòng nhập nội dung giải đáp hoặc đính kèm video/tệp hướng dẫn.');
       }
+
+      const finalContent =
+        text ||
+        (vid ? `Video hướng dẫn chi tiết (${vid.fileName})` : 'Hình ảnh/âm thanh/video hướng dẫn');
+      const sig = `${questionId}|${finalContent}|${vid?.url || ''}|${atts.length}`;
+      if (
+        !answerRequestRef.current[questionId] ||
+        answerRequestRef.current[questionId].signature !== sig
+      ) {
+        answerRequestRef.current[questionId] = {
+          signature: sig,
+          clientRequestId: `fa-req-${Date.now().toString(36)}-${Math.random()
+            .toString(36)
+            .slice(2, 7)}`,
+        };
+      }
+      const clientRequestId = answerRequestRef.current[questionId].clientRequestId;
+      const hasVideoAttachment = Boolean(vid?.url || atts.some((a) => a.type === 'video'));
+      const pointsAwarded = isTeacherOrAdmin ? 5 + (hasVideoAttachment ? 5 : 0) : 0;
+
+      if (isDemoMode) {
+        return {
+          ok: true,
+          answer: normalizeForumAnswerRecord({
+            id: `demo-fa-${Date.now()}`,
+            question_id: questionId,
+            author_name: user?.name || (isTeacherOrAdmin ? 'Giáo viên KTN' : 'Học viên'),
+            author_role: (user?.role as any) || 'teacher',
+            teacher_title: isTeacherOrAdmin ? 'Giáo viên hướng dẫn' : undefined,
+            content: finalContent,
+            attachments: atts,
+            video_url: vid?.url || null,
+            video_verified: Boolean(vid?.url),
+            is_accepted: false,
+            helpful_count: 0,
+            viewerHasVotedHelpful: false,
+            created_at: new Date().toISOString(),
+          }),
+          pointsAwarded,
+          notifiedStudent: true,
+        };
+      }
+
       return ktnApi.createForumAnswer({
         questionId,
-        content: text || (vid ? `Video hướng dẫn chi tiết (${vid.fileName})` : 'Hình ảnh/tệp hướng dẫn'),
+        content: finalContent,
         attachments: atts,
         videoUrl: vid?.url || null,
         videoFileSize: vid?.fileSize || null,
-      });
+        videoSizeBytes: vid?.fileSize || null,
+        clientRequestId,
+      } as any);
     },
     onSuccess: (res, questionId) => {
+      delete answerRequestRef.current[questionId];
+      const text = (answerContentMap[questionId] || '').trim();
+      const vid = answerVideoMap[questionId];
+      const atts = (answerAttachmentsMap[questionId] || []).map((att, idx) =>
+        normalizeForumAttachmentRecord(att, idx)
+      );
+      const createdAns = normalizeForumAnswerRecord(
+        res?.answer || {
+          id: `ans-${Date.now()}`,
+          question_id: questionId,
+          author_name: user?.name || (isTeacherOrAdmin ? 'Giáo viên KTN' : 'Học viên'),
+          author_role: user?.role || 'teacher',
+          teacher_title: isTeacherOrAdmin ? 'Giáo viên hướng dẫn' : undefined,
+          content:
+            text ||
+            (vid
+              ? `Video hướng dẫn chi tiết (${vid.fileName})`
+              : 'Hình ảnh/âm thanh/video hướng dẫn'),
+          attachments: atts,
+          video_url: vid?.url || null,
+          video_verified: Boolean(vid?.url),
+          is_accepted: false,
+          helpful_count: 0,
+          created_at: new Date().toISOString(),
+        }
+      );
+
+      setLocalQuestionPatches((prev) => {
+        const target = questions.find((item) => item.id === questionId);
+        const existingAnswers = prev[questionId]?.answers ?? target?.answers ?? [];
+        const nextAnswers = [...existingAnswers, createdAns];
+        return {
+          ...prev,
+          [questionId]: {
+            ...(prev[questionId] || {}),
+            status:
+              target?.status === 'resolved'
+                ? 'resolved'
+                : isTeacherOrAdmin
+                ? 'answered'
+                : target?.status || 'open',
+            answers: nextAnswers,
+            answersCount: nextAnswers.length,
+          },
+        };
+      });
+
       setAnswerContentMap((prev) => ({ ...prev, [questionId]: '' }));
       setAnswerAttachmentsMap((prev) => ({ ...prev, [questionId]: [] }));
       setAnswerVideoMap((prev) => ({ ...prev, [questionId]: null }));
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-forum-leaderboard'] });
+      const points = Number(res?.pointsAwarded || 0);
       addToast({
         title:
-          res.pointsAwarded > 0
-            ? `Đã gửi giải đáp (+${res.pointsAwarded} điểm đóng góp)!`
+          points > 0
+            ? `Đã gửi giải đáp (+${points} điểm đóng góp)!`
             : 'Đã gửi phản hồi thành công!',
         description:
-          res.pointsAwarded > 0
-            ? 'Học viên đặt câu hỏi và các bạn theo dõi đã nhận được thông báo.'
+          points > 0
+            ? 'Điểm đóng góp được ghi nhận đánh giá chuyên môn (không tự quy đổi thành lương).'
             : 'Phản hồi đã được hiển thị trong bài học.',
         variant: 'success',
       });
@@ -439,9 +777,43 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
   });
 
   const claimMutation = useMutation({
-    mutationFn: async ({ questionId, action }: { questionId: string; action: 'claim' | 'unclaim' }) =>
-      ktnApi.claimForumQuestion(questionId, action),
-    onSuccess: () => {
+    mutationFn: async ({ questionId, action }: { questionId: string; action: 'claim' | 'unclaim' }) => {
+      if (isDemoMode) {
+        return {
+          ok: true,
+          questionId,
+          claimedByEmail: action === 'claim' ? user?.email || 'teacher@khongtunhi.com' : null,
+          claimedByName: action === 'claim' ? user?.name || 'Giáo viên KTN' : null,
+        };
+      }
+      return ktnApi.claimForumQuestion(questionId, action);
+    },
+    onSuccess: (res: any, vars) => {
+      const rawQ = res?.question;
+      setLocalQuestionPatches((prev) => ({
+        ...prev,
+        [vars.questionId]: {
+          ...(prev[vars.questionId] || {}),
+          status:
+            vars.action === 'claim'
+              ? ((rawQ?.status as any) || 'claimed')
+              : ((rawQ?.status as any) || 'open'),
+          claimed_by_email:
+            vars.action === 'claim'
+              ? rawQ?.claimedByTeacherEmail ||
+                res?.claimedByEmail ||
+                user?.email ||
+                'teacher@khongtunhi.com'
+              : null,
+          claimed_by_name:
+            vars.action === 'claim'
+              ? rawQ?.claimedByTeacherName ||
+                res?.claimedByName ||
+                user?.name ||
+                'Giáo viên KTN'
+              : null,
+        },
+      }));
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
     },
   });
@@ -455,8 +827,52 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       answerId: string;
       questionId: string;
       markAccepted?: boolean;
-    }) => ktnApi.voteForumAnswerHelpful({ answerId, questionId, markAccepted }),
+    }) => {
+      if (isDemoMode) {
+        return {
+          ok: true,
+          answerId,
+          helpfulCount: 1,
+          isAccepted: Boolean(markAccepted),
+          pointsDelta: markAccepted ? 2 : 1,
+          alreadyVoted: false,
+        };
+      }
+      return ktnApi.voteForumAnswerHelpful({
+        answerId,
+        questionId,
+        markAccepted,
+        accept: markAccepted,
+      } as any);
+    },
     onSuccess: (res, vars) => {
+      setLocalQuestionPatches((prev) => {
+        const target = questions.find((item) => item.id === vars.questionId);
+        const existingAnswers = prev[vars.questionId]?.answers ?? target?.answers ?? [];
+        const nextAnswers = existingAnswers.map((ans) => {
+          if (ans.id !== vars.answerId) return ans;
+          return {
+            ...ans,
+            is_accepted: vars.markAccepted ? true : ans.is_accepted,
+            helpful_count:
+              typeof (res as any)?.helpfulCount === 'number'
+                ? Number((res as any).helpfulCount)
+                : (ans.helpful_count || 0) + (res?.alreadyVoted ? 0 : 1),
+            viewerHasVotedHelpful: true,
+          };
+        });
+        return {
+          ...prev,
+          [vars.questionId]: {
+            ...(prev[vars.questionId] || {}),
+            status: vars.markAccepted ? 'resolved' : prev[vars.questionId]?.status || target?.status,
+            accepted_answer_id: vars.markAccepted
+              ? vars.answerId
+              : prev[vars.questionId]?.accepted_answer_id || target?.accepted_answer_id,
+            answers: nextAnswers,
+          },
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-forum-leaderboard'] });
       addToast({
@@ -478,15 +894,46 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
   });
 
   const followMutation = useMutation({
-    mutationFn: async ({ questionId, following }: { questionId: string; following: boolean }) =>
-      ktnApi.toggleForumFollow({ questionId, following }),
-    onSuccess: (res) => {
+    mutationFn: async ({ questionId, following }: { questionId: string; following: boolean }) => {
+      if (isDemoMode) {
+        return {
+          ok: true,
+          questionId,
+          isFollowing: following,
+        };
+      }
+      return ktnApi.toggleForumFollow({ questionId, following });
+    },
+    onSuccess: (res, vars) => {
+      const nextFollowing =
+        typeof res?.isFollowing === 'boolean'
+          ? res.isFollowing
+          : typeof (res as any)?.following === 'boolean'
+          ? Boolean((res as any).following)
+          : vars.following;
+      setLocalQuestionPatches((prev) => {
+        const target = questions.find((item) => item.id === vars.questionId);
+        const currentCount = Number(
+          prev[vars.questionId]?.followCount ?? target?.followCount ?? (target?.isFollowing ? 1 : 0)
+        );
+        const nextCount = nextFollowing
+          ? Math.max(1, currentCount + (target?.isFollowing ? 0 : 1))
+          : Math.max(0, currentCount - 1);
+        return {
+          ...prev,
+          [vars.questionId]: {
+            ...(prev[vars.questionId] || {}),
+            isFollowing: nextFollowing,
+            followCount: nextCount,
+          },
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
       addToast({
-        title: res.isFollowing
+        title: nextFollowing
           ? 'Đang theo dõi câu hỏi này'
           : 'Đã tắt thông báo cho câu hỏi này',
-        description: res.isFollowing
+        description: nextFollowing
           ? 'Khi giáo viên trả lời, hệ thống sẽ gửi thông báo trực tiếp cho em.'
           : undefined,
         variant: 'success',
@@ -503,8 +950,22 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       targetType: 'question' | 'answer';
       targetId: string;
       action: 'resolve' | 'reopen' | 'hide';
-    }) => ktnApi.moderateForumItem({ targetType, targetId, action }),
-    onSuccess: () => {
+    }) => {
+      if (isDemoMode) {
+        return { ok: true, status: action === 'resolve' ? 'resolved' : 'open' };
+      }
+      return ktnApi.moderateForumItem({ targetType, targetId, action });
+    },
+    onSuccess: (_res, vars) => {
+      if (vars.targetType === 'question') {
+        setLocalQuestionPatches((prev) => ({
+          ...prev,
+          [vars.targetId]: {
+            ...(prev[vars.targetId] || {}),
+            status: vars.action === 'resolve' ? 'resolved' : 'open',
+          },
+        }));
+      }
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
       addToast({
         title: 'Đã cập nhật trạng thái câu hỏi',
@@ -529,6 +990,14 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
           <p className="mt-0.5 text-xs text-stone-600">
             Đặt câu hỏi đúng nội dung bài này để đội ngũ giáo viên giải đáp kèm lời giải hoặc video hướng dẫn.
           </p>
+          {isTeacherOrAdmin && (
+            <p
+              data-testid="forum-points-policy-notice"
+              className="mt-1 text-[11px] font-semibold text-amber-900"
+            >
+              Chính sách điểm đóng góp (+5đ trả lời đầu tiên, +5đ video hướng dẫn, +10đ được chấp nhận): dùng để ghi nhận đánh giá chuyên môn, không tự quy đổi thành lương.
+            </p>
+          )}
         </div>
 
         <button
@@ -623,6 +1092,8 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                 >
                   {att.type === 'image' ? (
                     <ImageIcon className="h-3.5 w-3.5 text-emerald-700" />
+                  ) : att.type === 'video' ? (
+                    <Video className="h-3.5 w-3.5 text-red-700" />
                   ) : (
                     <Volume2 className="h-3.5 w-3.5 text-amber-700" />
                   )}
@@ -649,10 +1120,10 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                 ) : (
                   <Paperclip className="h-3.5 w-3.5 text-red-800" />
                 )}
-                <span>Đính kèm ảnh chụp / âm thanh phát âm</span>
+                <span>Đính kèm ảnh chụp / âm thanh / video</span>
                 <input
                   type="file"
-                  accept="image/*,audio/*,.pdf"
+                  accept="image/*,audio/*,video/*,.pdf"
                   data-testid="forum-question-attachment-input"
                   onChange={handleUploadQuestionAttachment}
                   disabled={isUploadingQuestionAttachment}
@@ -774,6 +1245,14 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                         </span>
                       )}
 
+                      <span
+                        data-testid={`forum-question-lesson-badge-${q.id}`}
+                        className="inline-flex items-center rounded-md bg-stone-100 px-2 py-0.5 text-[10.5px] font-semibold text-stone-700"
+                      >
+                        Bài {q.lesson_number || lessonNumber}:{' '}
+                        {q.lesson_title_snapshot || lessonTitle}
+                      </span>
+
                       {q.video_timestamp_seconds !== null &&
                         q.video_timestamp_seconds !== undefined && (
                           <button
@@ -796,12 +1275,16 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                           </button>
                         )}
 
-                      {q.claimed_by_name && q.status === 'open' && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[10.5px] font-semibold text-purple-800">
-                          <UserCheck className="h-3 w-3" />
-                          {q.claimed_by_name} đang hỗ trợ
-                        </span>
-                      )}
+                      {q.claimed_by_name &&
+                        (q.status === 'open' || q.status === 'claimed') && (
+                          <span
+                            data-testid={`forum-claimed-badge-${q.id}`}
+                            className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[10.5px] font-semibold text-purple-800"
+                          >
+                            <UserCheck className="h-3 w-3" />
+                            {q.claimed_by_name} đang hỗ trợ
+                          </span>
+                        )}
                     </div>
 
                     <span className="text-[11px] text-stone-400">
@@ -825,36 +1308,53 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                   {/* Question Attachments */}
                   {q.attachments && q.attachments.length > 0 && (
                     <div className="mt-2.5 flex flex-wrap gap-2">
-                      {q.attachments.map((att, idx) => (
-                        <div key={att.id || idx} className="overflow-hidden rounded-xl border border-stone-200 bg-stone-50 p-2">
-                          {att.type === 'image' ? (
-                            <a href={att.url} target="_blank" rel="noopener noreferrer">
-                              <img
-                                src={att.url}
-                                alt={att.name}
-                                className="max-h-40 rounded-lg object-contain"
-                              />
-                            </a>
-                          ) : att.type === 'audio' ? (
-                            <div className="space-y-1">
-                              <p className="text-[11px] font-semibold text-stone-700">
-                                {att.name}
-                              </p>
-                              <audio controls preload="none" src={att.url} className="h-8 w-56" />
-                            </div>
-                          ) : (
-                            <a
-                              href={att.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs font-bold text-red-800 hover:underline"
-                            >
-                              <Paperclip className="h-3.5 w-3.5" />
-                              <span>{att.name}</span>
-                            </a>
-                          )}
-                        </div>
-                      ))}
+                      {q.attachments.map((att, idx) => {
+                        const mediaUrl = resolveUploadedMediaUrl(att.url);
+                        const kind = detectAttachmentKind(att.kind || att.type, mediaUrl);
+                        return (
+                          <div key={att.id || idx} className="overflow-hidden rounded-xl border border-stone-200 bg-stone-50 p-2">
+                            {kind === 'image' ? (
+                              <a href={mediaUrl} target="_blank" rel="noopener noreferrer">
+                                <img
+                                  src={mediaUrl}
+                                  alt={att.name}
+                                  className="max-h-40 rounded-lg object-contain"
+                                />
+                              </a>
+                            ) : kind === 'audio' ? (
+                              <div className="space-y-1">
+                                <p className="text-[11px] font-semibold text-stone-700">
+                                  {att.name}
+                                </p>
+                                <audio controls preload="none" src={mediaUrl} className="h-8 w-56" />
+                              </div>
+                            ) : kind === 'video' ? (
+                              <div className="space-y-1">
+                                <p className="text-[11px] font-semibold text-stone-700">
+                                  {att.name}
+                                </p>
+                                <video
+                                  controls
+                                  playsInline
+                                  preload="metadata"
+                                  src={mediaUrl}
+                                  className="max-h-44 rounded-lg bg-black object-contain"
+                                />
+                              </div>
+                            ) : (
+                              <a
+                                href={mediaUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-red-800 hover:underline"
+                              >
+                                <Paperclip className="h-3.5 w-3.5" />
+                                <span>{att.name}</span>
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -905,19 +1405,32 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                         )}
                       </button>
 
-                      {isTeacherOrAdmin && q.status === 'open' && !q.claimed_by_email && (
-                        <button
-                          type="button"
-                          data-testid={`forum-claim-btn-${q.id}`}
-                          onClick={() =>
-                            claimMutation.mutate({ questionId: q.id, action: 'claim' })
-                          }
-                          className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-bold text-purple-900 hover:bg-purple-100"
-                        >
-                          <UserCheck className="h-3 w-3" />
-                          <span>Nhận trả lời câu này</span>
-                        </button>
-                      )}
+                      {isTeacherOrAdmin &&
+                        (q.status === 'open' || q.status === 'claimed') &&
+                        (!q.claimed_by_email ? (
+                          <button
+                            type="button"
+                            data-testid={`forum-claim-btn-${q.id}`}
+                            onClick={() =>
+                              claimMutation.mutate({ questionId: q.id, action: 'claim' })
+                            }
+                            className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-bold text-purple-900 hover:bg-purple-100"
+                          >
+                            <UserCheck className="h-3 w-3" />
+                            <span>Nhận trả lời câu này</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            data-testid={`forum-unclaim-btn-${q.id}`}
+                            onClick={() =>
+                              claimMutation.mutate({ questionId: q.id, action: 'unclaim' })
+                            }
+                            className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 hover:bg-stone-50"
+                          >
+                            <span>Nhường lại</span>
+                          </button>
+                        ))}
 
                       {isTeacherOrAdmin && (
                         <button
@@ -1020,7 +1533,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                                     playsInline
                                     preload="metadata"
                                     data-testid={`forum-answer-video-${ans.id}`}
-                                    src={ans.video_url}
+                                    src={resolveUploadedMediaUrl(ans.video_url)}
                                     className="max-h-72 w-full object-contain"
                                   />
                                 </div>
@@ -1029,42 +1542,57 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                               {/* Answer Attachments */}
                               {ans.attachments && ans.attachments.length > 0 && (
                                 <div className="mt-2 flex flex-wrap gap-2">
-                                  {ans.attachments.map((att, idx) => (
-                                    <div
-                                      key={att.id || idx}
-                                      className="rounded-lg border border-stone-200 bg-stone-50 p-1.5"
-                                    >
-                                      {att.type === 'image' ? (
-                                        <a
-                                          href={att.url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                        >
-                                          <img
-                                            src={att.url}
-                                            alt={att.name}
-                                            className="max-h-36 rounded object-contain"
+                                  {ans.attachments.map((att, idx) => {
+                                    const mediaUrl = resolveUploadedMediaUrl(att.url);
+                                    const kind = detectAttachmentKind(
+                                      att.kind || att.type,
+                                      mediaUrl
+                                    );
+                                    return (
+                                      <div
+                                        key={att.id || idx}
+                                        className="rounded-lg border border-stone-200 bg-stone-50 p-1.5"
+                                      >
+                                        {kind === 'image' ? (
+                                          <a
+                                            href={mediaUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                          >
+                                            <img
+                                              src={mediaUrl}
+                                              alt={att.name}
+                                              className="max-h-36 rounded object-contain"
+                                            />
+                                          </a>
+                                        ) : kind === 'audio' ? (
+                                          <audio
+                                            controls
+                                            preload="none"
+                                            src={mediaUrl}
+                                            className="h-8 w-56"
                                           />
-                                        </a>
-                                      ) : att.type === 'audio' ? (
-                                        <audio
-                                          controls
-                                          preload="none"
-                                          src={att.url}
-                                          className="h-8 w-56"
-                                        />
-                                      ) : (
-                                        <a
-                                          href={att.url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-xs font-bold text-red-800 hover:underline"
-                                        >
-                                          {att.name}
-                                        </a>
-                                      )}
-                                    </div>
-                                  ))}
+                                        ) : kind === 'video' ? (
+                                          <video
+                                            controls
+                                            playsInline
+                                            preload="metadata"
+                                            src={mediaUrl}
+                                            className="max-h-40 rounded bg-black object-contain"
+                                          />
+                                        ) : (
+                                          <a
+                                            href={mediaUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs font-bold text-red-800 hover:underline"
+                                          >
+                                            {att.name}
+                                          </a>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
 
@@ -1141,7 +1669,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-1">
                         <span className="text-[11px] font-bold text-stone-800">
                           {isTeacherOrAdmin
-                            ? 'Gửi lời giải / Video hướng dẫn cho học viên (+1 điểm trả lời, +5 điểm video hướng dẫn)'
+                            ? 'Gửi lời giải / Video hướng dẫn cho học viên (+5 điểm trả lời, +5 điểm video hướng dẫn)'
                             : 'Gửi phản hồi bổ sung cho câu hỏi này'}
                         </span>
                       </div>
@@ -1261,10 +1789,11 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                             ) : (
                               <Paperclip className="h-3.5 w-3.5 text-stone-600" />
                             )}
-                            <span>Ảnh / Âm thanh</span>
+                            <span>Ảnh / Âm thanh / Video</span>
                             <input
                               type="file"
-                              accept="image/*,audio/*,.pdf"
+                              accept="image/*,audio/*,video/*,.pdf"
+                              data-testid={`forum-answer-attachment-input-${q.id}`}
                               onChange={(e) => handleUploadAnswerAttachment(q.id, e)}
                               disabled={uploadingAnswerAttachmentFor === q.id}
                               className="hidden"

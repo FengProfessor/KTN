@@ -9,37 +9,144 @@ import {
   DEMO_RICH_MESSAGES,
 } from '@/lib/demoData';
 import { ChatMessage, ChatRoom, PinnedAnnouncement } from '../types/chat.types';
+import type { KtnClassItem } from '@/types/ktn.types';
+
+function reconcileRoomsWithActiveClasses(
+  rooms: ChatRoom[],
+  activeClasses: KtnClassItem[] | undefined,
+  includeMissingActiveClasses: boolean
+): ChatRoom[] {
+  if (!Array.isArray(activeClasses)) {
+    return rooms;
+  }
+  const activeClassMap = new Map<string, KtnClassItem>();
+  for (const cls of activeClasses) {
+    if (cls && cls.active !== false) {
+      const code = String(cls.id || '').trim().toUpperCase();
+      if (code) {
+        activeClassMap.set(code, cls);
+      }
+    }
+  }
+
+  const filteredRooms = rooms
+    .filter((r) => {
+      const rawCode = String(
+        r.classCode || (r.roomId.toLowerCase().startsWith('class:') ? r.roomId.slice(6) : '')
+      )
+        .trim()
+        .toUpperCase();
+      if ((r.type === 'class' || r.roomId.toLowerCase().startsWith('class:')) && rawCode) {
+        return activeClassMap.has(rawCode);
+      }
+      return true;
+    })
+    .map((r) => {
+      const rawCode = String(
+        r.classCode || (r.roomId.toLowerCase().startsWith('class:') ? r.roomId.slice(6) : '')
+      )
+        .trim()
+        .toUpperCase();
+      const matchedCls = rawCode ? activeClassMap.get(rawCode) : undefined;
+      if (matchedCls && (r.type === 'class' || r.roomId.toLowerCase().startsWith('class:'))) {
+        return {
+          ...r,
+          roomId: `class:${rawCode}`,
+          classCode: rawCode,
+          label: `Nhóm Lớp ${rawCode} — ${matchedCls.name}`,
+          shortLabel: `Lớp ${rawCode}`,
+          teacherName: matchedCls.teacher_name || r.teacherName,
+        };
+      }
+      return r;
+    });
+
+  if (!includeMissingActiveClasses) {
+    return filteredRooms;
+  }
+
+  const existingCodes = new Set(
+    filteredRooms
+      .map((r) =>
+        String(
+          r.classCode || (r.roomId.toLowerCase().startsWith('class:') ? r.roomId.slice(6) : '')
+        )
+          .trim()
+          .toUpperCase()
+      )
+      .filter(Boolean)
+  );
+
+  const extraClassRooms: ChatRoom[] = [];
+  activeClassMap.forEach((c, code) => {
+    if (!existingCodes.has(code)) {
+      extraClassRooms.push({
+        roomId: `class:${code}`,
+        classCode: code,
+        label: `Nhóm Lớp ${code} — ${c.name}`,
+        shortLabel: `Lớp ${code}`,
+        teacherName: c.teacher_name,
+        type: 'class',
+        unreadCount: 0,
+        lastMessage: '',
+      });
+    }
+  });
+
+  return [...extraClassRooms, ...filteredRooms];
+}
 
 export function useChatRooms() {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
   const user = useAuthStore((s) => s.user);
+  const queryClient = useQueryClient();
 
   const query = useQuery<ChatRoom[]>({
     queryKey: ['chat-rooms', user?.email, isDemoMode, chatDemoScenario],
     queryFn: async () => {
+      const cachedClassEntries = queryClient.getQueriesData<KtnClassItem[]>({
+        queryKey: ['ktn-classes'],
+      });
+      const activeClasses = cachedClassEntries
+        .map(([, data]) => data)
+        .find((data): data is KtnClassItem[] => Array.isArray(data));
+
       if (isDemoMode || chatDemoScenario !== 'live_real') {
+        let baseRooms = DEMO_CHAT_ROOMS;
         if (chatDemoScenario === 'demo_empty') {
-          return DEMO_CHAT_ROOMS.map((r) => ({ ...r, unreadCount: 0, lastMessage: '' }));
-        }
-        if (chatDemoScenario === 'demo_unread') {
-          return DEMO_CHAT_ROOMS.map((r, i) => ({
+          baseRooms = DEMO_CHAT_ROOMS.map((r) => ({ ...r, unreadCount: 0, lastMessage: '' }));
+        } else if (chatDemoScenario === 'demo_unread') {
+          baseRooms = DEMO_CHAT_ROOMS.map((r, i) => ({
             ...r,
             unreadCount: (r.unreadCount || 0) + (i === 0 ? 5 : 2),
           }));
         }
-        return DEMO_CHAT_ROOMS;
+
+        return reconcileRoomsWithActiveClasses(baseRooms, activeClasses, true);
       }
       const res = await chatApi.getRooms();
-      const all: ChatRoom[] = [...(res.groupRooms || [])];
+      const groupRooms =
+        user?.role === 'admin' && Array.isArray(activeClasses)
+          ? reconcileRoomsWithActiveClasses(res.groupRooms || [], activeClasses, true)
+          : res.groupRooms || [];
+      const all: ChatRoom[] = [];
+      const seenRoomIds = new Set<string>();
+      const pushUniqueRoom = (room: ChatRoom) => {
+        const key = String(room.roomId || '').trim().toUpperCase();
+        if (!key || seenRoomIds.has(key)) return;
+        seenRoomIds.add(key);
+        all.push(room);
+      };
+      for (const r of groupRooms) {
+        pushUniqueRoom(r);
+      }
       if (res.privateRoom) {
-        all.push(res.privateRoom);
+        pushUniqueRoom(res.privateRoom);
       }
       if (res.privateThreads && res.privateThreads.length > 0) {
         for (const t of res.privateThreads) {
-          if (!all.some((r) => r.roomId === t.roomId)) {
-            all.push(t);
-          }
+          pushUniqueRoom(t);
         }
       }
       return all;

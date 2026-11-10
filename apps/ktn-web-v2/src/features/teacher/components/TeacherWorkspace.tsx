@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -37,6 +37,19 @@ import {
 } from '@/types/ktn.types';
 import { formatChatTimestamp, formatRelativeTime } from '@/lib/utils';
 
+export interface CreatedStudentSummary {
+  name: string;
+  email: string;
+  code: string;
+  classCode: string;
+  initialPassword: string;
+  phone?: string;
+  parentName?: string;
+  parentPhone?: string;
+  note?: string;
+  clientRequestId?: string;
+}
+
 export const TeacherWorkspace: React.FC = () => {
   const navigate = useNavigate();
   const { section } = useParams<{ section?: string }>();
@@ -48,10 +61,10 @@ export const TeacherWorkspace: React.FC = () => {
   const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
 
   const [selectedClassId, setSelectedClassId] = useState<string>(
-    () => searchParams.get('class') || user?.classCode || ''
+    () => searchParams.get('class') || searchParams.get('classCode') || user?.classCode || ''
   );
   const [hasManualClassSelection, setHasManualClassSelection] = useState<boolean>(() =>
-    Boolean(searchParams.get('class'))
+    Boolean(searchParams.get('class') || searchParams.get('classCode'))
   );
   const [activeSubTab, setActiveSubTab] = useState<
     'grading' | 'sessions' | 'students' | 'forum'
@@ -60,7 +73,7 @@ export const TeacherWorkspace: React.FC = () => {
   const [scheduleModalOpen, setScheduleModalOpen] = useState<boolean>(false);
   const [isSavingSchedule, setIsSavingSchedule] = useState<boolean>(false);
 
-  // Agent E: Teacher Create Student Modal state
+  // Agent C / Agent E: Teacher Create Student Modal state & idempotency tracking
   const [createStudentModalOpen, setCreateStudentModalOpen] = useState<boolean>(false);
   const [newStuName, setNewStuName] = useState<string>('');
   const [newStuEmail, setNewStuEmail] = useState<string>('');
@@ -70,15 +83,19 @@ export const TeacherWorkspace: React.FC = () => {
   const [newStuClassCode, setNewStuClassCode] = useState<string>('');
   const [newStuNotes, setNewStuNotes] = useState<string>('');
   const [createStudentError, setCreateStudentError] = useState<string | null>(null);
-  const [createdStudentResult, setCreatedStudentResult] = useState<{
-    name: string;
-    email: string;
-    code: string;
-    classCode: string;
-    initialPassword: string;
+  const [createdStudentResult, setCreatedStudentResult] =
+    useState<CreatedStudentSummary | null>(null);
+  const [localCreatedStudents, setLocalCreatedStudents] = useState<KtnStudentRecord[]>([]);
+  const createStudentRequestRef = useRef<{
+    signature: string;
+    clientRequestId: string;
+  } | null>(null);
+  const courseGrantRequestRef = useRef<{
+    signature: string;
+    clientRequestId: string;
   } | null>(null);
 
-  // Agent E: Teacher Request Online Course Access Modal state
+  // Agent C / Agent E: Teacher Request Online Course Access Modal state
   const [courseRequestModalOpen, setCourseRequestModalOpen] = useState<boolean>(false);
   const [reqStudentEmail, setReqStudentEmail] = useState<string>('');
   const [reqCourseId, setReqCourseId] = useState<string>('');
@@ -101,17 +118,35 @@ export const TeacherWorkspace: React.FC = () => {
     'Con hãy cầm bức ảnh gia đình và giới thiệu bằng tiếng Trung gửi vào mục Bài tập nhé!'
   );
 
-  // Sync sub-tab with route param (:section) or query param (?hwId / ?class)
+  // Sync sub-tab with route param (:section) or query param (?hwId / ?class / ?classCode / ?tab / ?questionId)
   useEffect(() => {
     const hwIdParam = searchParams.get('hwId');
-    const clsParam = searchParams.get('class');
+    const clsParam = (searchParams.get('class') || searchParams.get('classCode') || '').trim();
+    const tabParam = searchParams.get('tab');
+    const questionIdParam = searchParams.get('questionId');
     if (clsParam) {
-      setSelectedClassId(clsParam);
+      setSelectedClassId(clsParam.toUpperCase());
       setHasManualClassSelection(true);
     }
     if (hwIdParam) {
       setActiveSubTab('grading');
       setActiveHomeworkId(hwIdParam);
+      return;
+    }
+    if (tabParam === 'forum' || questionIdParam) {
+      setActiveSubTab('forum');
+      return;
+    }
+    if (tabParam === 'students' || tabParam === 'classes') {
+      setActiveSubTab('students');
+      return;
+    }
+    if (tabParam === 'sessions' || tabParam === 'assign') {
+      setActiveSubTab('sessions');
+      return;
+    }
+    if (tabParam === 'grading') {
+      setActiveSubTab('grading');
       return;
     }
     if (section === 'classes') {
@@ -136,16 +171,64 @@ export const TeacherWorkspace: React.FC = () => {
   });
 
   const classesList = useMemo(() => {
-    const raw = isDemoMode ? DEMO_CLASSES : classesQuery.data || [];
-    if (isDemoMode || user?.role === 'admin') return raw;
-    if (!user?.email) return [];
-    return raw.filter(
-      (c) =>
-        (c.teacher_email &&
-          c.teacher_email.toLowerCase() === user.email.toLowerCase()) ||
-        (c.teacher_code && user.code && c.teacher_code === user.code)
+    const raw = (isDemoMode ? DEMO_CLASSES : classesQuery.data || []).filter(
+      (c) => (c as KtnClassItem & { active?: boolean }).active !== false
     );
-  }, [isDemoMode, classesQuery.data, user?.email, user?.code, user?.role]);
+    if (user?.role === 'admin') return raw;
+    const assignedSet = new Set(
+      (user?.assignedClasses || [])
+        .map((c) => String(c || '').trim().toUpperCase())
+        .filter(Boolean)
+    );
+    const hasTeacherIdentity = Boolean(
+      user?.email || user?.code || user?.classCode || assignedSet.size > 0
+    );
+    if (!hasTeacherIdentity) {
+      return isDemoMode ? raw : [];
+    }
+    const filtered = raw.filter((c) => {
+      const classIdUpper = String(c.id || '').trim().toUpperCase();
+      if (
+        c.teacher_email &&
+        user?.email &&
+        c.teacher_email.toLowerCase() === user.email.toLowerCase()
+      ) {
+        return true;
+      }
+      if (
+        c.teacher_email &&
+        user?.email &&
+        c.teacher_email.toLowerCase() !== user.email.toLowerCase()
+      ) {
+        // Class was explicitly reassigned to another teacher — do not trust stale session assignedClasses
+        return false;
+      }
+      if (
+        c.teacher_code &&
+        user?.code &&
+        c.teacher_code.toUpperCase() === user.code.toUpperCase()
+      ) {
+        return true;
+      }
+      if (assignedSet.size > 0 && assignedSet.has(classIdUpper)) return true;
+      if (user?.classCode && classIdUpper === String(user.classCode).trim().toUpperCase()) {
+        return true;
+      }
+      return false;
+    });
+    if (isDemoMode && filtered.length === 0 && assignedSet.size === 0 && !user?.email) {
+      return raw;
+    }
+    return filtered;
+  }, [
+    isDemoMode,
+    classesQuery.data,
+    user?.email,
+    user?.code,
+    user?.role,
+    user?.assignedClasses,
+    user?.classCode,
+  ]);
 
   useEffect(() => {
     if (!selectedClassId && classesList.length > 0) {
@@ -153,10 +236,26 @@ export const TeacherWorkspace: React.FC = () => {
         (user?.classCode && classesList.find((c) => c.id === user.classCode)?.id) ||
         classesList[0].id;
       setSelectedClassId(preferred);
+    } else if (
+      selectedClassId &&
+      classesList.length > 0 &&
+      !classesList.some((c) => c.id.toUpperCase() === selectedClassId.toUpperCase())
+    ) {
+      setSelectedClassId(classesList[0].id);
+    } else if (selectedClassId && !classesQuery.isLoading && classesList.length === 0) {
+      setSelectedClassId('');
     }
-  }, [selectedClassId, classesList, user?.classCode]);
+  }, [selectedClassId, classesList, classesQuery.isLoading, user?.classCode]);
 
-  const effectiveClassId = selectedClassId || classesList[0]?.id || '';
+  const effectiveClassId = useMemo(() => {
+    if (classesList.length === 0) {
+      return classesQuery.isLoading ? selectedClassId : '';
+    }
+    const matched = classesList.find(
+      (c) => c.id.toUpperCase() === String(selectedClassId || '').toUpperCase()
+    );
+    return matched ? matched.id : classesList[0].id;
+  }, [classesList, classesQuery.isLoading, selectedClassId]);
   const homeworkClassFilter =
     user?.role === 'teacher' && !hasManualClassSelection
       ? undefined
@@ -391,51 +490,190 @@ export const TeacherWorkspace: React.FC = () => {
       if (classesList.length === 0) {
         throw new Error('Bạn chưa được phân công lớp. Vui lòng liên hệ Quản lý.');
       }
-      const chosenClass = newStuClassCode || effectiveClassId || classesList[0]?.id || '';
+      const chosenClass = (newStuClassCode || effectiveClassId || classesList[0]?.id || '').trim();
       if (!chosenClass) {
         throw new Error('Vui lòng chọn lớp học trực tiếp được phân công.');
       }
-      if (!newStuName.trim() || !newStuEmail.trim()) {
-        throw new Error('Vui lòng nhập đầy đủ họ tên và email học viên.');
+      if (
+        user?.role !== 'admin' &&
+        !classesList.some((c) => c.id.toUpperCase() === chosenClass.toUpperCase())
+      ) {
+        throw new Error(
+          `Bạn chỉ được phép tạo và xếp học viên vào lớp mình đang phụ trách (${classesList
+            .map((c) => c.id)
+            .join(', ')}).`
+        );
       }
+      const cleanName = newStuName.trim();
+      const cleanEmail = newStuEmail.trim().toLowerCase();
+      if (!cleanName || !cleanEmail || !cleanEmail.includes('@')) {
+        throw new Error('Vui lòng nhập đầy đủ họ tên và email hợp lệ của học viên.');
+      }
+      const cleanPhone = newStuPhone.trim();
+      const cleanParentName = newStuParentName.trim();
+      const cleanParentPhone = newStuParentPhone.trim();
+      const cleanNote = newStuNotes.trim();
+
+      // Preserve stable clientRequestId across network retries for the same (email, classCode)
+      const signature = `${cleanEmail}|${chosenClass.toUpperCase()}`;
+      if (!createStudentRequestRef.current || createStudentRequestRef.current.signature !== signature) {
+        createStudentRequestRef.current = {
+          signature,
+          clientRequestId: `tcs_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        };
+      }
+      const clientRequestId = createStudentRequestRef.current.clientRequestId;
+
       if (isDemoMode) {
+        const existingInDemo = (studentsQuery.data || []).find(
+          (s) => s.email.toLowerCase() === cleanEmail
+        );
+        if (existingInDemo) {
+          throw new Error(
+            `Học viên ${existingInDemo.name || cleanEmail} đã tồn tại trên hệ thống (lớp ${
+              existingInDemo.class_code || chosenClass
+            }). Không tạo trùng tài khoản.`
+          );
+        }
         await new Promise((r) => setTimeout(r, 400));
         return {
           ok: true,
+          operationId: clientRequestId,
           student: {
             code: `KTN-2026-${Math.floor(100 + Math.random() * 899)}`,
-            name: newStuName.trim(),
-            email: newStuEmail.trim().toLowerCase(),
+            name: cleanName,
+            email: cleanEmail,
+            phone: cleanPhone || cleanParentPhone || undefined,
+            parent_name: cleanParentName || undefined,
+            parent_phone: cleanParentPhone || undefined,
+            internal_note: cleanNote || undefined,
             class_code: chosenClass,
             has_live_class: true,
             has_online_courses: false,
             online_courses: [],
             studentCase: 'sll_only',
-          } as KtnStudentRecord,
+          } as KtnStudentRecord & { parent_phone?: string },
           initialPassword: 'Ktn@123456',
           classCode: chosenClass,
           message: 'Đã tạo học viên mới.',
         };
       }
-      return ktnApi.teacherCreateStudent({
-        name: newStuName.trim(),
-        email: newStuEmail.trim().toLowerCase(),
-        phone: newStuPhone.trim() || undefined,
-        parentName: newStuParentName.trim() || undefined,
-        parentPhone: newStuParentPhone.trim() || undefined,
+
+      // Contract note for Agent A (/api/ktn/teacher/students/create):
+      // Frontend sends all 7 onboarding fields + idempotent clientRequestId.
+      // We send both `parentPhone` and `phone` (falling back to `parentPhone` when student `phone` is blank)
+      // so parent contact phone is never dropped even if backend only reads `body.phone` or `body.parentPhone`.
+      const payload = {
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone || cleanParentPhone || undefined,
+        studentPhone: cleanPhone || undefined,
+        parentName: cleanParentName || undefined,
+        parentPhone: cleanParentPhone || undefined,
         classCode: chosenClass,
-        note: newStuNotes.trim() || undefined,
-      });
+        note: cleanNote || undefined,
+        clientRequestId,
+      };
+      return ktnApi.teacherCreateStudent(
+        payload as Parameters<typeof ktnApi.teacherCreateStudent>[0]
+      );
     },
     onSuccess: (res) => {
+      const stuObj = (res.student || {}) as KtnStudentRecord & {
+        studentCode?: string;
+        classCode?: string;
+        parent_phone?: string;
+        parentPhone?: string;
+        parentName?: string;
+        note?: string;
+      };
+      const rawRes = res as Record<string, any>;
+      const resolvedClassCode =
+        res.classCode ||
+        stuObj.class_code ||
+        stuObj.classCode ||
+        newStuClassCode ||
+        effectiveClassId ||
+        '';
+      const resolvedParentName =
+        stuObj.parent_name || stuObj.parentName || newStuParentName.trim() || undefined;
+      const resolvedParentPhone =
+        stuObj.parent_phone || stuObj.parentPhone || newStuParentPhone.trim() || undefined;
+      const explicitStudentPhone =
+        (stuObj as Record<string, any>).student_phone ||
+        (stuObj as Record<string, any>).studentPhone ||
+        newStuPhone.trim();
+      const resolvedPhone =
+        explicitStudentPhone ||
+        (stuObj.phone && stuObj.phone !== resolvedParentPhone ? stuObj.phone : undefined) ||
+        undefined;
+      const resolvedNote =
+        stuObj.internal_note || stuObj.note || newStuNotes.trim() || undefined;
+      const resolvedPassword = String(
+        res.initialPassword ||
+          rawRes?.credentials?.initialPassword ||
+          rawRes?.credentials?.tempPassword ||
+          ''
+      );
+      const usedClientRequestId = createStudentRequestRef.current?.clientRequestId;
+
+      const enrichedStudent: KtnStudentRecord & {
+        parent_phone?: string;
+        parentPhone?: string;
+      } = {
+        ...stuObj,
+        code: stuObj.code || stuObj.studentCode || 'KTN-NEW',
+        name: stuObj.name || newStuName.trim(),
+        email: stuObj.email || newStuEmail.trim().toLowerCase(),
+        class_code: resolvedClassCode,
+        phone: resolvedPhone || resolvedParentPhone,
+        parent_name: resolvedParentName,
+        parent_phone: resolvedParentPhone,
+        parentPhone: resolvedParentPhone,
+        internal_note: resolvedNote,
+        has_live_class: true,
+        has_online_courses: Boolean(stuObj.has_online_courses),
+        online_courses: Array.isArray(stuObj.online_courses) ? stuObj.online_courses : [],
+        studentCase: stuObj.studentCase || 'sll_only',
+      };
+
+      setLocalCreatedStudents((prev) => [
+        enrichedStudent,
+        ...prev.filter(
+          (item) => item.email.toLowerCase() !== enrichedStudent.email.toLowerCase()
+        ),
+      ]);
+      queryClient.setQueryData<KtnStudentRecord[]>(
+        ['ktn-class-students', effectiveClassId, user?.email, isDemoMode],
+        (prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          const exists = list.some(
+            (item) => item.email.toLowerCase() === enrichedStudent.email.toLowerCase()
+          );
+          return exists
+            ? list.map((item) =>
+                item.email.toLowerCase() === enrichedStudent.email.toLowerCase()
+                  ? enrichedStudent
+                  : item
+              )
+            : [enrichedStudent, ...list];
+        }
+      );
       queryClient.invalidateQueries({ queryKey: ['ktn-class-students'] });
+
       setCreatedStudentResult({
-        name: res.student.name,
-        email: res.student.email,
-        code: res.student.code,
-        classCode: res.classCode || res.student.class_code || '',
-        initialPassword: res.initialPassword || '',
+        name: enrichedStudent.name,
+        email: enrichedStudent.email,
+        code: enrichedStudent.code,
+        classCode: resolvedClassCode,
+        initialPassword: resolvedPassword,
+        phone: resolvedPhone,
+        parentName: resolvedParentName,
+        parentPhone: resolvedParentPhone,
+        note: resolvedNote,
+        clientRequestId: usedClientRequestId,
       });
+      createStudentRequestRef.current = null;
       setNewStuName('');
       setNewStuEmail('');
       setNewStuPhone('');
@@ -443,7 +681,7 @@ export const TeacherWorkspace: React.FC = () => {
       setNewStuParentPhone('');
       setNewStuNotes('');
       addToast({
-        title: `Đã tạo học viên ${res.student.name} vào lớp ${res.classCode || res.student.class_code}`,
+        title: `Đã tạo học viên ${enrichedStudent.name} vào lớp ${resolvedClassCode}`,
         description:
           'Tài khoản đã được tạo và xếp vào nhóm chat lớp trực tiếp (chưa cấp khóa học video).',
         variant: 'success',
@@ -469,42 +707,74 @@ export const TeacherWorkspace: React.FC = () => {
       if (!reqCourseId.trim()) {
         throw new Error('Vui lòng chọn khóa học video đề xuất mở.');
       }
-      const stObj = studentsList.find(
-        (s) => s.email.toLowerCase() === reqStudentEmail.trim().toLowerCase()
-      );
+      const cleanStuEmail = reqStudentEmail.trim().toLowerCase();
+      const cleanCourseId = reqCourseId.trim();
+      const stObj = studentsList.find((s) => s.email.toLowerCase() === cleanStuEmail);
+      const targetClassCode = stObj?.class_code || effectiveClassId;
+      const isAssignedClass =
+        user?.role === 'admin' ||
+        classesList.some(
+          (c) =>
+            String((c as Record<string, any>).code || c.id || '')
+              .trim()
+              .toUpperCase() ===
+            String(targetClassCode || '')
+              .trim()
+              .toUpperCase()
+        );
+      if (!stObj || !isAssignedClass) {
+        throw new Error(
+          'Chỉ được đề nghị cấp khóa học cho học viên thuộc lớp trực tiếp bạn phụ trách.'
+        );
+      }
       const courseObj = (coursesQuery.data || DEMO_COURSES).find(
-        (c) => c.id === reqCourseId.trim()
+        (c) => c.id === cleanCourseId
       );
+      const cleanReason =
+        reqReason.trim().length >= 3
+          ? reqReason.trim()
+          : 'Giáo viên phụ trách đề xuất mở khóa video bổ trợ';
+      const reqSig = `${cleanStuEmail}|${cleanCourseId}`;
+      if (!courseGrantRequestRef.current || courseGrantRequestRef.current.signature !== reqSig) {
+        courseGrantRequestRef.current = {
+          signature: reqSig,
+          clientRequestId: `cgr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        };
+      }
+      const clientRequestId = courseGrantRequestRef.current.clientRequestId;
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 300));
         return {
           ok: true,
           request: {
-            id: `req-${Date.now()}`,
-            student_id: stObj?.code || reqStudentEmail,
-            student_email: reqStudentEmail,
-            student_name: stObj?.name || reqStudentEmail,
-            class_code: stObj?.class_code || effectiveClassId,
-            requested_course_id: reqCourseId,
-            requested_course_title: courseObj?.title || reqCourseId,
+            id: clientRequestId,
+            student_id: stObj?.code || cleanStuEmail,
+            student_email: cleanStuEmail,
+            student_name: stObj?.name || cleanStuEmail,
+            class_code: targetClassCode,
+            requested_course_id: cleanCourseId,
+            requested_course_title: courseObj?.title || cleanCourseId,
             requested_by_teacher_id: user?.code || 'GV',
-            reason: reqReason.trim(),
+            reason: cleanReason,
             status: 'pending' as const,
             created_at: new Date().toISOString(),
           },
         };
       }
       return ktnApi.createCourseGrantRequest({
-        studentEmail: reqStudentEmail.trim(),
+        id: clientRequestId,
+        clientRequestId,
+        studentEmail: cleanStuEmail,
         studentId: stObj?.code,
         studentName: stObj?.name,
-        classCode: stObj?.class_code || effectiveClassId,
-        requestedCourseId: reqCourseId.trim(),
+        classCode: targetClassCode,
+        requestedCourseId: cleanCourseId,
         requestedCourseTitle: courseObj?.title,
-        reason: reqReason.trim() || 'Giáo viên phụ trách đề xuất mở khóa video bổ trợ',
-      });
+        reason: cleanReason,
+      } as Parameters<typeof ktnApi.createCourseGrantRequest>[0]);
     },
     onSuccess: () => {
+      courseGrantRequestRef.current = null;
       queryClient.invalidateQueries({ queryKey: ['ktn-course-grant-requests'] });
       setCourseRequestModalOpen(false);
       setReqReason('');
@@ -565,7 +835,24 @@ export const TeacherWorkspace: React.FC = () => {
   };
 
   const sessionsList = sessionsQuery.data || [];
-  const studentsList = studentsQuery.data || [];
+  const studentsList = useMemo(() => {
+    const remote = studentsQuery.data || [];
+    const merged = new Map<string, KtnStudentRecord>();
+    for (const st of localCreatedStudents) {
+      if (
+        !effectiveClassId ||
+        !st.class_code ||
+        st.class_code.toUpperCase() === effectiveClassId.toUpperCase()
+      ) {
+        merged.set(st.email.toLowerCase(), st);
+      }
+    }
+    for (const st of remote) {
+      const existing = merged.get(st.email.toLowerCase());
+      merged.set(st.email.toLowerCase(), existing ? { ...existing, ...st } : st);
+    }
+    return Array.from(merged.values());
+  }, [studentsQuery.data, localCreatedStudents, effectiveClassId]);
   const selectedClassItem = useMemo(
     () => classesList.find((c) => c.id === effectiveClassId) || classesList[0] || null,
     [classesList, effectiveClassId]
@@ -640,7 +927,8 @@ export const TeacherWorkspace: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => navigate(`/chat?room=class:${effectiveClassId}`)}
+              data-testid="teacher-open-class-chat-btn"
+              onClick={() => navigate(`/chat?room=${encodeURIComponent(`class:${effectiveClassId}`)}`)}
               className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
             >
               <MessageSquare className="h-3.5 w-3.5" />
@@ -1207,9 +1495,17 @@ export const TeacherWorkspace: React.FC = () => {
               ) : (
                 studentsList.map((st) => {
                   const attStatus = attendanceMap[st.email] || 'present';
+                  const stExt = st as KtnStudentRecord & {
+                    parent_phone?: string;
+                    parentPhone?: string;
+                    parentName?: string;
+                  };
+                  const displayParentName = stExt.parent_name || stExt.parentName;
+                  const displayParentPhone = stExt.parent_phone || stExt.parentPhone;
                   return (
                     <div
                       key={st.code || st.email}
+                      data-testid={`teacher-student-row-${st.email}`}
                       className="flex flex-wrap items-center justify-between gap-2 py-2.5"
                     >
                       <div className="min-w-0 flex-1">
@@ -1230,7 +1526,16 @@ export const TeacherWorkspace: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        <p className="truncate text-[11px] text-stone-500">{st.email}</p>
+                        <p className="truncate text-[11px] text-stone-500">
+                          {st.email}
+                          {st.phone && st.phone !== displayParentPhone ? ` · SĐT: ${st.phone}` : ''}
+                          {displayParentName ? ` · PH: ${displayParentName}` : ''}
+                          {displayParentPhone
+                            ? displayParentName
+                              ? ` (${displayParentPhone})`
+                              : ` · SĐT PH: ${displayParentPhone}`
+                            : ''}
+                        </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <select
@@ -1322,7 +1627,10 @@ export const TeacherWorkspace: React.FC = () => {
                           Lớp {req.class_code}
                         </span>
                         <span className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-900">
-                          {req.requested_course_title || req.requested_course_id}
+                          {(req as Record<string, any>).requested_course_title ||
+                            (req as Record<string, any>).course_title ||
+                            (req as Record<string, any>).requested_course_id ||
+                            (req as Record<string, any>).course_id}
                         </span>
                       </div>
                       {req.reason && (
@@ -1429,22 +1737,61 @@ export const TeacherWorkspace: React.FC = () => {
                     <p>
                       Mã HV: <strong>{createdStudentResult.code}</strong>
                     </p>
-                    <p>
+                    <p data-testid="teacher-created-student-email-display">
                       Email đăng nhập: <strong>{createdStudentResult.email}</strong>
                     </p>
-                    <p>
+                    <p data-testid="teacher-created-student-password-display">
                       Mật khẩu khởi tạo:{' '}
                       <strong className="text-red-800">
                         {createdStudentResult.initialPassword}
                       </strong>
                     </p>
+                    {createdStudentResult.phone && (
+                      <p data-testid="teacher-created-student-phone-display">
+                        SĐT học viên: <strong>{createdStudentResult.phone}</strong>
+                      </p>
+                    )}
+                    {createdStudentResult.parentName && (
+                      <p data-testid="teacher-created-student-parent-name-display">
+                        Phụ huynh: <strong>{createdStudentResult.parentName}</strong>
+                      </p>
+                    )}
+                    {createdStudentResult.parentPhone && (
+                      <p data-testid="teacher-created-student-parent-phone-display">
+                        SĐT phụ huynh: <strong>{createdStudentResult.parentPhone}</strong>
+                      </p>
+                    )}
+                    {createdStudentResult.note && (
+                      <p data-testid="teacher-created-student-note-display">
+                        Ghi chú: <strong>{createdStudentResult.note}</strong>
+                      </p>
+                    )}
                     <p>
                       Khóa học video: <strong>Chưa cấp (0 khóa)</strong>
                     </p>
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    data-testid="teacher-request-course-from-created-btn"
+                    onClick={() => {
+                      const targetEmail = createdStudentResult.email;
+                      setCreatedStudentResult(null);
+                      setCreateStudentModalOpen(false);
+                      setCourseRequestError(null);
+                      setReqStudentEmail(targetEmail);
+                      if (!reqCourseId && (coursesQuery.data || DEMO_COURSES)[0]?.id) {
+                        setReqCourseId((coursesQuery.data || DEMO_COURSES)[0].id);
+                      }
+                      setCourseRequestModalOpen(true);
+                    }}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
+                  >
+                    <BookOpen className="h-3.5 w-3.5 text-amber-800" />
+                    <span>Đề nghị mở khóa học online</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {

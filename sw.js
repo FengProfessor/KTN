@@ -116,7 +116,11 @@ self.addEventListener('push', (event) => {
     if (oldestKey) RECENT_PUSH_EVENT_IDS.delete(oldestKey);
   }
   const title = notif.title || 'Học Viện Khổng Tử Nhí';
-  const targetUrl = notif.action_url || (notif.data && notif.data.url) || '/custom-page/so-lien-lac-test#/notifications';
+  const targetUrl =
+    notif.action_url ||
+    notif.actionUrl ||
+    (notif.data && (notif.data.url || notif.data.action_url || notif.data.actionUrl)) ||
+    '/custom-page/so-lien-lac-test#/notifications';
   const eventType = String(notif.eventType || notif.type || (notif.data && notif.data.type) || 'notification');
   const options = {
     body: notif.body || 'Chạm để mở ứng dụng xem chi tiết.',
@@ -128,13 +132,17 @@ self.addEventListener('push', (event) => {
     data: {
       url: targetUrl,
       action_url: targetUrl,
+      actionUrl: targetUrl,
       id: eventId,
       eventId: eventId,
       eventType: eventType,
       type: eventType,
       roomId: notif.roomId || (notif.data && notif.data.roomId) || '',
       classCode: notif.classCode || (notif.data && notif.data.classCode) || '',
-      homeworkId: notif.homeworkId || (notif.data && notif.data.homeworkId) || ''
+      homeworkId: notif.homeworkId || (notif.data && notif.data.homeworkId) || '',
+      courseId: notif.courseId || (notif.data && notif.data.courseId) || '',
+      lessonNum: notif.lessonNum || (notif.data && notif.data.lessonNum) || null,
+      sessionNum: notif.sessionNum || (notif.data && notif.data.sessionNum) || null
     },
     vibrate: [200, 100, 200]
   };
@@ -221,11 +229,89 @@ self.addEventListener('message', (event) => {
   }
 });
 
+function resolveSwColdOpenUrl(data) {
+  const raw = String((data && (data.url || data.action_url || data.actionUrl)) || '').trim();
+  const type = String((data && (data.eventType || data.type)) || '').trim();
+  const classCode = String((data && data.classCode) || '').replace(/^class:/i, '').trim().toUpperCase();
+  const roomId = String((data && data.roomId) || '').trim();
+  const homeworkId = String((data && data.homeworkId) || '').trim();
+  let working = raw;
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      const host = parsed.hostname.toLowerCase();
+      const isInternal =
+        host === 'khongtunhi.com' ||
+        host === 'www.khongtunhi.com' ||
+        host === 'localhost' ||
+        host === '127.0.0.1';
+      if (!isInternal) {
+        return raw;
+      }
+      working = (parsed.pathname || '') + (parsed.search || '') + (parsed.hash || '');
+    } catch {
+      return raw;
+    }
+  }
+  let route = working;
+  const hashIdx = route.indexOf('#');
+  if (hashIdx >= 0) {
+    route = route.slice(hashIdx + 1);
+  } else if (/^\/custom-page\/so-lien-lac(?:-test)?/i.test(route)) {
+    route = route.replace(/^\/custom-page\/so-lien-lac(?:-test)?/i, '') || '/notifications';
+  }
+  if (!route.startsWith('/')) route = '/' + route;
+
+  const qIdx = route.indexOf('?');
+  const sp = new URLSearchParams(qIdx >= 0 ? route.slice(qIdx + 1) : '');
+  const viewParam = sp.get('view') || '';
+
+  if (route.startsWith('/messages') || route.startsWith('/nhom-lop') || viewParam === 'groups') {
+    let targetRoom = sp.get('room') || sp.get('roomId') || roomId || '';
+    const qCls = (sp.get('class') || sp.get('classCode') || classCode || '').replace(/^class:/i, '').trim().toUpperCase();
+    if (!targetRoom && qCls) {
+      targetRoom = 'class:' + qCls;
+    } else if (targetRoom && !/^(?:class:|course:|student:)/i.test(targetRoom)) {
+      targetRoom = 'class:' + targetRoom.toUpperCase();
+    } else if (targetRoom && /^class:/i.test(targetRoom)) {
+      targetRoom = 'class:' + targetRoom.slice(6).trim().toUpperCase();
+    }
+    route = targetRoom ? ('/chat?room=' + encodeURIComponent(targetRoom)) : '/chat';
+  } else if (viewParam === 'grade') {
+    const hwId = sp.get('hwId') || homeworkId || '';
+    route = hwId ? ('/teacher?hwId=' + encodeURIComponent(hwId)) : '/teacher';
+  } else if (viewParam === 'orders') {
+    route = '/admin';
+  } else if (route === '/notifications' || route === '/' || route === '/dashboard') {
+    if (type === 'class_created' || type === 'class_teacher_changed') {
+      route = classCode ? ('/teacher/classes?class=' + encodeURIComponent(classCode)) : '/teacher/classes';
+    } else if (
+      type === 'class_joined' ||
+      type === 'class_reminder' ||
+      type === 'schedule_changed' ||
+      type === 'homework_assigned'
+    ) {
+      route = classCode ? ('/classrooms?class=' + encodeURIComponent(classCode)) : '/classrooms';
+    } else if (
+      type === 'chat_group_message' ||
+      type === 'chat_private_message' ||
+      type === 'chat_course_message' ||
+      type === 'chat_message'
+    ) {
+      const targetRoom = roomId || (classCode ? ('class:' + classCode) : '');
+      route = targetRoom ? ('/chat?room=' + encodeURIComponent(targetRoom)) : '/chat';
+    } else {
+      route = '/notifications';
+    }
+  }
+  return '/custom-page/so-lien-lac-test#' + route;
+}
+
 // 4. Khi người dùng chạm vào thông báo ngoài Màn hình khóa iPhone / Android
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};
-  const targetUrl = data.url || '/custom-page/so-lien-lac-test#/notifications';
+  const targetUrl = resolveSwColdOpenUrl(data);
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {

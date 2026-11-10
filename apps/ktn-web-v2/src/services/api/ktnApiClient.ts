@@ -416,7 +416,9 @@ export const ktnApi = {
     }
   },
 
-  async logout(): Promise<void> {
+  async logout(tokenOverride?: string): Promise<void> {
+    const tokenToRevoke = String(tokenOverride || getStoredSession()?.token || '').trim();
+    clearStoredSession();
     try {
       let unsubscribeEndpoint = '';
       if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
@@ -430,8 +432,17 @@ export const ktnApi = {
           // ignore
         }
       }
+      const headers: Record<string, string> = {};
+      if (
+        tokenToRevoke &&
+        tokenToRevoke !== 'DEMO-MODE-ONLY' &&
+        !tokenToRevoke.startsWith('KTN-')
+      ) {
+        headers.Authorization = `Bearer ${tokenToRevoke}`;
+      }
       await ktnRequest('/api/ktn/auth/logout', {
         method: 'POST',
+        headers,
         body: JSON.stringify(unsubscribeEndpoint ? { unsubscribeEndpoint } : {})
       });
     } catch {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, render, renderHook, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   inspectDlpClient,
@@ -26,6 +26,7 @@ import {
   shouldGroupWithPreviousMessage,
 } from '../../src/features/chat/services/chatApi';
 import { MessageBubble } from '../../src/features/chat/components/MessageBubble';
+import { MessageComposer } from '../../src/features/chat/components/MessageComposer';
 import {
   ConversationList,
   formatCompactRoomTitle,
@@ -40,7 +41,7 @@ import {
   resolveHeaderTitle,
 } from '../../src/app/navigation/roleRoutes';
 import { shouldUseHashRouter } from '../../src/app/providers/AppProviders';
-import { ktnApi } from '../../src/services/api/ktnApiClient';
+import { ktnApi, saveStoredSession } from '../../src/services/api/ktnApiClient';
 import {
   CONTACT_STATUS_META,
   PAYMENT_STATUS_META,
@@ -350,7 +351,7 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
     });
 
-    it('synchronously clears room drafts in localStorage and memory as soon as logout() begins (before async ktnApi.logout resolves)', async () => {
+    it('synchronously clears room drafts in localStorage and memory as soon as logout() begins (before async ktnApi.logout resolves) and forwards token to ktnApi.logout', async () => {
       let resolveLogoutApi!: () => void;
       const logoutSpy = vi.spyOn(ktnApi, 'logout').mockImplementation(
         () =>
@@ -359,6 +360,12 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
           })
       );
 
+      saveStoredSession(DEMO_USERS.student_both, 'jwt-live-token-hoangngan');
+      useAuthStore.setState({
+        user: { ...DEMO_USERS.student_both, token: 'jwt-live-token-hoangngan' },
+        authUser: { ...DEMO_USERS.student_both, token: 'jwt-live-token-hoangngan' },
+      });
+
       useUiStore.getState().setRoomDraft('class:YCT2-04', 'Bản nháp riêng của Hoàng Ngân');
       expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBe(
         'Bản nháp riêng của Hoàng Ngân'
@@ -366,15 +373,62 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
 
       const logoutPromise = useAuthStore.getState().logout();
 
-      // Even before ktnApi.logout() resolves, draft keys must already be purged
+      // Even before ktnApi.logout() resolves, draft keys and stored session must already be purged
+      expect(localStorage.getItem('ktn_v2_auth_session')).toBeNull();
       expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
       expect(useUiStore.getState().draftByRoom).toEqual({});
       expect(useAuthStore.getState().user).toBeNull();
+      expect(logoutSpy).toHaveBeenCalledWith('jwt-live-token-hoangngan');
 
       resolveLogoutApi();
       await logoutPromise;
       expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
       logoutSpy.mockRestore();
+    });
+
+    it('prevents unmounting or unauthenticated MessageComposer from re-saving a draft and purges drafts on cross-tab storage logout', () => {
+      saveStoredSession(DEMO_USERS.student_both, 'jwt-live-token-hoangngan');
+      useAuthStore.setState({
+        user: { ...DEMO_USERS.student_both, token: 'jwt-live-token-hoangngan' },
+        authUser: { ...DEMO_USERS.student_both, token: 'jwt-live-token-hoangngan' },
+      });
+      useUiStore.getState().setDemoMode(false);
+
+      const { getByTestId } = render(
+        <MessageComposer
+          roomId="class:YCT2-04"
+          classCode="YCT2-04"
+          replyingTo={null}
+          isSending={false}
+          onClearReply={() => {}}
+          onSend={async () => ({})}
+        />
+      );
+
+      const textarea = getByTestId('chat-composer-input') as HTMLTextAreaElement;
+      fireEvent.change(textarea, { target: { value: 'Bản nháp riêng của Hoàng Ngân' } });
+      expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBe(
+        'Bản nháp riêng của Hoàng Ngân'
+      );
+
+      // Simulate cross-tab storage removal of ktn_v2_auth_session
+      act(() => {
+        localStorage.removeItem('ktn_v2_auth_session');
+        window.dispatchEvent(
+          new StorageEvent('storage', {
+            key: 'ktn_v2_auth_session',
+            newValue: null,
+          })
+        );
+      });
+
+      expect(useAuthStore.getState().user).toBeNull();
+      expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
+
+      // Any trailing change event from an unmounting/unauthenticated composer must not re-save the draft
+      fireEvent.change(textarea, { target: { value: 'Bản nháp rò rỉ sau khi đăng xuất' } });
+      expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
+      expect(useUiStore.getState().getRoomDraft('class:YCT2-04')).toBe('');
     });
 
     it('T09: switching from Demo to Live mode does not leak cached Demo ktn-classes (Cô Lâm Mỹ Linh) into Live useChatRooms', async () => {

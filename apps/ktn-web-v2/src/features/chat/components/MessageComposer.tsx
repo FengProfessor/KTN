@@ -18,7 +18,9 @@ import {
   normalizeAudioMimeType,
 } from './VoiceRecorder';
 import { detectDlpViolation, formatFileSize } from '@/lib/utils';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
+import { getStoredSession } from '@/services/api/ktnApiClient';
 import { truncateFileName } from '../services/chatApi';
 
 const COMPOSER_EMOJIS = ['👋', '👍', '❤️', '🎉', '🙏', '🌟', '🐼', '📚'];
@@ -43,6 +45,17 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const draft = useUiStore((s) => s.draftByRoom[roomId] ?? s.getRoomDraft(roomId));
   const setRoomDraft = useUiStore((s) => s.setRoomDraft);
   const addToast = useUiStore((s) => s.addToast);
+
+  const handleDraftChange = (nextText: string) => {
+    if (nextText) {
+      const authState = useAuthStore.getState();
+      const uiState = useUiStore.getState();
+      if (!authState.user && !authState.authUser && !uiState.isDemoMode && !getStoredSession()) {
+        return;
+      }
+    }
+    setRoomDraft(roomId, nextText);
+  };
 
   const [showEmojiBar, setShowEmojiBar] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
@@ -321,7 +334,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 <button
                   key={emoji}
                   type="button"
-                  onClick={() => setRoomDraft(roomId, `${draft}${emoji}`)}
+                  onClick={() => handleDraftChange(`${draft}${emoji}`)}
                   className="rounded-lg p-1.5 text-base transition-transform hover:scale-110 hover:bg-white"
                 >
                   {emoji}
@@ -393,7 +406,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 rows={1}
                 data-testid="chat-composer-input"
                 value={draft}
-                onChange={(e) => setRoomDraft(roomId, e.target.value)}
+                onChange={(e) => handleDraftChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={`Nhắn tới ${classCode || roomId}...`}
                 className="max-h-24 min-h-[38px] w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:border-red-800 focus:bg-white focus:outline-none"

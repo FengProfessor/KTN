@@ -143,8 +143,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   async logout() {
     ++authEpoch;
     restoreInFlight = null;
+    const tokenToRevoke =
+      getStoredSession()?.token || get().authUser?.token || get().user?.token || '';
     clearStoredSession();
     useUiStore.getState().resetSessionUiState();
+    try {
+      sessionStorage.removeItem('ktn_post_login_redirect');
+    } catch {
+      // ignore
+    }
     set({
       user: null,
       authUser: null,
@@ -153,10 +160,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       error: null
     });
     try {
-      await ktnApi.logout();
+      await ktnApi.logout(tokenToRevoke || undefined);
     } finally {
       clearStoredSession();
       useUiStore.getState().resetSessionUiState();
+      try {
+        sessionStorage.removeItem('ktn_post_login_redirect');
+      } catch {
+        // ignore
+      }
       set({
         user: null,
         authUser: null,
@@ -228,4 +240,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   }
 }));
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (event: StorageEvent) => {
+    if ((event.key === 'ktn_v2_auth_session' && !event.newValue) || event.key === null) {
+      ++authEpoch;
+      restoreInFlight = null;
+      clearStoredSession();
+      useUiStore.getState().resetSessionUiState();
+      useAuthStore.setState({
+        user: null,
+        authUser: null,
+        isLoading: false,
+        isRestoring: false,
+        error: null
+      });
+    }
+  });
+}
 

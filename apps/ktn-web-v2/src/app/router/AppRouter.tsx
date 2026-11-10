@@ -32,6 +32,9 @@ const RouteLoadingFallback: React.FC = () => (
 );
 
 function buildLoginRedirectUrl(pathname: string, search: string): string {
+  if (useAuthStore.getState().isLoading) {
+    return '/login';
+  }
   const fullPath = `${pathname || '/'}${search || ''}`;
   if (fullPath && fullPath !== '/' && !fullPath.startsWith('/login')) {
     try {

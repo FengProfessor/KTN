@@ -3744,6 +3744,420 @@ async function runSuite() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reset' }),
     });
+
+    // =========================================================================
+    // TEST U — KTN MASTER UX & PERFORMANCE UPGRADE (U1..U3 + SCREENSHOTS)
+    // =========================================================================
+    const upgradeShotDir = path.join(REPO_ROOT, 'reports/ktn-v3-production-readiness/screenshots');
+    fs.mkdirSync(upgradeShotDir, { recursive: true });
+
+    // U1: Admin Teacher Search (accent-insensitive, status/class filter, pagination, mobile compact cards, TeacherDetailDrawer)
+    const uAdminCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const uAdminPage = await uAdminCtx.newPage();
+    await uAdminPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await uAdminPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await uAdminPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 10000 });
+    await uAdminPage.goto(`${baseUrl}/admin`, { waitUntil: 'domcontentloaded' });
+    await uAdminPage.waitForSelector('[data-testid="admin-tab-teachers"]', { timeout: 8000 });
+    await uAdminPage.click('[data-testid="admin-tab-teachers"]');
+    await uAdminPage.waitForSelector('[data-testid="admin-teachers-section"]', { timeout: 8000 });
+    await uAdminPage.waitForSelector('[data-testid="teacher-search-pagination-summary"]', {
+      timeout: 8000,
+    });
+
+    const u1Page1Summary = await uAdminPage.textContent(
+      '[data-testid="teacher-search-pagination-summary"]'
+    );
+    await uAdminPage.click('[data-testid="teacher-search-next-page"]');
+    await uAdminPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="teacher-search-pagination-summary"]')
+          ?.textContent?.includes('Trang 2 / 2'),
+      null,
+      { timeout: 6000 }
+    );
+    const u1Page2Summary = await uAdminPage.textContent(
+      '[data-testid="teacher-search-pagination-summary"]'
+    );
+    await uAdminPage.click('[data-testid="teacher-search-prev-page"]');
+    await uAdminPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="teacher-search-pagination-summary"]')
+          ?.textContent?.includes('Trang 1 / 2'),
+      null,
+      { timeout: 6000 }
+    );
+
+    // Accent-insensitive search ("dang quoc bao 0022") matches "Thầy Đặng Quốc Bảo 0022"
+    await uAdminPage.fill('[data-testid="admin-teacher-search-input"]', 'dang quoc bao 0022');
+    await uAdminPage.waitForSelector(
+      '[data-testid="admin-teacher-row-e2e.gv.0022@khongtunhi.com"]',
+      { timeout: 6000 }
+    );
+    const u1MatchedRowText = await uAdminPage.textContent(
+      '[data-testid="admin-teacher-row-e2e.gv.0022@khongtunhi.com"]'
+    );
+
+    // Clear search and test status filter (INACTIVE) & class filter (YCT2-04)
+    await uAdminPage.fill('[data-testid="admin-teacher-search-input"]', '');
+    await uAdminPage.selectOption('[data-testid="admin-teacher-status-filter"]', 'INACTIVE');
+    await uAdminPage.waitForSelector(
+      '[data-testid="admin-teacher-row-e2e.gv.0015@khongtunhi.com"]',
+      { timeout: 6000 }
+    );
+    const u1LockedRowVisible = await uAdminPage.isVisible(
+      '[data-testid="admin-teacher-row-e2e.gv.0015@khongtunhi.com"]'
+    );
+
+    await uAdminPage.selectOption('[data-testid="admin-teacher-status-filter"]', 'ALL');
+    await uAdminPage.selectOption('[data-testid="admin-teacher-class-filter"]', 'YCT2-04');
+    await uAdminPage.waitForSelector(
+      '[data-testid="admin-teacher-row-linh.lam@khongtunhi.com"]',
+      { timeout: 6000 }
+    );
+    await uAdminPage.click('[data-testid="admin-open-teacher-btn-linh.lam@khongtunhi.com"]');
+    await uAdminPage.waitForSelector('[data-testid="teacher-detail-drawer"]', { timeout: 6000 });
+    const u1DrawerName = await uAdminPage.textContent('[data-testid="teacher-drawer-name"]');
+    await uAdminPage.click('[data-testid="teacher-drawer-tab-teaching"]');
+    await uAdminPage.waitForTimeout(150);
+
+    await uAdminPage.screenshot({
+      path: path.join(upgradeShotDir, 'admin-teacher-search-desktop-1440.png'),
+      fullPage: false,
+    });
+    // Close drawer
+    await uAdminPage.keyboard.press('Escape').catch(() => {});
+    await uAdminPage.evaluate(() => {
+      const closeBtn = document.querySelector(
+        '[data-testid="teacher-detail-drawer"] button'
+      );
+      if (closeBtn instanceof HTMLElement) closeBtn.click();
+    });
+    await uAdminPage.selectOption('[data-testid="admin-teacher-class-filter"]', 'ALL');
+    await uAdminPage.waitForTimeout(300);
+
+    // Mobile 390x844 compact teacher cards
+    await uAdminPage.setViewportSize({ width: 390, height: 844 });
+    await uAdminPage.waitForSelector('[data-testid="admin-teacher-mobile-list"]', {
+      timeout: 5000,
+    });
+    const u1MobileCardsVisible = await uAdminPage.isVisible(
+      '[data-testid="admin-teacher-mobile-list"]'
+    );
+    const u1MobileOverflow = await uAdminPage.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth
+    );
+    await uAdminPage.screenshot({
+      path: path.join(upgradeShotDir, 'admin-teacher-search-mobile-390.png'),
+      fullPage: false,
+    });
+    await uAdminCtx.close();
+
+    recordTest(
+      'TEST U',
+      'U1',
+      'Admin server-side Teacher Search paginates 20/page, matches unaccented Vietnamese ("dang quoc bao 0022"), filters by status/class, opens TeacherDetailDrawer, and renders mobile compact cards',
+      Boolean(
+        u1Page1Summary?.includes('Trang 1 / 2') &&
+          u1Page2Summary?.includes('Trang 2 / 2') &&
+          u1MatchedRowText?.includes('Thầy Đặng Quốc Bảo 0022') &&
+          u1LockedRowVisible &&
+          u1DrawerName?.includes('Lâm') &&
+          u1MobileCardsVisible &&
+          u1MobileOverflow <= 2
+      ),
+      JSON.stringify({
+        u1Page1Summary: u1Page1Summary?.trim(),
+        u1Page2Summary: u1Page2Summary?.trim(),
+        u1LockedRowVisible,
+        u1MobileCardsVisible,
+        u1MobileOverflow,
+      })
+    );
+
+    // U2: Chat Inbox Latest-First Ordering, Empty 1-1 Removal, "Nhắn mới" Ephemeral -> Persisted Flow & Clean Image Message UI
+    const uTeacherCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const uTeacherPage = await uTeacherCtx.newPage();
+    await uTeacherPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await uTeacherPage.click('[data-testid="quick-login-linh.lam@khongtunhi.com"]');
+    await uTeacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 10000 });
+    await uTeacherPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
+    await uTeacherPage.waitForSelector('[data-testid="chat-room-scroll-list"]', { timeout: 8000 });
+
+    // Empty 1-1 threads must NOT appear in Inbox
+    const empty1on1Count = await uTeacherPage
+      .locator('[data-testid="chat-room-item-student:e2e.hs.0005@khongtunhi.com"]')
+      .count();
+
+    // Click "Nhắn mới", search "hoang ngan", open 1-1 room, and send first message -> promotes to top of Inbox
+    await uTeacherPage.click('[data-testid="chat-new-message-btn"]');
+    await uTeacherPage.waitForSelector('[data-testid="chat-new-message-modal"]', { timeout: 5000 });
+    await uTeacherPage.fill('[data-testid="chat-new-message-search-input"]', 'hoang ngan');
+    await uTeacherPage.waitForSelector(
+      '[data-testid="chat-new-message-student-item-hoangngan@khongtunhi.com"]',
+      { timeout: 5000 }
+    );
+    await uTeacherPage.click(
+      '[data-testid="chat-new-message-student-item-hoangngan@khongtunhi.com"]'
+    );
+    await uTeacherPage.waitForSelector('[data-testid="chat-composer-input"]', { timeout: 5000 });
+
+    const u2DirectMsg = `Cô Linh nhắn riêng 1-1 cho Hoàng Ngân lúc ${Date.now()}`;
+    await uTeacherPage.fill('[data-testid="chat-composer-input"]', u2DirectMsg);
+    await uTeacherPage.click('[data-testid="chat-send-btn"]');
+    await uTeacherPage.waitForFunction(
+      (txt) => document.body.innerText.includes(txt),
+      u2DirectMsg,
+      { timeout: 8000 }
+    );
+
+    const topRoomIdAfterDirectSend = await uTeacherPage.evaluate(() => {
+      const firstBtn = document.querySelector(
+        '[data-testid="chat-room-scroll-list"] > button[data-testid^="chat-room-item-"]'
+      );
+      return firstBtn?.getAttribute('data-testid') || '';
+    });
+
+    // Send image-only message and verify NO redundant "[Đã gửi ảnh: ...]" text marker is shown
+    const u2PngBuffer = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64'
+    );
+    await uTeacherPage.setInputFiles('[data-testid="chat-file-input"]', {
+      name: 'anh-chup-bai-chua-yct2.png',
+      mimeType: 'image/png',
+      buffer: u2PngBuffer,
+    });
+    await uTeacherPage.waitForSelector('[data-testid="composer-staged-attachment"]', {
+      timeout: 5000,
+    });
+    await uTeacherPage.click('[data-testid="chat-send-btn"]');
+    await uTeacherPage.waitForSelector('[data-testid="chat-image-attachment"]', {
+      timeout: 8000,
+    });
+    await uTeacherPage.waitForTimeout(300);
+
+    const hasRedundantImageMarker = await uTeacherPage.evaluate(() => {
+      const texts = Array.from(document.querySelectorAll('[data-testid="chat-message-text"]')).map(
+        (n) => n.textContent || ''
+      );
+      return texts.some((t) => t.includes('[Đã gửi ảnh:'));
+    });
+
+    await uTeacherPage.screenshot({
+      path: path.join(upgradeShotDir, 'chat-compact-inbox-desktop-1440.png'),
+      fullPage: false,
+    });
+
+    // Check 360px and 390px mobile chat viewports
+    await uTeacherPage.setViewportSize({ width: 390, height: 844 });
+    await uTeacherPage.waitForTimeout(200);
+    await uTeacherPage.screenshot({
+      path: path.join(upgradeShotDir, 'chat-compact-inbox-mobile-390.png'),
+      fullPage: false,
+    });
+    await uTeacherPage.setViewportSize({ width: 360, height: 800 });
+    await uTeacherPage.waitForTimeout(200);
+    const u2Overflow360 = await uTeacherPage.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth
+    );
+    await uTeacherPage.screenshot({
+      path: path.join(upgradeShotDir, 'chat-compact-inbox-mobile-360.png'),
+      fullPage: false,
+    });
+    await uTeacherPage.setViewportSize({ width: 1440, height: 900 });
+
+    recordTest(
+      'TEST U',
+      'U2',
+      'Chat Inbox excludes empty 1-1 threads, supports "Nhắn mới" 1-1 creation & latest-first promotion, hides redundant "[Đã gửi ảnh: ...]" marker on image messages, and has zero overflow at 360px/390px/1440px',
+      empty1on1Count === 0 &&
+        topRoomIdAfterDirectSend === 'chat-room-item-student:hoangngan@khongtunhi.com' &&
+        !hasRedundantImageMarker &&
+        u2Overflow360 <= 2,
+      JSON.stringify({
+        empty1on1Count,
+        topRoomIdAfterDirectSend,
+        hasRedundantImageMarker,
+        u2Overflow360,
+      })
+    );
+
+    // U3: Teacher Exercise File Upload (PDF), Non-Overwriting Create vs Edit with Confirmation, and Student Viewing/Downloading Attachment + Homework Submission
+    await uTeacherPage.goto(`${baseUrl}/teacher`, { waitUntil: 'domcontentloaded' });
+    await uTeacherPage.waitForSelector('[data-testid="teacher-tab-sessions"]', {
+      timeout: 8000,
+    });
+    await uTeacherPage.click('[data-testid="teacher-tab-sessions"]');
+    await uTeacherPage.waitForSelector('[data-testid="teacher-session-num-input"]', {
+      timeout: 8000,
+    });
+    await uTeacherPage.selectOption('[data-testid="teacher-exercise-class-select"]', 'YCT2-04');
+    await uTeacherPage.fill('[data-testid="teacher-session-num-input"]', '2');
+    await uTeacherPage.waitForTimeout(250);
+
+    // Ensure "Tạo bài mới" mode so existing Exercise 1 of Session 2 is NOT overwritten
+    await uTeacherPage.click('[data-testid="teacher-exercise-mode-create"]');
+    await uTeacherPage.fill(
+      '[data-testid="teacher-exercise-title-input"]',
+      'Bài 2: Đọc & dịch phiếu bài tập PDF Buổi 2'
+    );
+    await uTeacherPage.fill(
+      '[data-testid="teacher-exercise-prompt-input"]',
+      'Các con mở tệp PDF đính kèm bên dưới, đọc to và ghi chú từ mới nộp cho cô nhé.'
+    );
+
+    const samplePdfBuffer = Buffer.from(
+      '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n%%EOF\n',
+      'utf8'
+    );
+    await uTeacherPage.setInputFiles('[data-testid="teacher-exercise-file-input"]', {
+      name: 'phieu-bai-tap-yct2-buoi2.pdf',
+      mimeType: 'application/pdf',
+      buffer: samplePdfBuffer,
+    });
+    await uTeacherPage.waitForSelector('[data-testid="teacher-exercise-attachments-list"]', {
+      timeout: 8000,
+    });
+    await uTeacherPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="teacher-exercise-attachments-list"]')
+          ?.textContent?.includes('Đã tải xong'),
+      null,
+      { timeout: 8000 }
+    );
+
+    await uTeacherPage.click('[data-testid="teacher-save-session-btn"]');
+    await uTeacherPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="teacher-saved-session-card-2"]')
+          ?.textContent?.includes('2 bài tập'),
+      null,
+      { timeout: 8000 }
+    );
+    const savedSession2CardTextAfterAdd = await uTeacherPage.textContent(
+      '[data-testid="teacher-saved-session-card-2"]'
+    );
+
+    // Edit the newly created Exercise 2 -> triggers confirmation modal -> preserves Exercise 1 & PDF attachment
+    const editExBtns = uTeacherPage.locator(
+      '[data-testid="teacher-saved-session-card-2"] [data-testid^="teacher-edit-saved-exercise-btn-"]'
+    );
+    await editExBtns.last().click();
+    await uTeacherPage.fill(
+      '[data-testid="teacher-exercise-prompt-input"]',
+      'Các con mở tệp PDF đính kèm bên dưới, đọc to và nộp bài trước thứ Sáu cho cô nhé (Đã cập nhật).'
+    );
+    await uTeacherPage.click('[data-testid="teacher-save-session-btn"]');
+    await uTeacherPage.waitForSelector('[data-testid="teacher-confirm-overwrite-modal"]', {
+      timeout: 5000,
+    });
+    await uTeacherPage.click('[data-testid="teacher-confirm-overwrite-btn"]');
+    await uTeacherPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="teacher-saved-session-card-2"]')
+          ?.textContent?.includes('(Đã cập nhật)'),
+      null,
+      { timeout: 8000 }
+    );
+
+    await uTeacherPage.screenshot({
+      path: path.join(upgradeShotDir, 'teacher-exercise-upload-desktop-1440.png'),
+      fullPage: false,
+    });
+    await uTeacherPage.setViewportSize({ width: 390, height: 844 });
+    await uTeacherPage.waitForTimeout(200);
+    await uTeacherPage.screenshot({
+      path: path.join(upgradeShotDir, 'teacher-exercise-upload-mobile-390.png'),
+      fullPage: false,
+    });
+    await uTeacherCtx.close();
+
+    // Student opens /classrooms?class=YCT2-04&session=2 -> sees both Exercise 1 (201) and Exercise 2 (202), previews PDF attachment, and submits homework
+    const uStudentCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const uStudentPage = await uStudentCtx.newPage();
+    await uStudentPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await uStudentPage.click('[data-testid="quick-login-hoangngan@khongtunhi.com"]');
+    await uStudentPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 10000 });
+    await uStudentPage.goto(`${baseUrl}/classrooms?class=YCT2-04&session=2`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await uStudentPage.waitForSelector('[data-testid="classroom-exercise-201"]', {
+      timeout: 8000,
+    });
+    await uStudentPage.waitForSelector('[data-testid="classroom-exercise-202"]', {
+      timeout: 8000,
+    });
+    await uStudentPage.waitForSelector(
+      '[data-testid="student-exercise-attachments-block-202"]',
+      { timeout: 8000 }
+    );
+
+    const studentAttBlockText = await uStudentPage.textContent(
+      '[data-testid="student-exercise-attachments-block-202"]'
+    );
+    await uStudentPage
+      .locator(
+        '[data-testid="student-exercise-attachments-block-202"] [data-testid^="student-preview-attachment-btn-"]'
+      )
+      .first()
+      .click();
+    await uStudentPage.waitForSelector('[data-testid="student-attachment-preview-modal"]', {
+      timeout: 5000,
+    });
+    const previewModalOpen = await uStudentPage.isVisible(
+      '[data-testid="student-attachment-preview-modal"]'
+    );
+    await uStudentPage.click('[aria-label="Đóng xem trước tài liệu"]');
+
+    // Student submits homework on Exercise 2 (202)
+    await uStudentPage.click('[data-testid="classroom-open-hw-btn-202"]');
+    await uStudentPage.waitForSelector('[data-testid="homework-note-input"]', { timeout: 5000 });
+    await uStudentPage.fill(
+      '[data-testid="homework-note-input"]',
+      'Con Hoàng Ngân đã tải phiếu PDF Buổi 2 và hoàn thành bài dịch nộp cô Linh ạ!'
+    );
+    await uStudentPage.click('[data-testid="homework-submit-btn"]');
+    await uStudentPage.waitForSelector('[data-testid="homework-status-submitted"]', {
+      timeout: 10000,
+    });
+    const hwStatus202 = await uStudentPage.textContent('[data-testid="classroom-hw-status-202"]');
+
+    await uStudentPage.screenshot({
+      path: path.join(upgradeShotDir, 'student-classroom-attachments-desktop-1440.png'),
+      fullPage: false,
+    });
+    await uStudentPage.setViewportSize({ width: 390, height: 844 });
+    await uStudentPage.waitForTimeout(200);
+    await uStudentPage.screenshot({
+      path: path.join(upgradeShotDir, 'student-classroom-attachments-mobile-390.png'),
+      fullPage: false,
+    });
+    await uStudentCtx.close();
+
+    recordTest(
+      'TEST U',
+      'U3',
+      'Teacher uploads PDF exercise attachment without overwriting existing exercises, confirms edits, and Student previews/downloads the PDF and submits homework on ClassroomsPage',
+      Boolean(
+        savedSession2CardTextAfterAdd?.includes('2 bài tập') &&
+          savedSession2CardTextAfterAdd?.includes('1 tệp đính kèm') &&
+          studentAttBlockText?.includes('phieu-bai-tap-yct2-buoi2.pdf') &&
+          previewModalOpen &&
+          hwStatus202?.includes('Đã nộp')
+      ),
+      JSON.stringify({
+        has2Exercises: savedSession2CardTextAfterAdd?.includes('2 bài tập'),
+        hasPdfAttachment: studentAttBlockText?.includes('phieu-bai-tap-yct2-buoi2.pdf'),
+        previewModalOpen,
+        hwStatus202: hwStatus202?.trim(),
+      })
+    );
   } finally {
     await browser.close();
     await viteServer.close();

@@ -39,6 +39,7 @@ tests/*
 !tests/ktn_postgres_migration_and_search_benchmark.mjs
 !tests/ktn_live_production_acceptance.cjs
 !tests/ktn_class_notification_matrix_n01_n33.cjs
+!tests/ktn_ux_and_performance_upgrade_suite.cjs
 ebook-bulk-rollout/
 ebook-detail-prototype/
 free-library-redesign/

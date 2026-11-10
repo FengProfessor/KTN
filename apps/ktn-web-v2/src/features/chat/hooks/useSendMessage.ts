@@ -1,10 +1,10 @@
 import { useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { chatApi } from '../services/chatApi';
+import { chatApi, sortChatRoomsLatestFirst } from '../services/chatApi';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { generateClientMessageId } from '@/lib/utils';
-import { ChatMessage, PinnedAnnouncement, SendMessageInput } from '../types/chat.types';
+import { ChatMessage, ChatRoom, PinnedAnnouncement, SendMessageInput } from '../types/chat.types';
 import { RealtimeChatBroadcastPayload } from './useChatRealtime';
 
 const inFlightPromisesByClientId = new Map<string, Promise<{
@@ -59,6 +59,56 @@ export function useSendMessage(
           status: 'sending',
         };
 
+        const promoteRoomInCache = (msg: ChatMessage) => {
+          const roomsKey = ['chat-rooms', user?.email, isDemoMode, effectiveScenario];
+          queryClient.setQueryData<ChatRoom[]>(roomsKey, (prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const normTarget = String(input.roomId || '').trim().toUpperCase();
+            let found = false;
+            const next = list.map((r) => {
+              if (String(r.roomId || '').trim().toUpperCase() !== normTarget) return r;
+              found = true;
+              return {
+                ...r,
+                hasMessages: true,
+                isEphemeral: false,
+                lastMessage: msg.content || input.content,
+                lastSenderName: msg.sender_name || user?.name || user?.email,
+                lastSenderRole: msg.sender_role || user?.role,
+                lastMessageId: msg.id,
+                lastMessageAt: msg.created_at,
+                updatedAt: msg.created_at,
+              };
+            });
+            if (!found) {
+              const isStudent = input.roomId.toLowerCase().startsWith('student:');
+              const studentEmail = isStudent ? input.roomId.slice(8).trim().toLowerCase() : undefined;
+              next.unshift({
+                roomId: input.roomId,
+                type: isStudent ? 'student' : input.roomId.toLowerCase().startsWith('course:') ? 'course' : 'class',
+                classCode: input.classCode || input.roomMeta?.classCode,
+                studentEmail: input.roomMeta?.studentEmail || studentEmail,
+                studentName: input.roomMeta?.studentName,
+                teacherName: input.roomMeta?.teacherName,
+                label:
+                  input.roomMeta?.label ||
+                  (isStudent ? `Học viên (${studentEmail})` : `Phòng ${input.roomId}`),
+                shortLabel: input.roomMeta?.shortLabel || (isStudent ? '1-1' : input.roomId),
+                lastMessage: msg.content || input.content,
+                lastSenderName: msg.sender_name || user?.name || user?.email,
+                lastSenderRole: msg.sender_role || user?.role,
+                lastMessageId: msg.id,
+                lastMessageAt: msg.created_at,
+                updatedAt: msg.created_at,
+                unreadCount: 0,
+                hasMessages: true,
+                isEphemeral: false,
+              });
+            }
+            return sortChatRoomsLatestFirst(next);
+          });
+        };
+
         // Step 1: Transition to SENDING immediately (never claim 'Đã gửi' before server ack)
         removeFailedMessage(input.roomId, clientMessageId);
         addSendingMessage(input.roomId, optimisticMessage);
@@ -77,6 +127,7 @@ export function useSendMessage(
               status: 'sent',
             };
             removeSendingMessage(input.roomId, clientMessageId);
+            promoteRoomInCache(demoAck);
             return {
               message: demoAck,
               clientMessageId,
@@ -104,6 +155,8 @@ export function useSendMessage(
             clientMessageId: res.clientMessageId || clientMessageId,
             status: 'sent',
           };
+
+          promoteRoomInCache(confirmedMsg);
 
           queryClient.setQueryData(
             ['chat-messages', input.roomId, user?.email, isDemoMode, effectiveScenario],

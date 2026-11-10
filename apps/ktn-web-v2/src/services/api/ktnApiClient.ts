@@ -7,6 +7,7 @@ import type {
   KtnClassSession,
   KtnCourse,
   KtnCourseGrantRequest,
+  KtnExerciseAttachment,
   KtnForumAnswer,
   KtnForumAttachment,
   KtnForumLeaderboardEntry,
@@ -17,11 +18,13 @@ import type {
   KtnNotification,
   KtnOrder,
   KtnProvisionStudentResponse,
+  KtnSessionExercise,
   KtnStudentRecord,
   KtnStudentSearchResult,
   KtnSyncStatusResponse,
   KtnTeacherContributionEvent,
   KtnTeacherRecord,
+  KtnTeacherSearchResult,
   KtnUserSession,
   KtnVietQrPaymentInfo,
   OrderContactStatus,
@@ -29,6 +32,126 @@ import type {
   UpcomingClassSession,
   UserNotificationSettings
 } from '@/types/ktn.types';
+
+import { normalizeViSearchText, normalizeVietnameseText } from '@/lib/utils';
+
+export type { KtnExerciseAttachment, KtnSessionExercise, KtnTeacherSearchResult };
+export { normalizeViSearchText, normalizeVietnameseText };
+
+export const MAX_HOMEWORK_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
+export const ALLOWED_HOMEWORK_ATTACHMENT_EXTENSIONS: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  wav: 'audio/wav',
+  aac: 'audio/aac',
+  ogg: 'audio/ogg',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm'
+};
+
+export function formatBytes(bytes?: number | null): string {
+  const num = Number(bytes || 0);
+  if (!Number.isFinite(num) || num <= 0) return '0 KB';
+  if (num < 1024) return `${num} B`;
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
+  return `${(num / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function filterAndPaginateTeachersClientSide(
+  teachers: KtnTeacherRecord[],
+  params?: {
+    q?: string;
+    status?: string;
+    classCode?: string;
+    courseId?: string;
+    limit?: number;
+    offset?: number;
+  }
+): KtnTeacherSearchResult {
+  const qNorm = normalizeViSearchText(params?.q || '');
+  const qCompact = qNorm.replace(/\s+/g, '');
+  const qDigits = String(params?.q || '').replace(/\D+/g, '');
+  const statusFilter = String(params?.status || 'ALL').toUpperCase();
+  const classCodeFilter = String(params?.classCode || '').trim().toUpperCase();
+  const courseIdFilter = String(params?.courseId || '').trim().toUpperCase();
+  const limit = Math.max(1, Math.min(100, Number(params?.limit) || 20));
+  const offset = Math.max(0, Number(params?.offset) || 0);
+
+  const filtered = (Array.isArray(teachers) ? teachers : []).filter((t) => {
+    const isActive = t.active !== false && t.status !== 'locked' && t.status !== 'inactive';
+    const assignedClasses = Array.isArray(t.assigned_classes) ? t.assigned_classes : [];
+    const assignedCourses = Array.isArray(t.assigned_courses) ? t.assigned_courses : [];
+
+    if (statusFilter === 'ACTIVE' && !isActive) return false;
+    if ((statusFilter === 'INACTIVE' || statusFilter === 'LOCKED') && isActive) return false;
+    if (statusFilter === 'UNASSIGNED' && assignedClasses.length > 0) return false;
+
+    if (
+      classCodeFilter &&
+      classCodeFilter !== 'ALL' &&
+      !assignedClasses.some((c) => String(c || '').trim().toUpperCase() === classCodeFilter)
+    ) {
+      return false;
+    }
+
+    if (
+      courseIdFilter &&
+      courseIdFilter !== 'ALL' &&
+      !assignedCourses.some((c) => String(c || '').trim().toUpperCase() === courseIdFilter)
+    ) {
+      return false;
+    }
+
+    if (!qNorm) return true;
+
+    const rawHaystack = [
+      t.name,
+      t.email,
+      t.code,
+      t.phone,
+      t.specialty,
+      t.specialization,
+      assignedClasses.join(' '),
+      assignedCourses.join(' ')
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const normHaystack = normalizeViSearchText(rawHaystack);
+    const compactHaystack = normHaystack.replace(/\s+/g, '');
+    const phoneDigits = String(t.phone || '').replace(/\D+/g, '');
+    return (
+      normHaystack.includes(qNorm) ||
+      (Boolean(qCompact) && compactHaystack.includes(qCompact)) ||
+      (qDigits.length >= 3 && phoneDigits.includes(qDigits)) ||
+      rawHaystack.toLowerCase().includes(String(params?.q || '').trim().toLowerCase())
+    );
+  });
+
+  const totalCount = filtered.length;
+  const items = filtered.slice(offset, offset + limit);
+  const hasMore = offset + items.length < totalCount;
+
+  return {
+    ok: true,
+    items,
+    totalCount,
+    hasMore,
+    limit,
+    offset
+  };
+}
 
 const SESSION_STORAGE_KEY = 'ktn_sll_persistent_auth_v2';
 
@@ -210,6 +333,11 @@ export async function ktnRequest<T>(
     });
   } catch (err) {
     clearTimeout(timer);
+    if (options.signal?.aborted) {
+      throw err instanceof Error && err.name === 'AbortError'
+        ? err
+        : new DOMException('Yêu cầu đã bị hủy.', 'AbortError');
+    }
     throw new KtnApiError({
       message: 'Mất kết nối mạng hoặc máy chủ không phản hồi.',
       status: 0,
@@ -663,7 +791,23 @@ export const ktnApi = {
     classCode: string;
     sessionNum: number;
     title: string;
-    exercises: Array<{ id?: string; num: number; title: string; prompt: string; type: string }>;
+    mode?: 'append_exercise' | 'update_exercise' | 'upsert';
+    exercise?: KtnSessionExercise;
+    preserveExistingExercises?: boolean;
+    preserveDefaultExercises?: boolean;
+    status?: 'draft' | 'published';
+    suppressDuplicateNotification?: boolean;
+    exercises: Array<{
+      id?: string;
+      num: number;
+      title: string;
+      prompt: string;
+      type: string;
+      submissionType?: string;
+      dueDate?: string;
+      status?: 'draft' | 'published';
+      attachments?: KtnExerciseAttachment[];
+    }>;
   }): Promise<KtnClassSession> {
     const res = await ktnRequest<{ ok: boolean; sessionItem: KtnClassSession }>(
       '/api/ktn/class-sessions',
@@ -673,6 +817,177 @@ export const ktnApi = {
       }
     );
     return res.sessionItem;
+  },
+
+  async presignUpload(payload: {
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+    folder?: string;
+    classCode?: string;
+    sessionNum?: number;
+  }): Promise<{
+    ok: boolean;
+    signedUrl: string;
+    fileUrl: string;
+  }> {
+    try {
+      return await ktnRequest<{
+        ok: boolean;
+        signedUrl: string;
+        fileUrl: string;
+      }>('/api/ktn/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...payload,
+          folder: payload.folder || 'homework-assignments'
+        })
+      });
+    } catch (err) {
+      if (err instanceof KtnApiError && (err.status === 404 || err.status === 405)) {
+        return ktnRequest<{
+          ok: boolean;
+          signedUrl: string;
+          fileUrl: string;
+        }>('/api/ktn/homeworks/upload-url', {
+          method: 'POST',
+          body: JSON.stringify({
+            fileName: payload.fileName,
+            fileType: payload.fileType,
+            fileSize: payload.fileSize
+          })
+        });
+      }
+      throw err;
+    }
+  },
+
+  async uploadHomeworkAttachment(params: {
+    file: File | Blob;
+    fileName?: string;
+    classCode: string;
+    sessionNum: number;
+    allowedClassCodes?: string[];
+    isDemoMode?: boolean;
+    signal?: AbortSignal;
+    onProgress?: (percent: number) => void;
+  }): Promise<KtnExerciseAttachment> {
+    const rawFile = params.file;
+    const fileName = String(
+      params.fileName || (rawFile as File).name || `tai-lieu-buoi-${params.sessionNum}.pdf`
+    ).trim();
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    const mappedMime = ALLOWED_HOMEWORK_ATTACHMENT_EXTENSIONS[ext];
+    if (!mappedMime) {
+      throw new KtnApiError({
+        message: `Định dạng tệp ".${ext || 'unknown'}" không được hỗ trợ. Chỉ chấp nhận PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4.`,
+        status: 415,
+        code: 'UNSUPPORTED_FILE_TYPE'
+      });
+    }
+
+    const sizeBytes = Number(rawFile.size || 0);
+    if (sizeBytes > MAX_HOMEWORK_ATTACHMENT_BYTES) {
+      const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
+      throw new KtnApiError({
+        message: `Tệp "${fileName}" có dung lượng ${sizeMb}MB, vượt quá giới hạn tối đa 50MB/tệp cho luồng giao bài tập.`,
+        status: 413,
+        code: 'FILE_TOO_LARGE'
+      });
+    }
+
+    const cleanClassCode = String(params.classCode || '').trim().toUpperCase();
+    if (!cleanClassCode) {
+      throw new KtnApiError({
+        message: 'Vui lòng chọn lớp học trước khi tải tài liệu đính kèm.',
+        status: 400,
+        code: 'MISSING_CLASS_CODE'
+      });
+    }
+
+    const session = getStoredSession();
+    const allowedList =
+      params.allowedClassCodes ||
+      (session?.role === 'teacher' && Array.isArray(session.assignedClasses)
+        ? session.assignedClasses
+        : undefined);
+    if (
+      Array.isArray(allowedList) &&
+      session?.role !== 'admin' &&
+      !allowedList.some((c) => String(c || '').trim().toUpperCase() === cleanClassCode)
+    ) {
+      throw new KtnApiError({
+        message: `Giáo viên không có quyền tải tài liệu giao bài cho lớp ${cleanClassCode} không thuộc phạm vi phụ trách.`,
+        status: 403,
+        code: 'FORBIDDEN_CLASS'
+      });
+    }
+
+    const mimeType =
+      (rawFile.type && rawFile.type.split(';')[0].trim()) || mappedMime || 'application/octet-stream';
+    const effectiveSize = sizeBytes || 2048;
+
+    params.onProgress?.(10);
+
+    if (params.isDemoMode || session?.token === 'DEMO-MODE-ONLY') {
+      if (params.signal?.aborted) {
+        throw new DOMException('Đã hủy tải tệp.', 'AbortError');
+      }
+      params.onProgress?.(60);
+      const demoUrl = `https://cdn.khongtunhi.com/homework-assignments/${encodeURIComponent(
+        cleanClassCode
+      )}/s${params.sessionNum}-${Date.now()}-${encodeURIComponent(fileName)}`;
+      registerLocalUploadedMediaPreview(demoUrl, rawFile);
+      params.onProgress?.(100);
+      return {
+        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: fileName,
+        url: demoUrl,
+        mimeType,
+        sizeBytes: effectiveSize
+      };
+    }
+
+    const presign = await this.presignUpload({
+      fileName,
+      fileType: mimeType,
+      fileSize: effectiveSize,
+      folder: `homework-assignments/${cleanClassCode}/session-${params.sessionNum}`,
+      classCode: cleanClassCode,
+      sessionNum: params.sessionNum
+    });
+
+    if (params.signal?.aborted) {
+      throw new DOMException('Đã hủy tải tệp.', 'AbortError');
+    }
+
+    params.onProgress?.(45);
+
+    const uploadRes = await fetch(presign.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': mimeType },
+      body: rawFile,
+      signal: params.signal
+    });
+
+    if (!uploadRes.ok) {
+      throw new KtnApiError({
+        message: `Không thể tải tệp "${fileName}" lên kho lưu trữ (HTTP ${uploadRes.status}). Vui lòng thử lại.`,
+        status: uploadRes.status || 502,
+        code: 'STORAGE_UPLOAD_FAILED'
+      });
+    }
+
+    params.onProgress?.(100);
+    registerLocalUploadedMediaPreview(presign.fileUrl, rawFile);
+
+    return {
+      id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: fileName,
+      url: presign.fileUrl,
+      mimeType,
+      sizeBytes: effectiveSize
+    };
   },
 
   async getHomeworks(classCode?: string): Promise<KtnHomework[]> {
@@ -1200,6 +1515,83 @@ export const ktnApi = {
       `/api/ktn/teachers${qs}`
     );
     return Array.isArray(res.teachers) ? res.teachers : [];
+  },
+
+  async searchAdminTeachers(
+    params?: {
+      q?: string;
+      status?: string;
+      classCode?: string;
+      courseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<KtnTeacherSearchResult> {
+    const limit = Math.max(1, Math.min(100, Number(params?.limit) || 20));
+    const offset = Math.max(0, Number(params?.offset) || 0);
+    const sp = new URLSearchParams();
+    if (params?.q && params.q.trim()) sp.set('q', params.q.trim());
+    if (params?.status && params.status !== 'ALL') sp.set('status', params.status);
+    if (params?.classCode && params.classCode !== 'ALL') sp.set('classCode', params.classCode);
+    if (params?.courseId && params.courseId !== 'ALL') sp.set('courseId', params.courseId);
+    sp.set('limit', String(limit));
+    sp.set('offset', String(offset));
+
+    try {
+      const res = await ktnRequest<{
+        ok?: boolean;
+        items?: KtnTeacherRecord[];
+        teachers?: KtnTeacherRecord[];
+        totalCount?: number;
+        total?: number;
+        hasMore?: boolean;
+        limit?: number;
+        offset?: number;
+      }>(`/api/ktn/admin/teachers/search?${sp.toString()}`, {
+        signal: options?.signal
+      });
+      const items = Array.isArray(res.items)
+        ? res.items
+        : Array.isArray(res.teachers)
+          ? res.teachers
+          : [];
+      const totalCount =
+        typeof res.totalCount === 'number'
+          ? res.totalCount
+          : typeof res.total === 'number'
+            ? res.total
+            : offset + items.length;
+      const effectiveLimit = typeof res.limit === 'number' ? res.limit : limit;
+      const effectiveOffset = typeof res.offset === 'number' ? res.offset : offset;
+      const hasMore =
+        typeof res.hasMore === 'boolean'
+          ? res.hasMore
+          : effectiveOffset + items.length < totalCount;
+
+      return {
+        ok: true,
+        items,
+        totalCount,
+        hasMore,
+        limit: effectiveLimit,
+        offset: effectiveOffset
+      };
+    } catch (err) {
+      if (options?.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
+        throw err;
+      }
+      if (err instanceof KtnApiError && (err.status === 401 || err.status === 403)) {
+        throw err;
+      }
+      // Graceful fallback to legacy /api/ktn/teachers if backend endpoint is not yet deployed or returns 404
+      const allTeachers = await this.getTeachers(undefined);
+      return filterAndPaginateTeachersClientSide(allTeachers, {
+        ...params,
+        limit,
+        offset
+      });
+    }
   },
 
   async saveTeacher(payload: {

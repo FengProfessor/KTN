@@ -57,6 +57,7 @@ export interface ChatRoom {
   roomId: string;
   type: 'class' | 'course' | 'student';
   classCode?: string;
+  className?: string;
   courseId?: string;
   studentEmail?: string;
   studentName?: string;
@@ -66,12 +67,15 @@ export interface ChatRoom {
   lastMessage?: string;
   lastSenderName?: string;
   lastSenderRole?: string;
+  lastMessageAt?: string | null;
   updatedAt?: string;
   lastMessageId?: string | null;
   lastReadMessageId?: string | null;
   unreadCount: number;
   unread?: boolean;
   memberCount?: number;
+  hasMessages?: boolean;
+  isEphemeral?: boolean;
 }
 
 export interface ChatPagination {
@@ -98,4 +102,5 @@ export interface SendMessageInput {
   replyTo?: ChatReplyTarget | null;
   clientMessageId?: string;
   isPinned?: boolean;
+  roomMeta?: Partial<ChatRoom>;
 }

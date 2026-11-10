@@ -1,6 +1,11 @@
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { chatApi } from '../services/chatApi';
+import {
+  chatApi,
+  getRoomLastMessageTimestampMs,
+  hasRoomRealMessages,
+  sortChatRoomsLatestFirst,
+} from '../services/chatApi';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import {
@@ -17,7 +22,7 @@ function reconcileRoomsWithActiveClasses(
   includeMissingActiveClasses: boolean
 ): ChatRoom[] {
   if (!Array.isArray(activeClasses)) {
-    return rooms;
+    return sortChatRoomsLatestFirst(rooms);
   }
   const activeClassMap = new Map<string, KtnClassItem>();
   for (const cls of activeClasses) {
@@ -53,16 +58,21 @@ function reconcileRoomsWithActiveClasses(
           ...r,
           roomId: `class:${rawCode}`,
           classCode: rawCode,
+          className: matchedCls.name,
           label: `Nhóm Lớp ${rawCode} — ${matchedCls.name}`,
           shortLabel: `Lớp ${rawCode}`,
           teacherName: matchedCls.teacher_name || r.teacherName,
+          hasMessages: hasRoomRealMessages(r),
         };
       }
-      return r;
+      return {
+        ...r,
+        hasMessages: hasRoomRealMessages(r),
+      };
     });
 
   if (!includeMissingActiveClasses) {
-    return filteredRooms;
+    return sortChatRoomsLatestFirst(filteredRooms);
   }
 
   const existingCodes = new Set(
@@ -83,17 +93,21 @@ function reconcileRoomsWithActiveClasses(
       extraClassRooms.push({
         roomId: `class:${code}`,
         classCode: code,
+        className: c.name,
         label: `Nhóm Lớp ${code} — ${c.name}`,
         shortLabel: `Lớp ${code}`,
         teacherName: c.teacher_name,
         type: 'class',
         unreadCount: 0,
         lastMessage: '',
+        hasMessages: false,
+        lastMessageAt: null,
+        updatedAt: undefined,
       });
     }
   });
 
-  return [...extraClassRooms, ...filteredRooms];
+  return sortChatRoomsLatestFirst([...filteredRooms, ...extraClassRooms]);
 }
 
 export function useChatRooms() {
@@ -115,17 +129,35 @@ export function useChatRooms() {
         .find((data): data is KtnClassItem[] => Array.isArray(data));
 
       if (isDemoMode) {
-        let baseRooms = DEMO_CHAT_ROOMS;
+        let baseRooms = DEMO_CHAT_ROOMS.map((r) => ({
+          ...r,
+          hasMessages: hasRoomRealMessages(r),
+          lastMessageAt: r.updatedAt || null,
+        }));
         if (effectiveScenario === 'demo_empty') {
-          baseRooms = DEMO_CHAT_ROOMS.map((r) => ({ ...r, unreadCount: 0, lastMessage: '' }));
+          baseRooms = DEMO_CHAT_ROOMS.map((r) => ({
+            ...r,
+            unreadCount: 0,
+            lastMessage: '',
+            hasMessages: false,
+            lastMessageAt: null,
+            updatedAt: undefined,
+          }));
         } else if (effectiveScenario === 'demo_unread') {
-          baseRooms = DEMO_CHAT_ROOMS.map((r, i) => ({
+          baseRooms = baseRooms.map((r, i) => ({
             ...r,
             unreadCount: (r.unreadCount || 0) + (i === 0 ? 5 : 2),
           }));
         }
 
-        return reconcileRoomsWithActiveClasses(baseRooms, activeClasses, true);
+        const reconciled = reconcileRoomsWithActiveClasses(baseRooms, activeClasses, true);
+        return sortChatRoomsLatestFirst(
+          reconciled.filter(
+            (r) =>
+              (r.type !== 'student' && !String(r.roomId || '').toLowerCase().startsWith('student:')) ||
+              hasRoomRealMessages(r)
+          )
+        );
       }
       const res = await chatApi.getRooms();
       const groupRooms =
@@ -137,8 +169,17 @@ export function useChatRooms() {
       const pushUniqueRoom = (room: ChatRoom) => {
         const key = String(room.roomId || '').trim().toUpperCase();
         if (!key || seenRoomIds.has(key)) return;
+        const isStudentDirect =
+          room.type === 'student' || String(room.roomId || '').toLowerCase().startsWith('student:');
+        // 1-1 rooms without real saved messages must not appear in Inbox
+        if (isStudentDirect && !hasRoomRealMessages(room)) {
+          return;
+        }
         seenRoomIds.add(key);
-        all.push(room);
+        all.push({
+          ...room,
+          hasMessages: hasRoomRealMessages(room),
+        });
       };
       for (const r of groupRooms) {
         pushUniqueRoom(r);
@@ -151,7 +192,7 @@ export function useChatRooms() {
           pushUniqueRoom(t);
         }
       }
-      return all;
+      return sortChatRoomsLatestFirst(all);
     },
     enabled: Boolean(user) || isDemoMode,
     refetchInterval: isDemoMode ? false : 3500,
@@ -510,6 +551,57 @@ export function useRoomMessages(roomId: string | null) {
     effectiveScenario,
     user,
   ]);
+
+  useEffect(() => {
+    if (!roomId || mergedMessages.length === 0) return;
+    if (isDemoMode && effectiveScenario === 'demo_empty') return;
+    const latestMsg = mergedMessages[mergedMessages.length - 1];
+    if (!latestMsg || latestMsg.status === 'failed' || latestMsg.status === 'sending') return;
+    const latestTs = Date.parse(latestMsg.created_at);
+    if (!Number.isFinite(latestTs) || latestTs <= 0) return;
+
+    const normRoomId = String(roomId).trim().toUpperCase();
+    const normRoomBare = normRoomId.replace(/^CLASS:/, '');
+    const msgRoom = String(latestMsg.room_id || latestMsg.class_code || '').trim().toUpperCase();
+    const msgRoomBare = msgRoom.replace(/^CLASS:/, '');
+    if (msgRoom && msgRoom !== normRoomId && msgRoomBare !== normRoomBare) {
+      return;
+    }
+
+    const roomsKey = ['chat-rooms', user?.email, isDemoMode, effectiveScenario];
+    const currentRooms = queryClient.getQueryData<ChatRoom[]>(roomsKey);
+    if (!Array.isArray(currentRooms) || currentRooms.length === 0) return;
+
+    const targetRoom = currentRooms.find(
+      (r) => String(r.roomId || '').trim().toUpperCase() === normRoomId
+    );
+    if (!targetRoom) return;
+
+    const existingTs = getRoomLastMessageTimestampMs(targetRoom);
+    if (
+      latestTs > existingTs ||
+      (!hasRoomRealMessages(targetRoom) && Boolean(latestMsg.content || latestMsg.attachment))
+    ) {
+      queryClient.setQueryData<ChatRoom[]>(roomsKey, (prev) => {
+        if (!Array.isArray(prev)) return prev;
+        const updated = prev.map((r) => {
+          if (String(r.roomId || '').trim().toUpperCase() !== normRoomId) return r;
+          return {
+            ...r,
+            hasMessages: true,
+            isEphemeral: false,
+            lastMessage: latestMsg.content || r.lastMessage,
+            lastSenderName: latestMsg.sender_name || r.lastSenderName,
+            lastSenderRole: latestMsg.sender_role || r.lastSenderRole,
+            lastMessageId: latestMsg.id || r.lastMessageId,
+            lastMessageAt: latestMsg.created_at,
+            updatedAt: latestMsg.created_at,
+          };
+        });
+        return sortChatRoomsLatestFirst(updated);
+      });
+    }
+  }, [roomId, mergedMessages, isDemoMode, effectiveScenario, user?.email, queryClient]);
 
   const markReadMutation = useMutation({
     mutationFn: async (params: { roomId: string; lastReadMessageId?: string | null }) => {

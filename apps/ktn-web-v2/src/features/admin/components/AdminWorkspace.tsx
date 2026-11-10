@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   ShieldCheck,
   Users,
@@ -27,7 +27,12 @@ import {
   BookOpen,
   Trash2,
 } from 'lucide-react';
-import { ktnApi, KtnApiError } from '@/services/api/ktnApiClient';
+import {
+  ktnApi,
+  KtnApiError,
+  filterAndPaginateTeachersClientSide,
+  type KtnTeacherSearchResult,
+} from '@/services/api/ktnApiClient';
 import { ChatRoom } from '@/features/chat/types/chat.types';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
@@ -104,9 +109,16 @@ export const AdminWorkspace: React.FC = () => {
     'all' | 'students' | 'teachers' | 'classes' | 'orders' | 'more'
   >('all');
 
-  // Selected teacher for TeacherDetailDrawer
+  // Selected teacher for TeacherDetailDrawer + Server-side Teacher Search state (C1)
   const [selectedTeacherKey, setSelectedTeacherKey] = useState<string | null>(null);
   const [teacherSearchInput, setTeacherSearchInput] = useState<string>('');
+  const [debouncedTeacherQ, setDebouncedTeacherQ] = useState<string>('');
+  const [teacherFilter, setTeacherFilter] = useState<
+    'ALL' | 'ACTIVE' | 'INACTIVE' | 'UNASSIGNED'
+  >('ALL');
+  const [teacherClassFilter, setTeacherClassFilter] = useState<string>('ALL');
+  const [teacherPage, setTeacherPage] = useState<number>(1);
+  const teacherPageLimit = 20;
 
   // Selected student for StudentDetailDrawer (neutral by default — only opened by explicit click or valid ?email= param)
   const [selectedStudentEmail, setSelectedStudentEmail] = useState<string | null>(() => {
@@ -200,6 +212,14 @@ export const AdminWorkspace: React.FC = () => {
     }, 250);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedTeacherQ(teacherSearchInput.trim());
+      setTeacherPage(1);
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [teacherSearchInput]);
 
   useEffect(() => {
     const rawEmail = (searchParams.get('email') || '').trim().toLowerCase();
@@ -455,52 +475,160 @@ export const AdminWorkspace: React.FC = () => {
     enabled: Boolean(user) || isDemoMode,
   });
 
+  const getDemoTeachersList = (): KtnTeacherRecord[] => {
+    const baseTeachers: KtnTeacherRecord[] = [
+      {
+        code: 'GV-KTN-08',
+        name: 'Cô Lâm Mỹ Linh',
+        email: 'linh.lam@khongtunhi.com',
+        phone: '0901112233',
+        specialty: 'HSK 1-4, YCT thiếu nhi',
+        specialization: 'HSK 1-4, YCT thiếu nhi',
+        assigned_classes: ['YCT2-04', 'YCT3-02'],
+        assigned_courses: ['6adadba969897b0002482ca5'],
+        active: true,
+        provisioningStatus: 'ready_to_login',
+        syncStatus: 'synced',
+        managedStudentsCount: 12,
+        scheduledSessionsCount: 8,
+        activitySessionsCount: 4,
+        recordedClassSessionsCount: 4,
+        confirmedSessionsCount: 0,
+        attendanceConfirmedSessionsCount: 0,
+        teachingVerificationStatus: 'unverified',
+        gradedHomeworksCount: 15,
+        pendingHomeworksCount: 1,
+        avgGradingTurnaroundHours: 2.4,
+        forumAnswersCount: 3,
+        videoGuidesCount: 1,
+        forumVideoAnswersCount: 1,
+        acceptedAnswersCount: 2,
+        forumAcceptedAnswersCount: 2,
+        totalContributionPoints: 40,
+        monthlyContributionPoints: 23,
+      },
+    ];
+    const tMap = new Map<string, KtnTeacherRecord>();
+    baseTeachers.forEach((t) => tMap.set(t.email.toLowerCase(), t));
+    Object.entries(demoTeacherOverridesRef.current).forEach(([em, row]) => {
+      tMap.set(em.toLowerCase(), row);
+    });
+    return Array.from(tMap.values());
+  };
+
   const teachersQuery = useQuery<KtnTeacherRecord[]>({
     queryKey: ['ktn-admin-teachers', user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) {
-        const baseTeachers: KtnTeacherRecord[] = [
-          {
-            code: 'GV-KTN-08',
-            name: 'Cô Lâm Mỹ Linh',
-            email: 'linh.lam@khongtunhi.com',
-            phone: '0901112233',
-            specialty: 'HSK 1-4, YCT thiếu nhi',
-            specialization: 'HSK 1-4, YCT thiếu nhi',
-            assigned_classes: ['YCT2-04', 'YCT3-02'],
-            assigned_courses: ['6adadba969897b0002482ca5'],
-            active: true,
-            provisioningStatus: 'ready_to_login',
-            syncStatus: 'synced',
-            managedStudentsCount: 12,
-            scheduledSessionsCount: 8,
-            activitySessionsCount: 4,
-            recordedClassSessionsCount: 4,
-            confirmedSessionsCount: 0,
-            attendanceConfirmedSessionsCount: 0,
-            teachingVerificationStatus: 'unverified',
-            gradedHomeworksCount: 15,
-            pendingHomeworksCount: 1,
-            avgGradingTurnaroundHours: 2.4,
-            forumAnswersCount: 3,
-            videoGuidesCount: 1,
-            forumVideoAnswersCount: 1,
-            acceptedAnswersCount: 2,
-            forumAcceptedAnswersCount: 2,
-            totalContributionPoints: 40,
-            monthlyContributionPoints: 23,
-          },
-        ];
-        const tMap = new Map<string, KtnTeacherRecord>();
-        baseTeachers.forEach((t) => tMap.set(t.email.toLowerCase(), t));
-        Object.entries(demoTeacherOverridesRef.current).forEach(([em, row]) => {
-          tMap.set(em.toLowerCase(), row);
-        });
-        return Array.from(tMap.values());
+        return getDemoTeachersList();
       }
-      return ktnApi.getTeachers();
+      const seeded = queryClient.getQueryData<KtnTeacherRecord[]>([
+        'ktn-admin-teachers',
+        user?.email,
+        isDemoMode,
+      ]);
+      if (Array.isArray(seeded) && seeded.length > 0) {
+        return seeded;
+      }
+      const res = await ktnApi.searchAdminTeachers({ limit: 50, offset: 0 });
+      return res.items;
+    },
+    enabled: isDemoMode,
+  });
+
+  const teacherSearchOffset = (teacherPage - 1) * teacherPageLimit;
+
+  const teacherSearchQuery = useQuery<KtnTeacherSearchResult>({
+    queryKey: [
+      'ktn-admin-teachers-search',
+      user?.email,
+      isDemoMode,
+      debouncedTeacherQ,
+      teacherFilter,
+      teacherClassFilter,
+      teacherPage,
+      teacherPageLimit,
+    ],
+    placeholderData: keepPreviousData,
+    queryFn: async ({ signal }) => {
+      if (isDemoMode) {
+        return filterAndPaginateTeachersClientSide(getDemoTeachersList(), {
+          q: debouncedTeacherQ,
+          status: teacherFilter,
+          classCode: teacherClassFilter,
+          limit: teacherPageLimit,
+          offset: teacherSearchOffset,
+        });
+      }
+      try {
+        const res = await ktnApi.searchAdminTeachers(
+          {
+            q: debouncedTeacherQ || undefined,
+            status: teacherFilter !== 'ALL' ? teacherFilter : undefined,
+            classCode: teacherClassFilter !== 'ALL' ? teacherClassFilter : undefined,
+            limit: teacherPageLimit,
+            offset: teacherSearchOffset,
+          },
+          { signal }
+        );
+        if (
+          !debouncedTeacherQ &&
+          teacherFilter === 'ALL' &&
+          teacherClassFilter === 'ALL' &&
+          teacherPage === 1
+        ) {
+          const existing = queryClient.getQueryData<KtnTeacherRecord[]>([
+            'ktn-admin-teachers',
+            user?.email,
+            isDemoMode,
+          ]);
+          if (!Array.isArray(existing) || existing.length === 0) {
+            queryClient.setQueryData(
+              ['ktn-admin-teachers', user?.email, isDemoMode],
+              res.items
+            );
+          }
+        }
+        return res;
+      } catch (err) {
+        if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
+          throw err;
+        }
+        const seeded = queryClient.getQueryData<KtnTeacherRecord[]>([
+          'ktn-admin-teachers',
+          user?.email,
+          isDemoMode,
+        ]);
+        if (Array.isArray(seeded)) {
+          return filterAndPaginateTeachersClientSide(seeded, {
+            q: debouncedTeacherQ,
+            status: teacherFilter,
+            classCode: teacherClassFilter,
+            limit: teacherPageLimit,
+            offset: teacherSearchOffset,
+          });
+        }
+        throw err;
+      }
     },
     enabled: Boolean(user) || isDemoMode,
+  });
+
+  const selectedTeacherDetailQuery = useQuery<KtnTeacherRecord | null>({
+    queryKey: ['ktn-admin-teacher-detail', selectedTeacherKey, isDemoMode],
+    queryFn: async () => {
+      if (!selectedTeacherKey || isDemoMode) return null;
+      const list = await ktnApi.getTeachers(selectedTeacherKey);
+      const norm = selectedTeacherKey.toLowerCase();
+      return (
+        list.find(
+          (t) =>
+            String(t.email || '').toLowerCase() === norm ||
+            String(t.code || '').toLowerCase() === norm
+        ) || null
+      );
+    },
+    enabled: Boolean(selectedTeacherKey) && !isDemoMode,
   });
 
   const courseGrantRequestsQuery = useQuery<KtnCourseGrantRequest[]>({
@@ -1085,6 +1213,8 @@ export const AdminWorkspace: React.FC = () => {
         };
       }
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers-search'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teacher-detail'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
       queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
       setShowCreateTeacherModal(false);
@@ -1311,6 +1441,8 @@ export const AdminWorkspace: React.FC = () => {
     },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers-search'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teacher-detail'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
       queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
       addToast({
@@ -1531,10 +1663,26 @@ export const AdminWorkspace: React.FC = () => {
           }));
         }
       );
+      queryClient.setQueriesData<KtnTeacherSearchResult>(
+        { queryKey: ['ktn-admin-teachers-search'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
+        (prev) => {
+          if (!prev || !Array.isArray(prev.items)) return prev;
+          return {
+            ...prev,
+            items: prev.items.map((t) => ({
+              ...t,
+              assigned_classes: (t.assigned_classes || []).filter(
+                (c) => String(c || '').trim().toUpperCase() !== cleanCode
+              ),
+            })),
+          };
+        }
+      );
 
       queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
       queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers-search'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-sync-status'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-overview'] });
@@ -1582,7 +1730,20 @@ export const AdminWorkspace: React.FC = () => {
   const ordersList = ordersQuery.data || [];
   const studentsList = studentSearchQuery.data?.items || [];
   const totalStudentsCount = studentSearchQuery.data?.totalCount ?? studentsList.length;
-  const teachersList = teachersQuery.data || [];
+  const teachersList = useMemo(() => {
+    if (isDemoMode) {
+      return teachersQuery.data || getDemoTeachersList();
+    }
+    const legacyItems = teachersQuery.data;
+    const searchItems = teacherSearchQuery.data?.items;
+    if (Array.isArray(legacyItems) && legacyItems.length > 0 && (!searchItems || searchItems.length === 0)) {
+      return legacyItems;
+    }
+    if (Array.isArray(searchItems) && searchItems.length > 0) {
+      return searchItems;
+    }
+    return legacyItems || searchItems || [];
+  }, [isDemoMode, teachersQuery.data, teacherSearchQuery.data?.items]);
 
   const getClassActiveStudentCount = (cls: KtnClassWithCounts): number => {
     const codeUpper = String(cls.id || '').trim().toUpperCase();
@@ -1655,34 +1816,58 @@ export const AdminWorkspace: React.FC = () => {
   const selectedTeacher: KtnTeacherRecord | null = useMemo(() => {
     if (!selectedTeacherKey) return null;
     const norm = selectedTeacherKey.toLowerCase();
-    return (
+    const baseMatch =
       teachersList.find(
         (t) =>
           String(t.code || '').toLowerCase() === norm ||
           String(t.email || '').toLowerCase() === norm
-      ) || null
-    );
-  }, [selectedTeacherKey, teachersList]);
-  const filteredTeachersList = useMemo(() => {
-    const q = teacherSearchInput.trim().toLowerCase();
-    if (!q) return teachersList;
-    return teachersList.filter((t) =>
-      [
-        t.code,
-        t.name,
-        t.email,
-        t.phone,
-        t.specialty,
-        t.specialization,
-        ...(t.assigned_classes || []),
-        ...(t.assigned_courses || []),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [teachersList, teacherSearchInput]);
+      ) || null;
+    if (selectedTeacherDetailQuery.data) {
+      return {
+        ...(baseMatch || {}),
+        ...selectedTeacherDetailQuery.data,
+      };
+    }
+    return baseMatch;
+  }, [selectedTeacherKey, teachersList, selectedTeacherDetailQuery.data]);
+  const filteredTeachersResult: KtnTeacherSearchResult = useMemo(() => {
+    if (isDemoMode) {
+      return filterAndPaginateTeachersClientSide(teachersList, {
+        q: teacherSearchInput,
+        status: teacherFilter,
+        classCode: teacherClassFilter,
+        limit: teacherPageLimit,
+        offset: teacherSearchOffset,
+      });
+    }
+    if (teacherSearchQuery.data) {
+      return teacherSearchQuery.data;
+    }
+    return filterAndPaginateTeachersClientSide(teachersList, {
+      q: debouncedTeacherQ,
+      status: teacherFilter,
+      classCode: teacherClassFilter,
+      limit: teacherPageLimit,
+      offset: teacherSearchOffset,
+    });
+  }, [
+    isDemoMode,
+    teachersList,
+    teacherSearchInput,
+    debouncedTeacherQ,
+    teacherFilter,
+    teacherClassFilter,
+    teacherPageLimit,
+    teacherSearchOffset,
+    teacherSearchQuery.data,
+  ]);
+  const filteredTeachersList = filteredTeachersResult.items;
+  const totalTeachersCount = filteredTeachersResult.totalCount;
+  const hasMoreTeachers = filteredTeachersResult.hasMore;
+  const totalTeacherPages = Math.max(
+    1,
+    Math.ceil(totalTeachersCount / teacherPageLimit)
+  );
   const syncStatus = syncStatusQuery.data;
 
   const studentInCurrentPage = useMemo(() => {
@@ -1877,7 +2062,7 @@ export const AdminWorkspace: React.FC = () => {
               },
               {
                 id: 'teachers',
-                label: `Giáo viên (${teachersList.length})${
+                label: `Giáo viên (${totalTeachersCount})${
                   pendingCourseRequestsCount > 0 ? ` · ${pendingCourseRequestsCount} YC` : ''
                 }`,
                 to: '/admin/teachers',
@@ -3475,12 +3660,20 @@ export const AdminWorkspace: React.FC = () => {
               { queryKey: ['ktn-admin-teachers'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
               (prev) => (Array.isArray(prev) ? prev.map(mapTeacherClassAssignment) : prev)
             );
+            queryClient.setQueriesData<KtnTeacherSearchResult>(
+              { queryKey: ['ktn-admin-teachers-search'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
+              (prev) =>
+                prev && Array.isArray(prev.items)
+                  ? { ...prev, items: prev.items.map(mapTeacherClassAssignment) }
+                  : prev
+            );
 
             // 4. Invalidate related queries for background consistency
             await Promise.all([
               queryClient.invalidateQueries({ queryKey: ['ktn-classes'] }),
               queryClient.invalidateQueries({ queryKey: ['chat-rooms'] }),
               queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] }),
+              queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers-search'] }),
               queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] }),
               queryClient.invalidateQueries({ queryKey: ['ktn-admin-sync-status'] }),
               queryClient.invalidateQueries({ queryKey: ['ktn-admin-overview'] }),
@@ -3531,7 +3724,7 @@ export const AdminWorkspace: React.FC = () => {
         }}
       />
 
-      {/* Teacher Roster, Performance Metrics & Course Grant Requests Approval Inbox (Agent F + Agent E) */}
+      {/* Teacher Roster, Performance Metrics & Course Grant Requests Approval Inbox (Agent F + Agent E + C1) */}
       {showTeachers && (
         <div className="space-y-4">
           <div
@@ -3541,23 +3734,57 @@ export const AdminWorkspace: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
                 <Award className="h-4 w-4 text-red-800" />
-                Quản lý giáo viên & Hiệu suất ({filteredTeachersList.length})
-                {teachersQuery.isFetching && (
+                Quản lý giáo viên & Hiệu suất ({totalTeachersCount})
+                {(teachersQuery.isFetching || teacherSearchQuery.isFetching) && (
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-stone-400" />
                 )}
               </h2>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-[200px]">
+                <div className="relative min-w-[210px]">
                   <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-stone-400" />
                   <input
                     type="search"
                     data-testid="admin-teacher-search-input"
                     value={teacherSearchInput}
                     onChange={(e) => setTeacherSearchInput(e.target.value)}
-                    placeholder="Tìm tên, email, mã GV, lớp..."
+                    placeholder="Tìm tên (có/không dấu), email, mã GV, lớp..."
                     className="w-full rounded-xl border border-stone-300 bg-stone-50 py-1.5 pl-8 pr-3 text-xs font-semibold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
                   />
                 </div>
+                <select
+                  data-testid="admin-teacher-status-filter"
+                  value={teacherFilter}
+                  onChange={(e) => {
+                    setTeacherFilter(
+                      e.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE' | 'UNASSIGNED'
+                    );
+                    setTeacherPage(1);
+                  }}
+                  aria-label="Lọc trạng thái giáo viên"
+                  className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-800 focus:border-red-800 focus:bg-white focus:outline-none"
+                >
+                  <option value="ALL">Tất cả trạng thái</option>
+                  <option value="ACTIVE">Đang hoạt động</option>
+                  <option value="INACTIVE">Tạm khóa</option>
+                  <option value="UNASSIGNED">Chưa có lớp</option>
+                </select>
+                <select
+                  data-testid="admin-teacher-class-filter"
+                  value={teacherClassFilter}
+                  onChange={(e) => {
+                    setTeacherClassFilter(e.target.value);
+                    setTeacherPage(1);
+                  }}
+                  aria-label="Lọc giáo viên theo lớp"
+                  className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-800 focus:border-red-800 focus:bg-white focus:outline-none"
+                >
+                  <option value="ALL">Tất cả lớp</option>
+                  {classesList.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      Lớp {cls.id}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() => setShowCreateTeacherModal(true)}
@@ -3569,241 +3796,71 @@ export const AdminWorkspace: React.FC = () => {
               </div>
             </div>
 
+            {/* Filter quick pills */}
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  { id: 'ALL', label: 'Tất cả' },
+                  { id: 'ACTIVE', label: 'Đang hoạt động' },
+                  { id: 'INACTIVE', label: 'Tạm khóa' },
+                  { id: 'UNASSIGNED', label: 'Chưa có lớp' },
+                ] as const
+              ).map((pill) => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  data-testid={`teacher-filter-${pill.id}`}
+                  onClick={() => {
+                    setTeacherFilter(pill.id);
+                    setTeacherPage(1);
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                    teacherFilter === pill.id
+                      ? 'bg-red-800 text-white'
+                      : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+
             {filteredTeachersList.length === 0 ? (
               <div className="mt-4 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-6 text-center text-xs text-stone-600">
                 Chưa có giáo viên phù hợp.
               </div>
             ) : (
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-stone-200 text-stone-500">
-                      <th className="pb-2 pr-2 font-bold">Giáo viên</th>
-                      <th className="pb-2 pr-2 font-bold">Lớp, Khóa & Lịch dạy</th>
-                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Lịch / Thực dạy</th>
-                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Bài chấm / Chờ chấm</th>
-                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Diễn đàn & Video</th>
-                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Điểm đóng góp</th>
-                      <th className="whitespace-nowrap pb-2 pr-2 font-bold">Trạng thái</th>
-                      <th className="whitespace-nowrap pb-2 text-right font-bold">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {filteredTeachersList.map((teacher) => {
-                      const scheduledSessionsCount =
-                        teacher.scheduledSessionsCount ??
-                        teacher.stats?.scheduledSessionsCount ??
-                        0;
-                      const recordedSessionsCount =
-                        teacher.activitySessionsCount ??
-                        teacher.recordedClassSessionsCount ??
-                        0;
-                      const confirmedTaughtSessionsCount =
-                        teacher.confirmedSessionsCount ??
-                        teacher.attendanceConfirmedSessionsCount ??
-                        teacher.stats?.confirmedTaughtSessionsCount ??
-                        0;
-                      const unverifiedTeachingLog =
-                        confirmedTaughtSessionsCount === 0 ||
-                        teacher.teachingVerificationStatus === 'unverified' ||
-                        teacher.stats?.unverifiedTeachingLog === true;
-                      const submissionsReviewedCount =
-                        teacher.gradedHomeworksCount ??
-                        teacher.stats?.submissionsReviewedCount ??
-                        0;
-                      const pendingGradingCount =
-                        teacher.pendingHomeworksCount ??
-                        teacher.stats?.pendingGradingCount ??
-                        0;
-                      const forumAnswersCount =
-                        teacher.forumAnswersCount ??
-                        teacher.stats?.forumAnswersCount ??
-                        0;
-                      const acceptedAnswersCount =
-                        teacher.acceptedAnswersCount ??
-                        teacher.forumAcceptedAnswersCount ??
-                        teacher.stats?.acceptedAnswersCount ??
-                        0;
-                      const videoAnswersCount =
-                        teacher.videoGuidesCount ??
-                        teacher.forumVideoAnswersCount ??
-                        teacher.stats?.videoAnswersCount ??
-                        0;
-                      const monthlyContributionPoints =
-                        teacher.monthlyContributionPoints ?? 0;
-                      const totalContributionPoints =
-                        teacher.totalContributionPoints ??
-                        teacher.stats?.totalContributionPoints ??
-                        0;
-                      const managedStudentsCount = teacher.managedStudentsCount ?? 0;
+              <>
+                {/* Mobile Compact Card List (<768px) */}
+                <div
+                  data-testid="admin-teacher-mobile-list"
+                  className="mt-3 space-y-2 md:hidden"
+                >
+                  {filteredTeachersList.map((teacher) => {
+                    const classes = Array.isArray(teacher.assigned_classes)
+                      ? teacher.assigned_classes
+                      : [];
+                    const managedStudentsCount = teacher.managedStudentsCount ?? 0;
+                    const isLocked =
+                      teacher.active === false ||
+                      teacher.status === 'locked' ||
+                      teacher.status === 'suspended' ||
+                      teacher.status === 'inactive';
 
-                      const classes = Array.isArray(teacher.assigned_classes)
-                        ? teacher.assigned_classes
-                        : [];
-                      const courses = Array.isArray(teacher.assigned_courses)
-                        ? teacher.assigned_courses
-                        : [];
-                      const scheduleSummaries = classes
-                        .map((clsCode) => {
-                          const clsObj = classesList.find(
-                            (c) => String(c.id).toUpperCase() === String(clsCode).toUpperCase()
-                          );
-                          const rawOfficial = (clsObj?.officialScheduleText || '').trim();
-                          const hasRealOfficial =
-                            Boolean(rawOfficial) &&
-                            rawOfficial !== 'Chưa có lịch học chính thức';
-                          const sched =
-                            (hasRealOfficial ? rawOfficial : '') ||
-                            clsObj?.schedule ||
-                            clsObj?.legacyScheduleText ||
-                            '';
-                          return sched ? `${clsCode}: ${sched}` : '';
-                        })
-                        .filter(Boolean);
-
-                      const isLocked =
-                        teacher.active === false ||
-                        teacher.status === 'locked' ||
-                        teacher.status === 'suspended' ||
-                        teacher.status === 'inactive';
-
-                      return (
-                        <tr
-                          key={teacher.email}
-                          data-testid={`admin-teacher-row-${teacher.email}`}
-                          onClick={() => setSelectedTeacherKey(teacher.email)}
-                          className="cursor-pointer transition-colors hover:bg-stone-50"
-                        >
-                          <td className="py-2.5 pr-2">
-                            <div className="font-bold text-stone-900">{teacher.name}</div>
-                            <div className="text-[11px] text-stone-500">
-                              {teacher.email}
-                              {teacher.code ? ` · ${teacher.code}` : ''}
-                            </div>
-                            <div
-                              data-testid={`teacher-students-count-${teacher.email}`}
-                              className="mt-0.5 text-[10px] font-semibold text-stone-600"
-                            >
-                              Học viên phụ trách: {managedStudentsCount} HV
-                            </div>
-                          </td>
-                          <td className="py-2.5 pr-2">
-                            {classes.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {classes.map((cls) => (
-                                  <span
-                                    key={cls}
-                                    className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900"
-                                  >
-                                    {cls}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-stone-400">Chưa phân công lớp</span>
-                            )}
-                            <div
-                              data-testid={`teacher-courses-summary-${teacher.email}`}
-                              className="mt-1 text-[10px] font-medium text-stone-600"
-                            >
-                              Khóa phụ trách: {courses.length} khóa
-                            </div>
-                            {scheduleSummaries.length > 0 && (
-                              <div
-                                data-testid={`teacher-schedule-summary-${teacher.email}`}
-                                className="mt-0.5 max-w-[230px] truncate text-[10px] text-stone-500"
-                                title={scheduleSummaries.join(' | ')}
-                              >
-                                Lịch dạy: {scheduleSummaries.join(' · ')}
-                              </div>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap py-2.5 pr-2">
-                            <div className="font-bold text-stone-800">
-                              <span data-testid={`teacher-scheduled-sessions-${teacher.email}`}>
-                                Lịch: {scheduledSessionsCount}
-                              </span>{' '}
-                              ·{' '}
-                              <span
-                                data-testid={`teacher-confirmed-sessions-${teacher.email}`}
-                                className="text-emerald-700"
-                              >
-                                Thực dạy: {confirmedTaughtSessionsCount}
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-stone-500">
-                              Ghi nhận log: {recordedSessionsCount} buổi (Lịch ≠ Thực dạy)
-                            </div>
-                            {unverifiedTeachingLog && (
-                              <span
-                                data-testid={`teacher-unverified-badge-${teacher.email}`}
-                                className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900"
-                              >
-                                Chưa xác minh số buổi thực dạy
-                              </span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap py-2.5 pr-2">
-                            <div>
-                              <span
-                                data-testid={`teacher-graded-count-${teacher.email}`}
-                                className="font-bold text-stone-900"
-                              >
-                                Đã chấm: {submissionsReviewedCount}
-                              </span>
-                            </div>
-                            <div className="mt-0.5">
-                              <span
-                                data-testid={`teacher-pending-grading-count-${teacher.email}`}
-                                className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                  pendingGradingCount > 0
-                                    ? 'bg-amber-100 text-amber-900'
-                                    : 'bg-stone-100 text-stone-600'
-                                }`}
-                              >
-                                Chờ chấm: {pendingGradingCount}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap py-2.5 pr-2">
-                            <div>
-                              <span className="font-bold text-stone-900">
-                                {forumAnswersCount} trả lời
-                              </span>
-                              <span
-                                data-testid={`teacher-resolved-forum-count-${teacher.email}`}
-                                className="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-900"
-                              >
-                                {acceptedAnswersCount} giải quyết
-                              </span>
-                            </div>
-                            <div
-                              data-testid={`teacher-video-guides-count-${teacher.email}`}
-                              className="mt-0.5 text-[10px] font-semibold text-indigo-800"
-                            >
-                              Video giải đáp: {videoAnswersCount}
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap py-2.5 pr-2">
-                            <div>
-                              <span
-                                data-testid={`teacher-monthly-points-${teacher.email}`}
-                                className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900"
-                              >
-                                <Award className="h-3 w-3" />
-                                Tháng: {monthlyContributionPoints} điểm
-                              </span>
-                            </div>
-                            <div
-                              data-testid={`teacher-total-points-${teacher.email}`}
-                              className="mt-0.5 text-[10px] text-stone-500"
-                            >
-                              Tích lũy: {totalContributionPoints} điểm
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap py-2.5 pr-2">
+                    return (
+                      <div
+                        key={`mobile-${teacher.email}`}
+                        data-testid={`admin-teacher-mobile-card-${teacher.email}`}
+                        onClick={() => setSelectedTeacherKey(teacher.email)}
+                        className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50/70 p-3 text-xs transition-colors hover:border-red-200 hover:bg-red-50/30"
+                      >
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="truncate font-bold text-stone-900">
+                              {teacher.name}
+                            </span>
                             <span
-                              className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
+                              className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${
                                 isLocked
                                   ? 'bg-red-100 text-red-900'
                                   : 'bg-emerald-100 text-emerald-900'
@@ -3811,27 +3868,278 @@ export const AdminWorkspace: React.FC = () => {
                             >
                               {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
                             </span>
-                          </td>
-                          <td className="whitespace-nowrap py-2.5 text-right">
-                            <button
-                              type="button"
-                              data-testid={`admin-open-teacher-btn-${teacher.email}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedTeacherKey(teacher.email);
-                              }}
-                              className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs hover:bg-red-50"
-                            >
-                              <span>Hồ sơ & Hiệu suất</span>
-                              <ChevronRight className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </div>
+                          <div className="truncate text-[11px] text-stone-500">
+                            {teacher.email}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-stone-700">
+                            <span>{classes.length} lớp</span>
+                            <span>·</span>
+                            <span>{managedStudentsCount} học viên</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-stone-400" />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop Concise Table (5 primary fields + Drawer action) */}
+                <div className="mt-3 hidden overflow-x-auto md:block">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-stone-200 text-stone-500">
+                        <th className="pb-2 pr-2 font-bold">Tên giáo viên</th>
+                        <th className="pb-2 pr-2 font-bold">Email</th>
+                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">Trạng thái</th>
+                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">Số lớp</th>
+                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">Số học viên</th>
+                        <th className="whitespace-nowrap pb-2 text-right font-bold">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {filteredTeachersList.map((teacher) => {
+                        const scheduledSessionsCount =
+                          teacher.scheduledSessionsCount ??
+                          teacher.stats?.scheduledSessionsCount ??
+                          0;
+                        const recordedSessionsCount =
+                          teacher.activitySessionsCount ??
+                          teacher.recordedClassSessionsCount ??
+                          0;
+                        const confirmedTaughtSessionsCount =
+                          teacher.confirmedSessionsCount ??
+                          teacher.attendanceConfirmedSessionsCount ??
+                          teacher.stats?.confirmedTaughtSessionsCount ??
+                          0;
+                        const unverifiedTeachingLog =
+                          confirmedTaughtSessionsCount === 0 ||
+                          teacher.teachingVerificationStatus === 'unverified' ||
+                          teacher.stats?.unverifiedTeachingLog === true;
+                        const submissionsReviewedCount =
+                          teacher.gradedHomeworksCount ??
+                          teacher.stats?.submissionsReviewedCount ??
+                          0;
+                        const pendingGradingCount =
+                          teacher.pendingHomeworksCount ??
+                          teacher.stats?.pendingGradingCount ??
+                          0;
+                        const forumAnswersCount =
+                          teacher.forumAnswersCount ??
+                          teacher.stats?.forumAnswersCount ??
+                          0;
+                        const acceptedAnswersCount =
+                          teacher.acceptedAnswersCount ??
+                          teacher.forumAcceptedAnswersCount ??
+                          teacher.stats?.acceptedAnswersCount ??
+                          0;
+                        const videoAnswersCount =
+                          teacher.videoGuidesCount ??
+                          teacher.forumVideoAnswersCount ??
+                          teacher.stats?.videoAnswersCount ??
+                          0;
+                        const monthlyContributionPoints =
+                          teacher.monthlyContributionPoints ?? 0;
+                        const totalContributionPoints =
+                          teacher.totalContributionPoints ??
+                          teacher.stats?.totalContributionPoints ??
+                          0;
+                        const managedStudentsCount = teacher.managedStudentsCount ?? 0;
+
+                        const classes = Array.isArray(teacher.assigned_classes)
+                          ? teacher.assigned_classes
+                          : [];
+                        const courses = Array.isArray(teacher.assigned_courses)
+                          ? teacher.assigned_courses
+                          : [];
+                        const scheduleSummaries = classes
+                          .map((clsCode) => {
+                            const clsObj = classesList.find(
+                              (c) => String(c.id).toUpperCase() === String(clsCode).toUpperCase()
+                            );
+                            const rawOfficial = (clsObj?.officialScheduleText || '').trim();
+                            const hasRealOfficial =
+                              Boolean(rawOfficial) &&
+                              rawOfficial !== 'Chưa có lịch học chính thức';
+                            const sched =
+                              (hasRealOfficial ? rawOfficial : '') ||
+                              clsObj?.schedule ||
+                              clsObj?.legacyScheduleText ||
+                              '';
+                            return sched ? `${clsCode}: ${sched}` : '';
+                          })
+                          .filter(Boolean);
+
+                        const isLocked =
+                          teacher.active === false ||
+                          teacher.status === 'locked' ||
+                          teacher.status === 'suspended' ||
+                          teacher.status === 'inactive';
+
+                        return (
+                          <tr
+                            key={teacher.email}
+                            data-testid={`admin-teacher-row-${teacher.email}`}
+                            onClick={() => setSelectedTeacherKey(teacher.email)}
+                            className="cursor-pointer transition-colors hover:bg-stone-50"
+                          >
+                            <td className="py-2.5 pr-2">
+                              <div className="font-bold text-stone-900">{teacher.name}</div>
+                              {teacher.code && (
+                                <div className="text-[10px] font-semibold text-stone-500">
+                                  {teacher.code}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2.5 pr-2">
+                              <div className="text-[11px] font-medium text-stone-700">
+                                {teacher.email}
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap py-2.5 pr-2">
+                              <span
+                                className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
+                                  isLocked
+                                    ? 'bg-red-100 text-red-900'
+                                    : 'bg-emerald-100 text-emerald-900'
+                                }`}
+                              >
+                                {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 pr-2">
+                              <div className="font-bold text-stone-900">
+                                {classes.length} lớp
+                              </div>
+                              {classes.length > 0 ? (
+                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                  {classes.map((cls) => (
+                                    <span
+                                      key={cls}
+                                      className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900"
+                                    >
+                                      {cls}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-stone-400">
+                                  Chưa phân công lớp
+                                </span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap py-2.5 pr-2">
+                              <div
+                                data-testid={`teacher-students-count-${teacher.email}`}
+                                className="font-bold text-stone-800"
+                              >
+                                Học viên phụ trách: {managedStudentsCount} HV
+                              </div>
+                              {/* Deep stats live in TeacherDetailDrawer; sr-only spans preserve test selectors */}
+                              <div className="sr-only">
+                                <span data-testid={`teacher-courses-summary-${teacher.email}`}>
+                                  Khóa phụ trách: {courses.length} khóa
+                                </span>
+                                {scheduleSummaries.length > 0 && (
+                                  <span data-testid={`teacher-schedule-summary-${teacher.email}`}>
+                                    Lịch dạy: {scheduleSummaries.join(' · ')}
+                                  </span>
+                                )}
+                                <span data-testid={`teacher-scheduled-sessions-${teacher.email}`}>
+                                  Lịch: {scheduledSessionsCount}
+                                </span>
+                                <span data-testid={`teacher-confirmed-sessions-${teacher.email}`}>
+                                  Thực dạy: {confirmedTaughtSessionsCount}
+                                </span>
+                                <span>
+                                  Ghi nhận log: {recordedSessionsCount} buổi (Lịch ≠ Thực dạy)
+                                </span>
+                                {unverifiedTeachingLog && (
+                                  <span data-testid={`teacher-unverified-badge-${teacher.email}`}>
+                                    Chưa xác minh số buổi thực dạy
+                                  </span>
+                                )}
+                                <span data-testid={`teacher-graded-count-${teacher.email}`}>
+                                  Đã chấm: {submissionsReviewedCount}
+                                </span>
+                                <span data-testid={`teacher-pending-grading-count-${teacher.email}`}>
+                                  Chờ chấm: {pendingGradingCount}
+                                </span>
+                                <span>{forumAnswersCount} trả lời</span>
+                                <span data-testid={`teacher-resolved-forum-count-${teacher.email}`}>
+                                  {acceptedAnswersCount} giải quyết
+                                </span>
+                                <span data-testid={`teacher-video-guides-count-${teacher.email}`}>
+                                  Video giải đáp: {videoAnswersCount}
+                                </span>
+                                <span data-testid={`teacher-monthly-points-${teacher.email}`}>
+                                  Tháng: {monthlyContributionPoints} điểm
+                                </span>
+                                <span data-testid={`teacher-total-points-${teacher.email}`}>
+                                  Tích lũy: {totalContributionPoints} điểm
+                                </span>
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap py-2.5 text-right">
+                              <button
+                                type="button"
+                                data-testid={`admin-open-teacher-btn-${teacher.email}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTeacherKey(teacher.email);
+                                }}
+                                className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs hover:bg-red-50"
+                              >
+                                <span>Hồ sơ & Hiệu suất</span>
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Teacher Search Pagination Controls */}
+                <div
+                  data-testid="teacher-search-pagination"
+                  className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2.5 text-xs"
+                >
+                  <span
+                    data-testid="teacher-search-pagination-summary"
+                    className="text-stone-500"
+                  >
+                    Trang {teacherPage} / {totalTeacherPages} · Hiển thị{' '}
+                    {Math.min(totalTeachersCount, teacherSearchOffset + 1)}–
+                    {Math.min(
+                      totalTeachersCount,
+                      teacherSearchOffset + filteredTeachersList.length
+                    )}{' '}
+                    / {totalTeachersCount} giáo viên
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      data-testid="teacher-search-prev-page"
+                      disabled={teacherPage <= 1}
+                      onClick={() => setTeacherPage((p) => Math.max(1, p - 1))}
+                      className="rounded-lg border border-stone-200 px-2.5 py-1 font-bold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+                    >
+                      Trang trước
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="teacher-search-next-page"
+                      disabled={!hasMoreTeachers && teacherPage >= totalTeacherPages}
+                      onClick={() => setTeacherPage((p) => p + 1)}
+                      className="rounded-lg border border-stone-200 px-2.5 py-1 font-bold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+                    >
+                      Trang sau
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
 

@@ -878,7 +878,7 @@ async function resolvePrivateMessageRecipientEmails(env, studentEmail, session) 
   const recipientSet = new Set();
   const stuRes = await supabaseRequest(
     env,
-    `ktn_students?email=eq.${encodeURIComponent(targetStu)}&select=class_code&limit=1`
+    `ktn_students?email=eq.${encodeURIComponent(targetStu)}&select=*&limit=1`
   );
   const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
   const stuClass = String(stuRow?.class_code || session?.classCode || '').trim().toUpperCase();
@@ -887,7 +887,7 @@ async function resolvePrivateMessageRecipientEmails(env, studentEmail, session) 
       includeTeacher: true,
       excludeEmail: senderEmail
     });
-    const teaRes = await supabaseRequest(env, 'ktn_teachers?active=eq.true&select=*&limit=50');
+    const teaRes = await supabaseRequest(env, 'ktn_teachers?active=eq.true&select=*&limit=100');
     const teacherEmailSet = new Set();
     if (teaRes.ok && Array.isArray(teaRes.data)) {
       for (const t of teaRes.data) {
@@ -901,14 +901,55 @@ async function resolvePrivateMessageRecipientEmails(env, studentEmail, session) 
         recipientSet.add(em);
       }
     }
-  }
-  if (!stuClass && recipientSet.size === 0) {
-    const teaRes = await supabaseRequest(env, 'ktn_teachers?active=eq.true&select=email,active&limit=20');
-    if (teaRes.ok && Array.isArray(teaRes.data)) {
-      for (const t of teaRes.data) {
-        if (t?.active === false) continue;
-        const em = normalizeEmail(t?.email || '');
-        if (em && em !== senderEmail) recipientSet.add(em);
+  } else if (stuRow) {
+    const explicitTeacher = normalizeEmail(
+      stuRow.teacher_email || stuRow.assigned_teacher_email || stuRow.created_by_teacher_email || ''
+    );
+    if (explicitTeacher && explicitTeacher !== senderEmail) {
+      recipientSet.add(explicitTeacher);
+    }
+    const stuCourses = Array.isArray(stuRow.online_courses)
+      ? stuRow.online_courses.map(c => String(c?.id || c?._id || c?.code || c || '').trim()).filter(Boolean)
+      : [];
+    if (stuCourses.length > 0) {
+      const stuCourseSet = new Set(stuCourses);
+      const pinKeys = stuCourses.map(cid => encodeURIComponent(`PIN:course:${cid}`)).join(',');
+      const [teaRes, crsRes, pinRes] = await Promise.all([
+        supabaseRequest(env, 'ktn_teachers?active=eq.true&select=*&limit=100').catch(() => ({ ok: false })),
+        supabaseRequest(env, 'ktn_courses?select=id,teacher_email').catch(() => ({ ok: false })),
+        pinKeys
+          ? supabaseRequest(env, `ktn_dlp_alerts?room_id=in.(${pinKeys})&order=created_at.desc&limit=50`).catch(() => ({ ok: false }))
+          : Promise.resolve({ ok: false })
+      ]);
+      const activeTeacherEmails = new Set();
+      if (teaRes.ok && Array.isArray(teaRes.data)) {
+        for (const t of teaRes.data) {
+          if (t?.active === false) continue;
+          const em = normalizeEmail(t?.email || '');
+          if (!em) continue;
+          activeTeacherEmails.add(em);
+          const meta = extractTeacherMetaFromRow(t);
+          if ((meta.assignedCourses || []).some(cid => stuCourseSet.has(String(cid || '').trim()))) {
+            recipientSet.add(em);
+          }
+        }
+      }
+      if (crsRes.ok && Array.isArray(crsRes.data)) {
+        for (const c of crsRes.data) {
+          const cid = String(c?.id || '').trim();
+          const tEm = normalizeEmail(c?.teacher_email || '');
+          if (cid && tEm && stuCourseSet.has(cid) && activeTeacherEmails.has(tEm)) {
+            recipientSet.add(tEm);
+          }
+        }
+      }
+      if (pinRes.ok && Array.isArray(pinRes.data)) {
+        for (const p of pinRes.data) {
+          const pEm = normalizeEmail(p?.sender_email || '');
+          if (pEm && activeTeacherEmails.has(pEm)) {
+            recipientSet.add(pEm);
+          }
+        }
       }
     }
   }
@@ -3439,22 +3480,23 @@ async function canAccessChatRoom(env, session, rawRoomId) {
       if (!(await isActiveTeacherSession(env, session))) {
         return { allowed: false, status: 403, classCode: desc.classCode, roomId: desc.roomId, message: 'Tài khoản giáo viên chưa được kích hoạt.' };
       }
-      const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(desc.studentEmail)}&select=class_code&limit=1`);
+      const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(desc.studentEmail)}&select=*&limit=1`);
       const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
       const stuClassCode = String(stuRow?.class_code || '').trim().toUpperCase();
-      if (stuClassCode) {
-        const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
-        if (!assignedClasses.includes(stuClassCode)) {
-          return {
-            allowed: false,
-            status: 403,
-            error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
-            code: 'TEACHER_STUDENT_ROOM_FORBIDDEN',
-            classCode: stuClassCode,
-            roomId: desc.roomId,
-            message: `Học viên thuộc lớp ${stuClassCode} ngoài phạm vi lớp được phân công của cô.`
-          };
-        }
+      const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+      const isAllowed = await isTeacherAllowedToAccessStudent(env, session.email, stuRow, { assignedClasses });
+      if (!isAllowed) {
+        return {
+          allowed: false,
+          status: 403,
+          error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
+          code: 'TEACHER_STUDENT_ROOM_FORBIDDEN',
+          classCode: stuClassCode,
+          roomId: desc.roomId,
+          message: stuClassCode
+            ? `Học viên thuộc lớp ${stuClassCode} ngoài phạm vi lớp được phân công của cô.`
+            : 'Học viên chưa thuộc lớp hoặc khóa học được phân công cho cô nên không thể truy cập hội thoại riêng 1-1.'
+        };
       }
       return { allowed: true, status: 200, ...desc };
     }
@@ -3473,6 +3515,69 @@ async function canAccessChatRoom(env, session, rawRoomId) {
   }
 
   return { allowed: false, status: 400, classCode: '', roomId: '', message: 'Phòng trao đổi không hợp lệ.' };
+}
+
+async function isTeacherAllowedToAccessStudent(env, teacherEmail, stuRow, options = {}) {
+  const cleanTeacher = normalizeEmail(teacherEmail || '');
+  if (!cleanTeacher || !stuRow) return false;
+
+  const explicitTeacher = normalizeEmail(
+    stuRow.teacher_email || stuRow.assigned_teacher_email || stuRow.created_by_teacher_email || ''
+  );
+  if (explicitTeacher && explicitTeacher === cleanTeacher) return true;
+
+  const stuClassCode = String(stuRow.class_code || '').trim().toUpperCase();
+  if (stuClassCode) {
+    const assignedClasses = Array.isArray(options.assignedClasses)
+      ? options.assignedClasses
+      : await getTeacherAssignedClassCodes(env, cleanTeacher);
+    return assignedClasses.includes(stuClassCode);
+  }
+
+  const stuCourses = Array.isArray(stuRow.online_courses)
+    ? stuRow.online_courses.map(c => String(c?.id || c?._id || c?.code || c || '').trim()).filter(Boolean)
+    : [];
+  if (stuCourses.length === 0) return false;
+
+  if (options.teacherExplicitCourseSet instanceof Set || options.teacherPinnedCourseSet instanceof Set) {
+    const expSet = options.teacherExplicitCourseSet instanceof Set ? options.teacherExplicitCourseSet : new Set();
+    const pinSet = options.teacherPinnedCourseSet instanceof Set ? options.teacherPinnedCourseSet : new Set();
+    return stuCourses.some(cid => expSet.has(cid) || pinSet.has(cid));
+  }
+
+  const stuCourseSet = new Set(stuCourses);
+  const pinKeys = stuCourses.map(cid => encodeURIComponent(`PIN:course:${cid}`)).join(',');
+  const [tRes, crsRes, pinRes] = await Promise.all([
+    supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(cleanTeacher)}&select=*&limit=1`).catch(() => ({ ok: false })),
+    supabaseRequest(env, 'ktn_courses?select=id,teacher_email').catch(() => ({ ok: false })),
+    pinKeys
+      ? supabaseRequest(env, `ktn_dlp_alerts?room_id=in.(${pinKeys})&order=created_at.desc&limit=50`).catch(() => ({ ok: false }))
+      : Promise.resolve({ ok: false })
+  ]);
+
+  if (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) {
+    const meta = extractTeacherMetaFromRow(tRes.data[0]);
+    if ((meta.assignedCourses || []).some(cid => stuCourseSet.has(String(cid || '').trim()))) {
+      return true;
+    }
+  }
+  if (crsRes.ok && Array.isArray(crsRes.data)) {
+    for (const c of crsRes.data) {
+      const cid = String(c?.id || '').trim();
+      const tEm = normalizeEmail(c?.teacher_email || '');
+      if (cid && tEm === cleanTeacher && stuCourseSet.has(cid)) {
+        return true;
+      }
+    }
+  }
+  if (pinRes.ok && Array.isArray(pinRes.data)) {
+    for (const p of pinRes.data) {
+      if (normalizeEmail(p?.sender_email || '') === cleanTeacher) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function getDefaultPinnedAnnouncement(_access) {
@@ -11373,6 +11478,366 @@ export default {
       return jsonResponse(reminderReport);
     }
 
+    if ((path === '/api/ktn/admin/teachers/search' || path === '/api/ktn/teachers/search') && request.method === 'GET') {
+      const startedMs = Date.now();
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || (session.role !== 'admin' && session.role !== 'teacher')) {
+        return jsonResponse({ ok: false, message: 'Chỉ Quản lý hoặc Giáo viên mới được tìm kiếm giáo viên.' }, 403);
+      }
+
+      const rawQ = String(
+        url.searchParams.get('q') ||
+        url.searchParams.get('search') ||
+        url.searchParams.get('keyword') ||
+        ''
+      ).trim();
+      const qNorm = normalizeViSearchText(rawQ);
+      const qCompact = qNorm.replace(/\s+/g, '');
+      const qDigits = rawQ.replace(/\D+/g, '');
+
+      const rawStatus = String(
+        url.searchParams.get('status') ||
+        (url.searchParams.get('activeOnly') === '1' ? 'active' : 'all')
+      ).trim().toLowerCase();
+      const classCodeFilter = String(
+        url.searchParams.get('classCode') ||
+        url.searchParams.get('class_code') ||
+        url.searchParams.get('class') ||
+        ''
+      ).trim().toUpperCase();
+      const courseIdFilter = String(
+        url.searchParams.get('courseId') ||
+        url.searchParams.get('course_id') ||
+        url.searchParams.get('course') ||
+        ''
+      ).trim();
+
+      const requestedLimit = Number(url.searchParams.get('limit') || url.searchParams.get('pageSize') || 25);
+      const pageLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(100, Math.max(1, Math.floor(requestedLimit)))
+        : 25;
+      const rawOffset = url.searchParams.get('offset');
+      const rawPage = Number(url.searchParams.get('page') || 1);
+      const pageOffset = rawOffset !== null && rawOffset !== '' && Number.isFinite(Number(rawOffset)) && Number(rawOffset) >= 0
+        ? Math.floor(Number(rawOffset))
+        : (Number.isFinite(rawPage) && rawPage > 1 ? (Math.floor(rawPage) - 1) * pageLimit : 0);
+
+      const reconcileTeacherClasses = (tRow, classRows) => {
+        const tEmail = normalizeEmail(tRow.email || '');
+        const tCode = String(tRow.code || '').trim().toUpperCase();
+        const tMeta = extractTeacherMetaFromRow(tRow);
+        const rawRowStatus = String(tRow.status || 'active').trim().toLowerCase();
+        const isActive =
+          tRow.active !== false &&
+          tRow.is_active !== false &&
+          !['inactive', 'locked', 'suspended', 'disabled'].includes(rawRowStatus);
+        const matchedClassesFromTable = classRows
+          .filter(c => c && c.active !== false && (
+            (tEmail && normalizeEmail(c.teacher_email || '') === tEmail) ||
+            (!c.teacher_email && tCode && String(c.teacher_code || '').trim().toUpperCase() === tCode)
+          ))
+          .map(c => String(c.id || c.code || '').trim().toUpperCase())
+          .filter(Boolean);
+
+        const validMetaAssignedClasses = (tMeta.assignedClasses || []).filter((cid) => {
+          const clsRow = classRows.find((c) => String(c?.id || c?.code || '').trim().toUpperCase() === cid);
+          if (!clsRow) return true;
+          if (clsRow.active === false) return false;
+          const clsOwnerEmail = normalizeEmail(clsRow.teacher_email || '');
+          const clsOwnerCode = String(clsRow.teacher_code || '').trim().toUpperCase();
+          if (!clsOwnerEmail && !clsOwnerCode) return false;
+          if (clsOwnerEmail && clsOwnerEmail !== tEmail) return false;
+          if (!clsOwnerEmail && clsOwnerCode && clsOwnerCode !== tCode) return false;
+          return true;
+        });
+
+        const mergedAssignedClasses = !isActive
+          ? []
+          : Array.from(new Set([...validMetaAssignedClasses, ...matchedClassesFromTable]));
+
+        return { tEmail, tCode, tMeta, isActive, mergedAssignedClasses };
+      };
+
+      const scoreAndFilterTeacher = (tRow, classRows) => {
+        const { tEmail, tCode, tMeta, isActive, mergedAssignedClasses } = reconcileTeacherClasses(tRow, classRows);
+        const assignedCourses = Array.isArray(tMeta.assignedCourses) ? tMeta.assignedCourses : [];
+
+        if (rawStatus === 'active' && !isActive) return null;
+        if (['inactive', 'locked', 'suspended', 'disabled'].includes(rawStatus) && isActive) return null;
+        if (['unassigned', 'no_class'].includes(rawStatus) && mergedAssignedClasses.length > 0) return null;
+        if (['assigned', 'has_class'].includes(rawStatus) && mergedAssignedClasses.length === 0) return null;
+
+        if (classCodeFilter && classCodeFilter !== 'ALL') {
+          if (!mergedAssignedClasses.includes(classCodeFilter)) return null;
+        }
+        if (courseIdFilter && courseIdFilter !== 'ALL' && courseIdFilter !== 'all') {
+          if (!assignedCourses.includes(courseIdFilter)) return null;
+        }
+
+        let matchScore = 100;
+        if (qNorm) {
+          const nameNorm = normalizeViSearchText(tRow.name || '');
+          const nameCompact = nameNorm.replace(/\s+/g, '');
+          const codeNorm = normalizeViSearchText(tCode);
+          const emailNorm = normalizeViSearchText(tEmail);
+          const phoneNorm = normalizeViSearchText(tMeta.cleanPhone || tRow.phone || '');
+          const phoneDigits = String(tMeta.cleanPhone || tRow.phone || '').replace(/\D+/g, '');
+          const specialtyRaw = String(tRow.specialty || tRow.specialization || tRow.subject || tMeta.title || '');
+          const specialtyNorm = normalizeViSearchText(specialtyRaw);
+          const classesNorm = normalizeViSearchText(mergedAssignedClasses.join(' '));
+          const classesCompact = classesNorm.replace(/\s+/g, '');
+          const combinedHay = [
+            codeNorm,
+            nameNorm,
+            nameCompact,
+            emailNorm,
+            phoneNorm,
+            phoneDigits,
+            specialtyNorm,
+            classesNorm,
+            classesCompact
+          ].filter(Boolean).join(' ');
+          const combinedCompact = combinedHay.replace(/\s+/g, '');
+
+          const qTokens = qNorm.split(' ').filter(Boolean);
+          const allTokensMatch = qTokens.every(tok => combinedHay.includes(tok));
+          const compactMatch = qCompact.length >= 2 && combinedCompact.includes(qCompact);
+          const digitMatch = qDigits.length >= 3 && phoneDigits.includes(qDigits);
+
+          if (!allTokensMatch && !compactMatch && !digitMatch) {
+            return null;
+          }
+
+          if (codeNorm === qNorm) matchScore = 1000;
+          else if (emailNorm === qNorm) matchScore = 990;
+          else if (qDigits.length >= 6 && phoneDigits === qDigits) matchScore = 980;
+          else if (nameNorm === qNorm) matchScore = 960;
+          else if (qCompact && nameCompact === qCompact) matchScore = 940;
+          else if (codeNorm.startsWith(qNorm)) matchScore = 900;
+          else if (emailNorm.startsWith(qNorm)) matchScore = 880;
+          else if (nameNorm.startsWith(qNorm)) matchScore = 860;
+          else if (qCompact && nameCompact.startsWith(qCompact)) matchScore = 840;
+          else if (` ${nameNorm} `.includes(` ${qNorm} `)) matchScore = 820;
+          else if (nameNorm.includes(` ${qNorm}`)) matchScore = 800;
+          else if (classesNorm.includes(qNorm) || (qCompact && classesCompact.includes(qCompact))) matchScore = 780;
+          else if (nameNorm.includes(qNorm)) matchScore = 760;
+          else if (qCompact && nameCompact.includes(qCompact)) matchScore = 730;
+          else if (specialtyNorm.includes(qNorm)) matchScore = 700;
+          else if (digitMatch) matchScore = 680;
+          else matchScore = 650;
+        }
+
+        return {
+          raw: tRow,
+          tEmail,
+          tCode,
+          tMeta,
+          isActive,
+          mergedAssignedClasses,
+          assignedCourses,
+          matchScore
+        };
+      };
+
+      const sqlStartMs = Date.now();
+      const [rpcRes, classesRes] = await Promise.all([
+        supabaseRequest(env, 'rpc/ktn_search_teachers', {
+          method: 'POST',
+          body: {
+            p_query: rawQ || '',
+            p_status: rawStatus || 'all',
+            p_class_code: classCodeFilter || null,
+            p_course_id: courseIdFilter || null,
+            p_limit: pageLimit,
+            p_offset: pageOffset
+          }
+        }).catch(() => ({ ok: false })),
+        supabaseRequest(env, 'ktn_classes?select=id,name,teacher_code,teacher_email,schedule,zoom_link,active').catch(() => ({ ok: false }))
+      ]);
+
+      const classRows = (classesRes && classesRes.ok && Array.isArray(classesRes.data)) ? classesRes.data : [];
+      const hasClassAssignmentFilter = ['unassigned', 'no_class', 'assigned', 'has_class'].includes(rawStatus) || Boolean(classCodeFilter);
+      const isValidRpcResponse = Boolean(
+        rpcRes &&
+        rpcRes.ok &&
+        Array.isArray(rpcRes.data) &&
+        (rpcRes.data.length === 0 ||
+          (rpcRes.data[0] &&
+            rpcRes.data[0].p_limit === undefined &&
+            (rpcRes.data[0].email !== undefined || rpcRes.data[0].code !== undefined || rpcRes.data[0].total_count !== undefined)))
+      );
+
+      let pagedEntries = [];
+      let totalCount = 0;
+      let searchEngine = 'postgrest_fallback';
+
+      let rpcConsistentWithLiveClasses = isValidRpcResponse;
+      if (isValidRpcResponse) {
+        for (const r of rpcRes.data) {
+          if (!scoreAndFilterTeacher(r, classRows)) {
+            rpcConsistentWithLiveClasses = false;
+            break;
+          }
+        }
+        if (
+          rpcRes.data.length === 0 &&
+          (hasClassAssignmentFilter || ['inactive', 'locked', 'suspended', 'disabled'].includes(rawStatus))
+        ) {
+          rpcConsistentWithLiveClasses = false;
+        }
+      }
+
+      if (isValidRpcResponse && rpcConsistentWithLiveClasses) {
+        searchEngine = 'postgres_rpc';
+        const rpcRows = rpcRes.data;
+        totalCount = rpcRows.length > 0 && Number.isFinite(Number(rpcRows[0].total_count))
+          ? Number(rpcRows[0].total_count)
+          : 0;
+        pagedEntries = rpcRows.map(r => {
+          const { tEmail, tCode, tMeta, isActive, mergedAssignedClasses } = reconcileTeacherClasses(r, classRows);
+          return {
+            raw: r,
+            tEmail,
+            tCode,
+            tMeta,
+            isActive,
+            mergedAssignedClasses,
+            assignedCourses: Array.isArray(tMeta.assignedCourses) ? tMeta.assignedCourses : [],
+            matchScore: Number(r.rank_score || 100)
+          };
+        });
+      } else {
+        let sbRes = await supabaseRequest(env, 'ktn_teachers?order=code.asc');
+        if (!sbRes || !sbRes.ok) {
+          sbRes = await supabaseRequest(env, 'ktn_teachers');
+        }
+        if (!sbRes || !sbRes.ok) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            message: 'Không thể tải danh sách giáo viên từ cơ sở dữ liệu Supabase.'
+          }, sbRes?.status || 503);
+        }
+        const rawTeachers = Array.isArray(sbRes.data) ? sbRes.data : [];
+        const matched = [];
+        for (const tRow of rawTeachers) {
+          const item = scoreAndFilterTeacher(tRow, classRows);
+          if (item) matched.push(item);
+        }
+        matched.sort((a, b) => {
+          if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+          if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+          return String(a.tCode || '').localeCompare(String(b.tCode || ''));
+        });
+        totalCount = matched.length;
+        pagedEntries = matched.slice(pageOffset, pageOffset + pageLimit);
+      }
+
+      const sqlMs = Date.now() - sqlStartMs;
+
+      // Only count students for the classes assigned to the paged teachers (no full-table homework/forum/attendance scan)
+      const pagedClassCodes = Array.from(new Set(pagedEntries.flatMap(e => e.mergedAssignedClasses))).filter(Boolean);
+      const classStudentCounts = new Map();
+      if (pagedClassCodes.length > 0) {
+        const inClasses = pagedClassCodes.map(c => encodeURIComponent(c)).join(',');
+        const [stuRes, stuLifecycleMap] = await Promise.all([
+          supabaseRequest(env, `ktn_students?class_code=in.(${inClasses})&select=*&limit=2000`).catch(() => ({ ok: false })),
+          loadAllStudentLifecycleStates(env).catch(() => new Map())
+        ]);
+        const stuRows = (stuRes && stuRes.ok && Array.isArray(stuRes.data)) ? stuRes.data : [];
+        const seenStudentByClass = new Set();
+        for (const s of stuRows) {
+          const em = normalizeEmail(s?.email || '');
+          const life = em ? stuLifecycleMap.get(em)?.status : null;
+          const st = String(life || s?.account_status || 'active').toLowerCase();
+          if (st === 'deleted' || st === 'archived') continue;
+          const cls = String(s?.class_code || '').trim().toUpperCase();
+          if (cls) {
+            const dedupKey = `${cls}:${em || s?.id || s?.code || Math.random()}`;
+            if (seenStudentByClass.has(dedupKey)) continue;
+            seenStudentByClass.add(dedupKey);
+            classStudentCounts.set(cls, (classStudentCounts.get(cls) || 0) + 1);
+          }
+        }
+      }
+
+      const items = pagedEntries.map(({ raw: t, tEmail, tCode, tMeta, isActive, mergedAssignedClasses, assignedCourses, matchScore }) => {
+        const pStatus = tMeta.provisioningStatus || (
+          isValidCognitoUuid(tMeta.cognitoUserId) ||
+          tEmail === 'linh.lam@khongtunhi.com' ||
+          tEmail === 'thu.ha@khongtunhi.com'
+            ? 'ready_to_login'
+            : 'pending_external_provisioning'
+        );
+        let managedStudentsCount = 0;
+        const assignedClassesDetail = mergedAssignedClasses.map(cid => {
+          const clsRow = classRows.find(c => String(c?.id || c?.code || '').trim().toUpperCase() === cid);
+          const cStuCount = classStudentCounts.get(cid) || 0;
+          managedStudentsCount += cStuCount;
+          return {
+            code: cid,
+            title: clsRow?.name || clsRow?.title || `Lớp ${cid}`,
+            schedule: clsRow?.schedule || '',
+            zoomLink: clsRow?.zoom_link || '',
+            studentCount: cStuCount
+          };
+        });
+        const specialtyText = t.specialty || t.specialization || 'Giáo viên Tiếng Trung Thiếu Nhi';
+        return {
+          id: t.id || tCode || tEmail,
+          code: tCode,
+          name: t.name || '',
+          email: tEmail,
+          phone: tMeta.cleanPhone || t.phone || '',
+          title: tMeta.title || 'Giảng viên',
+          specialty: specialtyText,
+          specialization: specialtyText,
+          subject: t.subject || specialtyText,
+          assigned_classes: mergedAssignedClasses,
+          assignedClasses: mergedAssignedClasses,
+          assignedClassesDetail,
+          assigned_courses: assignedCourses,
+          assignedCourses,
+          classCount: mergedAssignedClasses.length,
+          classesCount: mergedAssignedClasses.length,
+          managedStudentsCount,
+          studentCount: managedStudentsCount,
+          studentsCount: managedStudentsCount,
+          active: isActive,
+          is_active: isActive,
+          status: isActive ? 'active' : 'inactive',
+          provisioningStatus: pStatus,
+          readyToLogin: pStatus === 'ready_to_login' && isActive,
+          syncStatus: t.sync_status || (pStatus === 'ready_to_login' ? 'synced' : 'pending_activation'),
+          hasPassword: Boolean(tMeta.passwordHash),
+          cognito_user_id: tMeta.cognitoUserId || t.cognito_user_id || null,
+          updated_at: t.updated_at || null,
+          updatedAt: t.updated_at || null,
+          matchScore
+        };
+      });
+
+      const hasMore = pageOffset + items.length < totalCount;
+      const nextOffset = hasMore ? pageOffset + items.length : null;
+      const totalElapsedMs = Date.now() - startedMs;
+
+      return jsonResponse({
+        ok: true,
+        items,
+        teachers: items,
+        totalCount,
+        total: totalCount,
+        hasMore,
+        limit: pageLimit,
+        offset: pageOffset,
+        nextOffset,
+        searchEngine,
+        sqlMs,
+        workerMs: Math.max(0, totalElapsedMs - sqlMs),
+        queryMs: totalElapsedMs
+      });
+    }
+
     if (path === '/api/ktn/teachers' || path === '/api/ktn/admin/teachers/provision') {
       if (request.method === 'GET') {
         const session = await extractSessionFromRequest(request, env);
@@ -11380,8 +11845,15 @@ export default {
           return jsonResponse({ ok: false, message: 'Chỉ Quản lý hoặc Giáo viên mới được xem danh sách giáo viên.' }, 403);
         }
         const q = normalizeViSearchText(url.searchParams.get('q') || '');
+        const singleTeacherEmail = normalizeEmail(url.searchParams.get('teacherEmail') || url.searchParams.get('email') || '');
+        const singleTeacherCode = String(url.searchParams.get('code') || '').trim().toUpperCase();
         const activeOnly = url.searchParams.get('activeOnly') === '1' || session.role !== 'admin';
-        const teacherQuery = activeOnly ? 'ktn_teachers?active=eq.true&order=code.asc' : 'ktn_teachers?order=code.asc';
+        let teacherQuery = activeOnly ? 'ktn_teachers?active=eq.true&order=code.asc' : 'ktn_teachers?order=code.asc';
+        if (singleTeacherEmail) {
+          teacherQuery = `ktn_teachers?email=eq.${encodeURIComponent(singleTeacherEmail)}&limit=1`;
+        } else if (singleTeacherCode) {
+          teacherQuery = `ktn_teachers?code=eq.${encodeURIComponent(singleTeacherCode)}&limit=1`;
+        }
         const currentMonthPrefix = new Date().toISOString().slice(0, 7);
 
         const [
@@ -11538,10 +12010,15 @@ export default {
 
           return {
             ...t,
+            active: t.active !== false,
+            is_active: t.active !== false,
+            status: t.active !== false ? 'active' : 'inactive',
             specialty: t.specialty || t.specialization || 'Giáo viên Tiếng Trung Thiếu Nhi',
             specialization: t.specialization || t.specialty || 'Giáo viên Tiếng Trung Thiếu Nhi',
             assigned_classes: mergedAssignedClasses,
             assignedClasses: mergedAssignedClasses,
+            classCount: mergedAssignedClasses.length,
+            classesCount: mergedAssignedClasses.length,
             assigned_courses: tMeta.assignedCourses,
             assignedCourses: tMeta.assignedCourses,
             cognito_user_id: tMeta.cognitoUserId || t.cognito_user_id || null,
@@ -11549,6 +12026,8 @@ export default {
             readyToLogin: pStatus === 'ready_to_login' && t.active !== false,
             syncStatus: t.sync_status || (pStatus === 'ready_to_login' ? 'synced' : 'pending_activation'),
             managedStudentsCount,
+            studentCount: managedStudentsCount,
+            studentsCount: managedStudentsCount,
             scheduledSessionsCount,
             activitySessionsCount,
             recordedClassSessionsCount: activitySessionsCount,
@@ -11576,11 +12055,16 @@ export default {
         if (q) {
           const tokens = q.split(' ').filter(Boolean);
           teachers = teachers.filter(t => {
-            const hay = normalizeViSearchText([t.code, t.name, t.email, t.phone, ...(Array.isArray(t.assigned_classes) ? t.assigned_classes : [])].join(' '));
+            const hay = normalizeViSearchText([t.code, t.name, t.email, t.phone, t.specialty, ...(Array.isArray(t.assigned_classes) ? t.assigned_classes : [])].join(' '));
             return tokens.every(tok => hay.includes(tok));
           });
         }
-        return jsonResponse({ ok: true, teachers });
+        return jsonResponse({
+          ok: true,
+          teachers,
+          items: teachers,
+          ...(singleTeacherEmail || singleTeacherCode ? { teacher: teachers[0] || null } : {})
+        });
       }
       if (request.method === 'POST') {
         // Giải quyết triệt để BUG BE-06 & BUG BE-07:
@@ -14003,6 +14487,291 @@ export default {
       ]
     };
 
+    const MAX_HOMEWORK_FILE_BYTES = 50 * 1024 * 1024;
+    const ALLOWED_HW_EXT_REGEX = /\.(wav|mp3|m4a|webm|ogg|aac|mp4|m4v|mov|jpg|jpeg|png|webp|gif|pdf|doc|docx|ppt|pptx)(\?|$)/i;
+    const DANGEROUS_HW_EXT_REGEX = /\.(exe|bat|cmd|sh|php|pl|py|js|mjs|cjs|html|htm|svg|xml|jar|msi|apk|dll|scr)(\?|$)/i;
+    const DANGEROUS_UPLOAD_MIME_REGEX = /^(application\/(x-msdownload|x-executable|x-msdos-program|x-sh|x-csh|x-httpd-php|javascript|x-javascript|ecmascript|vnd\.microsoft\.portable-executable|java-archive|x-msi)|text\/(html|javascript|xml|x-php|x-python|x-shellscript)|image\/svg\+xml)$/i;
+    const ALLOWED_HW_MIME_SET = new Set([
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/mp4',
+      'audio/x-m4a',
+      'audio/m4a',
+      'audio/wav',
+      'audio/x-wav',
+      'audio/webm',
+      'audio/ogg',
+      'audio/aac',
+      'video/mp4',
+      'video/x-m4v',
+      'video/quicktime',
+      'video/webm',
+      'application/octet-stream'
+    ]);
+
+    const validateAndAuthorizeUploadRequest = async (session, body, { isStrictHomeworkRoute = false, routePath = '' } = {}) => {
+      const folderHint = String(body.folder || '').trim();
+      const scopeHint = String(body.scope || body.uploadScope || body.purpose || '').trim().toLowerCase();
+      const targetClassCode = String(
+        body.classCode ||
+        body.class_code ||
+        (folderHint.startsWith('homework-assignments/') ? folderHint.split('/')[1] || '' : '')
+      ).trim().toUpperCase();
+
+      const isTeacherAssignmentScope = Boolean(
+        routePath === '/api/ktn/class-sessions/upload-url' ||
+        scopeHint === 'assignment' ||
+        scopeHint === 'class_session' ||
+        scopeHint === 'exercise' ||
+        folderHint.toLowerCase().startsWith('homework-assignments')
+      );
+
+      const isHomeworkOrAssignmentUpload = Boolean(
+        isStrictHomeworkRoute ||
+        isTeacherAssignmentScope ||
+        targetClassCode ||
+        scopeHint === 'homework' ||
+        folderHint.toLowerCase().includes('homework') ||
+        folderHint.toLowerCase().includes('assignment') ||
+        folderHint.toLowerCase().includes('exercise')
+      );
+
+      if (session.role === 'student') {
+        if (isTeacherAssignmentScope) {
+          return {
+            ok: false,
+            status: 403,
+            payload: {
+              ok: false,
+              error: 'STUDENT_ASSIGNMENT_UPLOAD_FORBIDDEN',
+              message: 'Học viên không có quyền tải lên tài liệu giao bài của giáo viên.'
+            }
+          };
+        }
+        if (targetClassCode) {
+          const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(normalizeEmail(session.email))}&select=class_code&limit=1`).catch(() => ({ ok: false }));
+          const stuRow = (stuRes && stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+          const stuClass = String(stuRow?.class_code || session.classCode || '').trim().toUpperCase();
+          if (stuClass && stuClass !== targetClassCode) {
+            return {
+              ok: false,
+              status: 403,
+              payload: {
+                ok: false,
+                error: 'STUDENT_CLASS_SCOPE_FORBIDDEN',
+                message: `Học viên không thuộc lớp ${targetClassCode}.`
+              }
+            };
+          }
+        }
+      }
+
+      if (session.role === 'teacher') {
+        const isActiveTeacher = await isActiveTeacherSession(env, session);
+        if (!isActiveTeacher) {
+          return {
+            ok: false,
+            status: 403,
+            payload: {
+              ok: false,
+              error: 'TEACHER_INACTIVE_FORBIDDEN',
+              message: 'Tài khoản giáo viên đang tạm ngưng hoạt động.'
+            }
+          };
+        }
+        if (targetClassCode) {
+          const assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+          if (!assignedClasses.includes(targetClassCode)) {
+            return {
+              ok: false,
+              status: 403,
+              payload: {
+                ok: false,
+                error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
+                message: `Cô không phụ trách lớp ${targetClassCode} nên không có quyền tải tài liệu bài tập cho lớp này.`
+              }
+            };
+          }
+        }
+      }
+
+      const maxBytes = isHomeworkOrAssignmentUpload ? MAX_HOMEWORK_FILE_BYTES : (100 * 1024 * 1024);
+      if (body.fileSize !== undefined && body.fileSize !== null) {
+        const fSize = Number(body.fileSize);
+        if (!Number.isFinite(fSize) || fSize <= 0 || fSize > maxBytes) {
+          return {
+            ok: false,
+            status: 400,
+            payload: {
+              ok: false,
+              error: 'FILE_SIZE_LIMIT_EXCEEDED',
+              message: isHomeworkOrAssignmentUpload
+                ? 'Dung lượng tệp vượt quá giới hạn tối đa 50MB/tệp.'
+                : 'Dung lượng tệp không hợp lệ hoặc vượt quá giới hạn tối đa 100MB.'
+            }
+          };
+        }
+      }
+
+      const defaultMime = isStrictHomeworkRoute ? 'audio/wav' : 'application/octet-stream';
+      const rawFileType = String(body.fileType || body.contentType || defaultMime).split(';')[0].trim().toLowerCase() || defaultMime;
+      if (DANGEROUS_UPLOAD_MIME_REGEX.test(rawFileType)) {
+        return {
+          ok: false,
+          status: 400,
+          payload: {
+            ok: false,
+            error: 'DANGEROUS_FILE_TYPE',
+            message: 'Kiểu MIME thực thi hoặc script không được phép tải lên vì lý do an toàn.'
+          }
+        };
+      }
+
+      const extByMime = {
+        'image/png': '.png',
+        'image/jpeg': '.jpg',
+        'image/jpg': '.jpg',
+        'image/webp': '.webp',
+        'image/gif': '.gif',
+        'image/bmp': '.bmp',
+        'image/heic': '.heic',
+        'audio/wav': '.wav',
+        'audio/x-wav': '.wav',
+        'audio/mpeg': '.mp3',
+        'audio/mp3': '.mp3',
+        'audio/mp4': '.m4a',
+        'audio/x-m4a': '.m4a',
+        'audio/m4a': '.m4a',
+        'audio/webm': '.webm',
+        'audio/ogg': '.ogg',
+        'audio/aac': '.aac',
+        'video/mp4': '.mp4',
+        'video/x-m4v': '.m4v',
+        'video/quicktime': '.mov',
+        'video/webm': '.webm',
+        'application/pdf': '.pdf',
+        'application/msword': '.doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+        'application/vnd.ms-excel': '.xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+        'application/vnd.ms-powerpoint': '.ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+        'application/zip': '.zip',
+        'application/vnd.rar': '.rar',
+        'application/x-rar-compressed': '.rar',
+        'text/plain': '.txt'
+      };
+
+      const fallbackPrefix = isStrictHomeworkRoute ? 'btvn' : 'chat';
+      const fallbackExt = extByMime[rawFileType] || (isStrictHomeworkRoute ? '.wav' : '.bin');
+      const rawName = String(body.fileName || `${fallbackPrefix}_${Date.now()}${fallbackExt}`);
+      let cleanName = rawName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[đĐ]/g, 'd')
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+      if (!/\.[a-zA-Z0-9]{2,5}$/.test(cleanName)) {
+        cleanName += fallbackExt;
+      }
+
+      if (DANGEROUS_HW_EXT_REGEX.test(cleanName)) {
+        return {
+          ok: false,
+          status: 400,
+          payload: {
+            ok: false,
+            error: 'DANGEROUS_FILE_TYPE',
+            message: 'Định dạng tệp thực thi không được phép tải lên vì lý do an toàn.'
+          }
+        };
+      }
+
+      if (isHomeworkOrAssignmentUpload) {
+        const hasexplicitType = Boolean(body.fileType || body.contentType);
+        if (!ALLOWED_HW_EXT_REGEX.test(cleanName) || (hasexplicitType && !ALLOWED_HW_MIME_SET.has(rawFileType))) {
+          return {
+            ok: false,
+            status: 400,
+            payload: {
+              ok: false,
+              error: 'UNSUPPORTED_FILE_TYPE',
+              message: 'Định dạng tệp không được phép tải lên. Chỉ chấp nhận PDF, Word (DOC/DOCX), PowerPoint (PPT/PPTX), ảnh (JPG/PNG/WEBP/GIF), âm thanh (MP3/M4A/WAV) và video (MP4/WEBM/MOV).'
+            }
+          };
+        }
+      }
+
+      return {
+        ok: true,
+        cleanName,
+        fileType: rawFileType,
+        targetClassCode,
+        isHomeworkOrAssignmentUpload
+      };
+    };
+
+    const normalizeSessionExerciseAttachment = (att, attIdx) => {
+      if (!att || typeof att !== 'object') return null;
+      const url = String(att.url || att.fileUrl || att.publicUrl || att.cdnUrl || '').trim();
+      if (!url) return null;
+      const name = String(att.name || att.fileName || url.split('/').pop() || `Tai_lieu_${attIdx + 1}`).trim();
+      const mimeType = String(att.mimeType || att.fileType || att.contentType || 'application/octet-stream').trim();
+      const sizeBytes = Number.isFinite(Number(att.sizeBytes ?? att.fileSize ?? att.size))
+        ? Math.max(0, Number(att.sizeBytes ?? att.fileSize ?? att.size))
+        : 0;
+      return {
+        id: String(att.id || `ATT-${attIdx + 1}-${fnv1aHex(url)}`).trim(),
+        name,
+        fileName: name,
+        url,
+        fileUrl: url,
+        mimeType,
+        fileType: mimeType,
+        sizeBytes,
+        fileSize: sizeBytes
+      };
+    };
+
+    const normalizeSessionExerciseItem = (ex, idx, code, sNum) => {
+      const rawAttachments = Array.isArray(ex?.attachments)
+        ? ex.attachments
+        : Array.isArray(ex?.files)
+          ? ex.files
+          : [];
+      const normAttachments = rawAttachments
+        .map((att, aIdx) => normalizeSessionExerciseAttachment(att, aIdx))
+        .filter(Boolean)
+        .slice(0, 5);
+      const rawStatus = String(ex?.status || (ex?.isDraft ? 'draft' : 'published')).trim().toLowerCase();
+      const exStatus = rawStatus === 'draft' ? 'draft' : 'published';
+      const dueDate = ex?.dueDate || ex?.due_date || ex?.dueAt || ex?.due_at || ex?.deadline || undefined;
+      const exType = String(ex?.type || ex?.submissionType || ex?.submission_type || 'audio').trim();
+      const submissionType = String(ex?.submissionType || ex?.submission_type || exType).trim();
+      return {
+        ...ex,
+        id: String(ex?.id || `${code}-B${sNum}-E${idx + 1}`).trim(),
+        num: Number(ex?.num || ex?.order) || (idx + 1),
+        title: String(ex?.title || `Bài ${idx + 1}`).trim(),
+        prompt: String(ex?.prompt || ex?.instruction || '').trim(),
+        instruction: String(ex?.instruction || ex?.prompt || '').trim(),
+        type: exType,
+        submissionType,
+        ...(dueDate ? { dueDate: String(dueDate).trim(), dueAt: String(dueDate).trim() } : {}),
+        status: exStatus,
+        attachments: normAttachments
+      };
+    };
+
     const getMergedClassSessions = async (targetClassCode) => {
       const code = String(targetClassCode || '').trim().toUpperCase();
       if (!code) return [];
@@ -14016,7 +14785,15 @@ export default {
         : [];
       const mergedByNum = new Map();
       baseDefaults.forEach(item => {
-        mergedByNum.set(Number(item.session_num || item.sessionNum), item);
+        const sNum = Number(item.session_num || item.sessionNum) || 1;
+        const normEx = (Array.isArray(item.exercises) ? item.exercises : []).map((ex, idx) =>
+          normalizeSessionExerciseItem(ex, idx, code, sNum)
+        );
+        mergedByNum.set(sNum, {
+          ...item,
+          exercises: normEx,
+          assignments: normEx
+        });
       });
       dbRows.forEach(row => {
         const sNum = Number(row.session_num || row.sessionNum) || 1;
@@ -14024,15 +14801,9 @@ export default {
         const rawExercises = Array.isArray(row.exercises)
           ? row.exercises
           : (Array.isArray(row.assignments) ? row.assignments : []);
-        const normExercises = rawExercises.map((ex, idx) => ({
-          ...ex,
-          id: String(ex?.id || `${code}-B${sNum}-E${idx + 1}`).trim(),
-          num: Number(ex?.num || ex?.order) || (idx + 1),
-          title: String(ex?.title || `Bài ${idx + 1}`).trim(),
-          prompt: String(ex?.prompt || ex?.instruction || '').trim(),
-          instruction: String(ex?.instruction || ex?.prompt || '').trim(),
-          type: String(ex?.type || 'audio').trim()
-        }));
+        const normExercises = rawExercises.map((ex, idx) =>
+          normalizeSessionExerciseItem(ex, idx, code, sNum)
+        );
         mergedByNum.set(sNum, {
           id: row.id,
           classCode: row.class_code || code,
@@ -14053,36 +14824,18 @@ export default {
       );
     };
 
-    const MAX_HOMEWORK_FILE_BYTES = 50 * 1024 * 1024;
-    const ALLOWED_HW_EXT_REGEX = /\.(wav|mp3|m4a|webm|ogg|aac|mp4|mov|jpg|jpeg|png|webp|gif|pdf)(\?|$)/i;
-    const DANGEROUS_HW_EXT_REGEX = /\.(exe|bat|cmd|sh|php|pl|py|js|mjs|cjs|html|htm|svg|xml|jar|msi|apk|dll|scr)(\?|$)/i;
-
-    if (path === '/api/ktn/homeworks/upload-url' && request.method === 'POST') {
+    if ((path === '/api/ktn/homeworks/upload-url' || path === '/api/ktn/homework/presign' || path === '/api/ktn/uploads/presign' || path === '/api/ktn/class-sessions/upload-url') && request.method === 'POST') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để tải bài tập lên.' }, 401);
       const body = await request.json().catch(() => ({}));
-      if (body.fileSize !== undefined && body.fileSize !== null) {
-        const fSize = Number(body.fileSize);
-        if (!Number.isFinite(fSize) || fSize <= 0 || fSize > MAX_HOMEWORK_FILE_BYTES) {
-          return jsonResponse({
-            ok: false,
-            message: 'Dung lượng tệp bài làm không hợp lệ hoặc vượt quá giới hạn tối đa 50MB.'
-          }, 400);
-        }
+      const check = await validateAndAuthorizeUploadRequest(session, body, {
+        isStrictHomeworkRoute: true,
+        routePath: path
+      });
+      if (!check.ok) {
+        return jsonResponse(check.payload, check.status);
       }
-      const rawName = String(body.fileName || `btvn_${Date.now()}.wav`);
-      const cleanName = rawName
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[đĐ]/g, 'd')
-        .replace(/[^a-zA-Z0-9._-]/g, '_');
-      if (DANGEROUS_HW_EXT_REGEX.test(cleanName) || !ALLOWED_HW_EXT_REGEX.test(cleanName)) {
-        return jsonResponse({
-          ok: false,
-          message: 'Định dạng tệp không được phép tải lên. Chỉ chấp nhận tệp âm thanh, hình ảnh, video hoặc PDF bài làm.'
-        }, 400);
-      }
-      const fileType = String(body.fileType || 'audio/wav').split(';')[0].trim() || 'audio/wav';
+      const { cleanName, fileType } = check;
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
       const studentFolder = normalizeEmail(session.email).replace(/[^a-z0-9]/g, '_');
       const s3Key = `resource/homeworks/${vendorId}/${studentFolder}/${Date.now()}-${cleanName}`;
@@ -14098,11 +14851,15 @@ export default {
       if (!s3Res.ok || !signedUrl) {
         return jsonResponse({ ok: false, message: 'Không thể khởi tạo đường dẫn tải tệp lên S3.' }, s3Res.status || 502);
       }
+      const fileUrl = `https://d21acfi38wn3iy.cloudfront.net/${s3Key}`;
       return jsonResponse({
         ok: true,
         signedUrl,
+        uploadUrl: signedUrl,
         s3Key,
-        fileUrl: `https://d21acfi38wn3iy.cloudfront.net/${s3Key}`,
+        fileUrl,
+        publicUrl: fileUrl,
+        cdnUrl: fileUrl,
         data: s3Data
       });
     }
@@ -14111,66 +14868,21 @@ export default {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập để tải tệp đính kèm lên.' }, 401);
       const body = await request.json().catch(() => ({}));
-      const MAX_CHAT_FILE_BYTES = 100 * 1024 * 1024;
-      if (body.fileSize !== undefined && body.fileSize !== null) {
-        const fSize = Number(body.fileSize);
-        if (!Number.isFinite(fSize) || fSize <= 0 || fSize > MAX_CHAT_FILE_BYTES) {
-          return jsonResponse({
-            ok: false,
-            message: 'Dung lượng tệp không hợp lệ hoặc vượt quá giới hạn tối đa 100MB.'
-          }, 400);
-        }
+      const check = await validateAndAuthorizeUploadRequest(session, body, {
+        isStrictHomeworkRoute: false,
+        routePath: path
+      });
+      if (!check.ok) {
+        return jsonResponse(check.payload, check.status);
       }
-      const fileType = String(body.fileType || body.contentType || 'application/octet-stream').split(';')[0].trim() || 'application/octet-stream';
-      const extByMime = {
-        'image/png': '.png',
-        'image/jpeg': '.jpg',
-        'image/webp': '.webp',
-        'image/gif': '.gif',
-        'image/bmp': '.bmp',
-        'image/heic': '.heic',
-        'audio/wav': '.wav',
-        'audio/mpeg': '.mp3',
-        'audio/mp3': '.mp3',
-        'audio/mp4': '.m4a',
-        'audio/x-m4a': '.m4a',
-        'audio/webm': '.webm',
-        'audio/ogg': '.ogg',
-        'audio/aac': '.aac',
-        'video/mp4': '.mp4',
-        'video/x-m4v': '.m4v',
-        'video/quicktime': '.mov',
-        'video/webm': '.webm',
-        'application/pdf': '.pdf',
-        'application/msword': '.doc',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-        'application/vnd.ms-excel': '.xls',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-        'application/vnd.ms-powerpoint': '.ppt',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-        'application/zip': '.zip',
-        'application/vnd.rar': '.rar',
-        'application/x-rar-compressed': '.rar',
-        'text/plain': '.txt'
-      };
-      const rawName = String(body.fileName || `chat_${Date.now()}${extByMime[fileType.toLowerCase()] || '.bin'}`);
-      let cleanName = rawName
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[đĐ]/g, 'd')
-        .replace(/[^a-zA-Z0-9._-]/g, '_');
-      if (!/\.[a-zA-Z0-9]{2,5}$/.test(cleanName)) {
-        cleanName += (extByMime[fileType.toLowerCase()] || '.bin');
-      }
-      if (DANGEROUS_HW_EXT_REGEX.test(cleanName)) {
-        return jsonResponse({
-          ok: false,
-          message: 'Định dạng tệp thực thi không được phép tải lên vì lý do an toàn.'
-        }, 400);
-      }
+      const { cleanName, fileType, isHomeworkOrAssignmentUpload } = check;
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
       const userFolder = normalizeEmail(session.email).replace(/[^a-z0-9]/g, '_');
-      const s3Folder = path === '/api/ktn/forum/upload-url' ? 'forum' : 'chat';
+      const s3Folder = path === '/api/ktn/forum/upload-url'
+        ? 'forum'
+        : isHomeworkOrAssignmentUpload
+          ? 'homeworks'
+          : 'chat';
       const s3Key = `resource/${s3Folder}/${vendorId}/${userFolder}/${Date.now()}-${cleanName}`;
       const adminToken = await getIzTeachAdminToken(env);
       if (!adminToken) return jsonResponse({ ok: false, message: 'Chưa cấu hình token kho lưu trữ S3.' }, 503);
@@ -14191,6 +14903,7 @@ export default {
         uploadUrl: signedUrl,
         s3Key,
         fileUrl,
+        publicUrl: fileUrl,
         cdnUrl: fileUrl,
         data: s3Data
       });
@@ -15198,16 +15911,190 @@ export default {
           }
         }
         const sessionNum = Math.max(1, Number(body.sessionNum || body.session_num) || 1);
-        const title = String(body.title || body.session_title || `Buổi ${sessionNum}`).trim();
-        const rawExercises = Array.isArray(body.exercises)
+        const rawMode = String(body.mode || 'upsert').trim().toLowerCase();
+        const isReplaceAll = body.replaceAllExercises === true || rawMode === 'replace_all';
+        const isAppendMode = rawMode === 'append_exercise' || rawMode === 'create_exercise' || body.isNewExercise === true;
+        const isUpdateMode = rawMode === 'update_exercise';
+
+        const existingDbRes = await supabaseRequest(
+          env,
+          `ktn_class_sessions?class_code=eq.${encodeURIComponent(classCode)}&session_num=eq.${sessionNum}&limit=1`
+        );
+        const existingDbRow = (existingDbRes.ok && Array.isArray(existingDbRes.data) && existingDbRes.data[0])
+          ? existingDbRes.data[0]
+          : null;
+
+        const defaultSessionObj = (DEFAULT_SESSIONS_BY_CLASS[classCode] || []).find(
+          s => Number(s.session_num || s.sessionNum) === sessionNum
+        );
+        const title = String(
+          body.title ||
+          body.session_title ||
+          existingDbRow?.session_title ||
+          defaultSessionObj?.session_title ||
+          `Buổi ${sessionNum}`
+        ).trim();
+
+        const incomingRawList = Array.isArray(body.exercises)
           ? body.exercises
-          : (Array.isArray(body.assignments) ? body.assignments : []);
-        const exercises = rawExercises.map((ex, idx) => ({
-          id: String(ex?.id || `${classCode}-B${sessionNum}-E${idx + 1}`).trim(),
-          num: Number(ex?.num || ex?.order) || (idx + 1),
-          title: String(ex?.title || `Bài ${idx + 1}`).trim(),
-          prompt: String(ex?.prompt || ex?.instruction || '').trim(),
-          type: String(ex?.type || 'audio').trim()
+          : Array.isArray(body.assignments)
+            ? body.assignments
+            : (body.exercise && typeof body.exercise === 'object' ? [body.exercise] : []);
+
+        // Validate attachment count (<= 5) and size (<= 50MB) on incoming exercises
+        for (const rawEx of incomingRawList) {
+          const rawAtts = Array.isArray(rawEx?.attachments)
+            ? rawEx.attachments
+            : Array.isArray(rawEx?.files)
+              ? rawEx.files
+              : [];
+          if (rawAtts.length > 5) {
+            return jsonResponse({
+              ok: false,
+              error: 'TOO_MANY_ATTACHMENTS',
+              message: 'Mỗi bài tập chỉ được đính kèm tối đa 5 tệp tài liệu.'
+            }, 400);
+          }
+          for (const att of rawAtts) {
+            const attSize = Number(att?.sizeBytes ?? att?.fileSize ?? att?.size ?? 0);
+            if (Number.isFinite(attSize) && attSize > MAX_HOMEWORK_FILE_BYTES) {
+              return jsonResponse({
+                ok: false,
+                error: 'FILE_SIZE_LIMIT_EXCEEDED',
+                message: `Tệp đính kèm "${att?.name || att?.fileName || ''}" vượt quá giới hạn 50MB/tệp.`
+              }, 400);
+            }
+            const attNameOrUrl = String(att?.name || att?.fileName || att?.url || att?.fileUrl || '');
+            if (attNameOrUrl && DANGEROUS_HW_EXT_REGEX.test(attNameOrUrl)) {
+              return jsonResponse({
+                ok: false,
+                error: 'DANGEROUS_FILE_TYPE',
+                message: 'Tệp đính kèm chứa định dạng thực thi không an toàn.'
+              }, 400);
+            }
+          }
+        }
+
+        let baseExercises = [];
+        if (!isReplaceAll) {
+          if (existingDbRow && Array.isArray(existingDbRow.exercises)) {
+            baseExercises = existingDbRow.exercises.map((ex, idx) =>
+              normalizeSessionExerciseItem(ex, idx, classCode, sessionNum)
+            );
+          } else if (
+            !existingDbRow &&
+            (body.preserveDefaultExercises === true || body.includeDefaultExercises === true) &&
+            defaultSessionObj &&
+            Array.isArray(defaultSessionObj.exercises)
+          ) {
+            baseExercises = defaultSessionObj.exercises.map((ex, idx) =>
+              normalizeSessionExerciseItem(ex, idx, classCode, sessionNum)
+            );
+          }
+        }
+
+        const deletedIds = new Set(
+          (Array.isArray(body.deletedExerciseIds) ? body.deletedExerciseIds : [])
+            .map(id => String(id || '').trim())
+            .filter(Boolean)
+        );
+        const mergedList = baseExercises.filter(ex => !deletedIds.has(String(ex.id || '').trim()));
+        const prevPublishedIds = new Set(
+          mergedList.filter(ex => ex.status !== 'draft').map(ex => String(ex.id || '').trim())
+        );
+
+        let newlyPublishedCount = 0;
+        let newlyAddedDraftCount = 0;
+        let updatedExistingCount = 0;
+        const targetExerciseId = body.exercise && typeof body.exercise === 'object' && body.exercise.id
+          ? String(body.exercise.id).trim()
+          : '';
+
+        incomingRawList.forEach((rawEx, idx) => {
+          const explicitId = rawEx?.id ? String(rawEx.id).trim() : '';
+          const existingIdx = explicitId
+            ? mergedList.findIndex(e => String(e.id || '').trim() === explicitId)
+            : -1;
+
+          const topLevelStatus = body.status ? String(body.status).trim().toLowerCase() : '';
+          const isTargetOrSingle =
+            incomingRawList.length === 1 ||
+            (targetExerciseId && explicitId === targetExerciseId) ||
+            existingIdx < 0;
+          const exWithStatus = {
+            ...rawEx,
+            ...(rawEx?.status ? {} : (topLevelStatus && isTargetOrSingle ? { status: topLevelStatus } : {}))
+          };
+
+          if (existingIdx >= 0) {
+            const prevEx = mergedList[existingIdx];
+            const isSameContentAsPrev =
+              String(prevEx.title || '').trim() === String(rawEx.title || '').trim() &&
+              String(prevEx.prompt || '').trim() === String(rawEx.prompt || rawEx.instruction || '').trim();
+
+            if (isAppendMode && incomingRawList.length === 1 && !isSameContentAsPrev) {
+              // Caller requested append_exercise with a colliding default ID -> allocate a new non-colliding ID
+              let nextNum = mergedList.length + 1;
+              let newId = `${classCode}-B${sessionNum}-E${nextNum}`;
+              while (mergedList.some(e => String(e.id || '').trim() === newId)) {
+                nextNum++;
+                newId = `${classCode}-B${sessionNum}-E${nextNum}`;
+              }
+              const normNew = normalizeSessionExerciseItem(
+                { ...exWithStatus, id: newId, num: mergedList.length + 1 },
+                mergedList.length,
+                classCode,
+                sessionNum
+              );
+              mergedList.push(normNew);
+              if (normNew.status !== 'draft') newlyPublishedCount++;
+              else newlyAddedDraftCount++;
+            } else {
+              // Update existing exercise in place, preserving ID and existing attachments if not overwritten
+              const hasIncomingAttachments = Array.isArray(rawEx?.attachments) || Array.isArray(rawEx?.files);
+              const mergedExInput = {
+                ...prevEx,
+                ...exWithStatus,
+                status: exWithStatus.status || prevEx.status || 'published',
+                id: prevEx.id,
+                attachments: hasIncomingAttachments
+                  ? (rawEx.attachments || rawEx.files)
+                  : (prevEx.attachments || [])
+              };
+              const normUpdated = normalizeSessionExerciseItem(
+                mergedExInput,
+                existingIdx,
+                classCode,
+                sessionNum
+              );
+              mergedList[existingIdx] = normUpdated;
+              updatedExistingCount++;
+              if (normUpdated.status !== 'draft' && !prevPublishedIds.has(normUpdated.id)) {
+                newlyPublishedCount++;
+              }
+            }
+          } else {
+            let nextNum = mergedList.length + 1;
+            let resolvedId = explicitId || `${classCode}-B${sessionNum}-E${nextNum}`;
+            while (mergedList.some(e => String(e.id || '').trim() === resolvedId)) {
+              nextNum++;
+              resolvedId = `${classCode}-B${sessionNum}-E${nextNum}`;
+            }
+            const normAdded = normalizeSessionExerciseItem(
+              { ...exWithStatus, id: resolvedId, num: mergedList.length + 1 },
+              mergedList.length,
+              classCode,
+              sessionNum
+            );
+            mergedList.push(normAdded);
+            if (normAdded.status !== 'draft') newlyPublishedCount++;
+            else newlyAddedDraftCount++;
+          }
+        });
+
+        const exercises = mergedList.map((ex, idx) => ({
+          ...ex,
+          num: idx + 1
         }));
 
         const rowToSave = {
@@ -15234,42 +16121,78 @@ export default {
         }
 
         const saved = sbRes.data[0];
-        const clsRecipients = await resolveClassRecipientEmails(env, classCode, {
-          includeTeacher: false,
-          excludeEmail: session.email
-        });
-        const exSig = fnv1aHex(
-          JSON.stringify({
-            title,
-            exercises: exercises.map((e) => ({ id: e.id, num: e.num, title: e.title, prompt: e.prompt }))
-          })
+        const savedExercises = (Array.isArray(saved.exercises) ? saved.exercises : exercises).map((ex, idx) =>
+          normalizeSessionExerciseItem(ex, idx, classCode, sessionNum)
         );
-        const assignEventId = String(
-          body.eventId || body.clientRequestId || `NOTIF-ASSIGN-${classCode}-S${sessionNum}-${exSig}`
-        ).trim();
-        const assignActionUrl = `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(classCode)}&session=${sessionNum}`;
-        const assignPushPromise = dispatchWebPushForQuery(
-          env,
-          '',
-          {
-            id: assignEventId,
-            eventId: assignEventId,
-            eventType: 'homework_assigned',
-            title: `Bài tập mới Lớp ${classCode} · Buổi ${sessionNum}`,
-            body: `${saved.session_title || title}${exercises.length ? ` (${exercises.length} bài tập)` : ''}`,
-            action_url: assignActionUrl,
-            classCode
-          },
-          {
-            eventId: assignEventId,
-            eventType: 'homework_assigned',
-            recipientEmails: clsRecipients.recipientEmails,
-            senderEmail: session.email,
-            classCode
-          }
-        );
-        if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(assignPushPromise);
-        const pushDispatch = await assignPushPromise;
+        const publishedExercises = savedExercises.filter(ex => ex.status !== 'draft');
+        const isDraftOnlySave =
+          String(body.status || '').toLowerCase() === 'draft' ||
+          body.isDraft === true ||
+          String(body.exercise?.status || '').toLowerCase() === 'draft' ||
+          publishedExercises.length === 0 ||
+          (newlyPublishedCount === 0 && newlyAddedDraftCount > 0) ||
+          (incomingRawList.length > 0 && incomingRawList.every(ex => String(ex?.status || '').toLowerCase() === 'draft'));
+
+        const shouldSuppressDuplicateEditNotify =
+          !body.forceNotify &&
+          newlyPublishedCount === 0 &&
+          updatedExistingCount > 0 &&
+          existingDbRow !== null;
+
+        let pushDispatch = null;
+        if (isDraftOnlySave || body.skipNotification === true) {
+          pushDispatch = {
+            ok: true,
+            skipped: true,
+            reason: 'DRAFT_NO_NOTIFICATION',
+            sent: 0
+          };
+        } else if (shouldSuppressDuplicateEditNotify) {
+          pushDispatch = {
+            ok: true,
+            skipped: true,
+            reason: 'EDIT_EXISTING_EXERCISE_NO_DUPLICATE_NOTIFY',
+            sent: 0
+          };
+        } else {
+          const clsRecipients = await resolveClassRecipientEmails(env, classCode, {
+            includeTeacher: false,
+            excludeEmail: session.email
+          });
+          const exSig = fnv1aHex(
+            JSON.stringify({
+              classCode,
+              sessionNum,
+              publishedIds: publishedExercises.map((e) => e.id)
+            })
+          );
+          const assignEventId = String(
+            body.eventId || body.clientRequestId || `NOTIF-ASSIGN-${classCode}-S${sessionNum}-${exSig}`
+          ).trim();
+          const assignActionUrl = `/custom-page/so-lien-lac-test#/classrooms?class=${encodeURIComponent(classCode)}&session=${sessionNum}`;
+          const assignPushPromise = dispatchWebPushForQuery(
+            env,
+            '',
+            {
+              id: assignEventId,
+              eventId: assignEventId,
+              eventType: 'homework_assigned',
+              title: `Bài tập mới Lớp ${classCode} · Buổi ${sessionNum}`,
+              body: `${saved.session_title || title}${publishedExercises.length ? ` (${publishedExercises.length} bài tập)` : ''}`,
+              action_url: assignActionUrl,
+              classCode
+            },
+            {
+              eventId: assignEventId,
+              eventType: 'homework_assigned',
+              recipientEmails: clsRecipients.recipientEmails,
+              senderEmail: session.email,
+              classCode
+            }
+          );
+          if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(assignPushPromise);
+          pushDispatch = await assignPushPromise;
+        }
 
         return jsonResponse({
           ok: true,
@@ -15280,7 +16203,8 @@ export default {
             sessionNum: saved.session_num,
             session_title: saved.session_title,
             title: saved.session_title,
-            exercises: saved.exercises || [],
+            exercises: savedExercises,
+            assignments: savedExercises,
             updatedBy: saved.updated_by,
             updatedAt: saved.updated_at
           },
@@ -15393,15 +16317,130 @@ export default {
       });
     }
 
+    if (path === '/api/ktn/messages/candidates' && request.method === 'GET') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || (session.role !== 'admin' && session.role !== 'teacher')) {
+        return jsonResponse({ ok: false, message: 'Chỉ Giáo viên hoặc Quản lý mới được tìm học viên để nhắn tin mới.' }, 403);
+      }
+      const rawQ = String(url.searchParams.get('q') || url.searchParams.get('search') || '').trim();
+      const classFilter = String(url.searchParams.get('classCode') || '').trim().toUpperCase();
+      const pageLimit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 30) || 30));
+
+      let assignedClasses = [];
+      if (session.role === 'teacher') {
+        const isActive = await isActiveTeacherSession(env, session);
+        if (!isActive) {
+          return jsonResponse({ ok: true, items: [], candidates: [], totalCount: 0 });
+        }
+        assignedClasses = await getTeacherAssignedClassCodes(env, session.email);
+        if (assignedClasses.length === 0) {
+          return jsonResponse({ ok: true, items: [], candidates: [], totalCount: 0 });
+        }
+        if (classFilter && classFilter !== 'ALL' && !assignedClasses.includes(classFilter)) {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_CLASS_SCOPE_FORBIDDEN',
+            message: `Cô không phụ trách lớp ${classFilter}.`
+          }, 403);
+        }
+      }
+
+      const targetClasses = classFilter && classFilter !== 'ALL'
+        ? [classFilter]
+        : (session.role === 'teacher' ? assignedClasses : []);
+      const stuQuery = targetClasses.length > 0
+        ? `ktn_students?class_code=in.(${targetClasses.map(c => encodeURIComponent(c)).join(',')})&select=*&order=updated_at.desc&limit=500`
+        : 'ktn_students?select=*&order=updated_at.desc&limit=500';
+
+      const [stuRes, lifeMap] = await Promise.all([
+        supabaseRequest(env, stuQuery),
+        loadAllStudentLifecycleStates(env).catch(() => new Map())
+      ]);
+      const rawStudents = (stuRes.ok && Array.isArray(stuRes.data)) ? stuRes.data : [];
+      const activeStudents = rawStudents.filter(s => {
+        const em = normalizeEmail(s?.email || '');
+        if (!em) return false;
+        const life = lifeMap.get(em)?.status;
+        const st = String(life || s?.account_status || 'active').toLowerCase();
+        return st !== 'deleted' && st !== 'archived' && st !== 'suspended';
+      });
+
+      const ranked = filterAndRankStudents(activeStudents, {
+        q: rawQ,
+        classFilter: classFilter && classFilter !== 'ALL' ? classFilter : ''
+      });
+      const items = ranked.slice(0, pageLimit).map(s => {
+        const em = normalizeEmail(s.email || '');
+        const cls = String(s.class_code || '').trim().toUpperCase();
+        const displayName = s.name || em;
+        return {
+          roomId: `student:${em}`,
+          email: em,
+          studentEmail: em,
+          name: displayName,
+          studentName: displayName,
+          code: s.code || '',
+          studentCode: s.code || '',
+          class_code: cls,
+          classCode: cls,
+          phone: s.phone || '',
+          parent_name: s.parent_name || '',
+          parentName: s.parent_name || '',
+          label: `👩‍🏫 ${displayName}`
+        };
+      });
+
+      return jsonResponse({
+        ok: true,
+        items,
+        candidates: items,
+        totalCount: ranked.length
+      });
+    }
+
     if (path === '/api/ktn/messages/rooms' && request.method === 'GET') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Vui lòng đăng nhập.' }, 401);
 
+      const rawIncludeStudentParam = String(
+        url.searchParams.get('includeStudentRoom') || url.searchParams.get('draftStudentEmail') || ''
+      ).trim();
+      const includeStudentEmail = normalizeEmail(
+        rawIncludeStudentParam.toLowerCase().startsWith('student:')
+          ? rawIncludeStudentParam.slice(8)
+          : rawIncludeStudentParam
+      );
+      if (includeStudentEmail && session.role === 'teacher') {
+        const draftAccess = await canAccessChatRoom(env, session, 'student:' + includeStudentEmail);
+        if (!draftAccess.allowed) {
+          return jsonResponse({
+            ok: false,
+            error: draftAccess.error || 'TEACHER_STUDENT_SCOPE_FORBIDDEN',
+            message: draftAccess.message || 'Cô không phụ trách lớp của học viên này nên không được mở kênh nhắn tin riêng.'
+          }, draftAccess.status || 403);
+        }
+      }
+
       const readStateByRoom = await loadChatReadStateMap(session.email);
       const myEmail = normalizeEmail(session.email);
 
+      const sortRoomsByActivity = (list) => {
+        if (!Array.isArray(list)) return [];
+        return list.slice().sort((a, b) => {
+          const aHas = Boolean(a?.hasMessages && (a?.lastMessageAt || a?.updatedAt));
+          const bHas = Boolean(b?.hasMessages && (b?.lastMessageAt || b?.updatedAt));
+          if (aHas !== bHas) return aHas ? -1 : 1;
+          if (aHas && bHas) {
+            const ta = Date.parse(a.lastMessageAt || a.updatedAt || '') || 0;
+            const tb = Date.parse(b.lastMessageAt || b.updatedAt || '') || 0;
+            if (tb !== ta) return tb - ta;
+          }
+          return String(a?.roomId || '').localeCompare(String(b?.roomId || ''));
+        });
+      };
+
       const enrichRoomsWithStats = async (roomsList) => {
-        if (!Array.isArray(roomsList) || roomsList.length === 0) return roomsList;
+        if (!Array.isArray(roomsList) || roomsList.length === 0) return [];
         const queryKeys = new Set();
         for (const r of roomsList) {
           if (r.roomId) queryKeys.add(r.roomId);
@@ -15414,9 +16453,35 @@ export default {
         if (!inParam) return roomsList;
         const recentRes = await supabaseRequest(
           env,
-          `ktn_messages?room_id=in.(${inParam})&order=created_at.desc&limit=200`
+          `ktn_messages?room_id=in.(${inParam})&order=created_at.desc&limit=1000`
         );
-        const recentMsgs = (recentRes.ok && Array.isArray(recentRes.data)) ? recentRes.data : [];
+        let recentMsgs = (recentRes.ok && Array.isArray(recentRes.data)) ? recentRes.data : [];
+
+        // If high-volume rooms saturated the batch window, fetch remaining uncovered rooms in bounded follow-up passes
+        let lastBatchLen = recentMsgs.length;
+        for (let pass = 0; pass < 3 && lastBatchLen >= 200 && roomsList.length > 1; pass++) {
+          const coveredKeys = new Set(recentMsgs.map(m => String(m?.room_id || m?.class_code || '').trim()).filter(Boolean));
+          const missingRoomKeys = new Set();
+          for (const r of roomsList) {
+            const rKeys = [r.roomId, r.classCode, r.classCode ? `class:${r.classCode}` : ''].filter(Boolean);
+            if (!rKeys.some(k => coveredKeys.has(k))) {
+              rKeys.forEach(k => missingRoomKeys.add(k));
+            }
+          }
+          if (missingRoomKeys.size === 0) break;
+          const missingIn = Array.from(missingRoomKeys).map(k => encodeURIComponent(k)).join(',');
+          const extraRes = await supabaseRequest(
+            env,
+            `ktn_messages?room_id=in.(${missingIn})&order=created_at.desc&limit=1000`
+          ).catch(() => ({ ok: false }));
+          if (extraRes.ok && Array.isArray(extraRes.data) && extraRes.data.length > 0) {
+            lastBatchLen = extraRes.data.length;
+            recentMsgs = [...recentMsgs, ...extraRes.data];
+          } else {
+            break;
+          }
+        }
+
         return roomsList.map(r => {
           const matchKeys = new Set([r.roomId, r.classCode, r.classCode ? `class:${r.classCode}` : ''].filter(Boolean));
           const roomMsgs = recentMsgs.filter(m => m && matchKeys.has(String(m.room_id || m.class_code || '').trim()));
@@ -15426,10 +16491,16 @@ export default {
           const lastReadAtMs = readEntry?.lastReadAt ? Date.parse(readEntry.lastReadAt) : 0;
           const lastReadId = readEntry?.lastReadMessageId || null;
           let unreadCount = 0;
+          let seenLastReadId = false;
           for (const m of roomMsgs) {
-            if (normalizeEmail(m.sender_email) === myEmail) continue;
             if (lastReadId && m.id === lastReadId) {
               unreadCount = 0;
+              seenLastReadId = true;
+              continue;
+            }
+            if (normalizeEmail(m.sender_email) === myEmail) continue;
+            if (seenLastReadId) {
+              unreadCount++;
               continue;
             }
             const mTs = Date.parse(m.created_at || '') || 0;
@@ -15437,12 +16508,17 @@ export default {
               unreadCount++;
             }
           }
+          const previewText = latest ? String(latest.content || '').slice(0, 100) : '';
+          const latestAt = latest?.created_at || null;
           return {
             ...r,
-            lastMessage: latest ? String(latest.content || '').slice(0, 100) : (r.lastMessage || ''),
+            hasMessages: Boolean(latest),
+            lastMessage: previewText,
+            lastMessagePreview: previewText,
             lastSenderName: latest?.sender_name || r.lastSenderName || '',
             lastSenderRole: latest?.sender_role || r.lastSenderRole || '',
-            updatedAt: latest?.created_at || r.updatedAt || '',
+            lastMessageAt: latestAt,
+            updatedAt: latestAt || '',
             lastMessageId: latest?.id || null,
             lastReadMessageId: lastReadId,
             unreadCount,
@@ -15540,28 +16616,70 @@ export default {
           teacherName: studentTeacherName
         };
         const enrichedAll = await enrichRoomsWithStats([...rawGroupRooms, rawPrivateRoom]);
-        const groupRooms = enrichedAll.slice(0, rawGroupRooms.length);
+        const groupRooms = sortRoomsByActivity(enrichedAll.slice(0, rawGroupRooms.length));
         const privateRoom = enrichedAll[rawGroupRooms.length] || rawPrivateRoom;
-        return jsonResponse({ ok: true, role: 'student', groupRooms, privateRoom, readStateByRoom });
+        const rooms = sortRoomsByActivity([
+          ...groupRooms,
+          ...(privateRoom.hasMessages ? [privateRoom] : [])
+        ]);
+        return jsonResponse({
+          ok: true,
+          role: 'student',
+          groupRooms,
+          allGroupRooms: groupRooms,
+          activeGroupRooms: groupRooms.filter(r => r.hasMessages),
+          emptyGroupRooms: groupRooms.filter(r => !r.hasMessages),
+          privateRoom,
+          privateThreads: privateRoom.hasMessages ? [privateRoom] : [],
+          inboxRooms: rooms.filter(r => r.hasMessages),
+          rooms,
+          readStateByRoom
+        });
       }
 
       // Teacher hoặc Admin: lấy danh sách lớp thực tế đang hoạt động từ ktn_classes (không hardcode 3 lớp)
-      const [activeClsRes, activeTeaRes] = await Promise.all([
+      const [activeClsRes, activeTeaRes, pinCourseRes] = await Promise.all([
         supabaseRequest(env, 'ktn_classes?active=eq.true&order=created_at.asc,id.asc').catch(() => ({ ok: false, data: [] })),
-        supabaseRequest(env, 'ktn_teachers?active=eq.true').catch(() => ({ ok: false, data: [] }))
+        supabaseRequest(env, 'ktn_teachers?active=eq.true').catch(() => ({ ok: false, data: [] })),
+        session.role === 'teacher'
+          ? supabaseRequest(
+              env,
+              `ktn_dlp_alerts?room_id=like.PIN%3Acourse%3A*&sender_email=eq.${encodeURIComponent(myEmail)}&limit=50`
+            ).catch(() => ({ ok: false, data: [] }))
+          : Promise.resolve({ ok: false, data: [] })
       ]);
       const allActiveClasses = (activeClsRes.ok && Array.isArray(activeClsRes.data))
         ? activeClsRes.data.filter(c => c && c.active !== false && String(c.id || '').trim())
         : [];
       const activeTeacherLookup = new Map();
+      const teacherExplicitCourseSet = new Set();
       if (activeTeaRes.ok && Array.isArray(activeTeaRes.data)) {
         for (const t of activeTeaRes.data) {
           if (t?.active === false) continue;
-          if (t?.email) activeTeacherLookup.set(normalizeEmail(t.email), t);
+          const em = normalizeEmail(t?.email || '');
+          if (em) activeTeacherLookup.set(em, t);
           const tCodeKey = String(t?.code || t?.teacher_code || '').trim().toUpperCase();
           if (tCodeKey) activeTeacherLookup.set(tCodeKey, t);
+          if (session.role === 'teacher' && em === myEmail) {
+            const meta = extractTeacherMetaFromRow(t);
+            (meta.assignedCourses || []).forEach(cid => {
+              const cleanCid = String(cid || '').trim();
+              if (cleanCid) teacherExplicitCourseSet.add(cleanCid);
+            });
+          }
         }
       }
+      const teacherPinnedCourseSet = new Set();
+      if (pinCourseRes && pinCourseRes.ok && Array.isArray(pinCourseRes.data)) {
+        for (const p of pinCourseRes.data) {
+          const rid = String(p?.room_id || '').trim();
+          if (rid.toLowerCase().startsWith('pin:course:')) {
+            const cid = rid.slice(11).trim();
+            if (cid) teacherPinnedCourseSet.add(cid);
+          }
+        }
+      }
+
       const activeClassMetaMap = new Map();
       for (const c of allActiveClasses) {
         const cid = String(c.id || '').trim().toUpperCase();
@@ -15629,112 +16747,209 @@ export default {
       const assignedClassesSet = new Set(
         assignedClasses.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
       );
-      const stuQueryPath = session.role === 'teacher'
-        ? (assignedClasses.length > 0
-            ? `ktn_students?or=(class_code.in.(${assignedClasses.map(c => encodeURIComponent(c)).join(',')}),class_code.is.null,class_code.eq.)&order=updated_at.desc&limit=50`
-            : 'ktn_students?or=(class_code.is.null,class_code.eq.)&order=updated_at.desc&limit=50')
-        : 'ktn_students?order=updated_at.desc&limit=50';
 
-      const [privMsgRes, stuListRes, groupRooms] = await Promise.all([
-        supabaseRequest(env, 'ktn_messages?room_id=like.student:*&order=created_at.desc&limit=100'),
-        supabaseRequest(env, stuQueryPath),
+      const [privMsgRes, enrichedGroupRooms] = await Promise.all([
+        supabaseRequest(env, 'ktn_messages?room_id=like.student:*&order=created_at.desc&limit=2000'),
         enrichRoomsWithStats(rawGroupRooms)
       ]);
-      const stuMap = new Map();
-      if (stuListRes.ok && Array.isArray(stuListRes.data)) {
-        for (const s of stuListRes.data) {
-          const em = normalizeEmail(s?.email || '');
-          if (em) stuMap.set(em, s);
+      const groupRooms = sortRoomsByActivity(enrichedGroupRooms);
+
+      // Group saved 1-1 messages by student email (only students with >= 1 saved message appear in privateThreads!)
+      let allPrivMsgs = (privMsgRes.ok && Array.isArray(privMsgRes.data)) ? privMsgRes.data : [];
+      if (allPrivMsgs.length >= 2000) {
+        // Bounded follow-up queries excluding already-seen student rooms so one 2,000+ msg room cannot starve others
+        const discoveredRoomIds = new Set(
+          allPrivMsgs.map(m => String(m?.room_id || '').trim()).filter(r => r.toLowerCase().startsWith('student:'))
+        );
+        for (let pass = 0; pass < 3 && discoveredRoomIds.size > 0 && discoveredRoomIds.size <= 50; pass++) {
+          const neqClauses = Array.from(discoveredRoomIds).map(rid => `room_id.neq.${encodeURIComponent(rid)}`).join(',');
+          const extraPrivRes = await supabaseRequest(
+            env,
+            `ktn_messages?room_id=like.student:*&and=(${neqClauses})&order=created_at.desc&limit=2000`
+          ).catch(() => ({ ok: false }));
+          if (extraPrivRes.ok && Array.isArray(extraPrivRes.data) && extraPrivRes.data.length > 0) {
+            allPrivMsgs = [...allPrivMsgs, ...extraPrivRes.data];
+            for (const m of extraPrivRes.data) {
+              const rid = String(m?.room_id || '').trim();
+              if (rid.toLowerCase().startsWith('student:')) discoveredRoomIds.add(rid);
+            }
+            if (extraPrivRes.data.length < 2000) break;
+          } else {
+            break;
+          }
         }
       }
 
-      if (session.role === 'teacher' && privMsgRes.ok && Array.isArray(privMsgRes.data)) {
-        const missingEmails = [];
-        for (const m of privMsgRes.data) {
-          const rid = String(m?.room_id || m?.class_code || '').trim().toLowerCase();
-          if (!rid.startsWith('student:')) continue;
-          const stuEmail = normalizeEmail(rid.slice(8));
-          if (stuEmail && !stuMap.has(stuEmail) && !missingEmails.includes(stuEmail)) {
-            missingEmails.push(stuEmail);
-          }
+      const privMsgsByStudent = new Map();
+      for (const m of allPrivMsgs) {
+        if (!m) continue;
+        const rid = String(m.room_id || m.class_code || '').trim().toLowerCase();
+        if (!rid.startsWith('student:')) continue;
+        const stuEmail = normalizeEmail(rid.slice(8));
+        if (!stuEmail) continue;
+        if (!privMsgsByStudent.has(stuEmail)) {
+          privMsgsByStudent.set(stuEmail, []);
         }
-        if (missingEmails.length > 0) {
-          const extraStuRes = await supabaseRequest(
-            env,
-            `ktn_students?email=in.(${missingEmails.map(e => encodeURIComponent(e)).join(',')})&select=email,name,class_code,updated_at`
-          );
-          if (extraStuRes.ok && Array.isArray(extraStuRes.data)) {
-            for (const s of extraStuRes.data) {
-              const em = normalizeEmail(s?.email || '');
-              if (em) stuMap.set(em, s);
-            }
+        privMsgsByStudent.get(stuEmail).push(m);
+      }
+
+      const stuMap = new Map();
+      const lookupEmails = new Set(privMsgsByStudent.keys());
+      if (includeStudentEmail) lookupEmails.add(includeStudentEmail);
+      const activePrivateStudentEmails = Array.from(lookupEmails);
+      if (activePrivateStudentEmails.length > 0) {
+        const stuLookupRes = await supabaseRequest(
+          env,
+          `ktn_students?email=in.(${activePrivateStudentEmails.map(e => encodeURIComponent(e)).join(',')})&select=*`
+        ).catch(() => ({ ok: false }));
+        if (stuLookupRes.ok && Array.isArray(stuLookupRes.data)) {
+          for (const s of stuLookupRes.data) {
+            const em = normalizeEmail(s?.email || '');
+            if (em) stuMap.set(em, s);
           }
         }
       }
 
       const isStudentAllowedForTeacher = (stuInfo) => {
         if (session.role !== 'teacher') return true;
-        const stuCls = String(stuInfo?.class_code || '').trim().toUpperCase();
-        if (stuCls && !assignedClassesSet.has(stuCls)) return false;
-        return true;
+        if (!stuInfo) return false;
+        const explicitTeacher = normalizeEmail(
+          stuInfo.teacher_email || stuInfo.assigned_teacher_email || stuInfo.created_by_teacher_email || ''
+        );
+        if (explicitTeacher && explicitTeacher === myEmail) return true;
+        const stuCls = String(stuInfo.class_code || '').trim().toUpperCase();
+        if (stuCls) {
+          return assignedClassesSet.has(stuCls);
+        }
+        const stuCourses = Array.isArray(stuInfo.online_courses)
+          ? stuInfo.online_courses.map(c => String(c?.id || c?._id || c?.code || c || '').trim()).filter(Boolean)
+          : [];
+        if (stuCourses.length > 0) {
+          return stuCourses.some(cid => teacherExplicitCourseSet.has(cid) || teacherPinnedCourseSet.has(cid));
+        }
+        return false;
       };
 
-      const threadMap = new Map();
-      if (privMsgRes.ok && Array.isArray(privMsgRes.data)) {
-        for (const m of privMsgRes.data) {
-          const rid = String(m?.room_id || m?.class_code || '').trim().toLowerCase();
-          if (!rid.startsWith('student:')) continue;
-          const stuEmail = normalizeEmail(rid.slice(8));
-          if (!stuEmail || threadMap.has(stuEmail)) continue;
-          const stuInfo = stuMap.get(stuEmail);
-          if (!isStudentAllowedForTeacher(stuInfo)) continue;
-          const studentName = stuInfo?.name || (m.sender_role === 'student' ? m.sender_name : '') || stuEmail;
-          const roomKey = `student:${stuEmail}`;
-          const readEntry = readStateByRoom[roomKey] || null;
-          const lastReadAtMs = readEntry?.lastReadAt ? Date.parse(readEntry.lastReadAt) : 0;
-          const msgTs = Date.parse(m.created_at || '') || 0;
-          const isUnread = m.sender_role === 'student' && (!readEntry || (readEntry.lastReadMessageId !== m.id && msgTs > lastReadAtMs));
-          threadMap.set(stuEmail, {
-            roomId: roomKey,
+      const threadList = [];
+      for (const [stuEmail, rawMsgs] of privMsgsByStudent.entries()) {
+        if (!rawMsgs || rawMsgs.length === 0) continue;
+        const stuInfo = stuMap.get(stuEmail);
+        if (!isStudentAllowedForTeacher(stuInfo)) continue;
+
+        const sortedMsgs = rawMsgs.slice().sort(
+          (a, b) => (Date.parse(a.created_at || '') - Date.parse(b.created_at || '')) || String(a.id || '').localeCompare(String(b.id || ''))
+        );
+        const latest = sortedMsgs[sortedMsgs.length - 1];
+        if (!latest) continue;
+
+        const roomKey = `student:${stuEmail}`;
+        const readEntry = readStateByRoom[roomKey] || null;
+        const lastReadAtMs = readEntry?.lastReadAt ? Date.parse(readEntry.lastReadAt) : 0;
+        const lastReadId = readEntry?.lastReadMessageId || null;
+        let unreadCount = 0;
+        let seenLastReadId = false;
+        for (const m of sortedMsgs) {
+          if (lastReadId && m.id === lastReadId) {
+            unreadCount = 0;
+            seenLastReadId = true;
+            continue;
+          }
+          if (normalizeEmail(m.sender_email) === myEmail) continue;
+          if (seenLastReadId) {
+            unreadCount++;
+            continue;
+          }
+          const mTs = Date.parse(m.created_at || '') || 0;
+          if (!lastReadAtMs || mTs > lastReadAtMs) {
+            unreadCount++;
+          }
+        }
+
+        const studentName = stuInfo?.name || (latest.sender_role === 'student' ? latest.sender_name : '') || stuEmail;
+        const previewText = String(latest.content || '').slice(0, 100);
+        const latestAt = latest.created_at || null;
+
+        threadList.push({
+          id: roomKey,
+          roomId: roomKey,
+          type: 'student',
+          roomType: 'student',
+          studentEmail: stuEmail,
+          studentName,
+          classCode: stuInfo?.class_code || '',
+          label: `👩‍🏫 ${studentName}`,
+          shortLabel: studentName,
+          hasMessages: true,
+          lastMessage: previewText,
+          lastMessagePreview: previewText,
+          lastSenderName: latest.sender_name || '',
+          lastSenderRole: latest.sender_role || '',
+          lastMessageAt: latestAt,
+          updatedAt: latestAt || '',
+          lastMessageId: latest.id || null,
+          lastReadMessageId: lastReadId,
+          unreadCount,
+          unread: unreadCount > 0
+        });
+      }
+
+      const draftPrivateRooms = [];
+      if (includeStudentEmail && !threadList.some(t => t.studentEmail === includeStudentEmail)) {
+        const stuInfo = stuMap.get(includeStudentEmail);
+        if (session.role === 'admin' || isStudentAllowedForTeacher(stuInfo)) {
+          const studentName = stuInfo?.name || includeStudentEmail;
+          const draftRoomObj = {
+            id: `student:${includeStudentEmail}`,
+            roomId: `student:${includeStudentEmail}`,
             type: 'student',
-            studentEmail: stuEmail,
+            roomType: 'student',
+            studentEmail: includeStudentEmail,
             studentName,
             classCode: stuInfo?.class_code || '',
             label: `👩‍🏫 ${studentName}`,
-            lastMessage: String(m.content || '').slice(0, 80),
-            lastSenderRole: m.sender_role || '',
-            updatedAt: m.created_at || '',
-            lastMessageId: m.id || null,
-            lastReadMessageId: readEntry?.lastReadMessageId || null,
-            unreadCount: isUnread ? 1 : 0,
-            unread: isUnread
-          });
+            shortLabel: studentName,
+            hasMessages: false,
+            isDraft: true,
+            lastMessage: '',
+            lastMessagePreview: '',
+            lastSenderName: '',
+            lastSenderRole: '',
+            lastMessageAt: null,
+            updatedAt: '',
+            lastMessageId: null,
+            lastReadMessageId: null,
+            unreadCount: 0,
+            unread: false
+          };
+          draftPrivateRooms.push(draftRoomObj);
         }
       }
-      for (const [em, s] of stuMap.entries()) {
-        if (threadMap.has(em)) continue;
-        if (!isStudentAllowedForTeacher(s)) continue;
-        const studentName = s?.name || em;
-        threadMap.set(em, {
-          roomId: `student:${em}`,
-          type: 'student',
-          studentEmail: em,
-          studentName,
-          classCode: s?.class_code || '',
-          label: `👩‍🏫 ${studentName}`,
-          lastMessage: 'Nhắn riêng 1-1 với học viên',
-          lastSenderRole: '',
-          updatedAt: s?.updated_at || '',
-          unreadCount: 0,
-          unread: false
-        });
-      }
+
+      const privateThreads = sortRoomsByActivity(threadList);
+      const allSortedRooms = sortRoomsByActivity([...groupRooms, ...privateThreads, ...draftPrivateRooms]);
+      const activeGroupRooms = groupRooms.filter(r => r.hasMessages);
+      const emptyGroupRooms = groupRooms.filter(r => !r.hasMessages);
+      const inboxRooms = allSortedRooms.filter(r => r.hasMessages);
+
+      const requestedLimit = Number(url.searchParams.get('limit') || 0);
+      const pageOffset = Math.max(0, Number(url.searchParams.get('offset') || 0) || 0);
+      const pagedRooms = requestedLimit > 0
+        ? allSortedRooms.slice(pageOffset, pageOffset + requestedLimit)
+        : allSortedRooms;
 
       return jsonResponse({
         ok: true,
         role: session.role,
         groupRooms,
-        privateThreads: Array.from(threadMap.values()),
+        allGroupRooms: groupRooms,
+        activeGroupRooms,
+        emptyGroupRooms,
+        privateThreads,
+        draftPrivateRooms,
+        inboxRooms,
+        rooms: pagedRooms,
+        totalCount: allSortedRooms.length,
+        hasMore: requestedLimit > 0 ? (pageOffset + pagedRooms.length < allSortedRooms.length) : false,
         readStateByRoom
       });
     }
@@ -16524,25 +17739,27 @@ export default {
             })
             .filter(Boolean)
         ));
-        const stuClassByEmail = new Map();
+        const allowedPrivStudents = new Set();
         if (privStudentEmails.length > 0) {
           const stuClsRes = await supabaseRequest(
             env,
-            `ktn_students?email=in.(${privStudentEmails.map(e => encodeURIComponent(e)).join(',')})&select=email,class_code`
+            `ktn_students?email=in.(${privStudentEmails.map(e => encodeURIComponent(e)).join(',')})&select=*`
           );
           if (stuClsRes.ok && Array.isArray(stuClsRes.data)) {
             for (const s of stuClsRes.data) {
               const em = normalizeEmail(s?.email || '');
-              if (em) stuClassByEmail.set(em, String(s?.class_code || '').trim().toUpperCase());
+              if (!em) continue;
+              const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, s, { assignedClasses });
+              if (isAllowed) {
+                allowedPrivStudents.add(em);
+              }
             }
           }
         }
         const scopedPrivMsgs = rawPrivMsgs.filter(m => {
           const r = String(m?.room_id || m?.class_code || '').trim();
           const em = /^student:/i.test(r) ? normalizeEmail(r.slice(8)) : normalizeEmail(m?.sender_email || '');
-          const stuCls = stuClassByEmail.get(em) || '';
-          if (stuCls && !assignedClassesSet.has(stuCls)) return false;
-          return true;
+          return Boolean(em && allowedPrivStudents.has(em));
         });
         const mergedStudentMsgs = [
           ...rawGroupMsgs,

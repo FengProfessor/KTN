@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { TeacherWorkspace } from '@/features/teacher/components/TeacherWorkspace';
+import { ClassroomsPage } from '@/features/classrooms/components/ClassroomsPage';
 import {
   TeacherForumInbox,
   detectAttachmentKind,
@@ -1054,6 +1055,470 @@ describe('Agent C — Teacher Onboarding, Permission Boundaries & Forum UI', () 
       await waitFor(() => {
         expect(claimSpy).toHaveBeenCalledWith('fq-deep-1', 'unclaim');
       });
+    });
+  });
+
+  describe('C2, C3, C4 & C5 — Teacher File Assignments, Non-Overwriting Exercises & Student Preview', () => {
+    it('C2 & C3: uploads PDF/DOCX/image/audio/video attachments, rejects >50MB or invalid files, appends new exercises without overwriting old ones, and confirms before updating published exercises', async () => {
+      useAuthStore.setState({
+        user: {
+          id: 'GV-01',
+          email: 'lamlinh@khongtunhi.com',
+          name: 'Cô Lâm Linh',
+          role: 'teacher',
+          roles: ['teacher'],
+          classCode: 'YCT2-04',
+          assignedClasses: ['YCT2-04'],
+          hasLiveClass: true,
+          hasOnlineCourses: false,
+          onlineCourses: [],
+        },
+      });
+      useUiStore.setState({ isDemoMode: false });
+
+      vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([
+        {
+          id: 'YCT2-04',
+          name: 'YCT 2 Thiếu Nhi',
+          teacher_code: 'GV-01',
+          teacher_name: 'Cô Lâm Linh',
+          teacher_email: 'lamlinh@khongtunhi.com',
+          total_lessons: 24,
+          current_lesson: 2,
+          schedule: 'Thứ 3 & Thứ 5',
+          active: true,
+        },
+      ]);
+      vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([]);
+      vi.spyOn(ktnApi, 'getStudents').mockResolvedValue([]);
+      vi.spyOn(ktnApi, 'getCourses').mockResolvedValue([]);
+      vi.spyOn(ktnApi, 'getCourseGrantRequests').mockResolvedValue({
+        ok: true,
+        requests: [],
+        pendingCount: 0,
+      });
+
+      const existingEx1 = {
+        id: 'ex_YCT2-04_2_1',
+        num: 1,
+        title: 'Bài 1: Đọc từ vựng gia đình',
+        prompt: 'Con thu âm đọc 10 từ mới trang 12 nhé!',
+        type: 'audio',
+        status: 'published' as const,
+        attachments: [
+          {
+            id: 'att-old-1',
+            name: 'tu-vung-buoi-2.pdf',
+            url: 'https://cdn.khongtunhi.com/tu-vung-buoi-2.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 120000,
+          },
+        ],
+      };
+
+      vi.spyOn(ktnApi, 'getClassSessions').mockResolvedValue([
+        {
+          id: 'sess_YCT2-04_2',
+          classCode: 'YCT2-04',
+          session_num: 2,
+          sessionNum: 2,
+          session_title: 'Buổi 2: Gia đình của em',
+          title: 'Buổi 2: Gia đình của em',
+          exercises: [existingEx1],
+        },
+      ]);
+
+      const uploadSpy = vi
+        .spyOn(ktnApi, 'uploadHomeworkAttachment')
+        .mockImplementation(async (params) => {
+          const f = params.file as File;
+          if (f.size > 50 * 1024 * 1024) {
+            throw new Error(
+              `Tệp "${f.name}" vượt quá giới hạn tối đa 50MB/tệp cho luồng giao bài tập.`
+            );
+          }
+          const ext = (f.name.split('.').pop() || '').toLowerCase();
+          if (ext === 'exe') {
+            throw new Error(
+              `Định dạng tệp ".exe" không được hỗ trợ. Chỉ chấp nhận PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4.`
+            );
+          }
+          params.onProgress?.(100);
+          return {
+            id: `att-${f.name}`,
+            name: f.name,
+            url: `https://cdn.khongtunhi.com/${encodeURIComponent(f.name)}`,
+            mimeType: f.type || 'application/pdf',
+            sizeBytes: f.size || 4096,
+          };
+        });
+
+      const saveSessionSpy = vi
+        .spyOn(ktnApi, 'saveClassSession')
+        .mockImplementation(async (payload) => ({
+          id: `sess_${payload.classCode}_${payload.sessionNum}`,
+          classCode: payload.classCode,
+          session_num: payload.sessionNum,
+          sessionNum: payload.sessionNum,
+          session_title: payload.title,
+          title: payload.title,
+          exercises: payload.exercises as any,
+        }));
+
+      renderWithQuery(
+        <TeacherWorkspace />,
+        ['/teacher?tab=sessions&class=YCT2-04']
+      );
+
+      // Wait for sessions tab and existing exercises banner
+      expect(
+        await screen.findByTestId('teacher-existing-exercises-banner')
+      ).toHaveTextContent('Buổi 2 hiện đã có 1 bài tập');
+
+      const fileInput = screen.getByTestId(
+        'teacher-exercise-file-input'
+      ) as HTMLInputElement;
+
+      // 1. Reject >50MB file
+      const hugeFile = new File(['x'], 'bai-giang-nang.mp4', { type: 'video/mp4' });
+      Object.defineProperty(hugeFile, 'size', { value: 55 * 1024 * 1024 });
+      fireEvent.change(fileInput, { target: { files: [hugeFile] } });
+
+      expect(await screen.findByTestId('teacher-attachment-error')).toHaveTextContent(
+        '50MB'
+      );
+
+      // 2. Reject unsupported .exe file
+      const badFile = new File(['x'], 'malware.exe', {
+        type: 'application/octet-stream',
+      });
+      fireEvent.change(fileInput, { target: { files: [badFile] } });
+      expect(await screen.findByTestId('teacher-attachment-error')).toHaveTextContent(
+        'không được hỗ trợ'
+      );
+
+      // 3. Upload valid PDF + DOCX + MP3 files
+      const pdfFile = new File(['%PDF-1.4'], 'de-bai-buoi-2.pdf', {
+        type: 'application/pdf',
+      });
+      const docxFile = new File(['PK'], 'bai-tap-viet.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      const mp3File = new File(['ID3'], 'nghe-mau.mp3', {
+        type: 'audio/mpeg',
+      });
+
+      fireEvent.change(fileInput, {
+        target: { files: [pdfFile, docxFile, mp3File] },
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId('teacher-exercise-attachment-item-att-de-bai-buoi-2.pdf')
+        ).toBeInTheDocument();
+        expect(
+          screen.getByTestId('teacher-exercise-attachment-item-att-bai-tap-viet.docx')
+        ).toBeInTheDocument();
+        expect(
+          screen.getByTestId('teacher-exercise-attachment-item-att-nghe-mau.mp3')
+        ).toBeInTheDocument();
+      });
+
+      // Remove one attachment before assigning
+      fireEvent.click(
+        screen.getByTestId('teacher-remove-attachment-att-bai-tap-viet.docx')
+      );
+      expect(
+        screen.queryByTestId('teacher-exercise-attachment-item-att-bai-tap-viet.docx')
+      ).not.toBeInTheDocument();
+
+      // 4. Create Exercise 2 in Session 2 -> MUST append to Exercise 1 without overwriting Exercise 1
+      fireEvent.change(screen.getByTestId('teacher-exercise-title-input'), {
+        target: { value: 'Bài 2: Viết chữ Hán & nghe file mẫu' },
+      });
+      fireEvent.change(screen.getByTestId('teacher-exercise-prompt-input'), {
+        target: { value: 'Con tải PDF và nghe file MP3 đính kèm để làm bài nhé!' },
+      });
+      fireEvent.click(screen.getByTestId('teacher-save-session-btn'));
+
+      await waitFor(() => {
+        expect(saveSessionSpy).toHaveBeenCalledTimes(1);
+      });
+
+      const firstCallPayload = saveSessionSpy.mock.calls[0][0];
+      expect(firstCallPayload.mode).toBe('append_exercise');
+      expect(firstCallPayload.preserveExistingExercises).toBe(true);
+      expect(firstCallPayload.exercises).toHaveLength(2);
+      expect(firstCallPayload.exercises[0].id).toBe('ex_YCT2-04_2_1');
+      expect(firstCallPayload.exercises[0].attachments).toHaveLength(1);
+      expect(firstCallPayload.exercises[1].title).toBe(
+        'Bài 2: Viết chữ Hán & nghe file mẫu'
+      );
+      expect(firstCallPayload.exercises[1].attachments).toHaveLength(2);
+
+      // 5. Switch to Edit Existing Exercise -> preserves ID, requires confirmation modal before overwriting published exercise, and suppresses duplicate notification
+      fireEvent.click(
+        await screen.findByTestId('teacher-edit-saved-exercise-btn-ex_YCT2-04_2_1')
+      );
+      expect(screen.getByTestId('teacher-exercise-title-input')).toHaveValue(
+        'Bài 1: Đọc từ vựng gia đình'
+      );
+
+      fireEvent.change(screen.getByTestId('teacher-exercise-title-input'), {
+        target: { value: 'Bài 1 (Đã cập nhật): Đọc từ vựng gia đình' },
+      });
+      fireEvent.click(screen.getByTestId('teacher-save-session-btn'));
+
+      // Confirmation modal must appear before overwriting a published exercise
+      expect(
+        await screen.findByTestId('teacher-confirm-overwrite-modal')
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('teacher-confirm-overwrite-btn'));
+
+      await waitFor(() => {
+        expect(saveSessionSpy).toHaveBeenCalledTimes(2);
+      });
+
+      const secondCallPayload = saveSessionSpy.mock.calls[1][0];
+      expect(secondCallPayload.mode).toBe('update_exercise');
+      expect(secondCallPayload.suppressDuplicateNotification).toBe(true);
+      expect(secondCallPayload.preserveDefaultExercises).toBe(true);
+      expect(secondCallPayload.exercises).toHaveLength(2);
+      expect(secondCallPayload.exercises[0].id).toBe('ex_YCT2-04_2_1');
+      expect(secondCallPayload.exercises[0].title).toBe(
+        'Bài 1 (Đã cập nhật): Đọc từ vựng gia đình'
+      );
+      expect(secondCallPayload.exercises[0].attachments).toEqual(
+        existingEx1.attachments
+      );
+      expect(uploadSpy).toHaveBeenCalled();
+
+      // 6. Switch back to Create Mode, click "Lưu nháp" (draft), then click "Giao bài" (published) ->
+      // MUST update and publish the draft in place (still 3 exercises total, not 4!) and emit notification (suppressDuplicateNotification: false)
+      fireEvent.click(screen.getByTestId('teacher-exercise-mode-create'));
+      fireEvent.change(screen.getByTestId('teacher-exercise-title-input'), {
+        target: { value: 'Bài 3: Tập viết chữ Hán (Lưu nháp trước)' },
+      });
+      fireEvent.change(screen.getByTestId('teacher-exercise-prompt-input'), {
+        target: { value: 'Con viết mỗi chữ 2 dòng vào vở ô ly nhé!' },
+      });
+      fireEvent.click(screen.getByTestId('teacher-save-draft-session-btn'));
+
+      await waitFor(() => {
+        expect(saveSessionSpy).toHaveBeenCalledTimes(3);
+      });
+      const draftPayload = saveSessionSpy.mock.calls[2][0];
+      expect(draftPayload.mode).toBe('append_exercise');
+      expect(draftPayload.status).toBe('draft');
+      expect(draftPayload.suppressDuplicateNotification).toBe(true);
+      expect(draftPayload.exercises).toHaveLength(3);
+      const draftExerciseId = draftPayload.exercises[2].id;
+
+      // Now click "Giao bài" right after saving draft -> publishes that draft without overwrite modal or duplicate exercise
+      fireEvent.click(screen.getByTestId('teacher-save-session-btn'));
+      await waitFor(() => {
+        expect(saveSessionSpy).toHaveBeenCalledTimes(4);
+      });
+      const publishDraftPayload = saveSessionSpy.mock.calls[3][0];
+      expect(publishDraftPayload.mode).toBe('update_exercise');
+      expect(publishDraftPayload.status).toBe('published');
+      expect(publishDraftPayload.suppressDuplicateNotification).toBe(false);
+      expect(publishDraftPayload.exercises).toHaveLength(3);
+      expect(publishDraftPayload.exercises[2].id).toBe(draftExerciseId);
+      expect(publishDraftPayload.exercises[2].status).toBe('published');
+    });
+
+    it('C4: renders teacher exercise attachments below prompt in ClassroomsPage with preview/download, hides drafts, keeps HomeworkPanel separate, and blocks student cross-class URL access', async () => {
+      useAuthStore.setState({
+        user: {
+          id: 'stu-01',
+          email: 'hoangngan@khongtunhi.com',
+          name: 'Bé Nguyễn Hoàng Ngân',
+          role: 'student',
+          roles: ['student'],
+          classCode: 'YCT2-04',
+          hasLiveClass: true,
+          hasOnlineCourses: false,
+          onlineCourses: [],
+        },
+      });
+      useUiStore.setState({ isDemoMode: false });
+
+      vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([
+        {
+          id: 'YCT2-04',
+          name: 'YCT 2 Thiếu Nhi',
+          teacher_code: 'GV-01',
+          teacher_name: 'Cô Lâm Linh',
+          teacher_email: 'lamlinh@khongtunhi.com',
+          total_lessons: 24,
+          current_lesson: 2,
+          schedule: 'Thứ 3 & Thứ 5',
+          active: true,
+        },
+      ]);
+      vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([]);
+      vi.spyOn(ktnApi, 'getAttendance').mockResolvedValue({
+        ok: true,
+        classCode: 'YCT2-04',
+        sessionNum: null,
+        records: [],
+        summary: {
+          total: 1,
+          present: 1,
+          late: 0,
+          absentExcused: 0,
+          absentUnexcused: 0,
+        },
+      });
+      const getSessionsSpy = vi
+        .spyOn(ktnApi, 'getClassSessions')
+        .mockResolvedValue([
+          {
+            id: 'sess_YCT2-04_2',
+            classCode: 'YCT2-04',
+            session_num: 2,
+            sessionNum: 2,
+            session_title: 'Buổi 2: Gia đình của em',
+            title: 'Buổi 2: Gia đình của em',
+            exercises: [
+              {
+                id: 'ex_YCT2-04_2_1',
+                num: 1,
+                title: 'Bài 1: Luyện đọc & viết từ mới',
+                prompt: 'Con xem PDF đề bài và nghe file MP3 cô gửi bên dưới nhé!',
+                type: 'audio',
+                status: 'published',
+                attachments: [
+                  {
+                    id: 'att-pdf-1',
+                    name: 'phieu-bai-tap-buoi-2.pdf',
+                    url: 'https://cdn.khongtunhi.com/phieu-bai-tap-buoi-2.pdf',
+                    mimeType: 'application/pdf',
+                    sizeBytes: 245760,
+                  },
+                  {
+                    id: 'att-audio-1',
+                    name: 'file-nghe-mau.mp3',
+                    url: 'https://cdn.khongtunhi.com/file-nghe-mau.mp3',
+                    mimeType: 'audio/mpeg',
+                    sizeBytes: 512000,
+                  },
+                ],
+              },
+              {
+                id: 'ex_YCT2-04_2_2_draft',
+                num: 2,
+                title: 'Bài 2 (Bản nháp chưa giao)',
+                prompt: 'Nội dung nháp',
+                type: 'audio',
+                status: 'draft',
+                attachments: [],
+              },
+            ],
+          },
+        ]);
+
+      // Attempt cross-class URL parameter (?class=HSK3-OTHER) as a student assigned to YCT2-04
+      renderWithQuery(
+        <ClassroomsPage />,
+        ['/classrooms?class=HSK3-OTHER&session=2']
+      );
+
+      // 1. Cross-class access is blocked; student stays on their own class YCT2-04
+      expect(
+        await screen.findByTestId('student-cross-class-blocked-alert')
+      ).toHaveTextContent('HSK3-OTHER');
+      expect(getSessionsSpy).toHaveBeenCalledWith('YCT2-04');
+      expect(getSessionsSpy).not.toHaveBeenCalledWith('HSK3-OTHER');
+
+      // 2. Teacher attachments render right below exercise prompt
+      expect(
+        await screen.findByTestId('student-exercise-attachment-att-pdf-1')
+      ).toHaveTextContent('phieu-bai-tap-buoi-2.pdf');
+      expect(
+        screen.getByTestId('student-exercise-attachment-att-audio-1')
+      ).toHaveTextContent('file-nghe-mau.mp3');
+      expect(
+        screen.getByTestId('student-exercise-audio-player-att-audio-1')
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId('student-download-attachment-btn-att-pdf-1')
+      ).toHaveAttribute(
+        'href',
+        'https://cdn.khongtunhi.com/phieu-bai-tap-buoi-2.pdf'
+      );
+
+      // 3. Draft exercise is hidden from students
+      expect(
+        screen.queryByText('Bài 2 (Bản nháp chưa giao)')
+      ).not.toBeInTheDocument();
+
+      // 4. Preview modal opens when clicking Xem PDF
+      fireEvent.click(
+        screen.getByTestId('student-preview-attachment-btn-att-pdf-1')
+      );
+      expect(
+        await screen.findByTestId('student-attachment-preview-modal')
+      ).toBeInTheDocument();
+    });
+
+    it('C2 & C5 API Client: ktnApi.uploadHomeworkAttachment enforces 50MB limit, allowed file extensions, and teacher class scope', async () => {
+      const oversized = new File(['x'], 'oversized.mp4', { type: 'video/mp4' });
+      Object.defineProperty(oversized, 'size', { value: 52 * 1024 * 1024 });
+
+      await expect(
+        ktnApi.uploadHomeworkAttachment({
+          file: oversized,
+          fileName: 'oversized.mp4',
+          classCode: 'YCT2-04',
+          sessionNum: 2,
+          allowedClassCodes: ['YCT2-04'],
+          isDemoMode: true,
+        })
+      ).rejects.toThrow(/50MB/);
+
+      const unsupported = new File(['x'], 'script.bat', {
+        type: 'application/octet-stream',
+      });
+      await expect(
+        ktnApi.uploadHomeworkAttachment({
+          file: unsupported,
+          fileName: 'script.bat',
+          classCode: 'YCT2-04',
+          sessionNum: 2,
+          allowedClassCodes: ['YCT2-04'],
+          isDemoMode: true,
+        })
+      ).rejects.toThrow(/không được hỗ trợ/);
+
+      const validPdf = new File(['%PDF-1.4'], 'tai-lieu.pdf', {
+        type: 'application/pdf',
+      });
+      await expect(
+        ktnApi.uploadHomeworkAttachment({
+          file: validPdf,
+          fileName: 'tai-lieu.pdf',
+          classCode: 'HSK4-UNASSIGNED',
+          sessionNum: 2,
+          allowedClassCodes: ['YCT2-04'],
+          isDemoMode: true,
+        })
+      ).rejects.toThrow(/không có quyền tải tài liệu giao bài cho lớp HSK4-UNASSIGNED/);
+
+      const progressSteps: number[] = [];
+      const uploaded = await ktnApi.uploadHomeworkAttachment({
+        file: validPdf,
+        fileName: 'tai-lieu.pdf',
+        classCode: 'YCT2-04',
+        sessionNum: 2,
+        allowedClassCodes: ['YCT2-04'],
+        isDemoMode: true,
+        onProgress: (pct) => progressSteps.push(pct),
+      });
+      expect(uploaded.name).toBe('tai-lieu.pdf');
+      expect(uploaded.mimeType).toBe('application/pdf');
+      expect(progressSteps).toContain(100);
     });
   });
 });

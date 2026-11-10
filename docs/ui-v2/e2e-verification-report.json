@@ -1,7 +1,7 @@
 {
   "suite": "KTN UI V2 Real-Browser E2E Verification",
-  "total": 127,
-  "passed": 127,
+  "total": 130,
+  "passed": 130,
   "failed": 0,
   "results": [
     {
@@ -10,7 +10,7 @@
       "title": "Invalid credentials show clear login error alert with role=\"alert\"",
       "passed": true,
       "details": "role=alert",
-      "timestamp": "2026-11-10T15:11:46.726Z"
+      "timestamp": "2026-11-10T19:31:04.096Z"
     },
     {
       "group": "TEST A",
@@ -18,7 +18,7 @@
       "title": "Student login succeeds and displays Student Dashboard",
       "passed": true,
       "details": "User: Bé Nguyễn Hoàng Ngân",
-      "timestamp": "2026-11-10T15:11:47.025Z"
+      "timestamp": "2026-11-10T19:31:04.371Z"
     },
     {
       "group": "TEST A",
@@ -26,7 +26,7 @@
       "title": "Browser reload preserves authenticated session",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:11:47.364Z"
+      "timestamp": "2026-11-10T19:31:04.726Z"
     },
     {
       "group": "TEST A",
@@ -34,7 +34,7 @@
       "title": "RBAC Route Guard blocks Student from accessing /teacher and /admin",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:11:47.750Z"
+      "timestamp": "2026-11-10T19:31:05.217Z"
     },
     {
       "group": "TEST A",
@@ -42,7 +42,7 @@
       "title": "Logout revokes session, clears room drafts in storage, and redirects to /login",
       "passed": true,
       "details": "draftBefore=\"Bản nháp riêng của Hoàng Ngân\", remainingDrafts=0",
-      "timestamp": "2026-11-10T15:11:48.214Z"
+      "timestamp": "2026-11-10T19:31:05.687Z"
     },
     {
       "group": "TEST A",
@@ -50,7 +50,7 @@
       "title": "Admin login succeeds and loads Admin Home (/) and Admin Workspace (/admin)",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:11:49.857Z"
+      "timestamp": "2026-11-10T19:31:07.491Z"
     },
     {
       "group": "TEST B",
@@ -58,7 +58,7 @@
       "title": "Entitled student sees Video Course vs Live Classroom separation and loads HLS Video Player Lesson 1",
       "passed": true,
       "details": "Bài 1: AI小语，你好！ — Xin chào AI Tiểu Ngữ!",
-      "timestamp": "2026-11-10T15:11:50.608Z"
+      "timestamp": "2026-11-10T19:31:08.320Z"
     },
     {
       "group": "TEST B",
@@ -66,7 +66,7 @@
       "title": "Switching to Lesson 2 updates player and marks lesson completed",
       "passed": true,
       "details": "Bài 2: 我叫李文 — Mình tên là Lý Văn",
-      "timestamp": "2026-11-10T15:11:51.210Z"
+      "timestamp": "2026-11-10T19:31:08.885Z"
     },
     {
       "group": "TEST B",
@@ -74,7 +74,7 @@
       "title": "Unassigned student does not see fake YCT2-04 class on sidebar or dashboard",
       "passed": true,
       "details": "Subtitle: Học viên tự học / Chưa xếp lớp",
-      "timestamp": "2026-11-10T15:11:52.080Z"
+      "timestamp": "2026-11-10T19:31:09.886Z"
     },
     {
       "group": "TEST B",
@@ -82,7 +82,7 @@
       "title": "Unentitled student is blocked by 403 COURSE_NOT_ENTITLED guard on /learning",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:11:52.430Z"
+      "timestamp": "2026-11-10T19:31:10.244Z"
     },
     {
       "group": "TEST B",
@@ -90,7 +90,7 @@
       "title": "Unassigned student sees honest empty classroom state on /classrooms",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:11:52.490Z"
+      "timestamp": "2026-11-10T19:31:10.321Z"
     },
     {
       "group": "TEST C",
@@ -98,7 +98,7 @@
       "title": "Pinned classroom announcement banner is rendered",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:11:53.872Z"
+      "timestamp": "2026-11-10T19:31:11.870Z"
     },
     {
       "group": "TEST C",
@@ -106,7 +106,7 @@
       "title": "DLP guard warns and disables Send button when phone number is typed",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:11:53.917Z"
+      "timestamp": "2026-11-10T19:31:11.915Z"
     },
     {
       "group": "TEST C",
@@ -114,7 +114,7 @@
       "title": "Real-time 2-account chat: Student sends -> Teacher receives -> Persists after reload",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:11:57.118Z"
+      "timestamp": "2026-11-10T19:31:15.197Z"
     },
     {
       "group": "TEST C",
@@ -122,7 +122,7 @@
       "title": "When POST /api/ktn/messages fails, UI shows \"Chưa gửi được. Tin nhắn vẫn đang được giữ trên thiết bị.\" and retains draft",
       "passed": true,
       "details": "Chưa gửi được. Tin nhắn vẫn đang được giữ trên thiết bị.Thử lại",
-      "timestamp": "2026-11-10T15:11:57.259Z"
+      "timestamp": "2026-11-10T19:31:15.392Z"
     },
     {
       "group": "TEST C",
@@ -130,7 +130,7 @@
       "title": "Clicking \"Thử lại\" succeeds with idempotent clientMessageId and produces exactly 1 message",
       "passed": true,
       "details": "Occurrences: 1",
-      "timestamp": "2026-11-10T15:11:57.347Z"
+      "timestamp": "2026-11-10T19:31:15.497Z"
     },
     {
       "group": "TEST C",
@@ -138,7 +138,7 @@
       "title": "Voice message persists as data:audio/wav;base64,... across reload and is playable in Teacher browser",
       "passed": true,
       "details": "src prefix: data:audio/wav;base64,UklGRi...",
-      "timestamp": "2026-11-10T15:12:03.288Z"
+      "timestamp": "2026-11-10T19:31:20.982Z"
     },
     {
       "group": "TEST C",
@@ -146,7 +146,7 @@
       "title": "RBAC Isolation: Student in YCT3-02 receives HTTP 403 when requesting YCT2-04 messages",
       "passed": true,
       "details": "HTTP 403",
-      "timestamp": "2026-11-10T15:12:03.301Z"
+      "timestamp": "2026-11-10T19:31:20.997Z"
     },
     {
       "group": "TEST D",
@@ -154,7 +154,7 @@
       "title": "Teacher assigning a class session generates a real homework_assigned notification for Student",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:03.571Z"
+      "timestamp": "2026-11-10T19:31:21.321Z"
     },
     {
       "group": "TEST D",
@@ -162,7 +162,7 @@
       "title": "Clicking homework_assigned notification deep-links directly to /classrooms?class=YCT2-04&session=2",
       "passed": true,
       "details": "http://127.0.0.1:5173/classrooms?class=YCT2-04&session=2",
-      "timestamp": "2026-11-10T15:12:03.684Z"
+      "timestamp": "2026-11-10T19:31:21.452Z"
     },
     {
       "group": "TEST D",
@@ -170,7 +170,7 @@
       "title": "Marking notifications read persists across browser reload via PATCH /api/ktn/notifications/read",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:04.712Z"
+      "timestamp": "2026-11-10T19:31:22.571Z"
     },
     {
       "group": "TEST E",
@@ -178,7 +178,7 @@
       "title": "Live-classroom homework is isolated from Video Course homework and supports inline submission (CLASS_YCT2-04)",
       "passed": true,
       "details": "Before: Cần hoàn thành -> After: Đã nộp (Lớp YCT2-04)",
-      "timestamp": "2026-11-10T15:12:05.166Z"
+      "timestamp": "2026-11-10T19:31:23.038Z"
     },
     {
       "group": "TEST E",
@@ -186,7 +186,7 @@
       "title": "Student uploads video-course homework via presigned S3 URL + POST /api/ktn/homeworks and sees pending status",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:06.254Z"
+      "timestamp": "2026-11-10T19:31:24.154Z"
     },
     {
       "group": "TEST E",
@@ -194,7 +194,7 @@
       "title": "Teacher requests revision (revision_requested) -> Student sees feedback and resubmits revised homework",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:08.296Z"
+      "timestamp": "2026-11-10T19:31:26.303Z"
     },
     {
       "group": "TEST E",
@@ -202,7 +202,7 @@
       "title": "Clicking graded homework notification deep-links to Lesson 2 and displays 10/10 score + feedback",
       "passed": true,
       "details": "Điểm: 10 / 10 | Xuất sắc 10/10! Con đọc chuẩn từng thanh điệu Bài 2.",
-      "timestamp": "2026-11-10T15:12:10.009Z"
+      "timestamp": "2026-11-10T19:31:27.981Z"
     },
     {
       "group": "TEST F",
@@ -210,7 +210,7 @@
       "title": "Zero horizontal overflow on / at 360px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:10.436Z"
+      "timestamp": "2026-11-10T19:31:28.455Z"
     },
     {
       "group": "TEST F",
@@ -218,7 +218,7 @@
       "title": "Zero horizontal overflow on /learning at 360px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:10.813Z"
+      "timestamp": "2026-11-10T19:31:28.856Z"
     },
     {
       "group": "TEST F",
@@ -226,7 +226,7 @@
       "title": "Zero horizontal overflow on /chat?room=class:YCT2-04 at 360px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:11.203Z"
+      "timestamp": "2026-11-10T19:31:29.254Z"
     },
     {
       "group": "TEST F",
@@ -234,7 +234,7 @@
       "title": "Zero horizontal overflow on /notifications at 360px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:11.621Z"
+      "timestamp": "2026-11-10T19:31:29.667Z"
     },
     {
       "group": "TEST F",
@@ -242,7 +242,7 @@
       "title": "Zero horizontal overflow on / at 375px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:12.021Z"
+      "timestamp": "2026-11-10T19:31:30.081Z"
     },
     {
       "group": "TEST F",
@@ -250,7 +250,7 @@
       "title": "Zero horizontal overflow on /learning at 375px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:12.429Z"
+      "timestamp": "2026-11-10T19:31:30.481Z"
     },
     {
       "group": "TEST F",
@@ -258,7 +258,7 @@
       "title": "Zero horizontal overflow on /chat?room=class:YCT2-04 at 375px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:12.855Z"
+      "timestamp": "2026-11-10T19:31:30.907Z"
     },
     {
       "group": "TEST F",
@@ -266,7 +266,7 @@
       "title": "Zero horizontal overflow on /notifications at 375px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:13.238Z"
+      "timestamp": "2026-11-10T19:31:31.320Z"
     },
     {
       "group": "TEST F",
@@ -274,7 +274,7 @@
       "title": "Zero horizontal overflow on / at 390px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:13.630Z"
+      "timestamp": "2026-11-10T19:31:31.733Z"
     },
     {
       "group": "TEST F",
@@ -282,7 +282,7 @@
       "title": "Zero horizontal overflow on /learning at 390px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:14.060Z"
+      "timestamp": "2026-11-10T19:31:32.174Z"
     },
     {
       "group": "TEST F",
@@ -290,7 +290,7 @@
       "title": "Zero horizontal overflow on /chat?room=class:YCT2-04 at 390px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:14.480Z"
+      "timestamp": "2026-11-10T19:31:32.667Z"
     },
     {
       "group": "TEST F",
@@ -298,7 +298,7 @@
       "title": "Zero horizontal overflow on /notifications at 390px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:14.896Z"
+      "timestamp": "2026-11-10T19:31:33.134Z"
     },
     {
       "group": "TEST F",
@@ -306,7 +306,7 @@
       "title": "Zero horizontal overflow on / at 430px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:15.362Z"
+      "timestamp": "2026-11-10T19:31:33.587Z"
     },
     {
       "group": "TEST F",
@@ -314,7 +314,7 @@
       "title": "Zero horizontal overflow on /learning at 430px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:15.745Z"
+      "timestamp": "2026-11-10T19:31:33.974Z"
     },
     {
       "group": "TEST F",
@@ -322,7 +322,7 @@
       "title": "Zero horizontal overflow on /chat?room=class:YCT2-04 at 430px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:16.144Z"
+      "timestamp": "2026-11-10T19:31:34.354Z"
     },
     {
       "group": "TEST F",
@@ -330,7 +330,7 @@
       "title": "Zero horizontal overflow on /notifications at 430px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:16.521Z"
+      "timestamp": "2026-11-10T19:31:34.787Z"
     },
     {
       "group": "TEST F",
@@ -338,7 +338,7 @@
       "title": "Zero horizontal overflow on / at 768px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:16.913Z"
+      "timestamp": "2026-11-10T19:31:35.227Z"
     },
     {
       "group": "TEST F",
@@ -346,7 +346,7 @@
       "title": "Zero horizontal overflow on /learning at 768px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:17.371Z"
+      "timestamp": "2026-11-10T19:31:35.693Z"
     },
     {
       "group": "TEST F",
@@ -354,7 +354,7 @@
       "title": "Zero horizontal overflow on /chat?room=class:YCT2-04 at 768px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:17.879Z"
+      "timestamp": "2026-11-10T19:31:36.180Z"
     },
     {
       "group": "TEST F",
@@ -362,7 +362,7 @@
       "title": "Zero horizontal overflow on /notifications at 768px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:18.338Z"
+      "timestamp": "2026-11-10T19:31:36.640Z"
     },
     {
       "group": "TEST F",
@@ -370,7 +370,7 @@
       "title": "Zero horizontal overflow on / at 1024px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:18.793Z"
+      "timestamp": "2026-11-10T19:31:37.120Z"
     },
     {
       "group": "TEST F",
@@ -378,7 +378,7 @@
       "title": "Zero horizontal overflow on /learning at 1024px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:19.215Z"
+      "timestamp": "2026-11-10T19:31:37.548Z"
     },
     {
       "group": "TEST F",
@@ -386,7 +386,7 @@
       "title": "Zero horizontal overflow on /chat?room=class:YCT2-04 at 1024px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:19.628Z"
+      "timestamp": "2026-11-10T19:31:37.974Z"
     },
     {
       "group": "TEST F",
@@ -394,7 +394,7 @@
       "title": "Zero horizontal overflow on /notifications at 1024px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:20.029Z"
+      "timestamp": "2026-11-10T19:31:38.386Z"
     },
     {
       "group": "TEST F",
@@ -402,7 +402,7 @@
       "title": "Zero horizontal overflow on / at 1280px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:20.421Z"
+      "timestamp": "2026-11-10T19:31:38.800Z"
     },
     {
       "group": "TEST F",
@@ -410,7 +410,7 @@
       "title": "Zero horizontal overflow on /learning at 1280px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:20.814Z"
+      "timestamp": "2026-11-10T19:31:39.201Z"
     },
     {
       "group": "TEST F",
@@ -418,7 +418,7 @@
       "title": "Zero horizontal overflow on /chat?room=class:YCT2-04 at 1280px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:21.211Z"
+      "timestamp": "2026-11-10T19:31:39.613Z"
     },
     {
       "group": "TEST F",
@@ -426,7 +426,7 @@
       "title": "Zero horizontal overflow on /notifications at 1280px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:21.620Z"
+      "timestamp": "2026-11-10T19:31:40.013Z"
     },
     {
       "group": "TEST F",
@@ -434,7 +434,7 @@
       "title": "Zero horizontal overflow on / at 1440px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:22.011Z"
+      "timestamp": "2026-11-10T19:31:40.441Z"
     },
     {
       "group": "TEST F",
@@ -442,7 +442,7 @@
       "title": "Zero horizontal overflow on /learning at 1440px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:22.464Z"
+      "timestamp": "2026-11-10T19:31:40.943Z"
     },
     {
       "group": "TEST F",
@@ -450,7 +450,7 @@
       "title": "Zero horizontal overflow on /chat?room=class:YCT2-04 at 1440px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:23.045Z"
+      "timestamp": "2026-11-10T19:31:41.506Z"
     },
     {
       "group": "TEST F",
@@ -458,7 +458,7 @@
       "title": "Zero horizontal overflow on /notifications at 1440px",
       "passed": true,
       "details": "overflowDelta=0px",
-      "timestamp": "2026-11-10T15:12:23.503Z"
+      "timestamp": "2026-11-10T19:31:41.986Z"
     },
     {
       "group": "TEST G",
@@ -466,7 +466,7 @@
       "title": "Accessibility audit: Keyboard Tab focus works, 0 unlabeled icon buttons, and prefers-reduced-motion CSS rule active",
       "passed": true,
       "details": "{\"activeTag\":\"BODY\",\"unlabeledButtonCount\":0,\"hasReducedMotionRule\":true}",
-      "timestamp": "2026-11-10T15:12:23.766Z"
+      "timestamp": "2026-11-10T19:31:42.226Z"
     },
     {
       "group": "TEST G",
@@ -474,7 +474,7 @@
       "title": "Captured responsive screenshots across 390px, 768px, and 1440px for all 5 core workspaces",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:25.448Z"
+      "timestamp": "2026-11-10T19:31:43.948Z"
     },
     {
       "group": "TEST H",
@@ -482,7 +482,7 @@
       "title": "Student opening / renders StudentHome with Continue Learning CTA and compact greeting",
       "passed": true,
       "details": "header=\"Chào Hoàng Ngân 👋\"",
-      "timestamp": "2026-11-10T15:12:26.450Z"
+      "timestamp": "2026-11-10T19:31:45.099Z"
     },
     {
       "group": "TEST H",
@@ -490,7 +490,7 @@
       "title": "Teacher opening / renders TeacherHome with grading priority card and assigned classes (never StudentDashboard)",
       "passed": true,
       "details": "header=\"Chào Cô Lâm Mỹ Linh\"",
-      "timestamp": "2026-11-10T15:12:26.766Z"
+      "timestamp": "2026-11-10T19:31:45.449Z"
     },
     {
       "group": "TEST H",
@@ -498,7 +498,7 @@
       "title": "Admin opening / renders AdminHome with 3 compact KPIs and actionable queue (never StudentDashboard)",
       "passed": true,
       "details": "header=\"Quản lý học vụ\"",
-      "timestamp": "2026-11-10T15:12:27.146Z"
+      "timestamp": "2026-11-10T19:31:45.785Z"
     },
     {
       "group": "TEST H",
@@ -506,7 +506,7 @@
       "title": "Mobile bottom navigation renders 5 purposeful role-specific items and navigates accurately across all 15 buttons",
       "passed": true,
       "details": "S=Trang chủ|Học|Lớp|Tin nhắn|Thông báo / T=Tổng quan|Lớp|Chấm bài|Tin nhắn|Thông báo / A=Tổng quan|Học viên|Lớp|Đơn hàng|Thêm",
-      "timestamp": "2026-11-10T15:12:28.556Z"
+      "timestamp": "2026-11-10T19:31:47.487Z"
     },
     {
       "group": "TEST H",
@@ -514,7 +514,7 @@
       "title": "Clicking header Home button returns Student -> StudentHome, Teacher -> TeacherHome, Admin -> AdminHome",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:29.637Z"
+      "timestamp": "2026-11-10T19:31:48.667Z"
     },
     {
       "group": "TEST H",
@@ -522,7 +522,7 @@
       "title": "Reloading / on Teacher and Admin preserves role session and never renders StudentHome",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:30.174Z"
+      "timestamp": "2026-11-10T19:31:49.213Z"
     },
     {
       "group": "TEST H",
@@ -530,7 +530,7 @@
       "title": "Sequential logout/login across Teacher -> Student -> Admin -> Teacher leaves zero stale menus or state",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:40.497Z"
+      "timestamp": "2026-11-10T19:31:59.640Z"
     },
     {
       "group": "TEST H",
@@ -538,7 +538,7 @@
       "title": "Role protection blocks unauthorized routes and enforces 403 RBAC on grading/orders/course APIs",
       "passed": true,
       "details": "student(grade=403,order=403) teacher(order=403,course=403)",
-      "timestamp": "2026-11-10T15:12:41.232Z"
+      "timestamp": "2026-11-10T19:32:00.561Z"
     },
     {
       "group": "TEST H",
@@ -546,7 +546,7 @@
       "title": "DemoControlBar is hidden in Live mode and failed live login never falls back to demoUser",
       "passed": true,
       "details": "",
-      "timestamp": "2026-11-10T15:12:41.860Z"
+      "timestamp": "2026-11-10T19:32:01.229Z"
     },
     {
       "group": "TEST I",
@@ -554,7 +554,7 @@
       "title": "Compact mobile layout for student at 360px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:42.407Z"
+      "timestamp": "2026-11-10T19:32:01.807Z"
     },
     {
       "group": "TEST I",
@@ -562,7 +562,7 @@
       "title": "Compact mobile layout for student at 375px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:42.890Z"
+      "timestamp": "2026-11-10T19:32:02.346Z"
     },
     {
       "group": "TEST I",
@@ -570,7 +570,7 @@
       "title": "Compact mobile layout for student at 390px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:43.375Z"
+      "timestamp": "2026-11-10T19:32:02.800Z"
     },
     {
       "group": "TEST I",
@@ -578,7 +578,7 @@
       "title": "Compact mobile layout for student at 430px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:43.977Z"
+      "timestamp": "2026-11-10T19:32:03.319Z"
     },
     {
       "group": "TEST I",
@@ -586,7 +586,7 @@
       "title": "Compact mobile layout for teacher at 360px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:45.017Z"
+      "timestamp": "2026-11-10T19:32:04.428Z"
     },
     {
       "group": "TEST I",
@@ -594,7 +594,7 @@
       "title": "Compact mobile layout for teacher at 375px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:45.490Z"
+      "timestamp": "2026-11-10T19:32:04.906Z"
     },
     {
       "group": "TEST I",
@@ -602,7 +602,7 @@
       "title": "Compact mobile layout for teacher at 390px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:45.924Z"
+      "timestamp": "2026-11-10T19:32:05.385Z"
     },
     {
       "group": "TEST I",
@@ -610,7 +610,7 @@
       "title": "Compact mobile layout for teacher at 430px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:46.523Z"
+      "timestamp": "2026-11-10T19:32:05.945Z"
     },
     {
       "group": "TEST I",
@@ -618,7 +618,7 @@
       "title": "Compact mobile layout for admin at 360px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:47.525Z"
+      "timestamp": "2026-11-10T19:32:06.989Z"
     },
     {
       "group": "TEST I",
@@ -626,7 +626,7 @@
       "title": "Compact mobile layout for admin at 375px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:48.009Z"
+      "timestamp": "2026-11-10T19:32:07.507Z"
     },
     {
       "group": "TEST I",
@@ -634,7 +634,7 @@
       "title": "Compact mobile layout for admin at 390px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:48.465Z"
+      "timestamp": "2026-11-10T19:32:07.986Z"
     },
     {
       "group": "TEST I",
@@ -642,7 +642,7 @@
       "title": "Compact mobile layout for admin at 430px (header=48px <= 56px, navBars=1, ctaAboveFold=true, overflow=0px)",
       "passed": true,
       "details": "{\"headerHeight\":48,\"overflow\":0,\"hasLeakedTokens\":false,\"visibleNavBars\":1,\"ctaAboveFold\":true}",
-      "timestamp": "2026-11-10T15:12:48.909Z"
+      "timestamp": "2026-11-10T19:32:08.534Z"
     },
     {
       "group": "TEST I",
@@ -650,15 +650,15 @@
       "title": "Mobile chat composer at 390x844 is completely visible above the bottom navigation bar",
       "passed": true,
       "details": "{\"ok\":true,\"composerBottom\":767,\"bottomNavTop\":788}",
-      "timestamp": "2026-11-10T15:12:51.185Z"
+      "timestamp": "2026-11-10T19:32:11.010Z"
     },
     {
       "group": "TEST J",
       "id": "J1",
       "title": "Admin 1-click student provisioning creates student without default YCT2-04 and displays one-time credential handoff banner",
       "passed": true,
-      "details": "Provisioned: dangnam.v3.1794323571700@khongtunhi.com",
-      "timestamp": "2026-11-10T15:12:51.978Z"
+      "details": "Provisioned: dangnam.v3.1794339131627@khongtunhi.com",
+      "timestamp": "2026-11-10T19:32:11.998Z"
     },
     {
       "group": "TEST J",
@@ -666,7 +666,7 @@
       "title": "Admin server-side Vietnamese unaccented search (\"dang nhat nam\") matches \"Bé Đặng Nhật Nam\" with zero default YCT2-04",
       "passed": true,
       "details": "Matched unaccented search + Chưa xếp lớp",
-      "timestamp": "2026-11-10T15:12:52.474Z"
+      "timestamp": "2026-11-10T19:32:12.494Z"
     },
     {
       "group": "TEST J",
@@ -674,7 +674,7 @@
       "title": "Admin 3-System Reconciliation & Sync Health panel renders and refreshes sync status",
       "passed": true,
       "details": "Sync health verified",
-      "timestamp": "2026-11-10T15:12:53.066Z"
+      "timestamp": "2026-11-10T19:32:13.271Z"
     },
     {
       "group": "TEST J",
@@ -682,7 +682,7 @@
       "title": "Teacher saves classroom attendance -> Student immediately sees attendance badge on /classrooms",
       "passed": true,
       "details": "Chuyên cần: 1/1 buổi",
-      "timestamp": "2026-11-10T15:12:54.248Z"
+      "timestamp": "2026-11-10T19:32:14.510Z"
     },
     {
       "group": "TEST K",
@@ -690,7 +690,7 @@
       "title": "Non-video pages (/login, /, /admin) make 0 HLS chunk requests and paginate student search with limit=20",
       "passed": true,
       "details": "hlsReqs=0, searchReqs=4, limit20=true",
-      "timestamp": "2026-11-10T15:12:56.122Z"
+      "timestamp": "2026-11-10T19:32:16.357Z"
     },
     {
       "group": "TEST K",
@@ -698,15 +698,15 @@
       "title": "Custom Page HashRouter embed mode (?router=hash#/...) navigates and survives reload without 404",
       "passed": true,
       "details": "hash=#/learning",
-      "timestamp": "2026-11-10T15:12:57.639Z"
+      "timestamp": "2026-11-10T19:32:17.887Z"
     },
     {
       "group": "TEST K",
       "id": "K3",
       "title": "Real HLS stream on /learning decodes video frames and advances playback currentTime > 0",
       "passed": true,
-      "details": "readyState=4, res=858x480, duration=815s, currentTime=0.19s",
-      "timestamp": "2026-11-10T15:12:58.138Z"
+      "details": "readyState=4, res=858x480, duration=815s, currentTime=0.18s",
+      "timestamp": "2026-11-10T19:32:18.373Z"
     },
     {
       "group": "TEST L",
@@ -714,7 +714,7 @@
       "title": "Opening /admin/students starts in neutral state (no auto-selected student, — Chưa xếp lớp —, — Chưa chọn khóa học —)",
       "passed": true,
       "details": "drawerOpen=false, defaultClass=\"\"",
-      "timestamp": "2026-11-10T15:12:59.703Z"
+      "timestamp": "2026-11-10T19:32:20.080Z"
     },
     {
       "group": "TEST L",
@@ -722,7 +722,7 @@
       "title": "Server-side search across >1,000 students finds target by unaccented name and enforces max 2 canonical course badges (+N khóa)",
       "passed": true,
       "details": "extraBadge=\"+1 khóa\", legacyBadge=true",
-      "timestamp": "2026-11-10T15:13:00.746Z"
+      "timestamp": "2026-11-10T19:32:21.152Z"
     },
     {
       "group": "TEST L",
@@ -730,7 +730,7 @@
       "title": "Clicking student row opens StudentDetailDrawer with exact profile/entitlements, 3-part sync status, and disabled Grant button when empty",
       "passed": true,
       "details": "name=\"Trần Bảo Ngọc 0999\", class=\"YCT1-01\", grantDisabled=true",
-      "timestamp": "2026-11-10T15:13:00.955Z"
+      "timestamp": "2026-11-10T19:32:21.355Z"
     },
     {
       "group": "TEST L",
@@ -738,7 +738,7 @@
       "title": "Granting a course sends action=\"grant\" without classCode/class_code, adds course, and keeps live class unchanged",
       "passed": true,
       "details": "payload={\"action\":\"grant\",\"email\":\"e2e.hs.0999@khongtunhi.com\",\"courseIds\":[\"65e7704a9ea90c00080d5195\"]}, classAfter=\"YCT1-01\"",
-      "timestamp": "2026-11-10T15:13:01.143Z"
+      "timestamp": "2026-11-10T19:32:21.533Z"
     },
     {
       "group": "TEST L",
@@ -746,7 +746,7 @@
       "title": "Revoking a course requires confirmation, sends action=\"revoke\" without classCode/class_code, and preserves other courses + live class",
       "passed": true,
       "details": "payload={\"action\":\"revoke\",\"email\":\"e2e.hs.0999@khongtunhi.com\",\"courseIds\":[\"65e7704a9ea90c00080d5195\"]}, stillHasHsk1=true",
-      "timestamp": "2026-11-10T15:13:01.352Z"
+      "timestamp": "2026-11-10T19:32:21.702Z"
     },
     {
       "group": "TEST L",
@@ -754,7 +754,7 @@
       "title": "Changing live class sends action=\"assign_class\" without courseIds/course_ids and preserves video course entitlements",
       "passed": true,
       "details": "payload={\"action\":\"assign_class\",\"email\":\"e2e.hs.0999@khongtunhi.com\",\"classCode\":\"YCT3-02\"}",
-      "timestamp": "2026-11-10T15:13:01.516Z"
+      "timestamp": "2026-11-10T19:32:21.843Z"
     },
     {
       "group": "TEST L",
@@ -762,7 +762,7 @@
       "title": "When POST /api/ktn/students/courses fails, StudentDetailDrawer displays real error alert and does not mutate entitlements",
       "passed": true,
       "details": "Thao tác chưa hoàn tất — Dữ liệu chưa bị ghi đèChưa tạo hoặc kích hoạt được tài khoản đăng",
-      "timestamp": "2026-11-10T15:13:01.664Z"
+      "timestamp": "2026-11-10T19:32:21.989Z"
     },
     {
       "group": "TEST L",
@@ -770,7 +770,7 @@
       "title": "Closing drawer preserves search state, /admin/more?email=... redirects to /admin/students drawer, and legacy class code shows warning without deleting data",
       "passed": true,
       "details": "search=\"tran bao ngoc 0999\", legacyClass=\"LEGACY-2023\"",
-      "timestamp": "2026-11-10T15:13:02.243Z"
+      "timestamp": "2026-11-10T19:32:22.590Z"
     },
     {
       "group": "TEST L",
@@ -778,7 +778,7 @@
       "title": "Mobile 390x844 opens full-width StudentDetailDrawer, saves profile edits, closes via Quay lại, and persists all changes after F5 reload",
       "passed": true,
       "details": "mobileBack=true, phone=\"0978999888\", class=\"YCT3-02\"",
-      "timestamp": "2026-11-10T15:13:04.316Z"
+      "timestamp": "2026-11-10T19:32:24.831Z"
     },
     {
       "group": "TEST M",
@@ -786,7 +786,7 @@
       "title": "StudentHome removes duplicate greeting strip and 4-tile nav grid while keeping compact Next Class, Continue Learning, and Discovery cards",
       "passed": true,
       "details": "greetingStrip=false, fourGrid=false",
-      "timestamp": "2026-11-10T15:13:06.165Z"
+      "timestamp": "2026-11-10T19:32:26.666Z"
     },
     {
       "group": "TEST M",
@@ -794,7 +794,7 @@
       "title": "ClassroomsPage removes video-courses-summary-card completely and renders compact horizontal session selector on mobile without overflow",
       "passed": true,
       "details": "videoCard=false, overflow=0px, mobileSessionHeight=46px",
-      "timestamp": "2026-11-10T15:13:07.219Z"
+      "timestamp": "2026-11-10T19:32:27.738Z"
     },
     {
       "group": "TEST M",
@@ -802,7 +802,7 @@
       "title": "Unassigned student on /classrooms sees \"Em chưa được xếp vào lớp học trực tiếp.\" and \"Liên hệ Học vụ\" with zero video course promo",
       "passed": true,
       "details": "text=\"Em chưa được xếp vào lớp học trực tiếp.Liên hệ Học vụ\"",
-      "timestamp": "2026-11-10T15:13:08.176Z"
+      "timestamp": "2026-11-10T19:32:28.755Z"
     },
     {
       "group": "TEST M",
@@ -810,7 +810,7 @@
       "title": "Clicking CLASS_YCT2-04 homework on StudentHome navigates directly to /classrooms with exact session & exercise and opens HomeworkPanel",
       "passed": true,
       "details": "url=http://127.0.0.1:5173/classrooms?class=YCT2-04&session=1&exercise=101, hwPanelOpen=true",
-      "timestamp": "2026-11-10T15:13:08.666Z"
+      "timestamp": "2026-11-10T19:32:29.254Z"
     },
     {
       "group": "TEST M",
@@ -818,7 +818,7 @@
       "title": "LearningPage displays video course switcher header and opens HomeworkPanel when deep-linked with tab=homework",
       "passed": true,
       "details": "courseSwitcher=true, hwPanel=true",
-      "timestamp": "2026-11-10T15:13:09.154Z"
+      "timestamp": "2026-11-10T19:32:29.699Z"
     },
     {
       "group": "TEST M",
@@ -826,7 +826,7 @@
       "title": "NotificationCenter displays Cài đặt thông báo with device push status, iPhone PWA guide, push opt-in button, and independent persistent Tin nhắn/Bài tập/Điểm số/Lịch học toggles",
       "passed": true,
       "details": "deviceStatus=\"Chưa bật\", gradesOff=true, hwKept=true",
-      "timestamp": "2026-11-10T15:13:10.337Z"
+      "timestamp": "2026-11-10T19:32:30.943Z"
     },
     {
       "group": "TEST N",
@@ -834,7 +834,7 @@
       "title": "Admin /admin/orders displays full 10-column table, shows \"Chưa cung cấp\" when parent_name is missing, differentiates payment badges, and supports quick search + 7 filters",
       "passed": true,
       "details": "parent261106=\"Chưa cung cấp\", pay261106=\"Chưa thanh toán\", pay261107=\"Khách báo đã chuyển khoản\"",
-      "timestamp": "2026-11-10T15:13:12.156Z"
+      "timestamp": "2026-11-10T19:32:32.892Z"
     },
     {
       "group": "TEST N",
@@ -842,15 +842,15 @@
       "title": "OrderDetailDrawer renders Customer/Contact/Payment/Account/Activation sections, tel:/Zalo links, and disables \"Xác nhận & Kích hoạt khóa học\" with explicit reasons until policy gates pass",
       "passed": true,
       "details": "disabledInitial=true, customerReportedBlocked=true",
-      "timestamp": "2026-11-10T15:13:12.535Z"
+      "timestamp": "2026-11-10T19:32:33.290Z"
     },
     {
       "group": "TEST N",
       "id": "N3",
       "title": "Admin consultation + payment verification enables \"Xác nhận & Kích hoạt khóa học\", shows final confirmation modal, provisions account, and requires explicit credential handoff confirmation",
       "passed": true,
-      "details": "email=minhtuan.order.1794323592535@khongtunhi.com, handoffBefore=\"Đang chờ học viên thiết lập mật khẩu / chờ bàn giao\", handoffAfter=\"Đã bàn giao thông tin đăng nhập\"",
-      "timestamp": "2026-11-10T15:13:18.696Z"
+      "details": "email=minhtuan.order.1794339153290@khongtunhi.com, handoffBefore=\"Đang chờ học viên thiết lập mật khẩu / chờ bàn giao\", handoffAfter=\"Đã bàn giao thông tin đăng nhập\"",
+      "timestamp": "2026-11-10T19:32:39.476Z"
     },
     {
       "group": "TEST N",
@@ -858,15 +858,15 @@
       "title": "Student /learning prioritizes \"Khóa của em\" above \"Khám phá thêm\", plays 90s demo video when available, and shows \"Chưa có bài học thử\" when no demo exists",
       "passed": true,
       "details": "myTop=1761px < expTop=1867px, demoBadge=\"Thời lượng học thử: 90 giây\"",
-      "timestamp": "2026-11-10T15:13:20.754Z"
+      "timestamp": "2026-11-10T19:32:41.718Z"
     },
     {
       "group": "TEST N",
       "id": "N5",
       "title": "In-app course registration pre-fills session email/name, creates authenticated_student order with VietQR & 7-stage tracker (\"Đơn của em đang chờ xác nhận.\"), preserves original student profile phone, and moves course into \"Khóa của em\" after Admin approval",
       "passed": true,
-      "details": "orderId=ORD-694734, modalZ=50>navZ=30, profilePhoneKept=0912345601, unlockedInMyCourses=true",
-      "timestamp": "2026-11-10T15:13:22.329Z"
+      "details": "orderId=ORD-679875, modalZ=50>navZ=30, profilePhoneKept=0912345601, unlockedInMyCourses=true",
+      "timestamp": "2026-11-10T19:32:43.393Z"
     },
     {
       "group": "TEST N",
@@ -874,7 +874,7 @@
       "title": "StudentHome Flashcard CTA opens in-app route #/flashcards (zero github.io link, zero target=\"_blank\"), loads 605 cards across 7 Lộ from same-origin /flashcards/* while preserving KTN header/session, and returns home via \"Quay lại Trang chủ\"",
       "passed": true,
       "details": "{\"flashcardLinkAttrs\":{\"tagName\":\"A\",\"href\":\"#/flashcards\",\"target\":\"\",\"rel\":\"\",\"cardText\":\"汉字卡片 · Từ vựngFlashcard — Học từ vựngLật thẻ, nghe phát âm, luyện viết chữ HánHọc ngay\"},\"fcInAppStats\":{\"origin\":\"http://127.0.0.1:5173\",\"pathname\":\"/flashcards/index.html\",\"isEmbedClass\":true,\"counts\":{\"lo1\":90,\"lo2\":109,\"lo3\":96,\"lo4\":100,\"lo5\":92,\"lo6\":88,\"lo7\":30},\"total\":605},\"headerStillVisibleInApp\":true,\"returnedHomeOk\":true}",
-      "timestamp": "2026-11-10T15:13:24.239Z"
+      "timestamp": "2026-11-10T19:32:45.241Z"
     },
     {
       "group": "TEST O",
@@ -882,7 +882,7 @@
       "title": "HSK1 33-unit mapping displays verified Lesson 1 title (\"AI小语，你好！ — Xin chào AI Tiểu Ngữ!\"), groups sub-parts (13.1/13.2) and SBT 1.1/1.2 with honest unassigned homework state",
       "passed": true,
       "details": "{\"o1CourseTitle\":\"Khóa học Tiêu Chuẩn New HSK 1 (3.0)\",\"o1Lesson1Title\":\"Bài 1: AI小语，你好！ — Xin chào AI Tiểu Ngữ!\",\"o1Banner13_2\":\"Bài 13 · Phần 13.2HSK1_Bài 13.205:25Bài 13: 请给我一杯茶 — Xin cho tôi một cốc trà请给我一杯茶—Xin cho tôi một cốc tràTrọng tâm bài \",\"o1SbtUnassignedText\":\"Chưa có bài tập cần nộp cho bài này.Chưa có bài tập cần nộp cho bài này.Gửi bản thu âm / ảnh luyện t\"}",
-      "timestamp": "2026-11-10T15:13:26.423Z"
+      "timestamp": "2026-11-10T19:32:47.451Z"
     },
     {
       "group": "TEST O",
@@ -890,15 +890,15 @@
       "title": "Learning Materials tab (\"Học liệu của bài này\") renders verified SGK (#page=17), SBT (#page=11), Vở tập viết (#page=1) PDFs and MP3 tracks with preload=\"none\"",
       "passed": true,
       "details": "{\"materialsHeading\":\"Học liệu của bài này\",\"matLinksCount\":5,\"audioAttrs\":{\"preload\":\"none\",\"src\":\"https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sgk/01-1.mp3\"}}",
-      "timestamp": "2026-11-10T15:13:26.903Z"
+      "timestamp": "2026-11-10T19:32:47.934Z"
     },
     {
       "group": "TEST O",
       "id": "O3",
       "title": "Urgent Bug 1 Fixed: Student voice recording blocks premature submit while recording (even with note), preserves attached audio across tab switches, and submits playable audio",
       "passed": true,
-      "details": "{\"emptyBlockedError\":\"Vui lòng thu âm giọng đọc hoặc chọn tệp bài làm thật (ảnh vở viết, âm thanh, PDF) trước khi nhấn Nộp bài.\",\"recordingActiveBlockedError\":\"Em đang mở khung thu âm. Vui lòng bấm \\\"Dừng thu\\\" để hoàn tất bản thu trước khi bấm Nộp bài tập.\",\"attachedAudioText\":\"ThuAm-6adadb-Bai3-2s.wav31.3 KB • audio/wav • Sẵn sàng nộpXóa tệp\",\"submittedAudioSrc\":\"blob:http://127.0.0.1:5173/26a741dd-9526-4f0a-8356-a409c05c2997\"}",
-      "timestamp": "2026-11-10T15:13:28.822Z"
+      "details": "{\"emptyBlockedError\":\"Vui lòng thu âm giọng đọc hoặc chọn tệp bài làm thật (ảnh vở viết, âm thanh, PDF) trước khi nhấn Nộp bài.\",\"recordingActiveBlockedError\":\"Em đang mở khung thu âm. Vui lòng bấm \\\"Dừng thu\\\" để hoàn tất bản thu trước khi bấm Nộp bài tập.\",\"attachedAudioText\":\"ThuAm-6adadb-Bai3-2s.wav31.3 KB • audio/wav • Sẵn sàng nộpXóa tệp\",\"submittedAudioSrc\":\"blob:http://127.0.0.1:5173/8debeb41-47ea-4ef6-b550-91edead7d1c2\"}",
+      "timestamp": "2026-11-10T19:32:49.972Z"
     },
     {
       "group": "TEST O",
@@ -906,7 +906,7 @@
       "title": "Urgent Bug 2 Fixed: Chat image upload (including camera filename with digits) renders immediately and \"Phóng to\" opens full-screen portal lightbox that zooms (150%) and survives 3.5s polling",
       "passed": true,
       "details": "{\"zoomLevelBeforePoll\":\"150%\",\"lightboxStillOpen\":true,\"zoomLevelAfterPoll\":\"150%\",\"lightboxClosed\":true}",
-      "timestamp": "2026-11-10T15:13:33.636Z"
+      "timestamp": "2026-11-10T19:32:54.931Z"
     },
     {
       "group": "TEST O",
@@ -914,7 +914,7 @@
       "title": "Mobile 390x844 layout hides 33-unit sidebar above video and provides expandable lesson drawer with 3 clear tabs",
       "passed": true,
       "details": "{\"desktopSidebarVisibleOnMobile\":false,\"mobileDrawerOpenOk\":true}",
-      "timestamp": "2026-11-10T15:13:34.252Z"
+      "timestamp": "2026-11-10T19:32:55.544Z"
     },
     {
       "group": "TEST O",
@@ -922,23 +922,23 @@
       "title": "Phase 1 & 4 Homework Config RBAC: Admin edits & persists course config (200); Teacher manages own class (200) and assigned video course in UI (200) but is blocked from unassigned video course (403) & other class (403); Student is blocked (403)",
       "passed": true,
       "details": "{\"studentDirectPostStatus\":403,\"savedInstrText\":\"Bài 4 (Đã cập nhật): Nghe đoạn hội thoại Bài 4, thu âm câu g\",\"teacherUnassignedSeesEditBtn\":false,\"teacherScopeChecks\":{\"unassignedCourseStatus\":403,\"ownClassStatus\":200,\"otherClassStatus\":403},\"teacherAssignedSeesEditBtn\":true,\"teacherSavedInstrText\":\"Bài 4 (GV phụ trách khóa cập nhật): Đọc bài khóa Bài 4 và th\",\"teacherBlockedOnOtherCourseUi\":true}",
-      "timestamp": "2026-11-10T15:13:36.869Z"
+      "timestamp": "2026-11-10T19:32:58.541Z"
     },
     {
       "group": "TEST S",
       "id": "S01",
       "title": "Sidebar scroll from top to bottom works independently across Admin, Teacher, and Student (>= 60 rooms, fixed header, zero page scroll)",
       "passed": true,
-      "details": "{\"admin\":{\"ok\":true,\"roomCount\":121,\"scrollHeight\":9418,\"clientHeight\":679,\"topEnd\":8739,\"pageScrollY\":0},\"teacher\":{\"ok\":true,\"roomCount\":95,\"scrollHeight\":7576,\"clientHeight\":679,\"topEnd\":6897,\"pageScrollY\":0},\"student\":{\"ok\":true,\"roomCount\":70,\"scrollHeight\":5880,\"clientHeight\":679,\"topEnd\":5201,\"pageScrollY\":0}}",
-      "timestamp": "2026-11-10T15:13:41.399Z"
+      "details": "{\"admin\":{\"ok\":true,\"roomCount\":71,\"scrollHeight\":4380,\"clientHeight\":699,\"topEnd\":3681,\"pageScrollY\":0},\"teacher\":{\"ok\":true,\"roomCount\":68,\"scrollHeight\":4195,\"clientHeight\":699,\"topEnd\":3496,\"pageScrollY\":0},\"student\":{\"ok\":true,\"roomCount\":69,\"scrollHeight\":4256,\"clientHeight\":699,\"topEnd\":3557,\"pageScrollY\":0}}",
+      "timestamp": "2026-11-10T19:33:03.281Z"
     },
     {
       "group": "TEST S",
       "id": "S02",
       "title": "Mouse wheel, touchpad scroll, and scrollbar thumb drag update scrollTop smoothly without snapping back",
       "passed": true,
-      "details": "{\"ok\":true,\"afterWheelTop\":805,\"afterDragTop\":3121,\"scrollHeight\":5880,\"clientHeight\":679}",
-      "timestamp": "2026-11-10T15:13:41.925Z"
+      "details": "{\"ok\":true,\"afterWheelTop\":805,\"afterDragTop\":2134,\"scrollHeight\":4256,\"clientHeight\":699}",
+      "timestamp": "2026-11-10T19:33:03.905Z"
     },
     {
       "group": "TEST S",
@@ -946,47 +946,47 @@
       "title": "Switching filter tabs (Tất cả / Chưa đọc / 1-1) & search/clear resets stale scrollTop to 0 while 3.5s polling preserves sidebar scrollTop",
       "passed": true,
       "details": "{\"topAfterSidebarPoll\":750,\"topOnUnreadTab\":0,\"topOnSupportTab\":0,\"topDuringSearch\":0,\"topAfterClearSearch\":0}",
-      "timestamp": "2026-11-10T15:13:46.390Z"
+      "timestamp": "2026-11-10T19:33:08.357Z"
     },
     {
       "group": "TEST S",
       "id": "S04",
       "title": "Reading history at scrollTop=360 across >3 consecutive polling intervals (9.6s) never pulls scroll position down",
       "passed": true,
-      "details": "{\"before\":{\"scrollTop\":360,\"scrollHeight\":10539,\"clientHeight\":667},\"after\":{\"scrollTop\":360,\"scrollHeight\":10539,\"clientHeight\":667}}",
-      "timestamp": "2026-11-10T15:13:56.030Z"
+      "details": "{\"before\":{\"scrollTop\":360,\"scrollHeight\":10200,\"clientHeight\":667},\"after\":{\"scrollTop\":360,\"scrollHeight\":10200,\"clientHeight\":667}}",
+      "timestamp": "2026-11-10T19:33:17.983Z"
     },
     {
       "group": "TEST S",
       "id": "S05",
       "title": "Incoming message from Teacher while reading history preserves exact scrollTop=360 and shows unread count pill",
       "passed": true,
-      "details": "{\"scrollTop\":360,\"scrollHeight\":10670,\"pillText\":\"1 tin nhắn mới\"}",
-      "timestamp": "2026-11-10T15:13:58.861Z"
+      "details": "{\"scrollTop\":360,\"scrollHeight\":10330,\"pillText\":\"1 tin nhắn mới\"}",
+      "timestamp": "2026-11-10T19:33:20.649Z"
     },
     {
       "group": "TEST S",
       "id": "S06",
       "title": "Sending own new message automatically scrolls message list to bottom",
       "passed": true,
-      "details": "{\"scrollTop\":10072,\"scrollHeight\":10798,\"clientHeight\":667,\"distanceFromBottom\":59}",
-      "timestamp": "2026-11-10T15:14:02.699Z"
+      "details": "{\"scrollTop\":9734,\"scrollHeight\":10458,\"clientHeight\":667,\"distanceFromBottom\":57}",
+      "timestamp": "2026-11-10T19:33:24.566Z"
     },
     {
       "group": "TEST S",
       "id": "S07",
       "title": "Loading 50 older messages compensates scrollHeight delta and keeps anchor message in place without jumping to top or bottom",
       "passed": true,
-      "details": "{\"before\":{\"scrollTop\":12,\"scrollHeight\":10798,\"clientHeight\":667,\"count\":62,\"anchorId\":\"MSG-QA-SCROLL-YCT2-066\",\"anchorOffset\":77},\"after\":{\"scrollTop\":8634,\"scrollHeight\":19420,\"clientHeight\":667,\"count\":112,\"anchorOffset\":77},\"offsetDelta\":0}",
-      "timestamp": "2026-11-10T15:14:03.234Z"
+      "details": "{\"before\":{\"scrollTop\":12,\"scrollHeight\":10458,\"clientHeight\":667,\"count\":62,\"anchorId\":\"MSG-QA-SCROLL-YCT2-066\",\"anchorOffset\":77},\"after\":{\"scrollTop\":8439,\"scrollHeight\":18885,\"clientHeight\":667,\"count\":112,\"anchorOffset\":76},\"offsetDelta\":1}",
+      "timestamp": "2026-11-10T19:33:25.093Z"
     },
     {
       "group": "TEST S",
       "id": "S08",
       "title": "Switching Room A -> Room B -> Room A opens at bottom, preserves loaded history, and never mixes messages across rooms",
       "passed": true,
-      "details": "{\"roomB\":{\"hasRoomA\":false,\"hasRoomB\":true,\"distanceFromBottom\":0,\"count\":25},\"backToRoomA\":{\"hasRoomB\":false,\"distanceFromBottom\":0,\"count\":112}}",
-      "timestamp": "2026-11-10T15:14:03.693Z"
+      "details": "{\"roomB\":{\"hasRoomA\":false,\"hasRoomB\":true,\"distanceFromBottom\":0,\"count\":25},\"backToRoomA\":{\"hasRoomB\":false,\"distanceFromBottom\":0,\"count\":111}}",
+      "timestamp": "2026-11-10T19:33:25.493Z"
     },
     {
       "group": "TEST S",
@@ -994,15 +994,15 @@
       "title": "React Query manual & background refetches preserve exact scrollTop on both room sidebar (640) and message list (520)",
       "passed": true,
       "details": "{\"sideScrollTop\":640,\"msgScrollTop\":520}",
-      "timestamp": "2026-11-10T15:14:07.629Z"
+      "timestamp": "2026-11-10T19:33:29.437Z"
     },
     {
       "group": "TEST S",
       "id": "S10",
       "title": "Mobile 390x844 swipe/scroll is stable on both conversation list and message history across polling with zero window scroll",
       "passed": true,
-      "details": "{\"list\":{\"ok\":true,\"scrollTop\":480,\"scrollHeight\":5876,\"clientHeight\":585,\"windowScrollY\":0},\"msg\":{\"scrollTop\":410,\"windowScrollY\":0}}",
-      "timestamp": "2026-11-10T15:14:12.028Z"
+      "details": "{\"list\":{\"ok\":true,\"scrollTop\":480,\"scrollHeight\":3980,\"clientHeight\":605,\"windowScrollY\":0},\"msg\":{\"scrollTop\":410,\"windowScrollY\":0}}",
+      "timestamp": "2026-11-10T19:33:33.840Z"
     },
     {
       "group": "TEST S",
@@ -1010,7 +1010,7 @@
       "title": "Message composer remains completely visible above bottom navigation (390x844) and when mobile keyboard shrinks viewport (390x480)",
       "passed": true,
       "details": "{\"normal\":{\"ok\":true,\"composerBottom\":783,\"bottomNavTop\":788},\"keyboard\":{\"ok\":true,\"inputTop\":365,\"inputBottom\":403,\"innerHeight\":480}}",
-      "timestamp": "2026-11-10T15:14:12.240Z"
+      "timestamp": "2026-11-10T19:33:34.069Z"
     },
     {
       "group": "TEST S",
@@ -1018,7 +1018,31 @@
       "title": "Reactions, pinning announcements, and in-room message search/close work accurately while preserving scrollTop=450",
       "passed": true,
       "details": "{\"topAfterReact\":450,\"topAfterPin\":450,\"pinnedBannerStillVisible\":true,\"searchMatchCount\":1,\"afterCloseSearch\":{\"count\":60,\"scrollTop\":450,\"jumpBtnVisible\":true}}",
-      "timestamp": "2026-11-10T15:14:14.683Z"
+      "timestamp": "2026-11-10T19:33:36.530Z"
+    },
+    {
+      "group": "TEST U",
+      "id": "U1",
+      "title": "Admin server-side Teacher Search paginates 20/page, matches unaccented Vietnamese (\"dang quoc bao 0022\"), filters by status/class, opens TeacherDetailDrawer, and renders mobile compact cards",
+      "passed": true,
+      "details": "{\"u1Page1Summary\":\"Trang 1 / 2 · Hiển thị 1–20 / 32 giáo viên\",\"u1Page2Summary\":\"Trang 2 / 2 · Hiển thị 21–32 / 32 giáo viên\",\"u1LockedRowVisible\":true,\"u1MobileCardsVisible\":true,\"u1MobileOverflow\":0}",
+      "timestamp": "2026-11-10T19:33:39.836Z"
+    },
+    {
+      "group": "TEST U",
+      "id": "U2",
+      "title": "Chat Inbox excludes empty 1-1 threads, supports \"Nhắn mới\" 1-1 creation & latest-first promotion, hides redundant \"[Đã gửi ảnh: ...]\" marker on image messages, and has zero overflow at 360px/390px/1440px",
+      "passed": true,
+      "details": "{\"empty1on1Count\":0,\"topRoomIdAfterDirectSend\":\"chat-room-item-student:hoangngan@khongtunhi.com\",\"hasRedundantImageMarker\":false,\"u2Overflow360\":0}",
+      "timestamp": "2026-11-10T19:33:42.697Z"
+    },
+    {
+      "group": "TEST U",
+      "id": "U3",
+      "title": "Teacher uploads PDF exercise attachment without overwriting existing exercises, confirms edits, and Student previews/downloads the PDF and submits homework on ClassroomsPage",
+      "passed": true,
+      "details": "{\"has2Exercises\":true,\"hasPdfAttachment\":true,\"previewModalOpen\":true,\"hwStatus202\":\"Đã nộp (Lớp YCT2-04)\"}",
+      "timestamp": "2026-11-10T19:33:45.961Z"
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "suite": "KTN Class Lifecycle, Auto Chat Group & Push Notification Matrix (N01-N33)",
-  "generatedAt": "2026-11-10T08:39:07.817Z",
+  "generatedAt": "2026-11-10T19:35:58.731Z",
   "totalScenarios": 33,
   "passedScenarios": 33,
   "failedScenarios": 0,
@@ -25,23 +25,23 @@
     "audited": true,
     "totalRows": 9,
     "accounts": {
-      "e2e.hs.a@khongtunhi.com": {
-        "role": "student",
-        "classCode": "YCT2-04",
-        "totalEndpoints": 3,
-        "realFcmCount": 0,
-        "realApnsCount": 0,
-        "syntheticCount": 3,
-        "latestUpdatedAt": "2026-11-10T01:37:42.936+00:00"
-      },
       "haiyen442k8@gmail.com": {
         "role": "teacher",
         "classCode": "NGUVAN06",
-        "totalEndpoints": 1,
-        "realFcmCount": 1,
+        "totalEndpoints": 2,
+        "realFcmCount": 2,
         "realApnsCount": 0,
         "syntheticCount": 0,
-        "latestUpdatedAt": "2026-11-09T15:52:51.459+00:00"
+        "latestUpdatedAt": "2026-11-10T12:15:55.56+00:00"
+      },
+      "e2e.hs.a@khongtunhi.com": {
+        "role": "student",
+        "classCode": "YCT2-04",
+        "totalEndpoints": 2,
+        "realFcmCount": 0,
+        "realApnsCount": 0,
+        "syntheticCount": 2,
+        "latestUpdatedAt": "2026-11-10T01:37:42.936+00:00"
       },
       "phuonganh21828@gmail.com": {
         "role": "teacher",
@@ -118,10 +118,10 @@
     {
       "id": "N04",
       "group": "Group A",
-      "title": "Admin tạo lớp không có giáo viên hợp lệ -> Không phát push tới người không xác định",
+      "title": "Admin tạo lớp không có giáo viên hợp lệ -> Hiện \"Chưa phân công giáo viên\", tin ghim null, không gán nhầm Cô Lâm Mỹ Linh & không phát push",
       "status": "PASS",
       "passed": true,
-      "evidence": "status=200, pushDeliveries=0"
+      "evidence": "status=200, pushDeliveries=0, teacher_name=Chưa phân công giáo viên, pinned=null, cleanedPinBy=quanly@khongtunhi.com"
     },
     {
       "id": "N05",
@@ -257,7 +257,7 @@
       "title": "Scheduler chạy trước giờ học 30 phút -> Teacher A & Student A nhận đúng 1 reminder (in-app + Web Push)",
       "status": "PASS",
       "passed": true,
-      "evidence": "remindedSessionsCount=1, pushCount=2, notifId=REMIND_YCT2-05_2026-11-10_30_e2e.hs.a@khongtunhi.com"
+      "evidence": "remindedSessionsCount=1, pushCount=2, notifId=REMIND_YCT2-05_2026-11-13_30_e2e.hs.a@khongtunhi.com"
     },
     {
       "id": "N22",
@@ -273,7 +273,7 @@
       "title": "Teacher A giao bài tập -> Student A nhận homework_assigned (in-app + Web Push)",
       "status": "PASS",
       "passed": true,
-      "evidence": "notifId=NOTIF-ASSIGN-YCT2-05-S1-2026-11-10T08:39:06.011Z, pushEndpoints=https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
+      "evidence": "notifId=NOTIF-ASSIGN-YCT2-05-S1-2026-11-10T19:35:57.792Z, pushEndpoints=https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
     },
     {
       "id": "N24",
@@ -281,7 +281,7 @@
       "title": "Student A nộp bài -> Giáo viên phụ trách (Teacher A) nhận thông báo homework_submitted (in-app + Web Push)",
       "status": "PASS",
       "passed": true,
-      "evidence": "homeworkId=HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1, notifId=NOTIF-SUB-HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1-2026-11-10T08:39:06.020Z, pushEndpoints=https://fcm.googleapis.com/fcm/send/QA_TEACHER_A_ANDROID"
+      "evidence": "homeworkId=HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1, notifId=NOTIF-SUB-HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1-2026-11-10T19:35:57.799Z, pushEndpoints=https://fcm.googleapis.com/fcm/send/QA_TEACHER_A_ANDROID"
     },
     {
       "id": "N25",

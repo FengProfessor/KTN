@@ -113,6 +113,36 @@ export function createLocalWorkerHarness() {
     syntheticPermsByUid[uid] = onlineCourses.map((c) => c.id);
   }
 
+  const syntheticTeachers = [];
+  const teacherSampleNames = [
+    'Cô Nguyễn Phương Thảo',
+    'Thầy Đặng Quốc Bảo',
+    'Cô Bùi Ngọc Ánh',
+    'Thầy Hoàng Minh Đức',
+    'Cô Vũ Thanh Huyền',
+  ];
+  for (let i = 1; i <= 30; i++) {
+    const seq = String(i).padStart(4, '0');
+    const isLocked = i === 15 || i === 28;
+    const isUnassigned = i % 5 === 0;
+    const assignedClasses = isUnassigned
+      ? []
+      : i % 2 === 0
+      ? ['YCT1-01']
+      : ['YCT3-02'];
+    syntheticTeachers.push({
+      code: `GV-E2E-${seq}`,
+      email: `e2e.gv.${seq}@khongtunhi.com`,
+      name: `${teacherSampleNames[(i - 1) % teacherSampleNames.length]} ${seq}`,
+      phone: `096800${seq}`,
+      specialty: i % 2 === 0 ? 'Chuyên gia HSK & Giao tiếp' : 'Chuyên gia YCT & Hán tự',
+      assigned_classes: assignedClasses,
+      assigned_courses: i % 3 === 0 ? ['6adadba969897b0002482ca5'] : [],
+      active: !isLocked,
+      status: isLocked ? 'locked' : 'active',
+    });
+  }
+
   const state = {
     faults: {
       failMessagesPost: false,
@@ -205,7 +235,8 @@ export function createLocalWorkerHarness() {
           specialty: 'Chuyên gia HSK & Hán tự tư duy',
           assigned_classes: ['YCT1-01'],
           active: true
-        }
+        },
+        ...syntheticTeachers
       ],
       ktn_classes: [
         {
@@ -456,7 +487,7 @@ export function createLocalWorkerHarness() {
   }
 
   function evalSingleClause(row, clause) {
-    const m = clause.match(/^([a-zA-Z0-9_]+)\.(eq|ilike|like|is)\.(.+)$/);
+    const m = clause.match(/^([a-zA-Z0-9_]+)\.(eq|neq|ilike|like|is)\.(.+)$/);
     if (!m) return true;
     const [, col, op, v] = m;
     const rawCell = row[col];
@@ -466,6 +497,7 @@ export function createLocalWorkerHarness() {
     }
     const cell = String(rawCell ?? '');
     if (op === 'eq') return cell === v;
+    if (op === 'neq') return cell !== v;
     const isCaseInsensitive = op === 'ilike';
     const regexStr = '^' + v.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/[*%]/g, '.*') + '$';
     const re = new RegExp(regexStr, isCaseInsensitive ? 'i' : '');
@@ -492,6 +524,9 @@ export function createLocalWorkerHarness() {
       if (rawVal.startsWith('eq.')) {
         const target = rawVal.slice(3);
         if (String(row[k] ?? '') !== target) return false;
+      } else if (rawVal.startsWith('neq.')) {
+        const target = rawVal.slice(4);
+        if (String(row[k] ?? '') === target) return false;
       } else if (rawVal.startsWith('is.')) {
         const target = rawVal.slice(3).toLowerCase();
         if (target === 'null' && row[k] !== null && row[k] !== undefined && row[k] !== '') return false;
@@ -619,6 +654,94 @@ export function createLocalWorkerHarness() {
         });
       }
 
+      if (table === 'rpc/ktn_search_teachers' && method === 'POST') {
+        const rpcBody = init.body ? JSON.parse(init.body) : {};
+        const qNorm = normalizeViMock(rpcBody.p_query || '');
+        const qCompact = qNorm.replace(/\s+/g, '');
+        const qDigits = qNorm.replace(/\D/g, '');
+        const qTokens = qNorm ? qNorm.split(' ').filter(Boolean) : [];
+        const statusFilter = String(rpcBody.p_status || '').trim().toLowerCase();
+        const classFilter = String(rpcBody.p_class_code || '').trim().toUpperCase();
+        const courseFilter = String(rpcBody.p_course_id || '').trim();
+        const limit = Math.min(100, Math.max(1, Number(rpcBody.p_limit) || 25));
+        const offset = Math.max(0, Number(rpcBody.p_offset) || 0);
+
+        const allTeachers = state.tables.ktn_teachers || [];
+        const matched = [];
+        for (let rowIdx = 0; rowIdx < allTeachers.length; rowIdx++) {
+          const r = allTeachers[rowIdx];
+          const rawRowStatus = String(r.status || '').trim().toLowerCase();
+          const isActive =
+            r.active !== false &&
+            r.is_active !== false &&
+            !['inactive', 'locked', 'suspended', 'disabled'].includes(rawRowStatus);
+          const classes = Array.isArray(r.assigned_classes) ? r.assigned_classes.map(c => String(c || '').trim().toUpperCase()).filter(Boolean) : [];
+          const courses = Array.isArray(r.assigned_courses) ? r.assigned_courses.map(c => String(c || '').trim()).filter(Boolean) : [];
+
+          if (statusFilter === 'active' && !isActive) continue;
+          if (['inactive', 'locked', 'suspended', 'disabled'].includes(statusFilter) && isActive) continue;
+          if (['unassigned', 'no_class'].includes(statusFilter) && classes.length > 0) continue;
+          if (['assigned', 'has_class'].includes(statusFilter) && classes.length === 0) continue;
+          if (classFilter && classFilter !== 'ALL' && !classes.includes(classFilter)) continue;
+          if (courseFilter && courseFilter !== 'ALL' && courseFilter !== 'all' && !courses.includes(courseFilter)) continue;
+
+          const nameNorm = normalizeViMock(r.name || '');
+          const nameCompact = nameNorm.replace(/\s+/g, '');
+          const codeNorm = normalizeViMock(r.code || '');
+          const emLower = String(r.email || '').toLowerCase();
+          const phoneClean = String(r.phone || '').replace(/\D/g, '');
+          const specNorm = normalizeViMock(r.specialty || r.specialization || '');
+          const hay = normalizeViMock([r.code, r.name, nameCompact, r.email, r.phone, phoneClean, r.specialty, r.specialization, ...classes].join(' '));
+          const hayCompact = hay.replace(/\s+/g, '');
+
+          if (qTokens.length > 0) {
+            const tokenOk = qTokens.every(t => hay.includes(t));
+            const compactOk = qCompact.length >= 2 && hayCompact.includes(qCompact);
+            const phoneOk = qDigits.length >= 3 && phoneClean.includes(qDigits);
+            if (!tokenOk && !compactOk && !phoneOk) continue;
+          }
+
+          let score = 100;
+          if (qNorm) {
+            if (codeNorm === qNorm) score = 1000;
+            else if (emLower === qNorm) score = 990;
+            else if (qDigits.length >= 6 && phoneClean === qDigits) score = 980;
+            else if (nameNorm === qNorm) score = 960;
+            else if (qCompact && nameCompact === qCompact) score = 940;
+            else if (codeNorm.startsWith(qNorm)) score = 900;
+            else if (emLower.startsWith(qNorm)) score = 880;
+            else if (nameNorm.startsWith(qNorm)) score = 860;
+            else if (qDigits.length >= 3 && phoneClean.includes(qDigits)) score = 840;
+            else if (nameNorm.includes(qNorm)) score = 760;
+            else if (qCompact && nameCompact.includes(qCompact)) score = 730;
+            else if (specNorm.includes(qNorm)) score = 700;
+            else score = 650;
+          }
+
+          matched.push({ row: r, score, isActive, rowIdx });
+        }
+
+        matched.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+          return String(a.row.code || '').localeCompare(String(b.row.code || ''));
+        });
+
+        const totalCount = matched.length;
+        const page = matched.slice(offset, offset + limit).map(m => ({
+          ...m.row,
+          active: m.isActive,
+          is_active: m.isActive,
+          rank_score: m.score,
+          total_count: totalCount
+        }));
+
+        return new Response(JSON.stringify(page), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       if (table === 'ktn_messages' && method === 'POST' && state.faults.failMessagesPost) {
         return new Response(JSON.stringify({ message: 'Simulated database error' }), {
           status: 503,
@@ -653,6 +776,10 @@ export function createLocalWorkerHarness() {
           matched.sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
         } else if (orderParam.includes('created_at.asc')) {
           matched.sort((a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0));
+        } else if (orderParam.includes('updated_at.desc')) {
+          matched.sort((a, b) => (Date.parse(b.updated_at || '') || 0) - (Date.parse(a.updated_at || '') || 0));
+        } else if (orderParam.includes('code.asc')) {
+          matched.sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
         }
         const totalMatched = matched.length;
         const offset = Math.max(0, Number(u.searchParams.get('offset') || 0));
@@ -1099,6 +1226,7 @@ export function createLocalWorkerHarness() {
   return {
     state,
     env,
+    workerModule,
     async handleRequest(req, res, next) {
       const url = req.url || '/';
       if (url.startsWith('/__local_s3_upload')) {

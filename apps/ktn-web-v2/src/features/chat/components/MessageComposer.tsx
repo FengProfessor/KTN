@@ -19,6 +19,7 @@ import {
 } from './VoiceRecorder';
 import { detectDlpViolation, formatFileSize } from '@/lib/utils';
 import { useUiStore } from '@/stores/useUiStore';
+import { truncateFileName } from '../services/chatApi';
 
 const COMPOSER_EMOJIS = ['👋', '👍', '❤️', '🎉', '🙏', '🌟', '🐼', '📚'];
 
@@ -187,11 +188,13 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       {isSending && uploadProgress && (
         <div
           data-testid="chat-upload-progress"
-          className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50/70 px-3 py-1.5 text-xs text-red-900"
+          className="mb-2 flex min-w-0 items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50/70 px-3 py-1.5 text-xs text-red-900"
         >
-          <span className="flex min-w-0 items-center gap-1.5 font-semibold truncate">
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 font-semibold">
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-red-700" />
-            <span className="truncate">Đang tải lên S3: {uploadProgress.fileName}</span>
+            <span className="min-w-0 flex-1 truncate">
+              Đang tải lên S3: {truncateFileName(uploadProgress.fileName, 26)}
+            </span>
           </span>
           <span className="shrink-0 font-bold text-red-800">{uploadProgress.percent}%</span>
         </div>
@@ -234,26 +237,29 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       {stagedAttachment && (
         <div
           data-testid="composer-staged-attachment"
-          className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2"
+          className="mb-2 flex min-w-0 items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2"
         >
-          <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
             {stagedAttachment.kind === 'image' ? (
               <img
                 src={stagedAttachment.url}
                 alt={stagedAttachment.name}
                 onClick={() => useUiStore.getState().setActiveLightboxAttachment(stagedAttachment)}
-                className="h-10 w-10 cursor-zoom-in rounded-lg object-cover border border-stone-200 hover:opacity-90"
+                className="h-10 w-10 shrink-0 cursor-zoom-in rounded-lg object-cover border border-stone-200 hover:opacity-90"
               />
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-800 text-white">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-800 text-white">
                 <FileText className="h-5 w-5" />
               </div>
             )}
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-stone-900">
-                {stagedAttachment.name}
+            <div className="min-w-0 flex-1">
+              <p
+                title={stagedAttachment.name}
+                className="truncate text-xs font-semibold text-stone-900"
+              >
+                {truncateFileName(stagedAttachment.name, 28)}
               </p>
-              <p className="text-[11px] text-stone-500">
+              <p className="truncate text-[11px] text-stone-500">
                 {stagedAttachment.sizeLabel} • Sẵn sàng gửi
               </p>
             </div>
@@ -261,7 +267,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           <button
             type="button"
             onClick={() => setStagedAttachment(null)}
-            className="rounded-lg p-1 text-stone-500 hover:bg-stone-200"
+            className="shrink-0 rounded-lg p-1 text-stone-500 hover:bg-stone-200"
             aria-label="Xóa tệp đính kèm"
           >
             <X className="h-4 w-4" />

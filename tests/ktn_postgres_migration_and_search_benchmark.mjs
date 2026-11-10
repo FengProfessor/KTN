@@ -20,15 +20,150 @@ const require = createRequire(path.join(ROOT_DIR, 'apps', 'ktn-web-v2', 'package
 const { PGlite } = require('@electric-sql/pglite');
 const { pg_trgm } = require('./node_modules/@electric-sql/pglite/dist/contrib/pg_trgm.cjs');
 
+function buildPostgrestSqlForTable(tableName, searchParams) {
+  const params = [];
+  const addParam = (val) => {
+    params.push(val);
+    return `$${params.length}`;
+  };
+
+  const parseSingleClause = (col, op, rawVal) => {
+    if (!/^[a-zA-Z0-9_]+$/.test(col)) return 'TRUE';
+    if (op === 'is' && rawVal === 'null') return `${col} IS NULL`;
+    if (op === 'not.is' && rawVal === 'null') return `${col} IS NOT NULL`;
+    if (op === 'eq') {
+      if (col === 'active' && (rawVal === 'true' || rawVal === 'false')) {
+        return `active = ${rawVal === 'true' ? 'TRUE' : 'FALSE'}`;
+      }
+      return `COALESCE(${col}::text, '') = ${addParam(rawVal)}`;
+    }
+    if (op === 'neq') {
+      if (col === 'active' && (rawVal === 'true' || rawVal === 'false')) {
+        return `active IS DISTINCT FROM ${rawVal === 'true' ? 'TRUE' : 'FALSE'}`;
+      }
+      return `COALESCE(${col}::text, '') <> ${addParam(rawVal)}`;
+    }
+    if (op === 'ilike' || op === 'like') {
+      const pattern = String(rawVal || '').replace(/\*/g, '%');
+      return `COALESCE(${col}::text, '') ${op === 'ilike' ? 'ILIKE' : 'LIKE'} ${addParam(pattern)}`;
+    }
+    if (op === 'cs') {
+      return `COALESCE(${col}::jsonb, '[]'::jsonb) @> ${addParam(rawVal)}::jsonb`;
+    }
+    if (op === 'in') {
+      const listStr = String(rawVal || '').replace(/^\(/, '').replace(/\)$/, '');
+      const items = listStr
+        .split(',')
+        .map((s) => s.trim().replace(/^"|"$/g, ''))
+        .filter(Boolean);
+      if (items.length === 0) return 'FALSE';
+      return `COALESCE(${col}::text, '') = ANY(${addParam(items)}::text[])`;
+    }
+    return 'TRUE';
+  };
+
+  const parseSubExpr = (expr) => {
+    if (expr.endsWith('.is.null')) {
+      return parseSingleClause(expr.slice(0, -8), 'is', 'null');
+    }
+    if (expr.endsWith('.not.is.null')) {
+      return parseSingleClause(expr.slice(0, -12), 'not.is', 'null');
+    }
+    const m = expr.match(/^([a-zA-Z0-9_]+)\.(eq|neq|ilike|like|cs|in)\.(.*)$/);
+    if (!m) return 'TRUE';
+    return parseSingleClause(m[1], m[2], m[3]);
+  };
+
+  const splitTopLevelComma = (str) => {
+    const out = [];
+    let depth = 0;
+    let cur = '';
+    for (let i = 0; i < str.length; i += 1) {
+      const ch = str[i];
+      if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+      else if (ch === ')' || ch === ']' || ch === '}') depth = Math.max(0, depth - 1);
+      if (ch === ',' && depth === 0) {
+        if (cur.trim()) out.push(cur.trim());
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  };
+
+  const whereParts = ['TRUE'];
+  for (const [k, rawVal] of searchParams.entries()) {
+    if (k === 'select' || k === 'order' || k === 'limit' || k === 'offset' || k === 'on_conflict') continue;
+    if (k === 'and' || k === 'or') {
+      const inner = String(rawVal || '').replace(/^\(/, '').replace(/\)$/, '');
+      const subClauses = splitTopLevelComma(inner).map(parseSubExpr).filter(Boolean);
+      if (subClauses.length > 0) {
+        whereParts.push(`(${subClauses.join(k === 'and' ? ' AND ' : ' OR ')})`);
+      }
+      continue;
+    }
+    if (rawVal === 'is.null') {
+      whereParts.push(parseSingleClause(k, 'is', 'null'));
+    } else if (rawVal === 'not.is.null') {
+      whereParts.push(parseSingleClause(k, 'not.is', 'null'));
+    } else {
+      const dotIdx = rawVal.indexOf('.');
+      if (dotIdx > 0) {
+        const op = rawVal.slice(0, dotIdx);
+        const val = rawVal.slice(dotIdx + 1);
+        whereParts.push(parseSingleClause(k, op, val));
+      }
+    }
+  }
+
+  let orderSql = tableName === 'ktn_teachers' ? 'code ASC' : 'updated_at DESC NULLS LAST';
+  const orderParam = searchParams.get('order');
+  if (orderParam) {
+    const orderClauses = orderParam
+      .split(',')
+      .map((part) => {
+        const segs = part.trim().split('.');
+        const col = segs[0];
+        if (!/^[a-zA-Z0-9_]+$/.test(col)) return null;
+        const dir = segs[1]?.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+        const nulls =
+          segs[2]?.toLowerCase() === 'nullslast'
+            ? ' NULLS LAST'
+            : segs[2]?.toLowerCase() === 'nullsfirst'
+              ? ' NULLS FIRST'
+              : '';
+        return `${col} ${dir}${nulls}`;
+      })
+      .filter(Boolean);
+    if (orderClauses.length > 0) orderSql = orderClauses.join(', ');
+  }
+
+  const limitVal = Number(searchParams.get('limit') || 0);
+  const offsetVal = Math.max(0, Number(searchParams.get('offset') || 0));
+  const whereSql = whereParts.join(' AND ');
+  return { whereSql, orderSql, limitVal, offsetVal, params };
+}
+
 function loadWorkerWithPostgresBridge(db) {
   const workerPath = path.join(ROOT_DIR, 'cloudflare-worker-sw-proxy.js');
   const rawCode = fs.readFileSync(workerPath, 'utf8');
   const transformedCode = rawCode.replace(/export\s+default\s+\{/, 'module.exports = {');
+  let cachedTeacherSearchNargs = null;
 
-  const pgRestFetch = async (urlStr, options = {}) => {
+  const pgRestFetch = async (input, options = {}) => {
+    const urlStr = typeof input === 'string' ? input : input.url;
     const u = new URL(urlStr);
-    const method = (options.method || 'GET').toUpperCase();
+    const method = (options.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
     const bodyObj = options.body ? JSON.parse(options.body) : null;
+
+    if (u.pathname.startsWith('/api/ktn/')) {
+      return new Response(JSON.stringify({ ok: false, message: 'Endpoint not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     if (u.pathname.endsWith('/rest/v1/rpc/ktn_search_students') && method === 'POST') {
       const p = bodyObj || {};
@@ -52,40 +187,77 @@ function loadWorkerWithPostgresBridge(db) {
       });
     }
 
-    if (u.pathname.endsWith('/rest/v1/ktn_teachers') && method === 'GET') {
-      const emailEq = u.searchParams.get('email');
-      if (emailEq && emailEq.startsWith('eq.')) {
-        const email = emailEq.slice(3);
-        const res = await db.query(`SELECT * FROM public.ktn_teachers WHERE email = $1 LIMIT 1`, [email]);
-        return new Response(JSON.stringify(res.rows), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      const res = await db.query(`SELECT * FROM public.ktn_teachers WHERE active = true ORDER BY code ASC`);
-      return new Response(JSON.stringify(res.rows), {
-        status: 200,
+    if (u.pathname.endsWith('/rest/v1/rpc/ktn_search_teachers') && method === 'POST') {
+      const p = bodyObj || {};
+      try {
+        if (cachedTeacherSearchNargs === null) {
+          const fnCheck = await db.query(`SELECT pronargs FROM pg_proc WHERE proname = 'ktn_search_teachers' LIMIT 1`);
+          cachedTeacherSearchNargs = fnCheck.rows.length > 0 ? Number(fnCheck.rows[0].pronargs || 6) : 0;
+        }
+        if (cachedTeacherSearchNargs > 0) {
+          const nargs = cachedTeacherSearchNargs;
+          const args =
+            nargs === 6
+              ? [
+                  p.p_query ?? p.q ?? '',
+                  p.p_status ?? p.status ?? '',
+                  p.p_class_code ?? p.classCode ?? '',
+                  p.p_course_id ?? p.courseId ?? '',
+                  p.p_limit ?? p.limit ?? 25,
+                  p.p_offset ?? p.offset ?? 0,
+                ]
+              : [
+                  p.p_query ?? p.q ?? '',
+                  p.p_status ?? p.status ?? '',
+                  p.p_class_code ?? p.classCode ?? '',
+                  p.p_course_id ?? p.courseId ?? '',
+                  p.p_active_only ?? null,
+                  p.p_limit ?? p.limit ?? 25,
+                  p.p_offset ?? p.offset ?? 0,
+                ].slice(0, nargs);
+          const placeholders = args.map((_, idx) => `$${idx + 1}`).join(', ');
+          const res = await db.query(`SELECT * FROM public.ktn_search_teachers(${placeholders})`, args);
+          return new Response(JSON.stringify(res.rows), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      } catch {}
+      return new Response(JSON.stringify({ message: 'ktn_search_teachers RPC fallback to PostgREST' }), {
+        status: 404,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    if (u.pathname.endsWith('/rest/v1/ktn_classes') && method === 'GET') {
-      const teacherEmailEq = u.searchParams.get('teacher_email');
-      if (teacherEmailEq && teacherEmailEq.startsWith('eq.')) {
-        const email = teacherEmailEq.slice(3);
-        const res = await db.query(
-          `SELECT id FROM public.ktn_classes WHERE teacher_email = $1 AND active = true`,
-          [email]
-        );
-        return new Response(JSON.stringify(res.rows), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      const res = await db.query(`SELECT * FROM public.ktn_classes WHERE active = true ORDER BY id ASC`);
-      return new Response(JSON.stringify(res.rows), {
+    if (
+      (u.pathname.endsWith('/rest/v1/ktn_teachers') ||
+        u.pathname.endsWith('/rest/v1/ktn_classes') ||
+        u.pathname.endsWith('/rest/v1/ktn_students')) &&
+      method === 'GET'
+    ) {
+      const tableName = u.pathname.split('/').pop();
+      const { whereSql, orderSql, limitVal, offsetVal, params } = buildPostgrestSqlForTable(
+        tableName,
+        u.searchParams
+      );
+      const countRes = await db.query(
+        `SELECT COUNT(*)::int AS cnt FROM public.${tableName} WHERE ${whereSql}`,
+        params
+      );
+      const totalMatched = countRes.rows[0]?.cnt || 0;
+      const limitClause = limitVal > 0 ? ` LIMIT ${limitVal}` : '';
+      const offsetClause = offsetVal > 0 ? ` OFFSET ${offsetVal}` : '';
+      const rowsRes = await db.query(
+        `SELECT * FROM public.${tableName} WHERE ${whereSql} ORDER BY ${orderSql}${limitClause}${offsetClause}`,
+        params
+      );
+      const rows = rowsRes.rows || [];
+      return new Response(JSON.stringify(rows), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Range': `${offsetVal}-${Math.max(offsetVal, offsetVal + rows.length - 1)}/${totalMatched}`,
+        },
       });
     }
 
@@ -999,6 +1171,239 @@ async function run() {
     );
   }
 
+  // 11. Real PostgreSQL 1,000 & 10,000 Synthetic Teachers Search Benchmark (EXPLAIN ANALYZE + SQL & Worker p50/p95)
+  const teacherBenchmarkSummary = {};
+  await db.exec(`DELETE FROM public.ktn_students WHERE code LIKE 'KTN-SYN-%' AND code > 'KTN-SYN-00100';`);
+  await db.exec(`ANALYZE public.ktn_students;`);
+
+  // Ensure composite index for teacher pagination exists
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_ktn_teachers_code_asc ON public.ktn_teachers (code ASC);
+    CREATE INDEX IF NOT EXISTS idx_ktn_teachers_active_code ON public.ktn_teachers (active, code ASC);
+  `);
+
+  for (const teacherScale of [1000, 10000]) {
+    console.log(`\n--- Seeding ${teacherScale.toLocaleString()} synthetic teachers in PostgreSQL 18.6 ---`);
+    await db.exec(`DELETE FROM public.ktn_teachers WHERE code LIKE 'GV-SYN-%';`);
+    const baseTeacherCount = (await db.query(`SELECT COUNT(*)::int AS cnt FROM public.ktn_teachers`)).rows[0].cnt;
+    const synthCount = Math.max(1, teacherScale - baseTeacherCount);
+
+    const seedStart = performance.now();
+    await db.query(
+      `
+      INSERT INTO public.ktn_teachers (
+        code, email, name, phone, specialty, aliases, active,
+        assigned_classes, assigned_courses, status, provisioning_status, sync_status, updated_at, search_text
+      )
+      SELECT
+        'GV-SYN-' || LPAD(i::text, 5, '0'),
+        'gv.syn.' || i::text || '@khongtunhi.com',
+        CASE
+          WHEN i = $1 THEN 'Cô Đặng Vũ Quỳnh Hương Đặc Biệt'
+          WHEN i = 505 THEN 'Thầy Nguyễn Hoàng Bách HSK'
+          ELSE (ARRAY['Cô','Thầy'])[1 + (i % 2)] || ' '
+               || (ARRAY['Nguyễn','Trần','Lê','Phạm','Hoàng','Vũ','Đặng','Bùi','Đỗ','Hồ'])[1 + (i % 10)] || ' '
+               || (ARRAY['Thị','Văn','Mỹ','Thu','Ngọc','Thanh','Quỳnh','Phương','Minh','Hoàng'])[1 + ((i / 10) % 10)] || ' '
+               || (ARRAY['Linh','Hà','Hương','Trang','Lan','Mai','Bách','Tùng','Thảo','Yến'])[1 + ((i / 100) % 10)] || ' '
+               || i::text
+        END,
+        '098' || LPAD((1000000 + i)::text, 7, '0'),
+        CASE
+          WHEN i % 4 = 0 THEN 'Chuyên gia HSK Cao Cấp'
+          WHEN i % 4 = 1 THEN 'Chuyên gia YCT & Phản xạ Giao tiếp'
+          WHEN i % 4 = 2 THEN 'Hán tự tư duy & Luyện viết'
+          ELSE 'Tiếng Trung Trẻ Em YCT / HSK'
+        END,
+        CASE
+          WHEN i % 3 = 1 THEN '["__class:YCT2-04"]'::jsonb
+          WHEN i % 5 = 0 THEN '["__class:YCT3-02"]'::jsonb
+          ELSE '[]'::jsonb
+        END,
+        (i % 10 <> 0),
+        CASE
+          WHEN i % 10 = 0 THEN '[]'::jsonb
+          WHEN i % 3 = 1 THEN '["YCT2-04"]'::jsonb
+          WHEN i % 5 = 0 THEN '["YCT3-02"]'::jsonb
+          ELSE '[]'::jsonb
+        END,
+        CASE
+          WHEN i % 2 = 0 THEN '["6adadba969897b0002482ca5"]'::jsonb
+          ELSE '[]'::jsonb
+        END,
+        CASE WHEN i % 10 = 0 THEN 'inactive' ELSE 'active' END,
+        'ready_to_login',
+        'synced',
+        NOW() - (i || ' seconds')::interval,
+        public.ktn_normalize_vi(
+          'GV-SYN-' || LPAD(i::text, 5, '0') || ' ' ||
+          'gv.syn.' || i::text || '@khongtunhi.com ' ||
+          CASE
+            WHEN i = $1 THEN 'Cô Đặng Vũ Quỳnh Hương Đặc Biệt'
+            WHEN i = 505 THEN 'Thầy Nguyễn Hoàng Bách HSK'
+            ELSE (ARRAY['Cô','Thầy'])[1 + (i % 2)] || ' '
+                 || (ARRAY['Nguyễn','Trần','Lê','Phạm','Hoàng','Vũ','Đặng','Bùi','Đỗ','Hồ'])[1 + (i % 10)] || ' '
+                 || (ARRAY['Thị','Văn','Mỹ','Thu','Ngọc','Thanh','Quỳnh','Phương','Minh','Hoàng'])[1 + ((i / 10) % 10)] || ' '
+                 || (ARRAY['Linh','Hà','Hương','Trang','Lan','Mai','Bách','Tùng','Thảo','Yến'])[1 + ((i / 100) % 10)] || ' '
+                 || i::text
+          END || ' ' ||
+          '098' || LPAD((1000000 + i)::text, 7, '0') || ' ' ||
+          CASE
+            WHEN i % 4 = 0 THEN 'Chuyên gia HSK Cao Cấp'
+            WHEN i % 4 = 1 THEN 'Chuyên gia YCT & Phản xạ Giao tiếp'
+            WHEN i % 4 = 2 THEN 'Hán tự tư duy & Luyện viết'
+            ELSE 'Tiếng Trung Trẻ Em YCT / HSK'
+          END || ' ' ||
+          CASE WHEN i % 3 = 1 THEN 'YCT2-04' WHEN i % 5 = 0 THEN 'YCT3-02' ELSE '' END
+        )
+      FROM generate_series(1, $1) AS g(i);
+      `,
+      [synthCount]
+    );
+    await db.exec(`ANALYZE public.ktn_teachers;`);
+    const seedMs = Math.round(performance.now() - seedStart);
+
+    const explainTeacherName = await db.query(`
+      EXPLAIN (ANALYZE, BUFFERS)
+      SELECT code, name, email, phone, specialty, active, assigned_classes
+      FROM public.ktn_teachers
+      WHERE search_text LIKE '%dang%' AND search_text LIKE '%quynh%' AND search_text LIKE '%huong%'
+      LIMIT 20;
+    `);
+    const explainTeacherEmail = await db.query(`
+      EXPLAIN (ANALYZE, BUFFERS)
+      SELECT code, name, email
+      FROM public.ktn_teachers
+      WHERE LOWER(email) = LOWER('gv.syn.${synthCount}@khongtunhi.com')
+      LIMIT 1;
+    `);
+    const teacherDeepOffset = teacherScale >= 10000 ? 2500 : 500;
+    const explainTeacherPage = await db.query(`
+      EXPLAIN (ANALYZE, BUFFERS)
+      SELECT code, name, email, active
+      FROM public.ktn_teachers
+      ORDER BY code ASC
+      LIMIT 20 OFFSET ${teacherDeepOffset};
+    `);
+
+    const runPgTeacherSqlBench = async (sqlText, sqlParams, iterations = 20) => {
+      const samples = [];
+      let rows = [];
+      for (let i = 0; i < iterations; i += 1) {
+        const t0 = performance.now();
+        const r = await db.query(sqlText, sqlParams);
+        samples.push(+(performance.now() - t0).toFixed(2));
+        rows = r.rows || [];
+      }
+      samples.sort((a, b) => a - b);
+      return {
+        iterations,
+        sqlP50Ms: percentile(samples, 50),
+        sqlP95Ms: percentile(samples, 95),
+        returnedRows: rows.length,
+        topMatchCode: rows[0]?.code || null,
+        topMatchName: rows[0]?.name || null,
+        topMatchEmail: rows[0]?.email || null,
+      };
+    };
+
+    const runWorkerTeacherSearchBench = async (queryStr, iterations = 20) => {
+      const e2eSamples = [];
+      const sqlSamples = [];
+      let lastRes = null;
+      for (let i = 0; i < iterations; i += 1) {
+        let r = await callWorker(`/api/ktn/admin/teachers/search?${queryStr}`, adminToken);
+        if (r.status === 404) {
+          r = await callWorker(`/api/ktn/teachers?${queryStr}`, adminToken);
+        }
+        lastRes = r;
+        e2eSamples.push(r.e2eMs);
+        sqlSamples.push(Number(r.data?.sqlMs || 0));
+      }
+      e2eSamples.sort((a, b) => a - b);
+      sqlSamples.sort((a, b) => a - b);
+      const items = lastRes?.data?.items || lastRes?.data?.teachers || [];
+      return {
+        iterations,
+        e2eP50Ms: percentile(e2eSamples, 50),
+        e2eP95Ms: percentile(e2eSamples, 95),
+        sqlP50Ms: percentile(sqlSamples, 50),
+        sqlP95Ms: percentile(sqlSamples, 95),
+        returnedRows: items.length,
+        totalCount: Number(lastRes?.data?.totalCount ?? items.length),
+        hasMore: Boolean(lastRes?.data?.hasMore),
+        topMatchEmail: items[0]?.email || null,
+        topMatchName: items[0]?.name || null,
+      };
+    };
+
+    const sqlAccentInsensitive = await runPgTeacherSqlBench(
+      `SELECT code, name, email, specialty, active, COUNT(*) OVER()::int AS total_count
+       FROM public.ktn_teachers
+       WHERE search_text LIKE '%dang%' AND search_text LIKE '%quynh%' AND search_text LIKE '%huong%' AND search_text LIKE '%biet%'
+       ORDER BY code ASC LIMIT 20 OFFSET 0`,
+      []
+    );
+    const sqlEmailLookup = await runPgTeacherSqlBench(
+      `SELECT code, name, email, specialty, active
+       FROM public.ktn_teachers
+       WHERE LOWER(email) = LOWER($1)
+       LIMIT 20`,
+      [`gv.syn.${synthCount}@khongtunhi.com`]
+    );
+    const sqlDeepPage = await runPgTeacherSqlBench(
+      `SELECT code, name, email, specialty, active, COUNT(*) OVER()::int AS total_count
+       FROM public.ktn_teachers
+       ORDER BY code ASC LIMIT 20 OFFSET $1`,
+      [teacherDeepOffset]
+    );
+
+    const workerAccentInsensitive = await runWorkerTeacherSearchBench(
+      `q=${encodeURIComponent('dang vu quynh huong dac biet')}&limit=20&offset=0`,
+      15
+    );
+    const workerAccented = await runWorkerTeacherSearchBench(
+      `q=${encodeURIComponent('Đặng Vũ Quỳnh Hương Đặc Biệt')}&limit=20&offset=0`,
+      15
+    );
+    const workerPage = await runWorkerTeacherSearchBench(
+      `limit=20&offset=${teacherDeepOffset}`,
+      15
+    );
+
+    teacherBenchmarkSummary[teacherScale] = {
+      scale: teacherScale,
+      seedMs,
+      postgresSql: {
+        accentInsensitiveName: sqlAccentInsensitive,
+        emailLookup: sqlEmailLookup,
+        deepPagination: { offset: teacherDeepOffset, ...sqlDeepPage },
+      },
+      workerEndpoint: {
+        accentInsensitiveSearch: workerAccentInsensitive,
+        accentedSearch: workerAccented,
+        deepPagination: { offset: teacherDeepOffset, ...workerPage },
+      },
+      explainAnalyzeBuffers: {
+        nameSearchTrgmGin: explainTeacherName.rows.map((r) => r['QUERY PLAN']),
+        emailLowerBtree: explainTeacherEmail.rows.map((r) => r['QUERY PLAN']),
+        deepPaginationIndex: explainTeacherPage.rows.map((r) => r['QUERY PLAN']),
+      },
+    };
+
+    record(
+      `PG-TEACHER-BENCH-${teacherScale}`,
+      `PostgreSQL ${teacherScale.toLocaleString()} teachers benchmark meets latency & accuracy targets (SQL name p95 < 100ms, email p95 < 50ms, pagination p95 < 150ms, accent-insensitive match accurate)`,
+      sqlAccentInsensitive.sqlP95Ms < 100 &&
+        sqlEmailLookup.sqlP95Ms < 50 &&
+        sqlDeepPage.sqlP95Ms < 150 &&
+        sqlAccentInsensitive.topMatchName === 'Cô Đặng Vũ Quỳnh Hương Đặc Biệt' &&
+        workerAccentInsensitive.topMatchName === 'Cô Đặng Vũ Quỳnh Hương Đặc Biệt' &&
+        workerAccented.topMatchName === 'Cô Đặng Vũ Quỳnh Hương Đặc Biệt' &&
+        sqlDeepPage.returnedRows === 20,
+      `sqlNameP50=${sqlAccentInsensitive.sqlP50Ms}ms/P95=${sqlAccentInsensitive.sqlP95Ms}ms, sqlEmailP95=${sqlEmailLookup.sqlP95Ms}ms, sqlPageP95=${sqlDeepPage.sqlP95Ms}ms, workerE2eP50=${workerAccentInsensitive.e2eP50Ms}ms/P95=${workerAccentInsensitive.e2eP95Ms}ms`
+    );
+  }
+
   const reportDir = path.join(ROOT_DIR, 'reports', 'ktn-three-way-reliability');
   fs.mkdirSync(reportDir, { recursive: true });
   const reportFile = path.join(reportDir, 'postgres-v3-migration-and-search-benchmark.json');
@@ -1012,6 +1417,7 @@ async function run() {
         testCount: results.length,
         results,
         benchmarks: benchmarkSummary,
+        teacherBenchmarks: teacherBenchmarkSummary,
       },
       null,
       2

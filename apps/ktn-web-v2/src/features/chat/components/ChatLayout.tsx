@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MessageSquareOff } from 'lucide-react';
+import { MessageSquareOff, Search, X, Loader2, UserPlus } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { ConversationHeader } from './ConversationHeader';
 import { PinnedMessage } from './PinnedMessage';
@@ -11,7 +11,31 @@ import { useSendMessage } from '../hooks/useSendMessage';
 import { useChatRealtime } from '../hooks/useChatRealtime';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { ChatMessage } from '../types/chat.types';
+import { ChatMessage, ChatRoom, SendMessageInput } from '../types/chat.types';
+import { getInitials } from '@/lib/utils';
+import { chatApi, normalizeVietnameseSearchText } from '../services/chatApi';
+import type { KtnStudentProfile } from '@/types/ktn.types';
+
+const DEMO_FALLBACK_STUDENTS: KtnStudentProfile[] = [
+  {
+    email: 'hoangngan@khongtunhi.com',
+    name: 'Bé Nguyễn Hoàng Ngân',
+    code: 'KTN-HS-01',
+    class_code: 'YCT2-04',
+  },
+  {
+    email: 'minhkhang@khongtunhi.com',
+    name: 'Bé Trần Minh Khang',
+    code: 'KTN-HS-02',
+    class_code: 'YCT2-04',
+  },
+  {
+    email: 'baongoc@khongtunhi.com',
+    name: 'Bé Lê Bảo Ngọc',
+    code: 'KTN-HS-03',
+    class_code: 'YCT1-01',
+  },
+];
 
 export const ChatLayout: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -29,7 +53,38 @@ export const ChatLayout: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data: rooms = [], isLoading: isRoomsLoading } = useChatRooms();
+  // Ephemeral 1-1 room state (only exists while open before first message is sent)
+  const [ephemeralRoom, setEphemeralRoom] = useState<ChatRoom | null>(null);
+
+  // "Nhắn mới" modal state for Teacher / Admin
+  const [newMsgModalOpen, setNewMsgModalOpen] = useState(false);
+  const [studentQuery, setStudentQuery] = useState('');
+  const [studentResults, setStudentResults] = useState<KtnStudentProfile[]>([]);
+  const [isSearchingStudents, setIsSearchingStudents] = useState(false);
+
+  const { data: serverRooms = [], isLoading: isRoomsLoading } = useChatRooms();
+
+  // Merge ephemeral 1-1 room only if it is not yet in serverRooms
+  const rooms = useMemo(() => {
+    if (!ephemeralRoom) return serverRooms;
+    const normEphemeralId = String(ephemeralRoom.roomId || '').trim().toUpperCase();
+    const alreadyPersisted = serverRooms.some(
+      (r) => String(r.roomId || '').trim().toUpperCase() === normEphemeralId
+    );
+    if (alreadyPersisted) {
+      return serverRooms;
+    }
+    return [ephemeralRoom, ...serverRooms];
+  }, [serverRooms, ephemeralRoom]);
+
+  // Clear ephemeralRoom once it has been persisted in serverRooms
+  useEffect(() => {
+    if (!ephemeralRoom) return;
+    const normEphemeralId = String(ephemeralRoom.roomId || '').trim().toUpperCase();
+    if (serverRooms.some((r) => String(r.roomId || '').trim().toUpperCase() === normEphemeralId)) {
+      setEphemeralRoom(null);
+    }
+  }, [serverRooms, ephemeralRoom]);
 
   const rawRoomParam = (
     searchParams.get('room') ||
@@ -63,6 +118,35 @@ export const ChatLayout: React.FC = () => {
         }
         return;
       }
+      // If Student opens their own 1-1 room or Admin deep-links to a student: room that has no messages yet, open ephemeral draft room
+      if (!isRoomsLoading && normParam.startsWith('STUDENT:')) {
+        const targetStudentEmail = roomParam.slice(8).trim().toLowerCase();
+        const isOwnStudentRoom =
+          user?.role === 'student' &&
+          String(user?.email || '').trim().toLowerCase() === targetStudentEmail;
+        if (targetStudentEmail && (isOwnStudentRoom || user?.role === 'admin')) {
+          const draftRoom: ChatRoom = {
+            roomId: `student:${targetStudentEmail}`,
+            type: 'student',
+            studentEmail: targetStudentEmail,
+            studentName: isOwnStudentRoom ? user?.name || targetStudentEmail : targetStudentEmail,
+            label: isOwnStudentRoom
+              ? 'Lão sư Chủ nhiệm & Học vụ KTN (1-1)'
+              : `1-1: ${targetStudentEmail}`,
+            shortLabel: isOwnStudentRoom ? '1-1 Giáo viên' : targetStudentEmail,
+            lastMessage: '',
+            hasMessages: false,
+            isEphemeral: true,
+            unreadCount: 0,
+          };
+          setEphemeralRoom(draftRoom);
+          setActiveRoomId(draftRoom.roomId);
+          if (!mobileChatConversationOpen) {
+            setMobileChatConversationOpen(true);
+          }
+          return;
+        }
+      }
       if (!isRoomsLoading && rooms.length > 0) {
         if (activeRoomId) {
           setActiveRoomId('');
@@ -82,6 +166,9 @@ export const ChatLayout: React.FC = () => {
     mobileChatConversationOpen,
     setActiveRoomId,
     setMobileChatConversationOpen,
+    user?.role,
+    user?.email,
+    user?.name,
   ]);
 
   const activeRoom = useMemo(() => {
@@ -132,14 +219,200 @@ export const ChatLayout: React.FC = () => {
     }
   }, [resolvedRoomId, activeRoom?.unreadCount, messages, markRoomRead]);
 
-  const handleSelectRoom = (roomId: string) => {
-    setActiveRoomId(roomId);
-    setMobileChatConversationOpen(true);
-    setReplyingTo(null);
-    setSearchOpen(false);
-    setSearchQuery('');
-    setSearchParams({ room: roomId }, { replace: true });
-  };
+  const handleSelectRoom = useCallback(
+    (roomId: string) => {
+      // If leaving an ephemeral room without having sent any message, discard the ephemeral room so no garbage thread remains
+      if (
+        ephemeralRoom &&
+        String(ephemeralRoom.roomId || '').trim().toUpperCase() !==
+          String(roomId || '').trim().toUpperCase()
+      ) {
+        setEphemeralRoom(null);
+      }
+      setActiveRoomId(roomId);
+      setMobileChatConversationOpen(true);
+      setReplyingTo(null);
+      setSearchOpen(false);
+      setSearchQuery('');
+      setSearchParams({ room: roomId }, { replace: true });
+    },
+    [ephemeralRoom, setActiveRoomId, setMobileChatConversationOpen, setSearchParams]
+  );
+
+  const handleOpenNewMessage = useCallback(() => {
+    if (user?.role === 'student') {
+      const studentEmail = String(
+        user?.email || (isDemoMode ? 'hoangngan@khongtunhi.com' : '')
+      )
+        .trim()
+        .toLowerCase();
+      if (!studentEmail) return;
+      const targetRoomId = `student:${studentEmail}`;
+      const existing = serverRooms.find(
+        (r) => String(r.roomId || '').trim().toLowerCase() === targetRoomId
+      );
+      if (existing) {
+        handleSelectRoom(existing.roomId);
+        return;
+      }
+      const draftRoom: ChatRoom = {
+        roomId: targetRoomId,
+        type: 'student',
+        classCode: user?.classCode || undefined,
+        studentEmail,
+        studentName: user?.name || studentEmail,
+        label: 'Lão sư Chủ nhiệm & Học vụ KTN (1-1)',
+        shortLabel: '1-1 Giáo viên',
+        lastMessage: '',
+        hasMessages: false,
+        isEphemeral: true,
+        unreadCount: 0,
+      };
+      setEphemeralRoom(draftRoom);
+      setActiveRoomId(draftRoom.roomId);
+      setMobileChatConversationOpen(true);
+      setSearchParams({ room: draftRoom.roomId }, { replace: true });
+      return;
+    }
+
+    setStudentQuery('');
+    setNewMsgModalOpen(true);
+  }, [
+    user?.role,
+    user?.email,
+    user?.classCode,
+    user?.name,
+    isDemoMode,
+    serverRooms,
+    handleSelectRoom,
+    setActiveRoomId,
+    setMobileChatConversationOpen,
+    setSearchParams,
+  ]);
+
+  // Search students for "Nhắn mới" modal (Teacher / Admin)
+  useEffect(() => {
+    if (!newMsgModalOpen) return;
+
+    const assignedClassCodes = new Set(
+      serverRooms
+        .filter((r) => r.type === 'class' && r.classCode)
+        .map((r) => String(r.classCode || '').trim().toUpperCase())
+    );
+
+    if (isDemoMode) {
+      const qNorm = normalizeVietnameseSearchText(studentQuery);
+      const filtered = DEMO_FALLBACK_STUDENTS.filter((s) => {
+        if (user?.role === 'teacher') {
+          const sCls = String(s.class_code || '').trim().toUpperCase();
+          if (!sCls) return false;
+          if (assignedClassCodes.size > 0 && !assignedClassCodes.has(sCls)) return false;
+        }
+        if (!qNorm) return true;
+        return normalizeVietnameseSearchText(
+          `${s.name} ${s.email} ${s.code || ''} ${s.class_code || ''}`
+        ).includes(qNorm);
+      });
+      setStudentResults(filtered);
+      setIsSearchingStudents(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsSearchingStudents(true);
+    const timer = setTimeout(async () => {
+      try {
+        const rawItems = await chatApi.searchMessageCandidates(
+          { q: studentQuery.trim(), limit: 25 },
+          controller.signal
+        );
+        const allowedItems =
+          user?.role === 'teacher'
+            ? rawItems.filter((s) => {
+                const sCls = String(s.class_code || '').trim().toUpperCase();
+                // Teacher may only message students assigned to their classes (never unassigned students)
+                if (!sCls) return false;
+                if (assignedClassCodes.size > 0) return assignedClassCodes.has(sCls);
+                if (user?.classCode) {
+                  return sCls === String(user.classCode).trim().toUpperCase();
+                }
+                return isRoomsLoading;
+              })
+            : rawItems;
+        setStudentResults(allowedItems);
+      } catch (err) {
+        if ((err as Error)?.name !== 'AbortError') {
+          setStudentResults([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearchingStudents(false);
+        }
+      }
+    }, 200);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [newMsgModalOpen, studentQuery, isDemoMode, user?.role, user?.classCode, isRoomsLoading, serverRooms]);
+
+  const handleStartDirectChatWithStudent = useCallback(
+    (student: KtnStudentProfile) => {
+      const email = String(student.email || '').trim().toLowerCase();
+      if (!email) return;
+      const targetRoomId = `student:${email}`;
+      setNewMsgModalOpen(false);
+
+      const existing = serverRooms.find(
+        (r) => String(r.roomId || '').trim().toLowerCase() === targetRoomId
+      );
+      if (existing) {
+        handleSelectRoom(existing.roomId);
+        return;
+      }
+
+      const cls = String(student.class_code || '').trim().toUpperCase();
+      const studentName = String(student.name || email).trim();
+      const draftRoom: ChatRoom = {
+        roomId: targetRoomId,
+        type: 'student',
+        classCode: cls || undefined,
+        studentEmail: email,
+        studentName,
+        label: `1-1: ${studentName}${cls ? ` (${cls})` : ''}`,
+        shortLabel: studentName,
+        lastMessage: '',
+        hasMessages: false,
+        isEphemeral: true,
+        unreadCount: 0,
+      };
+      setEphemeralRoom(draftRoom);
+      setActiveRoomId(draftRoom.roomId);
+      setMobileChatConversationOpen(true);
+      setReplyingTo(null);
+      setSearchOpen(false);
+      setSearchQuery('');
+      setSearchParams({ room: draftRoom.roomId }, { replace: true });
+    },
+    [
+      serverRooms,
+      handleSelectRoom,
+      setActiveRoomId,
+      setMobileChatConversationOpen,
+      setSearchParams,
+    ]
+  );
+
+  const handleSendWithRoomMeta = useCallback(
+    (input: SendMessageInput) => {
+      return sendMessage({
+        ...input,
+        roomMeta: activeRoom || undefined,
+      });
+    },
+    [sendMessage, activeRoom]
+  );
 
   const canManagePin = user?.role === 'teacher' || user?.role === 'admin';
 
@@ -195,6 +468,7 @@ export const ChatLayout: React.FC = () => {
             activeRoomId={resolvedRoomId}
             isLoading={isRoomsLoading}
             onSelectRoom={handleSelectRoom}
+            onOpenNewMessage={handleOpenNewMessage}
           />
         </div>
 
@@ -222,6 +496,9 @@ export const ChatLayout: React.FC = () => {
                 }}
                 onSearchChange={setSearchQuery}
                 onMobileBack={() => {
+                  if (ephemeralRoom && messages.length === 0) {
+                    setEphemeralRoom(null);
+                  }
                   setMobileChatConversationOpen(false);
                   setSearchParams({}, { replace: true });
                 }}
@@ -284,7 +561,7 @@ export const ChatLayout: React.FC = () => {
                 replyingTo={replyingTo}
                 isSending={isSending}
                 onClearReply={() => setReplyingTo(null)}
-                onSend={sendMessage}
+                onSend={handleSendWithRoomMeta}
               />
             </>
           ) : (
@@ -307,6 +584,96 @@ export const ChatLayout: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* "Nhắn mới" 1-1 Student Picker Modal (Teacher & Admin) */}
+      {newMsgModalOpen && (
+        <div
+          data-testid="chat-new-message-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Bắt đầu tin nhắn 1-1 mới"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => setNewMsgModalOpen(false)}
+        >
+          <div
+            className="flex max-h-[82vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <UserPlus className="h-4 w-4 text-red-800" />
+                <h2 className="font-display text-sm font-bold text-stone-900">
+                  Nhắn mới 1-1 với học viên
+                </h2>
+              </div>
+              <button
+                type="button"
+                data-testid="chat-new-message-close-btn"
+                onClick={() => setNewMsgModalOpen(false)}
+                aria-label="Đóng cửa sổ nhắn mới"
+                title="Đóng cửa sổ nhắn mới"
+                className="rounded-lg p-1 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="border-b border-stone-100 p-3">
+              <div className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 focus-within:border-red-700 focus-within:bg-white">
+                <Search className="h-4 w-4 shrink-0 text-stone-400" />
+                <input
+                  type="text"
+                  data-testid="chat-new-message-search-input"
+                  value={studentQuery}
+                  onChange={(e) => setStudentQuery(e.target.value)}
+                  placeholder="Nhập tên, mã HV hoặc email học viên (hỗ trợ không dấu)..."
+                  className="w-full bg-transparent text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-stone-500">
+                Hội thoại 1-1 chỉ xuất hiện trong danh sách Gần đây sau khi gửi tin nhắn đầu tiên.
+              </p>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-stone-100">
+              {isSearchingStudents ? (
+                <div className="flex items-center justify-center gap-2 py-8 text-xs text-stone-500">
+                  <Loader2 className="h-4 w-4 animate-spin text-red-800" />
+                  <span>Đang tìm học viên...</span>
+                </div>
+              ) : studentResults.length === 0 ? (
+                <div className="py-8 text-center text-xs text-stone-500">
+                  Không tìm thấy học viên hợp lệ trong phạm vi lớp phụ trách.
+                </div>
+              ) : (
+                studentResults.map((st) => (
+                  <button
+                    key={st.email}
+                    type="button"
+                    data-testid={`chat-new-message-student-item-${st.email}`}
+                    onClick={() => handleStartDirectChatWithStudent(st)}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-red-50/60"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 font-display text-xs font-bold text-amber-900 border border-amber-300/80">
+                      {getInitials(st.name || st.email)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-bold text-stone-900">
+                        {st.name || st.email}
+                      </p>
+                      <p className="truncate text-[11px] text-stone-500">
+                        {st.email}
+                        {st.class_code ? ` • Lớp ${st.class_code}` : ''}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

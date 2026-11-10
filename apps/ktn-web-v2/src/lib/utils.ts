@@ -886,5 +886,23 @@ export function disambiguateCatalogCourses<
   });
 }
 
+/**
+ * Shared Vietnamese accent-insensitive search normalizer.
+ * Strips diacritics, converts đ/Đ -> d, lowercases, and collapses whitespace.
+ */
+export function normalizeVietnameseText(raw?: string | null): string {
+  return String(raw || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export const normalizeViSearchText = normalizeVietnameseText;
+
+
 
 

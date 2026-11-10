@@ -20,8 +20,23 @@ import {
   BookOpen,
   Copy,
   X,
+  Paperclip,
+  FileText,
+  Trash2,
+  Edit3,
+  Plus,
+  Save,
+  AlertTriangle,
 } from 'lucide-react';
-import { KtnApiError, ktnApi, resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
+import {
+  KtnApiError,
+  ktnApi,
+  resolveUploadedMediaUrl,
+  formatBytes,
+  MAX_HOMEWORK_ATTACHMENT_BYTES,
+  type KtnExerciseAttachment,
+  type KtnSessionExercise,
+} from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_CLASS_SESSIONS, DEMO_COURSES, DEMO_HOMEWORKS } from '@/lib/demoData';
@@ -36,6 +51,15 @@ import {
   KtnStudentRecord,
 } from '@/types/ktn.types';
 import { formatChatTimestamp, formatRelativeTime } from '@/lib/utils';
+
+export interface TeacherAttachmentUploadItem extends KtnExerciseAttachment {
+  uploading?: boolean;
+  progress?: number;
+  error?: string;
+  controller?: AbortController;
+}
+
+const MAX_EXERCISE_ATTACHMENTS = 5;
 
 export interface CreatedStudentSummary {
   name: string;
@@ -111,12 +135,34 @@ export const TeacherWorkspace: React.FC = () => {
 
   const [sessionNum, setSessionNum] = useState<number>(2);
   const [sessionTitle, setSessionTitle] = useState<string>('Buổi 2: Gia đình của em có mấy người?');
+  const [exerciseMode, setExerciseMode] = useState<'create' | 'edit'>('create');
+  const [editingExerciseId, setEditingExerciseId] = useState<string>('');
   const [exerciseTitle, setExerciseTitle] = useState<string>(
     'Bài tập thu âm: Giới thiệu gia đình của con (45 giây)'
   );
   const [exercisePrompt, setExercisePrompt] = useState<string>(
     'Con hãy cầm bức ảnh gia đình và giới thiệu bằng tiếng Trung gửi vào mục Bài tập nhé!'
   );
+  const [exerciseSubmissionType, setExerciseSubmissionType] = useState<
+    'mixed' | 'file' | 'audio' | 'text'
+  >('mixed');
+  const [exerciseDueDate, setExerciseDueDate] = useState<string>('');
+  const [exerciseAttachments, setExerciseAttachments] = useState<
+    TeacherAttachmentUploadItem[]
+  >([]);
+  const [exerciseAttachmentError, setExerciseAttachmentError] = useState<string | null>(
+    null
+  );
+  const [previewingExerciseAttachment, setPreviewingExerciseAttachment] =
+    useState<KtnExerciseAttachment | null>(null);
+  const [confirmOverwriteOpen, setConfirmOverwriteOpen] = useState<boolean>(false);
+  const [pendingSubmitStatus, setPendingSubmitStatus] = useState<'draft' | 'published'>(
+    'published'
+  );
+  const [localSavedSessions, setLocalSavedSessions] = useState<
+    Record<string, KtnClassSession[]>
+  >({});
+  const exerciseFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sync sub-tab with route param (:section) or query param (?hwId / ?class / ?classCode / ?tab / ?questionId)
   useEffect(() => {
@@ -262,6 +308,23 @@ export const TeacherWorkspace: React.FC = () => {
     );
     return matched ? matched.id : classesList[0].id;
   }, [classesList, classesQuery.isLoading, selectedClassId]);
+
+  const prevEffectiveClassIdRef = useRef<string>(effectiveClassId);
+  useEffect(() => {
+    const prev = prevEffectiveClassIdRef.current;
+    if (prev && effectiveClassId && prev.toUpperCase() !== effectiveClassId.toUpperCase()) {
+      setExerciseMode('create');
+      setEditingExerciseId('');
+      setExerciseAttachments([]);
+      setExerciseAttachmentError(null);
+      setConfirmOverwriteOpen(false);
+      setPreviewingExerciseAttachment(null);
+    }
+    if (effectiveClassId) {
+      prevEffectiveClassIdRef.current = effectiveClassId;
+    }
+  }, [effectiveClassId]);
+
   const homeworkClassFilter =
     user?.role === 'teacher' && !hasManualClassSelection
       ? undefined
@@ -356,35 +419,207 @@ export const TeacherWorkspace: React.FC = () => {
     },
   });
 
-  // 6. Save Class Session Mutation
+  // 6. Save Class Session & Exercise Assignment Mutation (C2 & C3: Non-overwriting + File Attachments)
   const saveSessionMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (vars?: { status?: 'draft' | 'published' }) => {
+      const submitStatus: 'draft' | 'published' = vars?.status || 'published';
+      setExerciseAttachmentError(null);
+
+      if (!effectiveClassId) {
+        throw new Error('Vui lòng chọn lớp học trước khi giao bài tập.');
+      }
+      if (
+        user?.role !== 'admin' &&
+        !classesList.some((c) => c.id.toUpperCase() === effectiveClassId.toUpperCase())
+      ) {
+        throw new Error(
+          `Giáo viên không có quyền giao bài tập cho lớp ${effectiveClassId} không thuộc phạm vi phụ trách.`
+        );
+      }
+
+      if (exerciseAttachments.some((a) => a.uploading)) {
+        throw new Error(
+          'Vui lòng chờ quá trình tải tài liệu đính kèm hoàn tất trước khi lưu hoặc giao bài.'
+        );
+      }
+
+      const cleanTitle = exerciseTitle.trim();
+      const cleanPrompt = exercisePrompt.trim();
+      if (!cleanTitle || !cleanPrompt) {
+        throw new Error('Vui lòng nhập đầy đủ Tên bài tập và Hướng dẫn làm bài.');
+      }
+
+      const numSession = Math.max(1, Number(sessionNum) || 1);
+      const remoteSessions = sessionsQuery.data || [];
+      const localSessions = localSavedSessions[effectiveClassId] || [];
+      const sessionMap = new Map<number, KtnClassSession>();
+      remoteSessions.forEach((s) => sessionMap.set(Number(s.sessionNum ?? s.session_num), s));
+      localSessions.forEach((s) => sessionMap.set(Number(s.sessionNum ?? s.session_num), s));
+
+      const existingSession = sessionMap.get(numSession);
+      const existingExercises: KtnSessionExercise[] = Array.isArray(existingSession?.exercises)
+        ? existingSession!.exercises.map((ex) => ({ ...ex }))
+        : [];
+
+      const readyAttachments: KtnExerciseAttachment[] = exerciseAttachments
+        .filter((a) => !a.uploading && !a.error && a.url)
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          url: a.url,
+          mimeType: a.mimeType,
+          sizeBytes: a.sizeBytes,
+        }));
+
+      let updatedExercises: KtnSessionExercise[];
+      let targetExercise: KtnSessionExercise;
+      let saveMode: 'append_exercise' | 'update_exercise' = 'append_exercise';
+
+      if (exerciseMode === 'edit' && editingExerciseId) {
+        saveMode = 'update_exercise';
+        const existingIdx = existingExercises.findIndex((ex) => ex.id === editingExerciseId);
+        const prevEx = existingIdx >= 0 ? existingExercises[existingIdx] : undefined;
+        targetExercise = {
+          ...(prevEx || {}),
+          id: editingExerciseId,
+          num: prevEx?.num || (existingIdx >= 0 ? existingIdx + 1 : 1),
+          title: cleanTitle,
+          prompt: cleanPrompt,
+          type:
+            exerciseSubmissionType === 'mixed'
+              ? prevEx?.type || 'audio'
+              : exerciseSubmissionType,
+          submissionType: exerciseSubmissionType,
+          dueDate: exerciseDueDate.trim() || undefined,
+          status: submitStatus,
+          attachments: readyAttachments,
+        };
+        if (existingIdx >= 0) {
+          updatedExercises = existingExercises.map((ex, idx) =>
+            idx === existingIdx ? targetExercise : ex
+          );
+        } else {
+          updatedExercises = [...existingExercises, targetExercise];
+        }
+      } else {
+        saveMode = 'append_exercise';
+        const nextNum = existingExercises.length + 1;
+        const baseId = `ex_${effectiveClassId}_${numSession}_${nextNum}`;
+        const uniqueId = existingExercises.some((ex) => ex.id === baseId)
+          ? `${baseId}_${Date.now().toString(36)}`
+          : baseId;
+        targetExercise = {
+          id: uniqueId,
+          num: nextNum,
+          title: cleanTitle,
+          prompt: cleanPrompt,
+          type: exerciseSubmissionType === 'mixed' ? 'audio' : exerciseSubmissionType,
+          submissionType: exerciseSubmissionType,
+          dueDate: exerciseDueDate.trim() || undefined,
+          status: submitStatus,
+          attachments: readyAttachments,
+        };
+        updatedExercises = [...existingExercises, targetExercise];
+      }
+
+      const prevExInSession =
+        saveMode === 'update_exercise'
+          ? existingExercises.find((ex) => ex.id === editingExerciseId)
+          : undefined;
+      const wasAlreadyPublished =
+        saveMode === 'update_exercise' &&
+        Boolean(prevExInSession) &&
+        prevExInSession?.status !== 'draft';
+
       const payload = {
         classCode: effectiveClassId,
-        sessionNum: Number(sessionNum),
-        title: sessionTitle,
-        exercises: [
-          {
-            id: `ex_${effectiveClassId}_${sessionNum}_1`,
-            num: 1,
-            title: exerciseTitle,
-            prompt: exercisePrompt,
-            type: 'audio',
-          },
-        ],
+        sessionNum: numSession,
+        title: sessionTitle.trim() || existingSession?.title || `Buổi ${numSession}`,
+        mode: saveMode,
+        exercise: targetExercise,
+        preserveExistingExercises: true,
+        preserveDefaultExercises: true,
+        status: submitStatus,
+        suppressDuplicateNotification:
+          submitStatus === 'draft' || wasAlreadyPublished,
+        exercises: updatedExercises,
       };
 
+      let savedSession: KtnClassSession;
       if (isDemoMode) {
-        await new Promise((r) => setTimeout(r, 400));
-        return payload as unknown as KtnClassSession;
+        await new Promise((r) => setTimeout(r, 250));
+        savedSession = {
+          id: existingSession?.id || `sess_${effectiveClassId}_${numSession}`,
+          classCode: effectiveClassId,
+          session_num: numSession,
+          sessionNum: numSession,
+          session_title: payload.title,
+          title: payload.title,
+          exercises: updatedExercises,
+        };
+      } else {
+        const apiRes = await ktnApi.saveClassSession(payload);
+        savedSession = {
+          ...(existingSession || {}),
+          ...(apiRes || {}),
+          classCode: effectiveClassId,
+          session_num: numSession,
+          sessionNum: numSession,
+          session_title: apiRes?.session_title || apiRes?.title || payload.title,
+          title: apiRes?.title || payload.title,
+          exercises:
+            Array.isArray(apiRes?.exercises) && apiRes.exercises.length >= updatedExercises.length
+              ? apiRes.exercises
+              : updatedExercises,
+        };
       }
-      return ktnApi.saveClassSession(payload);
+
+      return {
+        savedSession,
+        submitStatus,
+        saveMode,
+        targetExercise,
+      };
     },
-    onSuccess: () => {
+    onSuccess: ({ savedSession, submitStatus, saveMode, targetExercise }) => {
+      setLocalSavedSessions((prev) => {
+        const list = prev[effectiveClassId] || [];
+        const num = Number(savedSession.sessionNum ?? savedSession.session_num);
+        const filtered = list.filter(
+          (s) => Number(s.sessionNum ?? s.session_num) !== num
+        );
+        return {
+          ...prev,
+          [effectiveClassId]: [...filtered, savedSession].sort(
+            (a, b) =>
+              Number(a.sessionNum ?? a.session_num) -
+              Number(b.sessionNum ?? b.session_num)
+          ),
+        };
+      });
+      if (saveMode === 'append_exercise' && targetExercise?.id) {
+        setExerciseMode('edit');
+        setEditingExerciseId(targetExercise.id);
+      }
+      setConfirmOverwriteOpen(false);
       queryClient.invalidateQueries({ queryKey: ['ktn-class-sessions', effectiveClassId] });
       addToast({
-        title: 'Đã giao bài tập cho lớp!',
+        title:
+          submitStatus === 'draft'
+            ? 'Đã lưu nháp bài tập buổi học!'
+            : saveMode === 'update_exercise'
+              ? 'Đã cập nhật bài tập hiện có (bảo toàn các bài khác)!'
+              : 'Đã giao bài tập cho lớp!',
         variant: 'success',
+      });
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Không thể lưu bài tập buổi học.';
+      setExerciseAttachmentError(msg);
+      addToast({
+        title: 'Không thể lưu bài tập',
+        description: msg,
+        variant: 'error',
       });
     },
   });
@@ -840,7 +1075,180 @@ export const TeacherWorkspace: React.FC = () => {
     setGradeStatusInput(hw.status === 'revision_requested' ? 'revision_requested' : 'graded');
   };
 
-  const sessionsList = sessionsQuery.data || [];
+  const sessionsList = useMemo(() => {
+    const remote = sessionsQuery.data || [];
+    const local = localSavedSessions[effectiveClassId] || [];
+    const mergedMap = new Map<number, KtnClassSession>();
+    remote.forEach((s) => {
+      const num = Number(s.sessionNum ?? s.session_num);
+      if (num > 0) mergedMap.set(num, s);
+    });
+    local.forEach((s) => {
+      const num = Number(s.sessionNum ?? s.session_num);
+      if (num > 0) mergedMap.set(num, s);
+    });
+    return Array.from(mergedMap.values()).sort(
+      (a, b) =>
+        Number(a.sessionNum ?? a.session_num) - Number(b.sessionNum ?? b.session_num)
+    );
+  }, [sessionsQuery.data, localSavedSessions, effectiveClassId]);
+
+  const currentSessionObj = useMemo(() => {
+    const num = Math.max(1, Number(sessionNum) || 1);
+    return (
+      sessionsList.find((s) => Number(s.sessionNum ?? s.session_num) === num) || null
+    );
+  }, [sessionsList, sessionNum]);
+
+  const existingSessionExercises = useMemo<KtnSessionExercise[]>(
+    () => (Array.isArray(currentSessionObj?.exercises) ? currentSessionObj!.exercises : []),
+    [currentSessionObj]
+  );
+
+  const loadExistingExerciseIntoForm = (ex: KtnSessionExercise) => {
+    setExerciseMode('edit');
+    setEditingExerciseId(ex.id);
+    setExerciseTitle(ex.title || '');
+    setExercisePrompt(ex.prompt || ex.instruction || '');
+    const subType = (ex.submissionType || ex.type || 'mixed') as
+      | 'mixed'
+      | 'file'
+      | 'audio'
+      | 'text';
+    setExerciseSubmissionType(
+      ['mixed', 'file', 'audio', 'text'].includes(subType) ? subType : 'mixed'
+    );
+    setExerciseDueDate(ex.dueDate || '');
+    setExerciseAttachments(
+      Array.isArray(ex.attachments)
+        ? ex.attachments.map((att) => ({
+            ...att,
+            uploading: false,
+            progress: 100,
+          }))
+        : []
+    );
+    setExerciseAttachmentError(null);
+  };
+
+  const handleExerciseFilesSelected = async (fileList: FileList | File[] | null) => {
+    if (!fileList) return;
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+    setExerciseAttachmentError(null);
+
+    if (
+      user?.role !== 'admin' &&
+      !classesList.some((c) => c.id.toUpperCase() === effectiveClassId.toUpperCase())
+    ) {
+      setExerciseAttachmentError(
+        `Giáo viên không có quyền tải tài liệu giao bài cho lớp ${effectiveClassId || 'này'} không thuộc phạm vi phụ trách.`
+      );
+      return;
+    }
+
+    const currentActiveCount = exerciseAttachments.filter((a) => !a.error).length;
+    if (currentActiveCount + files.length > MAX_EXERCISE_ATTACHMENTS) {
+      setExerciseAttachmentError(
+        `Chỉ được đính kèm tối đa ${MAX_EXERCISE_ATTACHMENTS} tệp cho mỗi bài tập (hiện đã có ${currentActiveCount} tệp).`
+      );
+      return;
+    }
+
+    for (const file of files) {
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const controller = new AbortController();
+      const pendingItem: TeacherAttachmentUploadItem = {
+        id: tempId,
+        name: file.name,
+        url: '',
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size || 0,
+        uploading: true,
+        progress: 5,
+        controller,
+      };
+      setExerciseAttachments((prev) => [...prev, pendingItem]);
+
+      try {
+        const uploaded = await ktnApi.uploadHomeworkAttachment({
+          file,
+          fileName: file.name,
+          classCode: effectiveClassId,
+          sessionNum: Math.max(1, Number(sessionNum) || 1),
+          allowedClassCodes: classesList.map((c) => c.id),
+          isDemoMode,
+          signal: controller.signal,
+          onProgress: (pct) => {
+            setExerciseAttachments((prev) =>
+              prev.map((item) =>
+                item.id === tempId ? { ...item, progress: pct } : item
+              )
+            );
+          },
+        });
+        setExerciseAttachments((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? {
+                  ...uploaded,
+                  uploading: false,
+                  progress: 100,
+                }
+              : item
+          )
+        );
+      } catch (err) {
+        if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+          setExerciseAttachments((prev) => prev.filter((item) => item.id !== tempId));
+          continue;
+        }
+        const errMsg =
+          err instanceof Error
+            ? err.message
+            : `Không thể tải tệp "${file.name}". Vui lòng thử lại.`;
+        setExerciseAttachmentError(errMsg);
+        setExerciseAttachments((prev) => prev.filter((item) => item.id !== tempId));
+      }
+    }
+  };
+
+  const handleRemoveExerciseAttachment = (attachmentId: string) => {
+    setExerciseAttachments((prev) => {
+      const target = prev.find((item) => item.id === attachmentId);
+      if (target?.uploading && target.controller) {
+        target.controller.abort();
+      }
+      return prev.filter((item) => item.id !== attachmentId);
+    });
+  };
+
+  const handleTriggerSessionSubmit = (
+    status: 'draft' | 'published',
+    confirmedOverwrite = false
+  ) => {
+    setExerciseAttachmentError(null);
+    if (exerciseAttachments.some((a) => a.uploading)) {
+      setExerciseAttachmentError(
+        'Vui lòng chờ tải xong toàn bộ tài liệu đính kèm trước khi hoàn tất giao bài.'
+      );
+      return;
+    }
+    if (
+      exerciseMode === 'edit' &&
+      editingExerciseId &&
+      status === 'published' &&
+      !confirmedOverwrite
+    ) {
+      const targetEx = existingSessionExercises.find((ex) => ex.id === editingExerciseId);
+      if (targetEx && targetEx.status !== 'draft') {
+        setPendingSubmitStatus(status);
+        setConfirmOverwriteOpen(true);
+        return;
+      }
+    }
+    saveSessionMutation.mutate({ status });
+  };
   const studentsList = useMemo(() => {
     const remote = studentsQuery.data || [];
     const merged = new Map<string, KtnStudentRecord>();
@@ -1331,28 +1739,149 @@ export const TeacherWorkspace: React.FC = () => {
         </div>
       )}
 
-      {/* SubTab 2: Assign Session & Homework */}
+      {/* SubTab 2: Assign Session & Homework (C2 File Assignments & C3 Non-Overwriting Exercises) */}
       {activeSubTab === 'sessions' && (
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12">
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              saveSessionMutation.mutate();
+              handleTriggerSessionSubmit('published');
             }}
             className="space-y-3 rounded-xl border border-stone-200 bg-white p-4 shadow-2xs lg:col-span-7"
           >
-            <h2 className="font-display text-sm font-bold text-stone-900">
-              Giao bài tập buổi học ({effectiveClassId})
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-display text-sm font-bold text-stone-900">
+                Giao bài tập buổi học ({effectiveClassId})
+              </h2>
+              <div className="inline-flex rounded-xl border border-stone-200 bg-stone-50 p-0.5 text-xs">
+                <button
+                  type="button"
+                  data-testid="teacher-exercise-mode-create"
+                  onClick={() => {
+                    if (exerciseMode === 'edit') {
+                      setExerciseAttachments([]);
+                      setExerciseDueDate('');
+                    }
+                    setExerciseMode('create');
+                    setEditingExerciseId('');
+                    setExerciseAttachmentError(null);
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-bold transition-colors ${
+                    exerciseMode === 'create'
+                      ? 'bg-red-800 text-white'
+                      : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Tạo bài mới</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="teacher-exercise-mode-edit"
+                  disabled={existingSessionExercises.length === 0}
+                  onClick={() => {
+                    if (existingSessionExercises.length > 0) {
+                      const target =
+                        existingSessionExercises.find(
+                          (ex) => ex.id === editingExerciseId
+                        ) || existingSessionExercises[0];
+                      loadExistingExerciseIntoForm(target);
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-bold transition-colors disabled:opacity-40 ${
+                    exerciseMode === 'edit'
+                      ? 'bg-red-800 text-white'
+                      : 'text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  <Edit3 className="h-3.5 w-3.5" />
+                  <span>Sửa bài hiện có ({existingSessionExercises.length})</span>
+                </button>
+              </div>
+            </div>
 
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {existingSessionExercises.length > 0 && (
+              <div
+                data-testid="teacher-existing-exercises-banner"
+                className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-950"
+              >
+                {exerciseMode === 'create' ? (
+                  <p>
+                    <strong>Bảo toàn bài cũ:</strong> Buổi {sessionNum} hiện đã có{' '}
+                    <strong>{existingSessionExercises.length} bài tập</strong>. Chế độ{' '}
+                    <strong>&ldquo;Tạo bài mới&rdquo;</strong> sẽ tự động nối thêm bài số{' '}
+                    {existingSessionExercises.length + 1} mà không ghi đè các bài đã giao.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-emerald-950">
+                      Chọn bài tập hiện có trong Buổi {sessionNum} để chỉnh sửa:
+                    </label>
+                    <select
+                      data-testid="teacher-existing-exercise-select"
+                      value={editingExerciseId}
+                      onChange={(e) => {
+                        const target = existingSessionExercises.find(
+                          (ex) => ex.id === e.target.value
+                        );
+                        if (target) {
+                          loadExistingExerciseIntoForm(target);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
+                    >
+                      {existingSessionExercises.map((ex, idx) => (
+                        <option key={ex.id || idx} value={ex.id}>
+                          Bài {ex.num || idx + 1}: {ex.title} ({ex.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              <div>
+                <label className="block text-xs font-bold text-stone-700">Lớp học:</label>
+                <select
+                  aria-label="Chọn lớp giao bài"
+                  data-testid="teacher-exercise-class-select"
+                  value={effectiveClassId}
+                  onChange={(e) => {
+                    setSelectedClassId(e.target.value);
+                    setHasManualClassSelection(true);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
+                >
+                  {classesList.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.id} · {cls.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-bold text-stone-700">Buổi số:</label>
                 <input
                   type="number"
                   min={1}
+                  data-testid="teacher-session-num-input"
                   value={sessionNum}
-                  onChange={(e) => setSessionNum(Number(e.target.value))}
+                  onChange={(e) => {
+                    const nextNum = Math.max(1, Number(e.target.value) || 1);
+                    setSessionNum(nextNum);
+                    const matched = sessionsList.find(
+                      (s) => Number(s.sessionNum ?? s.session_num) === nextNum
+                    );
+                    if (matched) {
+                      setSessionTitle(matched.title || matched.session_title);
+                    } else {
+                      setSessionTitle(`Buổi ${nextNum}: Nội dung bài học`);
+                    }
+                    setExerciseMode('create');
+                    setEditingExerciseId('');
+                  }}
                   className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold"
                 />
               </div>
@@ -1360,6 +1889,7 @@ export const TeacherWorkspace: React.FC = () => {
                 <label className="block text-xs font-bold text-stone-700">Tiêu đề buổi:</label>
                 <input
                   type="text"
+                  data-testid="teacher-session-title-input"
                   value={sessionTitle}
                   onChange={(e) => setSessionTitle(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs"
@@ -1367,53 +1897,424 @@ export const TeacherWorkspace: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-              <p className="text-xs font-bold text-amber-950">Bài tập về nhà:</p>
-              <input
-                type="text"
-                value={exerciseTitle}
-                onChange={(e) => setExerciseTitle(e.target.value)}
-                placeholder="Tiêu đề bài tập..."
-                className="w-full rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs"
-              />
-              <textarea
-                rows={2}
-                value={exercisePrompt}
-                onChange={(e) => setExercisePrompt(e.target.value)}
-                placeholder="Hướng dẫn ngắn..."
-                className="w-full rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs"
-              />
+            <div className="space-y-2.5 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-bold text-amber-950">
+                  {exerciseMode === 'edit'
+                    ? `Đang chỉnh sửa bài tập (${editingExerciseId})`
+                    : 'Bài tập về nhà:'}
+                </p>
+                {exerciseMode === 'edit' && (
+                  <span className="rounded bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-950">
+                    Giữ nguyên ID & các bài tập khác trong buổi
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700">
+                  Tên bài tập:
+                </label>
+                <input
+                  type="text"
+                  data-testid="teacher-exercise-title-input"
+                  value={exerciseTitle}
+                  onChange={(e) => setExerciseTitle(e.target.value)}
+                  placeholder="Tiêu đề bài tập..."
+                  className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700">
+                  Hướng dẫn làm bài:
+                </label>
+                <textarea
+                  rows={2}
+                  data-testid="teacher-exercise-prompt-input"
+                  value={exercisePrompt}
+                  onChange={(e) => setExercisePrompt(e.target.value)}
+                  placeholder="Hướng dẫn ngắn..."
+                  className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-700">
+                    Loại bài cần nộp:
+                  </label>
+                  <select
+                    data-testid="teacher-exercise-submission-type-select"
+                    value={exerciseSubmissionType}
+                    onChange={(e) =>
+                      setExerciseSubmissionType(
+                        e.target.value as 'mixed' | 'file' | 'audio' | 'text'
+                      )
+                    }
+                    className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-900"
+                  >
+                    <option value="mixed">Tổng hợp (Thu âm / Ảnh / Tệp / Văn bản)</option>
+                    <option value="audio">Thu âm giọng đọc (Audio)</option>
+                    <option value="file">Nộp tệp / Ảnh vở viết (PDF, Word, Ảnh)</option>
+                    <option value="text">Trả lời văn bản trực tiếp</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-700">
+                    Hạn nộp (tùy chọn):
+                  </label>
+                  <input
+                    type="date"
+                    data-testid="teacher-exercise-due-date-input"
+                    value={exerciseDueDate}
+                    onChange={(e) => setExerciseDueDate(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs text-stone-900"
+                  />
+                </div>
+              </div>
+
+              {/* File Attachments Upload Section (C2) */}
+              <div className="space-y-2 rounded-xl border border-stone-200 bg-white p-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
+                      <Paperclip className="h-3.5 w-3.5 text-red-800" />
+                      <span>
+                        Tài liệu đính kèm ({exerciseAttachments.length}/{MAX_EXERCISE_ATTACHMENTS})
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-stone-500">
+                      Hỗ trợ PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4 (tối đa{' '}
+                      {Math.round(MAX_HOMEWORK_ATTACHMENT_BYTES / (1024 * 1024))}MB/tệp).
+                    </p>
+                  </div>
+
+                  <label className="inline-flex min-h-[32px] cursor-pointer items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-900 hover:bg-red-100">
+                    <Paperclip className="h-3.5 w-3.5" />
+                    <span>+ Đính kèm tệp</span>
+                    <input
+                      ref={exerciseFileInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif,.mp3,.m4a,.wav,.aac,.ogg,.mp4,.mov,.webm"
+                      data-testid="teacher-exercise-file-input"
+                      onChange={(e) => {
+                        handleExerciseFilesSelected(e.target.files);
+                        e.target.value = '';
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+
+                {exerciseAttachmentError && (
+                  <div
+                    role="alert"
+                    data-testid="teacher-attachment-error"
+                    className="flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs font-semibold text-red-900"
+                  >
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-700" />
+                    <span>{exerciseAttachmentError}</span>
+                  </div>
+                )}
+
+                {exerciseAttachments.length > 0 && (
+                  <div
+                    data-testid="teacher-exercise-attachments-list"
+                    className="space-y-1.5 pt-1"
+                  >
+                    {exerciseAttachments.map((att) => {
+                      const resolvedUrl = resolveUploadedMediaUrl(att.url);
+                      const mimeLower = (att.mimeType || '').toLowerCase();
+                      const nameLower = (att.name || '').toLowerCase();
+                      const isImage =
+                        mimeLower.startsWith('image/') ||
+                        /\.(jpg|jpeg|png|webp|gif)$/i.test(nameLower);
+                      const isPdf =
+                        mimeLower.includes('pdf') || nameLower.endsWith('.pdf');
+                      const isAudio =
+                        mimeLower.startsWith('audio/') ||
+                        /\.(mp3|m4a|wav|aac|ogg)$/i.test(nameLower);
+                      const isVideo =
+                        mimeLower.startsWith('video/') ||
+                        /\.(mp4|mov|webm)$/i.test(nameLower);
+
+                      return (
+                        <div
+                          key={att.id}
+                          data-testid={`teacher-exercise-attachment-item-${att.id}`}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs"
+                        >
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            {isImage && resolvedUrl ? (
+                              <img
+                                src={resolvedUrl}
+                                alt={att.name}
+                                className="h-8 w-8 shrink-0 rounded object-cover"
+                              />
+                            ) : (
+                              <FileText className="h-4 w-4 shrink-0 text-red-800" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-bold text-stone-900">
+                                {att.name}
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-stone-500">
+                                <span>{formatBytes(att.sizeBytes || 0)}</span>
+                                {att.uploading ? (
+                                  <span
+                                    data-testid={`teacher-attachment-progress-${att.id}`}
+                                    className="font-bold text-amber-800"
+                                  >
+                                    Đang tải {att.progress ?? 0}%...
+                                  </span>
+                                ) : (
+                                  <span className="font-semibold text-emerald-700">
+                                    Đã tải xong
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {!att.uploading &&
+                              resolvedUrl &&
+                              (isImage || isPdf || isAudio || isVideo) && (
+                                <button
+                                  type="button"
+                                  data-testid={`teacher-preview-attachment-${att.id}`}
+                                  onClick={() => setPreviewingExerciseAttachment(att)}
+                                  className="inline-flex items-center gap-1 rounded border border-stone-300 bg-white px-2 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-100"
+                                >
+                                  <ZoomIn className="h-3 w-3" />
+                                  <span>Xem trước</span>
+                                </button>
+                              )}
+                            <button
+                              type="button"
+                              data-testid={`teacher-remove-attachment-${att.id}`}
+                              onClick={() => handleRemoveExerciseAttachment(att.id)}
+                              className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-800 hover:bg-red-100"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              <span>{att.uploading ? 'Hủy tải' : 'Xóa'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <button
-              type="submit"
-              data-testid="teacher-save-session-btn"
-              disabled={saveSessionMutation.isPending}
-              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
-            >
-              <Send className="h-3.5 w-3.5" />
-              <span>Giao bài</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                data-testid="teacher-save-draft-session-btn"
+                disabled={
+                  saveSessionMutation.isPending ||
+                  exerciseAttachments.some((a) => a.uploading)
+                }
+                onClick={() => handleTriggerSessionSubmit('draft')}
+                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-800 hover:bg-stone-50 disabled:opacity-50"
+              >
+                <Save className="h-3.5 w-3.5" />
+                <span>Lưu nháp</span>
+              </button>
+
+              <button
+                type="submit"
+                data-testid="teacher-save-session-btn"
+                disabled={
+                  saveSessionMutation.isPending ||
+                  exerciseAttachments.some((a) => a.uploading)
+                }
+                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900 disabled:opacity-50"
+              >
+                <Send className="h-3.5 w-3.5" />
+                <span>
+                  {exerciseMode === 'edit' ? 'Cập nhật & Giao bài' : 'Giao bài'}
+                </span>
+              </button>
+            </div>
           </form>
 
           <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs lg:col-span-5">
             <h3 className="font-display text-sm font-bold text-stone-900">
               Buổi học đã lưu ({sessionsList.length})
             </h3>
-            <div className="mt-2.5 space-y-2">
-              {sessionsList.map((s) => (
-                <div
-                  key={s.id || s.sessionNum}
-                  className="rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs"
-                >
-                  <p className="font-bold text-stone-900">{s.title || s.session_title}</p>
-                  <p className="mt-0.5 text-[11px] text-stone-500">
-                    {s.exercises?.length || 0} bài tập
-                  </p>
-                </div>
-              ))}
+            <div className="mt-2.5 space-y-2.5">
+              {sessionsList.map((s) => {
+                const sNum = Number(s.sessionNum ?? s.session_num);
+                const exList = Array.isArray(s.exercises) ? s.exercises : [];
+                return (
+                  <div
+                    key={s.id || sNum}
+                    data-testid={`teacher-saved-session-card-${sNum}`}
+                    className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-bold text-stone-900">
+                        {s.title || s.session_title}
+                      </p>
+                      <span className="rounded bg-stone-200/80 px-2 py-0.5 text-[10px] font-bold text-stone-800">
+                        {exList.length} bài tập
+                      </span>
+                    </div>
+
+                    {exList.length > 0 && (
+                      <div className="mt-2 space-y-1.5 border-t border-stone-200/80 pt-2">
+                        {exList.map((ex, idx) => (
+                          <div
+                            key={ex.id || idx}
+                            data-testid={`teacher-saved-exercise-${ex.id}`}
+                            className="flex items-start justify-between gap-2 rounded-lg border border-stone-200 bg-white p-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-bold text-stone-900">
+                                  Bài {ex.num || idx + 1}: {ex.title}
+                                </span>
+                                {ex.status === 'draft' && (
+                                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                                    Nháp
+                                  </span>
+                                )}
+                                {Array.isArray(ex.attachments) &&
+                                  ex.attachments.length > 0 && (
+                                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
+                                      {ex.attachments.length} tệp đính kèm
+                                    </span>
+                                  )}
+                              </div>
+                              <p className="mt-0.5 line-clamp-2 text-[11px] text-stone-600">
+                                {ex.prompt || ex.instruction}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              data-testid={`teacher-edit-saved-exercise-btn-${ex.id}`}
+                              onClick={() => {
+                                setSessionNum(sNum);
+                                setSessionTitle(s.title || s.session_title);
+                                loadExistingExerciseIntoForm(ex);
+                              }}
+                              className="shrink-0 rounded-lg border border-stone-200 bg-stone-50 px-2 py-1 text-[10px] font-bold text-red-800 hover:bg-red-50"
+                            >
+                              Sửa bài này
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
+
+          {/* C3 Confirmation Modal before overwriting an already-published exercise */}
+          {confirmOverwriteOpen && (
+            <div
+              data-testid="teacher-confirm-overwrite-modal"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            >
+              <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl">
+                <h3 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
+                  <AlertTriangle className="h-4 w-4 text-amber-700" />
+                  <span>Xác nhận cập nhật bài tập đã giao ({editingExerciseId})</span>
+                </h3>
+                <p className="mt-2 text-xs leading-relaxed text-stone-600">
+                  Bạn đang sửa bài tập đã giao trong <strong>Buổi {sessionNum}</strong>. Hệ thống sẽ giữ nguyên mã bài tập (<code>{editingExerciseId}</code>), bảo toàn các bài tập khác cùng buổi và không gửi thông báo giao bài trùng lặp.
+                </p>
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    data-testid="teacher-cancel-overwrite-btn"
+                    onClick={() => setConfirmOverwriteOpen(false)}
+                    className="rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="teacher-confirm-overwrite-btn"
+                    onClick={() =>
+                      handleTriggerSessionSubmit(pendingSubmitStatus, true)
+                    }
+                    className="rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
+                  >
+                    Xác nhận cập nhật
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Teacher Attachment Preview Modal (Image / PDF / Audio / Video) */}
+          {previewingExerciseAttachment && (
+            <div
+              data-testid="teacher-attachment-preview-modal"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            >
+              <div className="w-full max-w-2xl rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl">
+                <div className="flex items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
+                  <div>
+                    <h3 className="font-display text-sm font-bold text-stone-900">
+                      {previewingExerciseAttachment.name}
+                    </h3>
+                    <p className="text-[11px] text-stone-500">
+                      {formatBytes(previewingExerciseAttachment.sizeBytes || 0)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Đóng xem trước tài liệu"
+                    onClick={() => setPreviewingExerciseAttachment(null)}
+                    className="rounded-lg p-1 text-stone-500 hover:bg-stone-100"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-3 max-h-[70vh] overflow-auto">
+                  {previewingExerciseAttachment.mimeType.startsWith('image/') ? (
+                    <img
+                      src={resolveUploadedMediaUrl(previewingExerciseAttachment.url)}
+                      alt={previewingExerciseAttachment.name}
+                      className="mx-auto max-h-[60vh] rounded-xl object-contain"
+                    />
+                  ) : previewingExerciseAttachment.mimeType.includes('pdf') ||
+                    previewingExerciseAttachment.name.toLowerCase().endsWith('.pdf') ? (
+                    <iframe
+                      title={previewingExerciseAttachment.name}
+                      src={resolveUploadedMediaUrl(previewingExerciseAttachment.url)}
+                      className="h-[60vh] w-full rounded-xl border border-stone-200"
+                    />
+                  ) : previewingExerciseAttachment.mimeType.startsWith('audio/') ? (
+                    <audio
+                      controls
+                      src={resolveUploadedMediaUrl(previewingExerciseAttachment.url)}
+                      className="w-full"
+                    />
+                  ) : previewingExerciseAttachment.mimeType.startsWith('video/') ? (
+                    <video
+                      controls
+                      src={resolveUploadedMediaUrl(previewingExerciseAttachment.url)}
+                      className="max-h-[60vh] w-full rounded-xl"
+                    />
+                  ) : (
+                    <p className="py-6 text-center text-xs text-stone-600">
+                      Tệp tài liệu văn phòng ({previewingExerciseAttachment.name}).
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

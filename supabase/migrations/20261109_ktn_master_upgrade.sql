@@ -425,10 +425,305 @@ BEGIN
 END $$;
 
 ALTER TABLE public.ktn_teachers
-  ADD COLUMN IF NOT EXISTS assigned_courses JSONB DEFAULT '[]'::jsonb;
+  ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS assigned_classes JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS assigned_courses JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS aliases JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS search_text TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS search_text_norm TEXT DEFAULT '';
 
 ALTER TABLE public.ktn_courses
   ADD COLUMN IF NOT EXISTS teacher_email TEXT;
+
+-- Ensure extensions & Vietnamese accent normalizer exist for fast teacher search (Agent A - A1)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS unaccent;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'unaccent extension not available; using ktn_normalize_vi translate fallback.';
+END $$;
+
+CREATE OR REPLACE FUNCTION public.ktn_normalize_vi(input_text TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE PARALLEL SAFE
+AS $$
+DECLARE
+  res TEXT;
+BEGIN
+  IF input_text IS NULL THEN
+    RETURN '';
+  END IF;
+  res := TRIM(input_text);
+  res := TRANSLATE(
+    res,
+    'ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ',
+    'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyydaaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd'
+  );
+  res := LOWER(res);
+  res := REGEXP_REPLACE(res, E'[\\u0300-\\u036f]+', '', 'g');
+  res := REGEXP_REPLACE(res, '\s+', ' ', 'g');
+  RETURN TRIM(res);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.ktn_teachers_update_search_fields()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $fn$
+DECLARE
+  v_norm text;
+BEGIN
+  v_norm := public.ktn_normalize_vi(
+    COALESCE(NEW.code, '') || ' ' ||
+    COALESCE(NEW.name, '') || ' ' ||
+    REPLACE(public.ktn_normalize_vi(COALESCE(NEW.name, '')), ' ', '') || ' ' ||
+    COALESCE(NEW.email, '') || ' ' ||
+    COALESCE(NEW.phone, '') || ' ' ||
+    COALESCE(NEW.specialty, '') || ' ' ||
+    COALESCE(NEW.assigned_classes::text, '') || ' ' ||
+    COALESCE(NEW.assigned_courses::text, '')
+  );
+  NEW.search_text := v_norm;
+  NEW.search_text_norm := v_norm;
+  RETURN NEW;
+END;
+$fn$;
+
+DROP TRIGGER IF EXISTS trg_ktn_teachers_search_fields ON public.ktn_teachers;
+CREATE TRIGGER trg_ktn_teachers_search_fields
+BEFORE INSERT OR UPDATE ON public.ktn_teachers
+FOR EACH ROW
+EXECUTE FUNCTION public.ktn_teachers_update_search_fields();
+
+UPDATE public.ktn_teachers
+SET
+  search_text = public.ktn_normalize_vi(
+    COALESCE(code, '') || ' ' ||
+    COALESCE(name, '') || ' ' ||
+    REPLACE(public.ktn_normalize_vi(COALESCE(name, '')), ' ', '') || ' ' ||
+    COALESCE(email, '') || ' ' ||
+    COALESCE(phone, '') || ' ' ||
+    COALESCE(specialty, '') || ' ' ||
+    COALESCE(assigned_classes::text, '') || ' ' ||
+    COALESCE(assigned_courses::text, '')
+  ),
+  search_text_norm = public.ktn_normalize_vi(
+    COALESCE(code, '') || ' ' ||
+    COALESCE(name, '') || ' ' ||
+    REPLACE(public.ktn_normalize_vi(COALESCE(name, '')), ' ', '') || ' ' ||
+    COALESCE(email, '') || ' ' ||
+    COALESCE(phone, '') || ' ' ||
+    COALESCE(specialty, '') || ' ' ||
+    COALESCE(assigned_classes::text, '') || ' ' ||
+    COALESCE(assigned_courses::text, '')
+  )
+WHERE COALESCE(search_text_norm, '') = '' OR COALESCE(search_text, '') = '';
+
+CREATE INDEX IF NOT EXISTS idx_ktn_teachers_search_trgm
+  ON public.ktn_teachers USING GIN (search_text gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_ktn_teachers_search_text_norm_trgm
+  ON public.ktn_teachers USING GIN (search_text_norm gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_ktn_teachers_active_code
+  ON public.ktn_teachers (active, code ASC);
+
+CREATE INDEX IF NOT EXISTS idx_ktn_teachers_email_lower
+  ON public.ktn_teachers (LOWER(email));
+
+CREATE OR REPLACE FUNCTION public.ktn_search_teachers(
+  p_query text DEFAULT '',
+  p_status text DEFAULT NULL,
+  p_class_code text DEFAULT NULL,
+  p_course_id text DEFAULT NULL,
+  p_limit integer DEFAULT 25,
+  p_offset integer DEFAULT 0
+)
+RETURNS TABLE (
+  code text,
+  name text,
+  email text,
+  phone text,
+  specialty text,
+  assigned_classes jsonb,
+  assigned_courses jsonb,
+  aliases jsonb,
+  active boolean,
+  is_active boolean,
+  updated_at timestamptz,
+  rank_score numeric,
+  total_count bigint
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+  v_q text := public.ktn_normalize_vi(p_query);
+  v_q_nospace text := replace(public.ktn_normalize_vi(p_query), ' ', '');
+  v_status text := lower(trim(coalesce(p_status, '')));
+  v_class text := upper(trim(coalesce(p_class_code, '')));
+  v_course text := trim(coalesce(p_course_id, ''));
+  v_limit integer := greatest(1, least(coalesce(p_limit, 25), 100));
+  v_offset integer := greatest(0, coalesce(p_offset, 0));
+BEGIN
+  RETURN QUERY
+  WITH filtered AS (
+    SELECT
+      t.code,
+      t.name,
+      t.email,
+      t.phone,
+      t.specialty,
+      COALESCE(t.assigned_classes, '[]'::jsonb) AS assigned_classes,
+      COALESCE(t.assigned_courses, '[]'::jsonb) AS assigned_courses,
+      COALESCE(t.aliases, '[]'::jsonb) AS aliases,
+      COALESCE(t.active, true) AS active,
+      COALESCE(t.active, true) AS is_active,
+      t.updated_at,
+      CASE
+        WHEN v_q = '' THEN 100::numeric
+        WHEN lower(coalesce(t.code, '')) = v_q THEN 1000::numeric
+        WHEN lower(coalesce(t.email, '')) = v_q THEN 990::numeric
+        WHEN regexp_replace(coalesce(t.phone, ''), '\D', '', 'g') = v_q_nospace AND length(v_q_nospace) >= 6 THEN 980::numeric
+        WHEN public.ktn_normalize_vi(t.name) = v_q THEN 960::numeric
+        WHEN replace(public.ktn_normalize_vi(t.name), ' ', '') = v_q_nospace THEN 940::numeric
+        WHEN lower(coalesce(t.code, '')) LIKE v_q || '%' THEN 900::numeric
+        WHEN lower(coalesce(t.email, '')) LIKE v_q || '%' THEN 880::numeric
+        WHEN public.ktn_normalize_vi(t.name) LIKE v_q || '%' THEN 860::numeric
+        WHEN replace(public.ktn_normalize_vi(t.name), ' ', '') LIKE v_q_nospace || '%' THEN 840::numeric
+        WHEN public.ktn_normalize_vi(t.name) LIKE '% ' || v_q || '%' THEN 810::numeric
+        WHEN public.ktn_normalize_vi(t.name) LIKE '%' || v_q || '%' THEN 760::numeric
+        WHEN replace(public.ktn_normalize_vi(t.name), ' ', '') LIKE '%' || v_q_nospace || '%' THEN 730::numeric
+        WHEN public.ktn_normalize_vi(t.specialty) LIKE '%' || v_q || '%' THEN 700::numeric
+        WHEN COALESCE(t.search_text_norm, t.search_text, '') LIKE '%' || v_q || '%' THEN 650::numeric
+        ELSE round((similarity(COALESCE(t.search_text_norm, t.search_text, ''), v_q) * 500)::numeric, 2)
+      END AS score
+    FROM public.ktn_teachers t
+    WHERE
+      (
+        v_status = '' OR v_status = 'all'
+        OR (v_status = 'active' AND COALESCE(t.active, true) = true)
+        OR (v_status IN ('inactive', 'locked', 'suspended', 'disabled') AND COALESCE(t.active, true) = false)
+        OR (
+          v_status IN ('unassigned', 'no_class')
+          AND (
+            COALESCE(t.active, true) = false
+            OR t.assigned_classes IS NULL
+            OR jsonb_typeof(t.assigned_classes) <> 'array'
+            OR jsonb_array_length(t.assigned_classes) = 0
+          )
+        )
+        OR (
+          v_status IN ('assigned', 'has_class')
+          AND COALESCE(t.active, true) = true
+          AND t.assigned_classes IS NOT NULL
+          AND jsonb_typeof(t.assigned_classes) = 'array'
+          AND jsonb_array_length(t.assigned_classes) > 0
+        )
+      )
+      AND (
+        v_class = '' OR v_class = 'ALL'
+        OR (
+          COALESCE(t.active, true) = true
+          AND t.assigned_classes IS NOT NULL
+          AND jsonb_typeof(t.assigned_classes) = 'array'
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(t.assigned_classes) AS cls_elem
+            WHERE upper(trim(cls_elem)) = v_class
+          )
+        )
+      )
+      AND (
+        v_course = '' OR v_course = 'all'
+        OR (
+          t.assigned_courses IS NOT NULL
+          AND jsonb_typeof(t.assigned_courses) = 'array'
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(t.assigned_courses) AS crs_elem
+            WHERE trim(crs_elem) = v_course
+          )
+        )
+      )
+      AND (
+        v_q = ''
+        OR COALESCE(t.search_text_norm, t.search_text, '') LIKE '%' || v_q || '%'
+        OR replace(COALESCE(t.search_text_norm, t.search_text, ''), ' ', '') LIKE '%' || v_q_nospace || '%'
+        OR (length(v_q) >= 3 AND COALESCE(t.search_text_norm, t.search_text, '') % v_q)
+      )
+  )
+  SELECT
+    f.code,
+    f.name,
+    f.email,
+    f.phone,
+    f.specialty,
+    f.assigned_classes,
+    f.assigned_courses,
+    f.aliases,
+    f.active,
+    f.is_active,
+    f.updated_at,
+    f.score AS rank_score,
+    COUNT(*) OVER() AS total_count
+  FROM filtered f
+  ORDER BY f.score DESC, f.active DESC, f.code ASC
+  LIMIT v_limit
+  OFFSET v_offset;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.ktn_search_teachers(text, text, text, text, integer, integer) TO anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.ktn_get_rooms_latest_messages(
+  p_room_ids text[] DEFAULT NULL,
+  p_room_prefix text DEFAULT NULL
+)
+RETURNS TABLE (
+  id text,
+  room_id text,
+  class_code text,
+  sender_email text,
+  sender_name text,
+  sender_role text,
+  content text,
+  attachment_url text,
+  created_at timestamptz
+)
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(m.room_id), ''), NULLIF(TRIM(m.class_code), '')))
+    m.id::text,
+    COALESCE(NULLIF(TRIM(m.room_id), ''), NULLIF(TRIM(m.class_code), '')) AS room_id,
+    m.class_code,
+    m.sender_email,
+    m.sender_name,
+    m.sender_role,
+    m.content,
+    m.attachment_url,
+    m.created_at
+  FROM public.ktn_messages m
+  WHERE
+    (
+      p_room_ids IS NULL
+      OR COALESCE(NULLIF(TRIM(m.room_id), ''), NULLIF(TRIM(m.class_code), '')) = ANY(p_room_ids)
+    )
+    AND (
+      p_room_prefix IS NULL OR p_room_prefix = ''
+      OR LOWER(COALESCE(NULLIF(TRIM(m.room_id), ''), NULLIF(TRIM(m.class_code), ''), '')) LIKE LOWER(p_room_prefix) || '%'
+    )
+  ORDER BY
+    COALESCE(NULLIF(TRIM(m.room_id), ''), NULLIF(TRIM(m.class_code), '')),
+    m.created_at DESC NULLS LAST,
+    m.id DESC;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.ktn_get_rooms_latest_messages(text[], text) TO anon, authenticated, service_role;
 
 CREATE TABLE IF NOT EXISTS public.ktn_admin_audit_logs (
   id TEXT PRIMARY KEY,
@@ -590,6 +885,9 @@ CREATE INDEX IF NOT EXISTS idx_ktn_notifications_class_created
 
 DO $$
 BEGIN
+  IF to_regclass('public.ktn_messages') IS NOT NULL THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ktn_messages_room_created_at_id ON public.ktn_messages (room_id, created_at DESC, id DESC)';
+  END IF;
   IF to_regclass('public.ktn_dlp_alerts') IS NOT NULL THEN
     EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ktn_dlp_alerts_room_sender_created ON public.ktn_dlp_alerts (room_id, LOWER(sender_email), created_at DESC)';
   END IF;

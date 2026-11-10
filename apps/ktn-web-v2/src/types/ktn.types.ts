@@ -224,6 +224,14 @@ export interface KtnClassItem {
   } | null;
 }
 
+export interface KtnExerciseAttachment {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface KtnSessionExercise {
   id: string;
   num: number;
@@ -231,6 +239,10 @@ export interface KtnSessionExercise {
   prompt: string;
   instruction?: string;
   type: 'audio' | 'photo' | 'video' | string;
+  submissionType?: 'mixed' | 'file' | 'audio' | 'text' | string;
+  dueDate?: string;
+  status?: 'draft' | 'published';
+  attachments?: KtnExerciseAttachment[];
 }
 
 export interface KtnClassSession {
@@ -482,6 +494,22 @@ export interface KtnTeacherRecord {
   pendingCourseRequestsCount?: number;
   stats?: KtnTeacherPerformanceStats;
 }
+
+export interface KtnTeacherSearchResult {
+  ok: boolean;
+  items: KtnTeacherRecord[];
+  totalCount: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+}
+
+export type KtnStudentProfile = Partial<KtnStudentRecord> & {
+  email: string;
+  name: string;
+  code?: string;
+  class_code?: string | null;
+};
 
 export interface KtnForumAttachment {
   id?: string;

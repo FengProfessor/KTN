@@ -13,6 +13,7 @@ import {
 import { ChatAttachment } from '../types/chat.types';
 import { resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
+import { truncateFileName } from '../services/chatApi';
 
 interface AttachmentPreviewProps {
   attachment: ChatAttachment | null | undefined;
@@ -204,6 +205,8 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     });
   };
 
+  const shortFileName = truncateFileName(attachment.name, 26);
+
   if (isImage) {
     return (
       <div
@@ -211,7 +214,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
         className="mt-1.5 overflow-hidden rounded-xl border border-black/10 bg-stone-100"
       >
         <div
-          className="group relative max-h-64 max-w-xs cursor-zoom-in overflow-hidden bg-stone-200/60"
+          className="group relative max-h-60 sm:max-h-64 max-w-[230px] sm:max-w-[270px] cursor-zoom-in overflow-hidden bg-stone-200/60"
           onClick={handleOpenLightbox}
         >
           <img
@@ -223,42 +226,33 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
                 target.src = attachment.url;
               }
             }}
-            className="max-h-64 w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+            className="max-h-60 sm:max-h-64 w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
           />
-          <button
-            type="button"
-            data-testid="chat-image-zoom-btn"
-            onClick={handleOpenLightbox}
-            className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/70 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm backdrop-blur-sm transition-all hover:bg-black"
-          >
-            <Maximize2 className="h-3 w-3" />
-            Phóng to
-          </button>
-        </div>
-        <div className="flex items-center justify-between gap-2 border-t border-black/5 bg-white/95 px-2.5 py-1.5 text-[11px] text-stone-600">
-          <span className="truncate font-medium text-stone-800">
-            {attachment.name || 'Ảnh đính kèm'}
-          </span>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={handleOpenLightbox}
-              className="inline-flex items-center gap-1 font-semibold text-stone-700 hover:text-red-800"
-            >
-              <ZoomIn className="h-3 w-3" />
-              Xem lớn
-            </button>
+          <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1.5 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2 py-1.5">
             <a
               data-testid="chat-attachment-download"
               href={resolvedUrl}
               download={attachment.name || 'ktn-image.png'}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex shrink-0 items-center gap-1 font-semibold text-red-800 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+              title={attachment.name ? `Tải ảnh: ${attachment.name}` : 'Tải ảnh gốc'}
+              className="inline-flex items-center gap-1 rounded-md bg-black/55 px-2 py-0.5 text-[10.5px] font-semibold text-white/95 backdrop-blur-xs transition-colors hover:bg-black/80"
             >
-              <Download className="h-3 w-3" />
-              Tải về
+              <Download className="h-3 w-3 shrink-0" />
+              <span>Tải về</span>
             </a>
+
+            <button
+              type="button"
+              data-testid="chat-image-zoom-btn"
+              onClick={handleOpenLightbox}
+              title="Phóng to ảnh"
+              className="inline-flex items-center gap-1 rounded-md bg-black/65 px-2 py-0.5 text-[10.5px] font-semibold text-white shadow-2xs backdrop-blur-xs transition-colors hover:bg-black"
+            >
+              <Maximize2 className="h-3 w-3 shrink-0" />
+              <span>Phóng to</span>
+            </button>
           </div>
         </div>
       </div>
@@ -269,7 +263,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     return (
       <div
         data-testid="chat-video-attachment"
-        className={`mt-1.5 flex min-w-0 max-w-xs flex-col gap-1.5 overflow-hidden rounded-xl border p-2 ${
+        className={`mt-1.5 flex min-w-0 max-w-[240px] sm:max-w-xs flex-col gap-1.5 overflow-hidden rounded-xl border p-2 ${
           isOwn
             ? 'border-red-300/60 bg-white/90 text-stone-900'
             : 'border-stone-200 bg-stone-50 text-stone-900'
@@ -281,11 +275,14 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           playsInline
           preload="metadata"
           src={resolvedUrl}
-          className="max-h-60 w-full rounded-lg bg-black"
+          className="max-h-56 w-full rounded-lg bg-black"
         />
-        <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-stone-600">
-          <span className="truncate font-semibold text-stone-800">
-            {attachment.name || 'Video đính kèm'}
+        <div className="flex min-w-0 items-center justify-between gap-2 px-1 text-[11px] text-stone-600">
+          <span
+            title={attachment.name || 'Video đính kèm'}
+            className="min-w-0 flex-1 truncate font-semibold text-stone-800"
+          >
+            {shortFileName}
           </span>
           <a
             data-testid="chat-attachment-download"
@@ -315,8 +312,11 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
       >
         <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-red-900">
           <Volume2 className="h-3.5 w-3.5 shrink-0 text-red-700" />
-          <span className="min-w-0 flex-1 truncate">
-            {attachment.name || 'Bản thu âm luyện nói tiếng Trung'}
+          <span
+            title={attachment.name || 'Bản thu âm'}
+            className="min-w-0 flex-1 truncate"
+          >
+            {shortFileName}
           </span>
           {attachment.durationSec ? (
             <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-800">
@@ -342,7 +342,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           controls
           preload="metadata"
           src={resolvedUrl}
-          className="h-8 w-full max-w-[210px] sm:max-w-[260px]"
+          className="h-8 w-full max-w-[200px] sm:max-w-[250px]"
         />
       </div>
     );
@@ -355,21 +355,22 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
       target="_blank"
       rel="noreferrer"
       download={attachment.name}
-      className={`mt-1.5 flex items-center gap-3 rounded-xl border p-2.5 transition-colors ${
+      title={attachment.name || 'Tài liệu đính kèm'}
+      className={`mt-1.5 flex min-w-0 max-w-[240px] sm:max-w-xs items-center gap-2.5 rounded-xl border p-2.5 transition-colors ${
         isOwn
           ? 'border-red-300/60 bg-white/90 hover:bg-white'
           : 'border-stone-200 bg-stone-50 hover:bg-stone-100'
       }`}
     >
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-800 text-white">
-        <FileText className="h-5 w-5" />
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-800 text-white">
+        <FileText className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-semibold text-stone-900">
-          {attachment.name || 'Tài liệu đính kèm.pdf'}
+          {shortFileName}
         </p>
-        <p className="text-[11px] text-stone-500">
-          {attachment.sizeLabel || 'PDF / Tài liệu học tập'}
+        <p className="truncate text-[11px] text-stone-500">
+          {attachment.sizeLabel || 'Tài liệu học tập'}
         </p>
       </div>
       <Download className="h-4 w-4 shrink-0 text-stone-500" />

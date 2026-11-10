@@ -13,6 +13,7 @@ import {
 import { ChatMessage } from '../types/chat.types';
 import { AttachmentPreview } from './AttachmentPreview';
 import { formatChatTimestamp, getInitials } from '@/lib/utils';
+import { getDisplayMessageCaption } from '../services/chatApi';
 
 const QUICK_EMOJIS = ['👍', '❤️', '👏', '🎉'];
 
@@ -21,6 +22,7 @@ interface MessageBubbleProps {
   currentUserEmail: string;
   currentUserName?: string;
   canManagePin: boolean;
+  isGroupedWithPrev?: boolean;
   onReply: (message: ChatMessage) => void;
   onReact: (messageId: string, emoji: string) => void;
   onPinMessage: (message: ChatMessage) => void;
@@ -32,6 +34,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   currentUserEmail,
   currentUserName,
   canManagePin,
+  isGroupedWithPrev = false,
   onReply,
   onReact,
   onPinMessage,
@@ -48,6 +51,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const status = message.status || 'sent';
   const reactions = Array.isArray(message.reactions) ? message.reactions : [];
+  const displayCaption = getDisplayMessageCaption(message);
 
   const renderRoleBadge = () => {
     if (message.sender_role === 'teacher') {
@@ -150,33 +154,43 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       data-testid="chat-message-item"
       data-message-id={message.id}
       data-delivery-status={status}
-      className={`group relative flex gap-2.5 px-3 py-1.5 transition-colors hover:bg-stone-200/25 ${
+      data-grouped={isGroupedWithPrev ? 'true' : 'false'}
+      className={`group relative flex gap-2 px-3 py-1.5 transition-colors hover:bg-stone-200/25 ${
         isOwn ? 'flex-row-reverse' : 'flex-row'
       }`}
     >
-      {/* Avatar */}
-      <div
-        className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-sm ${
-          isTeacherOrAdmin
-            ? 'bg-gradient-to-br from-red-800 to-red-950 text-amber-100 ring-2 ring-amber-400/60'
-            : isOwn
-            ? 'bg-red-100 text-red-900 border border-red-200'
-            : 'bg-stone-200 text-stone-700 border border-stone-300'
-        }`}
-        title={message.sender_name}
-      >
-        {getInitials(message.sender_name)}
-      </div>
+      {/* Avatar or Alignment Spacer for Grouped Consecutive Messages */}
+      {isGroupedWithPrev ? (
+        <div className="w-8 sm:w-9 shrink-0" aria-hidden="true" />
+      ) : (
+        <div
+          className={`mt-0.5 flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-sm ${
+            isTeacherOrAdmin
+              ? 'bg-gradient-to-br from-red-800 to-red-950 text-amber-100 ring-2 ring-amber-400/60'
+              : isOwn
+              ? 'bg-red-100 text-red-900 border border-red-200'
+              : 'bg-stone-200 text-stone-700 border border-stone-300'
+          }`}
+          title={message.sender_name}
+        >
+          {getInitials(message.sender_name)}
+        </div>
+      )}
 
       {/* Bubble Container */}
-      <div className={`flex min-w-0 max-w-[82%] sm:max-w-[72%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
-        {/* Sender header */}
-        <div className="mb-1 flex flex-wrap items-center gap-1.5 px-1">
-          <span className="text-xs font-semibold text-stone-700">
-            {isOwn ? 'Bạn' : message.sender_name}
-          </span>
-          {renderRoleBadge()}
-        </div>
+      <div className={`flex min-w-0 max-w-[84%] sm:max-w-[72%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+        {/* Sender header — hidden when grouped with previous message from same sender */}
+        {!isGroupedWithPrev && (
+          <div
+            data-testid="chat-message-sender-header"
+            className="mb-1 flex flex-wrap items-center gap-1.5 px-1"
+          >
+            <span className="text-xs font-semibold text-stone-700">
+              {isOwn ? 'Bạn' : message.sender_name}
+            </span>
+            {renderRoleBadge()}
+          </div>
+        )}
 
         {/* Message Bubble */}
         <div
@@ -184,8 +198,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             status === 'failed'
               ? 'border-2 border-red-300 bg-red-50/90 text-stone-900'
               : isOwn
-              ? 'rounded-tr-sm border border-[#E7C8C2] bg-[#FBF1EE] text-stone-900'
-              : 'rounded-tl-sm border border-[#E7E2DA] bg-white text-stone-900'
+              ? `${isGroupedWithPrev ? 'rounded-2xl' : 'rounded-tr-sm'} border border-[#E7C8C2] bg-[#FBF1EE] text-stone-900`
+              : `${isGroupedWithPrev ? 'rounded-2xl' : 'rounded-tl-sm'} border border-[#E7E2DA] bg-white text-stone-900`
           }`}
         >
           {/* Reply quote block */}
@@ -198,13 +212,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             </div>
           )}
 
-          {/* Main text */}
-          {message.content && (
+          {/* Main text (omitted when message is just an auto-generated attachment placeholder) */}
+          {displayCaption && (
             <p
               data-testid="chat-message-text"
-              className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed text-stone-900"
+              className="whitespace-pre-wrap break-words text-[14px] sm:text-[14.5px] leading-relaxed text-stone-900"
             >
-              {message.content}
+              {displayCaption}
             </p>
           )}
 

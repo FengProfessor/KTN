@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-11-10T07:48:55.388Z",
+  "generatedAt": "2026-11-10T19:35:57.097Z",
   "postgresEngine": "PostgreSQL 18.6 (@electric-sql/pglite WASM + native pg_trgm)",
   "allTestsPassed": true,
-  "testCount": 18,
+  "testCount": 20,
   "results": [
     {
       "id": "PG-01-PRE-MIGRATION-BASELINE",
@@ -98,33 +98,45 @@
       "id": "PG-BENCH-1000",
       "title": "PostgreSQL 1,000 students benchmark meets latency & accuracy targets (email p95 < 150ms, name p95 < 250ms, pagination p95 < 300ms, deep offset=500 returns 20 rows)",
       "passed": true,
-      "detail": "emailP95=8ms (sql=5ms), nameP95=4.79ms (sql=4ms), pageP95=5.08ms (offset=500, rows=20/1000)"
+      "detail": "emailP95=6ms (sql=4ms), nameP95=5.64ms (sql=4ms), pageP95=6.38ms (offset=500, rows=20/1000)"
     },
     {
       "id": "PG-BENCH-10000",
       "title": "PostgreSQL 10,000 students benchmark meets latency & accuracy targets (email p95 < 150ms, name p95 < 250ms, pagination p95 < 300ms, deep offset=2500 returns 20 rows)",
       "passed": true,
-      "detail": "emailP95=4.67ms (sql=4ms), nameP95=3.66ms (sql=3ms), pageP95=8.29ms (offset=2500, rows=20/10000)"
+      "detail": "emailP95=6.79ms (sql=5ms), nameP95=5.57ms (sql=4ms), pageP95=8.43ms (offset=2500, rows=20/10000)"
     },
     {
       "id": "PG-BENCH-50000",
       "title": "PostgreSQL 50,000 students benchmark meets latency & accuracy targets (email p95 < 150ms, name p95 < 250ms, pagination p95 < 300ms, deep offset=45000 returns 20 rows)",
       "passed": true,
-      "detail": "emailP95=8.35ms (sql=7ms), nameP95=4.49ms (sql=4ms), pageP95=39.72ms (offset=45000, rows=20/50000)"
+      "detail": "emailP95=8.12ms (sql=7ms), nameP95=4.77ms (sql=4ms), pageP95=35.75ms (offset=45000, rows=20/50000)"
+    },
+    {
+      "id": "PG-TEACHER-BENCH-1000",
+      "title": "PostgreSQL 1,000 teachers benchmark meets latency & accuracy targets (SQL name p95 < 100ms, email p95 < 50ms, pagination p95 < 150ms, accent-insensitive match accurate)",
+      "passed": true,
+      "detail": "sqlNameP50=1.65ms/P95=2.29ms, sqlEmailP95=0.76ms, sqlPageP95=2.7ms, workerE2eP50=35.84ms/P95=42.17ms"
+    },
+    {
+      "id": "PG-TEACHER-BENCH-10000",
+      "title": "PostgreSQL 10,000 teachers benchmark meets latency & accuracy targets (SQL name p95 < 100ms, email p95 < 50ms, pagination p95 < 150ms, accent-insensitive match accurate)",
+      "passed": true,
+      "detail": "sqlNameP50=0.98ms/P95=1.48ms, sqlEmailP95=0.4ms, sqlPageP95=8.75ms, workerE2eP50=318.03ms/P95=348.58ms"
     }
   ],
   "benchmarks": {
     "1000": {
       "scale": 1000,
-      "seedMs": 589,
+      "seedMs": 554,
       "emailSearch": {
         "iterations": 20,
         "sqlP50Ms": 3,
-        "sqlP95Ms": 5,
+        "sqlP95Ms": 4,
         "workerP50Ms": 1,
-        "workerP95Ms": 3,
-        "e2eP50Ms": 3.99,
-        "e2eP95Ms": 8,
+        "workerP95Ms": 2,
+        "e2eP50Ms": 3.88,
+        "e2eP95Ms": 6,
         "returnedRows": 1,
         "totalCount": 1,
         "topMatchEmail": "syn.1000@khongtunhi.com",
@@ -137,8 +149,8 @@
         "sqlP95Ms": 4,
         "workerP50Ms": 1,
         "workerP95Ms": 1,
-        "e2eP50Ms": 3.92,
-        "e2eP95Ms": 4.79,
+        "e2eP50Ms": 4.15,
+        "e2eP95Ms": 5.64,
         "returnedRows": 1,
         "totalCount": 1,
         "topMatchEmail": "syn.1000@khongtunhi.com",
@@ -148,11 +160,11 @@
       "multiWordSearch": {
         "iterations": 20,
         "sqlP50Ms": 6,
-        "sqlP95Ms": 7,
+        "sqlP95Ms": 8,
         "workerP50Ms": 1,
         "workerP95Ms": 2,
-        "e2eP50Ms": 6.95,
-        "e2eP95Ms": 7.85,
+        "e2eP50Ms": 8.06,
+        "e2eP95Ms": 9.29,
         "returnedRows": 20,
         "totalCount": 29,
         "topMatchEmail": "syn.1@khongtunhi.com",
@@ -162,12 +174,12 @@
       "deepPagination": {
         "offset": 500,
         "iterations": 20,
-        "sqlP50Ms": 3,
-        "sqlP95Ms": 4,
+        "sqlP50Ms": 4,
+        "sqlP95Ms": 5,
         "workerP50Ms": 1,
         "workerP95Ms": 2,
-        "e2eP50Ms": 4.58,
-        "e2eP95Ms": 5.08,
+        "e2eP50Ms": 4.63,
+        "e2eP95Ms": 6.38,
         "returnedRows": 20,
         "totalCount": 1000,
         "topMatchEmail": "syn.501@khongtunhi.com",
@@ -176,51 +188,51 @@
       },
       "explainAnalyzeBuffers": {
         "nameSearchTrgmGin": [
-          "Limit  (cost=0.00..58.50 rows=1 width=57) (actual time=0.646..0.685 rows=1.00 loops=1)",
+          "Limit  (cost=0.00..58.50 rows=1 width=57) (actual time=1.218..1.264 rows=1.00 loops=1)",
           "  Buffers: shared hit=41",
-          "  ->  Seq Scan on ktn_students  (cost=0.00..58.50 rows=1 width=57) (actual time=0.637..0.659 rows=1.00 loops=1)",
+          "  ->  Seq Scan on ktn_students  (cost=0.00..58.50 rows=1 width=57) (actual time=1.195..1.222 rows=1.00 loops=1)",
           "        Filter: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%trang%'::text) AND (search_text ~~ '%biet%'::text))",
           "        Rows Removed by Filter: 999",
           "        Buffers: shared hit=41",
           "Planning:",
           "  Buffers: shared hit=111",
-          "Planning Time: 0.815 ms",
-          "Execution Time: 0.785 ms"
+          "Planning Time: 1.313 ms",
+          "Execution Time: 1.432 ms"
         ],
         "emailUniqueBtree": [
-          "Limit  (cost=0.28..8.29 rows=1 width=57) (actual time=0.017..0.020 rows=1.00 loops=1)",
+          "Limit  (cost=0.28..8.29 rows=1 width=57) (actual time=0.014..0.017 rows=1.00 loops=1)",
           "  Buffers: shared hit=3",
-          "  ->  Index Scan using ktn_students_email_key on ktn_students  (cost=0.28..8.29 rows=1 width=57) (actual time=0.014..0.015 rows=1.00 loops=1)",
+          "  ->  Index Scan using ktn_students_email_key on ktn_students  (cost=0.28..8.29 rows=1 width=57) (actual time=0.011..0.012 rows=1.00 loops=1)",
           "        Index Cond: (email = 'syn.1000@khongtunhi.com'::text)",
           "        Index Searches: 1",
           "        Buffers: shared hit=3",
           "Planning:",
           "  Buffers: shared hit=3",
-          "Planning Time: 0.211 ms",
-          "Execution Time: 0.047 ms"
+          "Planning Time: 0.181 ms",
+          "Execution Time: 0.041 ms"
         ],
         "deepPaginationIndex": [
-          "Limit  (cost=72.04..74.92 rows=20 width=65) (actual time=1.559..1.592 rows=20.00 loops=1)",
+          "Limit  (cost=72.04..74.92 rows=20 width=65) (actual time=1.173..1.203 rows=20.00 loops=1)",
           "  Buffers: shared hit=31",
-          "  ->  Index Scan using idx_ktn_students_updated_email on ktn_students  (cost=0.28..143.81 rows=1000 width=65) (actual time=0.026..1.196 rows=520.00 loops=1)",
+          "  ->  Index Scan using idx_ktn_students_updated_email on ktn_students  (cost=0.28..143.81 rows=1000 width=65) (actual time=0.019..0.886 rows=520.00 loops=1)",
           "        Index Searches: 1",
           "        Buffers: shared hit=31",
-          "Planning Time: 0.151 ms",
-          "Execution Time: 1.625 ms"
+          "Planning Time: 0.148 ms",
+          "Execution Time: 1.232 ms"
         ]
       }
     },
     "10000": {
       "scale": 10000,
-      "seedMs": 6087,
+      "seedMs": 9722,
       "emailSearch": {
         "iterations": 20,
-        "sqlP50Ms": 3,
-        "sqlP95Ms": 4,
-        "workerP50Ms": 0,
+        "sqlP50Ms": 4,
+        "sqlP95Ms": 5,
+        "workerP50Ms": 1,
         "workerP95Ms": 1,
-        "e2eP50Ms": 3.72,
-        "e2eP95Ms": 4.67,
+        "e2eP50Ms": 4.55,
+        "e2eP95Ms": 6.79,
         "returnedRows": 1,
         "totalCount": 1,
         "topMatchEmail": "syn.10000@khongtunhi.com",
@@ -230,11 +242,11 @@
       "nameSearch": {
         "iterations": 20,
         "sqlP50Ms": 3,
-        "sqlP95Ms": 3,
-        "workerP50Ms": 0,
-        "workerP95Ms": 1,
-        "e2eP50Ms": 2.94,
-        "e2eP95Ms": 3.66,
+        "sqlP95Ms": 4,
+        "workerP50Ms": 1,
+        "workerP95Ms": 2,
+        "e2eP50Ms": 3.43,
+        "e2eP95Ms": 5.57,
         "returnedRows": 1,
         "totalCount": 1,
         "topMatchEmail": "syn.10000@khongtunhi.com",
@@ -243,12 +255,12 @@
       },
       "multiWordSearch": {
         "iterations": 20,
-        "sqlP50Ms": 25,
-        "sqlP95Ms": 29,
+        "sqlP50Ms": 27,
+        "sqlP95Ms": 33,
         "workerP50Ms": 1,
         "workerP95Ms": 2,
-        "e2eP50Ms": 25.89,
-        "e2eP95Ms": 30.73,
+        "e2eP50Ms": 28.45,
+        "e2eP95Ms": 34.74,
         "returnedRows": 20,
         "totalCount": 300,
         "topMatchEmail": "syn.1@khongtunhi.com",
@@ -258,12 +270,12 @@
       "deepPagination": {
         "offset": 2500,
         "iterations": 20,
-        "sqlP50Ms": 5,
+        "sqlP50Ms": 6,
         "sqlP95Ms": 7,
         "workerP50Ms": 1,
         "workerP95Ms": 2,
-        "e2eP50Ms": 6.31,
-        "e2eP95Ms": 8.29,
+        "e2eP50Ms": 7.06,
+        "e2eP95Ms": 8.43,
         "returnedRows": 20,
         "totalCount": 10000,
         "topMatchEmail": "syn.2501@khongtunhi.com",
@@ -272,55 +284,55 @@
       },
       "explainAnalyzeBuffers": {
         "nameSearchTrgmGin": [
-          "Limit  (cost=65.08..69.10 rows=1 width=59) (actual time=0.981..0.987 rows=1.00 loops=1)",
+          "Limit  (cost=65.08..69.10 rows=1 width=59) (actual time=1.690..1.700 rows=1.00 loops=1)",
           "  Buffers: shared hit=15",
-          "  ->  Bitmap Heap Scan on ktn_students  (cost=65.08..69.10 rows=1 width=59) (actual time=0.978..0.981 rows=1.00 loops=1)",
+          "  ->  Bitmap Heap Scan on ktn_students  (cost=65.08..69.10 rows=1 width=59) (actual time=1.681..1.687 rows=1.00 loops=1)",
           "        Recheck Cond: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%trang%'::text) AND (search_text ~~ '%biet%'::text))",
           "        Heap Blocks: exact=1",
           "        Buffers: shared hit=15",
-          "        ->  Bitmap Index Scan on idx_ktn_students_search_text_trgm  (cost=0.00..65.08 rows=1 width=0) (actual time=0.945..0.946 rows=1.00 loops=1)",
+          "        ->  Bitmap Index Scan on idx_ktn_students_search_text_trgm  (cost=0.00..65.08 rows=1 width=0) (actual time=1.607..1.609 rows=1.00 loops=1)",
           "              Index Cond: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%trang%'::text) AND (search_text ~~ '%biet%'::text))",
           "              Index Searches: 1",
           "              Buffers: shared hit=14",
           "Planning:",
           "  Buffers: shared hit=119",
-          "Planning Time: 0.713 ms",
-          "Execution Time: 1.152 ms"
+          "Planning Time: 1.481 ms",
+          "Execution Time: 2.009 ms"
         ],
         "emailUniqueBtree": [
-          "Limit  (cost=0.29..8.30 rows=1 width=59) (actual time=0.015..0.016 rows=1.00 loops=1)",
+          "Limit  (cost=0.29..8.30 rows=1 width=59) (actual time=0.025..0.029 rows=1.00 loops=1)",
           "  Buffers: shared hit=3",
-          "  ->  Index Scan using ktn_students_email_key on ktn_students  (cost=0.29..8.30 rows=1 width=59) (actual time=0.012..0.013 rows=1.00 loops=1)",
+          "  ->  Index Scan using ktn_students_email_key on ktn_students  (cost=0.29..8.30 rows=1 width=59) (actual time=0.021..0.021 rows=1.00 loops=1)",
           "        Index Cond: (email = 'syn.10000@khongtunhi.com'::text)",
           "        Index Searches: 1",
           "        Buffers: shared hit=3",
           "Planning:",
           "  Buffers: shared hit=5",
-          "Planning Time: 0.235 ms",
-          "Execution Time: 0.034 ms"
+          "Planning Time: 0.340 ms",
+          "Execution Time: 0.066 ms"
         ],
         "deepPaginationIndex": [
-          "Limit  (cost=340.30..343.02 rows=20 width=67) (actual time=2.701..2.732 rows=20.00 loops=1)",
+          "Limit  (cost=340.30..343.02 rows=20 width=67) (actual time=4.066..4.108 rows=20.00 loops=1)",
           "  Buffers: shared hit=132",
-          "  ->  Index Scan using idx_ktn_students_updated_email on ktn_students  (cost=0.29..1360.34 rows=10000 width=67) (actual time=0.016..1.880 rows=2520.00 loops=1)",
+          "  ->  Index Scan using idx_ktn_students_updated_email on ktn_students  (cost=0.29..1360.34 rows=10000 width=67) (actual time=0.025..3.091 rows=2520.00 loops=1)",
           "        Index Searches: 1",
           "        Buffers: shared hit=132",
-          "Planning Time: 0.118 ms",
-          "Execution Time: 2.762 ms"
+          "Planning Time: 0.218 ms",
+          "Execution Time: 4.156 ms"
         ]
       }
     },
     "50000": {
       "scale": 50000,
-      "seedMs": 33221,
+      "seedMs": 28453,
       "emailSearch": {
         "iterations": 20,
         "sqlP50Ms": 6,
         "sqlP95Ms": 7,
-        "workerP50Ms": 0,
+        "workerP50Ms": 1,
         "workerP95Ms": 1,
-        "e2eP50Ms": 7.19,
-        "e2eP95Ms": 8.35,
+        "e2eP50Ms": 7.12,
+        "e2eP95Ms": 8.12,
         "returnedRows": 1,
         "totalCount": 1,
         "topMatchEmail": "syn.50000@khongtunhi.com",
@@ -333,8 +345,8 @@
         "sqlP95Ms": 4,
         "workerP50Ms": 1,
         "workerP95Ms": 1,
-        "e2eP50Ms": 3.76,
-        "e2eP95Ms": 4.49,
+        "e2eP50Ms": 4.16,
+        "e2eP95Ms": 4.77,
         "returnedRows": 1,
         "totalCount": 1,
         "topMatchEmail": "syn.50000@khongtunhi.com",
@@ -343,12 +355,12 @@
       },
       "multiWordSearch": {
         "iterations": 20,
-        "sqlP50Ms": 118,
-        "sqlP95Ms": 137,
+        "sqlP50Ms": 120,
+        "sqlP95Ms": 127,
         "workerP50Ms": 1,
         "workerP95Ms": 2,
-        "e2eP50Ms": 119.41,
-        "e2eP95Ms": 137.84,
+        "e2eP50Ms": 120.8,
+        "e2eP95Ms": 129.09,
         "returnedRows": 20,
         "totalCount": 1500,
         "topMatchEmail": "syn.1@khongtunhi.com",
@@ -358,12 +370,12 @@
       "deepPagination": {
         "offset": 45000,
         "iterations": 20,
-        "sqlP50Ms": 33,
-        "sqlP95Ms": 38,
+        "sqlP50Ms": 32,
+        "sqlP95Ms": 34,
         "workerP50Ms": 1,
         "workerP95Ms": 2,
-        "e2eP50Ms": 34.63,
-        "e2eP95Ms": 39.72,
+        "e2eP50Ms": 32.98,
+        "e2eP95Ms": 35.75,
         "returnedRows": 20,
         "totalCount": 50000,
         "topMatchEmail": "syn.45001@khongtunhi.com",
@@ -372,41 +384,269 @@
       },
       "explainAnalyzeBuffers": {
         "nameSearchTrgmGin": [
-          "Limit  (cost=94.90..98.92 rows=1 width=61) (actual time=1.586..1.605 rows=1.00 loops=1)",
+          "Limit  (cost=94.90..98.92 rows=1 width=61) (actual time=0.867..0.872 rows=1.00 loops=1)",
           "  Buffers: shared hit=25",
-          "  ->  Bitmap Heap Scan on ktn_students  (cost=94.90..98.92 rows=1 width=61) (actual time=1.581..1.586 rows=1.00 loops=1)",
+          "  ->  Bitmap Heap Scan on ktn_students  (cost=94.90..98.92 rows=1 width=61) (actual time=0.865..0.867 rows=1.00 loops=1)",
           "        Recheck Cond: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%trang%'::text) AND (search_text ~~ '%biet%'::text))",
           "        Heap Blocks: exact=1",
           "        Buffers: shared hit=25",
-          "        ->  Bitmap Index Scan on idx_ktn_students_search_text_trgm  (cost=0.00..94.90 rows=1 width=0) (actual time=1.505..1.506 rows=1.00 loops=1)",
+          "        ->  Bitmap Index Scan on idx_ktn_students_search_text_trgm  (cost=0.00..94.90 rows=1 width=0) (actual time=0.836..0.836 rows=1.00 loops=1)",
           "              Index Cond: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%trang%'::text) AND (search_text ~~ '%biet%'::text))",
           "              Index Searches: 1",
           "              Buffers: shared hit=24",
           "Planning:",
           "  Buffers: shared hit=113",
-          "Planning Time: 1.092 ms",
-          "Execution Time: 1.654 ms"
+          "Planning Time: 0.791 ms",
+          "Execution Time: 0.905 ms"
         ],
         "emailUniqueBtree": [
-          "Limit  (cost=0.41..8.43 rows=1 width=61) (actual time=0.027..0.029 rows=1.00 loops=1)",
+          "Limit  (cost=0.41..8.43 rows=1 width=61) (actual time=0.015..0.017 rows=1.00 loops=1)",
           "  Buffers: shared hit=4",
-          "  ->  Index Scan using ktn_students_email_key on ktn_students  (cost=0.41..8.43 rows=1 width=61) (actual time=0.020..0.021 rows=1.00 loops=1)",
+          "  ->  Index Scan using ktn_students_email_key on ktn_students  (cost=0.41..8.43 rows=1 width=61) (actual time=0.013..0.014 rows=1.00 loops=1)",
           "        Index Cond: (email = 'syn.50000@khongtunhi.com'::text)",
           "        Index Searches: 1",
           "        Buffers: shared hit=4",
           "Planning:",
           "  Buffers: shared hit=5",
-          "Planning Time: 0.239 ms",
-          "Execution Time: 0.064 ms"
+          "Planning Time: 0.174 ms",
+          "Execution Time: 0.035 ms"
         ],
         "deepPaginationIndex": [
-          "Limit  (cost=349.37..352.16 rows=20 width=69) (actual time=7.139..7.173 rows=20.00 loops=1)",
+          "Limit  (cost=349.36..352.16 rows=20 width=69) (actual time=2.963..3.001 rows=20.00 loops=1)",
           "  Buffers: shared hit=132",
-          "  ->  Index Scan using idx_ktn_students_updated_email on ktn_students  (cost=0.29..6981.82 rows=50000 width=69) (actual time=0.021..3.452 rows=2520.00 loops=1)",
+          "  ->  Index Scan using idx_ktn_students_updated_email on ktn_students  (cost=0.29..6981.77 rows=50000 width=69) (actual time=0.018..2.068 rows=2520.00 loops=1)",
           "        Index Searches: 1",
           "        Buffers: shared hit=132",
-          "Planning Time: 0.157 ms",
-          "Execution Time: 7.213 ms"
+          "Planning Time: 0.139 ms",
+          "Execution Time: 3.033 ms"
+        ]
+      }
+    }
+  },
+  "teacherBenchmarks": {
+    "1000": {
+      "scale": 1000,
+      "seedMs": 884,
+      "postgresSql": {
+        "accentInsensitiveName": {
+          "iterations": 20,
+          "sqlP50Ms": 1.65,
+          "sqlP95Ms": 2.29,
+          "returnedRows": 1,
+          "topMatchCode": "GV-SYN-00998",
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
+          "topMatchEmail": "gv.syn.998@khongtunhi.com"
+        },
+        "emailLookup": {
+          "iterations": 20,
+          "sqlP50Ms": 0.41,
+          "sqlP95Ms": 0.76,
+          "returnedRows": 1,
+          "topMatchCode": "GV-SYN-00998",
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
+          "topMatchEmail": "gv.syn.998@khongtunhi.com"
+        },
+        "deepPagination": {
+          "offset": 500,
+          "iterations": 20,
+          "sqlP50Ms": 1.68,
+          "sqlP95Ms": 2.7,
+          "returnedRows": 20,
+          "topMatchCode": "GV-SYN-00499",
+          "topMatchName": "Thầy Hồ Hoàng Lan 499",
+          "topMatchEmail": "gv.syn.499@khongtunhi.com"
+        }
+      },
+      "workerEndpoint": {
+        "accentInsensitiveSearch": {
+          "iterations": 15,
+          "e2eP50Ms": 35.84,
+          "e2eP95Ms": 42.17,
+          "sqlP50Ms": 35,
+          "sqlP95Ms": 40,
+          "returnedRows": 1,
+          "totalCount": 1,
+          "hasMore": false,
+          "topMatchEmail": "gv.syn.998@khongtunhi.com",
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+        },
+        "accentedSearch": {
+          "iterations": 15,
+          "e2eP50Ms": 35.41,
+          "e2eP95Ms": 38.58,
+          "sqlP50Ms": 35,
+          "sqlP95Ms": 38,
+          "returnedRows": 1,
+          "totalCount": 1,
+          "hasMore": false,
+          "topMatchEmail": "gv.syn.998@khongtunhi.com",
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+        },
+        "deepPagination": {
+          "offset": 500,
+          "iterations": 15,
+          "e2eP50Ms": 6.55,
+          "e2eP95Ms": 7.56,
+          "sqlP50Ms": 6,
+          "sqlP95Ms": 6,
+          "returnedRows": 20,
+          "totalCount": 1000,
+          "hasMore": true,
+          "topMatchEmail": "gv.syn.554@khongtunhi.com",
+          "topMatchName": "Cô Hoàng Thanh Mai 554"
+        }
+      },
+      "explainAnalyzeBuffers": {
+        "nameSearchTrgmGin": [
+          "Limit  (cost=73.67..77.68 rows=1 width=118) (actual time=0.053..0.058 rows=2.00 loops=1)",
+          "  Buffers: shared hit=19",
+          "  ->  Bitmap Heap Scan on ktn_teachers  (cost=73.67..77.68 rows=1 width=118) (actual time=0.052..0.055 rows=2.00 loops=1)",
+          "        Recheck Cond: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%quynh%'::text) AND (search_text ~~ '%huong%'::text))",
+          "        Heap Blocks: exact=2",
+          "        Buffers: shared hit=19",
+          "        ->  Bitmap Index Scan on idx_ktn_teachers_search_trgm  (cost=0.00..73.67 rows=1 width=0) (actual time=0.038..0.039 rows=2.00 loops=1)",
+          "              Index Cond: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%quynh%'::text) AND (search_text ~~ '%huong%'::text))",
+          "              Index Searches: 1",
+          "              Buffers: shared hit=17",
+          "Planning:",
+          "  Buffers: shared hit=87",
+          "Planning Time: 0.485 ms",
+          "Execution Time: 0.078 ms"
+        ],
+        "emailLowerBtree": [
+          "Limit  (cost=0.28..8.29 rows=1 width=64) (actual time=0.009..0.011 rows=1.00 loops=1)",
+          "  Buffers: shared hit=3",
+          "  ->  Index Scan using idx_ktn_teachers_email_lower on ktn_teachers  (cost=0.28..8.29 rows=1 width=64) (actual time=0.008..0.008 rows=1.00 loops=1)",
+          "        Index Cond: (lower(email) = 'gv.syn.998@khongtunhi.com'::text)",
+          "        Index Searches: 1",
+          "        Buffers: shared hit=3",
+          "Planning:",
+          "  Buffers: shared hit=3",
+          "Planning Time: 0.090 ms",
+          "Execution Time: 0.022 ms"
+        ],
+        "deepPaginationIndex": [
+          "Limit  (cost=55.49..57.70 rows=20 width=65) (actual time=0.421..0.442 rows=20.00 loops=1)",
+          "  Buffers: shared hit=41",
+          "  ->  Index Scan using idx_ktn_teachers_code_asc on ktn_teachers  (cost=0.28..110.70 rows=1000 width=65) (actual time=0.018..0.318 rows=520.00 loops=1)",
+          "        Index Searches: 1",
+          "        Buffers: shared hit=41",
+          "Planning:",
+          "  Buffers: shared hit=6",
+          "Planning Time: 0.117 ms",
+          "Execution Time: 0.456 ms"
+        ]
+      }
+    },
+    "10000": {
+      "scale": 10000,
+      "seedMs": 11567,
+      "postgresSql": {
+        "accentInsensitiveName": {
+          "iterations": 20,
+          "sqlP50Ms": 0.98,
+          "sqlP95Ms": 1.48,
+          "returnedRows": 1,
+          "topMatchCode": "GV-SYN-09998",
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
+          "topMatchEmail": "gv.syn.9998@khongtunhi.com"
+        },
+        "emailLookup": {
+          "iterations": 20,
+          "sqlP50Ms": 0.31,
+          "sqlP95Ms": 0.4,
+          "returnedRows": 1,
+          "topMatchCode": "GV-SYN-09998",
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
+          "topMatchEmail": "gv.syn.9998@khongtunhi.com"
+        },
+        "deepPagination": {
+          "offset": 2500,
+          "iterations": 20,
+          "sqlP50Ms": 7.91,
+          "sqlP95Ms": 8.75,
+          "returnedRows": 20,
+          "topMatchCode": "GV-SYN-02499",
+          "topMatchName": "Thầy Hồ Hoàng Lan 2499",
+          "topMatchEmail": "gv.syn.2499@khongtunhi.com"
+        }
+      },
+      "workerEndpoint": {
+        "accentInsensitiveSearch": {
+          "iterations": 15,
+          "e2eP50Ms": 318.03,
+          "e2eP95Ms": 348.58,
+          "sqlP50Ms": 317,
+          "sqlP95Ms": 348,
+          "returnedRows": 1,
+          "totalCount": 1,
+          "hasMore": false,
+          "topMatchEmail": "gv.syn.9998@khongtunhi.com",
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+        },
+        "accentedSearch": {
+          "iterations": 15,
+          "e2eP50Ms": 323,
+          "e2eP95Ms": 333.17,
+          "sqlP50Ms": 323,
+          "sqlP95Ms": 332,
+          "returnedRows": 1,
+          "totalCount": 1,
+          "hasMore": false,
+          "topMatchEmail": "gv.syn.9998@khongtunhi.com",
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+        },
+        "deepPagination": {
+          "offset": 2500,
+          "iterations": 15,
+          "e2eP50Ms": 22.32,
+          "e2eP95Ms": 23.98,
+          "sqlP50Ms": 21,
+          "sqlP95Ms": 23,
+          "returnedRows": 20,
+          "totalCount": 10000,
+          "hasMore": true,
+          "topMatchEmail": "gv.syn.2776@khongtunhi.com",
+          "topMatchName": "Cô Đặng Phương Tùng 2776"
+        }
+      },
+      "explainAnalyzeBuffers": {
+        "nameSearchTrgmGin": [
+          "Limit  (cost=73.79..77.80 rows=1 width=120) (actual time=0.197..0.221 rows=11.00 loops=1)",
+          "  Buffers: shared hit=35",
+          "  ->  Bitmap Heap Scan on ktn_teachers  (cost=73.79..77.80 rows=1 width=120) (actual time=0.195..0.213 rows=11.00 loops=1)",
+          "        Recheck Cond: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%quynh%'::text) AND (search_text ~~ '%huong%'::text))",
+          "        Heap Blocks: exact=13",
+          "        Buffers: shared hit=35",
+          "        ->  Bitmap Index Scan on idx_ktn_teachers_search_trgm  (cost=0.00..73.79 rows=1 width=0) (actual time=0.177..0.178 rows=13.00 loops=1)",
+          "              Index Cond: ((search_text ~~ '%dang%'::text) AND (search_text ~~ '%quynh%'::text) AND (search_text ~~ '%huong%'::text))",
+          "              Index Searches: 1",
+          "              Buffers: shared hit=22",
+          "Planning:",
+          "  Buffers: shared hit=95",
+          "Planning Time: 0.553 ms",
+          "Execution Time: 0.247 ms"
+        ],
+        "emailLowerBtree": [
+          "Limit  (cost=0.29..8.30 rows=1 width=66) (actual time=0.012..0.013 rows=1.00 loops=1)",
+          "  Buffers: shared hit=3",
+          "  ->  Index Scan using idx_ktn_teachers_email_lower on ktn_teachers  (cost=0.29..8.30 rows=1 width=66) (actual time=0.010..0.011 rows=1.00 loops=1)",
+          "        Index Cond: (lower(email) = 'gv.syn.9998@khongtunhi.com'::text)",
+          "        Index Searches: 1",
+          "        Buffers: shared hit=3",
+          "Planning:",
+          "  Buffers: shared hit=5",
+          "Planning Time: 0.228 ms",
+          "Execution Time: 0.029 ms"
+        ],
+        "deepPaginationIndex": [
+          "Limit  (cost=271.75..273.92 rows=20 width=67) (actual time=2.144..2.167 rows=20.00 loops=1)",
+          "  Buffers: shared hit=205",
+          "  ->  Index Scan using ktn_teachers_pkey on ktn_teachers  (cost=0.29..1086.13 rows=10000 width=67) (actual time=0.015..1.581 rows=2520.00 loops=1)",
+          "        Index Searches: 1",
+          "        Buffers: shared hit=205",
+          "Planning Time: 0.084 ms",
+          "Execution Time: 2.188 ms"
         ]
       }
     }

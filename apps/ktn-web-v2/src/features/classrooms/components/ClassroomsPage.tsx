@@ -15,8 +15,18 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
+  Paperclip,
+  FileText,
+  Download,
+  ZoomIn,
+  X,
 } from 'lucide-react';
-import { ktnApi } from '@/services/api/ktnApiClient';
+import {
+  ktnApi,
+  resolveUploadedMediaUrl,
+  formatBytes,
+  type KtnExerciseAttachment,
+} from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { HomeworkPanel } from '@/features/learning/components/HomeworkPanel';
@@ -53,6 +63,8 @@ export const ClassroomsPage: React.FC = () => {
     return null;
   });
   const [mobileSessionsExpanded, setMobileSessionsExpanded] = useState<boolean>(false);
+  const [previewAttachment, setPreviewAttachment] =
+    useState<KtnExerciseAttachment | null>(null);
   const didAutoSelectSessionRef = useRef<boolean>(false);
 
   useEffect(() => {
@@ -85,10 +97,24 @@ export const ClassroomsPage: React.FC = () => {
     .trim()
     .toUpperCase();
 
+  const studentOwnClassCode = String(
+    user?.classCode || (isDemoMode ? 'YCT2-04' : '')
+  )
+    .trim()
+    .toUpperCase();
+  const isCrossClassBlockedForStudent =
+    user?.role === 'student' &&
+    Boolean(urlClassParam) &&
+    Boolean(studentOwnClassCode) &&
+    urlClassParam !== studentOwnClassCode;
+
   const activeClassCode =
     user?.role === 'teacher' || user?.role === 'admin'
-      ? urlClassParam || user?.assignedClasses?.[0] || user?.classCode || (isDemoMode ? 'YCT2-04' : '')
-      : urlClassParam || user?.classCode || (isDemoMode ? 'YCT2-04' : '');
+      ? urlClassParam ||
+        user?.assignedClasses?.[0] ||
+        user?.classCode ||
+        (isDemoMode ? 'YCT2-04' : '')
+      : studentOwnClassCode;
 
   const sessionsQuery = useQuery<KtnClassSession[]>({
     queryKey: ['ktn-class-sessions', activeClassCode, user?.email, isDemoMode],
@@ -253,6 +279,18 @@ export const ClassroomsPage: React.FC = () => {
 
   return (
     <div data-testid="classrooms-page" className="space-y-3 pb-16 sm:space-y-4 sm:pb-6">
+      {isCrossClassBlockedForStudent && (
+        <div
+          role="alert"
+          data-testid="student-cross-class-blocked-alert"
+          className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-800" />
+          <span>
+            Bạn không có quyền truy cập tài liệu của lớp {urlClassParam}. Hệ thống đang hiển thị lớp {studentOwnClassCode} của bạn.
+          </span>
+        </div>
+      )}
       {hasApiError && (
         <div
           role="alert"
@@ -538,136 +576,325 @@ export const ClassroomsPage: React.FC = () => {
                   <div className="mt-3 space-y-2.5">
                     <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-700">
                       <FileCheck2 className="h-3.5 w-3.5 text-red-800" />
-                      Bài tập được giao ({activeSession.exercises?.length || 0})
+                      Bài tập được giao (
+                      {
+                        (activeSession.exercises || []).filter(
+                          (ex) => user?.role !== 'student' || ex.status !== 'draft'
+                        ).length
+                      }
+                      )
                     </h4>
 
-                    {(activeSession.exercises || []).map((ex, idx) => {
-                      const sNum = Number(activeSession.sessionNum || activeSession.session_num || 1);
-                      const exNum = Number(ex.num || idx + 1);
-                      const liveLessonNum = sNum * 100 + exNum;
-                      const liveCourseId = `CLASS_${assignedClass.id.toUpperCase()}`;
-
-                      // Match ONLY live-classroom homework for this class & session/exercise, NEVER video-course homework
-                      const matchedHw = (homeworksQuery.data || []).find((h) => {
-                        const hCourseId = String(h.course_id || '').trim().toUpperCase();
-                        const isSameLiveClass =
-                          hCourseId === liveCourseId ||
-                          (!hCourseId &&
-                            String(h.class_code || '').trim().toUpperCase() ===
-                              assignedClass.id.toUpperCase());
-                        if (!isSameLiveClass) return false;
-                        return (
-                          Number(h.lesson_num) === liveLessonNum ||
-                          (exNum === 1 && Number(h.lesson_num) === sNum)
+                    {(activeSession.exercises || [])
+                      .filter((ex) => user?.role !== 'student' || ex.status !== 'draft')
+                      .map((ex, idx) => {
+                        const sNum = Number(
+                          activeSession.sessionNum || activeSession.session_num || 1
                         );
-                      });
+                        const exNum = Number(ex.num || idx + 1);
+                        const liveLessonNum = sNum * 100 + exNum;
+                        const liveCourseId = `CLASS_${assignedClass.id.toUpperCase()}`;
 
-                      const isDrawerOpen = activeExerciseLessonNum === liveLessonNum;
+                        // Match ONLY live-classroom homework for this class & session/exercise, NEVER video-course homework
+                        const matchedHw = (homeworksQuery.data || []).find((h) => {
+                          const hCourseId = String(h.course_id || '').trim().toUpperCase();
+                          const isSameLiveClass =
+                            hCourseId === liveCourseId ||
+                            (!hCourseId &&
+                              String(h.class_code || '').trim().toUpperCase() ===
+                                assignedClass.id.toUpperCase());
+                          if (!isSameLiveClass) return false;
+                          return (
+                            Number(h.lesson_num) === liveLessonNum ||
+                            (exNum === 1 && Number(h.lesson_num) === sNum)
+                          );
+                        });
 
-                      return (
-                        <div key={ex.id || exNum} className="space-y-2">
-                          <div
-                            data-testid={`classroom-exercise-${liveLessonNum}`}
-                            className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-stone-200 bg-white p-3 shadow-2xs"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <p className="text-xs font-bold text-stone-900">{ex.title}</p>
-                                {matchedHw?.status === 'graded' ? (
-                                  <span
-                                    data-testid={`classroom-hw-status-${liveLessonNum}`}
-                                    className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800"
-                                  >
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    Đã chấm: {matchedHw.score}/10
+                        const isDrawerOpen = activeExerciseLessonNum === liveLessonNum;
+                        const teacherAttachments = Array.isArray(ex.attachments)
+                          ? ex.attachments
+                          : [];
+
+                        return (
+                          <div key={ex.id || exNum} className="space-y-2">
+                            <div
+                              data-testid={`classroom-exercise-${liveLessonNum}`}
+                              className="space-y-2.5 rounded-xl border border-stone-200 bg-white p-3 shadow-2xs"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <p className="text-xs font-bold text-stone-900">
+                                      {ex.title}
+                                    </p>
+                                    {ex.dueDate && (
+                                      <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700">
+                                        Hạn nộp: {ex.dueDate}
+                                      </span>
+                                    )}
+                                    {matchedHw?.status === 'graded' ? (
+                                      <span
+                                        data-testid={`classroom-hw-status-${liveLessonNum}`}
+                                        className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800"
+                                      >
+                                        <CheckCircle2 className="h-3 w-3" />
+                                        Đã chấm: {matchedHw.score}/10
+                                      </span>
+                                    ) : matchedHw ? (
+                                      <span
+                                        data-testid={`classroom-hw-status-${liveLessonNum}`}
+                                        className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800"
+                                      >
+                                        <Clock className="h-3 w-3" />
+                                        Đã nộp (Lớp {assignedClass.id})
+                                      </span>
+                                    ) : (
+                                      <span
+                                        data-testid={`classroom-hw-status-${liveLessonNum}`}
+                                        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900"
+                                      >
+                                        <Sparkles className="h-3 w-3" />
+                                        Cần hoàn thành
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="mt-0.5 text-xs text-stone-600">
+                                    {ex.prompt || ex.instruction}
+                                  </p>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  data-testid={`classroom-open-hw-btn-${liveLessonNum}`}
+                                  onClick={() =>
+                                    setActiveExerciseLessonNum(
+                                      isDrawerOpen ? null : liveLessonNum
+                                    )
+                                  }
+                                  className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                                >
+                                  <BookOpen className="h-3.5 w-3.5" />
+                                  <span>
+                                    {isDrawerOpen
+                                      ? 'Đóng'
+                                      : matchedHw
+                                        ? 'Xem bài nộp'
+                                        : 'Nộp bài'}
                                   </span>
-                                ) : matchedHw ? (
-                                  <span
-                                    data-testid={`classroom-hw-status-${liveLessonNum}`}
-                                    className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800"
-                                  >
-                                    <Clock className="h-3 w-3" />
-                                    Đã nộp (Lớp {assignedClass.id})
-                                  </span>
-                                ) : (
-                                  <span
-                                    data-testid={`classroom-hw-status-${liveLessonNum}`}
-                                    className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900"
-                                  >
-                                    <Sparkles className="h-3 w-3" />
-                                    Cần hoàn thành
-                                  </span>
-                                )}
+                                </button>
                               </div>
-                              <p className="mt-0.5 text-xs text-stone-600">
-                                {ex.prompt || ex.instruction}
-                              </p>
+
+                              {/* C4: Teacher Exercise Attachments right below prompt (separate from student HomeworkPanel) */}
+                              {teacherAttachments.length > 0 && (
+                                <div
+                                  data-testid={`student-exercise-attachments-block-${liveLessonNum}`}
+                                  className="space-y-1.5 rounded-xl border border-stone-200 bg-stone-50/80 p-2.5"
+                                >
+                                  <p className="flex items-center gap-1.5 text-[11px] font-bold text-stone-800">
+                                    <Paperclip className="h-3.5 w-3.5 text-red-800" />
+                                    <span>
+                                      Tài liệu đề bài từ giáo viên ({teacherAttachments.length}{' '}
+                                      tệp)
+                                    </span>
+                                  </p>
+                                  <div className="space-y-2">
+                                    {teacherAttachments.map((att) => {
+                                      const resolvedUrl = resolveUploadedMediaUrl(att.url);
+                                      const mimeLower = (att.mimeType || '').toLowerCase();
+                                      const nameLower = (att.name || '').toLowerCase();
+                                      const isImage =
+                                        mimeLower.startsWith('image/') ||
+                                        /\.(jpg|jpeg|png|webp|gif)$/i.test(nameLower);
+                                      const isPdf =
+                                        mimeLower.includes('pdf') ||
+                                        nameLower.endsWith('.pdf');
+                                      const isAudio =
+                                        mimeLower.startsWith('audio/') ||
+                                        /\.(mp3|m4a|wav|aac|ogg)$/i.test(nameLower);
+                                      const isVideo =
+                                        mimeLower.startsWith('video/') ||
+                                        /\.(mp4|mov|webm)$/i.test(nameLower);
+
+                                      return (
+                                        <div
+                                          key={att.id}
+                                          data-testid={`student-exercise-attachment-${att.id}`}
+                                          className="space-y-2 rounded-lg border border-stone-200 bg-white p-2 text-xs"
+                                        >
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                                              {isImage && resolvedUrl ? (
+                                                <img
+                                                  src={resolvedUrl}
+                                                  alt={att.name}
+                                                  className="h-9 w-9 shrink-0 rounded object-cover"
+                                                />
+                                              ) : (
+                                                <FileText className="h-4 w-4 shrink-0 text-red-800" />
+                                              )}
+                                              <div className="min-w-0 flex-1">
+                                                <p className="truncate font-bold text-stone-900">
+                                                  {att.name}
+                                                </p>
+                                                <p className="text-[10px] text-stone-500">
+                                                  {formatBytes(att.sizeBytes || 0)}
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            <div className="flex shrink-0 items-center gap-1.5">
+                                              {(isImage || isPdf) && resolvedUrl && (
+                                                <button
+                                                  type="button"
+                                                  data-testid={`student-preview-attachment-btn-${att.id}`}
+                                                  onClick={() => setPreviewAttachment(att)}
+                                                  className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-bold text-stone-800 hover:bg-stone-50"
+                                                >
+                                                  <ZoomIn className="h-3.5 w-3.5" />
+                                                  <span>
+                                                    {isPdf ? 'Xem PDF' : 'Xem ảnh'}
+                                                  </span>
+                                                </button>
+                                              )}
+                                              {resolvedUrl && (
+                                                <a
+                                                  href={resolvedUrl}
+                                                  download={att.name}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  data-testid={`student-download-attachment-btn-${att.id}`}
+                                                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-900 hover:bg-red-100"
+                                                >
+                                                  <Download className="h-3.5 w-3.5" />
+                                                  <span>Tải về</span>
+                                                </a>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {isAudio && resolvedUrl && (
+                                            <audio
+                                              controls
+                                              src={resolvedUrl}
+                                              data-testid={`student-exercise-audio-player-${att.id}`}
+                                              className="h-9 w-full"
+                                            />
+                                          )}
+
+                                          {isVideo && resolvedUrl && (
+                                            <video
+                                              controls
+                                              src={resolvedUrl}
+                                              data-testid={`student-exercise-video-player-${att.id}`}
+                                              className="max-h-56 w-full rounded-lg bg-black"
+                                            />
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
-                            <button
-                              type="button"
-                              data-testid={`classroom-open-hw-btn-${liveLessonNum}`}
-                              onClick={() =>
-                                setActiveExerciseLessonNum(isDrawerOpen ? null : liveLessonNum)
-                              }
-                              className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
-                            >
-                              <BookOpen className="h-3.5 w-3.5" />
-                              <span>
-                                {isDrawerOpen
-                                  ? 'Đóng'
-                                  : matchedHw
-                                  ? 'Xem bài nộp'
-                                  : 'Nộp bài'}
-                              </span>
-                            </button>
-                          </div>
-
-                          {isDrawerOpen && (
-                            <HomeworkPanel
-                              key={`${liveCourseId}:${liveLessonNum}`}
-                              courseId={liveCourseId}
-                              lessonNum={liveLessonNum}
-                              lessonTitle={`Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`}
-                              classCode={assignedClass.id}
-                              homeworkAssignment={{
-                                assigned: true,
-                                mandatory: true,
-                                title: ex.title,
-                                instructions:
-                                  ex.prompt ||
-                                  ex.instruction ||
-                                  'Hoàn thành bài luyện tập của buổi học.',
-                                allowedTypes: ['audio', 'image', 'pdf', 'text'],
-                                maxFiles: 3,
-                              }}
-                              existingSubmission={matchedHw || null}
-                              isSubmitting={submitLiveClassHwMutation.isPending}
-                              onSubmitHomework={async ({
-                                file,
-                                fileName,
-                                note,
-                                submissionMode,
-                                textAnswer,
-                              }) => {
-                                await submitLiveClassHwMutation.mutateAsync({
-                                  lessonNum: liveLessonNum,
-                                  lessonTitle: `Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`,
-                                  studentNote: note,
+                            {isDrawerOpen && (
+                              <HomeworkPanel
+                                key={`${liveCourseId}:${liveLessonNum}`}
+                                courseId={liveCourseId}
+                                lessonNum={liveLessonNum}
+                                lessonTitle={`Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`}
+                                classCode={assignedClass.id}
+                                homeworkAssignment={{
+                                  assigned: true,
+                                  mandatory: true,
+                                  title: ex.title,
+                                  instructions:
+                                    ex.prompt ||
+                                    ex.instruction ||
+                                    'Hoàn thành bài luyện tập của buổi học.',
+                                  allowedTypes:
+                                    ex.submissionType === 'audio'
+                                      ? ['audio', 'text']
+                                      : ex.submissionType === 'text'
+                                        ? ['text']
+                                        : ex.submissionType === 'file'
+                                          ? ['image', 'pdf', 'video', 'text']
+                                          : ['audio', 'image', 'pdf', 'video', 'text'],
+                                  deadline: ex.dueDate || null,
+                                  maxFiles: 3,
+                                }}
+                                existingSubmission={matchedHw || null}
+                                isSubmitting={submitLiveClassHwMutation.isPending}
+                                onSubmitHomework={async ({
                                   file,
                                   fileName,
+                                  note,
                                   submissionMode,
                                   textAnswer,
-                                });
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
+                                }) => {
+                                  await submitLiveClassHwMutation.mutateAsync({
+                                    lessonNum: liveLessonNum,
+                                    lessonTitle: `Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`,
+                                    studentNote: note,
+                                    file,
+                                    fileName,
+                                    submissionMode,
+                                    textAnswer,
+                                  });
+                                }}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Exercise Attachment Preview Modal (Image / PDF) */}
+      {previewAttachment && (
+        <div
+          data-testid="student-attachment-preview-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        >
+          <div className="w-full max-w-2xl rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl">
+            <div className="flex items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
+              <div>
+                <h3 className="font-display text-sm font-bold text-stone-900">
+                  {previewAttachment.name}
+                </h3>
+                <p className="text-[11px] text-stone-500">
+                  {formatBytes(previewAttachment.sizeBytes || 0)}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Đóng xem trước tài liệu"
+                onClick={() => setPreviewAttachment(null)}
+                className="rounded-lg p-1 text-stone-500 hover:bg-stone-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-3 max-h-[70vh] overflow-auto">
+              {(previewAttachment.mimeType || '').toLowerCase().startsWith('image/') ||
+              /\.(jpg|jpeg|png|webp|gif)$/i.test(previewAttachment.name) ? (
+                <img
+                  src={resolveUploadedMediaUrl(previewAttachment.url)}
+                  alt={previewAttachment.name}
+                  className="mx-auto max-h-[60vh] rounded-xl object-contain"
+                />
+              ) : (
+                <iframe
+                  title={previewAttachment.name}
+                  src={resolveUploadedMediaUrl(previewAttachment.url)}
+                  className="h-[60vh] w-full rounded-xl border border-stone-200"
+                />
+              )}
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { ArrowDown, MessageSquarePlus, History, Loader2 } from 'lucide-react';
 import { ChatMessage } from '../types/chat.types';
 import { MessageBubble } from './MessageBubble';
 import { formatDateDivider } from '@/lib/utils';
+import { shouldGroupWithPreviousMessage } from '../services/chatApi';
 
 interface MessageListProps {
   roomId?: string | null;
@@ -447,12 +448,15 @@ export const MessageList: React.FC<MessageListProps> = ({
           </div>
         )}
 
-        {filteredMessages.map((msg) => {
+        {filteredMessages.map((msg, idx) => {
           const dateLabel = formatDateDivider(msg.created_at);
-          const showDateDivider = dateLabel && dateLabel !== lastDateLabel;
+          const showDateDivider = Boolean(dateLabel && dateLabel !== lastDateLabel);
           if (dateLabel) {
             lastDateLabel = dateLabel;
           }
+          const prevMsg = idx > 0 ? filteredMessages[idx - 1] : null;
+          const isGroupedWithPrev =
+            !showDateDivider && shouldGroupWithPreviousMessage(prevMsg, msg);
 
           return (
             <React.Fragment key={msg.clientMessageId || msg.id}>
@@ -469,6 +473,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                 currentUserEmail={currentUserEmail}
                 currentUserName={currentUserName}
                 canManagePin={canManagePin}
+                isGroupedWithPrev={isGroupedWithPrev}
                 onReply={onReply}
                 onReact={onReact}
                 onPinMessage={onPinMessage}

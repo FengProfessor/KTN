@@ -1,0 +1,280 @@
+{
+  "generatedAt": "2026-11-10T19:34:44.853Z",
+  "suite": "KTN_UX_AND_PERFORMANCE_UPGRADE_SUITE",
+  "allPassed": true,
+  "totalChecks": 22,
+  "passedChecks": 22,
+  "failedChecks": 0,
+  "teacherSearchBenchmarks": {
+    "workerHandler": {
+      "1000": {
+        "scale": 1000,
+        "nameSearch": {
+          "runs": 15,
+          "p50Ms": 3.62,
+          "p95Ms": 9.97,
+          "totalCount": 1,
+          "returnedRows": 1,
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
+          "searchEngine": "postgres_rpc"
+        },
+        "emailSearch": {
+          "runs": 15,
+          "p50Ms": 3.53,
+          "p95Ms": 5.99,
+          "totalCount": 1,
+          "returnedRows": 1,
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
+          "searchEngine": "postgres_rpc"
+        },
+        "deepPagination": {
+          "runs": 15,
+          "p50Ms": 2.66,
+          "p95Ms": 4.26,
+          "totalCount": 1000,
+          "returnedRows": 20,
+          "topMatchName": "Thầy Phạm Thanh Mai 553",
+          "searchEngine": "postgres_rpc"
+        }
+      },
+      "10000": {
+        "scale": 10000,
+        "nameSearch": {
+          "runs": 15,
+          "p50Ms": 22.29,
+          "p95Ms": 36.46,
+          "totalCount": 1,
+          "returnedRows": 1,
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
+          "searchEngine": "postgres_rpc"
+        },
+        "emailSearch": {
+          "runs": 15,
+          "p50Ms": 15.24,
+          "p95Ms": 18.23,
+          "totalCount": 1,
+          "returnedRows": 1,
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt",
+          "searchEngine": "postgres_rpc"
+        },
+        "deepPagination": {
+          "runs": 15,
+          "p50Ms": 6.82,
+          "p95Ms": 10.36,
+          "totalCount": 10000,
+          "returnedRows": 20,
+          "topMatchName": "Thầy Vũ Phương Tùng 2775",
+          "searchEngine": "postgres_rpc"
+        }
+      }
+    },
+    "postgres18PgliteTrgm": {
+      "1000": {
+        "scale": 1000,
+        "nameSearch": {
+          "runs": 20,
+          "p50Ms": 2.12,
+          "p95Ms": 3.83,
+          "returnedRows": 1,
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+        },
+        "emailSearch": {
+          "runs": 20,
+          "p50Ms": 0.86,
+          "p95Ms": 1.31,
+          "returnedRows": 1,
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+        },
+        "deepPagination": {
+          "runs": 20,
+          "p50Ms": 2.12,
+          "p95Ms": 3.44,
+          "returnedRows": 20,
+          "topMatchName": "Thầy Hồ Hoàng Lan 499"
+        },
+        "rpcVerifiedMatch": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+      },
+      "10000": {
+        "scale": 10000,
+        "nameSearch": {
+          "runs": 20,
+          "p50Ms": 1.15,
+          "p95Ms": 1.44,
+          "returnedRows": 1,
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+        },
+        "emailSearch": {
+          "runs": 20,
+          "p50Ms": 0.66,
+          "p95Ms": 1.14,
+          "returnedRows": 1,
+          "topMatchName": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+        },
+        "deepPagination": {
+          "runs": 20,
+          "p50Ms": 8.18,
+          "p95Ms": 13.07,
+          "returnedRows": 20,
+          "topMatchName": "Thầy Hồ Hoàng Lan 2499"
+        },
+        "rpcVerifiedMatch": "Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "T01_TEACHER_SEARCH_ACCENT_NORMALIZATION",
+      "category": "TEACHER_SEARCH",
+      "title": "GET /api/ktn/admin/teachers/search supports accented (\"Mỹ Linh\") and unaccented (\"linh\", \"my linh\", \"nguyen van\", \"dang vu\") Vietnamese search accurately",
+      "passed": true,
+      "detail": "qLinh=1 (linh.lam@khongtunhi.com), accented=1 (linh.lam@khongtunhi.com), unaccented=1 (linh.lam@khongtunhi.com), nguyenVan=bach.nguyen@khongtunhi.com, dangVu=quynh.huong@khongtunhi.com"
+    },
+    {
+      "id": "T02_TEACHER_SEARCH_CODE_EMAIL_PHONE_CLASS_SPEC",
+      "category": "TEACHER_SEARCH",
+      "title": "Search matches teacher code, email, phone number, assigned class code, and specialization",
+      "passed": true,
+      "detail": "code=GV-KTN-08, email=thu.ha@khongtunhi.com, phone=0912345678, classQ=linh.lam@khongtunhi.com, spec=thu.ha@khongtunhi.com"
+    },
+    {
+      "id": "T03_TEACHER_SEARCH_FILTERS_STATUS_CLASS_COURSE",
+      "category": "TEACHER_SEARCH",
+      "title": "Filters accurately by status (active, inactive, unassigned), classCode (YCT3-02), and courseId",
+      "passed": true,
+      "detail": "active=3, inactive=1, unassigned=2, classYCT3=thu.ha@khongtunhi.com, courseHSK1=linh.lam@khongtunhi.com"
+    },
+    {
+      "id": "T04_TEACHER_SEARCH_LIGHTWEIGHT_AND_LEGACY_COMPAT",
+      "category": "TEACHER_SEARCH",
+      "title": "GET /api/ktn/admin/teachers/search avoids heavy homework/forum/grant/attendance table scans on both RPC and PostgREST fallback paths while GET /api/ktn/teachers remains backward-compatible",
+      "passed": true,
+      "detail": "rpcEngine=postgres_rpc, fallbackEngine=postgrest_fallback, heavyTables=0, legacyStatus=200"
+    },
+    {
+      "id": "T05_TEACHER_SEARCH_RBAC",
+      "category": "TEACHER_SEARCH",
+      "title": "Unauthenticated and Student actors are denied access (401/403) to /api/ktn/admin/teachers/search",
+      "passed": true,
+      "detail": "unauth=403, student=403"
+    },
+    {
+      "id": "T06_TEACHER_SEARCH_PAGINATION_AND_RAPID_QUERY_SWITCH",
+      "category": "TEACHER_SEARCH",
+      "title": "Pagination returns disjoint pages with accurate totalCount (1,000) and hasMore flags, and rapid query switching aborts stale in-flight requests so only the latest query resolves",
+      "passed": true,
+      "detail": "p1=20/1000 (hasMore=true), p2Overlap=false, pLast=10 (hasMore=false), aborted1=true, aborted2=true, rapidFinal=Cô Đặng Vũ Quỳnh Hương Đặc Biệt"
+    },
+    {
+      "id": "T07_TEACHER_SEARCH_1K_AND_10K_BENCHMARK",
+      "category": "TEACHER_SEARCH",
+      "title": "1,000 and 10,000 synthetic teachers benchmark measured on both Worker /api/ktn/admin/teachers/search and PostgreSQL 18.6 pg_trgm + ktn_search_teachers RPC",
+      "passed": true,
+      "detail": "1k Worker p50=3.62ms/p95=9.97ms (PG SQL p50=2.12ms/p95=3.83ms); 10k Worker p50=22.29ms/p95=36.46ms (PG SQL p50=1.15ms/p95=1.44ms)"
+    },
+    {
+      "id": "C01_EMPTY_1_1_REMOVED_AND_DRAFT_LEAVE_NO_JUNK_THREAD",
+      "category": "CHAT_INBOX",
+      "title": "Students with 0 messages (minhkhang, new.hs) do not generate empty student:<email> threads in GET /api/ktn/messages/rooms even after opening draft room without sending, while Nhắn mới (/api/ktn/messages/candidates) finds eligible students in scope",
+      "passed": true,
+      "detail": "privateThreads=[student:older.hs@khongtunhi.com], candidatesMatch=minhkhang@khongtunhi.com, crossClassCandidates=403"
+    },
+    {
+      "id": "C02_EMPTY_GROUP_PRESERVED_AND_STUDENT_UPDATED_AT_IMMUNITY",
+      "category": "CHAT_INBOX",
+      "title": "Empty class group (class:YCT1-NEW) remains accessible in groupRooms but does not rank above rooms with messages; student.updated_at never inflates room ordering",
+      "passed": true,
+      "detail": "firstGroupRoom=class:YCT2-04 (lastMsg=\"Chào các con lớp YCT2-04 buổi 3\"), yct1NewPresent=true"
+    },
+    {
+      "id": "C03_FIRST_1_1_MESSAGE_CREATES_SINGLE_THREAD_AT_TOP",
+      "category": "CHAT_INBOX",
+      "title": "Sending first 1-1 message creates exactly 1 student:<email> thread, places it at index 0 of privateThreads/inbox, and persists across reload",
+      "passed": true,
+      "detail": "newHsCount=1, topPrivate=student:new.hs@khongtunhi.com, reloadTopPrivate=student:new.hs@khongtunhi.com"
+    },
+    {
+      "id": "C04_LATEST_MESSAGE_MOVES_ROOM_TO_INDEX_0",
+      "category": "CHAT_INBOX",
+      "title": "Posting a new message to class:YCT3-02 immediately moves class:YCT3-02 to index 0 of active rooms with updated lastMessage and timestamp",
+      "passed": true,
+      "detail": "topGroup=class:YCT3-02, topInbox=class:YCT3-02, lastMessage=\"Tin nhắn mới nhất vừa gửi vào YCT3-02!\""
+    },
+    {
+      "id": "C05_500_PLUS_MESSAGES_CONCENTRATION_RETENTION",
+      "category": "CHAT_INBOX",
+      "title": "With 520+ messages concentrated in class:YCT2-04 (360) and student:e2e.hs.a (160), class:YCT3-02 and older 1-1 thread student:older.hs (>160 messages ago) still retain their lastMessage and timestamp",
+      "passed": true,
+      "detail": "yct3Last=\"Tin nhắn mới nhất vừa gửi vào YCT3-02!\", olderHsLast=\"Thưa cô em gửi câu hỏi từ tháng trước ạ\" (2026-10-15T09:00:00.000Z), yct2Last=\"Tin nhắn thảo luận lớp YCT2-04 số #360\""
+    },
+    {
+      "id": "C06_UNREAD_COUNTS_MATCH_READ_CURSORS",
+      "category": "CHAT_INBOX",
+      "title": "Unread count matches read cursor accurately (unreadCount=2 after reading #158/160, and unreadCount=0 after reading #160/160)",
+      "passed": true,
+      "detail": "partialReadUnread=2, fullReadUnread=0"
+    },
+    {
+      "id": "C07_PRIVATE_CHAT_RBAC_CROSS_CLASS_AND_UNASSIGNED_403",
+      "category": "CHAT_RBAC",
+      "title": "Teacher outside a student class (e2e.hs.b in YCT3-02) and teacher targeting an unassigned student (unassigned.hs) get 403 Forbidden on GET/POST /api/ktn/messages with 0 leaked push notifications, while authorized 1-1 chat notifies only the target student",
+      "passed": true,
+      "detail": "otherClassGet=403, otherClassPost=403, unassignedGet=403, unassignedPost=403, forbiddenPush=0, authPushEndpoint=https://web.push.apple.com/UPGRADE_STUDENT_A_YCT2"
+    },
+    {
+      "id": "C08_IMAGE_MESSAGE_NO_DUPLICATE_FILENAME_MARKER",
+      "category": "CHAT_UI_CONTRACT",
+      "title": "Image message with long filename stores raw message intact via POST /api/ktn/messages while matching redundant placeholder pattern so MessageBubble renders only the image without duplicate filename text",
+      "passed": true,
+      "detail": "status=200, rawPreserved=true, redundantMarkerDetected=true"
+    },
+    {
+      "id": "F01_TEACHER_UPLOAD_PDF_DOCX_PNG_M4A_MP4",
+      "category": "FILE_ASSIGNMENT",
+      "title": "Teacher obtains presigned upload URLs for PDF, Word (.docx), Image (.png), Audio (.m4a), and Video (.mp4 <= 50MB)",
+      "passed": true,
+      "detail": "uploadedCount=5, sampleUrl=https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/linh_lam_khongtunhi_com/1794339284809-Giao-trinh-YCT2-Buoi-3.pdf"
+    },
+    {
+      "id": "F02_REJECT_OVERSIZED_AND_DANGEROUS_MIME_400",
+      "category": "FILE_ASSIGNMENT",
+      "title": "Rejects oversized assignment files (>50MB) and dangerous executable files (.exe / application/x-msdownload) with 400",
+      "passed": true,
+      "detail": "oversizeStatus=400, exeStatus=400"
+    },
+    {
+      "id": "F03_REJECT_TEACHER_OUTSIDE_CLASS_403",
+      "category": "FILE_ASSIGNMENT",
+      "title": "Teacher outside the class (thu.ha targeting YCT2-04) gets 403 Forbidden on both assignment file upload and session save",
+      "passed": true,
+      "detail": "uploadStatus=403, sessionSaveStatus=403"
+    },
+    {
+      "id": "F04_PERSISTENCE_AND_STUDENT_CLASS_ACCESS_RBAC",
+      "category": "FILE_ASSIGNMENT",
+      "title": "Exercise #1 and its 5 attachments persist across reload and dispatch homework_assigned push to YCT2-04 students; Student in YCT2-04 receives full attachment metadata while Student in YCT3-02 gets 403",
+      "passed": true,
+      "detail": "saveStatus=200, pushAccepted=1 (https://web.push.apple.com/UPGRADE_STUDENT_A_YCT2), stuAStatus=200, stuBStatus=403, stuAAttachments=5"
+    },
+    {
+      "id": "F05_NON_OVERWRITING_APPEND_EXERCISE",
+      "category": "FILE_ASSIGNMENT",
+      "title": "Adding Exercise #2 (mode: append_exercise) to existing Session 3 preserves Exercise #1 (id + all 5 attachments) without overwriting and notifies students of the new exercise",
+      "passed": true,
+      "detail": "totalExercises=2, ex1Id=YCT2-04-B3-E1 (att=5), ex2Id=YCT2-04-B3-E2 (att=1), pushSent=1"
+    },
+    {
+      "id": "F06_UPDATE_EXISTING_EXERCISE_PRESERVES_ATTACHMENTS_AND_NO_DUP_PUSH",
+      "category": "FILE_ASSIGNMENT",
+      "title": "Updating Exercise #1 (mode: update_exercise) preserves its id, preserves existing attachments when not explicitly removed, keeps Exercise #2 intact, and emits 0 duplicate homework_assigned push notifications",
+      "passed": true,
+      "detail": "ex1Att=5, ex2Present=true, pushBefore=5, pushAfter=5, skipReason=EDIT_EXISTING_EXERCISE_NO_DUPLICATE_NOTIFY"
+    },
+    {
+      "id": "F07_END_TO_END_HOMEWORK_SUBMISSION_AND_GRADING",
+      "category": "FILE_ASSIGNMENT",
+      "title": "Student submits homework for Session 3 Exercise #1 (lessonNum=301) and Teacher grades it (9.5/10) while session exercise attachments remain isolated and intact",
+      "passed": true,
+      "detail": "submitStatus=200, gradeStatus=200, score=9.5, sessionExercises=2"
+    }
+  ]
+}

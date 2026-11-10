@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   inspectDlpClient,
@@ -17,8 +17,21 @@ import {
   encodeAttachmentUrl,
   parseAttachmentFromUrl,
   normalizeServerMessage,
+  hasRoomRealMessages,
+  sortChatRoomsLatestFirst,
+  isRedundantAttachmentPlaceholder,
+  getDisplayMessageCaption,
+  formatRoomPreviewText,
+  truncateFileName,
+  shouldGroupWithPreviousMessage,
 } from '../../src/features/chat/services/chatApi';
+import { MessageBubble } from '../../src/features/chat/components/MessageBubble';
+import {
+  ConversationList,
+  formatCompactRoomTitle,
+} from '../../src/features/chat/components/ConversationList';
 import { useChatRooms, useRoomMessages } from '../../src/features/chat/hooks/useMessages';
+import { useSendMessage } from '../../src/features/chat/hooks/useSendMessage';
 import { useUiStore } from '../../src/stores/useUiStore';
 import { useAuthStore, DEMO_USERS } from '../../src/stores/useAuthStore';
 import { roleNavigation } from '../../src/app/navigation/navigationConfig';
@@ -823,6 +836,561 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       const beforeCalls = getMessagesSpy.mock.calls.filter(([, opts]) => Boolean(opts?.before));
       expect(beforeCalls).toHaveLength(1);
 
+      getMessagesSpy.mockRestore();
+    });
+  });
+
+  describe('10. Compact Chat Inbox, Latest-First Sorting, Empty 1-1 Filtering & Attachment UX (B1–B4)', () => {
+    it('sorts active rooms by latest message timestamp descending and keeps empty group rooms below active rooms (ignoring student profile updatedAt on empty rooms)', () => {
+      const sorted = sortChatRoomsLatestFirst([
+        {
+          roomId: 'class:EMPTY-NEW',
+          classCode: 'EMPTY-NEW',
+          type: 'class',
+          label: 'Nhóm Lớp Mới Chưa Có Tin',
+          lastMessage: 'Chưa có tin nhắn. Hãy gửi lời chào đầu tiên!',
+          updatedAt: '2026-11-10T12:00:00.000Z',
+          unreadCount: 0,
+        },
+        {
+          roomId: 'class:YCT1-01',
+          classCode: 'YCT1-01',
+          type: 'class',
+          label: 'Nhóm Lớp YCT1-01',
+          lastMessage: 'Tin nhắn lúc 09:00',
+          updatedAt: '2026-11-10T09:00:00.000Z',
+          unreadCount: 0,
+        },
+        {
+          roomId: 'class:YCT2-04',
+          classCode: 'YCT2-04',
+          type: 'class',
+          label: 'Nhóm Lớp YCT2-04',
+          lastMessage: 'Tin nhắn mới nhất lúc 10:30',
+          updatedAt: '2026-11-10T10:30:00.000Z',
+          unreadCount: 2,
+        },
+      ]);
+
+      expect(hasRoomRealMessages(sorted[0])).toBe(true);
+      expect(hasRoomRealMessages(sorted[1])).toBe(true);
+      expect(hasRoomRealMessages(sorted[2])).toBe(false);
+      expect(sorted.map((r) => r.roomId)).toEqual([
+        'class:YCT2-04',
+        'class:YCT1-01',
+        'class:EMPTY-NEW',
+      ]);
+    });
+
+    it('filters out empty 1-1 student threads from useChatRooms while keeping 1-1 threads that have real saved messages and keeping group rooms', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      useAuthStore.setState({
+        user: {
+          id: 'teacher-1',
+          email: 'linh.lam@khongtunhi.com',
+          name: 'Cô Lâm Mỹ Linh',
+          role: 'teacher',
+          roles: ['teacher'],
+          classCode: 'YCT2-04',
+          hasLiveClass: true,
+          hasOnlineCourses: true,
+          onlineCourses: [],
+        },
+      });
+      useUiStore.setState({ isDemoMode: false });
+
+      const getRoomsSpy = vi.spyOn(chatApi, 'getRooms').mockResolvedValue({
+        role: 'teacher',
+        groupRooms: [
+          {
+            roomId: 'class:EMPTY-GROUP',
+            classCode: 'EMPTY-GROUP',
+            label: 'Nhóm Lớp Trống',
+            type: 'class',
+            lastMessage: 'Chưa có tin nhắn. Hãy gửi lời chào đầu tiên!',
+            unreadCount: 0,
+          },
+          {
+            roomId: 'class:YCT2-04',
+            classCode: 'YCT2-04',
+            label: 'Nhóm Lớp YCT2-04',
+            type: 'class',
+            lastMessage: 'Cô gửi bài ôn tập nhé',
+            updatedAt: '2026-11-10T08:00:00.000Z',
+            unreadCount: 0,
+          },
+        ],
+        privateThreads: [
+          {
+            roomId: 'student:empty1@khongtunhi.com',
+            studentEmail: 'empty1@khongtunhi.com',
+            label: '💬 1-1: Học viên chưa từng nhắn',
+            type: 'student',
+            lastMessage: 'Nhắn riêng 1-1 với học viên',
+            updatedAt: '2026-11-10T11:59:00.000Z',
+            unreadCount: 0,
+          },
+          {
+            roomId: 'student:hoangngan@khongtunhi.com',
+            studentEmail: 'hoangngan@khongtunhi.com',
+            label: '💬 1-1: Bé Nguyễn Hoàng Ngân',
+            type: 'student',
+            lastMessage: 'Con nộp bài thu âm cho cô ạ',
+            updatedAt: '2026-11-10T09:30:00.000Z',
+            unreadCount: 1,
+          },
+        ],
+      });
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      const { result } = renderHook(() => useChatRooms(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      const rooms = result.current.data || [];
+      expect(rooms.map((r) => r.roomId)).toEqual([
+        'student:hoangngan@khongtunhi.com',
+        'class:YCT2-04',
+        'class:EMPTY-GROUP',
+      ]);
+      expect(rooms.some((r) => r.roomId === 'student:empty1@khongtunhi.com')).toBe(false);
+
+      getRoomsSpy.mockRestore();
+    });
+
+    it('suppresses redundant [Đã gửi ảnh: ...] marker in MessageBubble while preserving real user captions and never mutating raw message data', () => {
+      const imageOnlyMsg: ChatMessage = {
+        id: 'MSG-IMG-1',
+        room_id: 'class:YCT2-04',
+        sender_email: 'hoangngan@khongtunhi.com',
+        sender_name: 'Bé Nguyễn Hoàng Ngân',
+        sender_role: 'student',
+        content: '[Đã gửi ảnh: IMG_20261110_bai_tap_viet_chu_han_rat_dai_001.png]',
+        attachment: {
+          kind: 'image',
+          url: 'https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/sample.png',
+          name: 'IMG_20261110_bai_tap_viet_chu_han_rat_dai_001.png',
+        },
+        created_at: '2026-11-10T10:00:00.000Z',
+        status: 'sent',
+      };
+
+      expect(getDisplayMessageCaption(imageOnlyMsg)).toBe('');
+
+      const { queryByTestId, getByTestId, unmount } = render(
+        <MessageBubble
+          message={imageOnlyMsg}
+          currentUserEmail="hoangngan@khongtunhi.com"
+          canManagePin={false}
+          onReply={() => {}}
+          onReact={() => {}}
+          onPinMessage={() => {}}
+        />
+      );
+
+      expect(getByTestId('chat-image-attachment')).toBeTruthy();
+      expect(getByTestId('chat-image-zoom-btn')).toBeTruthy();
+      expect(getByTestId('chat-attachment-download')).toBeTruthy();
+      expect(queryByTestId('chat-message-text')).toBeNull();
+      // Raw message object must remain untouched
+      expect(imageOnlyMsg.content).toBe(
+        '[Đã gửi ảnh: IMG_20261110_bai_tap_viet_chu_han_rat_dai_001.png]'
+      );
+      unmount();
+
+      const captionedImgMsg: ChatMessage = {
+        ...imageOnlyMsg,
+        id: 'MSG-IMG-2',
+        content: 'Cô Linh chấm giúp con trang chữ Hán này với ạ!',
+      };
+      expect(getDisplayMessageCaption(captionedImgMsg)).toBe(
+        'Cô Linh chấm giúp con trang chữ Hán này với ạ!'
+      );
+
+      const renderedWithCaption = render(
+        <MessageBubble
+          message={captionedImgMsg}
+          currentUserEmail="hoangngan@khongtunhi.com"
+          canManagePin={false}
+          onReply={() => {}}
+          onReact={() => {}}
+          onPinMessage={() => {}}
+        />
+      );
+      expect(renderedWithCaption.getByTestId('chat-message-text').textContent).toBe(
+        'Cô Linh chấm giúp con trang chữ Hán này với ạ!'
+      );
+      expect(renderedWithCaption.getByTestId('chat-image-attachment')).toBeTruthy();
+      renderedWithCaption.unmount();
+    });
+
+    it('truncates long filenames cleanly while preserving extensions and groups consecutive messages from the same sender', () => {
+      const truncated = truncateFileName(
+        'Bai_Tap_Luyen_Viet_Chu_Han_Buoi_18_Nguyen_Hoang_Ngan_2026.pdf',
+        26
+      );
+      expect(truncated.length).toBeLessThanOrEqual(26);
+      expect(truncated.endsWith('.pdf')).toBe(true);
+      expect(truncated).toContain('…');
+
+      const msg1: ChatMessage = {
+        id: 'M1',
+        room_id: 'class:YCT2-04',
+        sender_email: 'linh.lam@khongtunhi.com',
+        sender_name: 'Cô Lâm Mỹ Linh',
+        sender_role: 'teacher',
+        content: 'Các con mở sách trang 18 nhé.',
+        created_at: '2026-11-10T10:00:00.000Z',
+        status: 'sent',
+      };
+      const msg2: ChatMessage = {
+        ...msg1,
+        id: 'M2',
+        content: 'Sau đó nghe file MP3 số 2.',
+        created_at: '2026-11-10T10:02:00.000Z',
+      };
+      const msg3Later: ChatMessage = {
+        ...msg1,
+        id: 'M3',
+        content: 'Tin nhắn sau 15 phút.',
+        created_at: '2026-11-10T10:15:00.000Z',
+      };
+
+      expect(shouldGroupWithPreviousMessage(null, msg1)).toBe(false);
+      expect(shouldGroupWithPreviousMessage(msg1, msg2)).toBe(true);
+      expect(shouldGroupWithPreviousMessage(msg2, msg3Later)).toBe(false);
+
+      const firstRender = render(
+        <MessageBubble
+          message={msg1}
+          currentUserEmail="hoangngan@khongtunhi.com"
+          canManagePin={false}
+          isGroupedWithPrev={false}
+          onReply={() => {}}
+          onReact={() => {}}
+          onPinMessage={() => {}}
+        />
+      );
+      expect(firstRender.queryByTestId('chat-message-sender-header')).not.toBeNull();
+      firstRender.unmount();
+
+      const groupedRender = render(
+        <MessageBubble
+          message={msg2}
+          currentUserEmail="hoangngan@khongtunhi.com"
+          canManagePin={false}
+          isGroupedWithPrev={true}
+          onReply={() => {}}
+          onReact={() => {}}
+          onPinMessage={() => {}}
+        />
+      );
+      expect(groupedRender.queryByTestId('chat-message-sender-header')).toBeNull();
+      groupedRender.unmount();
+    });
+
+    it('renders compact ConversationList with Tin nhắn header, Nhắn mới button, 4 filter tabs, and promotes ephemeral 1-1 room to top of Inbox on first message', async () => {
+      const onOpenNew = vi.fn();
+      const onSelect = vi.fn();
+      const convRender = render(
+        <ConversationList
+          rooms={[
+            {
+              roomId: 'class:YCT2-04',
+              classCode: 'YCT2-04',
+              type: 'class',
+              label: 'Nhóm Lớp YCT2-04 — Ca tối T3 & T6',
+              lastMessage: 'Cô gửi phiếu bài tập nhé',
+              updatedAt: '2026-11-10T10:00:00.000Z',
+              unreadCount: 1,
+            },
+            {
+              roomId: 'class:EMPTY-01',
+              classCode: 'EMPTY-01',
+              type: 'class',
+              label: 'Nhóm Lớp Mới Khai Giảng',
+              lastMessage: '',
+              unreadCount: 0,
+            },
+          ]}
+          activeRoomId="class:YCT2-04"
+          isLoading={false}
+          onSelectRoom={onSelect}
+          onOpenNewMessage={onOpenNew}
+        />
+      );
+
+      expect(convRender.getByText('Tin nhắn')).toBeTruthy();
+      expect(convRender.getByTestId('chat-new-message-btn')).toBeTruthy();
+      expect(convRender.getByTestId('chat-filter-tab-all').textContent).toContain('Gần đây');
+      expect(convRender.getByTestId('chat-filter-tab-unread').textContent).toContain('Chưa đọc');
+      expect(convRender.getByTestId('chat-filter-tab-groups').textContent).toContain('Nhóm lớp');
+      expect(convRender.getByTestId('chat-filter-tab-support').textContent).toContain('1-1');
+      expect(convRender.getByTestId('chat-empty-groups-section').textContent).toContain(
+        'Nhóm lớp chưa có tin nhắn (1)'
+      );
+      convRender.unmount();
+
+      // Verify useSendMessage promotes an ephemeral 1-1 room to the top of ['chat-rooms'] cache on first sent message
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      useAuthStore.setState({
+        user: {
+          id: 'teacher-1',
+          email: 'linh.lam@khongtunhi.com',
+          name: 'Cô Lâm Mỹ Linh',
+          role: 'teacher',
+          roles: ['teacher'],
+          classCode: 'YCT2-04',
+          hasLiveClass: true,
+          hasOnlineCourses: true,
+          onlineCourses: [],
+        },
+      });
+      useUiStore.setState({ isDemoMode: false, isOfflineSimulated: false });
+
+      const roomsKey = ['chat-rooms', 'linh.lam@khongtunhi.com', false, 'live_real'];
+      queryClient.setQueryData(roomsKey, [
+        {
+          roomId: 'class:YCT2-04',
+          classCode: 'YCT2-04',
+          type: 'class',
+          label: 'Nhóm Lớp YCT2-04',
+          lastMessage: 'Tin nhắn cũ trong lớp',
+          updatedAt: '2026-11-10T08:00:00.000Z',
+          unreadCount: 0,
+          hasMessages: true,
+        },
+      ]);
+
+      const sendSpy = vi.spyOn(chatApi, 'sendMessage').mockResolvedValue({
+        clientMessageId: 'cmsg-ephemeral-1',
+        serverMessageId: 'SRV-EPHEMERAL-1',
+        message: {
+          id: 'SRV-EPHEMERAL-1',
+          clientMessageId: 'cmsg-ephemeral-1',
+          room_id: 'student:minhkhang@khongtunhi.com',
+          sender_email: 'linh.lam@khongtunhi.com',
+          sender_name: 'Cô Lâm Mỹ Linh',
+          sender_role: 'teacher',
+          content: 'Cô chào mẹ bé Minh Khang ạ!',
+          created_at: '2026-11-10T11:30:00.000Z',
+          status: 'sent',
+        },
+      });
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      const { result } = renderHook(() => useSendMessage(), { wrapper });
+
+      await act(async () => {
+        await result.current.sendMessage({
+          roomId: 'student:minhkhang@khongtunhi.com',
+          classCode: 'YCT2-04',
+          content: 'Cô chào mẹ bé Minh Khang ạ!',
+          roomMeta: {
+            roomId: 'student:minhkhang@khongtunhi.com',
+            type: 'student',
+            studentEmail: 'minhkhang@khongtunhi.com',
+            studentName: 'Bé Trần Minh Khang',
+            label: '1-1: Bé Trần Minh Khang (YCT2-04)',
+          },
+        });
+      });
+
+      const updatedRooms = queryClient.getQueryData<Array<{ roomId: string; lastMessage?: string; isEphemeral?: boolean }>>(roomsKey) || [];
+      expect(updatedRooms[0]?.roomId).toBe('student:minhkhang@khongtunhi.com');
+      expect(updatedRooms[0]?.lastMessage).toBe('Cô chào mẹ bé Minh Khang ạ!');
+      expect(updatedRooms[0]?.isEphemeral).toBe(false);
+      expect(updatedRooms[1]?.roomId).toBe('class:YCT2-04');
+
+      sendSpy.mockRestore();
+    });
+
+    it('handles bracketed filenames in attachment placeholders, quoted reply image previews, and ZWJ emoji room labels', () => {
+      expect(isRedundantAttachmentPlaceholder('[Đã gửi ảnh: IMG_2026_[1].png]', true)).toBe(true);
+      expect(isRedundantAttachmentPlaceholder('[Đã đính kèm tệp: De_thi_[v2].pdf]', true)).toBe(true);
+      expect(isRedundantAttachmentPlaceholder('Ảnh bài tập [1] con nộp ạ', true)).toBe(false);
+      expect(isRedundantAttachmentPlaceholder('[Đã gửi ảnh: IMG_2026_[1].png]', false)).toBe(false);
+
+      const bracketImgMsg: ChatMessage = {
+        id: 'MSG-BRACKET-1',
+        room_id: 'class:YCT2-04',
+        sender_email: 'hoangngan@khongtunhi.com',
+        sender_name: 'Bé Nguyễn Hoàng Ngân',
+        sender_role: 'student',
+        content: '[Đã gửi ảnh: IMG_2026_[1].png]',
+        attachment: {
+          kind: 'image',
+          url: 'https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/sample.png',
+          name: 'IMG_2026_[1].png',
+        },
+        created_at: '2026-11-10T10:00:00.000Z',
+        status: 'sent',
+      };
+      expect(getDisplayMessageCaption(bracketImgMsg)).toBe('');
+
+      const quotedReplyImagePreview = formatRoomPreviewText({
+        roomId: 'class:YCT2-04',
+        type: 'class',
+        label: 'Nhóm Lớp YCT2-04',
+        lastMessage: '[Trả lời Cô Linh: "Các con nộp bài nhé"]\n[Đã gửi ảnh: bai_tap_viet_chu_han_[1].png]',
+        unreadCount: 0,
+        hasMessages: true,
+      });
+      expect(quotedReplyImagePreview).toContain('↩ 📷 Hình ảnh');
+      expect(quotedReplyImagePreview).not.toContain('[Đã gửi ảnh:');
+
+      expect(
+        formatCompactRoomTitle({
+          roomId: 'student:hoangngan@khongtunhi.com',
+          type: 'student',
+          label: '👩‍🏫 Bé Nguyễn Hoàng Ngân',
+          unreadCount: 0,
+        })
+      ).toBe('Bé Nguyễn Hoàng Ngân');
+      expect(
+        formatCompactRoomTitle({
+          roomId: 'student:hoangngan@khongtunhi.com',
+          type: 'student',
+          label: '👩‍🏫 Nhắn riêng Cô',
+          unreadCount: 0,
+        })
+      ).toBe('Nhắn riêng Cô');
+    });
+
+    it('prevents cross-room timestamp pollution in Demo Mode and prevents unacknowledged sending messages from prematurely promoting rooms', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      useAuthStore.setState({
+        user: {
+          id: 'teacher-1',
+          email: 'linh.lam@khongtunhi.com',
+          name: 'Cô Lâm Mỹ Linh',
+          role: 'teacher',
+          roles: ['teacher'],
+          classCode: 'YCT2-04',
+          hasLiveClass: true,
+          hasOnlineCourses: true,
+          onlineCourses: [],
+        },
+      });
+      useUiStore.setState({ isDemoMode: true, chatDemoScenario: 'demo_rich' });
+
+      const demoRoomsKey = ['chat-rooms', 'linh.lam@khongtunhi.com', true, 'demo_rich'];
+      queryClient.setQueryData(demoRoomsKey, [
+        {
+          roomId: 'class:YCT2-04',
+          classCode: 'YCT2-04',
+          type: 'class',
+          label: 'Nhóm Lớp YCT2-04',
+          lastMessage: 'Tin nhắn của lớp YCT2-04',
+          updatedAt: '2026-11-10T09:00:00.000Z',
+          unreadCount: 0,
+          hasMessages: true,
+        },
+        {
+          roomId: 'student:hoangngan@khongtunhi.com',
+          studentEmail: 'hoangngan@khongtunhi.com',
+          type: 'student',
+          label: '1-1: Bé Nguyễn Hoàng Ngân',
+          lastMessage: 'Tin nhắn riêng 1-1 ban đầu',
+          updatedAt: '2026-11-10T08:00:00.000Z',
+          unreadCount: 0,
+          hasMessages: true,
+        },
+      ]);
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+
+      // Viewing student:hoangngan@khongtunhi.com in demo_rich returns fallback DEMO_RICH_MESSAGES (which have room_id: class:YCT2-04)
+      const { unmount } = renderHook(
+        () => useRoomMessages('student:hoangngan@khongtunhi.com'),
+        { wrapper }
+      );
+
+      await waitFor(() => {
+        const rooms = queryClient.getQueryData<Array<{ roomId: string; lastMessage?: string }>>(demoRoomsKey) || [];
+        const studentRoom = rooms.find((r) => r.roomId === 'student:hoangngan@khongtunhi.com');
+        expect(studentRoom?.lastMessage).toBe('Tin nhắn riêng 1-1 ban đầu');
+      });
+      unmount();
+
+      // Now test Live mode with an unacknowledged optimistic 'sending' message in an ephemeral room
+      useUiStore.setState({ isDemoMode: false });
+      const liveRoomsKey = ['chat-rooms', 'linh.lam@khongtunhi.com', false, 'live_real'];
+      queryClient.setQueryData(liveRoomsKey, [
+        {
+          roomId: 'class:YCT2-04',
+          classCode: 'YCT2-04',
+          type: 'class',
+          label: 'Nhóm Lớp YCT2-04',
+          lastMessage: 'Tin nhắn cũ',
+          updatedAt: '2026-11-10T09:00:00.000Z',
+          unreadCount: 0,
+          hasMessages: true,
+        },
+        {
+          roomId: 'student:pending@khongtunhi.com',
+          studentEmail: 'pending@khongtunhi.com',
+          type: 'student',
+          label: '1-1: Học viên đang gõ',
+          lastMessage: 'Phòng tạm thời — Gửi tin nhắn đầu tiên để bắt đầu hội thoại',
+          unreadCount: 0,
+          hasMessages: false,
+          isEphemeral: true,
+        },
+      ]);
+
+      const getMessagesSpy = vi.spyOn(chatApi, 'getMessages').mockResolvedValue({
+        roomId: 'student:pending@khongtunhi.com',
+        pinnedMessage: null,
+        messages: [
+          {
+            id: 'OPT-SENDING-1',
+            room_id: 'student:pending@khongtunhi.com',
+            sender_email: 'linh.lam@khongtunhi.com',
+            sender_name: 'Cô Lâm Mỹ Linh',
+            sender_role: 'teacher',
+            content: 'Tin nhắn đang gửi...',
+            created_at: '2026-11-10T12:00:00.000Z',
+            status: 'sending',
+          },
+        ],
+        pagination: {
+          hasMore: false,
+          nextCursor: null,
+          oldestCreatedAt: '2026-11-10T12:00:00.000Z',
+          limit: 60,
+          totalAvailable: 1,
+        },
+      });
+
+      const liveHook = renderHook(
+        () => useRoomMessages('student:pending@khongtunhi.com'),
+        { wrapper }
+      );
+      await waitFor(() => {
+        expect(liveHook.result.current.messages).toHaveLength(1);
+      });
+
+      const liveRoomsAfter = queryClient.getQueryData<Array<{ roomId: string; isEphemeral?: boolean; hasMessages?: boolean }>>(liveRoomsKey) || [];
+      const pendingRoom = liveRoomsAfter.find((r) => r.roomId === 'student:pending@khongtunhi.com');
+      expect(pendingRoom?.isEphemeral).toBe(true);
+      expect(pendingRoom?.hasMessages).toBe(false);
+
+      liveHook.unmount();
       getMessagesSpy.mockRestore();
     });
   });

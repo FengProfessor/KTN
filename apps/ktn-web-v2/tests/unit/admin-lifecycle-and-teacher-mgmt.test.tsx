@@ -1472,6 +1472,187 @@ describe('C1 & C2 — Class Lifecycle, Auto Chat Group & Safe Soft-Delete UX', (
       );
     });
   });
+
+  it('C1: supports debounced server-side teacher search, accent-insensitive matching, status/class filters, AbortSignal cancellation, and 20-item pagination', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 'admin-01',
+        email: 'quanly@khongtunhi.com',
+        name: 'Quản lý KTN',
+        role: 'admin',
+        roles: ['admin'],
+        classCode: null,
+        hasLiveClass: false,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    useUiStore.setState({ isDemoMode: false });
+
+    const total25Teachers = Array.from({ length: 25 }, (_, i) => ({
+      code: `GV-KTN-${String(i + 1).padStart(2, '0')}`,
+      name:
+        i === 0
+          ? 'Cô Lâm Mỹ Linh'
+          : i === 1
+            ? 'Thầy Đặng Quốc Tuấn'
+            : `Giáo viên KTN ${i + 1}`,
+      email:
+        i === 0
+          ? 'linh.lam@khongtunhi.com'
+          : i === 1
+            ? 'tuan.dang@khongtunhi.com'
+            : `gv${i + 1}@khongtunhi.com`,
+      phone: `09011122${String(i).padStart(2, '0')}`,
+      specialty: i === 0 ? 'HSK 1-4, YCT thiếu nhi' : 'Giao tiếp thương mại',
+      assigned_classes: i === 0 ? ['YCT2-04'] : i === 1 ? [] : ['HSK1-01'],
+      assigned_courses: ['6adadba969897b0002482ca5'],
+      active: i !== 2,
+      status: i === 2 ? 'locked' : 'active',
+      managedStudentsCount: i === 0 ? 12 : 5,
+    }));
+
+    const searchSpy = vi
+      .spyOn(ktnApi, 'searchAdminTeachers')
+      .mockImplementation(async (params, options) => {
+        if (options?.signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        const { filterAndPaginateTeachersClientSide } = await import(
+          '@/services/api/ktnApiClient'
+        );
+        return filterAndPaginateTeachersClientSide(total25Teachers as any, params);
+      });
+
+    vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([
+      {
+        id: 'YCT2-04',
+        name: 'YCT 2 Thiếu Nhi',
+        teacher_code: 'GV-KTN-01',
+        teacher_name: 'Cô Lâm Mỹ Linh',
+        teacher_email: 'linh.lam@khongtunhi.com',
+        total_lessons: 24,
+        current_lesson: 4,
+        schedule: 'Thứ 3 & Thứ 5',
+        active: true,
+      },
+    ]);
+    vi.spyOn(ktnApi, 'getCourses').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getOrders').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getCourseGrantRequests').mockResolvedValue({
+      ok: true,
+      requests: [],
+      pendingCount: 0,
+    });
+    vi.spyOn(ktnApi, 'getSyncStatus').mockResolvedValue({
+      ok: true,
+      checkedAt: new Date().toISOString(),
+      summary: {
+        totalStudents: 0,
+        healthyCount: 0,
+        needsResyncCount: 0,
+        manualReviewCount: 0,
+        driftTotal: 0,
+      },
+      driftItems: [],
+    });
+    vi.spyOn(ktnApi, 'searchStudents').mockResolvedValue({
+      ok: true,
+      items: [],
+      students: [],
+      totalCount: 0,
+      limit: 20,
+      offset: 0,
+      hasMore: false,
+      nextCursor: null,
+      query: '',
+      queryMs: 1,
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/admin/teachers']}>
+          <Routes>
+            <Route path="/admin/:section" element={<AdminWorkspace />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    // 1. Page 1 loads first 20 of 25 teachers and top tab shows totalCount (25), not page slice (20)
+    await waitFor(() => {
+      expect(screen.getByTestId('teacher-search-pagination-summary')).toHaveTextContent(
+        'Trang 1 / 2 · Hiển thị 1–20 / 25 giáo viên'
+      );
+      expect(screen.getByTestId('admin-tab-teachers')).toHaveTextContent(
+        'Giáo viên (25)'
+      );
+    });
+    expect(
+      screen.getByTestId('admin-teacher-row-linh.lam@khongtunhi.com')
+    ).toBeInTheDocument();
+
+    // 2. Click Next Page -> loads page 2 (items 21-25) while top tab still shows totalCount (25)
+    fireEvent.click(screen.getByTestId('teacher-search-next-page'));
+    await waitFor(() => {
+      expect(screen.getByTestId('teacher-search-pagination-summary')).toHaveTextContent(
+        'Trang 2 / 2 · Hiển thị 21–25 / 25 giáo viên'
+      );
+      expect(screen.getByTestId('admin-tab-teachers')).toHaveTextContent(
+        'Giáo viên (25)'
+      );
+    });
+
+    // 3. Vietnamese accent-insensitive search ('lam my linh' matches 'Cô Lâm Mỹ Linh')
+    const searchInput = screen.getByTestId('admin-teacher-search-input');
+    fireEvent.change(searchInput, { target: { value: 'lam my linh' } });
+
+    await waitFor(() => {
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: 'lam my linh',
+          limit: 20,
+          offset: 0,
+        }),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        screen.getByTestId('admin-teacher-row-linh.lam@khongtunhi.com')
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('teacher-search-pagination-summary')).toHaveTextContent(
+        'Trang 1 / 1 · Hiển thị 1–1 / 1 giáo viên'
+      );
+    });
+
+    // 3b. Formatted phone digits search ('0901 112 200' matches '0901112200')
+    fireEvent.change(searchInput, { target: { value: '0901 112 200' } });
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('admin-teacher-row-linh.lam@khongtunhi.com')
+      ).toBeInTheDocument();
+    });
+
+    // 4. Filter by UNASSIGNED ('Chưa có lớp') after clearing search
+    fireEvent.change(searchInput, { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('teacher-filter-UNASSIGNED'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('admin-teacher-row-tuan.dang@khongtunhi.com')
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId('admin-teacher-row-linh.lam@khongtunhi.com')
+      ).not.toBeInTheDocument();
+    });
+  });
 });
 
 

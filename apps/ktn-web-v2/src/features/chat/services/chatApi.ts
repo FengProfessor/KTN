@@ -7,8 +7,177 @@ import type {
   ChatRoom,
   PinnedAnnouncement
 } from '@/features/chat/types/chat.types';
+import type { KtnStudentProfile } from '@/types/ktn.types';
 
-import { formatFileSize } from '@/lib/utils';
+import { formatDateDivider, formatFileSize } from '@/lib/utils';
+
+const PLACEHOLDER_ROOM_MESSAGES = new Set([
+  'chưa có tin nhắn. hãy gửi lời chào đầu tiên!',
+  'kênh trao đổi lớp học trực tuyến',
+  'hỏi đáp bài tập, phát âm và nhận xét riêng từ lão sư',
+  'nhắn riêng 1-1 với học viên',
+  'nhấn để mở phòng trao đổi lớp học',
+  'chưa có tin nhắn mới',
+  'bắt đầu cuộc trò chuyện 1-1',
+]);
+
+export function normalizeVietnameseSearchText(input?: string | null): string {
+  return String(input || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function isPlaceholderRoomLastMessage(text?: string | null): boolean {
+  const normalized = String(text || '').trim().toLowerCase();
+  if (!normalized) return true;
+  return PLACEHOLDER_ROOM_MESSAGES.has(normalized);
+}
+
+export function hasRoomRealMessages(room?: Partial<ChatRoom> | null): boolean {
+  if (!room) return false;
+  if (typeof room.hasMessages === 'boolean') {
+    return room.hasMessages;
+  }
+  if (room.lastMessageId && String(room.lastMessageId).trim()) {
+    return true;
+  }
+  const msg = String(room.lastMessage || '').trim();
+  if (!msg || isPlaceholderRoomLastMessage(msg)) {
+    return false;
+  }
+  return true;
+}
+
+export function getRoomLastMessageTimestampMs(room?: Partial<ChatRoom> | null): number {
+  if (!room || !hasRoomRealMessages(room)) {
+    return 0;
+  }
+  const rawTs = room.lastMessageAt || room.updatedAt || '';
+  if (!rawTs) return 0;
+  const parsed = Date.parse(String(rawTs));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+export function sortChatRoomsLatestFirst(rooms: ChatRoom[]): ChatRoom[] {
+  return [...rooms].sort((a, b) => {
+    const aHasMsg = hasRoomRealMessages(a);
+    const bHasMsg = hasRoomRealMessages(b);
+    if (aHasMsg !== bHasMsg) {
+      return aHasMsg ? -1 : 1;
+    }
+    if (aHasMsg && bHasMsg) {
+      const aTs = getRoomLastMessageTimestampMs(a);
+      const bTs = getRoomLastMessageTimestampMs(b);
+      if (aTs !== bTs) {
+        return bTs - aTs;
+      }
+      const aUnread = Number(a.unreadCount) || 0;
+      const bUnread = Number(b.unreadCount) || 0;
+      if (aUnread !== bUnread) {
+        return bUnread - aUnread;
+      }
+    }
+    const typeRank = (t?: string) => (t === 'class' ? 0 : t === 'course' ? 1 : 2);
+    const rankDiff = typeRank(a.type) - typeRank(b.type);
+    if (rankDiff !== 0) return rankDiff;
+    return String(a.roomId || '').localeCompare(String(b.roomId || ''), 'vi');
+  });
+}
+
+export function isRedundantAttachmentPlaceholder(
+  content?: string | null,
+  hasAttachment = false
+): boolean {
+  if (!hasAttachment) return false;
+  const trimmed = String(content || '').trim();
+  if (!trimmed) return true;
+  if (/^\[Đã gửi (?:ảnh|hình ảnh|video|tệp|file|âm thanh)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
+    return true;
+  }
+  if (/^\[Đã đính kèm (?:tệp|file|ảnh)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
+    return true;
+  }
+  if (/^\[(?:Ảnh|Hình ảnh|Video|Tệp|File|Âm thanh) đính kèm\]$/i.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+export function getDisplayMessageCaption(
+  message: Pick<ChatMessage, 'content' | 'attachment' | 'attachment_url'>
+): string {
+  const rawContent = String(message.content || '').trim();
+  const hasAttachment = Boolean(message.attachment?.url || message.attachment_url);
+  if (isRedundantAttachmentPlaceholder(rawContent, hasAttachment)) {
+    return '';
+  }
+  return rawContent;
+}
+
+export function truncateFileName(name?: string | null, maxLength = 28): string {
+  const clean = String(name || '').trim();
+  if (!clean) return 'Tệp đính kèm';
+  if (clean.length <= maxLength) return clean;
+  const dotIdx = clean.lastIndexOf('.');
+  if (dotIdx > 0 && clean.length - dotIdx <= 8) {
+    const ext = clean.slice(dotIdx);
+    const stem = clean.slice(0, dotIdx);
+    const avail = Math.max(8, maxLength - ext.length - 1);
+    const headLen = Math.ceil(avail * 0.65);
+    const tailLen = Math.max(3, avail - headLen);
+    return `${stem.slice(0, headLen)}…${stem.slice(-tailLen)}${ext}`;
+  }
+  return `${clean.slice(0, Math.max(8, maxLength - 1))}…`;
+}
+
+export function formatRoomPreviewText(room: ChatRoom): string {
+  if (!hasRoomRealMessages(room)) {
+    return room.type === 'student' ? 'Bắt đầu cuộc trò chuyện 1-1' : 'Chưa có tin nhắn';
+  }
+  const raw = String(room.lastMessage || '').trim();
+  let preview = raw
+    .replace(/^\[Trả lời [^\]]+\]\s*/i, '↩ ')
+    .replace(/\[Đã gửi (?:ảnh|hình ảnh):\s*([^\r\n]+)\]$/i, (_m, fn) => `📷 Hình ảnh (${truncateFileName(fn, 18)})`)
+    .replace(/\[(?:Ảnh|Hình ảnh) đính kèm\]$/i, '📷 Hình ảnh')
+    .replace(/\[Đã gửi video:\s*([^\r\n]+)\]$/i, (_m, fn) => `🎬 Video (${truncateFileName(fn, 18)})`)
+    .replace(/\[Đã đính kèm (?:tệp|file):\s*([^\r\n]+)\]$/i, (_m, fn) => `📎 ${truncateFileName(fn, 20)}`)
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!preview) {
+    preview = 'Tin nhắn mới';
+  }
+
+  if (room.type !== 'student' && room.lastSenderName) {
+    const senderShort = String(room.lastSenderName).trim();
+    if (senderShort && !preview.toLowerCase().startsWith(senderShort.toLowerCase())) {
+      return `${senderShort}: ${preview}`;
+    }
+  }
+  return preview;
+}
+
+export function shouldGroupWithPreviousMessage(
+  prev: ChatMessage | null | undefined,
+  curr: ChatMessage
+): boolean {
+  if (!prev) return false;
+  if (prev.status === 'failed' || curr.status === 'failed') return false;
+  const prevEmail = String(prev.sender_email || '').trim().toLowerCase();
+  const currEmail = String(curr.sender_email || '').trim().toLowerCase();
+  if (!prevEmail || !currEmail || prevEmail !== currEmail) return false;
+  if (prev.sender_role !== curr.sender_role) return false;
+  if (formatDateDivider(prev.created_at) !== formatDateDivider(curr.created_at)) return false;
+  const prevMs = Date.parse(prev.created_at);
+  const currMs = Date.parse(curr.created_at);
+  if (!Number.isFinite(prevMs) || !Number.isFinite(currMs)) return false;
+  return Math.abs(currMs - prevMs) <= 5 * 60 * 1000;
+}
 
 function dataUrlToBlob(dataUrl: string): Blob {
   const hashIdx = dataUrl.indexOf('#');
@@ -197,21 +366,51 @@ export const chatApi = {
       ok: boolean;
       role: string;
       groupRooms: ChatRoom[];
+      allGroupRooms?: ChatRoom[];
+      emptyGroupRooms?: ChatRoom[];
       privateRoom?: ChatRoom;
       privateThreads?: ChatRoom[];
     }>('/api/ktn/messages/rooms');
 
-    const normalizeRoom = (r: ChatRoom): ChatRoom => ({
-      ...r,
-      unreadCount: typeof r.unreadCount === 'number' ? r.unreadCount : r.unread ? 1 : 0,
-      memberCount: typeof r.memberCount === 'number' ? r.memberCount : undefined
-    });
+    const normalizeRoom = (r: ChatRoom): ChatRoom => {
+      const hasRealMsg = hasRoomRealMessages(r);
+      const resolvedLastMessageAt = hasRealMsg ? r.lastMessageAt || r.updatedAt || null : null;
+      return {
+        ...r,
+        hasMessages: hasRealMsg,
+        lastMessageAt: resolvedLastMessageAt,
+        updatedAt: resolvedLastMessageAt || undefined,
+        unreadCount:
+          hasRealMsg && typeof r.unreadCount === 'number'
+            ? r.unreadCount
+            : hasRealMsg && r.unread
+            ? 1
+            : 0,
+        memberCount: typeof r.memberCount === 'number' ? r.memberCount : undefined,
+      };
+    };
+
+    const rawGroups = [
+      ...(Array.isArray(res.groupRooms) ? res.groupRooms : []),
+      ...(Array.isArray(res.allGroupRooms) ? res.allGroupRooms : []),
+      ...(Array.isArray(res.emptyGroupRooms) ? res.emptyGroupRooms : []),
+    ];
+    const dedupedGroups = new Map<string, ChatRoom>();
+    for (const grp of rawGroups) {
+      if (!grp || !grp.roomId) continue;
+      const key = String(grp.roomId).trim().toUpperCase();
+      const norm = normalizeRoom(grp);
+      const existing = dedupedGroups.get(key);
+      if (!existing || (!hasRoomRealMessages(existing) && hasRoomRealMessages(norm))) {
+        dedupedGroups.set(key, norm);
+      }
+    }
 
     return {
       role: res.role,
-      groupRooms: (res.groupRooms || []).map(normalizeRoom),
+      groupRooms: Array.from(dedupedGroups.values()),
       privateRoom: res.privateRoom ? normalizeRoom(res.privateRoom) : undefined,
-      privateThreads: (res.privateThreads || []).map(normalizeRoom)
+      privateThreads: (res.privateThreads || []).map(normalizeRoom),
     };
   },
 
@@ -326,5 +525,69 @@ export const chatApi = {
         lastReadAt: new Date().toISOString()
       })
     });
+  },
+
+  async searchMessageCandidates(
+    params: { q?: string; classCode?: string; limit?: number } = {},
+    signal?: AbortSignal
+  ): Promise<KtnStudentProfile[]> {
+    const normalizeCandidate = (raw: Record<string, unknown>): KtnStudentProfile | null => {
+      const email = String(raw.email || raw.studentEmail || '')
+        .trim()
+        .toLowerCase();
+      if (!email) return null;
+      const name = String(raw.name || raw.studentName || email).trim();
+      const code = String(raw.code || raw.studentCode || '').trim() || undefined;
+      const classCode =
+        String(raw.class_code ?? raw.classCode ?? '')
+          .trim()
+          .toUpperCase() || null;
+      return {
+        email,
+        name,
+        code,
+        class_code: classCode,
+        phone: typeof raw.phone === 'string' ? raw.phone : undefined,
+        parent_name:
+          typeof raw.parent_name === 'string'
+            ? raw.parent_name
+            : typeof raw.parentName === 'string'
+            ? raw.parentName
+            : undefined,
+      };
+    };
+
+    const qs = new URLSearchParams();
+    if (params.q?.trim()) qs.set('q', params.q.trim());
+    if (params.classCode?.trim()) qs.set('classCode', params.classCode.trim());
+    qs.set('limit', String(params.limit || 25));
+
+    try {
+      const res = await ktnRequest<{
+        ok: boolean;
+        items?: Array<Record<string, unknown>>;
+        candidates?: Array<Record<string, unknown>>;
+      }>(`/api/ktn/messages/candidates?${qs.toString()}`, { signal });
+      const rawList = Array.isArray(res.candidates)
+        ? res.candidates
+        : Array.isArray(res.items)
+        ? res.items
+        : [];
+      return rawList
+        .map((item) => normalizeCandidate(item))
+        .filter((item): item is KtnStudentProfile => Boolean(item));
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') {
+        throw err;
+      }
+      const fallback = await ktnApi.searchStudents(
+        { q: params.q?.trim() || '', classCode: params.classCode, limit: params.limit || 25, offset: 0 },
+        signal
+      );
+      const rawItems = Array.isArray(fallback.items) ? fallback.items : [];
+      return rawItems
+        .map((item) => normalizeCandidate(item as unknown as Record<string, unknown>))
+        .filter((item): item is KtnStudentProfile => Boolean(item));
+    }
   }
 };

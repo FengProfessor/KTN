@@ -7,6 +7,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import {
+  isTeacherUnassignedNotification,
   resolveNotificationLink,
   sanitizePostLoginRedirect,
 } from '../../src/lib/utils';
@@ -108,6 +109,20 @@ describe('AGENT B — Notification Engine & Center Tests (B1–B5)', () => {
         'teacher'
       );
       expect(removedLink).toBe('/teacher/classes');
+
+      const workerUnassignedNotif = {
+        id: 'CLASS_TEACHER_UNASSIGNED_YCT2-05_abc_TO_def',
+        eventId: 'CLASS_TEACHER_UNASSIGNED_YCT2-05_abc_TO_def',
+        type: 'class_teacher_changed',
+        classCode: 'YCT2-05',
+        roomId: 'class:YCT2-05',
+        title: 'Thay đổi phân công lớp YCT2-05',
+        body: 'Lớp YCT2-05 đã được chuyển phân công sang giáo viên khác.',
+        actionUrl: '/custom-page/so-lien-lac-test#/teacher/classes',
+        meta: { roleInEvent: 'previous_teacher' },
+      };
+      expect(isTeacherUnassignedNotification(workerUnassignedNotif)).toBe(true);
+      expect(resolveNotificationLink(workerUnassignedNotif, 'teacher')).toBe('/teacher/classes');
     });
 
     it('B5: routes schedule_changed to /classrooms?class=<CODE> for student and /teacher/classes?class=<CODE> for teacher', () => {

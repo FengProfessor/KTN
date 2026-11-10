@@ -805,8 +805,8 @@ async function resolveClassRecipientEmails(env, classCode, options = {}) {
         const sCls = String(s?.class_code || '').trim().toUpperCase();
         const em = normalizeEmail(s?.email || '');
         if (!em || sCls !== cleanClass || em === excludeEmail) continue;
-        const lifeStatus = String(stuLifecycleMap.get(em)?.status || s?.account_status || 'active').toLowerCase();
-        if (lifeStatus === 'deleted' || lifeStatus === 'suspended' || lifeStatus === 'archived') continue;
+        const lifeStatus = String(stuLifecycleMap.get(em)?.status || s?.account_status || s?.status || 'active').toLowerCase();
+        if (lifeStatus === 'deleted' || lifeStatus === 'suspended' || lifeStatus === 'archived' || lifeStatus === 'dropped' || lifeStatus === 'locked') continue;
         recipientSet.add(em);
       }
     }
@@ -2057,23 +2057,47 @@ async function emitTargetedLifecycleNotification(env, options = {}) {
   }).catch(() => ({ ok: false }));
 
   // Đồng thời lưu vào ktn_notifications nếu bảng hỗ trợ
-  await supabaseRequest(env, 'ktn_notifications', {
+  const fullNotifInsert = await supabaseRequest(env, 'ktn_notifications', {
     method: 'POST',
     prefer: 'resolution=merge-duplicates,return=minimal',
     body: {
       id: rawEventId,
+      event_id: rawEventId,
+      recipient_email: recipientEmail,
       user_email: recipientEmail,
       target_email: recipientEmail,
+      sender_email: senderEmail,
       type: eventType,
       class_code: classCode || null,
+      room_id: roomId || null,
       title,
       body,
       action_url: actionUrl,
       action_label: actionLabel,
       read: false,
+      metadata: notifRecord.meta,
       created_at: nowIso
     }
-  }).catch(() => null);
+  }).catch(() => ({ ok: false }));
+  if (!fullNotifInsert || !fullNotifInsert.ok) {
+    await supabaseRequest(env, 'ktn_notifications', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=minimal',
+      body: {
+        id: rawEventId,
+        user_email: recipientEmail,
+        target_email: recipientEmail,
+        type: eventType,
+        class_code: classCode || null,
+        title,
+        body,
+        action_url: actionUrl,
+        action_label: actionLabel,
+        read: false,
+        created_at: nowIso
+      }
+    }).catch(() => null);
+  }
 
   let pushResult = null;
   if (options.sendPush !== false) {
@@ -7991,7 +8015,7 @@ export default {
         } else {
           const teacherCodeLookup = await supabaseRequest(
             env,
-            `ktn_teachers?or=(id.ilike.${encodeURIComponent(safeLookup)},phone.eq.${encodeURIComponent(safeLookup)})&limit=5`
+            `ktn_teachers?or=(code.ilike.${encodeURIComponent(safeLookup)},phone.eq.${encodeURIComponent(safeLookup)})&limit=5`
           );
           const matchedTeacher = Array.isArray(teacherCodeLookup.data)
             ? teacherCodeLookup.data.find(
@@ -10787,12 +10811,28 @@ export default {
             activeTeacherRow?.name ||
             (tEmail ? (existingRow?.teacher_name || 'Cô Lâm Mỹ Linh') : 'Chưa phân công giáo viên');
           const canonicalRoomId = `class:${classId}`;
+          let activeStuCountForClass = 0;
+          if (!isNewlyCreated) {
+            const [stuCountRes, stuLifeMap] = await Promise.all([
+              supabaseRequest(env, `ktn_students?class_code=eq.${encodeURIComponent(classId)}&select=*`),
+              loadAllStudentLifecycleStates(env).catch(() => new Map())
+            ]);
+            if (stuCountRes.ok && Array.isArray(stuCountRes.data)) {
+              for (const s of stuCountRes.data) {
+                const em = normalizeEmail(s?.email || '');
+                const lifeStatus = em ? stuLifeMap.get(em)?.status : null;
+                const st = String(lifeStatus || s?.account_status || s?.status || 'active').toLowerCase();
+                if (st === 'archived' || st === 'deleted' || st === 'dropped' || st === 'suspended' || st === 'locked') continue;
+                activeStuCountForClass += 1;
+              }
+            }
+          }
           const finalClassItem = {
             ...sbRes.data[0],
             roomId: canonicalRoomId,
             teacher_name: resolvedTeacherName,
-            studentCount: isNewlyCreated ? 0 : (typeof existingRow?.studentCount === 'number' ? existingRow.studentCount : 0),
-            student_count: isNewlyCreated ? 0 : (typeof existingRow?.student_count === 'number' ? existingRow.student_count : 0),
+            studentCount: activeStuCountForClass,
+            student_count: activeStuCountForClass,
             ...(savedScheduleResult?.ok
               ? {
                   schedule: savedScheduleResult.officialScheduleText,
@@ -10883,8 +10923,8 @@ export default {
           const activeStudents = (Array.isArray(stuRes.data) ? stuRes.data : []).filter((s) => {
             const em = normalizeEmail(s?.email || '');
             const lifeStatus = em ? lifeMap.get(em)?.status : null;
-            const st = String(lifeStatus || s?.account_status || 'active').toLowerCase();
-            return st !== 'deleted' && st !== 'archived' && st !== 'suspended';
+            const st = String(lifeStatus || s?.account_status || s?.status || 'active').toLowerCase();
+            return st !== 'deleted' && st !== 'archived' && st !== 'suspended' && st !== 'dropped' && st !== 'locked';
           });
 
           if (activeStudents.length > 0) {

@@ -131,6 +131,7 @@ export interface NotificationLinkInput {
   sessionNum?: number;
   role?: string;
   userRole?: string;
+  meta?: Record<string, unknown> | null;
 }
 
 export function isTeacherUnassignedNotification(
@@ -139,13 +140,16 @@ export function isTeacherUnassignedNotification(
   if (!notif) return false;
   const type = String(notif.type || notif.eventType || '').trim();
   if (type !== 'class_teacher_changed') return false;
+  const roleInEvent = String(notif.meta?.roleInEvent || '').trim().toLowerCase();
+  if (roleInEvent === 'previous_teacher' || roleInEvent === 'unassigned') return true;
   const idToken = String(notif.id || notif.eventId || '').toLowerCase();
   const textToken = `${notif.title || ''} ${notif.body || ''}`;
   return (
     idToken.includes(':removed') ||
     idToken.includes('_removed') ||
     idToken.includes(':unassigned') ||
-    /chuyển sang giáo viên khác|không còn phụ trách|ngừng phụ trách|thu hồi phân công|đã chuyển quyền chủ nhiệm/i.test(
+    idToken.includes('_unassigned') ||
+    /chuyển(?:\s+phân\s+công)?\s+sang\s+giáo\s+viên\s+khác|không còn phụ trách|ngừng phụ trách|thu hồi phân công|đã chuyển quyền chủ nhiệm/i.test(
       textToken
     )
   );

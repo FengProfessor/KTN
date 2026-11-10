@@ -955,6 +955,15 @@ async function runMatrixSuite() {
   const teacherAAccessWhenUnassigned = await callApi(`/api/ktn/messages?roomId=${encodeURIComponent(QA_ROOM)}`, {
     headers: { Authorization: `Bearer ${teacherAToken}` }
   });
+  const teacherANotifsAfterReassign = await callApi('/api/ktn/notifications', {
+    headers: { Authorization: `Bearer ${teacherAToken}` }
+  });
+  const teacherAUnassignedNotif = (teacherANotifsAfterReassign.data?.notifications || []).find(
+    (n) =>
+      n.type === 'class_teacher_changed' &&
+      n.classCode === QA_CLASS &&
+      String(n.id || n.eventId || '').startsWith('CLASS_TEACHER_UNASSIGNED_')
+  );
   const teacherBNotifsAfterReassign = await callApi('/api/ktn/notifications', {
     headers: { Authorization: `Bearer ${teacherBToken}` }
   });
@@ -986,24 +995,66 @@ async function runMatrixSuite() {
       classCreatedNotifCount === 1 &&
       reassignToBRes.status === 200 &&
       teacherAAccessWhenUnassigned.status === 403 &&
+      Boolean(teacherAUnassignedNotif) &&
+      teacherAUnassignedNotif.actionUrl === '/custom-page/so-lien-lac-test#/teacher/classes' &&
       Boolean(teacherBAssignedNotif),
-    `idempotentReplay=${retrySameKeyRes.data?.idempotentReplay}, dupStatus=${duplicateCreateDiffKeyRes.status}, notifCount=${classCreatedNotifCount}, oldTeacherAccess=${teacherAAccessWhenUnassigned.status}`
+    `idempotentReplay=${retrySameKeyRes.data?.idempotentReplay}, dupStatus=${duplicateCreateDiffKeyRes.status}, notifCount=${classCreatedNotifCount}, oldTeacherAccess=${teacherAAccessWhenUnassigned.status}, oldTeacherNotif=${teacherAUnassignedNotif?.id}`
   );
 
   // N06: Teacher A bấm notification -> Mở đúng lớp vừa tạo
   const swScriptRes = await callApi('/sw.js');
+  const swListeners = {};
+  const shownSwNotifications = [];
+  const openedSwWindows = [];
+  const swAckResponses = [];
   const swSandbox = {
     self: {
-      clients: { matchAll: async () => [], openWindow: async (u) => u, claim: async () => {} },
-      registration: { showNotification: async () => {}, pushManager: { getSubscription: async () => null } },
+      clients: {
+        matchAll: async () => [],
+        openWindow: async (u) => {
+          openedSwWindows.push(u);
+          return u;
+        },
+        claim: async () => {}
+      },
+      registration: {
+        showNotification: async (title, options) => {
+          shownSwNotifications.push({ title, options, close: () => {} });
+        },
+        pushManager: { getSubscription: async () => null }
+      },
       skipWaiting: () => {},
-      addEventListener: () => {}
+      addEventListener: (type, handler) => {
+        swListeners[type] = handler;
+      }
     },
     URL,
     URLSearchParams,
     encodeURIComponent,
     decodeURIComponent,
-    fetch: async () => ({ ok: true })
+    fetch: async (targetPath, init = {}) => {
+      let parsedBody = undefined;
+      if (typeof init.body === 'string') {
+        try {
+          parsedBody = JSON.parse(init.body);
+        } catch {
+          parsedBody = init.body;
+        }
+      }
+      const res = await callApi(targetPath, {
+        method: init.method || 'GET',
+        headers: init.headers || {},
+        body: parsedBody
+      });
+      if (String(targetPath).includes('/api/ktn/push/ack')) {
+        swAckResponses.push(res);
+      }
+      return {
+        ok: res.status >= 200 && res.status < 300,
+        status: res.status,
+        json: async () => res.data
+      };
+    }
   };
   vm.runInNewContext(swScriptRes.data, swSandbox, { filename: 'sw.js' });
   const resolvedTeacherColdOpen = swSandbox.resolveSwColdOpenUrl({
@@ -1357,29 +1408,53 @@ async function runMatrixSuite() {
 
   // N18: Nhấn push từ điện thoại -> Mở đúng class:<CLASS_CODE> và xác nhận SERVICE_WORKER_DISPLAYED qua /api/ktn/push/ack
   const chatPushEventId = teacherMsg1Res.data?.pushDelivery?.eventId;
-  const ackRes = await callApi('/api/ktn/push/ack', {
-    method: 'POST',
-    body: {
-      eventId: chatPushEventId,
-      eventType: 'chat_group_message',
-      displayedAt: new Date().toISOString()
-    }
-  });
-  const coldOpenChatUrl = swSandbox.resolveSwColdOpenUrl({
-    url: `/custom-page/so-lien-lac-test#/messages?roomId=${encodeURIComponent(QA_ROOM)}`,
-    eventType: 'chat_group_message',
-    classCode: QA_CLASS,
-    roomId: QA_ROOM
-  });
+  shownSwNotifications.length = 0;
+  openedSwWindows.length = 0;
+  swAckResponses.length = 0;
+  const swPushWaitPromises = [];
+  if (typeof swListeners.push === 'function') {
+    swListeners.push({
+      data: {
+        json: () => ({
+          id: chatPushEventId,
+          eventId: chatPushEventId,
+          eventType: 'chat_group_message',
+          title: `Tin nhắn mới • Lớp ${QA_CLASS}`,
+          body: 'Cô Lâm Mỹ Linh: Chào các con, tối nay lớp mình học lúc 19:30 nhé!',
+          action_url: `/custom-page/so-lien-lac-test#/messages?roomId=${encodeURIComponent(QA_ROOM)}`,
+          classCode: QA_CLASS,
+          roomId: QA_ROOM
+        }),
+        text: () => ''
+      },
+      waitUntil: (p) => swPushWaitPromises.push(Promise.resolve(p))
+    });
+  }
+  await Promise.all(swPushWaitPromises);
+  const ackRes = swAckResponses[0] || { status: 0, data: null };
+  const displayedSwNotif = shownSwNotifications[0] || null;
+  const swClickWaitPromises = [];
+  if (displayedSwNotif && typeof swListeners.notificationclick === 'function') {
+    swListeners.notificationclick({
+      notification: {
+        close: () => {},
+        data: displayedSwNotif.options?.data || {}
+      },
+      waitUntil: (p) => swClickWaitPromises.push(Promise.resolve(p))
+    });
+  }
+  await Promise.all(swClickWaitPromises);
+  const coldOpenChatUrl = openedSwWindows[0] || '';
 
   recordScenario(
     'N18',
     'Group C',
     'Service Worker hiển thị thông báo (POST /api/ktn/push/ack -> deviceDisplayConfirmed=true) & nhấn push mở đúng class:YCT2-05',
-    ackRes.status === 200 &&
+    Boolean(displayedSwNotif) &&
+      ackRes.status === 200 &&
       ackRes.data?.deviceDisplayConfirmed === true &&
       coldOpenChatUrl === `/custom-page/so-lien-lac-test#/chat?room=${encodeURIComponent(QA_ROOM)}`,
-    `ackStatus=${ackRes.status}, deviceDisplayConfirmed=${ackRes.data?.deviceDisplayConfirmed}, coldOpenUrl=${coldOpenChatUrl}`
+    `shown=${shownSwNotifications.length}, ackStatus=${ackRes.status}, deviceDisplayConfirmed=${ackRes.data?.deviceDisplayConfirmed}, coldOpenUrl=${coldOpenChatUrl}`
   );
 
   // =========================================================================

@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import React from 'react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   inspectDlpClient,
   generateClientMessageId,
@@ -10,10 +13,12 @@ import {
   disambiguateCatalogCourses,
 } from '../../src/lib/utils';
 import {
+  chatApi,
   encodeAttachmentUrl,
   parseAttachmentFromUrl,
   normalizeServerMessage,
 } from '../../src/features/chat/services/chatApi';
+import { useChatRooms } from '../../src/features/chat/hooks/useMessages';
 import { useUiStore } from '../../src/stores/useUiStore';
 import { useAuthStore, DEMO_USERS } from '../../src/stores/useAuthStore';
 import { roleNavigation } from '../../src/app/navigation/navigationConfig';
@@ -330,6 +335,72 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       useUiStore.getState().resetSessionUiState();
       expect(useUiStore.getState().draftByRoom).toEqual({});
       expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
+    });
+
+    it('T09: switching from Demo to Live mode does not leak cached Demo ktn-classes (Cô Lâm Mỹ Linh) into Live useChatRooms', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      // Seed Demo mode ktn-classes cache entry (queryKey[2] === true) with Cô Lâm Mỹ Linh
+      queryClient.setQueryData(
+        ['ktn-classes', 'quanly@khongtunhi.com', true],
+        [
+          {
+            id: 'YCT2-04',
+            name: 'Lớp Demo YCT2-04',
+            teacher_name: 'Cô Lâm Mỹ Linh',
+            teacher_email: 'linh.lam@khongtunhi.com',
+            active: true,
+          },
+        ]
+      );
+      useAuthStore.setState({
+        user: {
+          id: 'admin-live',
+          email: 'quanly@khongtunhi.com',
+          name: 'Quản lý Học vụ',
+          role: 'admin',
+          roles: ['admin'],
+          classCode: null,
+          hasLiveClass: true,
+          hasOnlineCourses: true,
+          onlineCourses: [],
+        },
+      });
+      useUiStore.setState({ isDemoMode: false });
+
+      const getRoomsSpy = vi.spyOn(chatApi, 'getRooms').mockResolvedValue({
+        role: 'admin',
+        groupRooms: [
+          {
+            roomId: 'class:TESTOK',
+            classCode: 'TESTOK',
+            label: '🏫 Lớp TESTOK',
+            shortLabel: 'Lớp TESTOK',
+            teacherName: 'Chưa phân công giáo viên',
+            type: 'class',
+            unreadCount: 0,
+          },
+        ],
+        privateThreads: [],
+      });
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      const { result } = renderHook(() => useChatRooms(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      const rooms = result.current.data || [];
+      expect(rooms.some((r) => r.classCode === 'YCT2-04')).toBe(false);
+      expect(rooms.some((r) => r.teacherName === 'Cô Lâm Mỹ Linh')).toBe(false);
+      const testOkRoom = rooms.find((r) => r.roomId === 'class:TESTOK');
+      expect(testOkRoom?.teacherName).toBe('Chưa phân công giáo viên');
+
+      getRoomsSpy.mockRestore();
     });
   });
 

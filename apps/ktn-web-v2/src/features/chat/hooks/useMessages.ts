@@ -108,6 +108,7 @@ export function useChatRooms() {
     queryFn: async () => {
       const cachedClassEntries = queryClient.getQueriesData<KtnClassItem[]>({
         queryKey: ['ktn-classes'],
+        predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode,
       });
       const activeClasses = cachedClassEntries
         .map(([, data]) => data)

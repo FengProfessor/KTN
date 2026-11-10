@@ -203,19 +203,10 @@ export const TeacherWorkspace: React.FC = () => {
         // Class was explicitly reassigned to another teacher — do not trust stale session assignedClasses
         return false;
       }
-      if (
-        c.teacher_code &&
-        user?.code &&
-        c.teacher_code.toUpperCase() === user.code.toUpperCase()
-      ) {
-        return true;
-      }
-      if (
-        c.teacher_code &&
-        user?.code &&
-        c.teacher_code.toUpperCase() !== user.code.toUpperCase()
-      ) {
-        return false;
+      if (c.teacher_code) {
+        return Boolean(
+          user?.code && c.teacher_code.toUpperCase() === user.code.toUpperCase()
+        );
       }
       if (
         !c.teacher_email &&

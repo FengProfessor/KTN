@@ -889,6 +889,45 @@ async function runMatrixSuite() {
     }
   });
   const unassignedDeliveries = [...state.pushDeliveries];
+  const classesCheckUnassigned = await callApi('/api/ktn/classes', {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  const unassignedClsItem = (classesCheckUnassigned.data?.classes || []).find(
+    (c) => c.id === 'YCT1-EMPTY-GV'
+  );
+  const adminRoomsUnassigned = await callApi('/api/ktn/messages/rooms', {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  const unassignedRoomItem = (adminRoomsUnassigned.data?.groupRooms || []).find(
+    (r) => r.roomId === 'class:YCT1-EMPTY-GV'
+  );
+  const unassignedMessagesRes = await callApi('/api/ktn/messages?roomId=class%3AYCT1-EMPTY-GV', {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  // Verify legacy pin with mismatched authorEmail does not attribute to Cô Lâm Mỹ Linh
+  state.tables.ktn_dlp_alerts.push({
+    id: 'PIN-class_YCT1-EMPTY-GV',
+    room_id: 'PIN:class:YCT1-EMPTY-GV',
+    sender_email: 'quanly@khongtunhi.com',
+    sender_name: 'Cô Lâm Mỹ Linh',
+    sender_role: 'admin',
+    blocked_content: JSON.stringify({
+      roomId: 'class:YCT1-EMPTY-GV',
+      content: 'Thông báo lịch khai giảng dự kiến tuần tới.',
+      pinnedBy: 'Cô Lâm Mỹ Linh',
+      pinnedByEmail: 'quanly@khongtunhi.com',
+      isDefault: false,
+      updatedAt: new Date().toISOString()
+    }),
+    reason: 'PINNED_ANNOUNCEMENT',
+    created_at: new Date().toISOString()
+  });
+  const legacyPinCleanedRes = await callApi('/api/ktn/messages?roomId=class%3AYCT1-EMPTY-GV', {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  state.tables.ktn_dlp_alerts = state.tables.ktn_dlp_alerts.filter(
+    (r) => r.id !== 'PIN-class_YCT1-EMPTY-GV'
+  );
   // Clean up helper class YCT1-EMPTY-GV via soft-delete
   await callApi('/api/ktn/classes?id=YCT1-EMPTY-GV', {
     method: 'DELETE',
@@ -898,12 +937,21 @@ async function runMatrixSuite() {
   recordScenario(
     'N04',
     'Group A',
-    'Admin tạo lớp không có giáo viên hợp lệ -> Không phát push tới người không xác định',
+    'Admin tạo lớp không có giáo viên hợp lệ -> Hiện "Chưa phân công giáo viên", tin ghim null, không gán nhầm Cô Lâm Mỹ Linh & không phát push',
     unassignedClassRes.status === 200 &&
       unassignedClassRes.data?.ok === true &&
       unassignedDeliveries.length === 0 &&
-      unassignedClassRes.data?.notificationDispatch === null,
-    `status=${unassignedClassRes.status}, pushDeliveries=${unassignedDeliveries.length}`
+      unassignedClassRes.data?.notificationDispatch === null &&
+      unassignedClsItem?.teacher_name === 'Chưa phân công giáo viên' &&
+      unassignedClsItem?.teacher_email === '' &&
+      unassignedClsItem?.teacher_code === '' &&
+      unassignedRoomItem?.teacherName === 'Chưa phân công giáo viên' &&
+      unassignedRoomItem?.teacherEmail === '' &&
+      unassignedMessagesRes.data?.pinnedMessage === null &&
+      !unassignedMessagesRes.data?.pinnedAnnouncement &&
+      legacyPinCleanedRes.data?.pinnedMessage?.pinnedBy !== 'Cô Lâm Mỹ Linh' &&
+      legacyPinCleanedRes.data?.pinnedMessage?.pinnedByEmail === 'quanly@khongtunhi.com',
+    `status=${unassignedClassRes.status}, pushDeliveries=${unassignedDeliveries.length}, teacher_name=${unassignedClsItem?.teacher_name}, pinned=${unassignedMessagesRes.data?.pinnedMessage}, cleanedPinBy=${legacyPinCleanedRes.data?.pinnedMessage?.pinnedBy}`
   );
 
   // N05: Retry request tạo lớp -> Không tạo lớp hoặc notification trùng (và chặn ghi đè khi khác clientRequestId)

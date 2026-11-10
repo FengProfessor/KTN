@@ -52,7 +52,10 @@ export const TeacherHome: React.FC = () => {
       (c) =>
         (c.teacher_email &&
           c.teacher_email.toLowerCase() === user.email.toLowerCase()) ||
-        (c.teacher_code && user.code && c.teacher_code === user.code)
+        (!c.teacher_email &&
+          c.teacher_code &&
+          user.code &&
+          c.teacher_code.toUpperCase() === user.code.toUpperCase())
     );
   }, [isDemoMode, classesQuery.data, user?.email, user?.code, user?.role]);
 

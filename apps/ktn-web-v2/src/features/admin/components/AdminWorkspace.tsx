@@ -856,11 +856,11 @@ export const AdminWorkspace: React.FC = () => {
             }
             return c;
           });
-        if (demoClassesRef.current) {
+        if (isDemoMode && demoClassesRef.current) {
           demoClassesRef.current = updateClassCounts(demoClassesRef.current);
         }
         queryClient.setQueriesData<KtnClassWithCounts[]>(
-          { queryKey: ['ktn-classes'] },
+          { queryKey: ['ktn-classes'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
           (prev) => (Array.isArray(prev) ? updateClassCounts(prev) : prev)
         );
       }
@@ -1470,7 +1470,7 @@ export const AdminWorkspace: React.FC = () => {
 
       // Immediately remove the soft-deleted class from active classes cache
       queryClient.setQueriesData<KtnClassWithCounts[]>(
-        { queryKey: ['ktn-classes'] },
+        { queryKey: ['ktn-classes'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
         (prev) => {
           if (!Array.isArray(prev)) return prev;
           return prev.filter(
@@ -1481,7 +1481,7 @@ export const AdminWorkspace: React.FC = () => {
 
       // Immediately remove the soft-deleted class room from active chat-rooms cache
       queryClient.setQueriesData<ChatRoom[]>(
-        { queryKey: ['chat-rooms'] },
+        { queryKey: ['chat-rooms'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
         (prev) => {
           if (!Array.isArray(prev)) return prev;
           return prev.filter((r) => {
@@ -1493,32 +1493,34 @@ export const AdminWorkspace: React.FC = () => {
       );
 
       // Immediately unassign the soft-deleted class from teachers cache & demo overrides
-      teachersList.forEach((t) => {
-        const em = String(t.email || '').trim().toLowerCase();
-        if (!em) return;
-        const baseRow = demoTeacherOverridesRef.current[em] || t;
-        if (Array.isArray(baseRow.assigned_classes)) {
-          demoTeacherOverridesRef.current[em] = {
-            ...baseRow,
-            assigned_classes: baseRow.assigned_classes.filter(
-              (c) => String(c || '').trim().toUpperCase() !== cleanCode
-            ),
-          };
-        }
-      });
-      Object.keys(demoTeacherOverridesRef.current).forEach((em) => {
-        const row = demoTeacherOverridesRef.current[em];
-        if (row?.assigned_classes) {
-          demoTeacherOverridesRef.current[em] = {
-            ...row,
-            assigned_classes: row.assigned_classes.filter(
-              (c) => String(c || '').trim().toUpperCase() !== cleanCode
-            ),
-          };
-        }
-      });
+      if (isDemoMode) {
+        teachersList.forEach((t) => {
+          const em = String(t.email || '').trim().toLowerCase();
+          if (!em) return;
+          const baseRow = demoTeacherOverridesRef.current[em] || t;
+          if (Array.isArray(baseRow.assigned_classes)) {
+            demoTeacherOverridesRef.current[em] = {
+              ...baseRow,
+              assigned_classes: baseRow.assigned_classes.filter(
+                (c) => String(c || '').trim().toUpperCase() !== cleanCode
+              ),
+            };
+          }
+        });
+        Object.keys(demoTeacherOverridesRef.current).forEach((em) => {
+          const row = demoTeacherOverridesRef.current[em];
+          if (row?.assigned_classes) {
+            demoTeacherOverridesRef.current[em] = {
+              ...row,
+              assigned_classes: row.assigned_classes.filter(
+                (c) => String(c || '').trim().toUpperCase() !== cleanCode
+              ),
+            };
+          }
+        });
+      }
       queryClient.setQueriesData<KtnTeacherRecord[]>(
-        { queryKey: ['ktn-admin-teachers'] },
+        { queryKey: ['ktn-admin-teachers'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
         (prev) => {
           if (!Array.isArray(prev)) return prev;
           return prev.map((t) => ({
@@ -3365,7 +3367,7 @@ export const AdminWorkspace: React.FC = () => {
 
             // 1. Immediately update ['ktn-classes'] cache so the class list updates without F5
             queryClient.setQueriesData<KtnClassWithCounts[]>(
-              { queryKey: ['ktn-classes'] },
+              { queryKey: ['ktn-classes'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
               (prev) => {
                 const base = Array.isArray(prev)
                   ? prev.filter((c) => c.active !== false)
@@ -3394,7 +3396,7 @@ export const AdminWorkspace: React.FC = () => {
               unreadCount: 0,
             };
             queryClient.setQueriesData<ChatRoom[]>(
-              { queryKey: ['chat-rooms'] },
+              { queryKey: ['chat-rooms'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
               (prev) => {
                 if (!Array.isArray(prev)) return [newChatRoom];
                 const idx = prev.findIndex(
@@ -3455,20 +3457,22 @@ export const AdminWorkspace: React.FC = () => {
               }
               return t;
             };
-            teachersList.forEach((t) => {
-              const em = String(t.email || '').trim().toLowerCase();
-              if (!em) return;
-              const baseRow = demoTeacherOverridesRef.current[em] || t;
-              demoTeacherOverridesRef.current[em] = mapTeacherClassAssignment(baseRow);
-            });
-            Object.keys(demoTeacherOverridesRef.current).forEach((em) => {
-              const row = demoTeacherOverridesRef.current[em];
-              if (row) {
-                demoTeacherOverridesRef.current[em] = mapTeacherClassAssignment(row);
-              }
-            });
+            if (isDemoMode) {
+              teachersList.forEach((t) => {
+                const em = String(t.email || '').trim().toLowerCase();
+                if (!em) return;
+                const baseRow = demoTeacherOverridesRef.current[em] || t;
+                demoTeacherOverridesRef.current[em] = mapTeacherClassAssignment(baseRow);
+              });
+              Object.keys(demoTeacherOverridesRef.current).forEach((em) => {
+                const row = demoTeacherOverridesRef.current[em];
+                if (row) {
+                  demoTeacherOverridesRef.current[em] = mapTeacherClassAssignment(row);
+                }
+              });
+            }
             queryClient.setQueriesData<KtnTeacherRecord[]>(
-              { queryKey: ['ktn-admin-teachers'] },
+              { queryKey: ['ktn-admin-teachers'], predicate: (q) => q.queryKey.length < 3 || q.queryKey[2] === isDemoMode },
               (prev) => (Array.isArray(prev) ? prev.map(mapTeacherClassAssignment) : prev)
             );
 

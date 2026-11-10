@@ -835,7 +835,7 @@ async function resolveClassRecipientEmails(env, classCode, options = {}) {
       if (allTeachers.length === 0 || activeTeacherByEmail.has(clsOwnerEmail)) {
         if (clsOwnerEmail !== excludeEmail) recipientSet.add(clsOwnerEmail);
       }
-    } else if (clsOwnerCode && activeTeacherByCode.has(clsOwnerCode)) {
+    } else if (!clsOwnerEmail && clsOwnerCode && activeTeacherByCode.has(clsOwnerCode)) {
       const matchedEm = normalizeEmail(activeTeacherByCode.get(clsOwnerCode)?.email || '');
       if (matchedEm && matchedEm !== excludeEmail) recipientSet.add(matchedEm);
     }
@@ -845,9 +845,11 @@ async function resolveClassRecipientEmails(env, classCode, options = {}) {
       const tEm = normalizeEmail(t?.email || '');
       const tCode = String(t?.code || '').trim().toUpperCase();
       if (!tEm || tEm === excludeEmail) continue;
-      // Nếu ktn_classes đã gắn chủ nhiệm rõ ràng cho giáo viên khác, không dùng assigned_classes cũ
-      if (clsOwnerEmail && clsOwnerEmail !== tEm && (!clsOwnerCode || clsOwnerCode !== tCode)) {
-        continue;
+      // Nếu ktn_classes tồn tại: chỉ nhận giáo viên đúng chủ nhiệm hiện tại; nếu lớp chưa phân công giáo viên thì không dùng assigned_classes cũ
+      if (clsRow) {
+        if (!clsOwnerEmail && !clsOwnerCode) continue;
+        if (clsOwnerEmail && clsOwnerEmail !== tEm) continue;
+        if (!clsOwnerEmail && clsOwnerCode && clsOwnerCode !== tCode) continue;
       }
       const meta = extractTeacherMetaFromRow(t);
       if (meta.assignedClasses.includes(cleanClass)) {
@@ -900,7 +902,7 @@ async function resolvePrivateMessageRecipientEmails(env, studentEmail, session) 
       }
     }
   }
-  if (recipientSet.size === 0) {
+  if (!stuClass && recipientSet.size === 0) {
     const teaRes = await supabaseRequest(env, 'ktn_teachers?active=eq.true&select=email,active&limit=20');
     if (teaRes.ok && Array.isArray(teaRes.data)) {
       for (const t of teaRes.data) {
@@ -3485,14 +3487,26 @@ async function getRoomPinnedAnnouncement(env, access) {
     const row = res.data[0];
     try {
       const parsed = JSON.parse(row.blocked_content || '{}');
-      if (parsed && parsed.content && parsed.isDefault !== true) {
+      const contentText = String(parsed?.content || '').trim();
+      const isLegacyAutoWelcome =
+        /Các con trao đổi bài học và hỏi bài cùng Cô Lâm Mỹ Linh tại nhóm lớp nhé\./i.test(contentText) ||
+        /Các con xem video bài giảng và trao đổi cùng Cô Lâm Mỹ Linh\s*&\s*các bạn cùng khóa tại đây nhé\./i.test(contentText);
+      if (parsed && contentText && parsed.isDefault !== true && !isLegacyAutoWelcome) {
         const neutralAuthorLabel =
           row.sender_role === 'admin' ? 'Ban Quản Trị KTN' : 'Giáo viên phụ trách';
+        const authorEmail = normalizeEmail(parsed.pinnedByEmail || row.sender_email || '');
+        const isLinhAuthor = authorEmail === 'linh.lam@khongtunhi.com';
+        const rawPinnedBy = String(parsed.pinnedBy || '').trim();
+        const rawSenderName = String(row.sender_name || '').trim();
+        const validPinnedBy =
+          rawPinnedBy && (isLinhAuthor || rawPinnedBy !== 'Cô Lâm Mỹ Linh') ? rawPinnedBy : '';
+        const validSenderName =
+          rawSenderName && (isLinhAuthor || rawSenderName !== 'Cô Lâm Mỹ Linh') ? rawSenderName : '';
         return {
           roomId: access.roomId,
-          content: String(parsed.content).trim(),
-          pinnedBy: parsed.pinnedBy || row.sender_name || row.sender_email || neutralAuthorLabel,
-          pinnedByEmail: parsed.pinnedByEmail || row.sender_email || '',
+          content: contentText,
+          pinnedBy: validPinnedBy || validSenderName || authorEmail || neutralAuthorLabel,
+          pinnedByEmail: authorEmail,
           messageId: parsed.messageId || null,
           isDefault: false,
           updatedAt: parsed.updatedAt || row.created_at || new Date().toISOString()
@@ -5297,15 +5311,26 @@ async function mergeAndUpsertStudentCourses(env, {
     ).catch(() => ({ ok: false, data: [] }));
     const clsRow = clsLookup.ok && Array.isArray(clsLookup.data) && clsLookup.data[0] ? clsLookup.data[0] : null;
     if (!clsRow || clsRow.active !== false) {
-      let teacherName = String(clsRow?.teacher_name || '').trim();
+      let teacherName = '';
       const teacherEmail = normalizeEmail(clsRow?.teacher_email || '');
-      if (!teacherName && teacherEmail) {
+      const teacherCode = String(clsRow?.teacher_code || '').trim();
+      if (teacherEmail) {
         const tLookup = await supabaseRequest(
           env,
-          `ktn_teachers?email=eq.${encodeURIComponent(teacherEmail)}&select=name&limit=1`
+          `ktn_teachers?email=eq.${encodeURIComponent(teacherEmail)}&select=name,active&limit=1`
         ).catch(() => ({ ok: false, data: [] }));
-        if (tLookup.ok && Array.isArray(tLookup.data) && tLookup.data[0]?.name) {
-          teacherName = String(tLookup.data[0].name).trim();
+        const tRow = tLookup.ok && Array.isArray(tLookup.data) && tLookup.data[0] ? tLookup.data[0] : null;
+        if (tRow && tRow.active !== false && tRow.name) {
+          teacherName = String(tRow.name).trim();
+        }
+      } else if (teacherCode) {
+        const tLookup = await supabaseRequest(
+          env,
+          `ktn_teachers?code=ilike.${encodeURIComponent(teacherCode)}&select=name,active&limit=1`
+        ).catch(() => ({ ok: false, data: [] }));
+        const tRow = tLookup.ok && Array.isArray(tLookup.data) && tLookup.data[0] ? tLookup.data[0] : null;
+        if (tRow && tRow.active !== false && tRow.name) {
+          teacherName = String(tRow.name).trim();
         }
       }
       const teacherDisplay = teacherName ? ` (Giáo viên: ${teacherName})` : '';
@@ -10400,8 +10425,8 @@ export default {
             studentCount: activeStudentCount,
             student_count: activeStudentCount,
             teacher_name: resolvedTeacherName,
-            teacher_email: matchedT?.email ? normalizeEmail(matchedT.email) : (tEmailNorm || ''),
-            teacher_code: matchedT?.code ? String(matchedT.code).trim() : (tCodeNorm || ''),
+            teacher_email: matchedT?.email ? normalizeEmail(matchedT.email) : (tRes.ok ? '' : (tEmailNorm || '')),
+            teacher_code: matchedT?.code ? String(matchedT.code).trim() : (tRes.ok ? '' : (tCodeNorm || '')),
             schedule: isConfirmed
               ? officialScheduleText
               : rawLegacyText || 'Chưa có lịch học chính thức',
@@ -15439,6 +15464,7 @@ export default {
         const rawGroupRooms = [];
         const seenRoomIds = new Set();
         let studentTeacherName = 'Chưa phân công giáo viên';
+        let studentTeacherEmail = '';
         if (classCode) {
           const clsCheckRes = await supabaseRequest(
             env,
@@ -15452,24 +15478,22 @@ export default {
             if (clsRow?.teacher_email) {
               const tRes = await supabaseRequest(
                 env,
-                `ktn_teachers?email=eq.${encodeURIComponent(normalizeEmail(clsRow.teacher_email))}&select=name,active&limit=1`
+                `ktn_teachers?email=eq.${encodeURIComponent(normalizeEmail(clsRow.teacher_email))}&select=name,email,active&limit=1`
               ).catch(() => ({ ok: false, data: [] }));
               const tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
               if (tRow && tRow.active !== false && tRow.name) {
                 studentTeacherName = String(tRow.name).trim();
-              } else if (clsRow?.teacher_name) {
-                studentTeacherName = String(clsRow.teacher_name).trim();
+                studentTeacherEmail = normalizeEmail(tRow.email || clsRow.teacher_email);
               }
             } else if (clsRow?.teacher_code) {
               const tRes = await supabaseRequest(
                 env,
-                `ktn_teachers?code=eq.${encodeURIComponent(String(clsRow.teacher_code).trim())}&select=name,active&limit=1`
+                `ktn_teachers?code=ilike.${encodeURIComponent(String(clsRow.teacher_code).trim())}&select=name,email,active&limit=1`
               ).catch(() => ({ ok: false, data: [] }));
               const tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
               if (tRow && tRow.active !== false && tRow.name) {
                 studentTeacherName = String(tRow.name).trim();
-              } else if (clsRow?.teacher_name) {
-                studentTeacherName = String(clsRow.teacher_name).trim();
+                studentTeacherEmail = normalizeEmail(tRow.email || '');
               }
             }
             const rid = `class:${classCode}`;
@@ -15481,7 +15505,7 @@ export default {
               classCode,
               className: String(clsRow?.name || `Lớp ${classCode}`).trim(),
               teacherName: studentTeacherName,
-              teacherEmail: clsRow?.teacher_email ? normalizeEmail(clsRow.teacher_email) : '',
+              teacherEmail: studentTeacherEmail,
               label: `🏫 Lớp ${classCode}`,
               shortLabel: `Lớp ${classCode}`
             });
@@ -15549,7 +15573,7 @@ export default {
           id: cid,
           name: String(c.name || `Lớp ${cid}`).trim(),
           teacherName: tMatch?.name ? String(tMatch.name).trim() : 'Chưa phân công giáo viên',
-          teacherEmail: cEmail || normalizeEmail(tMatch?.email || ''),
+          teacherEmail: tMatch?.email ? normalizeEmail(tMatch.email) : '',
           active: true
         });
       }

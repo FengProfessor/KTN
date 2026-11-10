@@ -170,16 +170,9 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
     );
 
     if (isCreateMode || !classItem) {
-      const firstActiveTeacher = teachers.find(
-        (t) =>
-          t.active !== false &&
-          t.status !== 'locked' &&
-          t.status !== 'suspended' &&
-          t.status !== 'inactive'
-      );
       setClassCode('');
       setClassName('');
-      setSelectedTeacherEmail(firstActiveTeacher?.email || '');
+      setSelectedTeacherEmail('');
       setTotalLessons(25);
       setScheduleMode('weekly');
       setDaysOfWeek([]);

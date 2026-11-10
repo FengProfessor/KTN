@@ -1156,38 +1156,48 @@ window.__syncKtnPortalViewByRole = function() {
     const existingCpRes = await req('GET', `https://k90adfn1jk.execute-api.ap-southeast-1.amazonaws.com/prod/custom-page-data?customPage=${PAGE_ID}&vendorId=${VENDOR_ID}`, apiHeaders);
     const existingCpData = JSON.parse(existingCpRes.text);
     const existingSections = Array.isArray(existingCpData) ? existingCpData : (existingCpData.data || []);
-    for (const sec of existingSections) {
-      const m = (sec.props?.js || '').match(/resource\/documents\/[^"'\s?]+\.js/);
-      if (m && !liveTimestamps.some(ts => m[0].includes(ts))) {
-        const dynamicJsKey = m[0];
-        if (dynamicJsKey.includes('clean-hsk1-portal')) {
-          const noopBuf = Buffer.from('/* deprecated duplicate section - handled by unified bundle */', 'utf8');
-          const sJs = await getSignedUrl(token, dynamicJsKey, 'application/javascript; charset=utf-8');
-          await uploadBufferToS3(sJs, noopBuf, 'application/javascript; charset=utf-8');
-          console.log(`Deprecated duplicate section JS (${dynamicJsKey}) neutralized on CloudFront!`);
-        } else {
-          const sJs = await getSignedUrl(token, dynamicJsKey, 'application/javascript; charset=utf-8');
-          await uploadBufferToS3(sJs, jsBuf, 'application/javascript; charset=utf-8');
-          console.log(`Active Server Bundle JS (${dynamicJsKey}) overwritten on CloudFront!`);
+    const hasLiveReactV2 = existingSections.some(sec =>
+      String(sec?.props?.html || '').includes('ktn-react-v2-root') ||
+      String(sec?.props?.js || '').includes('ktn-react-v2')
+    );
+    if (hasLiveReactV2 && process.env.KTN_FORCE_LEGACY_CUSTOM_PAGE !== 'true') {
+      console.log(
+        '[GUARD] Custom Page ' + PAGE_ID + ' is actively running React V2 (#ktn-react-v2-root). ' +
+        'Skipping legacy S3 chunk overwrite & SectionHtml overwrite.'
+      );
+    } else {
+      for (const sec of existingSections) {
+        const m = (sec.props?.js || '').match(/resource\/documents\/[^"'\s?]+\.js/);
+        if (m && !m[0].includes('ktn-react-v2') && !liveTimestamps.some(ts => m[0].includes(ts))) {
+          const dynamicJsKey = m[0];
+          if (dynamicJsKey.includes('clean-hsk1-portal')) {
+            const noopBuf = Buffer.from('/* deprecated duplicate section - handled by unified bundle */', 'utf8');
+            const sJs = await getSignedUrl(token, dynamicJsKey, 'application/javascript; charset=utf-8');
+            await uploadBufferToS3(sJs, noopBuf, 'application/javascript; charset=utf-8');
+            console.log(`Deprecated duplicate section JS (${dynamicJsKey}) neutralized on CloudFront!`);
+          } else {
+            const sJs = await getSignedUrl(token, dynamicJsKey, 'application/javascript; charset=utf-8');
+            await uploadBufferToS3(sJs, jsBuf, 'application/javascript; charset=utf-8');
+            console.log(`Active Server Bundle JS (${dynamicJsKey}) overwritten on CloudFront!`);
+          }
+        }
+        const mc = (sec.props?.css || '').match(/resource\/documents\/[^"'\s?]+\.css/);
+        if (mc && !mc[0].includes('ktn-react-v2') && !liveTimestamps.some(ts => mc[0].includes(ts))) {
+          const dynamicCssKey = mc[0];
+          if (dynamicCssKey.includes('clean-hsk1-portal')) {
+            const noopCssBuf = Buffer.from('/* deprecated */', 'utf8');
+            const sCss = await getSignedUrl(token, dynamicCssKey, 'text/css; charset=utf-8');
+            await uploadBufferToS3(sCss, noopCssBuf, 'text/css; charset=utf-8');
+          } else {
+            const sCss = await getSignedUrl(token, dynamicCssKey, 'text/css; charset=utf-8');
+            await uploadBufferToS3(sCss, cssBuf, 'text/css; charset=utf-8');
+            console.log(`Active Server Bundle CSS (${dynamicCssKey}) overwritten on CloudFront!`);
+          }
         }
       }
-      const mc = (sec.props?.css || '').match(/resource\/documents\/[^"'\s?]+\.css/);
-      if (mc && !liveTimestamps.some(ts => mc[0].includes(ts))) {
-        const dynamicCssKey = mc[0];
-        if (dynamicCssKey.includes('clean-hsk1-portal')) {
-          const noopCssBuf = Buffer.from('/* deprecated */', 'utf8');
-          const sCss = await getSignedUrl(token, dynamicCssKey, 'text/css; charset=utf-8');
-          await uploadBufferToS3(sCss, noopCssBuf, 'text/css; charset=utf-8');
-        } else {
-          const sCss = await getSignedUrl(token, dynamicCssKey, 'text/css; charset=utf-8');
-          await uploadBufferToS3(sCss, cssBuf, 'text/css; charset=utf-8');
-          console.log(`Active Server Bundle CSS (${dynamicCssKey}) overwritten on CloudFront!`);
-        }
-      }
-    }
 
-    // Update Custom Page SectionHtml to include BOTH #ktn-sll-root and #ktn-clean-portal-mount
-    const loaderJs = `
+      // Update Custom Page SectionHtml to include BOTH #ktn-sll-root and #ktn-clean-portal-mount
+      const loaderJs = `
 (function() {
   window.__ktnCleanPortalLoaded = true;
   window.navigateStudentHash = window.navigateStudentHash || function(h) {
@@ -1217,57 +1227,58 @@ window.__syncKtnPortalViewByRole = function() {
 })();
 `.trim();
 
-    const inlineBootImg = `<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" style="width:1px;height:1px;opacity:0;position:absolute;pointer-events:none;" onload="(function(){window.__ktnCleanPortalLoaded=true;window.navigateStudentHash=window.navigateStudentHash||function(h){window.location.hash=(h&&h.indexOf('#')===0)?h:('#'+(h||'/'));};window.openCourseContinueOrStart=window.openCourseContinueOrStart||function(cid){var map={'6adadba969897b0002482ca5':'hsk1','65e7704a9ea90c00080d5195':'cfk1','661528ea42af880008944573':'cfk3','65e7636a0a1b61000825c2ef':'mini1','6600fa477c18b80008c53c88':'mini2','6600fa7da2bfe10008834e13':'mini3','65e769bd637339000870618f':'ttte1','66028938bfd6c90008b816e1':'ttte2','6638bd09a7367400085c7ab2':'ttte3','678d14b960eae20002ddf8fe':'ttte4','67a7290a5fdc26000238b4e9':'ttte5','67a869302ecb9c000257d966':'ttte6','65e772a1767c56000829518e':'junior1','6638c76dfac274000876cd13':'junior3','65e76a533f5e7c00086715d7':'hsk1-20','65f6d1c722106a0008ff81a3':'hsk-prep','65e773c89ea90c00080d52fc':'hsk-prep-en'};var slug=map[cid]||cid||'hsk1';window.location.hash='#/khoa/'+slug+'/bai/1';};window.openActiveOrDefaultCourseHash=window.openActiveOrDefaultCourseHash||function(){window.location.hash='#/khoa/hsk1/bai/1';};window.openStudentLiveClassHash=window.openStudentLiveClassHash||function(){window.location.hash='#/lop/yct2-04/buoi/1';};if(window.__ktnUnifiedBundleLoaded)return;window.__ktnUnifiedBundleLoaded=true;var b=document.createElement('script');b.src='${cdnJsUrl}?v='+Date.now();document.head.appendChild(b);if(!window.Hls){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/hls.js@1';document.head.appendChild(s);}})()">`;
-    const mountHtmlWithCssLink = `<script>window.__ktnCleanPortalLoaded=true;</script>\n<link rel="stylesheet" href="${cdnCssUrl}">\n${inlineBootImg}\n${finalHtml}`;
-    const newViewData = existingSections.map((sec, idx) => {
-      if (sec.id === '6adffce796c3ff0002b2c8d5' || sec._id === '6adffce796c3ff0002b2c8d5') {
+      const inlineBootImg = `<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" style="width:1px;height:1px;opacity:0;position:absolute;pointer-events:none;" onload="(function(){window.__ktnCleanPortalLoaded=true;window.navigateStudentHash=window.navigateStudentHash||function(h){window.location.hash=(h&&h.indexOf('#')===0)?h:('#'+(h||'/'));};window.openCourseContinueOrStart=window.openCourseContinueOrStart||function(cid){var map={'6adadba969897b0002482ca5':'hsk1','65e7704a9ea90c00080d5195':'cfk1','661528ea42af880008944573':'cfk3','65e7636a0a1b61000825c2ef':'mini1','6600fa477c18b80008c53c88':'mini2','6600fa7da2bfe10008834e13':'mini3','65e769bd637339000870618f':'ttte1','66028938bfd6c90008b816e1':'ttte2','6638bd09a7367400085c7ab2':'ttte3','678d14b960eae20002ddf8fe':'ttte4','67a7290a5fdc26000238b4e9':'ttte5','67a869302ecb9c000257d966':'ttte6','65e772a1767c56000829518e':'junior1','6638c76dfac274000876cd13':'junior3','65e76a533f5e7c00086715d7':'hsk1-20','65f6d1c722106a0008ff81a3':'hsk-prep','65e773c89ea90c00080d52fc':'hsk-prep-en'};var slug=map[cid]||cid||'hsk1';window.location.hash='#/khoa/'+slug+'/bai/1';};window.openActiveOrDefaultCourseHash=window.openActiveOrDefaultCourseHash||function(){window.location.hash='#/khoa/hsk1/bai/1';};window.openStudentLiveClassHash=window.openStudentLiveClassHash||function(){window.location.hash='#/lop/yct2-04/buoi/1';};if(window.__ktnUnifiedBundleLoaded)return;window.__ktnUnifiedBundleLoaded=true;var b=document.createElement('script');b.src='${cdnJsUrl}?v='+Date.now();document.head.appendChild(b);if(!window.Hls){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/hls.js@1';document.head.appendChild(s);}})()">`;
+      const mountHtmlWithCssLink = `<script>window.__ktnCleanPortalLoaded=true;</script>\n<link rel="stylesheet" href="${cdnCssUrl}">\n${inlineBootImg}\n${finalHtml}`;
+      const newViewData = existingSections.map((sec, idx) => {
+        if (sec.id === '6adffce796c3ff0002b2c8d5' || sec._id === '6adffce796c3ff0002b2c8d5') {
+          return {
+            ...sec,
+            element: 'SectionHtml',
+            name: 'html-section:so-lien-lac-prod',
+            id: sec.id || sec._id,
+            _id: sec._id || sec.id,
+            index: 0,
+            props: {
+              'heading-text': 'Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí',
+              'sub-text': 'Học Viện Khổng Tử Nhí',
+              html: mountHtmlWithCssLink,
+              css: finalCss,
+              js: loaderJs
+            }
+          };
+        }
         return {
           ...sec,
-          element: 'SectionHtml',
-          name: 'html-section:so-lien-lac-prod',
+          element: sec.element || 'SectionHtml',
+          name: 'html-section:so-lien-lac-empty',
           id: sec.id || sec._id,
           _id: sec._id || sec.id,
-          index: 0,
+          index: idx + 1,
           props: {
-            'heading-text': 'Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí',
-            'sub-text': 'Học Viện Khổng Tử Nhí',
-            html: mountHtmlWithCssLink,
-            css: finalCss,
-            js: loaderJs
+            'heading-text': '',
+            'sub-text': '',
+            html: '<!-- empty -->',
+            css: '/* empty */',
+            js: '// empty'
           }
         };
-      }
-      return {
-        ...sec,
-        element: sec.element || 'SectionHtml',
-        name: 'html-section:so-lien-lac-empty',
-        id: sec.id || sec._id,
-        _id: sec._id || sec.id,
-        index: idx + 1,
-        props: {
-          'heading-text': '',
-          'sub-text': '',
-          html: '<!-- empty -->',
-          css: '/* empty */',
-          js: '// empty'
-        }
-      };
-    });
+      });
 
-    const cpPayload = JSON.stringify({
-      vendorSettingId: VENDOR_ID,
-      viewData: newViewData,
-      isAddition: true,
-      url: SLUG,
-      title: 'Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí',
-      pageId: PAGE_ID
-    });
+      const cpPayload = JSON.stringify({
+        vendorSettingId: VENDOR_ID,
+        viewData: newViewData,
+        isAddition: true,
+        url: SLUG,
+        title: 'Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí',
+        pageId: PAGE_ID
+      });
 
-    const cpPutRes = await req('PUT', 'https://k90adfn1jk.execute-api.ap-southeast-1.amazonaws.com/prod/custom-page-vendor-setting', {
-      ...apiHeaders,
-      'Content-Length': Buffer.byteLength(cpPayload, 'utf8')
-    }, cpPayload);
-    console.log('PUT /custom-page-vendor-setting status:', cpPutRes.status);
+      const cpPutRes = await req('PUT', 'https://k90adfn1jk.execute-api.ap-southeast-1.amazonaws.com/prod/custom-page-vendor-setting', {
+        ...apiHeaders,
+        'Content-Length': Buffer.byteLength(cpPayload, 'utf8')
+      }, cpPayload);
+      console.log('PUT /custom-page-vendor-setting status:', cpPutRes.status);
+    }
   } catch (err) {
     console.warn('[WARN] Could not inspect/update custom-page-data:', err.message);
   }

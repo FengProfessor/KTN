@@ -458,12 +458,16 @@ async function updateCustomPageVendorSetting(token, payload, existingPage = null
   let viewData;
   if (existingSections.length > 0) {
     let primaryAssigned = false;
-    const primaryIdx = existingSections.findIndex(
+    const byCanonicalIdIdx = existingSections.findIndex(
       (s) =>
         s._id === '6adffce796c3ff0002b2c8d5' ||
-        s.name === 'html-section:so-lien-lac-prod' ||
-        s.index === 0
+        s.id === '6adffce796c3ff0002b2c8d5' ||
+        s.name === 'html-section:so-lien-lac-prod'
     );
+    const primaryIdx =
+      byCanonicalIdIdx >= 0
+        ? byCanonicalIdIdx
+        : existingSections.findIndex((s) => s.index === 0);
     const targetPrimaryIndex = primaryIdx >= 0 ? primaryIdx : 0;
 
     viewData = existingSections.map((sec, idx) => {
@@ -472,6 +476,7 @@ async function updateCustomPageVendorSetting(token, payload, existingPage = null
           primaryAssigned = true;
           return {
             ...sec,
+            name: 'html-section:so-lien-lac-prod',
             index: 0,
             props: {
               'heading-text': 'Sổ Liên Lạc Điện Tử — Khổng Tử Nhí',
@@ -484,6 +489,7 @@ async function updateCustomPageVendorSetting(token, payload, existingPage = null
         }
         return {
           ...sec,
+          index: sec.index === 0 ? idx + 1 : (sec.index ?? idx + 1),
           props: {
             ...(sec.props && 'heading-text' in sec.props ? { 'heading-text': '', 'sub-text': '' } : {}),
             html: '<!-- empty -->',
@@ -594,7 +600,7 @@ async function main() {
 
       assertCustomPageWriteAllowed(targetPageId, args.allowProdOverwrite);
       const adminToken = await resolveIzTeachAdminToken();
-      const putUrl = `${IZTEACH_API_ORIGIN}/v3/vendor-setting/${targetVendorId}`;
+      const putUrl = `${IZTEACH_CUSTOM_PAGE_API_BASE}/custom-page-vendor-setting`;
       const putRes = await fetch(putUrl, {
         method: 'PUT',
         headers: {

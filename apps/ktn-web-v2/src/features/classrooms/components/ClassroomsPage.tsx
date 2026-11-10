@@ -305,7 +305,7 @@ export const ClassroomsPage: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <p className="text-[10.5px] text-stone-500">Giáo viên phụ trách</p>
                     <p className="break-words text-xs font-bold text-stone-900">
-                      {assignedClass.teacher_name || 'Cô Lâm Mỹ Linh'}
+                      {assignedClass.teacher_name || 'Chưa phân công giáo viên'}
                     </p>
                   </div>
                 </div>
@@ -521,7 +521,7 @@ export const ClassroomsPage: React.FC = () => {
                       BUỔI {activeSession.sessionNum || activeSession.session_num}
                     </span>
                     <span className="text-xs font-semibold text-stone-600">
-                      GV: {assignedClass.teacher_name}
+                      GV: {assignedClass.teacher_name || 'Chưa phân công giáo viên'}
                     </span>
                   </div>
 

@@ -353,7 +353,7 @@ export const StudentHome: React.FC = () => {
                 </h2>
 
                 <p className="mt-0.5 text-[11px] font-medium text-stone-600">
-                  GV: {assignedClass?.teacher_name || 'Cô Lâm Mỹ Linh'}
+                  GV: {assignedClass?.teacher_name || 'Chưa phân công giáo viên'}
                 </p>
 
                 <p

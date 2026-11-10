@@ -25,7 +25,21 @@ const COMPLETED_LESSONS_KEY = 'ktn_v2_completed_lessons';
 function readInitialFailedQueue(): Record<string, ChatMessage[]> {
   try {
     const raw = localStorage.getItem(FAILED_QUEUE_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, ChatMessage[]>) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, ChatMessage[]>;
+    const sanitized: Record<string, ChatMessage[]> = {};
+    for (const [room, list] of Object.entries(parsed || {})) {
+      if (!Array.isArray(list)) continue;
+      const cleanList = list.filter(
+        (m) =>
+          m &&
+          !String(m.id || '').startsWith('demo_') &&
+          !String(m.clientMessageId || '').startsWith('demo_') &&
+          !String(m.id || '').startsWith('MSG-SEED-')
+      );
+      if (cleanList.length > 0) sanitized[room] = cleanList;
+    }
+    return sanitized;
   } catch {
     return {};
   }
@@ -112,7 +126,21 @@ export const useUiStore = create<UiState>((set, get) => ({
     isDemoAllowedInEnv() &&
     typeof window !== 'undefined' &&
     window.location.search.includes('demo=1'),
-  setDemoMode: (val) => set({ isDemoMode: val && isDemoAllowedInEnv() }),
+  setDemoMode: (val) => {
+    const nextDemo = Boolean(val && isDemoAllowedInEnv());
+    if (!nextDemo) {
+      set({
+        isDemoMode: false,
+        chatDemoScenario: 'live_real',
+        videoDemoScenario: 'live_real',
+        isOfflineSimulated: false,
+        sendingMessagesByRoom: {},
+        reactionsByMessageId: {}
+      });
+    } else {
+      set({ isDemoMode: true });
+    }
+  },
 
   sidebarOpen: false,
   setSidebarOpen: (val) => set({ sidebarOpen: val }),
@@ -120,10 +148,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   notifDropdownOpen: false,
   setNotifDropdownOpen: (val) => set({ notifDropdownOpen: val }),
 
-  selectedClassCode: 'YCT2-04',
+  selectedClassCode: '',
   setSelectedClassCode: (code) => set({ selectedClassCode: code }),
 
-  activeRoomId: 'class:YCT2-04',
+  activeRoomId: '',
   setActiveRoomId: (roomId) => set({ activeRoomId: roomId }),
 
   mobileChatConversationOpen: false,
@@ -221,10 +249,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       return { failedMessagesByRoom: nextFailed };
     }),
 
-  reactionsByMessageId: {
-    'MSG-SEED-YCT2-001': [{ emoji: '❤️', count: 3, users: ['PH Bé Hoàng Ngân', 'PH Bé An Mẫn', 'Cô Lâm Mỹ Linh'] }],
-    'MSG-SEED-YCT2-002': [{ emoji: '👍', count: 1, users: ['Cô Lâm Mỹ Linh'] }]
-  },
+  reactionsByMessageId: {},
   toggleReaction: (messageId, emoji, userName) =>
     set((state) => {
       const current = state.reactionsByMessageId[messageId] || [];
@@ -300,6 +325,9 @@ export const useUiStore = create<UiState>((set, get) => ({
       // Ignore
     }
     set({
+      isDemoMode: false,
+      chatDemoScenario: 'live_real',
+      videoDemoScenario: 'live_real',
       sidebarOpen: false,
       notifDropdownOpen: false,
       mobileChatConversationOpen: false,
@@ -308,6 +336,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       draftByRoom: {},
       sendingMessagesByRoom: {},
       failedMessagesByRoom: {},
+      reactionsByMessageId: {},
       completedLessons: {},
       isOfflineSimulated: false
     });

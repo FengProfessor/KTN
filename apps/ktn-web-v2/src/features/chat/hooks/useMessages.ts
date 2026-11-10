@@ -99,11 +99,12 @@ function reconcileRoomsWithActiveClasses(
 export function useChatRooms() {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
+  const effectiveScenario = isDemoMode ? chatDemoScenario : 'live_real';
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
 
   const query = useQuery<ChatRoom[]>({
-    queryKey: ['chat-rooms', user?.email, isDemoMode, chatDemoScenario],
+    queryKey: ['chat-rooms', user?.email, isDemoMode, effectiveScenario],
     queryFn: async () => {
       const cachedClassEntries = queryClient.getQueriesData<KtnClassItem[]>({
         queryKey: ['ktn-classes'],
@@ -112,11 +113,11 @@ export function useChatRooms() {
         .map(([, data]) => data)
         .find((data): data is KtnClassItem[] => Array.isArray(data));
 
-      if (isDemoMode || chatDemoScenario !== 'live_real') {
+      if (isDemoMode) {
         let baseRooms = DEMO_CHAT_ROOMS;
-        if (chatDemoScenario === 'demo_empty') {
+        if (effectiveScenario === 'demo_empty') {
           baseRooms = DEMO_CHAT_ROOMS.map((r) => ({ ...r, unreadCount: 0, lastMessage: '' }));
-        } else if (chatDemoScenario === 'demo_unread') {
+        } else if (effectiveScenario === 'demo_unread') {
           baseRooms = DEMO_CHAT_ROOMS.map((r, i) => ({
             ...r,
             unreadCount: (r.unreadCount || 0) + (i === 0 ? 5 : 2),
@@ -163,6 +164,7 @@ export function useChatRooms() {
 export function useRoomMessages(roomId: string | null) {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
+  const effectiveScenario = isDemoMode ? chatDemoScenario : 'live_real';
   const sendingMessagesByRoom = useUiStore((s) => s.sendingMessagesByRoom);
   const failedMessagesByRoom = useUiStore((s) => s.failedMessagesByRoom);
   const reactionsByMessageId = useUiStore((s) => s.reactionsByMessageId);
@@ -181,7 +183,7 @@ export function useRoomMessages(roomId: string | null) {
   }, [roomId]);
 
   const query = useQuery({
-    queryKey: ['chat-messages', roomId, user?.email, isDemoMode, chatDemoScenario],
+    queryKey: ['chat-messages', roomId, user?.email, isDemoMode, effectiveScenario],
     queryFn: async () => {
       if (!roomId) {
         return {
@@ -197,8 +199,8 @@ export function useRoomMessages(roomId: string | null) {
         };
       }
 
-      if (isDemoMode || chatDemoScenario !== 'live_real') {
-        if (chatDemoScenario === 'demo_empty') {
+      if (isDemoMode) {
+        if (effectiveScenario === 'demo_empty') {
           return {
             messages: [] as ChatMessage[],
             pinnedMessage: null,
@@ -254,7 +256,7 @@ export function useRoomMessages(roomId: string | null) {
     if (!roomId || isLoadingOlder || !hasMoreOlder) return;
     setIsLoadingOlder(true);
     try {
-      if (isDemoMode || chatDemoScenario !== 'live_real') {
+      if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 300));
         const syntheticOlder: ChatMessage[] = [
           {
@@ -284,7 +286,7 @@ export function useRoomMessages(roomId: string | null) {
     } finally {
       setIsLoadingOlder(false);
     }
-  }, [roomId, hasMoreOlder, isDemoMode, chatDemoScenario, isLoadingOlder, olderCursor]);
+  }, [roomId, hasMoreOlder, isDemoMode, isLoadingOlder, olderCursor]);
 
   const mergedMessages = useMemo(() => {
     if (!roomId) return [];
@@ -293,7 +295,7 @@ export function useRoomMessages(roomId: string | null) {
     const failedList = failedMessagesByRoom[roomId] || [];
 
     let demoExtra: ChatMessage[] = [];
-    if (chatDemoScenario === 'demo_sending') {
+    if (isDemoMode && effectiveScenario === 'demo_sending') {
       demoExtra = [
         {
           id: 'demo_sending_1',
@@ -308,7 +310,7 @@ export function useRoomMessages(roomId: string | null) {
           status: 'sending',
         },
       ];
-    } else if (chatDemoScenario === 'demo_failed') {
+    } else if (isDemoMode && effectiveScenario === 'demo_failed') {
       demoExtra = [
         {
           id: 'demo_failed_1',
@@ -367,13 +369,14 @@ export function useRoomMessages(roomId: string | null) {
     sendingMessagesByRoom,
     failedMessagesByRoom,
     reactionsByMessageId,
-    chatDemoScenario,
+    isDemoMode,
+    effectiveScenario,
     user,
   ]);
 
   const markReadMutation = useMutation({
     mutationFn: async (params: { roomId: string; lastReadMessageId?: string | null }) => {
-      if (isDemoMode || chatDemoScenario !== 'live_real') return;
+      if (isDemoMode) return;
       return chatApi.markRoomRead(params.roomId, params.lastReadMessageId);
     },
     onSuccess: () => {

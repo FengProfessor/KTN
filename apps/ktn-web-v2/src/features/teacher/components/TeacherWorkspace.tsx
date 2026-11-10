@@ -210,6 +210,21 @@ export const TeacherWorkspace: React.FC = () => {
       ) {
         return true;
       }
+      if (
+        c.teacher_code &&
+        user?.code &&
+        c.teacher_code.toUpperCase() !== user.code.toUpperCase()
+      ) {
+        return false;
+      }
+      if (
+        !c.teacher_email &&
+        !c.teacher_code &&
+        c.teacher_name === 'Chưa phân công giáo viên'
+      ) {
+        // Class is explicitly unassigned — do not trust stale session assignedClasses or classCode
+        return false;
+      }
       if (assignedSet.size > 0 && assignedSet.has(classIdUpper)) return true;
       if (user?.classCode && classIdUpper === String(user.classCode).trim().toUpperCase()) {
         return true;

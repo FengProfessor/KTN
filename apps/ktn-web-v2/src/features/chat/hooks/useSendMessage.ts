@@ -21,6 +21,7 @@ export function useSendMessage(
   const user = useAuthStore((s) => s.user);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
+  const effectiveScenario = isDemoMode ? chatDemoScenario : 'live_real';
   const isOfflineSimulated = useUiStore((s) => s.isOfflineSimulated);
   const addSendingMessage = useUiStore((s) => s.addSendingMessage);
   const removeSendingMessage = useUiStore((s) => s.removeSendingMessage);
@@ -47,8 +48,8 @@ export function useSendMessage(
           clientMessageId,
           room_id: input.roomId,
           class_code: input.classCode || input.roomId.replace(/^class:/, ''),
-          sender_email: user?.email || 'hoangngan@khongtunhi.com',
-          sender_name: user?.name || 'Học viên KTN',
+          sender_email: user?.email || (isDemoMode ? 'hoangngan@khongtunhi.com' : ''),
+          sender_name: user?.name || user?.email || 'Thành viên KTN',
           sender_role: user?.role || 'student',
           content: input.content,
           attachment: input.attachment || null,
@@ -68,7 +69,7 @@ export function useSendMessage(
             throw new Error('Thiết bị đang mất kết nối mạng. Tin nhắn được giữ trên máy.');
           }
 
-          if (isDemoMode || chatDemoScenario !== 'live_real') {
+          if (isDemoMode) {
             await new Promise((r) => setTimeout(r, 350));
             const demoAck: ChatMessage = {
               ...optimisticMessage,
@@ -105,7 +106,7 @@ export function useSendMessage(
           };
 
           queryClient.setQueryData(
-            ['chat-messages', input.roomId, user?.email, isDemoMode, chatDemoScenario],
+            ['chat-messages', input.roomId, user?.email, isDemoMode, effectiveScenario],
             (
               oldData:
                 | {
@@ -198,7 +199,7 @@ export function useSendMessage(
 
   const toggleReaction = useCallback(
     (params: { roomId: string; messageId: string; emoji: string }) => {
-      toggleReactionStore(params.messageId, params.emoji, user?.name || 'Học viên KTN');
+      toggleReactionStore(params.messageId, params.emoji, user?.name || user?.email || 'Thành viên KTN');
       onBroadcast?.({
         type: 'REACTION_UPDATED',
         roomId: params.roomId,
@@ -211,7 +212,7 @@ export function useSendMessage(
 
   const pinMutation = useMutation({
     mutationFn: async (params: { roomId: string; content: string; messageId?: string }) => {
-      if (isDemoMode || chatDemoScenario !== 'live_real') return null;
+      if (isDemoMode) return null;
       const res = await chatApi.pinAnnouncement(params.roomId, params.content, params.messageId);
       onBroadcast?.({
         type: 'PIN_UPDATED',

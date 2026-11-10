@@ -199,6 +199,25 @@ export const DEMO_COURSES: KtnCourse[] = [
     lessonSample: 'Bài 1: AI小语，你好！ (Xin chào AI Tiểu Ngữ!)'
   },
   {
+    id: '6af2d9719a8b000002ad4bc0',
+    code: 'HSK2-30',
+    title: 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)',
+    shortTitle: 'HSK2 3.0',
+    badge: 'TIÊU CHUẨN MỚI 3.0',
+    ageGroup: 'Mọi lứa tuổi',
+    lessonsCount: 6,
+    price: 890000,
+    oldPrice: 1500000,
+    description:
+      'Chương trình HSK 2 (3.0) chuẩn 9 cấp mới nhất với giáo trình và luyện phát âm AI.',
+    thumb:
+      'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png',
+    demoVideoUrl:
+      'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6af2d9cda658a80002e1990d/playlist.m3u8',
+    demoDurationSeconds: 90,
+    lessonSample: 'Bài 1: 他请我们吃了北京烤鸭'
+  },
+  {
     id: '65e7704a9ea90c00080d5195',
     code: 'CFK-01',
     title: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)',

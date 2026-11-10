@@ -3068,7 +3068,7 @@ async function getTeacherAssignedClassCodes(env, teacherEmail) {
     env,
     'ktn_classes?select=id,teacher_email,teacher_code,active&order=created_at.asc,id.asc'
   );
-  const teacherCode = String(tRow?.teacher_code || '').trim();
+  const teacherCode = String(tRow?.code || tRow?.teacher_code || '').trim();
   if (allClsRes.ok && Array.isArray(allClsRes.data)) {
     for (const c of allClsRes.data) {
       const cid = String(c?.id || '').trim().toUpperCase();
@@ -3079,9 +3079,9 @@ async function getTeacherAssignedClassCodes(env, teacherEmail) {
       }
       const clsTeacherEmail = normalizeEmail(c?.teacher_email || '');
       const clsTeacherCode = String(c?.teacher_code || '').trim();
-      if (clsTeacherEmail === email || (teacherCode && clsTeacherCode && clsTeacherCode === teacherCode)) {
+      if (clsTeacherEmail === email || (!clsTeacherEmail && teacherCode && clsTeacherCode && clsTeacherCode === teacherCode)) {
         classSet.add(cid);
-      } else if (clsTeacherEmail && clsTeacherEmail !== email) {
+      } else {
         classSet.delete(cid);
       }
     }
@@ -3473,29 +3473,7 @@ async function canAccessChatRoom(env, session, rawRoomId) {
   return { allowed: false, status: 400, classCode: '', roomId: '', message: 'Phòng trao đổi không hợp lệ.' };
 }
 
-function getDefaultPinnedAnnouncement(access) {
-  if (!access || access.type === 'student') return null;
-  if (access.type === 'class') {
-    return {
-      roomId: access.roomId,
-      content: `Chào các con lớp ${access.classCode}! Các con trao đổi bài học và hỏi bài cùng Cô Lâm Mỹ Linh tại nhóm lớp nhé.`,
-      pinnedBy: 'Cô Lâm Mỹ Linh',
-      pinnedByEmail: 'linh.lam@khongtunhi.com',
-      isDefault: true,
-      updatedAt: '2026-04-15T08:00:00.000Z'
-    };
-  }
-  if (access.type === 'course') {
-    const meta = MASTER_PRODUCT_MAPPING[access.courseId] || { shortTitle: 'Khóa học Video' };
-    return {
-      roomId: access.roomId,
-      content: `Chào các con khóa ${meta.shortTitle || meta.title}! Các con xem video bài giảng và trao đổi cùng Cô Lâm Mỹ Linh & các bạn cùng khóa tại đây nhé.`,
-      pinnedBy: 'Cô Lâm Mỹ Linh',
-      pinnedByEmail: 'linh.lam@khongtunhi.com',
-      isDefault: true,
-      updatedAt: '2026-04-15T08:00:00.000Z'
-    };
-  }
+function getDefaultPinnedAnnouncement(_access) {
   return null;
 }
 
@@ -3507,12 +3485,14 @@ async function getRoomPinnedAnnouncement(env, access) {
     const row = res.data[0];
     try {
       const parsed = JSON.parse(row.blocked_content || '{}');
-      if (parsed && parsed.content) {
+      if (parsed && parsed.content && parsed.isDefault !== true) {
+        const neutralAuthorLabel =
+          row.sender_role === 'admin' ? 'Ban Quản Trị KTN' : 'Giáo viên phụ trách';
         return {
           roomId: access.roomId,
           content: String(parsed.content).trim(),
-          pinnedBy: parsed.pinnedBy || row.sender_name || 'Cô Lâm Mỹ Linh',
-          pinnedByEmail: parsed.pinnedByEmail || row.sender_email || 'linh.lam@khongtunhi.com',
+          pinnedBy: parsed.pinnedBy || row.sender_name || row.sender_email || neutralAuthorLabel,
+          pinnedByEmail: parsed.pinnedByEmail || row.sender_email || '',
           messageId: parsed.messageId || null,
           isDefault: false,
           updatedAt: parsed.updatedAt || row.created_at || new Date().toISOString()
@@ -3527,11 +3507,15 @@ async function saveRoomPinnedAnnouncement(env, session, access, content, message
   const pinKey = 'PIN:' + access.roomId;
   const pinId = 'PIN-' + access.roomId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const nowIso = new Date().toISOString();
+  const actorLabel =
+    session.name ||
+    session.email ||
+    (session.role === 'admin' ? 'Ban Quản Trị KTN' : 'Giáo viên phụ trách');
   const payload = {
     roomId: access.roomId,
     content: String(content || '').trim(),
-    pinnedBy: session.name || 'Cô Lâm Mỹ Linh',
-    pinnedByEmail: session.email,
+    pinnedBy: actorLabel,
+    pinnedByEmail: session.email || '',
     messageId: messageId || null,
     isDefault: false,
     updatedAt: nowIso
@@ -3545,7 +3529,7 @@ async function saveRoomPinnedAnnouncement(env, session, access, content, message
       prefer: 'return=representation',
       body: {
         sender_email: session.email,
-        sender_name: session.name || 'Cô Lâm Mỹ Linh',
+        sender_name: actorLabel,
         sender_role: session.role,
         blocked_content: JSON.stringify(payload)
       }
@@ -3559,7 +3543,7 @@ async function saveRoomPinnedAnnouncement(env, session, access, content, message
         id: pinId + '-' + Date.now(),
         room_id: pinKey,
         sender_email: session.email,
-        sender_name: session.name || 'Cô Lâm Mỹ Linh',
+        sender_name: actorLabel,
         sender_role: session.role,
         blocked_content: JSON.stringify(payload),
         reason: 'ROOM_PINNED_ANNOUNCEMENT',
@@ -8324,7 +8308,8 @@ export default {
             env,
             `ktn_teachers?email=eq.${encodeURIComponent(normalizeEmail(cleanSession.email))}&limit=1`
           );
-          if (teaRes.ok && Array.isArray(teaRes.data) && teaRes.data[0] && teaRes.data[0].active === false) {
+          const teaRow = (teaRes.ok && Array.isArray(teaRes.data) && teaRes.data[0]) || null;
+          if (teaRow && teaRow.active === false) {
             return jsonResponse({
               ok: false,
               authenticated: false,
@@ -8332,13 +8317,24 @@ export default {
               message: 'Tài khoản giáo viên đang tạm khóa. Vui lòng liên hệ Quản lý.'
             }, 403);
           }
+          if (teaRow?.name) {
+            cleanSession.name = String(teaRow.name).trim();
+          }
+          if (teaRow?.code) {
+            cleanSession.code = String(teaRow.code).trim();
+          }
           const freshClasses = await getTeacherAssignedClassCodes(env, cleanSession.email);
           const freshCourses = await getTeacherAssignedCourseIds(env, cleanSession.email);
           cleanSession.assignedClasses = freshClasses;
           cleanSession.assignedCourses = freshCourses;
-          if (freshClasses.length > 0 && !cleanSession.classCode) {
-            cleanSession.classCode = freshClasses[0];
+          if (freshClasses.length > 0) {
+            if (!cleanSession.classCode || !freshClasses.includes(String(cleanSession.classCode).toUpperCase())) {
+              cleanSession.classCode = freshClasses[0];
+            }
+          } else {
+            cleanSession.classCode = null;
           }
+          cleanSession.hasLiveClass = Boolean(cleanSession.classCode);
         } catch {}
       }
       const refreshedToken = await signSessionToken(cleanSession, env.KTN_SESSION_SECRET);
@@ -10342,7 +10338,11 @@ export default {
         const rawTeachers = Array.isArray(tRes.data) ? tRes.data : [];
         const teacherMap = new Map();
         for (const t of rawTeachers) {
-          if (t?.code) teacherMap.set(String(t.code).trim(), t);
+          if (t?.active === false) continue;
+          if (t?.code) {
+            teacherMap.set(String(t.code).trim(), t);
+            teacherMap.set(String(t.code).trim().toUpperCase(), t);
+          }
           if (t?.email) teacherMap.set(normalizeEmail(t.email), t);
         }
         const classStudentCounts = new Map();
@@ -10362,7 +10362,14 @@ export default {
         const nowMs = Date.now();
         const classes = rawClasses.map(c => {
           const classCode = String(c.id || '').trim().toUpperCase();
-          const matchedT = teacherMap.get(String(c.teacher_code || '').trim()) || teacherMap.get(normalizeEmail(c.teacher_email || ''));
+          const tEmailNorm = normalizeEmail(c.teacher_email || '');
+          const tCodeNorm = String(c.teacher_code || '').trim();
+          const matchedT = tEmailNorm
+            ? teacherMap.get(tEmailNorm)
+            : (tCodeNorm ? (teacherMap.get(tCodeNorm) || teacherMap.get(tCodeNorm.toUpperCase())) : null);
+          const resolvedTeacherName = matchedT?.name
+            ? String(matchedT.name).trim()
+            : 'Chưa phân công giáo viên';
           const cfg = scheduleMap.get(classCode) || null;
           const isConfirmed = Boolean(cfg && cfg.status === 'confirmed');
           const rawLegacyText = String(c.schedule || '').trim();
@@ -10392,10 +10399,9 @@ export default {
             roomId: `class:${classCode}`,
             studentCount: activeStudentCount,
             student_count: activeStudentCount,
-            teacher_name:
-              c.teacher_name ||
-              matchedT?.name ||
-              (c.teacher_email || c.teacher_code ? 'Cô Lâm Mỹ Linh' : 'Chưa phân công giáo viên'),
+            teacher_name: resolvedTeacherName,
+            teacher_email: matchedT?.email ? normalizeEmail(matchedT.email) : (tEmailNorm || ''),
+            teacher_code: matchedT?.code ? String(matchedT.code).trim() : (tCodeNorm || ''),
             schedule: isConfirmed
               ? officialScheduleText
               : rawLegacyText || 'Chưa có lịch học chính thức',
@@ -10506,13 +10512,13 @@ export default {
 
           if (session.role === 'teacher') {
             tEmail = normalizeEmail(existingRow?.teacher_email || session.email);
-            tCode = String(existingRow?.teacher_code || session.code || 'GV-KTN-08').trim();
+            tCode = String(existingRow?.teacher_code || session.code || resolvedTeacherRow?.code || '').trim() || null;
             hasValidActiveTeacher = Boolean(tEmail);
           } else if (rawIncomingEmail !== undefined || rawIncomingCode !== undefined) {
             // Admin truyền rõ thông tin giáo viên (hoặc truyền rỗng để bỏ trống/kiểm tra giáo viên không hợp lệ)
             if (resolvedTeacherRow && resolvedTeacherRow.active !== false) {
               tEmail = normalizeEmail(resolvedTeacherRow.email);
-              tCode = String(resolvedTeacherRow.code || incomingTeacherCode || 'GV-KTN-08').trim();
+              tCode = String(resolvedTeacherRow.code || incomingTeacherCode || '').trim() || null;
               hasValidActiveTeacher = true;
             } else if (incomingTeacherEmail && body.teacherName) {
               tEmail = incomingTeacherEmail;
@@ -10526,10 +10532,11 @@ export default {
             }
           } else if (wasActiveClass && existingRow?.teacher_email) {
             tEmail = normalizeEmail(existingRow.teacher_email);
-            tCode = String(existingRow.teacher_code || 'GV-KTN-08').trim();
             const prevTeaLookup = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(tEmail)}&limit=1`);
             const prevTeaRow = prevTeaLookup.ok && Array.isArray(prevTeaLookup.data) && prevTeaLookup.data[0] ? prevTeaLookup.data[0] : null;
             hasValidActiveTeacher = Boolean(prevTeaRow && prevTeaRow.active !== false);
+            tCode = hasValidActiveTeacher ? (String(prevTeaRow?.code || existingRow.teacher_code || '').trim() || null) : null;
+            if (!hasValidActiveTeacher) tEmail = null;
           }
 
           // Tuyệt đối KHÔNG tự điền '19:30 Thứ 3 & Thứ 6' làm lịch mặc định khi tạo lớp mới
@@ -10807,9 +10814,9 @@ export default {
           }
 
           const resolvedTeacherName =
-            body.teacherName ||
-            activeTeacherRow?.name ||
-            (tEmail ? (existingRow?.teacher_name || 'Cô Lâm Mỹ Linh') : 'Chưa phân công giáo viên');
+            hasValidActiveTeacher && (activeTeacherRow?.name || body.teacherName)
+              ? String(activeTeacherRow?.name || body.teacherName).trim()
+              : 'Chưa phân công giáo viên';
           const canonicalRoomId = `class:${classId}`;
           let activeStuCountForClass = 0;
           if (!isNewlyCreated) {
@@ -11174,8 +11181,8 @@ export default {
             body: {
               id: classCode,
               name: body.className || body.name || `Lớp ${classCode}`,
-              teacher_code: body.teacherCode || 'GV-KTN-08',
-              teacher_email: normalizeEmail(body.teacherEmail || 'linh.lam@khongtunhi.com'),
+              teacher_code: body.teacherCode ? String(body.teacherCode).trim() : null,
+              teacher_email: body.teacherEmail ? normalizeEmail(body.teacherEmail) : null,
               schedule: '',
               total_lessons: Number(body.totalLessons) || 25,
               current_lesson: Number(body.currentLesson) || 1,
@@ -11407,7 +11414,7 @@ export default {
           const matchedClassesFromTable = classRows
             .filter(c => c && c.active !== false && (
               (tEmail && normalizeEmail(c.teacher_email || '') === tEmail) ||
-              (tCode && String(c.teacher_code || '').trim().toUpperCase() === tCode)
+              (!c.teacher_email && tCode && String(c.teacher_code || '').trim().toUpperCase() === tCode)
             ))
             .map(c => String(c.id || '').trim().toUpperCase())
             .filter(Boolean);
@@ -11417,7 +11424,10 @@ export default {
             if (!clsRow) return true;
             if (clsRow.active === false) return false;
             const clsOwnerEmail = normalizeEmail(clsRow.teacher_email || '');
+            const clsOwnerCode = String(clsRow.teacher_code || '').trim().toUpperCase();
+            if (!clsOwnerEmail && !clsOwnerCode) return false;
             if (clsOwnerEmail && clsOwnerEmail !== tEmail) return false;
+            if (!clsOwnerEmail && clsOwnerCode && clsOwnerCode !== tCode) return false;
             return true;
           });
 
@@ -15428,7 +15438,7 @@ export default {
 
         const rawGroupRooms = [];
         const seenRoomIds = new Set();
-        let studentTeacherName = 'Cô Lâm Mỹ Linh';
+        let studentTeacherName = 'Chưa phân công giáo viên';
         if (classCode) {
           const clsCheckRes = await supabaseRequest(
             env,
@@ -15439,15 +15449,27 @@ export default {
             : null;
           // Chỉ hiển thị nhóm lớp đang hoạt động (active !== false)
           if (!clsRow || clsRow.active !== false) {
-            if (clsRow?.teacher_name) {
-              studentTeacherName = String(clsRow.teacher_name).trim();
-            } else if (clsRow?.teacher_email) {
+            if (clsRow?.teacher_email) {
               const tRes = await supabaseRequest(
                 env,
                 `ktn_teachers?email=eq.${encodeURIComponent(normalizeEmail(clsRow.teacher_email))}&select=name,active&limit=1`
               ).catch(() => ({ ok: false, data: [] }));
-              if (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]?.name) {
-                studentTeacherName = String(tRes.data[0].name).trim();
+              const tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
+              if (tRow && tRow.active !== false && tRow.name) {
+                studentTeacherName = String(tRow.name).trim();
+              } else if (clsRow?.teacher_name) {
+                studentTeacherName = String(clsRow.teacher_name).trim();
+              }
+            } else if (clsRow?.teacher_code) {
+              const tRes = await supabaseRequest(
+                env,
+                `ktn_teachers?code=eq.${encodeURIComponent(String(clsRow.teacher_code).trim())}&select=name,active&limit=1`
+              ).catch(() => ({ ok: false, data: [] }));
+              const tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
+              if (tRow && tRow.active !== false && tRow.name) {
+                studentTeacherName = String(tRow.name).trim();
+              } else if (clsRow?.teacher_name) {
+                studentTeacherName = String(clsRow.teacher_name).trim();
               }
             }
             const rid = `class:${classCode}`;
@@ -15512,19 +15534,22 @@ export default {
         for (const t of activeTeaRes.data) {
           if (t?.active === false) continue;
           if (t?.email) activeTeacherLookup.set(normalizeEmail(t.email), t);
-          if (t?.code) activeTeacherLookup.set(String(t.code).trim(), t);
+          const tCodeKey = String(t?.code || t?.teacher_code || '').trim().toUpperCase();
+          if (tCodeKey) activeTeacherLookup.set(tCodeKey, t);
         }
       }
       const activeClassMetaMap = new Map();
       for (const c of allActiveClasses) {
         const cid = String(c.id || '').trim().toUpperCase();
         if (!cid) continue;
-        const tMatch = activeTeacherLookup.get(normalizeEmail(c.teacher_email || '')) || activeTeacherLookup.get(String(c.teacher_code || '').trim());
+        const cEmail = normalizeEmail(c.teacher_email || '');
+        const cCode = String(c.teacher_code || '').trim().toUpperCase();
+        const tMatch = (cEmail && activeTeacherLookup.get(cEmail)) || (!cEmail && cCode && activeTeacherLookup.get(cCode)) || null;
         activeClassMetaMap.set(cid, {
           id: cid,
           name: String(c.name || `Lớp ${cid}`).trim(),
-          teacherName: String(c.teacher_name || tMatch?.name || (c.teacher_email || c.teacher_code ? 'Cô Lâm Mỹ Linh' : 'Chưa phân công giáo viên')).trim(),
-          teacherEmail: normalizeEmail(c.teacher_email || tMatch?.email || ''),
+          teacherName: tMatch?.name ? String(tMatch.name).trim() : 'Chưa phân công giáo viên',
+          teacherEmail: cEmail || normalizeEmail(tMatch?.email || ''),
           active: true
         });
       }
@@ -15547,7 +15572,7 @@ export default {
           roomType: 'class',
           classCode: cls,
           className: clsMeta?.name || `Lớp ${cls}`,
-          teacherName: clsMeta?.teacherName || session.name || 'Cô Lâm Mỹ Linh',
+          teacherName: clsMeta?.teacherName || (session.role === 'teacher' ? (session.name || 'Giáo viên phụ trách') : 'Chưa phân công giáo viên'),
           teacherEmail: clsMeta?.teacherEmail || (session.role === 'teacher' ? normalizeEmail(session.email) : ''),
           label: `🏫 Lớp ${cls}`,
           shortLabel: `Lớp ${cls}`
@@ -16410,7 +16435,7 @@ export default {
                 roomId: `course:${canonicalCid}`,
                 courseId: canonicalCid,
                 title: `Thông báo khóa học ${meta.shortTitle || meta.title || 'Tiếng Trung KTN'}`,
-                body: 'Chào con! Con vào xem video bài giảng, ghi âm luyện nói và trao đổi cùng Cô Lâm Mỹ Linh tại nhóm khóa học nhé.',
+                body: 'Chào con! Con vào xem video bài giảng, ghi âm luyện nói và trao đổi cùng Đội ngũ giáo viên Khổng Tử Nhí tại nhóm khóa học nhé.',
                 actionUrl: `#/khoa/${canonicalCid}/bai/1`,
                 createdAt: stu?.updated_at || stu?.created_at || '2026-04-15T08:00:00.000Z'
               });

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { Search, MessageSquare, Users, Headset, Sparkles } from 'lucide-react';
 import { ChatRoom } from '../types/chat.types';
 import { UnreadBadge } from './UnreadBadge';
@@ -19,6 +19,20 @@ export const ConversationList: React.FC<ConversationListProps> = ({
 }) => {
   const [searchText, setSearchText] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'unread' | 'support'>('all');
+  const roomListScrollRef = useRef<HTMLDivElement | null>(null);
+  const prevFilterKeyRef = useRef<string>('all::');
+
+  const normalizedSearch = searchText.trim().toLowerCase();
+
+  useLayoutEffect(() => {
+    const nextFilterKey = `${filterTab}::${normalizedSearch}`;
+    if (prevFilterKeyRef.current !== nextFilterKey) {
+      prevFilterKeyRef.current = nextFilterKey;
+      if (roomListScrollRef.current) {
+        roomListScrollRef.current.scrollTop = 0;
+      }
+    }
+  }, [filterTab, normalizedSearch]);
 
   const totalUnread = useMemo(
     () => rooms.reduce((acc, r) => acc + (Number(r.unreadCount) || 0), 0),
@@ -28,10 +42,10 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   const filteredRooms = useMemo(() => {
     return rooms.filter((room) => {
       const matchesSearch =
-        !searchText.trim() ||
-        room.label?.toLowerCase().includes(searchText.toLowerCase()) ||
-        room.roomId?.toLowerCase().includes(searchText.toLowerCase()) ||
-        room.teacherName?.toLowerCase().includes(searchText.toLowerCase());
+        !normalizedSearch ||
+        room.label?.toLowerCase().includes(normalizedSearch) ||
+        room.roomId?.toLowerCase().includes(normalizedSearch) ||
+        room.teacherName?.toLowerCase().includes(normalizedSearch);
 
       if (!matchesSearch) return false;
 
@@ -43,15 +57,15 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       }
       return true;
     });
-  }, [rooms, searchText, filterTab]);
+  }, [rooms, normalizedSearch, filterTab]);
 
   return (
     <aside
       data-testid="chat-conversation-list"
-      className="flex h-full w-full flex-col border-r border-stone-200 bg-white lg:w-[330px] xl:w-[360px] shrink-0"
+      className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden border-r border-stone-200 bg-white lg:w-[330px] xl:w-[360px] shrink-0"
     >
       {/* Top Header */}
-      <div className="border-b border-stone-200 p-3.5">
+      <div className="shrink-0 border-b border-stone-200 bg-white p-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h1 className="font-display text-base font-bold text-stone-900">
@@ -70,6 +84,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           <Search className="h-4 w-4 text-stone-400" />
           <input
             type="text"
+            data-testid="chat-room-search-input"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             placeholder="Tìm lớp học, giáo viên chủ nhiệm..."
@@ -81,6 +96,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         <div className="mt-2.5 grid grid-cols-3 gap-1 rounded-xl bg-stone-100 p-1">
           <button
             type="button"
+            data-testid="chat-filter-tab-all"
             onClick={() => setFilterTab('all')}
             className={`rounded-lg py-1.5 text-xs font-semibold transition-all ${
               filterTab === 'all'
@@ -92,6 +108,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           </button>
           <button
             type="button"
+            data-testid="chat-filter-tab-unread"
             onClick={() => setFilterTab('unread')}
             className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-semibold transition-all ${
               filterTab === 'unread'
@@ -108,6 +125,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           </button>
           <button
             type="button"
+            data-testid="chat-filter-tab-support"
             onClick={() => setFilterTab('support')}
             className={`rounded-lg py-1.5 text-xs font-semibold transition-all ${
               filterTab === 'support'
@@ -121,7 +139,11 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       </div>
 
       {/* Room List */}
-      <div className="flex-1 overflow-y-auto divide-y divide-stone-100">
+      <div
+        ref={roomListScrollRef}
+        data-testid="chat-room-scroll-list"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain divide-y divide-stone-100"
+      >
         {isLoading ? (
           <div className="space-y-3 p-3.5">
             {[1, 2, 3].map((i) => (

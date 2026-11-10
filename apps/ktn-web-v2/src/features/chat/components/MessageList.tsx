@@ -1,10 +1,11 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import { ArrowDown, MessageSquarePlus, History, Loader2 } from 'lucide-react';
 import { ChatMessage } from '../types/chat.types';
 import { MessageBubble } from './MessageBubble';
 import { formatDateDivider } from '@/lib/utils';
 
 interface MessageListProps {
+  roomId?: string | null;
   messages: ChatMessage[];
   currentUserEmail: string;
   currentUserName?: string;
@@ -21,7 +22,17 @@ interface MessageListProps {
   onQuickGreeting?: (text: string) => void;
 }
 
+interface PrependScrollAnchor {
+  active: boolean;
+  scrollHeight: number;
+  scrollTop: number;
+  anchorMsgId: string | null;
+  anchorOffsetTop: number;
+  settledUntil: number;
+}
+
 export const MessageList: React.FC<MessageListProps> = ({
+  roomId = null,
   messages,
   currentUserEmail,
   currentUserName,
@@ -39,50 +50,247 @@ export const MessageList: React.FC<MessageListProps> = ({
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+  const isNearBottomRef = useRef<boolean>(true);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [unreadBelowCount, setUnreadBelowCount] = useState(0);
-  const prevCountRef = useRef(messages.length);
+
+  const prevRoomIdRef = useRef<string | null>(null);
+  const needsInitialRoomScrollRef = useRef<boolean>(true);
+  const prevCountRef = useRef<number>(0);
+  const prevFirstMsgKeyRef = useRef<string>('');
+  const prevLastMsgKeyRef = useRef<string>('');
+  const lastKnownScrollMetricsRef = useRef<{ scrollTop: number; scrollHeight: number }>({
+    scrollTop: 0,
+    scrollHeight: 0,
+  });
+  const prependAnchorRef = useRef<PrependScrollAnchor | null>(null);
+
+  const cancelPendingRaf = useCallback(() => {
+    if (rafIdRef.current !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      cancelPendingRaf();
+    };
+  }, [cancelPendingRaf]);
 
   const checkScrollPosition = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
+    lastKnownScrollMetricsRef.current = {
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+    };
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const near = distanceFromBottom < 120;
-    setIsNearBottom(near);
+    isNearBottomRef.current = near;
+    setIsNearBottom((prev) => (prev === near ? prev : near));
     if (near) {
-      setUnreadBelowCount(0);
+      setUnreadBelowCount((prev) => (prev === 0 ? prev : 0));
     }
   }, []);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottom = useCallback(
+    (behavior: ScrollBehavior = 'smooth') => {
+      cancelPendingRaf();
+      const el = scrollContainerRef.current;
+      if (el) {
+        if (behavior === 'auto') {
+          el.scrollTop = el.scrollHeight;
+        } else if (typeof el.scrollTo === 'function') {
+          el.scrollTo({ top: el.scrollHeight, behavior });
+        } else {
+          el.scrollTop = el.scrollHeight;
+        }
+        lastKnownScrollMetricsRef.current = {
+          scrollTop: el.scrollTop,
+          scrollHeight: el.scrollHeight,
+        };
+      }
+      isNearBottomRef.current = true;
+      setIsNearBottom(true);
+      setUnreadBelowCount(0);
+    },
+    [cancelPendingRaf]
+  );
+
+  const handleLoadOlderClick = useCallback(() => {
     const el = scrollContainerRef.current;
     if (el) {
-      el.scrollTo({ top: el.scrollHeight, behavior });
+      const containerRect = el.getBoundingClientRect();
+      const msgNodes = Array.from(
+        el.querySelectorAll<HTMLElement>('[data-testid="chat-message-item"]')
+      );
+      const firstVisible =
+        msgNodes.find((node) => node.getBoundingClientRect().bottom > containerRect.top + 4) ||
+        msgNodes[0];
+      const anchorMsgId = firstVisible?.getAttribute('data-message-id') || null;
+      const anchorOffsetTop = firstVisible
+        ? firstVisible.getBoundingClientRect().top - containerRect.top
+        : 0;
+      prependAnchorRef.current = {
+        active: true,
+        scrollHeight: el.scrollHeight,
+        scrollTop: el.scrollTop,
+        anchorMsgId,
+        anchorOffsetTop,
+        settledUntil: Date.now() + 1200,
+      };
     }
-    setUnreadBelowCount(0);
-    setIsNearBottom(true);
+    onLoadOlder();
+  }, [onLoadOlder]);
+
+  const handleContentLoadCapture = useCallback(() => {
+    const el = scrollContainerRef.current;
+    const anchor = prependAnchorRef.current;
+    if (!el) return;
+    if (anchor && Date.now() <= anchor.settledUntil && anchor.anchorMsgId) {
+      const anchorEl = document.getElementById(`chat-msg-${anchor.anchorMsgId}`);
+      if (anchorEl) {
+        const currentOffset =
+          anchorEl.getBoundingClientRect().top - el.getBoundingClientRect().top;
+        const delta = currentOffset - anchor.anchorOffsetTop;
+        if (Math.abs(delta) > 1) {
+          el.scrollTop += delta;
+        }
+      }
+      anchor.scrollHeight = el.scrollHeight;
+      anchor.scrollTop = el.scrollTop;
+      lastKnownScrollMetricsRef.current = {
+        scrollTop: el.scrollTop,
+        scrollHeight: el.scrollHeight,
+      };
+    } else if (isNearBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+      lastKnownScrollMetricsRef.current = {
+        scrollTop: el.scrollTop,
+        scrollHeight: el.scrollHeight,
+      };
+    }
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const normalizedRoomKey = String(roomId || '__default__');
+    if (prevRoomIdRef.current !== normalizedRoomKey) {
+      cancelPendingRaf();
+      prevRoomIdRef.current = normalizedRoomKey;
+      needsInitialRoomScrollRef.current = true;
+      prevCountRef.current = 0;
+      prevFirstMsgKeyRef.current = '';
+      prevLastMsgKeyRef.current = '';
+      prependAnchorRef.current = null;
+      isNearBottomRef.current = true;
+      setIsNearBottom(true);
+      setUnreadBelowCount(0);
+    }
+
+    if (isLoading) return;
+
     const newCount = messages.length;
     const prevCount = prevCountRef.current;
+    const firstMsg = newCount > 0 ? messages[0] : null;
+    const latestMsg = newCount > 0 ? messages[newCount - 1] : null;
+    const firstMsgKey = firstMsg ? String(firstMsg.clientMessageId || firstMsg.id || '') : '';
+    const lastMsgKey = latestMsg ? String(latestMsg.clientMessageId || latestMsg.id || '') : '';
+    const prevFirstKey = prevFirstMsgKeyRef.current;
+    const prevLastKey = prevLastMsgKeyRef.current;
+
     prevCountRef.current = newCount;
+    prevFirstMsgKeyRef.current = firstMsgKey;
+    prevLastMsgKeyRef.current = lastMsgKey;
 
     if (newCount === 0) return;
 
-    const latestMsg = messages[newCount - 1];
-    const isLatestOwn =
-      String(latestMsg?.sender_email || '').toLowerCase() ===
-      String(currentUserEmail || '').toLowerCase();
+    const el = scrollContainerRef.current;
 
-    if (prevCount === 0 || isNearBottom || isLatestOwn) {
-      requestAnimationFrame(() => {
-        scrollToBottom(prevCount === 0 ? 'auto' : 'smooth');
+    // 1. Initial room load: jump immediately to bottom
+    if (needsInitialRoomScrollRef.current || prevCount === 0) {
+      needsInitialRoomScrollRef.current = false;
+      scrollToBottom('auto');
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        const node = scrollContainerRef.current;
+        if (node) {
+          node.scrollTop = node.scrollHeight;
+          lastKnownScrollMetricsRef.current = {
+            scrollTop: node.scrollTop,
+            scrollHeight: node.scrollHeight,
+          };
+        }
       });
-    } else if (newCount > prevCount) {
-      setUnreadBelowCount((c) => c + (newCount - prevCount));
+      return;
     }
-  }, [messages, currentUserEmail, isNearBottom, scrollToBottom]);
+
+    // 2. Older messages prepended at top: preserve exact reading position
+    const isOlderPrepend =
+      Boolean(prependAnchorRef.current?.active && newCount > prevCount) ||
+      (newCount > prevCount && firstMsgKey !== prevFirstKey && lastMsgKey === prevLastKey);
+
+    if (isOlderPrepend && el) {
+      const anchor = prependAnchorRef.current;
+      const prevHeight = anchor
+        ? anchor.scrollHeight
+        : lastKnownScrollMetricsRef.current.scrollHeight;
+      const prevTop = anchor ? anchor.scrollTop : lastKnownScrollMetricsRef.current.scrollTop;
+      const heightDiff = el.scrollHeight - prevHeight;
+      if (heightDiff > 0) {
+        el.scrollTop = prevTop + heightDiff;
+      }
+      if (anchor?.anchorMsgId) {
+        const anchorEl = document.getElementById(`chat-msg-${anchor.anchorMsgId}`);
+        if (anchorEl) {
+          const currentOffset =
+            anchorEl.getBoundingClientRect().top - el.getBoundingClientRect().top;
+          const delta = currentOffset - anchor.anchorOffsetTop;
+          if (Math.abs(delta) > 1) {
+            el.scrollTop += delta;
+          }
+        }
+      }
+      if (anchor) {
+        anchor.active = false;
+        anchor.scrollHeight = el.scrollHeight;
+        anchor.scrollTop = el.scrollTop;
+        anchor.settledUntil = Date.now() + 800;
+      }
+      lastKnownScrollMetricsRef.current = {
+        scrollTop: el.scrollTop,
+        scrollHeight: el.scrollHeight,
+      };
+      return;
+    }
+
+    // 3. Polling refetch, reaction, read status, or optimistic ack without new bottom message
+    if (lastMsgKey === prevLastKey) {
+      return;
+    }
+
+    // 4. Genuine new message appended at bottom
+    const isLatestFromCurrentUser =
+      Boolean(currentUserEmail) &&
+      String(latestMsg?.sender_email || '').trim().toLowerCase() ===
+        String(currentUserEmail || '').trim().toLowerCase();
+
+    if (isLatestFromCurrentUser || isNearBottomRef.current) {
+      cancelPendingRaf();
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        scrollToBottom('smooth');
+      });
+    } else {
+      const prevIdx = messages.findIndex(
+        (m) => String(m.clientMessageId || m.id || '') === prevLastKey
+      );
+      const addedCount =
+        prevIdx >= 0 ? Math.max(1, newCount - 1 - prevIdx) : Math.max(1, newCount - prevCount);
+      setUnreadBelowCount((c) => c + addedCount);
+    }
+  }, [roomId, isLoading, messages, currentUserEmail, scrollToBottom, cancelPendingRaf]);
 
   const filteredMessages = searchQuery.trim()
     ? messages.filter(
@@ -96,7 +304,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     return (
       <div
         data-testid="chat-loading-skeleton"
-        className="flex flex-1 flex-col gap-4 overflow-y-auto bg-[#F3EFEA] p-4"
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain bg-[#F3EFEA] p-4"
       >
         {[1, 2, 3, 4].map((idx) => (
           <div
@@ -120,7 +328,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     return (
       <div
         data-testid="chat-empty-state"
-        className="flex flex-1 flex-col items-center justify-center bg-[#F3EFEA] p-6 text-center"
+        className="flex min-h-0 flex-1 flex-col items-center justify-center bg-[#F3EFEA] p-6 text-center"
       >
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-800/10 text-red-800 shadow-inner">
           <MessageSquarePlus className="h-8 w-8" />
@@ -161,19 +369,20 @@ export const MessageList: React.FC<MessageListProps> = ({
   let lastDateLabel = '';
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden bg-[#F3EFEA]">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#F3EFEA]">
       <div
         ref={scrollContainerRef}
         onScroll={checkScrollPosition}
+        onLoadCapture={handleContentLoadCapture}
         data-testid="chat-message-scroll-area"
-        className="flex-1 overflow-y-auto py-3"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-3"
       >
         {hasMoreOlder && !searchQuery.trim() && (
           <div className="mb-3 flex justify-center px-4">
             <button
               type="button"
               data-testid="load-older-messages-btn"
-              onClick={onLoadOlder}
+              onClick={handleLoadOlderClick}
               disabled={isLoadingOlder}
               className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-stone-700 shadow-sm transition-colors hover:bg-white disabled:opacity-60"
             >

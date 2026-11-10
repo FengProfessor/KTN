@@ -145,11 +145,11 @@ export const ChatLayout: React.FC = () => {
   return (
     <div
       data-testid="zalo-chat-workspace"
-      className="flex h-[calc(100vh-8rem)] lg:h-[calc(100vh-5rem)] w-full flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xs"
+      className="flex h-[calc(100dvh-7.75rem-env(safe-area-inset-bottom,0px))] lg:h-[calc(100dvh-5rem)] max-h-full min-h-0 min-w-0 flex-1 w-full flex-col overflow-hidden overscroll-contain rounded-2xl border border-stone-200 bg-white shadow-2xs"
     >
       {/* Demo Mode Interactive State Switcher Bar */}
       {isDemoMode && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50/90 px-3.5 py-1.5 text-xs">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50/90 px-3.5 py-1.5 text-xs">
           <span className="font-semibold text-amber-950">
             Trạng thái kiểm thử Phòng Chat (Demo):
           </span>
@@ -182,12 +182,12 @@ export const ChatLayout: React.FC = () => {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* Left Pane: Conversation List */}
         <div
           className={`${
             !mobileChatConversationOpen ? 'flex w-full' : 'hidden'
-          } lg:flex lg:w-auto h-full`}
+          } lg:flex lg:w-auto h-full min-h-0 min-w-0 shrink-0 overflow-hidden`}
         >
           <ConversationList
             rooms={rooms}
@@ -201,7 +201,7 @@ export const ChatLayout: React.FC = () => {
         <div
           className={`${
             mobileChatConversationOpen ? 'flex w-full' : 'hidden'
-          } lg:flex flex-1 flex-col h-full min-w-0`}
+          } lg:flex flex-1 flex-col h-full min-h-0 min-w-0 overflow-hidden`}
         >
           {activeRoom ? (
             <>
@@ -223,12 +223,26 @@ export const ChatLayout: React.FC = () => {
                 pinnedMessage={pinnedMessage}
                 canManagePin={canManagePin}
                 onJumpToMessage={(msgId) => {
+                  const container = document.querySelector<HTMLElement>(
+                    '[data-testid="chat-message-scroll-area"]'
+                  );
                   const el = document.getElementById(`chat-msg-${msgId}`);
-                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  if (container && el) {
+                    const cRect = container.getBoundingClientRect();
+                    const eRect = el.getBoundingClientRect();
+                    const targetTop =
+                      container.scrollTop +
+                      (eRect.top - cRect.top) -
+                      Math.max(0, (container.clientHeight - eRect.height) / 2);
+                    container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+                  } else if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  }
                 }}
               />
 
               <MessageList
+                roomId={activeRoom.roomId}
                 messages={messages}
                 currentUserEmail={
                   user?.email || (isDemoMode ? 'hoangngan@khongtunhi.com' : '')

@@ -20,7 +20,7 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
   return (
     <div
       data-testid="pinned-announcement-banner"
-      className="border-b border-amber-200/80 bg-gradient-to-r from-amber-50/95 via-orange-50/80 to-amber-50/95 px-3 py-1.5 transition-all"
+      className="shrink-0 border-b border-amber-200/80 bg-gradient-to-r from-amber-50/95 via-orange-50/80 to-amber-50/95 px-3 py-1.5 transition-all"
     >
       <div className="flex items-center justify-between gap-2">
         <button

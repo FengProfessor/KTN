@@ -179,7 +179,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   };
 
   return (
-    <div className="border-t border-stone-200 bg-white px-3.5 py-2.5">
+    <div
+      data-testid="chat-message-composer"
+      className="shrink-0 border-t border-stone-200 bg-white px-3.5 py-2.5"
+    >
       {/* Upload Progress Banner */}
       {isSending && uploadProgress && (
         <div

@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatApi } from '../services/chatApi';
 import { useUiStore } from '@/stores/useUiStore';
@@ -162,6 +162,36 @@ export function useChatRooms() {
   return query;
 }
 
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
+interface RoomOlderHistoryState {
+  messages: ChatMessage[];
+  cursor: string | null;
+  hasMore: boolean | null;
+}
+
+function doesMessageBelongToRoom(msg: ChatMessage, targetRoomId: string, isDemoMode: boolean): boolean {
+  if (isDemoMode) return true;
+  const msgRoom = String(msg.room_id || msg.class_code || '').trim();
+  if (!msgRoom) return true;
+  const normMsgRoom = msgRoom.toUpperCase();
+  const normTarget = String(targetRoomId || '').trim().toUpperCase();
+  const normTargetBare = normTarget.replace(/^CLASS:/, '');
+  const normMsgBare = normMsgRoom.replace(/^CLASS:/, '');
+  return normMsgRoom === normTarget || (Boolean(normTargetBare) && normMsgBare === normTargetBare);
+}
+
+function buildMessagesSignature(list: ChatMessage[]): string {
+  return list
+    .map((m) => {
+      const rxSig = Array.isArray(m.reactions)
+        ? m.reactions.map((r) => `${r.emoji}:${r.count}:${(r.users || []).join(',')}`).join(';')
+        : '';
+      return `${m.id}|${m.clientMessageId || ''}|${m.status || 'sent'}|${m.created_at}|${m.content}|${m.attachment?.url || ''}|${rxSig}`;
+    })
+    .join('~');
+}
+
 export function useRoomMessages(roomId: string | null) {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
@@ -172,16 +202,21 @@ export function useRoomMessages(roomId: string | null) {
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
 
-  const [olderMessages, setOlderMessages] = useState<ChatMessage[]>([]);
-  const [olderCursor, setOlderCursor] = useState<string | null>(null);
-  const [hasMoreOlder, setHasMoreOlder] = useState(false);
-  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [olderByRoom, setOlderByRoom] = useState<Record<string, RoomOlderHistoryState>>({});
+  const [loadingOlderRoomId, setLoadingOlderRoomId] = useState<string | null>(null);
+  const retainedServerByScopeRef = useRef<Record<string, Map<string, ChatMessage>>>({});
+  const initialPaginationByScopeRef = useRef<
+    Record<string, { cursor: string | null; hasMore: boolean }>
+  >({});
+  const prevMergedRef = useRef<{ roomId: string | null; sig: string; list: ChatMessage[] }>({
+    roomId: null,
+    sig: '',
+    list: EMPTY_MESSAGES,
+  });
 
-  useEffect(() => {
-    setOlderMessages([]);
-    setOlderCursor(null);
-    setHasMoreOlder(false);
-  }, [roomId]);
+  const roomScopeKey = roomId
+    ? `${user?.email || 'anon'}::${isDemoMode ? effectiveScenario : 'live'}::${roomId}`
+    : '';
 
   const query = useQuery({
     queryKey: ['chat-messages', roomId, user?.email, isDemoMode, effectiveScenario],
@@ -246,23 +281,39 @@ export function useRoomMessages(roomId: string | null) {
     staleTime: 1000,
   });
 
-  useEffect(() => {
-    if (query.data?.pagination && olderMessages.length === 0) {
-      setHasMoreOlder(Boolean(query.data.pagination.hasMore));
-      setOlderCursor(query.data.pagination.nextCursor || null);
-    }
-  }, [query.data?.pagination, olderMessages.length]);
+  if (roomScopeKey && query.data?.pagination && !initialPaginationByScopeRef.current[roomScopeKey]) {
+    initialPaginationByScopeRef.current[roomScopeKey] = {
+      cursor: query.data.pagination.nextCursor || null,
+      hasMore: Boolean(query.data.pagination.hasMore),
+    };
+  }
+
+  const currentRoomOlder = roomId ? olderByRoom[roomId] : undefined;
+  const olderMessages = currentRoomOlder?.messages ?? EMPTY_MESSAGES;
+  const initialPag = roomScopeKey ? initialPaginationByScopeRef.current[roomScopeKey] : undefined;
+  const hasMoreOlder =
+    currentRoomOlder && currentRoomOlder.hasMore !== null
+      ? currentRoomOlder.hasMore
+      : initialPag
+      ? initialPag.hasMore
+      : Boolean(query.data?.pagination?.hasMore);
+  const olderCursor =
+    currentRoomOlder && currentRoomOlder.messages.length > 0
+      ? currentRoomOlder.cursor
+      : initialPag?.cursor || query.data?.pagination?.nextCursor || null;
+  const isLoadingOlder = Boolean(roomId && loadingOlderRoomId === roomId);
 
   const loadOlderMessages = useCallback(async () => {
-    if (!roomId || isLoadingOlder || !hasMoreOlder) return;
-    setIsLoadingOlder(true);
+    const targetRoomId = roomId;
+    if (!targetRoomId || loadingOlderRoomId === targetRoomId || !hasMoreOlder) return;
+    setLoadingOlderRoomId(targetRoomId);
     try {
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 300));
         const syntheticOlder: ChatMessage[] = [
           {
             id: `msg_older_${Date.now()}_1`,
-            room_id: roomId,
+            room_id: targetRoomId,
             class_code: 'YCT2-04',
             sender_email: 'linh.lam@khongtunhi.com',
             sender_name: 'Cô Lâm Mỹ Linh',
@@ -273,27 +324,66 @@ export function useRoomMessages(roomId: string | null) {
             status: 'seen',
           },
         ];
-        setOlderMessages((prev) => [...syntheticOlder, ...prev]);
-        setHasMoreOlder(false);
+        setOlderByRoom((prev) => {
+          const existing = prev[targetRoomId]?.messages || [];
+          return {
+            ...prev,
+            [targetRoomId]: {
+              messages: [...syntheticOlder, ...existing],
+              cursor: null,
+              hasMore: false,
+            },
+          };
+        });
         return;
       }
 
       if (!olderCursor) return;
-      const res = await chatApi.getMessages(roomId, { limit: 50, before: olderCursor });
-      const fetched = res.messages || [];
-      setOlderMessages((prev) => [...fetched, ...prev]);
-      setHasMoreOlder(Boolean(res.pagination?.hasMore));
-      setOlderCursor(res.pagination?.nextCursor || null);
+      const res = await chatApi.getMessages(targetRoomId, { limit: 50, before: olderCursor });
+      const fetched = (res.messages || []).filter((m) =>
+        doesMessageBelongToRoom(m, targetRoomId, false)
+      );
+      setOlderByRoom((prev) => {
+        const existing = prev[targetRoomId]?.messages || [];
+        return {
+          ...prev,
+          [targetRoomId]: {
+            messages: [...fetched, ...existing],
+            cursor: res.pagination?.nextCursor || null,
+            hasMore: Boolean(res.pagination?.hasMore),
+          },
+        };
+      });
     } finally {
-      setIsLoadingOlder(false);
+      setLoadingOlderRoomId((curr) => (curr === targetRoomId ? null : curr));
     }
-  }, [roomId, hasMoreOlder, isDemoMode, isLoadingOlder, olderCursor]);
+  }, [roomId, hasMoreOlder, isDemoMode, loadingOlderRoomId, olderCursor]);
 
   const mergedMessages = useMemo(() => {
-    if (!roomId) return [];
-    const serverMessages = query.data?.messages || [];
-    const sendingList = sendingMessagesByRoom[roomId] || [];
-    const failedList = failedMessagesByRoom[roomId] || [];
+    if (!roomId) return EMPTY_MESSAGES;
+    const serverMessages = query.data?.messages || EMPTY_MESSAGES;
+    const sendingList = sendingMessagesByRoom[roomId] || EMPTY_MESSAGES;
+    const failedList = failedMessagesByRoom[roomId] || EMPTY_MESSAGES;
+
+    let retainedMap = roomScopeKey ? retainedServerByScopeRef.current[roomScopeKey] : undefined;
+    if (roomScopeKey && !retainedMap) {
+      retainedMap = new Map<string, ChatMessage>();
+      retainedServerByScopeRef.current[roomScopeKey] = retainedMap;
+    }
+    if (retainedMap) {
+      if (isDemoMode && effectiveScenario === 'demo_empty') {
+        retainedMap.clear();
+      } else {
+        for (const sm of serverMessages) {
+          if (doesMessageBelongToRoom(sm, roomId, isDemoMode)) {
+            retainedMap.set(String(sm.id), sm);
+          }
+        }
+      }
+    }
+    const accumulatedServerMessages = retainedMap
+      ? Array.from(retainedMap.values())
+      : serverMessages;
 
     let demoExtra: ChatMessage[] = [];
     if (isDemoMode && effectiveScenario === 'demo_sending') {
@@ -332,8 +422,9 @@ export function useRoomMessages(roomId: string | null) {
     const byKey = new Map<string, ChatMessage>();
     const clientIdToKey = new Map<string, string>();
 
-    const allServer = [...olderMessages, ...serverMessages];
+    const allServer = [...olderMessages, ...accumulatedServerMessages];
     for (const msg of allServer) {
+      if (!doesMessageBelongToRoom(msg, roomId, isDemoMode)) continue;
       const key = String(msg.id);
       if (msg.clientMessageId) {
         const existingKey = clientIdToKey.get(msg.clientMessageId);
@@ -357,12 +448,22 @@ export function useRoomMessages(roomId: string | null) {
       byKey.set(cId, pending);
     }
 
-    return Array.from(byKey.values()).sort((a, b) => {
+    const sorted = Array.from(byKey.values()).sort((a, b) => {
       const ta = new Date(a.created_at).getTime();
       const tb = new Date(b.created_at).getTime();
       if (ta !== tb) return ta - tb;
       return String(a.id).localeCompare(String(b.id));
     });
+
+    const nextSig = buildMessagesSignature(sorted);
+    if (
+      prevMergedRef.current.roomId === roomId &&
+      prevMergedRef.current.sig === nextSig
+    ) {
+      return prevMergedRef.current.list;
+    }
+    prevMergedRef.current = { roomId, sig: nextSig, list: sorted };
+    return sorted;
   }, [
     roomId,
     query.data?.messages,

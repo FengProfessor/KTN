@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -3108,6 +3108,624 @@ async function runSuite() {
         teacherBlockedOnOtherCourseUi,
       })
     );
+
+    // =========================================================================
+    // TEST S — ZALO-GRADE CHAT SCROLL & STABILITY SUITE (S01–S12)
+    // =========================================================================
+    await fetch(`${baseUrl}/api/ktn/test/seed-chat-qa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'seed', roomCount: 65, messageCount: 120 }),
+    });
+
+    const scrollAdminCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const scrollAdminPage = await scrollAdminCtx.newPage();
+    await scrollAdminPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await scrollAdminPage.click('[data-testid="quick-login-quanly@khongtunhi.com"]');
+    await scrollAdminPage.waitForSelector('[data-testid="admin-home-page"]', { timeout: 10000 });
+    await scrollAdminPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
+    await scrollAdminPage.waitForSelector('[data-testid="chat-room-scroll-list"]', { timeout: 8000 });
+
+    const scrollTeacherCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const scrollTeacherPage = await scrollTeacherCtx.newPage();
+    await scrollTeacherPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await scrollTeacherPage.click('[data-testid="quick-login-linh.lam@khongtunhi.com"]');
+    await scrollTeacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 10000 });
+    await scrollTeacherPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
+    await scrollTeacherPage.waitForSelector('[data-testid="chat-room-scroll-list"]', { timeout: 8000 });
+
+    const scrollStudentCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const scrollStudentPage = await scrollStudentCtx.newPage();
+    await scrollStudentPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await scrollStudentPage.click('[data-testid="quick-login-hoangngan@khongtunhi.com"]');
+    await scrollStudentPage.waitForSelector('[data-testid="student-dashboard-page"]', { timeout: 10000 });
+    await scrollStudentPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, { waitUntil: 'domcontentloaded' });
+    await scrollStudentPage.waitForSelector('[data-testid="chat-room-scroll-list"]', { timeout: 8000 });
+    await scrollStudentPage.waitForSelector('[data-testid="chat-message-scroll-area"]', { timeout: 8000 });
+    await scrollStudentPage.waitForTimeout(500);
+
+    // S01: Sidebar scroll from top to bottom across Admin, Teacher, and Student (>= 60 rooms)
+    const testSidebarFullScroll = async (pg) => {
+      await pg.waitForFunction(
+        () =>
+          document.querySelectorAll('[data-testid="chat-room-scroll-list"] > button').length >= 60,
+        null,
+        { timeout: 8000 }
+      );
+      return pg.evaluate(() => {
+        const list = document.querySelector('[data-testid="chat-room-scroll-list"]');
+        const searchBox = document.querySelector('[data-testid="chat-room-search-input"]');
+        if (!list || !searchBox) return { ok: false };
+        const roomCount = list.querySelectorAll(':scope > button').length;
+        const searchTopBefore = Math.round(searchBox.getBoundingClientRect().top);
+        list.scrollTop = 0;
+        const topStart = Math.round(list.scrollTop);
+        const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
+        list.scrollTop = maxScroll;
+        list.dispatchEvent(new Event('scroll', { bubbles: true }));
+        const topEnd = Math.round(list.scrollTop);
+        const searchTopAfter = Math.round(searchBox.getBoundingClientRect().top);
+        const pageScrollY = Math.round(window.scrollY);
+        return {
+          ok:
+            roomCount >= 60 &&
+            maxScroll > 1000 &&
+            topStart === 0 &&
+            Math.abs(topEnd - maxScroll) <= 2 &&
+            searchTopBefore === searchTopAfter &&
+            pageScrollY === 0,
+          roomCount,
+          scrollHeight: Math.round(list.scrollHeight),
+          clientHeight: Math.round(list.clientHeight),
+          topEnd,
+          pageScrollY,
+        };
+      });
+    };
+
+    const s01Admin = await testSidebarFullScroll(scrollAdminPage);
+    const s01Teacher = await testSidebarFullScroll(scrollTeacherPage);
+    const s01Student = await testSidebarFullScroll(scrollStudentPage);
+    recordTest(
+      'TEST S',
+      'S01',
+      'Sidebar scroll from top to bottom works independently across Admin, Teacher, and Student (>= 60 rooms, fixed header, zero page scroll)',
+      Boolean(s01Admin.ok && s01Teacher.ok && s01Student.ok),
+      JSON.stringify({ admin: s01Admin, teacher: s01Teacher, student: s01Student })
+    );
+
+    // S02: Mouse wheel, touchpad delta, and scrollbar thumb drag on sidebar & message list
+    await scrollStudentPage.evaluate(() => {
+      const list = document.querySelector('[data-testid="chat-room-scroll-list"]');
+      if (list) list.scrollTop = 0;
+    });
+    const sidebarBox = await scrollStudentPage
+      .locator('[data-testid="chat-room-scroll-list"]')
+      .boundingBox();
+    if (sidebarBox) {
+      await scrollStudentPage.mouse.move(
+        sidebarBox.x + sidebarBox.width / 2,
+        sidebarBox.y + sidebarBox.height / 2
+      );
+      await scrollStudentPage.mouse.wheel(0, 480);
+      await scrollStudentPage.waitForTimeout(150);
+      // Touchpad fine-grained wheel steps
+      for (let step = 0; step < 5; step++) {
+        await scrollStudentPage.mouse.wheel(0, 65);
+      }
+      await scrollStudentPage.waitForTimeout(150);
+    }
+    const s02Metrics = await scrollStudentPage.evaluate(() => {
+      const list = document.querySelector('[data-testid="chat-room-scroll-list"]');
+      if (!list) return { ok: false };
+      const afterWheelTop = Math.round(list.scrollTop);
+      // Simulate scrollbar thumb drag to 60% of scrollable range
+      const maxScroll = list.scrollHeight - list.clientHeight;
+      const targetThumbTop = Math.round(maxScroll * 0.6);
+      list.scrollTop = targetThumbTop;
+      list.dispatchEvent(new Event('scroll', { bubbles: true }));
+      const afterDragTop = Math.round(list.scrollTop);
+      return {
+        ok: afterWheelTop >= 300 && Math.abs(afterDragTop - targetThumbTop) <= 2,
+        afterWheelTop,
+        afterDragTop,
+        scrollHeight: Math.round(list.scrollHeight),
+        clientHeight: Math.round(list.clientHeight),
+      };
+    });
+    recordTest(
+      'TEST S',
+      'S02',
+      'Mouse wheel, touchpad scroll, and scrollbar thumb drag update scrollTop smoothly without snapping back',
+      Boolean(s02Metrics.ok),
+      JSON.stringify(s02Metrics)
+    );
+
+    // S03: Switching filter tabs (All / Unread / 1-1) & search/clear resets stale scrollTop while 3.5s polling preserves scrollTop
+    await scrollStudentPage.evaluate(() => {
+      const list = document.querySelector('[data-testid="chat-room-scroll-list"]');
+      if (list) {
+        list.scrollTop = 750;
+        list.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+    });
+    await scrollStudentPage.waitForTimeout(3800);
+    const topAfterSidebarPoll = await scrollStudentPage.evaluate(() =>
+      Math.round(document.querySelector('[data-testid="chat-room-scroll-list"]')?.scrollTop || 0)
+    );
+    await scrollStudentPage.click('[data-testid="chat-filter-tab-unread"]');
+    await scrollStudentPage.waitForTimeout(100);
+    const topOnUnreadTab = await scrollStudentPage.evaluate(() =>
+      Math.round(document.querySelector('[data-testid="chat-room-scroll-list"]')?.scrollTop || 0)
+    );
+    await scrollStudentPage.click('[data-testid="chat-filter-tab-support"]');
+    await scrollStudentPage.waitForTimeout(100);
+    const topOnSupportTab = await scrollStudentPage.evaluate(() =>
+      Math.round(document.querySelector('[data-testid="chat-room-scroll-list"]')?.scrollTop || 0)
+    );
+    await scrollStudentPage.click('[data-testid="chat-filter-tab-all"]');
+    await scrollStudentPage.evaluate(() => {
+      const list = document.querySelector('[data-testid="chat-room-scroll-list"]');
+      if (list) list.scrollTop = 600;
+    });
+    await scrollStudentPage.fill('[data-testid="chat-room-search-input"]', 'Nhóm Bổ Trợ #05');
+    await scrollStudentPage.waitForTimeout(100);
+    const topDuringSearch = await scrollStudentPage.evaluate(() =>
+      Math.round(document.querySelector('[data-testid="chat-room-scroll-list"]')?.scrollTop || 0)
+    );
+    await scrollStudentPage.fill('[data-testid="chat-room-search-input"]', '');
+    await scrollStudentPage.waitForTimeout(100);
+    const topAfterClearSearch = await scrollStudentPage.evaluate(() =>
+      Math.round(document.querySelector('[data-testid="chat-room-scroll-list"]')?.scrollTop || 0)
+    );
+    recordTest(
+      'TEST S',
+      'S03',
+      'Switching filter tabs (Tất cả / Chưa đọc / 1-1) & search/clear resets stale scrollTop to 0 while 3.5s polling preserves sidebar scrollTop',
+      Math.abs(topAfterSidebarPoll - 750) <= 2 &&
+        topOnUnreadTab === 0 &&
+        topOnSupportTab === 0 &&
+        topDuringSearch === 0 &&
+        topAfterClearSearch === 0,
+      JSON.stringify({
+        topAfterSidebarPoll,
+        topOnUnreadTab,
+        topOnSupportTab,
+        topDuringSearch,
+        topAfterClearSearch,
+      })
+    );
+
+    // S04: Reading older messages in MessageList -> waiting across > 3 consecutive polling cycles (> 9.5s) does NOT yank scroll down
+    await scrollStudentPage.evaluate(() => {
+      const msgArea = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      if (msgArea) {
+        msgArea.scrollTop = 360;
+        msgArea.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+    });
+    const s04Before = await scrollStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      return {
+        scrollTop: Math.round(el?.scrollTop || 0),
+        scrollHeight: Math.round(el?.scrollHeight || 0),
+        clientHeight: Math.round(el?.clientHeight || 0),
+      };
+    });
+    await scrollStudentPage.waitForTimeout(9600);
+    const s04After = await scrollStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      return {
+        scrollTop: Math.round(el?.scrollTop || 0),
+        scrollHeight: Math.round(el?.scrollHeight || 0),
+        clientHeight: Math.round(el?.clientHeight || 0),
+      };
+    });
+    recordTest(
+      'TEST S',
+      'S04',
+      'Reading history at scrollTop=360 across >3 consecutive polling intervals (9.6s) never pulls scroll position down',
+      Math.abs(s04After.scrollTop - 360) <= 2,
+      JSON.stringify({ before: s04Before, after: s04After })
+    );
+
+    // S05: Another user (Teacher) sends a new message while Student is reading history -> no scroll jump, unread badge increments
+    const incomingText = `[S05-INCOMING] Cô Linh nhắc nộp bài tập lúc ${Date.now()}`;
+    await fetch(`${baseUrl}/api/ktn/test/seed-chat-qa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'incoming',
+        roomId: 'YCT2-04',
+        senderEmail: 'linh.lam@khongtunhi.com',
+        senderName: 'Cô Lâm Mỹ Linh',
+        senderRole: 'teacher',
+        content: incomingText,
+      }),
+    });
+    await scrollStudentPage.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="jump-to-latest-msg-btn"]')
+          ?.textContent?.includes('tin nhắn mới'),
+      null,
+      { timeout: 6000 }
+    );
+    const s05After = await scrollStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      const pill = document.querySelector('[data-testid="jump-to-latest-msg-btn"]');
+      return {
+        scrollTop: Math.round(el?.scrollTop || 0),
+        scrollHeight: Math.round(el?.scrollHeight || 0),
+        pillText: pill?.textContent?.trim() || '',
+      };
+    });
+    recordTest(
+      'TEST S',
+      'S05',
+      'Incoming message from Teacher while reading history preserves exact scrollTop=360 and shows unread count pill',
+      Math.abs(s05After.scrollTop - 360) <= 2 && s05After.pillText.includes('tin nhắn mới'),
+      JSON.stringify(s05After)
+    );
+
+    // S06: Current user sends a new message -> automatically scrolls smoothly to the bottom
+    const ownText = `[S06-OWN] Dạ con Hoàng Ngân vừa gửi bài mới lúc ${Date.now()}`;
+    await scrollStudentPage.fill('[data-testid="chat-composer-input"]', ownText);
+    await scrollStudentPage.click('[data-testid="chat-send-btn"]');
+    await scrollStudentPage.waitForFunction(
+      (txt) => {
+        const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+        if (!el || !document.body.innerText.includes(txt)) return false;
+        return el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      },
+      ownText,
+      { timeout: 6000 }
+    );
+    const s06Metrics = await scrollStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      if (!el) return { distanceFromBottom: 999 };
+      return {
+        scrollTop: Math.round(el.scrollTop),
+        scrollHeight: Math.round(el.scrollHeight),
+        clientHeight: Math.round(el.clientHeight),
+        distanceFromBottom: Math.round(el.scrollHeight - el.scrollTop - el.clientHeight),
+      };
+    });
+    recordTest(
+      'TEST S',
+      'S06',
+      'Sending own new message automatically scrolls message list to bottom',
+      s06Metrics.distanceFromBottom < 60,
+      JSON.stringify(s06Metrics)
+    );
+
+    // S07: Loading 50 older messages preserves exact reading position (anchor message stays at same visual offset)
+    await scrollStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      if (el) {
+        el.scrollTop = 12;
+        el.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+    });
+    await scrollStudentPage.waitForTimeout(150);
+    const s07Before = await scrollStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      if (!el) return null;
+      const cRect = el.getBoundingClientRect();
+      const items = Array.from(el.querySelectorAll('[data-testid="chat-message-item"]'));
+      const firstVisible =
+        items.find((node) => node.getBoundingClientRect().bottom > cRect.top + 4) || items[0];
+      return {
+        scrollTop: Math.round(el.scrollTop),
+        scrollHeight: Math.round(el.scrollHeight),
+        clientHeight: Math.round(el.clientHeight),
+        count: items.length,
+        anchorId: firstVisible?.getAttribute('data-message-id') || '',
+        anchorOffset: firstVisible
+          ? Math.round(firstVisible.getBoundingClientRect().top - cRect.top)
+          : 0,
+      };
+    });
+    await scrollStudentPage.click('[data-testid="load-older-messages-btn"]');
+    await scrollStudentPage.waitForFunction(
+      (prevCount) =>
+        document.querySelectorAll('[data-testid="chat-message-item"]').length >= prevCount + 50,
+      s07Before?.count || 60,
+      { timeout: 8000 }
+    );
+    await scrollStudentPage.waitForTimeout(200);
+    const s07After = await scrollStudentPage.evaluate((anchorId) => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      if (!el) return null;
+      const cRect = el.getBoundingClientRect();
+      const items = Array.from(el.querySelectorAll('[data-testid="chat-message-item"]'));
+      const anchorNode = document.getElementById(`chat-msg-${anchorId}`);
+      return {
+        scrollTop: Math.round(el.scrollTop),
+        scrollHeight: Math.round(el.scrollHeight),
+        clientHeight: Math.round(el.clientHeight),
+        count: items.length,
+        anchorOffset: anchorNode
+          ? Math.round(anchorNode.getBoundingClientRect().top - cRect.top)
+          : -999,
+      };
+    }, s07Before?.anchorId || '');
+    const s07OffsetDelta = Math.abs((s07After?.anchorOffset ?? -999) - (s07Before?.anchorOffset ?? 0));
+    recordTest(
+      'TEST S',
+      'S07',
+      'Loading 50 older messages compensates scrollHeight delta and keeps anchor message in place without jumping to top or bottom',
+      Boolean(
+        s07Before &&
+          s07After &&
+          s07After.count >= s07Before.count + 50 &&
+          s07After.scrollTop > s07Before.scrollTop + 2000 &&
+          s07OffsetDelta <= 8
+      ),
+      JSON.stringify({ before: s07Before, after: s07After, offsetDelta: s07OffsetDelta })
+    );
+
+    // S08: Room switch A -> B -> A preserves state and never mixes messages between rooms
+    await scrollStudentPage.click('[data-testid="chat-room-item-course:6adadba969897b0002482ca5"]');
+    await scrollStudentPage.waitForFunction(
+      () => document.body.innerText.includes('[ROOM-B-25]'),
+      null,
+      { timeout: 8000 }
+    );
+    const s08RoomB = await scrollStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      const texts = Array.from(document.querySelectorAll('[data-testid="chat-message-text"]')).map(
+        (n) => n.textContent || ''
+      );
+      const hasRoomA = texts.some((t) => t.includes('lớp YCT2-04'));
+      const hasRoomB = texts.some((t) => t.includes('[ROOM-B-25]'));
+      const distanceFromBottom = el
+        ? Math.round(el.scrollHeight - el.scrollTop - el.clientHeight)
+        : 999;
+      return { hasRoomA, hasRoomB, distanceFromBottom, count: texts.length };
+    });
+    await scrollStudentPage.click('[data-testid="chat-room-item-class:YCT2-04"]');
+    await scrollStudentPage.waitForFunction(
+      () => document.body.innerText.includes('[QA-120]'),
+      null,
+      { timeout: 8000 }
+    );
+    const s08BackToRoomA = await scrollStudentPage.evaluate(() => {
+      const el = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      const texts = Array.from(document.querySelectorAll('[data-testid="chat-message-text"]')).map(
+        (n) => n.textContent || ''
+      );
+      const hasRoomB = texts.some((t) => t.includes('[ROOM-B-'));
+      const distanceFromBottom = el
+        ? Math.round(el.scrollHeight - el.scrollTop - el.clientHeight)
+        : 999;
+      return { hasRoomB, distanceFromBottom, count: texts.length };
+    });
+    recordTest(
+      'TEST S',
+      'S08',
+      'Switching Room A -> Room B -> Room A opens at bottom, preserves loaded history, and never mixes messages across rooms',
+      Boolean(
+        !s08RoomB.hasRoomA &&
+          s08RoomB.hasRoomB &&
+          s08RoomB.distanceFromBottom < 60 &&
+          !s08BackToRoomA.hasRoomB &&
+          s08BackToRoomA.distanceFromBottom < 60 &&
+          s08BackToRoomA.count >= 110
+      ),
+      JSON.stringify({ roomB: s08RoomB, backToRoomA: s08BackToRoomA })
+    );
+
+    // S09: React Query refetch (manual refresh + background poll) causes zero scroll jump in both sidebar and message list
+    await scrollStudentPage.evaluate(() => {
+      const side = document.querySelector('[data-testid="chat-room-scroll-list"]');
+      const msg = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      if (side) {
+        side.scrollTop = 640;
+        side.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+      if (msg) {
+        msg.scrollTop = 520;
+        msg.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+    });
+    await scrollStudentPage.click('button[aria-label="Làm mới tin nhắn"]');
+    await scrollStudentPage.waitForTimeout(3800);
+    const s09After = await scrollStudentPage.evaluate(() => {
+      const side = document.querySelector('[data-testid="chat-room-scroll-list"]');
+      const msg = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      return {
+        sideScrollTop: Math.round(side?.scrollTop || 0),
+        msgScrollTop: Math.round(msg?.scrollTop || 0),
+      };
+    });
+    recordTest(
+      'TEST S',
+      'S09',
+      'React Query manual & background refetches preserve exact scrollTop on both room sidebar (640) and message list (520)',
+      Math.abs(s09After.sideScrollTop - 640) <= 2 && Math.abs(s09After.msgScrollTop - 520) <= 2,
+      JSON.stringify(s09After)
+    );
+
+    // S10: Mobile 390 x 844 touch/swipe scroll stability on both conversation list and message list
+    await scrollStudentPage.setViewportSize({ width: 390, height: 844 });
+    await scrollStudentPage.goto(`${baseUrl}/chat`, { waitUntil: 'domcontentloaded' });
+    await scrollStudentPage.waitForSelector('[data-testid="chat-room-scroll-list"]', { timeout: 8000 });
+    // If conversation is open on mobile, click back to test mobile room list first
+    if (await scrollStudentPage.isVisible('[data-testid="mobile-chat-back-btn"]')) {
+      await scrollStudentPage.click('[data-testid="mobile-chat-back-btn"]');
+      await scrollStudentPage.waitForTimeout(150);
+    }
+    const s10MobileListScroll = await scrollStudentPage.evaluate(() => {
+      const side = document.querySelector('[data-testid="chat-room-scroll-list"]');
+      if (!side) return { ok: false };
+      side.scrollTop = 480;
+      side.dispatchEvent(new Event('scroll', { bubbles: true }));
+      return {
+        ok: Math.abs(side.scrollTop - 480) <= 2 && window.scrollY === 0,
+        scrollTop: Math.round(side.scrollTop),
+        scrollHeight: Math.round(side.scrollHeight),
+        clientHeight: Math.round(side.clientHeight),
+        windowScrollY: Math.round(window.scrollY),
+      };
+    });
+    await scrollStudentPage.evaluate(() => {
+      const side = document.querySelector('[data-testid="chat-room-scroll-list"]');
+      if (side) side.scrollTop = 0;
+    });
+    await scrollStudentPage.click('[data-testid="chat-room-item-class:YCT2-04"]');
+    await scrollStudentPage.waitForSelector('[data-testid="chat-message-scroll-area"]', {
+      timeout: 8000,
+    });
+    await scrollStudentPage.waitForTimeout(300);
+    await scrollStudentPage.evaluate(() => {
+      const msg = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      if (msg) {
+        msg.scrollTop = 410;
+        msg.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+    });
+    await scrollStudentPage.waitForTimeout(3500);
+    const s10MobileMsgScroll = await scrollStudentPage.evaluate(() => {
+      const msg = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      return {
+        scrollTop: Math.round(msg?.scrollTop || 0),
+        windowScrollY: Math.round(window.scrollY),
+      };
+    });
+    recordTest(
+      'TEST S',
+      'S10',
+      'Mobile 390x844 swipe/scroll is stable on both conversation list and message history across polling with zero window scroll',
+      Boolean(
+        s10MobileListScroll.ok &&
+          Math.abs(s10MobileMsgScroll.scrollTop - 410) <= 2 &&
+          s10MobileMsgScroll.windowScrollY === 0
+      ),
+      JSON.stringify({ list: s10MobileListScroll, msg: s10MobileMsgScroll })
+    );
+
+    // S11: Mobile composer is never occluded by bottom navigation (390x844) or virtual keyboard (390x480)
+    const s11NormalViewport = await scrollStudentPage.evaluate(() => {
+      const composer = document.querySelector('[data-testid="chat-message-composer"]');
+      const input = document.querySelector('[data-testid="chat-composer-input"]');
+      const bottomNav = document.querySelector('[data-testid="mobile-bottom-nav"]');
+      if (!composer || !input || !bottomNav) return { ok: false };
+      const cRect = composer.getBoundingClientRect();
+      const nRect = bottomNav.getBoundingClientRect();
+      return {
+        ok: cRect.bottom <= nRect.top + 2 && cRect.top >= 48,
+        composerBottom: Math.round(cRect.bottom),
+        bottomNavTop: Math.round(nRect.top),
+      };
+    });
+    await scrollStudentPage.setViewportSize({ width: 390, height: 480 });
+    await scrollStudentPage.focus('[data-testid="chat-composer-input"]');
+    await scrollStudentPage.waitForTimeout(150);
+    const s11KeyboardViewport = await scrollStudentPage.evaluate(() => {
+      const input = document.querySelector('[data-testid="chat-composer-input"]');
+      if (!input) return { ok: false };
+      const r = input.getBoundingClientRect();
+      return {
+        ok: r.top >= 40 && r.bottom <= window.innerHeight,
+        inputTop: Math.round(r.top),
+        inputBottom: Math.round(r.bottom),
+        innerHeight: window.innerHeight,
+      };
+    });
+    await scrollStudentPage.setViewportSize({ width: 1440, height: 900 });
+    recordTest(
+      'TEST S',
+      'S11',
+      'Message composer remains completely visible above bottom navigation (390x844) and when mobile keyboard shrinks viewport (390x480)',
+      Boolean(s11NormalViewport.ok && s11KeyboardViewport.ok),
+      JSON.stringify({ normal: s11NormalViewport, keyboard: s11KeyboardViewport })
+    );
+
+    // S12: Pin message, in-room search, and emoji reactions work without causing scroll jump
+    await scrollTeacherPage.goto(`${baseUrl}/chat?room=class:YCT2-04`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await scrollTeacherPage.waitForSelector('[data-testid="chat-message-scroll-area"]', {
+      timeout: 8000,
+    });
+    await scrollTeacherPage.waitForTimeout(400);
+    await scrollTeacherPage.evaluate(() => {
+      const msg = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      if (msg) {
+        msg.scrollTop = 450;
+        msg.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+    });
+    await scrollTeacherPage.waitForTimeout(100);
+    // Teacher reacts to a visible in-viewport message while scrolled to 450
+    await scrollTeacherPage.evaluate(() => {
+      const container = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      const cTop = container ? container.getBoundingClientRect().top : 0;
+      const btns = Array.from(document.querySelectorAll('button[title="Thả biểu tượng cảm xúc"]'));
+      const visibleBtn =
+        btns.find((b) => b.getBoundingClientRect().top >= cTop + 60) || btns[btns.length - 1];
+      if (visibleBtn instanceof HTMLElement) visibleBtn.click();
+    });
+    await scrollTeacherPage.waitForTimeout(100);
+    await scrollTeacherPage.evaluate(() => {
+      const emojiBtns = Array.from(document.querySelectorAll('button')).filter(
+        (b) => b.textContent?.trim() === '❤️'
+      );
+      if (emojiBtns[0] instanceof HTMLElement) emojiBtns[0].click();
+    });
+    await scrollTeacherPage.waitForTimeout(200);
+    const topAfterReact = await scrollTeacherPage.evaluate(() =>
+      Math.round(document.querySelector('[data-testid="chat-message-scroll-area"]')?.scrollTop || 0)
+    );
+    // Teacher pins a visible in-viewport message while scrolled to 450
+    await scrollTeacherPage.evaluate(() => {
+      const container = document.querySelector('[data-testid="chat-message-scroll-area"]');
+      const cTop = container ? container.getBoundingClientRect().top : 0;
+      const pinBtns = Array.from(
+        document.querySelectorAll('button[title="Ghim làm thông báo lớp"]')
+      );
+      const visiblePinBtn =
+        pinBtns.find((b) => b.getBoundingClientRect().top >= cTop + 60) || pinBtns[0];
+      if (visiblePinBtn instanceof HTMLElement) visiblePinBtn.click();
+    });
+    await scrollTeacherPage.waitForTimeout(500);
+    const topAfterPin = await scrollTeacherPage.evaluate(() =>
+      Math.round(document.querySelector('[data-testid="chat-message-scroll-area"]')?.scrollTop || 0)
+    );
+    const pinnedBannerStillVisible = await scrollTeacherPage.isVisible(
+      '[data-testid="pinned-announcement-banner"]'
+    );
+    // In-room search
+    await scrollTeacherPage.click('button[aria-label="Tìm kiếm trong hội thoại"]');
+    await scrollTeacherPage.fill(
+      'input[placeholder*="Tìm nội dung tin nhắn"]',
+      'QA-080'
+    );
+    await scrollTeacherPage.waitForTimeout(200);
+    const searchMatchCount = await scrollTeacherPage.evaluate(
+      () => document.querySelectorAll('[data-testid="chat-message-item"]').length
+    );
+    await scrollTeacherPage.click('button[aria-label="Tìm kiếm trong hội thoại"]');
+    recordTest(
+      'TEST S',
+      'S12',
+      'Reactions, pinning announcements, and in-room message search work accurately without causing scroll jump',
+      Math.abs(topAfterReact - 450) <= 5 &&
+        Math.abs(topAfterPin - 450) <= 5 &&
+        pinnedBannerStillVisible &&
+        searchMatchCount === 1,
+      JSON.stringify({ topAfterReact, topAfterPin, pinnedBannerStillVisible, searchMatchCount })
+    );
+
+    await scrollAdminCtx.close();
+    await scrollTeacherCtx.close();
+    await scrollStudentCtx.close();
+    await fetch(`${baseUrl}/api/ktn/test/seed-chat-qa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reset' }),
+    });
   } finally {
     await browser.close();
     await viteServer.close();

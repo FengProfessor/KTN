@@ -439,12 +439,18 @@ export const AppShell: React.FC = () => {
   const headerInfo = isRestoringLiveSession
     ? { title: 'Khổng Tử Nhí', subtitle: 'Đang khôi phục phiên...' }
     : resolveHeaderTitle(location.pathname, effectiveRole, user);
+  const isChatRoute =
+    location.pathname === '/chat' || location.pathname.startsWith('/chat/');
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#FAF8F5] text-stone-900">
+    <div
+      className={`flex flex-col bg-[#FAF8F5] text-stone-900 ${
+        isChatRoute ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'
+      }`}
+    >
       <DemoControlBar />
 
-      <div className="flex flex-1">
+      <div className={`flex flex-1 ${isChatRoute ? 'min-h-0 overflow-hidden' : ''}`}>
         {/* Role-Specific Desktop Navigation (hidden while restoring unverified live session) */}
         {!isRestoringLiveSession && (
           <RoleDesktopNavigation
@@ -457,11 +463,15 @@ export const AppShell: React.FC = () => {
         )}
 
         {/* Main Content Area */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div
+          className={`flex min-w-0 flex-1 flex-col ${
+            isChatRoute ? 'min-h-0 overflow-hidden' : ''
+          }`}
+        >
           {/* Compact Top App Bar (48px-52px on mobile) */}
           <header
             data-testid="compact-top-header"
-            className="sticky top-0 z-30 flex h-12 items-center justify-between border-b border-stone-200 bg-white/95 px-3 backdrop-blur-md sm:h-13 sm:px-5"
+            className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between border-b border-stone-200 bg-white/95 px-3 backdrop-blur-md sm:h-13 sm:px-5"
           >
             <div className="flex min-w-0 items-center gap-2.5">
               <button
@@ -676,7 +686,13 @@ export const AppShell: React.FC = () => {
           </header>
 
           {/* Main Page Outlet */}
-          <main className="mx-auto w-full max-w-[1440px] flex-1 px-3 py-2.5 pb-16 sm:p-4 lg:pb-6">
+          <main
+            className={`mx-auto w-full max-w-[1440px] flex-1 ${
+              isChatRoute
+                ? 'flex min-h-0 flex-col overflow-hidden px-2 pt-1.5 pb-[calc(3.75rem+env(safe-area-inset-bottom,0px))] sm:px-4 sm:pt-3 lg:pb-4'
+                : 'px-3 py-2.5 pb-16 sm:p-4 lg:pb-6'
+            }`}
+          >
             <Outlet />
           </main>
 

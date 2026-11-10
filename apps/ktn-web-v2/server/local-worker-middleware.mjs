@@ -353,7 +353,7 @@ export function createLocalWorkerHarness() {
       ktn_dlp_alerts: [
         {
           id: 'PIN-YCT2-04-DEFAULT',
-          room_id: 'PINNED_MSG|YCT2-04',
+          room_id: 'PIN:class:YCT2-04',
           sender_email: 'linh.lam@khongtunhi.com',
           sender_name: 'Cô Lâm Mỹ Linh',
           sender_role: 'teacher',
@@ -361,6 +361,8 @@ export function createLocalWorkerHarness() {
             roomId: 'class:YCT2-04',
             content: 'Lịch học cố định: 19:30 Thứ 3 & Thứ 6 hàng tuần. Các con nộp bài thu âm trước 18:00 ngày có lịch học nhé!',
             pinnedBy: 'Cô Lâm Mỹ Linh',
+            pinnedByEmail: 'linh.lam@khongtunhi.com',
+            isDefault: false,
             updatedAt: new Date(Date.now() - 7200 * 1000).toISOString()
           }),
           reason: 'ROOM_PINNED_ANNOUNCEMENT',
@@ -646,6 +648,12 @@ export function createLocalWorkerHarness() {
 
       if (method === 'GET') {
         const matched = rows.filter(r => matchQueryFilters(r, u.searchParams));
+        const orderParam = String(u.searchParams.get('order') || '');
+        if (orderParam.includes('created_at.desc')) {
+          matched.sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
+        } else if (orderParam.includes('created_at.asc')) {
+          matched.sort((a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0));
+        }
         const totalMatched = matched.length;
         const offset = Math.max(0, Number(u.searchParams.get('offset') || 0));
         const limit = Number(u.searchParams.get('limit') || 0);
@@ -1114,6 +1122,187 @@ export function createLocalWorkerHarness() {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ ok: true, faults: state.faults }));
+        return;
+      }
+
+      if (url.startsWith('/api/ktn/test/seed-chat-qa')) {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
+        const action = body.action || 'seed';
+
+        const removeQaSeed = () => {
+          state.tables.ktn_classes = state.tables.ktn_classes.filter(
+            c => !String(c.id || '').startsWith('QA-SCROLL-')
+          );
+          const linh = state.tables.ktn_teachers.find(t => t.email === 'linh.lam@khongtunhi.com');
+          if (linh && Array.isArray(linh.assigned_classes)) {
+            linh.assigned_classes = linh.assigned_classes.filter(
+              c => !String(c || '').startsWith('QA-SCROLL-')
+            );
+          }
+          const ngan = state.tables.ktn_students.find(s => s.email === 'hoangngan@khongtunhi.com');
+          if (ngan && Array.isArray(ngan.online_courses)) {
+            ngan.online_courses = ngan.online_courses.filter(
+              c => !String(c?.id || '').startsWith('qa-scroll-course-')
+            );
+          }
+          state.tables.ktn_messages = state.tables.ktn_messages.filter(
+            m => !String(m.id || '').startsWith('MSG-QA-SCROLL-')
+          );
+        };
+
+        if (action === 'reset') {
+          removeQaSeed();
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: true, reset: true }));
+          return;
+        }
+
+        if (action === 'incoming') {
+          const targetRoom = String(body.roomId || 'YCT2-04').replace(/^class:/i, '');
+          const msgId = `MSG-QA-SCROLL-INC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          const newMsg = {
+            id: msgId,
+            room_id: targetRoom,
+            class_code: targetRoom,
+            sender_email: body.senderEmail || 'linh.lam@khongtunhi.com',
+            sender_name: body.senderName || 'Cô Lâm Mỹ Linh',
+            sender_role: body.senderRole || 'teacher',
+            content: body.content || `Tin nhắn mới từ giáo viên lúc ${new Date().toISOString()}`,
+            attachment_url: body.attachmentUrl || '',
+            created_at: new Date().toISOString()
+          };
+          state.tables.ktn_messages.unshift(newMsg);
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: true, message: newMsg }));
+          return;
+        }
+
+        removeQaSeed();
+        const roomCount = Number(body.roomCount || 65);
+        const messageCount = Number(body.messageCount || 120);
+        const linh = state.tables.ktn_teachers.find(t => t.email === 'linh.lam@khongtunhi.com');
+        const ngan = state.tables.ktn_students.find(s => s.email === 'hoangngan@khongtunhi.com');
+
+        for (let i = 1; i <= roomCount; i++) {
+          const num = String(i).padStart(2, '0');
+          const clsId = `QA-SCROLL-${num}`;
+          state.tables.ktn_classes.push({
+            id: clsId,
+            name: `Lớp Giao Tiếp & Hán Tự QA ${num}`,
+            teacher_code: 'GV-KTN-08',
+            teacher_email: 'linh.lam@khongtunhi.com',
+            teacher_name: 'Cô Lâm Mỹ Linh',
+            schedule: '19:30 Thứ 3 & Thứ 6',
+            total_lessons: 25,
+            current_lesson: 10,
+            active: true,
+            updated_at: new Date(Date.now() - i * 60000).toISOString()
+          });
+          if (linh && Array.isArray(linh.assigned_classes)) {
+            linh.assigned_classes.push(clsId);
+          }
+          if (ngan && Array.isArray(ngan.online_courses)) {
+            const cId = `qa-scroll-course-${num}`;
+            ngan.online_courses.push({
+              id: cId,
+              code: `QAC-${num}`,
+              title: `Nhóm Học Tập Bổ Trợ HSK-YCT #${num}`,
+              shortTitle: `Nhóm Bổ Trợ #${num}`
+            });
+          }
+          if (i <= 8) {
+            state.tables.ktn_messages.push({
+              id: `MSG-QA-SCROLL-UNREAD-CLS-${num}`,
+              room_id: clsId,
+              class_code: clsId,
+              sender_email: 'hoangngan@khongtunhi.com',
+              sender_name: 'Bé Nguyễn Hoàng Ngân',
+              sender_role: 'student',
+              content: `Câu hỏi chưa đọc tại lớp ${clsId}`,
+              attachment_url: '',
+              created_at: new Date(Date.now() - i * 30000).toISOString()
+            });
+            state.tables.ktn_messages.push({
+              id: `MSG-QA-SCROLL-UNREAD-CRS-${num}`,
+              room_id: `course:qa-scroll-course-${num}`,
+              class_code: `course:qa-scroll-course-${num}`,
+              sender_email: 'linh.lam@khongtunhi.com',
+              sender_name: 'Cô Lâm Mỹ Linh',
+              sender_role: 'teacher',
+              content: `Thông báo bài tập mới tại Nhóm Bổ Trợ #${num}`,
+              attachment_url: '',
+              created_at: new Date(Date.now() - i * 25000).toISOString()
+            });
+          }
+        }
+
+        const sampleSvgDataUri =
+          'data:image/svg+xml;utf8,' +
+          encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><rect width="320" height="180" fill="#fef3c7"/><text x="20" y="95" font-size="18" fill="#991b1b">Bảng từ vựng YCT2 Khổng Tử Nhí</text></svg>'
+          );
+
+        const baseTime = Date.now() - (messageCount + 20) * 60000;
+        for (let m = 1; m <= messageCount; m++) {
+          const seq = String(m).padStart(3, '0');
+          const isOwnStudent = m === messageCount ? true : m % 2 === 0;
+          const isLong = m % 7 === 0;
+          const hasImg = m % 15 === 0;
+          const textBody = isLong
+            ? `[QA-${seq}] Bài luyện đọc dài nhiều dòng lớp YCT2-04:\n1. 你好，我是小语 (Xin chào, mình là Tiểu Ngữ)\n2. 今天我们学习第十八课 (Hôm nay chúng ta học bài 18)\n3. Ghi chú phát âm thanh 3 khi đi liền nhau và luyện viết Hán tự đầy đủ.`
+            : `[QA-${seq}] Tin nhắn lịch sử lớp YCT2-04 số #${seq} — Ôn tập từ vựng và mẫu câu chủ đề gia đình.`;
+          state.tables.ktn_messages.push({
+            id: `MSG-QA-SCROLL-YCT2-${seq}`,
+            room_id: 'YCT2-04',
+            class_code: 'YCT2-04',
+            sender_email: isOwnStudent ? 'hoangngan@khongtunhi.com' : 'linh.lam@khongtunhi.com',
+            sender_name: isOwnStudent ? 'Bé Nguyễn Hoàng Ngân' : 'Cô Lâm Mỹ Linh',
+            sender_role: isOwnStudent ? 'student' : 'teacher',
+            content: textBody,
+            attachment_url: hasImg ? sampleSvgDataUri : '',
+            created_at: new Date(baseTime + m * 60000).toISOString()
+          });
+        }
+
+        for (let b = 1; b <= 25; b++) {
+          const seq = String(b).padStart(2, '0');
+          state.tables.ktn_messages.push({
+            id: `MSG-QA-SCROLL-ROOMB-${seq}`,
+            room_id: 'course:6adadba969897b0002482ca5',
+            class_code: 'course:6adadba969897b0002482ca5',
+            sender_email: b % 2 === 0 ? 'hoangngan@khongtunhi.com' : 'linh.lam@khongtunhi.com',
+            sender_name: b % 2 === 0 ? 'Bé Nguyễn Hoàng Ngân' : 'Cô Lâm Mỹ Linh',
+            sender_role: b % 2 === 0 ? 'student' : 'teacher',
+            content: `[ROOM-B-${seq}] Thảo luận khóa HSK1 3.0 câu số #${seq}`,
+            attachment_url: '',
+            created_at: new Date(baseTime + b * 60000).toISOString()
+          });
+          state.tables.ktn_messages.push({
+            id: `MSG-QA-SCROLL-YCT3-${seq}`,
+            room_id: 'YCT3-02',
+            class_code: 'YCT3-02',
+            sender_email: 'linh.lam@khongtunhi.com',
+            sender_name: 'Cô Lâm Mỹ Linh',
+            sender_role: 'teacher',
+            content: `[YCT3-${seq}] Nội dung ôn tập lớp YCT3-02 buổi #${seq}`,
+            attachment_url: '',
+            created_at: new Date(baseTime + b * 60000).toISOString()
+          });
+        }
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify({
+            ok: true,
+            seededClasses: roomCount,
+            seededMessages: messageCount
+          })
+        );
         return;
       }
 

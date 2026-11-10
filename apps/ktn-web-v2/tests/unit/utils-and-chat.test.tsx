@@ -18,7 +18,7 @@ import {
   parseAttachmentFromUrl,
   normalizeServerMessage,
 } from '../../src/features/chat/services/chatApi';
-import { useChatRooms } from '../../src/features/chat/hooks/useMessages';
+import { useChatRooms, useRoomMessages } from '../../src/features/chat/hooks/useMessages';
 import { useUiStore } from '../../src/stores/useUiStore';
 import { useAuthStore, DEMO_USERS } from '../../src/stores/useAuthStore';
 import { roleNavigation } from '../../src/app/navigation/navigationConfig';
@@ -546,7 +546,160 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       expect(typeof ktnApi.reportOrderPayment).toBe('function');
     });
   });
+
+  describe('9. Chat Scroll & Sliding-Window Message Retention (useRoomMessages)', () => {
+    it('retains already-loaded older messages when a sliding-window refetch returns newer messages and isolates per-room history', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      useAuthStore.setState({
+        user: {
+          id: 'student-1',
+          email: 'hoangngan@khongtunhi.com',
+          name: 'Bé Nguyễn Hoàng Ngân',
+          role: 'student',
+          roles: ['student'],
+          classCode: 'YCT2-04',
+          hasLiveClass: true,
+          hasOnlineCourses: true,
+          onlineCourses: [],
+        },
+      });
+      useUiStore.setState({ isDemoMode: false });
+
+      let pollCount = 0;
+      const getMessagesSpy = vi.spyOn(chatApi, 'getMessages').mockImplementation(async (roomId) => {
+        if (roomId === 'class:ROOM-B') {
+          return {
+            roomId: 'class:ROOM-B',
+            pinnedMessage: null,
+            messages: [
+              {
+                id: 'MSG-B-1',
+                room_id: 'class:ROOM-B',
+                sender_email: 'linh.lam@khongtunhi.com',
+                sender_name: 'Cô Lâm Mỹ Linh',
+                sender_role: 'teacher',
+                content: 'Tin nhắn riêng phòng B',
+                created_at: '2026-11-05T10:00:00.000Z',
+                status: 'sent',
+              },
+            ],
+            pagination: {
+              hasMore: false,
+              nextCursor: null,
+              oldestCreatedAt: '2026-11-05T10:00:00.000Z',
+              limit: 60,
+              totalAvailable: 1,
+            },
+          };
+        }
+        pollCount += 1;
+        if (pollCount === 1) {
+          return {
+            roomId: 'class:YCT2-04',
+            pinnedMessage: null,
+            messages: [
+              {
+                id: 'MSG-61',
+                room_id: 'class:YCT2-04',
+                sender_email: 'linh.lam@khongtunhi.com',
+                sender_name: 'Cô Lâm Mỹ Linh',
+                sender_role: 'teacher',
+                content: 'Tin nhắn đầu cửa sổ #61',
+                created_at: '2026-11-05T09:00:00.000Z',
+                status: 'sent',
+              },
+              {
+                id: 'MSG-120',
+                room_id: 'class:YCT2-04',
+                sender_email: 'hoangngan@khongtunhi.com',
+                sender_name: 'Bé Nguyễn Hoàng Ngân',
+                sender_role: 'student',
+                content: 'Tin nhắn #120',
+                created_at: '2026-11-05T09:59:00.000Z',
+                status: 'sent',
+              },
+            ],
+            pagination: {
+              hasMore: true,
+              nextCursor: '2026-11-05T09:00:00.000Z',
+              oldestCreatedAt: '2026-11-05T09:00:00.000Z',
+              limit: 60,
+              totalAvailable: 120,
+            },
+          };
+        }
+        // Poll 2 simulates sliding window dropping MSG-61 and adding MSG-121
+        return {
+          roomId: 'class:YCT2-04',
+          pinnedMessage: null,
+          messages: [
+            {
+              id: 'MSG-120',
+              room_id: 'class:YCT2-04',
+              sender_email: 'hoangngan@khongtunhi.com',
+              sender_name: 'Bé Nguyễn Hoàng Ngân',
+              sender_role: 'student',
+              content: 'Tin nhắn #120',
+              created_at: '2026-11-05T09:59:00.000Z',
+              status: 'sent',
+            },
+            {
+              id: 'MSG-121',
+              room_id: 'class:YCT2-04',
+              sender_email: 'linh.lam@khongtunhi.com',
+              sender_name: 'Cô Lâm Mỹ Linh',
+              sender_role: 'teacher',
+              content: 'Tin nhắn mới #121 từ giáo viên',
+              created_at: '2026-11-05T10:05:00.000Z',
+              status: 'sent',
+            },
+          ],
+          pagination: {
+            hasMore: true,
+            nextCursor: '2026-11-05T09:59:00.000Z',
+            oldestCreatedAt: '2026-11-05T09:59:00.000Z',
+            limit: 60,
+            totalAvailable: 121,
+          },
+        };
+      });
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      const { result, rerender } = renderHook(
+        ({ roomId }) => useRoomMessages(roomId),
+        {
+          wrapper,
+          initialProps: { roomId: 'class:YCT2-04' },
+        }
+      );
+
+      await waitFor(() => {
+        expect(result.current.messages).toHaveLength(2);
+      });
+      expect(result.current.messages.map((m) => m.id)).toEqual(['MSG-61', 'MSG-120']);
+
+      await result.current.refetch();
+      await waitFor(() => {
+        expect(result.current.messages).toHaveLength(3);
+      });
+      // MSG-61 must be retained so top scroll offset never collapses when MSG-121 arrives
+      expect(result.current.messages.map((m) => m.id)).toEqual(['MSG-61', 'MSG-120', 'MSG-121']);
+
+      // Switching to ROOM-B must not mix messages from YCT2-04
+      rerender({ roomId: 'class:ROOM-B' });
+      await waitFor(() => {
+        expect(result.current.messages.map((m) => m.id)).toEqual(['MSG-B-1']);
+      });
+
+      getMessagesSpy.mockRestore();
+    });
+  });
 });
+
 
 
 

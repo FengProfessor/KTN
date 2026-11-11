@@ -20,6 +20,8 @@ import {
   hasRoomRealMessages,
   sortChatRoomsLatestFirst,
   isRedundantAttachmentPlaceholder,
+  isImageAttachmentPlaceholder,
+  formatQuotedReplyText,
   getDisplayMessageCaption,
   formatRoomPreviewText,
   truncateFileName,
@@ -1438,6 +1440,68 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
         hasMessages: true,
       });
       expect(directImagePreview).toBe('📷 Hình ảnh');
+
+      // Server-truncated >100-char [Đã gửi ảnh: ...] without closing bracket still formats as 📷 Hình ảnh
+      const truncatedServerImagePreview = formatRoomPreviewText({
+        roomId: 'class:YCT2-04',
+        type: 'class',
+        label: 'Nhóm Lớp YCT2-04',
+        lastMessage:
+          '[Đã gửi ảnh: 1794198765519_7192996347215199736_7192996347215199736_dde7af6955926e0bfdfc7b1ba8858388.',
+        unreadCount: 0,
+        hasMessages: true,
+      });
+      expect(truncatedServerImagePreview).toBe('📷 Hình ảnh');
+
+      // Reply whose quoted text contains closing bracket ] does not leave ↩ "]
+      expect(
+        formatRoomPreviewText({
+          roomId: 'class:YCT2-04',
+          type: 'class',
+          label: 'Nhóm Lớp YCT2-04',
+          lastMessage: '[Trả lời Bé Ngân: "[Đã gửi ảnh: IMG_01.png]"]\nCô đã chấm bài!',
+          unreadCount: 0,
+          hasMessages: true,
+        })
+      ).toBe('↩ Cô đã chấm bài!');
+      expect(
+        formatRoomPreviewText({
+          roomId: 'class:YCT2-04',
+          type: 'class',
+          label: 'Nhóm Lớp YCT2-04',
+          lastMessage: '[Trả lời Bé Ngân: "[Đã gửi ảnh: IMG_01.png]"]',
+          unreadCount: 0,
+          hasMessages: true,
+        })
+      ).toBe('↩ 📷 Hình ảnh');
+
+      // Quoted reply text distinguishes image vs PDF/video placeholders
+      expect(isImageAttachmentPlaceholder('[Đã gửi ảnh: IMG_01.png]')).toBe(true);
+      expect(isImageAttachmentPlaceholder('[Đã đính kèm tệp: Giao_Trinh_YCT2_Buoi_18.pdf]')).toBe(false);
+      expect(formatQuotedReplyText('[Đã gửi ảnh: IMG_01.png]')).toBe('📷 Hình ảnh');
+      expect(formatQuotedReplyText('[Đã đính kèm tệp: Giao_Trinh_YCT2_Buoi_18.pdf]')).toBe(
+        '📎 Giao_Trinh_YCT2_Buoi_18.pdf'
+      );
+      expect(formatQuotedReplyText('[Đã gửi video: bai_hoc.mp4]')).toBe('🎬 bai_hoc.mp4');
+
+      // normalizeServerMessage handles empty-caption image reply to a bracketed quote
+      const normalizedImageReply = normalizeServerMessage({
+        id: 'MSG-REPLY-IMG-1',
+        room_id: 'class:YCT2-04',
+        sender_email: 'linh.lam@khongtunhi.com',
+        sender_name: 'Cô Lâm Mỹ Linh',
+        sender_role: 'teacher',
+        content: '[Trả lời Bé Ngân: "[Đã gửi ảnh: IMG_01.png]"]',
+        media_url: 'https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/corrected.png#kind=image&name=corrected.png',
+        created_at: '2026-11-10T10:05:00.000Z',
+      });
+      expect(normalizedImageReply.content).toBe('');
+      expect(normalizedImageReply.replyTo).toEqual({
+        id: 'quoted',
+        senderName: 'Bé Ngân',
+        content: '[Đã gửi ảnh: IMG_01.png]',
+      });
+      expect(getDisplayMessageCaption(normalizedImageReply)).toBe('');
 
       expect(
         formatCompactRoomTitle({

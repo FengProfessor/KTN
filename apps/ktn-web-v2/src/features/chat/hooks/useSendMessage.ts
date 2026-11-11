@@ -61,10 +61,16 @@ export function useSendMessage(
 
         const promoteRoomInCache = (msg: ChatMessage) => {
           const effAtt = msg.attachment || input.attachment;
-          const resolvedPreview =
+          const effReply = msg.replyTo || input.replyTo;
+          const basePreview =
             msg.content ||
             input.content ||
             (effAtt?.kind === 'image' ? '📷 Hình ảnh' : '');
+          const resolvedPreview = effReply
+            ? `[Trả lời ${effReply.senderName || 'tin nhắn'}: "${effReply.content || ''}"]${
+                basePreview ? `\n${basePreview}` : ''
+              }`
+            : basePreview;
           const roomsKey = ['chat-rooms', user?.email, isDemoMode, effectiveScenario];
           queryClient.setQueryData<ChatRoom[]>(roomsKey, (prev) => {
             const list = Array.isArray(prev) ? prev : [];

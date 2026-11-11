@@ -58,7 +58,10 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
                   expanded ? 'whitespace-pre-wrap' : 'truncate'
                 }`}
               >
-                {pinnedMessage.content}
+                {String(pinnedMessage.content || '').replace(
+                  /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm)\]/gi,
+                  '📷 Hình ảnh'
+                )}
               </p>
             </div>
           </div>

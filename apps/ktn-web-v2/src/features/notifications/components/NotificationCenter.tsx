@@ -945,7 +945,10 @@ export const NotificationCenter: React.FC = () => {
                     </div>
 
                     <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-stone-600">
-                      {String(item.body || '').replace(/\[Đã gửi ảnh:\s*[^\]]*\]/gi, '📷 Hình ảnh')}
+                      {String(item.body || '').replace(
+                        /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm)\]/gi,
+                        '📷 Hình ảnh'
+                      )}
                     </p>
                   </div>
                 </div>

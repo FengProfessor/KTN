@@ -21,7 +21,7 @@ import { detectDlpViolation, formatFileSize } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { getStoredSession } from '@/services/api/ktnApiClient';
-import { getDisplayMessageCaption, truncateFileName } from '../services/chatApi';
+import { formatQuotedReplyText, truncateFileName } from '../services/chatApi';
 
 const COMPOSER_EMOJIS = ['👋', '👍', '❤️', '🎉', '🙏', '🌟', '🐼', '📚'];
 
@@ -157,8 +157,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
     const attachmentToSend = stagedAttachment || null;
     const replyQuoteText = replyingTo
-      ? getDisplayMessageCaption(replyingTo) ||
-        (replyingTo.attachment?.kind === 'image' ? '📷 Hình ảnh' : replyingTo.content || 'Tệp đính kèm')
+      ? formatQuotedReplyText(replyingTo.content, replyingTo.attachment) || 'Tệp đính kèm'
       : '';
     const replyData = replyingTo
       ? {
@@ -238,8 +237,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               Đang trả lời {replyingTo.sender_name}
             </p>
             <p className="truncate text-stone-600">
-              {getDisplayMessageCaption(replyingTo) ||
-                (replyingTo.attachment?.kind === 'image' ? '📷 Hình ảnh' : replyingTo.content || 'Tệp đính kèm')}
+              {formatQuotedReplyText(replyingTo.content, replyingTo.attachment) || 'Tệp đính kèm'}
             </p>
           </div>
           <button

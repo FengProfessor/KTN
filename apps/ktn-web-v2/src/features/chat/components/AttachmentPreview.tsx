@@ -51,7 +51,12 @@ export const ChatImageLightbox: React.FC = () => {
   }
 
   const resolvedUrl = resolveUploadedMediaUrl(activeAttachment.url);
-  const downloadFileName = activeAttachment.name || 'ktn-image.png';
+  const rawName = String(activeAttachment.name || '').trim();
+  const downloadFileName =
+    rawName && /\.[a-z0-9]{2,5}$/i.test(rawName)
+      ? rawName
+      : (resolvedUrl.split('#')[0].split('?')[0].split('/').pop() || '').replace(/^\d{10,15}-/, '') ||
+        'ktn-image.png';
 
   const handleDownload = async (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.stopPropagation();
@@ -242,7 +247,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
         aria-label="Xem ảnh lớn"
         className={`${
           hasCaption ? 'mt-1.5 ' : ''
-        }group relative block max-h-64 sm:max-h-72 max-w-[230px] sm:max-w-[270px] cursor-zoom-in overflow-hidden rounded-xl border border-black/10 bg-stone-100 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700`}
+        }group relative block w-full min-w-[110px] max-h-64 sm:max-h-72 max-w-[230px] sm:max-w-[270px] cursor-zoom-in overflow-hidden rounded-xl border border-black/10 bg-stone-100 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700`}
       >
         <img
           data-testid="chat-image-thumbnail"
@@ -255,7 +260,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
               target.src = attachment.url;
             }
           }}
-          className="max-h-64 sm:max-h-72 w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+          className="min-h-[64px] max-h-64 sm:max-h-72 w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
         />
       </button>
     );

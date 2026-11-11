@@ -89,6 +89,55 @@ export function sortChatRoomsLatestFirst(rooms: ChatRoom[]): ChatRoom[] {
   });
 }
 
+export function isImageAttachmentPlaceholder(
+  content?: string | null,
+  attachment?: ChatAttachment | null
+): boolean {
+  const trimmed = String(content || '').trim();
+  if (
+    /^\[Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?(?:\]|$)/i.test(trimmed) ||
+    /^\[(?:Ảnh|Hình ảnh)(?: đính kèm)?(?::\s*[^\r\n]*)?(?:\]|$)/i.test(trimmed)
+  ) {
+    return true;
+  }
+  if (attachment?.kind === 'image') {
+    if (!trimmed) return true;
+    const attName = String(attachment.name || '').trim().toLowerCase();
+    if (attName && trimmed.toLowerCase() === attName) return true;
+  }
+  return false;
+}
+
+export function formatQuotedReplyText(
+  content?: string | null,
+  attachment?: ChatAttachment | null
+): string {
+  const trimmed = String(content || '').trim();
+  if (isImageAttachmentPlaceholder(trimmed, attachment)) {
+    return '📷 Hình ảnh';
+  }
+  const fileMatch = trimmed.match(/^\[Đã (?:đính kèm|gửi) (?:tệp|file):\s*([^\r\n\]]+)(?:\]|$)/i);
+  if (fileMatch) {
+    return `📎 ${fileMatch[1].trim()}`;
+  }
+  const videoMatch = trimmed.match(/^\[Đã gửi video:\s*([^\r\n\]]+)(?:\]|$)/i);
+  if (videoMatch) {
+    return `🎬 ${videoMatch[1].trim()}`;
+  }
+  if (!trimmed && attachment) {
+    if (attachment.kind === 'pdf' || attachment.kind === 'file') {
+      return `📎 ${attachment.name || 'Tài liệu đính kèm'}`;
+    }
+    if (attachment.kind === 'video') {
+      return `🎬 ${attachment.name || 'Video'}`;
+    }
+    if (attachment.kind === 'audio') {
+      return '🎤 Tin nhắn thoại';
+    }
+  }
+  return trimmed;
+}
+
 export function isRedundantAttachmentPlaceholder(
   content?: string | null,
   hasAttachment = false,
@@ -145,12 +194,12 @@ export function formatRoomPreviewText(room: ChatRoom): string {
   }
   const raw = String(room.lastMessage || '').trim();
   let preview = raw
-    .replace(/^\[Trả lời [^\]]+\]\s*/i, '↩ ')
-    .replace(/\[Đã gửi (?:ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]$/i, '📷 Hình ảnh')
-    .replace(/\[Đã đính kèm (?:ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]$/i, '📷 Hình ảnh')
-    .replace(/\[(?:Ảnh|Hình ảnh)(?: đính kèm)?\]$/i, '📷 Hình ảnh')
-    .replace(/\[Đã gửi video:\s*([^\r\n]+)\]$/i, (_m, fn) => `🎬 Video (${truncateFileName(fn, 18)})`)
-    .replace(/\[Đã đính kèm (?:tệp|file):\s*([^\r\n]+)\]$/i, (_m, fn) => `📎 ${truncateFileName(fn, 20)}`)
+    .replace(/^\[Trả lời (?:[^\]:]+:\s*"[^\r\n]*"|[^\]]+)\]\s*/i, '↩ ')
+    .replace(/\[Đã gửi (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?(?:\]|$)/i, '📷 Hình ảnh')
+    .replace(/\[Đã đính kèm (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?(?:\]|$)/i, '📷 Hình ảnh')
+    .replace(/\[(?:Ảnh|Hình ảnh)(?: đính kèm)?(?:\]|$)/i, '📷 Hình ảnh')
+    .replace(/\[Đã gửi video:\s*([^\r\n\]]+)(?:\]|$)/i, (_m, fn) => `🎬 Video (${truncateFileName(fn, 18)})`)
+    .replace(/\[Đã đính kèm (?:tệp|file):\s*([^\r\n\]]+)(?:\]|$)/i, (_m, fn) => `📎 ${truncateFileName(fn, 20)}`)
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -272,9 +321,12 @@ export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment |
       if (params.get('bytes')) sizeBytes = Number(params.get('bytes')) || undefined;
       if (params.get('mime')) mimeType = params.get('mime') || undefined;
       if (params.get('dur')) durationSec = Number(params.get('dur')) || undefined;
-    } else if (/^data:image\/|\.(png|jpg|jpeg|webp|gif)(\?|$)/i.test(s)) {
+    } else if (/^data:image\/|\.(png|jpg|jpeg|webp|gif|svg|bmp|heic)(\?|$)/i.test(s)) {
       kind = 'image';
-      name = 'Hình ảnh lớp học';
+      const rawFileName = s.split('#')[0].split('?')[0].split('/').pop() || '';
+      name = rawFileName && /\.(png|jpg|jpeg|webp|gif|svg|bmp|heic)$/i.test(rawFileName)
+        ? rawFileName.replace(/^\d{10,15}-/, '')
+        : 'Hình ảnh lớp học';
     } else if (/\.(mp4|mov|m4v)(\?|$)/i.test(s)) {
       kind = 'video';
       name = 'Video lớp học';
@@ -324,7 +376,7 @@ export function normalizeServerMessage(raw: Record<string, unknown>): ChatMessag
   let replyTo: ChatMessage['replyTo'] = null;
   let cleanContent = rawContent;
 
-  const replyMatch = rawContent.match(/^\[Trả lời ([^\]:]+): "([^"]+)"\](?:\r?\n|$)([\s\S]*)$/);
+  const replyMatch = rawContent.match(/^\[Trả lời ([^\]:]+): "([^\r\n]*)"\](?:\r?\n|$)([\s\S]*)$/);
   if (replyMatch) {
     replyTo = {
       id: 'quoted',
@@ -471,10 +523,7 @@ export const chatApi = {
     idempotent?: boolean;
   }> {
     const replyQuoteText = payload.replyTo
-      ? (isRedundantAttachmentPlaceholder(payload.replyTo.content, true)
-          ? '📷 Hình ảnh'
-          : payload.replyTo.content
-        ).slice(0, 60)
+      ? formatQuotedReplyText(payload.replyTo.content).slice(0, 60)
       : '';
     const finalContent = payload.replyTo
       ? `[Trả lời ${payload.replyTo.senderName}: "${replyQuoteText}"]${

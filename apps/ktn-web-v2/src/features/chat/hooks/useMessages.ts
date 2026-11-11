@@ -590,9 +590,12 @@ export function useRoomMessages(roomId: string | null) {
             ...r,
             hasMessages: true,
             isEphemeral: false,
-            lastMessage:
-              latestMsg.content ||
-              (latestMsg.attachment?.kind === 'image' ? '📷 Hình ảnh' : r.lastMessage),
+            lastMessage: latestMsg.replyTo
+              ? `[Trả lời ${latestMsg.replyTo.senderName || 'tin nhắn'}: "${latestMsg.replyTo.content || ''}"]${
+                  latestMsg.content ? `\n${latestMsg.content}` : ''
+                }`
+              : latestMsg.content ||
+                (latestMsg.attachment?.kind === 'image' ? '📷 Hình ảnh' : r.lastMessage),
             lastSenderName: latestMsg.sender_name || r.lastSenderName,
             lastSenderRole: latestMsg.sender_role || r.lastSenderRole,
             lastMessageId: latestMsg.id || r.lastMessageId,

@@ -13,7 +13,7 @@ import {
 import { ChatMessage } from '../types/chat.types';
 import { AttachmentPreview } from './AttachmentPreview';
 import { formatChatTimestamp, getInitials } from '@/lib/utils';
-import { getDisplayMessageCaption, isRedundantAttachmentPlaceholder } from '../services/chatApi';
+import { formatQuotedReplyText, getDisplayMessageCaption } from '../services/chatApi';
 
 const QUICK_EMOJIS = ['👍', '❤️', '👏', '🎉'];
 
@@ -53,9 +53,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const reactions = Array.isArray(message.reactions) ? message.reactions : [];
   const displayCaption = getDisplayMessageCaption(message);
   const quotedReplyText = message.replyTo?.content
-    ? isRedundantAttachmentPlaceholder(message.replyTo.content, true)
-      ? '📷 Hình ảnh'
-      : message.replyTo.content
+    ? formatQuotedReplyText(message.replyTo.content)
     : '';
   const isImageAttachment =
     message.attachment?.kind === 'image' ||

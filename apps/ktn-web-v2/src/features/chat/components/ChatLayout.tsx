@@ -14,7 +14,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { ChatMessage, ChatRoom, SendMessageInput } from '../types/chat.types';
 import { getInitials } from '@/lib/utils';
 import { getStoredSession } from '@/services/api/ktnApiClient';
-import { chatApi, normalizeVietnameseSearchText } from '../services/chatApi';
+import { chatApi, formatQuotedReplyText, normalizeVietnameseSearchText } from '../services/chatApi';
 import type { KtnStudentProfile } from '@/types/ktn.types';
 
 const DEMO_FALLBACK_STUDENTS: KtnStudentProfile[] = [
@@ -548,7 +548,10 @@ export const ChatLayout: React.FC = () => {
                 onPinMessage={(msg) =>
                   pinAnnouncement({
                     roomId: activeRoom.roomId,
-                    content: msg.content,
+                    content:
+                      formatQuotedReplyText(msg.content, msg.attachment) ||
+                      msg.content ||
+                      '📷 Hình ảnh',
                     messageId: msg.id,
                   })
                 }

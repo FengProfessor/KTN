@@ -16557,7 +16557,11 @@ export default {
               unreadCount++;
             }
           }
-          const rawLatestContent = latest ? String(latest.content || '').trim() : '';
+          const rawLatestContent = latest
+            ? String(latest.content || '')
+                .trim()
+                .replace(/\[Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]/gi, '[Ảnh đính kèm]')
+            : '';
           const latestAttUrl = latest ? String(latest.attachment_url || '').trim() : '';
           const isLatestImg =
             /[#&?]kind=image(?:&|$)/i.test(latestAttUrl) ||
@@ -16939,7 +16943,9 @@ export default {
         }
 
         const studentName = stuInfo?.name || (latest.sender_role === 'student' ? latest.sender_name : '') || stuEmail;
-        const rawPrivContent = String(latest.content || '').trim();
+        const rawPrivContent = String(latest.content || '')
+          .trim()
+          .replace(/\[Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]/gi, '[Ảnh đính kèm]');
         const privAttUrl = String(latest.attachment_url || '').trim();
         const isPrivImg =
           /[#&?]kind=image(?:&|$)/i.test(privAttUrl) ||
@@ -17228,8 +17234,8 @@ export default {
       const targetRoomKey = access.type === 'class' ? access.classCode : access.roomId;
 
       const dlpCheckText = content
-        .replace(/^\[Trả lời [^\]]+\]\s*/i, '')
-        .replace(/\[Đã (?:gửi ảnh|gửi video|gửi thu âm|đính kèm tệp): [^\]]+\]/gi, '')
+        .replace(/^\[Trả lời (?:[^\]:]+:\s*"[^\r\n]*"|[^\]]+)\]\s*/i, '')
+        .replace(/\[Đã (?:gửi ảnh|gửi video|gửi thu âm|đính kèm tệp): [^\r\n]+\]/gi, '')
         .trim();
       const dlp = inspectDlpContent(dlpCheckText);
       if (dlp.blocked) {
@@ -17471,7 +17477,15 @@ export default {
               classCode: verifiedCls || access.classCode || '',
               messageId: savedRow.id,
               title: pushTitle,
-              body: String(content || (isImageAttachment ? '📷 Hình ảnh' : '[Tệp đính kèm]')).slice(0, 80),
+              body: (() => {
+                const hasReply = /^\[Trả lời (?:[^\]:]+:\s*"[^\r\n]*"|[^\]]+)\]/i.test(content);
+                const stripped = content
+                  .replace(/^\[Trả lời (?:[^\]:]+:\s*"[^\r\n]*"|[^\]]+)\]\s*/i, '')
+                  .replace(/\[Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]/gi, '📷 Hình ảnh')
+                  .trim();
+                const coreText = stripped || (isImageAttachment ? '📷 Hình ảnh' : '[Tệp đính kèm]');
+                return `${hasReply ? '↩ ' : ''}${coreText}`.slice(0, 80);
+              })(),
               action_url: `/custom-page/so-lien-lac-test#/chat?room=${encodeURIComponent(access.roomId || targetRoomKey)}`,
               url: `/custom-page/so-lien-lac-test#/messages?roomId=${encodeURIComponent(access.roomId || targetRoomKey)}`
             },
@@ -17600,13 +17614,16 @@ export default {
         const isImgAtt = Boolean(
           attUrl && (/kind=image/i.test(attUrl) || /\.(png|jpe?g|webp|gif|bmp|heic)(?:[#?]|$)/i.test(attUrl))
         );
+        const hasReply = /^\[Trả lời (?:[^\]:]+:\s*"[^\r\n]*"|[^\]]+)\]/i.test(rawText);
+        const bodyAfterReply = rawText.replace(/^\[Trả lời (?:[^\]:]+:\s*"[^\r\n]*"|[^\]]+)\]\s*/i, '').trim();
+        const prefix = hasReply ? '↩ ' : '';
         if (
-          /^\[(?:Đã gửi ảnh:[\s\S]*|Ảnh đính kèm|Ảnh|Hình ảnh)\]$/i.test(rawText) ||
-          (!rawText && isImgAtt)
+          /^\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[\s\S]*)?|Ảnh đính kèm|Ảnh|Hình ảnh)\]$/i.test(bodyAfterReply) ||
+          (!bodyAfterReply && isImgAtt)
         ) {
-          return '📷 Hình ảnh';
+          return `${prefix}📷 Hình ảnh`;
         }
-        return (rawText || (attUrl ? '📎 Tệp đính kèm' : '')).slice(0, 60);
+        return `${prefix}${bodyAfterReply || (attUrl ? '📎 Tệp đính kèm' : '')}`.slice(0, 60);
       };
 
       if (session.role === 'student') {

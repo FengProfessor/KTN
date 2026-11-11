@@ -2806,11 +2806,12 @@ async function runSuite() {
     });
     await testOPage.waitForTimeout(300);
 
-    // Click the newest zoom button using a live Locator so optimistic-to-server swap never detaches handle
-    await testOPage.locator('[data-testid="chat-image-zoom-btn"]').last().click();
+    // Click the newest image thumbnail using a live Locator so optimistic-to-server swap never detaches handle
+    await testOPage.locator('[data-testid="chat-image-attachment"]').last().click();
     await testOPage.waitForSelector('[data-testid="chat-image-lightbox"]', {
       timeout: 5000,
     });
+    const hasLightboxDownloadBtn = await testOPage.isVisible('[data-testid="lightbox-download-btn"]');
     await testOPage.click('[data-testid="lightbox-zoom-in-btn"]');
     const zoomLevelBeforePoll = await testOPage.textContent(
       '[data-testid="lightbox-zoom-reset-btn"]'
@@ -2838,7 +2839,8 @@ async function runSuite() {
       'O4',
       'Urgent Bug 2 Fixed: Chat image upload (including camera filename with digits) renders immediately and "Phóng to" opens full-screen portal lightbox that zooms (150%) and survives 3.5s polling',
       Boolean(
-        zoomLevelBeforePoll?.includes('150%') &&
+        hasLightboxDownloadBtn &&
+          zoomLevelBeforePoll?.includes('150%') &&
           lightboxStillOpen &&
           zoomLevelAfterPoll?.includes('150%') &&
           lightboxClosed

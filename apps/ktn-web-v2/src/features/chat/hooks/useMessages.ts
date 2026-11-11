@@ -590,7 +590,9 @@ export function useRoomMessages(roomId: string | null) {
             ...r,
             hasMessages: true,
             isEphemeral: false,
-            lastMessage: latestMsg.content || r.lastMessage,
+            lastMessage:
+              latestMsg.content ||
+              (latestMsg.attachment?.kind === 'image' ? '📷 Hình ảnh' : r.lastMessage),
             lastSenderName: latestMsg.sender_name || r.lastSenderName,
             lastSenderRole: latestMsg.sender_role || r.lastSenderRole,
             lastMessageId: latestMsg.id || r.lastMessageId,

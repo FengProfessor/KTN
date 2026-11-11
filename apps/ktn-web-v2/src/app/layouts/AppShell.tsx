@@ -347,12 +347,13 @@ export const AppShell: React.FC = () => {
         }
         if (!alreadyWelcomed) {
           const latest = unreadItems[0];
+          const cleanBody = String(latest.body || '').replace(/\[Đã gửi ảnh:\s*[^\]]*\]/gi, '📷 Hình ảnh');
           addToast({
             title:
               unreadItems.length === 1
                 ? `🔔 ${latest.title}`
                 : `🔔 Bạn có ${unreadItems.length} thông báo mới`,
-            description: latest.body,
+            description: cleanBody,
             variant: 'default',
           });
         }
@@ -369,9 +370,10 @@ export const AppShell: React.FC = () => {
 
     if (newlyArrivedUnread.length > 0) {
       const topNotif = newlyArrivedUnread[0];
+      const cleanTopBody = String(topNotif.body || '').replace(/\[Đã gửi ảnh:\s*[^\]]*\]/gi, '📷 Hình ảnh');
       addToast({
         title: `🔔 ${topNotif.title}`,
-        description: topNotif.body,
+        description: cleanTopBody,
         variant: 'default',
       });
     }

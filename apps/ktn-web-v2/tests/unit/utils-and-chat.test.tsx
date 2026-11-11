@@ -26,6 +26,7 @@ import {
   shouldGroupWithPreviousMessage,
 } from '../../src/features/chat/services/chatApi';
 import { MessageBubble } from '../../src/features/chat/components/MessageBubble';
+import { ChatImageLightbox } from '../../src/features/chat/components/AttachmentPreview';
 import { MessageComposer } from '../../src/features/chat/components/MessageComposer';
 import {
   ConversationList,
@@ -1045,7 +1046,10 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
       getRoomsSpy.mockRestore();
     });
 
-    it('suppresses redundant [Đã gửi ảnh: ...] marker in MessageBubble while preserving real user captions and never mutating raw message data', () => {
+    it('suppresses redundant [Đã gửi ảnh: ...] marker in MessageBubble while preserving real user captions and never mutating raw message data', async () => {
+      if (!URL.createObjectURL) {
+        URL.createObjectURL = () => 'blob:mock-preview-url';
+      }
       const imageOnlyMsg: ChatMessage = {
         id: 'MSG-IMG-1',
         room_id: 'class:YCT2-04',
@@ -1064,9 +1068,57 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
 
       expect(getDisplayMessageCaption(imageOnlyMsg)).toBe('');
 
-      const { queryByTestId, getByTestId, unmount } = render(
+      const { queryByTestId, getByTestId, container, unmount } = render(
+        <>
+          <MessageBubble
+            message={imageOnlyMsg}
+            currentUserEmail="hoangngan@khongtunhi.com"
+            canManagePin={false}
+            onReply={() => {}}
+            onReact={() => {}}
+            onPinMessage={() => {}}
+          />
+          <ChatImageLightbox />
+        </>
+      );
+
+      const imgBtn = getByTestId('chat-image-attachment');
+      expect(imgBtn).toBeTruthy();
+      expect(queryByTestId('chat-image-zoom-btn')).toBeNull();
+      expect(queryByTestId('chat-attachment-download')).toBeNull();
+      expect(queryByTestId('chat-message-text')).toBeNull();
+      expect(container.textContent).not.toContain('IMG_20261110_bai_tap_viet_chu_han_rat_dai_001.png');
+      expect(container.textContent).not.toContain('Phóng to');
+      expect(container.textContent).not.toContain('Xem lớn');
+      expect(container.textContent).not.toContain('Tải về');
+
+      // Clicking the image thumbnail opens the Lightbox modal containing the download button
+      fireEvent.click(imgBtn);
+      expect(getByTestId('chat-image-lightbox')).toBeTruthy();
+      expect(getByTestId('lightbox-download-btn')).toBeTruthy();
+      fireEvent.click(getByTestId('lightbox-close-btn'));
+
+      // Raw message object must remain untouched
+      expect(imageOnlyMsg.content).toBe(
+        '[Đã gửi ảnh: IMG_20261110_bai_tap_viet_chu_han_rat_dai_001.png]'
+      );
+      unmount();
+
+      // PDF/Word document attachments still display filename and download link
+      const pdfMsg: ChatMessage = {
+        ...imageOnlyMsg,
+        id: 'MSG-PDF-1',
+        content: '[Đã đính kèm tệp: Giao_Trinh_YCT2_Buoi_18.pdf]',
+        attachment: {
+          kind: 'pdf',
+          url: 'https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/doc.pdf',
+          name: 'Giao_Trinh_YCT2_Buoi_18.pdf',
+          sizeLabel: '1.2 MB',
+        },
+      };
+      const renderedPdf = render(
         <MessageBubble
-          message={imageOnlyMsg}
+          message={pdfMsg}
           currentUserEmail="hoangngan@khongtunhi.com"
           canManagePin={false}
           onReply={() => {}}
@@ -1074,16 +1126,62 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
           onPinMessage={() => {}}
         />
       );
-
-      expect(getByTestId('chat-image-attachment')).toBeTruthy();
-      expect(getByTestId('chat-image-zoom-btn')).toBeTruthy();
-      expect(getByTestId('chat-attachment-download')).toBeTruthy();
-      expect(queryByTestId('chat-message-text')).toBeNull();
-      // Raw message object must remain untouched
-      expect(imageOnlyMsg.content).toBe(
-        '[Đã gửi ảnh: IMG_20261110_bai_tap_viet_chu_han_rat_dai_001.png]'
+      expect(renderedPdf.getByTestId('chat-attachment-download').textContent).toContain(
+        'Giao_Trinh_YCT'
       );
-      unmount();
+      expect(renderedPdf.getByTestId('chat-attachment-download').textContent).toContain(
+        'Buoi_18.pdf'
+      );
+      expect(renderedPdf.getByTestId('chat-attachment-download').getAttribute('title')).toBe(
+        'Giao_Trinh_YCT2_Buoi_18.pdf'
+      );
+      renderedPdf.unmount();
+
+      // MessageComposer: sends empty content ('') when sending an image without a caption, preserves caption when provided, and keeps filename marker for PDF
+      const sentPayloads: Array<{ content: string; attachmentName?: string }> = [];
+      useAuthStore.setState({ user: DEMO_USERS.student_both });
+      useUiStore.getState().setRoomDraft('class:YCT2-04', '');
+      const composerRender = render(
+        <MessageComposer
+          roomId="class:YCT2-04"
+          classCode="YCT2-04"
+          replyingTo={null}
+          isSending={false}
+          onClearReply={() => {}}
+          onSend={async (input) => {
+            sentPayloads.push({
+              content: input.content,
+              attachmentName: input.attachment?.name,
+            });
+          }}
+        />
+      );
+      const fileInput = composerRender.getByTestId('chat-file-input') as HTMLInputElement;
+      const imgFile = new File(['fake-png-bytes'], 'bai_tap_so_1.png', { type: 'image/png' });
+      fireEvent.change(fileInput, { target: { files: [imgFile] } });
+      fireEvent.click(composerRender.getByTestId('chat-send-btn'));
+      await waitFor(() => {
+        expect(sentPayloads.length).toBe(1);
+      });
+      expect(sentPayloads[0]).toEqual({
+        content: '',
+        attachmentName: 'bai_tap_so_1.png',
+      });
+
+      // Image with user caption preserves the caption
+      fireEvent.change(fileInput, { target: { files: [imgFile] } });
+      fireEvent.change(composerRender.getByTestId('chat-composer-input'), {
+        target: { value: 'Cô ơi đây là bài tập chữ Hán của con ạ' },
+      });
+      fireEvent.click(composerRender.getByTestId('chat-send-btn'));
+      await waitFor(() => {
+        expect(sentPayloads.length).toBe(2);
+      });
+      expect(sentPayloads[1]).toEqual({
+        content: 'Cô ơi đây là bài tập chữ Hán của con ạ',
+        attachmentName: 'bai_tap_so_1.png',
+      });
+      composerRender.unmount();
 
       const captionedImgMsg: ChatMessage = {
         ...imageOnlyMsg,
@@ -1327,8 +1425,19 @@ describe('KTN UI V2 — Unit & State Machine Tests', () => {
         unreadCount: 0,
         hasMessages: true,
       });
-      expect(quotedReplyImagePreview).toContain('↩ 📷 Hình ảnh');
+      expect(quotedReplyImagePreview).toBe('↩ 📷 Hình ảnh');
       expect(quotedReplyImagePreview).not.toContain('[Đã gửi ảnh:');
+      expect(quotedReplyImagePreview).not.toContain('.png');
+
+      const directImagePreview = formatRoomPreviewText({
+        roomId: 'student:hoangngan@khongtunhi.com',
+        type: 'student',
+        label: 'Bé Nguyễn Hoàng Ngân',
+        lastMessage: '[Đã gửi ảnh: IMG_20261110_rat_dai_khong_hien_ten_file.png]',
+        unreadCount: 0,
+        hasMessages: true,
+      });
+      expect(directImagePreview).toBe('📷 Hình ảnh');
 
       expect(
         formatCompactRoomTitle({

@@ -13,7 +13,7 @@ import {
 import { ChatMessage } from '../types/chat.types';
 import { AttachmentPreview } from './AttachmentPreview';
 import { formatChatTimestamp, getInitials } from '@/lib/utils';
-import { getDisplayMessageCaption } from '../services/chatApi';
+import { getDisplayMessageCaption, isRedundantAttachmentPlaceholder } from '../services/chatApi';
 
 const QUICK_EMOJIS = ['👍', '❤️', '👏', '🎉'];
 
@@ -52,6 +52,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const status = message.status || 'sent';
   const reactions = Array.isArray(message.reactions) ? message.reactions : [];
   const displayCaption = getDisplayMessageCaption(message);
+  const quotedReplyText = message.replyTo?.content
+    ? isRedundantAttachmentPlaceholder(message.replyTo.content, true)
+      ? '📷 Hình ảnh'
+      : message.replyTo.content
+    : '';
+  const isImageAttachment =
+    message.attachment?.kind === 'image' ||
+    Boolean(
+      message.attachment?.url &&
+        (/^data:image\//i.test(message.attachment.url) ||
+          /\.(png|jpe?g|gif|webp|svg|bmp|heic)(\?|$)/i.test(message.attachment.url))
+    );
+  const isImageOnlyBubble = isImageAttachment && !displayCaption && !quotedReplyText;
 
   const renderRoleBadge = () => {
     if (message.sender_role === 'teacher') {
@@ -194,7 +207,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         {/* Message Bubble */}
         <div
-          className={`relative max-w-full overflow-hidden rounded-2xl px-3.5 py-2.5 shadow-sm transition-all ${
+          className={`relative max-w-full overflow-hidden rounded-2xl ${
+            isImageOnlyBubble ? 'p-1.5 sm:p-2' : 'px-3.5 py-2.5'
+          } shadow-sm transition-all ${
             status === 'failed'
               ? 'border-2 border-red-300 bg-red-50/90 text-stone-900'
               : isOwn
@@ -203,12 +218,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           }`}
         >
           {/* Reply quote block */}
-          {message.replyTo && message.replyTo.content && (
+          {message.replyTo && quotedReplyText && (
             <div className="mb-2 rounded-lg border-l-4 border-red-700 bg-stone-900/5 px-2.5 py-1.5 text-xs">
               <p className="font-bold text-red-900">
                 Trả lời {message.replyTo.senderName || 'tin nhắn'}
               </p>
-              <p className="line-clamp-2 text-stone-600">{message.replyTo.content}</p>
+              <p className="line-clamp-2 text-stone-600">{quotedReplyText}</p>
             </div>
           )}
 
@@ -223,10 +238,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           )}
 
           {/* Attachment */}
-          <AttachmentPreview attachment={message.attachment} isOwn={isOwn} />
+          <AttachmentPreview
+            attachment={message.attachment}
+            isOwn={isOwn}
+            hasCaption={Boolean(displayCaption || quotedReplyText)}
+          />
 
           {/* Timestamp & Status Footer */}
-          <div className="mt-1.5 flex items-center justify-end gap-2 text-[11px] text-stone-500">
+          <div className="mt-1 flex items-center justify-end gap-1.5 px-0.5 text-[11px] text-stone-500">
             <span className="font-mono text-[10.5px]">
               {formatChatTimestamp(message.created_at)}
             </span>

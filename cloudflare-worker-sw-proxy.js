@@ -16557,7 +16557,15 @@ export default {
               unreadCount++;
             }
           }
-          const previewText = latest ? String(latest.content || '').slice(0, 100) : '';
+          const rawLatestContent = latest ? String(latest.content || '').trim() : '';
+          const latestAttUrl = latest ? String(latest.attachment_url || '').trim() : '';
+          const isLatestImg =
+            /[#&?]kind=image(?:&|$)/i.test(latestAttUrl) ||
+            /^data:image\//i.test(latestAttUrl) ||
+            /\.(?:png|jpe?g|gif|webp|svg|bmp|heic)(?:[?#]|$)/i.test(latestAttUrl);
+          const previewText = latest
+            ? (rawLatestContent || (isLatestImg ? '[Ảnh đính kèm]' : latestAttUrl ? '[Tệp đính kèm]' : '')).slice(0, 100)
+            : '';
           const latestAt = latest?.created_at || null;
           return {
             ...r,
@@ -16931,7 +16939,13 @@ export default {
         }
 
         const studentName = stuInfo?.name || (latest.sender_role === 'student' ? latest.sender_name : '') || stuEmail;
-        const previewText = String(latest.content || '').slice(0, 100);
+        const rawPrivContent = String(latest.content || '').trim();
+        const privAttUrl = String(latest.attachment_url || '').trim();
+        const isPrivImg =
+          /[#&?]kind=image(?:&|$)/i.test(privAttUrl) ||
+          /^data:image\//i.test(privAttUrl) ||
+          /\.(?:png|jpe?g|gif|webp|svg|bmp|heic)(?:[?#]|$)/i.test(privAttUrl);
+        const previewText = (rawPrivContent || (isPrivImg ? '[Ảnh đính kèm]' : privAttUrl ? '[Tệp đính kèm]' : '')).slice(0, 100);
         const latestAt = latest.created_at || null;
 
         threadList.push({
@@ -17290,6 +17304,10 @@ export default {
 
         // Gắn cứng room_id theo phòng đã phân quyền; class_code chỉ điền khi là phòng lớp trực tiếp (tránh lỗi FK 23503 cho phòng course:* / student:*)
         const nowIso = new Date().toISOString();
+        const isImageAttachment =
+          /[#&?]kind=image(?:&|$)/i.test(attachmentUrl) ||
+          /^data:image\//i.test(attachmentUrl) ||
+          /\.(?:png|jpe?g|gif|webp|svg|bmp|heic)(?:[?#]|$)/i.test(attachmentUrl);
         const baseMsgRecord = {
           id: deterministicId,
           room_id: targetRoomKey,
@@ -17297,7 +17315,7 @@ export default {
           sender_email: session.email,
           sender_name: session.name,
           sender_role: session.role,
-          content: content || '[Tệp đính kèm]',
+          content: content || (isImageAttachment ? '' : '[Tệp đính kèm]'),
           attachment_url: attachmentUrl,
           created_at: nowIso
         };
@@ -17453,7 +17471,7 @@ export default {
               classCode: verifiedCls || access.classCode || '',
               messageId: savedRow.id,
               title: pushTitle,
-              body: String(content || '[Tệp đính kèm]').slice(0, 80),
+              body: String(content || (isImageAttachment ? '📷 Hình ảnh' : '[Tệp đính kèm]')).slice(0, 80),
               action_url: `/custom-page/so-lien-lac-test#/chat?room=${encodeURIComponent(access.roomId || targetRoomKey)}`,
               url: `/custom-page/so-lien-lac-test#/messages?roomId=${encodeURIComponent(access.roomId || targetRoomKey)}`
             },
@@ -17576,6 +17594,20 @@ export default {
 
       const items = [];
       let scopedClassesForScheduleEvents = new Set();
+      const formatChatNotificationSnippet = (m) => {
+        const rawText = String(m?.content || '').trim();
+        const attUrl = String(m?.attachment_url || '');
+        const isImgAtt = Boolean(
+          attUrl && (/kind=image/i.test(attUrl) || /\.(png|jpe?g|webp|gif|bmp|heic)(?:[#?]|$)/i.test(attUrl))
+        );
+        if (
+          /^\[(?:Đã gửi ảnh:[\s\S]*|Ảnh đính kèm|Ảnh|Hình ảnh)\]$/i.test(rawText) ||
+          (!rawText && isImgAtt)
+        ) {
+          return '📷 Hình ảnh';
+        }
+        return (rawText || (attUrl ? '📎 Tệp đính kèm' : '')).slice(0, 60);
+      };
 
       if (session.role === 'student') {
         const stuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
@@ -17682,7 +17714,7 @@ export default {
               title: isPinned
                 ? 'Thông báo quan trọng được ghim.'
                 : 'Cô giáo vừa nhắn riêng cho em.',
-              body: `${latestMsg.sender_name || (isTeacherSender ? 'Cô giáo' : 'Bạn cùng lớp')}: ${String(latestMsg.content || '').slice(0, 60)}`,
+              body: `${latestMsg.sender_name || (isTeacherSender ? 'Cô giáo' : 'Bạn cùng lớp')}: ${formatChatNotificationSnippet(latestMsg)}`,
               actionUrl: (classCode && !isPrivate && !isCourseRoom) ? `#/lop/${classCode.toLowerCase()}/buoi/1` : '#/nhom-lop',
               createdAt: latestMsg.created_at
             });
@@ -17719,7 +17751,7 @@ export default {
             title: count > 1
               ? `${count} tin nhắn mới trong nhóm ${isCourseRoom ? 'khóa học' : ('lớp ' + normGroupKey)}`
               : (isTeacherSender ? 'Tin nhắn mới từ cô giáo.' : 'Tin nhắn mới trong nhóm lớp.'),
-            body: `${latestMsg.sender_name || (isTeacherSender ? 'Cô giáo' : 'Bạn cùng lớp')}: ${String(latestMsg.content || '').slice(0, 60)}`,
+            body: `${latestMsg.sender_name || (isTeacherSender ? 'Cô giáo' : 'Bạn cùng lớp')}: ${formatChatNotificationSnippet(latestMsg)}`,
             actionUrl: (classCode && !isCourseRoom) ? `#/lop/${classCode.toLowerCase()}/buoi/1` : '#/nhom-lop',
             createdAt: latestMsg.created_at
           });
@@ -17851,7 +17883,7 @@ export default {
             title: isPrivate
               ? 'Học sinh vừa nhắn riêng (1-1).'
               : (isAdminSender ? 'Tin nhắn mới từ Quản lý trong nhóm lớp.' : 'Tin nhắn mới từ học sinh.'),
-            body: `${m.sender_name || m.sender_email} (${normRoom}): ${String(m.content || '').slice(0, 60)}`,
+            body: `${m.sender_name || m.sender_email} (${normRoom}): ${formatChatNotificationSnippet(m)}`,
             actionUrl: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(canonicalRoomId)}`,
             createdAt: m.created_at
           });
@@ -17896,7 +17928,7 @@ export default {
             classCode: rawR,
             roomId: rawR,
             title: `Tin nhắn lớp học (${rawR || 'KTN'})`,
-            body: `${m.sender_name || m.sender_email}: ${String(m.content || '').slice(0, 60)}`,
+            body: `${m.sender_name || m.sender_email}: ${formatChatNotificationSnippet(m)}`,
             actionUrl: `/custom-page/so-lien-lac-test#/chat`,
             createdAt: m.created_at
           });

@@ -21,7 +21,7 @@ import { detectDlpViolation, formatFileSize } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { getStoredSession } from '@/services/api/ktnApiClient';
-import { truncateFileName } from '../services/chatApi';
+import { getDisplayMessageCaption, truncateFileName } from '../services/chatApi';
 
 const COMPOSER_EMOJIS = ['👋', '👍', '❤️', '🎉', '🙏', '🌟', '🐼', '📚'];
 
@@ -150,17 +150,21 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     const messageText =
       trimmed ||
       (stagedAttachment?.kind === 'image'
-        ? `[Đã gửi ảnh: ${stagedAttachment.name}]`
+        ? ''
         : stagedAttachment?.kind === 'video'
         ? `[Đã gửi video: ${stagedAttachment.name}]`
         : `[Đã đính kèm tệp: ${stagedAttachment?.name}]`);
 
     const attachmentToSend = stagedAttachment || null;
+    const replyQuoteText = replyingTo
+      ? getDisplayMessageCaption(replyingTo) ||
+        (replyingTo.attachment?.kind === 'image' ? '📷 Hình ảnh' : replyingTo.content || 'Tệp đính kèm')
+      : '';
     const replyData = replyingTo
       ? {
           id: replyingTo.id,
           senderName: replyingTo.sender_name,
-          content: replyingTo.content,
+          content: replyQuoteText,
         }
       : null;
 
@@ -233,7 +237,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               <Reply className="h-3 w-3" />
               Đang trả lời {replyingTo.sender_name}
             </p>
-            <p className="truncate text-stone-600">{replyingTo.content}</p>
+            <p className="truncate text-stone-600">
+              {getDisplayMessageCaption(replyingTo) ||
+                (replyingTo.attachment?.kind === 'image' ? '📷 Hình ảnh' : replyingTo.content || 'Tệp đính kèm')}
+            </p>
           </div>
           <button
             type="button"

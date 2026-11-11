@@ -60,6 +60,11 @@ export function useSendMessage(
         };
 
         const promoteRoomInCache = (msg: ChatMessage) => {
+          const effAtt = msg.attachment || input.attachment;
+          const resolvedPreview =
+            msg.content ||
+            input.content ||
+            (effAtt?.kind === 'image' ? '📷 Hình ảnh' : '');
           const roomsKey = ['chat-rooms', user?.email, isDemoMode, effectiveScenario];
           queryClient.setQueryData<ChatRoom[]>(roomsKey, (prev) => {
             const list = Array.isArray(prev) ? prev : [];
@@ -72,7 +77,7 @@ export function useSendMessage(
                 ...r,
                 hasMessages: true,
                 isEphemeral: false,
-                lastMessage: msg.content || input.content,
+                lastMessage: resolvedPreview,
                 lastSenderName: msg.sender_name || user?.name || user?.email,
                 lastSenderRole: msg.sender_role || user?.role,
                 lastMessageId: msg.id,
@@ -94,7 +99,7 @@ export function useSendMessage(
                   input.roomMeta?.label ||
                   (isStudent ? `Học viên (${studentEmail})` : `Phòng ${input.roomId}`),
                 shortLabel: input.roomMeta?.shortLabel || (isStudent ? '1-1' : input.roomId),
-                lastMessage: msg.content || input.content,
+                lastMessage: resolvedPreview,
                 lastSenderName: msg.sender_name || user?.name || user?.email,
                 lastSenderRole: msg.sender_role || user?.role,
                 lastMessageId: msg.id,

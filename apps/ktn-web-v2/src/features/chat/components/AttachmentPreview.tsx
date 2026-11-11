@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   FileText,
   Download,
-  Maximize2,
   X,
   Volume2,
   ZoomIn,
@@ -18,6 +17,7 @@ import { truncateFileName } from '../services/chatApi';
 interface AttachmentPreviewProps {
   attachment: ChatAttachment | null | undefined;
   isOwn?: boolean;
+  hasCaption?: boolean;
 }
 
 export const ChatImageLightbox: React.FC = () => {
@@ -51,6 +51,30 @@ export const ChatImageLightbox: React.FC = () => {
   }
 
   const resolvedUrl = resolveUploadedMediaUrl(activeAttachment.url);
+  const downloadFileName = activeAttachment.name || 'ktn-image.png';
+
+  const handleDownload = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.stopPropagation();
+    if (!resolvedUrl || resolvedUrl.startsWith('blob:') || resolvedUrl.startsWith('data:')) {
+      return;
+    }
+    e.preventDefault();
+    try {
+      const response = await fetch(resolvedUrl, { mode: 'cors', credentials: 'omit' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = downloadFileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+    } catch {
+      window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   return createPortal(
     <div
@@ -58,7 +82,7 @@ export const ChatImageLightbox: React.FC = () => {
       data-testid="chat-image-lightbox"
       role="dialog"
       aria-modal="true"
-      aria-label={activeAttachment.name || 'Xem ảnh phóng to'}
+      aria-label="Xem ảnh lớn"
       className="fixed inset-0 z-[99999] flex flex-col bg-black/90 backdrop-blur-sm"
       onClick={() => setActiveAttachment(null)}
     >
@@ -69,10 +93,10 @@ export const ChatImageLightbox: React.FC = () => {
       >
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs sm:text-sm font-bold text-white">
-            {activeAttachment.name || 'Ảnh đính kèm lớp học'}
+            Xem ảnh
           </p>
-          <p className="text-[11px] text-stone-400">
-            Bấm vào ảnh hoặc dùng nút +/- để phóng to kiểm tra bài viết • Nhấn ESC để đóng
+          <p className="hidden sm:block text-[11px] text-stone-400">
+            Bấm vào ảnh hoặc dùng nút +/- để phóng to • Nhấn ESC để đóng
           </p>
         </div>
 
@@ -113,13 +137,14 @@ export const ChatImageLightbox: React.FC = () => {
           <a
             data-testid="lightbox-download-btn"
             href={resolvedUrl}
-            download={activeAttachment.name || 'ktn-image.png'}
+            download={downloadFileName}
             target="_blank"
             rel="noreferrer"
+            onClick={handleDownload}
             className="inline-flex items-center gap-1 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
           >
             <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Tải ảnh</span>
+            <span>Tải xuống</span>
           </a>
 
           <button
@@ -146,7 +171,7 @@ export const ChatImageLightbox: React.FC = () => {
           <img
             data-testid="lightbox-image"
             src={resolvedUrl}
-            alt={activeAttachment.name || 'Ảnh phóng to'}
+            alt="Ảnh phóng to"
             onClick={() => setZoomLevel((z) => (z < 1.8 ? 2 : 1))}
             onError={(e) => {
               const target = e.currentTarget;
@@ -172,6 +197,7 @@ export const ChatImageLightbox: React.FC = () => {
 export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   attachment,
   isOwn,
+  hasCaption = true,
 }) => {
   const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
 
@@ -209,53 +235,29 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
 
   if (isImage) {
     return (
-      <div
+      <button
+        type="button"
         data-testid="chat-image-attachment"
-        className="mt-1.5 overflow-hidden rounded-xl border border-black/10 bg-stone-100"
+        onClick={handleOpenLightbox}
+        aria-label="Xem ảnh lớn"
+        className={`${
+          hasCaption ? 'mt-1.5 ' : ''
+        }group relative block max-h-64 sm:max-h-72 max-w-[230px] sm:max-w-[270px] cursor-zoom-in overflow-hidden rounded-xl border border-black/10 bg-stone-100 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700`}
       >
-        <div
-          className="group relative max-h-60 sm:max-h-64 max-w-[230px] sm:max-w-[270px] cursor-zoom-in overflow-hidden bg-stone-200/60"
-          onClick={handleOpenLightbox}
-        >
-          <img
-            src={resolvedUrl}
-            alt={attachment.name || 'Ảnh đính kèm'}
-            onError={(e) => {
-              const target = e.currentTarget;
-              if (attachment.url && target.src !== attachment.url) {
-                target.src = attachment.url;
-              }
-            }}
-            className="max-h-60 sm:max-h-64 w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-          />
-          <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1.5 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2 py-1.5">
-            <a
-              data-testid="chat-attachment-download"
-              href={resolvedUrl}
-              download={attachment.name || 'ktn-image.png'}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title={attachment.name ? `Tải ảnh: ${attachment.name}` : 'Tải ảnh gốc'}
-              className="inline-flex items-center gap-1 rounded-md bg-black/55 px-2 py-0.5 text-[10.5px] font-semibold text-white/95 backdrop-blur-xs transition-colors hover:bg-black/80"
-            >
-              <Download className="h-3 w-3 shrink-0" />
-              <span>Tải về</span>
-            </a>
-
-            <button
-              type="button"
-              data-testid="chat-image-zoom-btn"
-              onClick={handleOpenLightbox}
-              title="Phóng to ảnh"
-              className="inline-flex items-center gap-1 rounded-md bg-black/65 px-2 py-0.5 text-[10.5px] font-semibold text-white shadow-2xs backdrop-blur-xs transition-colors hover:bg-black"
-            >
-              <Maximize2 className="h-3 w-3 shrink-0" />
-              <span>Phóng to</span>
-            </button>
-          </div>
-        </div>
-      </div>
+        <img
+          data-testid="chat-image-thumbnail"
+          src={resolvedUrl}
+          alt="Hình ảnh"
+          loading="lazy"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (attachment.url && target.src !== attachment.url) {
+              target.src = attachment.url;
+            }
+          }}
+          className="max-h-64 sm:max-h-72 w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+        />
+      </button>
     );
   }
 

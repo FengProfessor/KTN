@@ -91,7 +91,8 @@ export function sortChatRoomsLatestFirst(rooms: ChatRoom[]): ChatRoom[] {
 
 export function isRedundantAttachmentPlaceholder(
   content?: string | null,
-  hasAttachment = false
+  hasAttachment = false,
+  attachmentName?: string | null
 ): boolean {
   if (!hasAttachment) return false;
   const trimmed = String(content || '').trim();
@@ -99,10 +100,13 @@ export function isRedundantAttachmentPlaceholder(
   if (/^\[Đã gửi (?:ảnh|hình ảnh|video|tệp|file|âm thanh)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
     return true;
   }
-  if (/^\[Đã đính kèm (?:tệp|file|ảnh)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
+  if (/^\[Đã đính kèm (?:tệp|file|ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
     return true;
   }
-  if (/^\[(?:Ảnh|Hình ảnh|Video|Tệp|File|Âm thanh) đính kèm\]$/i.test(trimmed)) {
+  if (/^\[(?:Ảnh|Hình ảnh|Video|Tệp|File|Âm thanh)(?: đính kèm)?(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
+    return true;
+  }
+  if (attachmentName && trimmed.toLowerCase() === String(attachmentName).trim().toLowerCase()) {
     return true;
   }
   return false;
@@ -113,7 +117,7 @@ export function getDisplayMessageCaption(
 ): string {
   const rawContent = String(message.content || '').trim();
   const hasAttachment = Boolean(message.attachment?.url || message.attachment_url);
-  if (isRedundantAttachmentPlaceholder(rawContent, hasAttachment)) {
+  if (isRedundantAttachmentPlaceholder(rawContent, hasAttachment, message.attachment?.name)) {
     return '';
   }
   return rawContent;
@@ -142,15 +146,16 @@ export function formatRoomPreviewText(room: ChatRoom): string {
   const raw = String(room.lastMessage || '').trim();
   let preview = raw
     .replace(/^\[Trả lời [^\]]+\]\s*/i, '↩ ')
-    .replace(/\[Đã gửi (?:ảnh|hình ảnh):\s*([^\r\n]+)\]$/i, (_m, fn) => `📷 Hình ảnh (${truncateFileName(fn, 18)})`)
-    .replace(/\[(?:Ảnh|Hình ảnh) đính kèm\]$/i, '📷 Hình ảnh')
+    .replace(/\[Đã gửi (?:ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]$/i, '📷 Hình ảnh')
+    .replace(/\[Đã đính kèm (?:ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]$/i, '📷 Hình ảnh')
+    .replace(/\[(?:Ảnh|Hình ảnh)(?: đính kèm)?\]$/i, '📷 Hình ảnh')
     .replace(/\[Đã gửi video:\s*([^\r\n]+)\]$/i, (_m, fn) => `🎬 Video (${truncateFileName(fn, 18)})`)
     .replace(/\[Đã đính kèm (?:tệp|file):\s*([^\r\n]+)\]$/i, (_m, fn) => `📎 ${truncateFileName(fn, 20)}`)
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!preview) {
-    preview = 'Tin nhắn mới';
+  if (!preview || preview === '↩') {
+    preview = preview === '↩' ? '↩ 📷 Hình ảnh' : '📷 Hình ảnh';
   }
 
   if (room.type !== 'student' && room.lastSenderName) {
@@ -319,14 +324,14 @@ export function normalizeServerMessage(raw: Record<string, unknown>): ChatMessag
   let replyTo: ChatMessage['replyTo'] = null;
   let cleanContent = rawContent;
 
-  const replyMatch = rawContent.match(/^\[Trả lời ([^\]:]+): "([^"]+)"\]\n([\s\S]*)$/);
+  const replyMatch = rawContent.match(/^\[Trả lời ([^\]:]+): "([^"]+)"\](?:\r?\n|$)([\s\S]*)$/);
   if (replyMatch) {
     replyTo = {
       id: 'quoted',
       senderName: replyMatch[1],
       content: replyMatch[2]
     };
-    cleanContent = replyMatch[3];
+    cleanContent = replyMatch[3].trim();
   }
 
   const serverId = String(raw.id || '');
@@ -465,8 +470,16 @@ export const chatApi = {
     serverMessageId: string;
     idempotent?: boolean;
   }> {
+    const replyQuoteText = payload.replyTo
+      ? (isRedundantAttachmentPlaceholder(payload.replyTo.content, true)
+          ? '📷 Hình ảnh'
+          : payload.replyTo.content
+        ).slice(0, 60)
+      : '';
     const finalContent = payload.replyTo
-      ? `[Trả lời ${payload.replyTo.senderName}: "${payload.replyTo.content.slice(0, 60)}"]\n${payload.content}`
+      ? `[Trả lời ${payload.replyTo.senderName}: "${replyQuoteText}"]${
+          payload.content ? `\n${payload.content}` : ''
+        }`
       : payload.content;
     const resolvedAttachment = payload.attachment
       ? await ensureRemoteAttachment(payload.attachment)

@@ -21,7 +21,15 @@ import {
   FileText,
   Sparkles,
 } from 'lucide-react';
-import { COURSE_DURATION_PRESET_OPTIONS, formatVnd } from '@/lib/utils';
+import {
+  COURSE_DURATION_PRESET_OPTIONS,
+  COURSE_DURATION_UNIT_OPTIONS,
+  buildCourseDurationPreset,
+  formatCourseDurationPresetLabel,
+  formatVnd,
+  parseCourseDurationPreset,
+  type CourseDurationUnitOption,
+} from '@/lib/utils';
 import type {
   CourseDurationPreset,
   KtnClassItem,
@@ -1149,9 +1157,9 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     </span>
                     <span className="text-[11px] font-bold text-stone-700">
                       Thời hạn học:{' '}
-                      {COURSE_DURATION_PRESET_OPTIONS.find(
-                        (o) => o.id === (order.duration_preset || order.durationPreset || 'unlimited')
-                      )?.label || 'Vĩnh viễn'}
+                      {formatCourseDurationPresetLabel(
+                        order.duration_preset || order.durationPreset || 'unlimited'
+                      )}
                       {order.limit_time || order.limitTime
                         ? ` (Hạn: ${String(order.limit_time || order.limitTime).slice(0, 10)})`
                         : ''}
@@ -1267,31 +1275,88 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 order.provisioning_status === 'partial_failure' ||
                 accountDetailedStatus === 'sync_error') && (
                 <div className="space-y-2.5">
-                  <div
-                    data-testid="order-duration-selector"
-                    className="rounded-xl border border-stone-200 bg-stone-50/80 p-2.5"
-                  >
-                    <span className="block text-[11px] font-bold text-stone-800">
-                      Thời hạn học:
-                    </span>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          data-testid={`order-duration-preset-${opt.id}`}
-                          onClick={() => setSelectedDurationPreset(opt.id)}
-                          className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
-                            selectedDurationPreset === opt.id
-                              ? 'bg-red-800 text-white shadow-2xs'
-                              : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  {(() => {
+                    const parsedOrderDur = parseCourseDurationPreset(selectedDurationPreset);
+                    return (
+                      <div
+                        data-testid="order-duration-selector"
+                        className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/80 p-2.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-stone-800">
+                            Thời hạn học:
+                          </span>
+                          <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-extrabold text-red-900">
+                            {formatCourseDurationPresetLabel(selectedDurationPreset)}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-stone-600">
+                              Số lượng (1–365)
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={365}
+                              step={1}
+                              data-testid="order-duration-value-input"
+                              disabled={parsedOrderDur.unit === 'unlimited'}
+                              value={parsedOrderDur.unit === 'unlimited' ? '' : parsedOrderDur.value}
+                              placeholder={parsedOrderDur.unit === 'unlimited' ? '—' : '1'}
+                              onChange={(e) => {
+                                const nextUnit =
+                                  parsedOrderDur.unit === 'unlimited' ? 'm' : parsedOrderDur.unit;
+                                setSelectedDurationPreset(
+                                  buildCourseDurationPreset(e.target.value, nextUnit)
+                                );
+                              }}
+                              className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800 disabled:bg-stone-100 disabled:text-stone-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-stone-600">
+                              Đơn vị (Ngày / Tuần / Tháng)
+                            </label>
+                            <select
+                              data-testid="order-duration-unit-select"
+                              value={parsedOrderDur.unit}
+                              onChange={(e) => {
+                                const nextUnit = e.target.value as CourseDurationUnitOption;
+                                setSelectedDurationPreset(
+                                  buildCourseDurationPreset(parsedOrderDur.value || 1, nextUnit)
+                                );
+                              }}
+                              className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800"
+                            >
+                              {COURSE_DURATION_UNIT_OPTIONS.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              data-testid={`order-duration-preset-${opt.id}`}
+                              onClick={() => setSelectedDurationPreset(opt.id)}
+                              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                                selectedDurationPreset === opt.id
+                                  ? 'bg-red-800 text-white shadow-2xs'
+                                  : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
@@ -1404,9 +1469,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 <strong>{order.course_name}</strong> trên email{' '}
                 <strong>{effectiveEmail}</strong> · Thời hạn học:{' '}
                 <strong>
-                  {COURSE_DURATION_PRESET_OPTIONS.find(
-                    (o) => o.id === selectedDurationPreset
-                  )?.label || 'Vĩnh viễn'}
+                  {formatCourseDurationPresetLabel(selectedDurationPreset)}
                 </strong>
                 .
               </p>

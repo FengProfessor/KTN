@@ -3821,12 +3821,20 @@ function extractIzTeachOnlineCourseIds(permData) {
 
 const VALID_COURSE_DURATION_PRESETS = new Set(['1w', '2w', '1m', '2m', '3m', 'unlimited']);
 
-function normalizeCourseDurationPreset(rawPreset) {
-  if (rawPreset === null || rawPreset === undefined || rawPreset === '') return null;
+function normalizeCourseDurationPreset(rawPreset, fallback = null) {
+  if (rawPreset === null || rawPreset === undefined || rawPreset === '') return fallback;
   const s = String(rawPreset).trim().toLowerCase();
   if (VALID_COURSE_DURATION_PRESETS.has(s)) return s;
   if (s === 'forever' || s === 'permanent' || s === 'vinh_vien') return 'unlimited';
-  return null;
+  const m = s.match(/^([1-9]\d{0,2})([dwm])$/);
+  if (m) {
+    const count = Number(m[1]);
+    const unit = m[2];
+    if (count >= 1 && count <= 365) {
+      return `${count}${unit}`;
+    }
+  }
+  return fallback;
 }
 
 function isQaTestEmail(email) {
@@ -3882,13 +3890,18 @@ function addPresetToCalendarDate(baseYmd, preset) {
   const month = Number(m[2]);
   const day = Number(m[3]);
 
-  if (normPreset === '1w' || normPreset === '2w') {
-    const addDays = normPreset === '1w' ? 7 : 14;
+  const pm = normPreset.match(/^(\d+)([dwm])$/);
+  if (!pm) return null;
+  const count = Number(pm[1]);
+  const unit = pm[2];
+
+  if (unit === 'd' || unit === 'w') {
+    const addDays = unit === 'w' ? count * 7 : count;
     const d = new Date(Date.UTC(year, month - 1, day + addDays));
     return d.toISOString().slice(0, 10);
   }
 
-  const addMonths = normPreset === '1m' ? 1 : (normPreset === '2m' ? 2 : 3);
+  const addMonths = count;
   const totalMonths = year * 12 + (month - 1) + addMonths;
   const targetYear = Math.floor(totalMonths / 12);
   const targetMonth = (totalMonths % 12) + 1;
@@ -11276,8 +11289,15 @@ export default {
       const body = await request.json().catch(() => ({}));
       const studentEmail = normalizeEmail(body.studentEmail || body.email || '');
       const courseId = String(body.courseId || '').trim().toLowerCase();
-      const rawPreset = String(body.preset ?? body.durationPreset ?? '').trim().toLowerCase();
-      const preset = VALID_COURSE_DURATION_PRESETS.has(rawPreset) ? rawPreset : null;
+      const rawPresetCandidate =
+        body.preset ??
+        body.durationPreset ??
+        (String(body.durationUnit || '').trim().toLowerCase() === 'unlimited'
+          ? 'unlimited'
+          : body.durationValue && body.durationUnit
+          ? `${body.durationValue}${body.durationUnit}`
+          : '');
+      const preset = normalizeCourseDurationPreset(rawPresetCandidate, null);
       const mode = body.mode === 'extend_from_current' ? 'extend_from_current' : 'set_from_now';
       const clientRequestId = String(body.clientRequestId || body.idempotencyKey || request.headers.get('Idempotency-Key') || '').trim();
       const reqNowMs = resolveEffectiveRequestNowMs(request, session);

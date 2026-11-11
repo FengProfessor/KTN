@@ -711,7 +711,7 @@ export interface ResolvedStudentCourse {
   userPermissionId?: string | null;
   limitTime?: string | null;
   expiresAt?: string | null;
-  durationPreset?: '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+  durationPreset?: CourseDurationPresetOptionId;
   isExpired?: boolean;
   syncStatus?: string;
   updatedAt?: string | null;
@@ -727,7 +727,7 @@ export function resolveStudentOnlineCourses(
     userPermissionId?: string | null;
     limitTime?: string | null;
     expiresAt?: string | null;
-    durationPreset?: '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+    durationPreset?: CourseDurationPresetOptionId;
     isExpired?: boolean;
     syncStatus?: string;
     updatedAt?: string | null;
@@ -760,7 +760,7 @@ export function resolveStudentOnlineCourses(
       userPermissionId?: string | null;
       limitTime?: string | null;
       expiresAt?: string | null;
-      durationPreset?: '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+      durationPreset?: CourseDurationPresetOptionId;
       isExpired?: boolean;
       syncStatus?: string;
       updatedAt?: string | null;
@@ -966,7 +966,27 @@ export function normalizeVietnameseText(raw?: string | null): string {
 
 export const normalizeViSearchText = normalizeVietnameseText;
 
-export type CourseDurationPresetOptionId = '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+export type CourseDurationPresetOptionId =
+  | '1w'
+  | '2w'
+  | '1m'
+  | '2m'
+  | '3m'
+  | 'unlimited'
+  | `${number}${'d' | 'w' | 'm'}`
+  | string;
+
+export type CourseDurationUnitOption = 'd' | 'w' | 'm' | 'unlimited';
+
+export const COURSE_DURATION_UNIT_OPTIONS: Array<{
+  id: CourseDurationUnitOption;
+  label: string;
+}> = [
+  { id: 'd', label: 'Ngày' },
+  { id: 'w', label: 'Tuần' },
+  { id: 'm', label: 'Tháng' },
+  { id: 'unlimited', label: 'Vĩnh viễn' },
+];
 
 export const COURSE_DURATION_PRESET_OPTIONS: Array<{
   id: CourseDurationPresetOptionId;
@@ -979,6 +999,41 @@ export const COURSE_DURATION_PRESET_OPTIONS: Array<{
   { id: '3m', label: '3 tháng' },
   { id: 'unlimited', label: 'Vĩnh viễn' },
 ];
+
+export function parseCourseDurationPreset(preset?: string | null): {
+  value: number;
+  unit: CourseDurationUnitOption;
+} {
+  const s = String(preset || '').trim().toLowerCase();
+  if (!s || s === 'unlimited' || s === 'forever' || s === 'permanent' || s === 'vinh_vien') {
+    return { value: 1, unit: 'unlimited' };
+  }
+  const m = s.match(/^([1-9]\d{0,2})([dwm])$/);
+  if (m) {
+    const val = Math.min(365, Math.max(1, Number(m[1])));
+    const unit = m[2] as 'd' | 'w' | 'm';
+    return { value: val, unit };
+  }
+  return { value: 1, unit: 'unlimited' };
+}
+
+export function buildCourseDurationPreset(
+  value: number | string,
+  unit: CourseDurationUnitOption
+): string {
+  if (unit === 'unlimited') return 'unlimited';
+  const num = Number(value);
+  const clamped = Number.isFinite(num) ? Math.min(365, Math.max(1, Math.floor(num))) : 1;
+  return `${clamped}${unit}`;
+}
+
+export function formatCourseDurationPresetLabel(preset?: string | null): string {
+  const parsed = parseCourseDurationPreset(preset);
+  if (parsed.unit === 'unlimited') return 'Vĩnh viễn';
+  if (parsed.unit === 'd') return `${parsed.value} ngày`;
+  if (parsed.unit === 'w') return `${parsed.value} tuần`;
+  return `${parsed.value} tháng`;
+}
 
 export function getHoChiMinhCalendarDateString(nowMs: number = Date.now()): string {
   const ts = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
@@ -1003,6 +1058,8 @@ export function addPresetToCalendarDate(
   preset: CourseDurationPresetOptionId
 ): string | null {
   if (!preset || preset === 'unlimited') return null;
+  const parsed = parseCourseDurationPreset(preset);
+  if (parsed.unit === 'unlimited') return null;
   const cleanYmd =
     extractCalendarDateFromLimitTime(baseYmd) || getHoChiMinhCalendarDateString();
   const m = cleanYmd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1011,13 +1068,13 @@ export function addPresetToCalendarDate(
   const month = Number(m[2]);
   const day = Number(m[3]);
 
-  if (preset === '1w' || preset === '2w') {
-    const addDays = preset === '1w' ? 7 : 14;
+  if (parsed.unit === 'd' || parsed.unit === 'w') {
+    const addDays = parsed.unit === 'w' ? parsed.value * 7 : parsed.value;
     const d = new Date(Date.UTC(year, month - 1, day + addDays));
     return d.toISOString().slice(0, 10);
   }
 
-  const addMonths = preset === '1m' ? 1 : preset === '2m' ? 2 : 3;
+  const addMonths = parsed.value;
   const totalMonths = year * 12 + (month - 1) + addMonths;
   const targetYear = Math.floor(totalMonths / 12);
   const targetMonth = (totalMonths % 12) + 1;

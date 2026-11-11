@@ -1,6 +1,15 @@
 export type UserRole = 'student' | 'teacher' | 'admin';
 export type StudentCase = 'both' | 'online_only' | 'sll_only' | 'unassigned';
-export type CourseDurationPreset = '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+export type CourseDurationUnit = 'd' | 'w' | 'm' | 'unlimited';
+export type CourseDurationPreset =
+  | '1w'
+  | '2w'
+  | '1m'
+  | '2m'
+  | '3m'
+  | 'unlimited'
+  | `${number}${'d' | 'w' | 'm'}`
+  | string;
 export type CourseDurationMode = 'set_from_now' | 'extend_from_current';
 
 export interface OnlineCourseEntitlement {

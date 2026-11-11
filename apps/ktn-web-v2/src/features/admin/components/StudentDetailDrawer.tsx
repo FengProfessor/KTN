@@ -26,9 +26,14 @@ import {
 } from 'lucide-react';
 import {
   COURSE_DURATION_PRESET_OPTIONS,
+  COURSE_DURATION_UNIT_OPTIONS,
+  buildCourseDurationPreset,
   computeCourseExpirationInfo,
   disambiguateCatalogCourses,
+  formatCourseDurationPresetLabel,
+  parseCourseDurationPreset,
   resolveStudentOnlineCourses,
+  type CourseDurationUnitOption,
 } from '@/lib/utils';
 import { getServerNowMs } from '@/services/api/ktnApiClient';
 import type {
@@ -978,28 +983,85 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                           data-testid={`drawer-renew-panel-${course.id}`}
                           className="mt-2.5 space-y-2 rounded-lg border border-stone-200 bg-white p-2.5 text-xs"
                         >
-                          <div>
-                            <span className="block text-[11px] font-bold text-stone-700">
-                              Thời hạn học:
-                            </span>
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
-                                <button
-                                  key={opt.id}
-                                  type="button"
-                                  data-testid={`drawer-renew-preset-${course.id}-${opt.id}`}
-                                  onClick={() => setRenewPreset(opt.id)}
-                                  className={`rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
-                                    renewPreset === opt.id
-                                      ? 'bg-red-800 text-white'
-                                      : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
-                                  }`}
-                                >
-                                  {opt.label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                          {(() => {
+                            const parsedRenew = parseCourseDurationPreset(renewPreset);
+                            return (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-bold text-stone-700">
+                                    Thời hạn học:
+                                  </span>
+                                  <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-extrabold text-red-900">
+                                    {formatCourseDurationPresetLabel(renewPreset)}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-stone-600">
+                                      Số lượng (1–365)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={365}
+                                      step={1}
+                                      data-testid={`drawer-renew-value-input-${course.id}`}
+                                      disabled={parsedRenew.unit === 'unlimited'}
+                                      value={parsedRenew.unit === 'unlimited' ? '' : parsedRenew.value}
+                                      placeholder={parsedRenew.unit === 'unlimited' ? '—' : '1'}
+                                      onChange={(e) => {
+                                        const nextUnit =
+                                          parsedRenew.unit === 'unlimited' ? 'm' : parsedRenew.unit;
+                                        setRenewPreset(
+                                          buildCourseDurationPreset(e.target.value, nextUnit)
+                                        );
+                                      }}
+                                      className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800 disabled:bg-stone-100 disabled:text-stone-400"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-stone-600">
+                                      Đơn vị (Ngày / Tuần / Tháng)
+                                    </label>
+                                    <select
+                                      data-testid={`drawer-renew-unit-select-${course.id}`}
+                                      value={parsedRenew.unit}
+                                      onChange={(e) => {
+                                        const nextUnit = e.target.value as CourseDurationUnitOption;
+                                        setRenewPreset(
+                                          buildCourseDurationPreset(parsedRenew.value || 1, nextUnit)
+                                        );
+                                      }}
+                                      className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800"
+                                    >
+                                      {COURSE_DURATION_UNIT_OPTIONS.map((u) => (
+                                        <option key={u.id} value={u.id}>
+                                          {u.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1 pt-0.5">
+                                  {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                                    <button
+                                      key={opt.id}
+                                      type="button"
+                                      data-testid={`drawer-renew-preset-${course.id}-${opt.id}`}
+                                      onClick={() => setRenewPreset(opt.id)}
+                                      className={`rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
+                                        renewPreset === opt.id
+                                          ? 'bg-red-800 text-white'
+                                          : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                                      }`}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {hasExistingLimit && renewPreset !== 'unlimited' && (
                             <div
@@ -1218,32 +1280,89 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     </div>
                   </div>
 
-                  {/* Course Duration Preset Selector */}
-                  <div
-                    data-testid="drawer-grant-duration-selector"
-                    className="rounded-xl border border-stone-200 bg-stone-50/70 p-2.5"
-                  >
-                    <span className="block text-[11px] font-bold text-stone-800">
-                      Thời hạn học:
-                    </span>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          data-testid={`drawer-grant-duration-preset-${opt.id}`}
-                          onClick={() => setGrantDurationPreset(opt.id)}
-                          className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
-                            grantDurationPreset === opt.id
-                              ? 'bg-red-800 text-white shadow-2xs'
-                              : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  {/* Course Duration 2-Column + Quick Preset Selector */}
+                  {(() => {
+                    const parsedGrant = parseCourseDurationPreset(grantDurationPreset);
+                    return (
+                      <div
+                        data-testid="drawer-grant-duration-selector"
+                        className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/70 p-2.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-stone-800">
+                            Thời hạn học:
+                          </span>
+                          <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-extrabold text-red-900">
+                            {formatCourseDurationPresetLabel(grantDurationPreset)}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-stone-600">
+                              Số lượng (1–365)
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={365}
+                              step={1}
+                              data-testid="drawer-grant-duration-value-input"
+                              disabled={parsedGrant.unit === 'unlimited'}
+                              value={parsedGrant.unit === 'unlimited' ? '' : parsedGrant.value}
+                              placeholder={parsedGrant.unit === 'unlimited' ? '—' : '1'}
+                              onChange={(e) => {
+                                const nextUnit =
+                                  parsedGrant.unit === 'unlimited' ? 'm' : parsedGrant.unit;
+                                setGrantDurationPreset(
+                                  buildCourseDurationPreset(e.target.value, nextUnit)
+                                );
+                              }}
+                              className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800 disabled:bg-stone-100 disabled:text-stone-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-stone-600">
+                              Đơn vị (Ngày / Tuần / Tháng)
+                            </label>
+                            <select
+                              data-testid="drawer-grant-duration-unit-select"
+                              value={parsedGrant.unit}
+                              onChange={(e) => {
+                                const nextUnit = e.target.value as CourseDurationUnitOption;
+                                setGrantDurationPreset(
+                                  buildCourseDurationPreset(parsedGrant.value || 1, nextUnit)
+                                );
+                              }}
+                              className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800"
+                            >
+                              {COURSE_DURATION_UNIT_OPTIONS.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              data-testid={`drawer-grant-duration-preset-${opt.id}`}
+                              onClick={() => setGrantDurationPreset(opt.id)}
+                              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                                grantDurationPreset === opt.id
+                                  ? 'bg-red-800 text-white shadow-2xs'
+                                  : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Preview Box Before Confirming Grant */}
                   {selectedCoursesPreview.length > 0 && (
@@ -1253,8 +1372,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     >
                       <p className="font-bold text-amber-900">
                         Xem trước thay đổi (Cấp thêm {selectedCoursesPreview.length} khóa học ·{' '}
-                        {COURSE_DURATION_PRESET_OPTIONS.find((o) => o.id === grantDurationPreset)
-                          ?.label || 'Vĩnh viễn'}
+                        {formatCourseDurationPresetLabel(grantDurationPreset)}
                         ):
                       </p>
                       <ul className="mt-1 space-y-0.5 text-[11px]">

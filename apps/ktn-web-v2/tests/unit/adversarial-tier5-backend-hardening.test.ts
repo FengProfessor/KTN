@@ -730,6 +730,107 @@ describe('Tier 5 Adversarial Coverage Hardening: Backend & API Resilience', () =
       expect(updated.aliases.filter((a: string) => a === '__status:deleted').length).toBe(1);
       expect(updated.aliases.filter((a: string) => a.startsWith('__deleted_at:')).length).toBe(1);
     });
+
+    it('TC-T5-DEL-STATE-11: Read-after-write verification uses matchedPatchFilter when code=eq. filter returns 0 rows and email=ilike. succeeds', async () => {
+      harness.state.faults.failTeacherPatchByCodeEq = true;
+      const fallbackEmail = 'fallback.filter@khongtunhi.com';
+      harness.state.tables.ktn_teachers.push({
+        code: 'gv-lowercase-code',
+        email: fallbackEmail,
+        name: 'Giáo Viên Fallback Filter',
+        active: true,
+        aliases: [],
+      });
+
+      const req = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(fallbackEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const res = await harness.workerModule.fetch(req, harness.env);
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.ok).toBe(true);
+      expect(data.deleted).toBe(true);
+    });
+
+    it('TC-T5-DEL-STATE-12: Aborts with 502 SUPABASE_CLASS_UNASSIGN_FAILED when unassigning an owned class in ktn_classes fails', async () => {
+      harness.state.faults.failClassesPatch = true;
+      const clsFailEmail = 'cls.unassign.fail@khongtunhi.com';
+      const clsFailCode = 'GV-CLS-FAIL';
+      harness.state.tables.ktn_teachers.push({
+        code: clsFailCode,
+        email: clsFailEmail,
+        name: 'Giáo Viên Lỗi Gỡ Lớp',
+        active: true,
+        assigned_classes: ['QA-FAIL-CLS'],
+      });
+      harness.state.tables.ktn_classes.push({
+        id: 'QA-FAIL-CLS',
+        name: 'Lớp Lỗi Gỡ Phân Công',
+        teacher_code: clsFailCode,
+        teacher_email: clsFailEmail,
+        active: true,
+      });
+
+      const req = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(clsFailEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const res = await harness.workerModule.fetch(req, harness.env);
+      const data = await res.json();
+
+      expect(res.status).toBe(502);
+      expect(data.ok).toBe(false);
+      expect(data.error).toBe('SUPABASE_CLASS_UNASSIGN_FAILED');
+      expect(data.failedClasses).toContain('QA-FAIL-CLS');
+    });
+
+    it('TC-T5-DEL-STATE-13: Re-creating a soft-deleted teacher via POST /api/ktn/teachers (with active omitted as in UI modal) restores active=true, clears revocation, and syncs classes', async () => {
+      const recreateEmail = 'recreate.deleted@khongtunhi.com';
+      harness.state.tables.ktn_teachers.push({
+        code: 'GV-RECREATE-01',
+        email: recreateEmail,
+        name: 'Giáo Viên Xóa Rồi Tạo Lại',
+        active: true,
+      });
+
+      // 1. Soft-delete teacher
+      const delReq = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(recreateEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const delRes = await harness.workerModule.fetch(delReq, harness.env);
+      expect(delRes.status).toBe(200);
+
+      // 2. Re-create via POST /api/ktn/teachers without passing active (matches AdminWorkspace saveTeacherMutation)
+      const postReq = new Request('http://localhost/api/ktn/teachers', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Giáo Viên Tạo Lại Mới',
+          email: recreateEmail,
+          phone: '0909888777',
+          assignedClasses: ['RECREATE-CLS-01'],
+        }),
+      });
+      const postRes = await harness.workerModule.fetch(postReq, harness.env);
+      const postData = await postRes.json();
+
+      expect(postRes.status).toBe(200);
+      expect(postData.ok).toBe(true);
+      expect(postData.teacher.active).toBe(true);
+      expect(postData.readyToLogin).toBe(true);
+      expect(postData.assignedClasses).toContain('RECREATE-CLS-01');
+
+      const dlpEntry = harness.state.tables.ktn_dlp_alerts.find(
+        (a: any) => a.id === `REVOKED_EMAIL_${recreateEmail}`
+      );
+      expect(dlpEntry).toBeUndefined();
+    });
   });
 
   // =========================================================================
@@ -823,6 +924,28 @@ describe('Tier 5 Adversarial Coverage Hardening: Backend & API Resilience', () =
       });
       const unitsRes = await harness.workerModule.fetch(unitsReq, harness.env);
       expect([401, 403]).toContain(unitsRes.status);
+    });
+
+    it('TC-T5-DEL-SESS-05: Aborts with 502 SUPABASE_SESSION_REVOKE_FAILED when durable session revocation in ktn_dlp_alerts fails', async () => {
+      harness.state.faults.failDlpAlertsPost = true;
+      const dlpFailEmail = 'dlp.revoke.fail@khongtunhi.com';
+      harness.state.tables.ktn_teachers.push({
+        code: 'GV-DLP-FAIL',
+        email: dlpFailEmail,
+        name: 'Giáo Viên Lỗi Thu Hồi Phiên',
+        active: true,
+      });
+
+      const req = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(dlpFailEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const res = await harness.workerModule.fetch(req, harness.env);
+      const data = await res.json();
+
+      expect(res.status).toBe(502);
+      expect(data.ok).toBe(false);
+      expect(data.error).toBe('SUPABASE_SESSION_REVOKE_FAILED');
     });
   });
 

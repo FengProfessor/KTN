@@ -10673,7 +10673,7 @@ export default {
               tEmail = normalizeEmail(resolvedTeacherRow.email);
               tCode = String(resolvedTeacherRow.code || incomingTeacherCode || '').trim() || null;
               hasValidActiveTeacher = true;
-            } else if (incomingTeacherEmail && body.teacherName) {
+            } else if (!resolvedTeacherRow && incomingTeacherEmail && body.teacherName) {
               tEmail = incomingTeacherEmail;
               tCode = incomingTeacherCode || ('GV-KTN-' + Date.now().toString().slice(-4));
               hasValidActiveTeacher = true;
@@ -12124,9 +12124,20 @@ export default {
           return jsonResponse({ ok: false, message: 'Vui lòng nhập email giáo viên hợp lệ.' }, 400);
         }
 
-        const existingTeaLookup = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(tEmail)}&limit=1`);
+        let existingTeaLookup = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(tEmail)}&limit=1`);
+        if (!existingTeaLookup?.ok || !Array.isArray(existingTeaLookup.data) || existingTeaLookup.data.length === 0) {
+          const ilikeLookup = await supabaseRequest(env, `ktn_teachers?email=ilike.${encodeURIComponent(tEmail)}&limit=1`);
+          if (ilikeLookup && ilikeLookup.ok && Array.isArray(ilikeLookup.data) && ilikeLookup.data.length > 0) {
+            existingTeaLookup = ilikeLookup;
+          }
+        }
         const existingTeaRow = (existingTeaLookup.ok && Array.isArray(existingTeaLookup.data) && existingTeaLookup.data[0]) || null;
         const existingMeta = extractTeacherMetaFromRow(existingTeaRow);
+        const existingRawAliases = Array.isArray(existingTeaRow?.aliases) ? existingTeaRow.aliases : [];
+        const wasSoftDeleted = Boolean(
+          existingRawAliases.includes('__status:deleted') ||
+          existingRawAliases.some(a => typeof a === 'string' && a.startsWith('__deleted_at:'))
+        );
 
         const tCode = String(existingTeaRow?.code || body.code || ('GV-KTN-' + Date.now().toString().slice(-4))).trim().toUpperCase();
         const tName = String(body.name || existingTeaRow?.name || tEmail.split('@')[0]).trim();
@@ -12140,7 +12151,7 @@ export default {
                 .map(c => String(c || '').trim().toUpperCase())
                 .filter(Boolean)
             ))
-          : existingMeta.assignedClasses;
+          : (wasSoftDeleted ? [] : existingMeta.assignedClasses);
         const rawAssignedCoursesInput = Array.isArray(body.assignedCourses)
           ? body.assignedCourses
           : (Array.isArray(body.assigned_courses) ? body.assigned_courses : null);
@@ -12151,13 +12162,13 @@ export default {
                 .map(c => String(c || '').trim().toLowerCase())
                 .filter(c => /^[0-9a-f]{24}$/i.test(c))
             ))
-          : existingMeta.assignedCourses;
+          : (wasSoftDeleted ? [] : existingMeta.assignedCourses);
 
         let cognitoUserId = body.cognitoUserId || existingMeta.cognitoUserId || null;
         const explicitTeacherPassword = String(body.initialPassword || body.password || '').trim();
         let initialPassword = explicitTeacherPassword.length >= 6 ? explicitTeacherPassword : null;
         let accountCreated = false;
-        let existingAccount = Boolean(existingTeaRow);
+        let existingAccount = Boolean(existingTeaRow && !wasSoftDeleted);
         let provisioningStatus = (
           existingMeta.provisioningStatus === 'ready_to_login' ||
           Boolean(existingMeta.passwordHmac) ||
@@ -12185,7 +12196,7 @@ export default {
             accountCreated = Boolean(prov.accountCreated);
             existingAccount = Boolean(prov.existingAccount);
             provisioningStatus = 'ready_to_login';
-            if (!existingTeaRow && !initialPassword) {
+            if ((!existingTeaRow || wasSoftDeleted) && !initialPassword) {
               initialPassword = await deriveDeterministicInitialPassword(env, 'TEA-' + tCode, tEmail);
               accountCreated = true;
               existingAccount = false;
@@ -12225,7 +12236,9 @@ export default {
           ...assignedCourses.map(c => `__course:${c}`)
         ];
 
-        const isActive = body.active !== undefined ? Boolean(body.active) : (existingTeaRow?.active !== undefined ? Boolean(existingTeaRow.active) : true);
+        const isActive = body.active !== undefined
+          ? Boolean(body.active)
+          : (wasSoftDeleted ? true : (existingTeaRow?.active !== undefined ? Boolean(existingTeaRow.active) : true));
         const resolvedSpecialty = String(
           body.specialty || body.specialization || existingTeaRow?.specialty || existingTeaRow?.specialization || 'Giáo viên Tiếng Trung Thiếu Nhi'
         ).trim();
@@ -12652,8 +12665,10 @@ export default {
             assigned_courses: []
           };
 
+          const rawTeacherCode = String(targetTeacher.code || '').trim();
           const patchFilters = Array.from(
             new Set([
+              rawTeacherCode ? `code=eq.${encodeURIComponent(rawTeacherCode)}` : '',
               targetCode ? `code=eq.${encodeURIComponent(targetCode)}` : '',
               targetEmail ? `email=ilike.${encodeURIComponent(targetEmail)}` : '',
               targetId ? `id=eq.${encodeURIComponent(targetId)}` : ''
@@ -12687,9 +12702,11 @@ export default {
           };
 
           let patchRes = null;
+          let matchedPatchFilter = '';
           for (const fStr of patchFilters) {
             patchRes = await executeTeacherSoftDeletePatch(fStr);
             if (patchRes && patchRes.ok && Array.isArray(patchRes.data) && patchRes.data.length > 0) {
+              matchedPatchFilter = fStr;
               break;
             }
           }
@@ -12715,10 +12732,17 @@ export default {
               ? supabaseRequest(env, `ktn_classes?teacher_code=eq.${encodeURIComponent(targetCode)}&select=id,teacher_email,teacher_code,active`)
               : Promise.resolve({ ok: true, data: [] })
           ]);
+          if (!byEmailRes || !byEmailRes.ok || !byCodeRes || !byCodeRes.ok) {
+            return jsonResponse({
+              ok: false,
+              error: 'SUPABASE_CLASS_UNASSIGN_FAILED',
+              message: 'Không thể truy vấn danh sách lớp học để gỡ phân công giáo viên.'
+            }, 502);
+          }
           const candidateClassMap = new Map();
           for (const cls of [
-            ...((byEmailRes && byEmailRes.ok && Array.isArray(byEmailRes.data)) ? byEmailRes.data : []),
-            ...((byCodeRes && byCodeRes.ok && Array.isArray(byCodeRes.data)) ? byCodeRes.data : [])
+            ...(Array.isArray(byEmailRes.data) ? byEmailRes.data : []),
+            ...(Array.isArray(byCodeRes.data) ? byCodeRes.data : [])
           ]) {
             const cid = String(cls?.id || '').trim().toUpperCase();
             if (cid && !candidateClassMap.has(cid)) {
@@ -12760,9 +12784,11 @@ export default {
           };
 
           const unassignedClasses = [];
+          const failedUnassignClasses = [];
           for (const [cid, clsRow] of candidateClassMap.entries()) {
             if (!isClassOwnedByTargetTeacher(clsRow)) continue;
-            const patchClsRes = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(cid)}`, {
+            const exactClsId = String(clsRow?.id || cid).trim();
+            let patchClsRes = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(exactClsId)}`, {
               method: 'PATCH',
               prefer: 'return=representation',
               body: {
@@ -12771,9 +12797,30 @@ export default {
                 updated_at: nowIso
               }
             });
+            if ((!patchClsRes || !patchClsRes.ok || !Array.isArray(patchClsRes.data) || patchClsRes.data.length === 0) && exactClsId !== cid) {
+              patchClsRes = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(cid)}`, {
+                method: 'PATCH',
+                prefer: 'return=representation',
+                body: {
+                  teacher_code: null,
+                  teacher_email: null,
+                  updated_at: nowIso
+                }
+              });
+            }
             if (patchClsRes && patchClsRes.ok && Array.isArray(patchClsRes.data) && patchClsRes.data.length > 0) {
               unassignedClasses.push(cid);
+            } else {
+              failedUnassignClasses.push(cid);
             }
+          }
+          if (failedUnassignClasses.length > 0) {
+            return jsonResponse({
+              ok: false,
+              error: 'SUPABASE_CLASS_UNASSIGN_FAILED',
+              failedClasses: failedUnassignClasses,
+              message: `Không thể gỡ phân công giáo viên khỏi lớp: ${failedUnassignClasses.join(', ')}.`
+            }, 502);
           }
 
           // Unassign courses strictly owned by this teacher
@@ -12844,26 +12891,68 @@ export default {
 
           // Invalidate active session tokens immediately (with required NOT NULL columns sender_name & sender_role)
           const revocationExp = String(Date.now() + 30 * 86400 * 1000);
-          const revokeAlertRes = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+          const revocationRow = {
+            id: `REVOKED_EMAIL_${targetEmail}`,
+            room_id: 'AUTH_REVOKED',
+            sender_email: targetEmail || 'deleted.teacher@khongtunhi.com',
+            sender_name: String(targetName || targetEmail || 'Deleted Teacher').trim(),
+            sender_role: 'teacher',
+            blocked_content: revocationExp,
+            reason: 'TEACHER_SOFT_DELETED_REVOKED',
+            resolved: true,
+            created_at: nowIso
+          };
+          let revokeAlertRes = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
             method: 'POST',
             prefer: 'resolution=merge-duplicates,return=representation',
-            body: {
-              id: `REVOKED_EMAIL_${targetEmail}`,
-              room_id: 'AUTH_REVOKED',
-              sender_email: targetEmail || 'deleted.teacher@khongtunhi.com',
-              sender_name: String(targetName || targetEmail || 'Deleted Teacher').trim(),
-              sender_role: 'teacher',
-              blocked_content: revocationExp,
-              reason: 'TEACHER_SOFT_DELETED_REVOKED',
-              resolved: true
-            }
+            body: revocationRow
           }).catch(() => null);
-          revokedTokenMemorySet.add(`REVOKED_EMAIL_${targetEmail}`);
-          revokedTokenMemorySet.add(`EMAIL_${targetEmail}`);
-          revokedTokenMemorySet.add(targetEmail);
-          for (const [k, v] of verifiedIzTeachTokenCache.entries()) {
-            if (normalizeEmail(v?.session?.email || '') === targetEmail) {
-              verifiedIzTeachTokenCache.delete(k);
+          if (!revokeAlertRes || !revokeAlertRes.ok) {
+            const patchRevoke = await supabaseRequest(
+              env,
+              `ktn_dlp_alerts?id=eq.${encodeURIComponent(revocationRow.id)}`,
+              {
+                method: 'PATCH',
+                prefer: 'return=representation',
+                body: {
+                  room_id: 'AUTH_REVOKED',
+                  sender_email: revocationRow.sender_email,
+                  sender_name: revocationRow.sender_name,
+                  sender_role: 'teacher',
+                  blocked_content: revocationExp,
+                  reason: 'TEACHER_SOFT_DELETED_REVOKED',
+                  resolved: true
+                }
+              }
+            ).catch(() => null);
+            if (patchRevoke && patchRevoke.ok && Array.isArray(patchRevoke.data) && patchRevoke.data.length > 0) {
+              revokeAlertRes = patchRevoke;
+            } else {
+              const postRevoke = await supabaseRequest(env, 'ktn_dlp_alerts', {
+                method: 'POST',
+                prefer: 'return=representation',
+                body: revocationRow
+              }).catch(() => null);
+              if (postRevoke && postRevoke.ok) {
+                revokeAlertRes = postRevoke;
+              }
+            }
+          }
+          if (targetEmail && (!revokeAlertRes || !revokeAlertRes.ok)) {
+            return jsonResponse({
+              ok: false,
+              error: 'SUPABASE_SESSION_REVOKE_FAILED',
+              message: 'Không thể thu hồi phiên đăng nhập của giáo viên trong cơ sở dữ liệu.'
+            }, 502);
+          }
+          if (targetEmail) {
+            revokedTokenMemorySet.add(`REVOKED_EMAIL_${targetEmail}`);
+            revokedTokenMemorySet.add(`EMAIL_${targetEmail}`);
+            revokedTokenMemorySet.add(targetEmail);
+            for (const [k, v] of verifiedIzTeachTokenCache.entries()) {
+              if (normalizeEmail(v?.session?.email || '') === targetEmail) {
+                verifiedIzTeachTokenCache.delete(k);
+              }
             }
           }
 
@@ -12905,12 +12994,45 @@ export default {
           }).catch(() => null);
 
           // Read-after-write verification
-          const verifyFilter = patchFilters[0] || '';
-          const verifyRes = await supabaseRequest(env, `ktn_teachers?${verifyFilter}&select=*&limit=1`);
-          const verifyRow = (verifyRes && verifyRes.ok && Array.isArray(verifyRes.data) && verifyRes.data[0]) || null;
+          const verifyFilterCandidates = Array.from(new Set([matchedPatchFilter, ...patchFilters].filter(Boolean)));
+          let verifyRow = null;
+          for (const vf of verifyFilterCandidates) {
+            const verifyRes = await supabaseRequest(env, `ktn_teachers?${vf}&select=*&limit=1`);
+            if (verifyRes && verifyRes.ok && Array.isArray(verifyRes.data) && verifyRes.data[0]) {
+              verifyRow = verifyRes.data[0];
+              break;
+            }
+          }
           const verifyAliases = Array.isArray(verifyRow?.aliases) ? verifyRow.aliases : [];
+          const hasDeletedStatusAlias = verifyAliases.includes('__status:deleted');
           const hasResidualClassAlias = verifyAliases.some(a => typeof a === 'string' && a.startsWith('__class:'));
-          if (!verifyRow || verifyRow.active !== false || hasResidualClassAlias) {
+          const hasResidualCourseAlias = verifyAliases.some(a => typeof a === 'string' && a.startsWith('__course:'));
+          const hasResidualAssignedClassesCol = Array.isArray(verifyRow?.assigned_classes) && verifyRow.assigned_classes.length > 0;
+          const hasResidualAssignedCoursesCol = Array.isArray(verifyRow?.assigned_courses) && verifyRow.assigned_courses.length > 0;
+
+          let hasResidualOwnedClassInDb = false;
+          if (unassignedClasses.length > 0 && targetEmail) {
+            const verifyClsRes = await supabaseRequest(
+              env,
+              `ktn_classes?teacher_email=ilike.${encodeURIComponent(targetEmail)}&select=id,teacher_email,teacher_code`
+            );
+            if (!verifyClsRes || !verifyClsRes.ok) {
+              hasResidualOwnedClassInDb = true;
+            } else if (Array.isArray(verifyClsRes.data) && verifyClsRes.data.some(c => isClassOwnedByTargetTeacher(c))) {
+              hasResidualOwnedClassInDb = true;
+            }
+          }
+
+          if (
+            !verifyRow ||
+            verifyRow.active !== false ||
+            !hasDeletedStatusAlias ||
+            hasResidualClassAlias ||
+            hasResidualCourseAlias ||
+            hasResidualAssignedClassesCol ||
+            hasResidualAssignedCoursesCol ||
+            hasResidualOwnedClassInDb
+          ) {
             return jsonResponse({
               ok: false,
               error: 'VERIFICATION_FAILED',
@@ -12919,8 +13041,7 @@ export default {
           }
 
           const sessionRevoked = Boolean(
-            (revokeAlertRes && revokeAlertRes.ok) ||
-            revokedTokenMemorySet.has(`REVOKED_EMAIL_${targetEmail}`)
+            !targetEmail || (revokeAlertRes && revokeAlertRes.ok)
           );
 
           return jsonResponse({

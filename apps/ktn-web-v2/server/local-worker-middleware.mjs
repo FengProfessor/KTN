@@ -150,7 +150,10 @@ export function createLocalWorkerHarness() {
       failHomeworkPost: false,
       failStudentCoursesPost: false,
       strictPreV3TeacherSchema: false,
-      zeroRowsTeacherPatch: false
+      zeroRowsTeacherPatch: false,
+      failTeacherPatchByCodeEq: false,
+      failClassesPatch: false,
+      failDlpAlertsPost: false
     },
     uploadedBlobs: new Map(),
     tables: {
@@ -799,6 +802,19 @@ export function createLocalWorkerHarness() {
         });
       }
 
+      if (table === 'ktn_teachers' && state.faults.failTeacherPatchByCodeEq && u.searchParams.has('code')) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (table === 'ktn_dlp_alerts' && (method === 'POST' || method === 'PATCH') && state.faults.failDlpAlertsPost) {
+        return new Response(JSON.stringify({ code: '23502', message: 'Simulated ktn_dlp_alerts write failure' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       const rows = state.tables[table] || (state.tables[table] = []);
 
       if (method === 'GET') {
@@ -917,6 +933,12 @@ export function createLocalWorkerHarness() {
         if (table === 'ktn_teachers' && state.faults.zeroRowsTeacherPatch) {
           return new Response(JSON.stringify([]), {
             status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        if (table === 'ktn_classes' && state.faults.failClassesPatch) {
+          return new Response(JSON.stringify({ code: 'PGRST500', message: 'Simulated ktn_classes PATCH failure' }), {
+            status: 500,
             headers: { 'Content-Type': 'application/json' }
           });
         }

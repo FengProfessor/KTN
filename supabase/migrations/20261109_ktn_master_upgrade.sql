@@ -603,7 +603,8 @@ BEGIN
       END AS score
     FROM public.ktn_teachers t
     WHERE
-      (
+      NOT (COALESCE(t.aliases, '[]'::jsonb) @> '["__status:deleted"]'::jsonb)
+      AND (
         v_status = '' OR v_status = 'all'
         OR (v_status = 'active' AND COALESCE(t.active, true) = true)
         OR (v_status IN ('inactive', 'locked', 'suspended', 'disabled') AND COALESCE(t.active, true) = false)

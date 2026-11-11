@@ -148,7 +148,9 @@ export function createLocalWorkerHarness() {
       failMessagesPost: false,
       failMessagesGet: false,
       failHomeworkPost: false,
-      failStudentCoursesPost: false
+      failStudentCoursesPost: false,
+      strictPreV3TeacherSchema: false,
+      zeroRowsTeacherPatch: false
     },
     uploadedBlobs: new Map(),
     tables: {
@@ -893,6 +895,31 @@ export function createLocalWorkerHarness() {
 
       if (method === 'PATCH') {
         const patch = init.body ? JSON.parse(init.body) : {};
+        if (
+          table === 'ktn_teachers' &&
+          state.faults.strictPreV3TeacherSchema &&
+          (Object.prototype.hasOwnProperty.call(patch, 'assigned_classes') ||
+            Object.prototype.hasOwnProperty.call(patch, 'assigned_courses'))
+        ) {
+          const missingCol = Object.prototype.hasOwnProperty.call(patch, 'assigned_classes')
+            ? 'assigned_classes'
+            : 'assigned_courses';
+          return new Response(
+            JSON.stringify({
+              code: 'PGRST204',
+              details: null,
+              hint: null,
+              message: `Could not find the '${missingCol}' column of 'ktn_teachers' in the schema cache`
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (table === 'ktn_teachers' && state.faults.zeroRowsTeacherPatch) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
         const matched = rows.filter(r => matchQueryFilters(r, u.searchParams));
         matched.forEach(r => Object.assign(r, patch));
         return new Response(JSON.stringify(matched), {

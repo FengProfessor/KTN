@@ -12291,6 +12291,17 @@ export default {
           }, 502);
         }
 
+        if (isActive && tEmail) {
+          revokedTokenMemorySet.delete(`REVOKED_EMAIL_${tEmail}`);
+          revokedTokenMemorySet.delete(`EMAIL_${tEmail}`);
+          revokedTokenMemorySet.delete(tEmail);
+          await supabaseRequest(
+            env,
+            `ktn_dlp_alerts?id=eq.${encodeURIComponent(`REVOKED_EMAIL_${tEmail}`)}&room_id=eq.AUTH_REVOKED`,
+            { method: 'DELETE', prefer: 'return=minimal' }
+          ).catch(() => null);
+        }
+
         // Thu hồi các lớp cũ từng gắn với tEmail nhưng không còn nằm trong assignedClasses (hoặc khi giáo viên bị khóa active=false)
         if (hasExplicitAssignedClasses || !isActive) {
           const prevClassesRes = await supabaseRequest(
@@ -12566,16 +12577,24 @@ export default {
         const isEmailTarget = rawTargetId.includes('@');
         const lookupQuery = isEmailTarget
           ? `ktn_teachers?email=ilike.${encodeURIComponent(rawTargetId)}&limit=1`
-          : `ktn_teachers?code=eq.${encodeURIComponent(rawTargetId)}&limit=1`;
+          : `ktn_teachers?code=eq.${encodeURIComponent(rawTargetId.toUpperCase())}&limit=1`;
         const teaLookupRes = await supabaseRequest(env, lookupQuery);
         let targetTeacher = (teaLookupRes && teaLookupRes.ok && Array.isArray(teaLookupRes.data) && teaLookupRes.data[0]) || null;
-        if (!targetTeacher && !isEmailTarget) {
-          const idFallback = await supabaseRequest(env, `ktn_teachers?id=eq.${encodeURIComponent(rawTargetId)}&limit=1`);
-          targetTeacher = (idFallback && idFallback.ok && Array.isArray(idFallback.data) && idFallback.data[0]) || null;
+        if (!targetTeacher && !isEmailTarget && rawTargetId !== rawTargetId.toUpperCase()) {
+          const codeIlikeFallback = await supabaseRequest(env, `ktn_teachers?code=ilike.${encodeURIComponent(rawTargetId)}&limit=1`);
+          targetTeacher = (codeIlikeFallback && codeIlikeFallback.ok && Array.isArray(codeIlikeFallback.data) && codeIlikeFallback.data[0]) || null;
+        }
+        if (!targetTeacher && isEmailTarget && queryCode) {
+          const codeFallback = await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(queryCode)}&limit=1`);
+          targetTeacher = (codeFallback && codeFallback.ok && Array.isArray(codeFallback.data) && codeFallback.data[0]) || null;
         }
         if (!targetTeacher && !isEmailTarget) {
           const emailFallback = await supabaseRequest(env, `ktn_teachers?email=ilike.${encodeURIComponent(rawTargetId)}&limit=1`);
           targetTeacher = (emailFallback && emailFallback.ok && Array.isArray(emailFallback.data) && emailFallback.data[0]) || null;
+        }
+        if (!targetTeacher && !isEmailTarget) {
+          const idFallback = await supabaseRequest(env, `ktn_teachers?id=eq.${encodeURIComponent(rawTargetId)}&limit=1`);
+          targetTeacher = (idFallback && idFallback.ok && Array.isArray(idFallback.data) && idFallback.data[0]) || null;
         }
         if (!targetTeacher) {
           return jsonResponse({
@@ -12598,128 +12617,242 @@ export default {
           }, 400);
         }
 
-        return await runWithHomeworkConcurrencyLock('TEACHER_MUTATE_' + targetEmail, async () => {
+        return await runWithHomeworkConcurrencyLock('TEACHER_MUTATE_' + (targetEmail || targetCode || rawTargetId), async () => {
           const nowIso = new Date().toISOString();
+          const tMetaBeforeDelete = extractTeacherMetaFromRow(targetTeacher);
           const existingAliases = Array.isArray(targetTeacher.aliases) ? targetTeacher.aliases : [];
-          const cleanAliases = existingAliases.filter(a => typeof a === 'string' && !a.startsWith('__status:'));
-          cleanAliases.push('__status:deleted', `__deleted_at:${nowIso}`, `__deleted_by:${normalizeEmail(session.email || '')}`);
+          const existingDeletedAt = existingAliases.find(a => typeof a === 'string' && a.startsWith('__deleted_at:'));
+          const existingDeletedBy = existingAliases.find(a => typeof a === 'string' && a.startsWith('__deleted_by:'));
+          const cleanAliases = existingAliases.filter(
+            a =>
+              typeof a === 'string' &&
+              !a.startsWith('__status:') &&
+              !a.startsWith('__class:') &&
+              !a.startsWith('__course:') &&
+              !a.startsWith('__deleted_at:') &&
+              !a.startsWith('__deleted_by:')
+          );
+          cleanAliases.push(
+            '__status:deleted',
+            existingDeletedAt || `__deleted_at:${nowIso}`,
+            existingDeletedBy || `__deleted_by:${normalizeEmail(session.email || '')}`
+          );
 
-          const patchBody = {
+          const basePatchBody = {
             active: false,
-            assigned_classes: [],
-            assigned_courses: [],
             aliases: cleanAliases,
             updated_at: nowIso
           };
+          const v3PatchBody = {
+            ...basePatchBody,
+            assigned_classes: []
+          };
+          const fullPatchBody = {
+            ...v3PatchBody,
+            assigned_courses: []
+          };
 
-          const patchFilter = targetCode
-            ? `code=eq.${encodeURIComponent(targetCode)}`
-            : targetEmail
-              ? `email=ilike.${encodeURIComponent(targetEmail)}`
-              : targetId
-                ? `id=eq.${encodeURIComponent(targetId)}`
-                : '';
-
-          const patchRes = await supabaseRequest(
-            env,
-            `ktn_teachers?${patchFilter}`,
-            {
-              method: 'PATCH',
-              body: patchBody
-            }
+          const patchFilters = Array.from(
+            new Set([
+              targetCode ? `code=eq.${encodeURIComponent(targetCode)}` : '',
+              targetEmail ? `email=ilike.${encodeURIComponent(targetEmail)}` : '',
+              targetId ? `id=eq.${encodeURIComponent(targetId)}` : ''
+            ].filter(Boolean))
           );
-          if (!patchRes || !patchRes.ok) {
+
+          const executeTeacherSoftDeletePatch = async (filterStr) => {
+            let res = await supabaseRequest(env, `ktn_teachers?${filterStr}`, {
+              method: 'PATCH',
+              prefer: 'return=representation',
+              body: fullPatchBody
+            });
+            if ((!res || !res.ok) && res?.status === 400) {
+              const errMsg = String(res?.data?.message || '');
+              if (!errMsg.includes('assigned_classes')) {
+                res = await supabaseRequest(env, `ktn_teachers?${filterStr}`, {
+                  method: 'PATCH',
+                  prefer: 'return=representation',
+                  body: v3PatchBody
+                });
+              }
+            }
+            if ((!res || !res.ok) && res?.status === 400) {
+              res = await supabaseRequest(env, `ktn_teachers?${filterStr}`, {
+                method: 'PATCH',
+                prefer: 'return=representation',
+                body: basePatchBody
+              });
+            }
+            return res;
+          };
+
+          let patchRes = null;
+          for (const fStr of patchFilters) {
+            patchRes = await executeTeacherSoftDeletePatch(fStr);
+            if (patchRes && patchRes.ok && Array.isArray(patchRes.data) && patchRes.data.length > 0) {
+              break;
+            }
+          }
+
+          const patchedRowsCount = (patchRes && patchRes.ok && Array.isArray(patchRes.data)) ? patchRes.data.length : 0;
+          if (!patchRes || !patchRes.ok || patchedRowsCount === 0) {
             return jsonResponse({
               ok: false,
               error: 'SUPABASE_TEACHER_SOFT_DELETE_FAILED',
+              supabaseStatus: patchRes?.status || 502,
+              supabaseErrorCode: patchRes?.data?.code || (patchRes?.ok && patchedRowsCount === 0 ? 'ZERO_ROWS_UPDATED' : null),
+              supabaseMessage: patchRes?.data?.message || null,
               message: 'Không thể cập nhật trạng thái xóa giáo viên trong Supabase.'
             }, 502);
           }
 
-          // Unassign classes
+          // Unassign classes strictly owned by this teacher (never unassign classes already reassigned to another teacher)
           const [byEmailRes, byCodeRes] = await Promise.all([
-            supabaseRequest(env, `ktn_classes?teacher_email=eq.${encodeURIComponent(targetEmail)}&select=id`),
-            targetCode ? supabaseRequest(env, `ktn_classes?teacher_code=eq.${encodeURIComponent(targetCode)}&select=id`) : Promise.resolve({ ok: true, data: [] })
+            targetEmail
+              ? supabaseRequest(env, `ktn_classes?teacher_email=ilike.${encodeURIComponent(targetEmail)}&select=id,teacher_email,teacher_code,active`)
+              : Promise.resolve({ ok: true, data: [] }),
+            targetCode
+              ? supabaseRequest(env, `ktn_classes?teacher_code=eq.${encodeURIComponent(targetCode)}&select=id,teacher_email,teacher_code,active`)
+              : Promise.resolve({ ok: true, data: [] })
           ]);
-          const matchedClasses = [
+          const candidateClassMap = new Map();
+          for (const cls of [
             ...((byEmailRes && byEmailRes.ok && Array.isArray(byEmailRes.data)) ? byEmailRes.data : []),
             ...((byCodeRes && byCodeRes.ok && Array.isArray(byCodeRes.data)) ? byCodeRes.data : [])
-          ];
-          const unassignedClasses = [];
-          for (const cls of matchedClasses) {
+          ]) {
             const cid = String(cls?.id || '').trim().toUpperCase();
-            if (cid && !unassignedClasses.includes(cid)) {
-              await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(cid)}`, {
-                method: 'PATCH',
-                body: {
-                  teacher_code: null,
-                  teacher_email: null,
-                  updated_at: nowIso
-                }
-              });
-              unassignedClasses.push(cid);
-            }
-          }
-          const metaClasses = Array.isArray(targetTeacher.assigned_classes) ? targetTeacher.assigned_classes : [];
-          for (const cid of metaClasses) {
-            const cleanCid = String(cid || '').trim().toUpperCase();
-            if (cleanCid && !unassignedClasses.includes(cleanCid)) {
-              await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(cleanCid)}`, {
-                method: 'PATCH',
-                body: {
-                  teacher_code: null,
-                  teacher_email: null,
-                  updated_at: nowIso
-                }
-              });
-              unassignedClasses.push(cleanCid);
+            if (cid && !candidateClassMap.has(cid)) {
+              candidateClassMap.set(cid, cls);
             }
           }
 
-          // Unassign courses
-          const courseLookupRes = await supabaseRequest(
-            env,
-            `ktn_courses?teacher_email=eq.${encodeURIComponent(targetEmail)}&select=course_id`
+          const metaClasses = Array.from(
+            new Set([
+              ...(Array.isArray(targetTeacher.assigned_classes) ? targetTeacher.assigned_classes : []),
+              ...(Array.isArray(tMetaBeforeDelete.assignedClasses) ? tMetaBeforeDelete.assignedClasses : [])
+            ])
           );
+          for (const rawCid of metaClasses) {
+            const cleanCid = String(rawCid || '').trim().toUpperCase();
+            if (cleanCid && !candidateClassMap.has(cleanCid)) {
+              const clsCheck = await supabaseRequest(
+                env,
+                `ktn_classes?id=eq.${encodeURIComponent(cleanCid)}&select=id,teacher_email,teacher_code,active&limit=1`
+              );
+              const clsRow = (clsCheck && clsCheck.ok && Array.isArray(clsCheck.data) && clsCheck.data[0]) || null;
+              if (clsRow) {
+                candidateClassMap.set(cleanCid, clsRow);
+              }
+            }
+          }
+
+          const isClassOwnedByTargetTeacher = (clsRow) => {
+            if (!clsRow) return false;
+            const clsEmail = normalizeEmail(clsRow.teacher_email || '');
+            const clsCode = String(clsRow.teacher_code || '').trim().toUpperCase();
+            if (clsEmail) {
+              return Boolean(targetEmail && clsEmail === targetEmail);
+            }
+            if (clsCode) {
+              return Boolean(targetCode && clsCode === targetCode);
+            }
+            return false;
+          };
+
+          const unassignedClasses = [];
+          for (const [cid, clsRow] of candidateClassMap.entries()) {
+            if (!isClassOwnedByTargetTeacher(clsRow)) continue;
+            const patchClsRes = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(cid)}`, {
+              method: 'PATCH',
+              prefer: 'return=representation',
+              body: {
+                teacher_code: null,
+                teacher_email: null,
+                updated_at: nowIso
+              }
+            });
+            if (patchClsRes && patchClsRes.ok && Array.isArray(patchClsRes.data) && patchClsRes.data.length > 0) {
+              unassignedClasses.push(cid);
+            }
+          }
+
+          // Unassign courses strictly owned by this teacher
+          const courseLookupRes = targetEmail
+            ? await supabaseRequest(
+                env,
+                `ktn_courses?teacher_email=ilike.${encodeURIComponent(targetEmail)}&select=course_id,teacher_email`
+              ).catch(() => ({ ok: false, data: [] }))
+            : { ok: false, data: [] };
           const matchedCourses = (courseLookupRes && courseLookupRes.ok && Array.isArray(courseLookupRes.data)) ? courseLookupRes.data : [];
           const unassignedCourses = [];
           for (const crs of matchedCourses) {
             const crsId = String(crs?.course_id || '').trim();
-            if (crsId && !unassignedCourses.includes(crsId)) {
-              await supabaseRequest(env, `ktn_courses?course_id=eq.${encodeURIComponent(crsId)}`, {
-                method: 'PATCH',
-                body: {
-                  teacher_email: null,
-                  updated_at: nowIso
+            const crsOwner = normalizeEmail(crs?.teacher_email || '');
+            if (crsId && (!crsOwner || crsOwner === targetEmail) && !unassignedCourses.includes(crsId)) {
+              const patchCrsRes = await supabaseRequest(
+                env,
+                `ktn_courses?course_id=eq.${encodeURIComponent(crsId)}`,
+                {
+                  method: 'PATCH',
+                  prefer: 'return=representation',
+                  body: {
+                    teacher_email: null,
+                    updated_at: nowIso
+                  }
                 }
-              });
-              unassignedCourses.push(crsId);
+              ).catch(() => ({ ok: false }));
+              if (patchCrsRes && patchCrsRes.ok) {
+                unassignedCourses.push(crsId);
+              }
             }
           }
-          const metaCourses = Array.isArray(targetTeacher.assigned_courses) ? targetTeacher.assigned_courses : [];
+          const metaCourses = Array.from(
+            new Set([
+              ...(Array.isArray(targetTeacher.assigned_courses) ? targetTeacher.assigned_courses : []),
+              ...(Array.isArray(tMetaBeforeDelete.assignedCourses) ? tMetaBeforeDelete.assignedCourses : [])
+            ])
+          );
           for (const crsId of metaCourses) {
             const cleanCrsId = String(crsId || '').trim();
-            if (cleanCrsId && !unassignedCourses.includes(cleanCrsId)) {
-              await supabaseRequest(env, `ktn_courses?course_id=eq.${encodeURIComponent(cleanCrsId)}`, {
-                method: 'PATCH',
-                body: {
-                  teacher_email: null,
-                  updated_at: nowIso
-                }
-              });
+            if (!cleanCrsId || unassignedCourses.includes(cleanCrsId)) continue;
+            const crsCheck = await supabaseRequest(
+              env,
+              `ktn_courses?course_id=eq.${encodeURIComponent(cleanCrsId)}&select=course_id,teacher_email&limit=1`
+            ).catch(() => ({ ok: false, data: [] }));
+            const crsRow = (crsCheck && crsCheck.ok && Array.isArray(crsCheck.data) && crsCheck.data[0]) || null;
+            if (crsRow) {
+              const crsOwner = normalizeEmail(crsRow.teacher_email || '');
+              if (crsOwner && crsOwner !== targetEmail) {
+                // Reassigned to another teacher — do not unassign
+                continue;
+              }
+              if (crsOwner && crsOwner === targetEmail) {
+                await supabaseRequest(env, `ktn_courses?course_id=eq.${encodeURIComponent(cleanCrsId)}`, {
+                  method: 'PATCH',
+                  prefer: 'return=representation',
+                  body: {
+                    teacher_email: null,
+                    updated_at: nowIso
+                  }
+                }).catch(() => null);
+              }
+              unassignedCourses.push(cleanCrsId);
+            } else {
               unassignedCourses.push(cleanCrsId);
             }
           }
 
-          // Invalidate active session tokens immediately
+          // Invalidate active session tokens immediately (with required NOT NULL columns sender_name & sender_role)
           const revocationExp = String(Date.now() + 30 * 86400 * 1000);
-          await supabaseRequest(env, 'ktn_dlp_alerts', {
+          const revokeAlertRes = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
             method: 'POST',
-            prefer: 'resolution=merge-duplicates,return=minimal',
+            prefer: 'resolution=merge-duplicates,return=representation',
             body: {
               id: `REVOKED_EMAIL_${targetEmail}`,
               room_id: 'AUTH_REVOKED',
-              sender_email: targetEmail,
+              sender_email: targetEmail || 'deleted.teacher@khongtunhi.com',
+              sender_name: String(targetName || targetEmail || 'Deleted Teacher').trim(),
+              sender_role: 'teacher',
               blocked_content: revocationExp,
               reason: 'TEACHER_SOFT_DELETED_REVOKED',
               resolved: true
@@ -12737,8 +12870,7 @@ export default {
           // Graceful izTeach upstream sync
           let syncStatus = 'synced';
           try {
-            const tMeta = extractTeacherMetaFromRow(targetTeacher);
-            const cognitoUid = tMeta.cognitoUserId || targetTeacher.cognito_user_id || null;
+            const cognitoUid = tMetaBeforeDelete.cognitoUserId || targetTeacher.cognito_user_id || null;
             if (unassignedCourses.length > 0 || cognitoUid) {
               const izRes = await revokeStudentCoursesOnIzTeach(env, {
                 email: targetEmail,
@@ -12773,22 +12905,23 @@ export default {
           }).catch(() => null);
 
           // Read-after-write verification
-          const verifyFilter = targetCode
-            ? `code=eq.${encodeURIComponent(targetCode)}`
-            : targetEmail
-              ? `email=ilike.${encodeURIComponent(targetEmail)}`
-              : targetId
-                ? `id=eq.${encodeURIComponent(targetId)}`
-                : '';
-          const verifyRes = await supabaseRequest(env, `ktn_teachers?${verifyFilter}&select=active&limit=1`);
+          const verifyFilter = patchFilters[0] || '';
+          const verifyRes = await supabaseRequest(env, `ktn_teachers?${verifyFilter}&select=*&limit=1`);
           const verifyRow = (verifyRes && verifyRes.ok && Array.isArray(verifyRes.data) && verifyRes.data[0]) || null;
-          if (!verifyRow || verifyRow.active !== false) {
+          const verifyAliases = Array.isArray(verifyRow?.aliases) ? verifyRow.aliases : [];
+          const hasResidualClassAlias = verifyAliases.some(a => typeof a === 'string' && a.startsWith('__class:'));
+          if (!verifyRow || verifyRow.active !== false || hasResidualClassAlias) {
             return jsonResponse({
               ok: false,
               error: 'VERIFICATION_FAILED',
               message: 'Không thể xác minh trạng thái soft-delete sau khi ghi cơ sở dữ liệu.'
             }, 500);
           }
+
+          const sessionRevoked = Boolean(
+            (revokeAlertRes && revokeAlertRes.ok) ||
+            revokedTokenMemorySet.has(`REVOKED_EMAIL_${targetEmail}`)
+          );
 
           return jsonResponse({
             ok: true,
@@ -12800,7 +12933,7 @@ export default {
             unassignedClasses,
             unassignedCoursesCount: unassignedCourses.length,
             unassignedCourses,
-            sessionRevoked: true,
+            sessionRevoked,
             syncStatus,
             message: syncStatus === 'needs_sync'
               ? `Đã xóa giáo viên ${targetName} và gỡ phân công khỏi ${unassignedClasses.length} lớp, nhưng đồng bộ izTeach cần kiểm tra lại.`

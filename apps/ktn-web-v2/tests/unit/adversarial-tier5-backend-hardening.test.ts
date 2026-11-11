@@ -581,6 +581,155 @@ describe('Tier 5 Adversarial Coverage Hardening: Backend & API Resilience', () =
       expect(harness.state.tables.ktn_homeworks.length).toBe(initialHomeworksCount);
       expect(harness.state.tables.ktn_students.length).toBe(initialStudentsCount);
     });
+
+    it('TC-T5-DEL-STATE-07: Production pre-V3 schema fallback (PGRST204 missing assigned_classes/assigned_courses): falls back to active+aliases+updated_at and strips __class:/__course: tags', async () => {
+      harness.state.faults.strictPreV3TeacherSchema = true;
+      const prodEmail = 'prod.schema.qa@khongtunhi.com';
+      const prodCode = 'GV-PROD-SCHEMA';
+
+      harness.state.tables.ktn_teachers.push({
+        code: prodCode,
+        email: prodEmail,
+        name: 'Giáo Viên Prod Schema',
+        active: true,
+        aliases: [
+          '__status:ready_to_login',
+          '__class:QA-PROD-CLS',
+          '__course:6adadba969897b0002482ca5',
+          'nickname_gv',
+        ],
+      });
+      harness.state.tables.ktn_classes.push({
+        id: 'QA-PROD-CLS',
+        name: 'Lớp QA Prod Schema',
+        teacher_code: prodCode,
+        teacher_email: prodEmail,
+        active: true,
+      });
+
+      const req = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(prodEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const res = await harness.workerModule.fetch(req, harness.env);
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.ok).toBe(true);
+      expect(data.deleted).toBe(true);
+      expect(data.unassignedClasses).toContain('QA-PROD-CLS');
+      expect(data.unassignedCourses).toContain('6adadba969897b0002482ca5');
+
+      const updated = harness.state.tables.ktn_teachers.find((t: any) => t.email === prodEmail);
+      expect(updated.active).toBe(false);
+      expect(updated.aliases).toContain('__status:deleted');
+      expect(updated.aliases).toContain('nickname_gv');
+      expect(updated.aliases.some((a: string) => a.startsWith('__class:'))).toBe(false);
+      expect(updated.aliases.some((a: string) => a.startsWith('__course:'))).toBe(false);
+
+      const cls = harness.state.tables.ktn_classes.find((c: any) => c.id === 'QA-PROD-CLS');
+      expect(cls.teacher_email).toBeNull();
+      expect(cls.teacher_code).toBeNull();
+    });
+
+    it('TC-T5-DEL-STATE-08: Rejects PATCH HTTP 200 with 0 updated rows as SUPABASE_TEACHER_SOFT_DELETE_FAILED (ZERO_ROWS_UPDATED)', async () => {
+      harness.state.faults.zeroRowsTeacherPatch = true;
+      const zeroEmail = 'zero.rows.qa@khongtunhi.com';
+      harness.state.tables.ktn_teachers.push({
+        code: 'GV-ZERO-01',
+        email: zeroEmail,
+        name: 'Giáo Viên Zero Rows',
+        active: true,
+      });
+
+      const req = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(zeroEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const res = await harness.workerModule.fetch(req, harness.env);
+      const data = await res.json();
+
+      expect(res.status).toBe(502);
+      expect(data.ok).toBe(false);
+      expect(data.error).toBe('SUPABASE_TEACHER_SOFT_DELETE_FAILED');
+      expect(data.supabaseErrorCode).toBe('ZERO_ROWS_UPDATED');
+    });
+
+    it('TC-T5-DEL-STATE-09: Does NOT use stale assignment metadata on deleted teacher to wipe classes or courses belonging to another teacher', async () => {
+      const staleTeacherEmail = 'stale.teacher@khongtunhi.com';
+      const otherTeacherEmail = 'thu.ha@khongtunhi.com';
+
+      // YCT1-01 in ktn_classes is currently owned by thu.ha@khongtunhi.com (GV-KTN-12)
+      // Give staleTeacher stale metadata pointing to YCT1-01 and course 6adadba969897b0002482ca5 (owned by thu.ha)
+      harness.state.tables.ktn_teachers.push({
+        code: 'GV-STALE-01',
+        email: staleTeacherEmail,
+        name: 'Giáo Viên Stale Metadata',
+        active: true,
+        assigned_classes: ['YCT1-01'],
+        assigned_courses: ['6adadba969897b0002482ca5'],
+        aliases: ['__class:YCT1-01', '__course:6adadba969897b0002482ca5'],
+      });
+      harness.state.tables.ktn_courses.push({
+        course_id: '6adadba969897b0002482ca5',
+        title: 'HSK 1',
+        teacher_email: otherTeacherEmail,
+      });
+
+      const req = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(staleTeacherEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const res = await harness.workerModule.fetch(req, harness.env);
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.deleted).toBe(true);
+      expect(data.unassignedClasses).not.toContain('YCT1-01');
+      expect(data.unassignedCourses).not.toContain('6adadba969897b0002482ca5');
+
+      // Verify other teacher's class & course were NOT unassigned
+      const otherCls = harness.state.tables.ktn_classes.find((c: any) => c.id === 'YCT1-01');
+      expect(otherCls.teacher_email).toBe(otherTeacherEmail);
+      expect(otherCls.teacher_code).toBe('GV-KTN-12');
+
+      const otherCrs = harness.state.tables.ktn_courses.find(
+        (c: any) => c.course_id === '6adadba969897b0002482ca5'
+      );
+      expect(otherCrs.teacher_email).toBe(otherTeacherEmail);
+    });
+
+    it('TC-T5-DEL-STATE-10: Idempotent repeated DELETE on already soft-deleted teacher succeeds without duplicating audit tags or corrupting data', async () => {
+      const idemEmail = 'idem.delete@khongtunhi.com';
+      harness.state.tables.ktn_teachers.push({
+        code: 'GV-IDEM-01',
+        email: idemEmail,
+        name: 'Giáo Viên Idempotent',
+        active: true,
+        aliases: ['custom_tag'],
+      });
+
+      const req1 = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(idemEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const res1 = await harness.workerModule.fetch(req1, harness.env);
+      expect(res1.status).toBe(200);
+
+      const req2 = new Request(`http://localhost/api/ktn/teachers?email=${encodeURIComponent(idemEmail)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const res2 = await harness.workerModule.fetch(req2, harness.env);
+      const data2 = await res2.json();
+      expect(res2.status).toBe(200);
+      expect(data2.deleted).toBe(true);
+
+      const updated = harness.state.tables.ktn_teachers.find((t: any) => t.email === idemEmail);
+      expect(updated.active).toBe(false);
+      expect(updated.aliases.filter((a: string) => a === '__status:deleted').length).toBe(1);
+      expect(updated.aliases.filter((a: string) => a.startsWith('__deleted_at:')).length).toBe(1);
+    });
   });
 
   // =========================================================================
@@ -608,6 +757,8 @@ describe('Tier 5 Adversarial Coverage Hardening: Backend & API Resilience', () =
       );
       expect(dlpEntry).toBeDefined();
       expect(dlpEntry.room_id).toBe('AUTH_REVOKED');
+      expect(dlpEntry.sender_name).toBe('Giáo Viên Bị Xóa');
+      expect(dlpEntry.sender_role).toBe('teacher');
       expect(dlpEntry.reason).toBe('TEACHER_SOFT_DELETED_REVOKED');
     });
 

@@ -38,6 +38,21 @@ import { normalizeViSearchText, normalizeVietnameseText } from '@/lib/utils';
 export type { KtnExerciseAttachment, KtnSessionExercise, KtnTeacherSearchResult };
 export { normalizeViSearchText, normalizeVietnameseText };
 
+export interface KtnTeacherDeleteResult {
+  ok: boolean;
+  deleted: boolean;
+  teacherId?: string;
+  teacherEmail?: string;
+  teacherName?: string;
+  unassignedClassesCount?: number;
+  unassignedClasses?: string[];
+  unassignedCoursesCount?: number;
+  unassignedCourses?: string[];
+  sessionRevoked?: boolean;
+  syncStatus?: string;
+  message?: string;
+}
+
 export const MAX_HOMEWORK_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
 export const ALLOWED_HOMEWORK_ATTACHMENT_EXTENSIONS: Record<string, string> = {
@@ -90,6 +105,13 @@ export function filterAndPaginateTeachersClientSide(
   const offset = Math.max(0, Number(params?.offset) || 0);
 
   const filtered = (Array.isArray(teachers) ? teachers : []).filter((t) => {
+    const tAny = t as { aliases?: string[]; deleted?: boolean };
+    if (
+      t.active === false &&
+      (tAny.aliases?.includes('__status:deleted') || tAny.deleted)
+    ) {
+      return false;
+    }
     const isActive = t.active !== false && t.status !== 'locked' && t.status !== 'inactive';
     const assignedClasses = Array.isArray(t.assigned_classes) ? t.assigned_classes : [];
     const assignedCourses = Array.isArray(t.assigned_courses) ? t.assigned_courses : [];
@@ -1648,6 +1670,32 @@ export const ktnApi = {
     }
   },
 
+  async searchTeachers(
+    params?: {
+      q?: string;
+      status?: string;
+      classCode?: string;
+      courseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<KtnTeacherSearchResult> {
+    return this.searchAdminTeachers(params, options);
+  },
+
+  async getTeacher(emailOrCode: string): Promise<KtnTeacherRecord | null> {
+    const list = await this.getTeachers(emailOrCode);
+    const normalized = (emailOrCode || '').trim().toLowerCase();
+    return (
+      list.find(
+        (t) =>
+          (t.email && t.email.toLowerCase() === normalized) ||
+          (t.code && t.code.toLowerCase() === normalized)
+      ) || null
+    );
+  },
+
   async saveTeacher(payload: {
     code?: string;
     name: string;
@@ -1673,6 +1721,34 @@ export const ktnApi = {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  },
+
+  async deleteTeacher(params: {
+    teacherId?: string;
+    code?: string;
+    email?: string;
+  }): Promise<KtnTeacherDeleteResult> {
+    const rawTarget = String(params.teacherId || params.code || params.email || '').trim();
+    if (!rawTarget) {
+      throw new KtnApiError({
+        message: 'Vui lòng cung cấp mã giáo viên (code) hoặc email hợp lệ để xóa.',
+        status: 400,
+        code: 'MISSING_TEACHER_IDENTIFIER'
+      });
+    }
+    const sp = new URLSearchParams();
+    if (params.teacherId) sp.set('teacherId', params.teacherId.trim());
+    if (params.code) sp.set('code', params.code.trim());
+    if (params.email) sp.set('email', params.email.trim());
+    const qs = sp.toString();
+
+    return ktnRequest<KtnTeacherDeleteResult>(
+      `/api/ktn/teachers${qs ? `?${qs}` : ''}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify(params)
+      }
+    );
   },
 
   async uploadFileWithProgress(
@@ -2196,4 +2272,73 @@ export const ktnApi = {
     });
   }
 };
+
+export class KtnApiClient {
+  async fetchWithAuth<T>(
+    path: string,
+    options: RequestInit & { timeoutMs?: number } = {}
+  ): Promise<T> {
+    return ktnRequest<T>(path, options);
+  }
+
+  async searchAdminTeachers(
+    params?: {
+      q?: string;
+      status?: string;
+      classCode?: string;
+      courseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<KtnTeacherSearchResult> {
+    return ktnApi.searchAdminTeachers(params, options);
+  }
+
+  async searchTeachers(
+    params?: {
+      q?: string;
+      status?: string;
+      classCode?: string;
+      courseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<KtnTeacherSearchResult> {
+    return ktnApi.searchTeachers(params, options);
+  }
+
+  async deleteTeacher(params: {
+    teacherId?: string;
+    code?: string;
+    email?: string;
+  }): Promise<KtnTeacherDeleteResult> {
+    return ktnApi.deleteTeacher(params);
+  }
+}
+
+export const searchTeachers = (
+  params?: {
+    q?: string;
+    status?: string;
+    classCode?: string;
+    courseId?: string;
+    limit?: number;
+    offset?: number;
+  },
+  options?: { signal?: AbortSignal }
+): Promise<KtnTeacherSearchResult> => ktnApi.searchTeachers(params, options);
+
+export const searchAdminTeachers = (
+  params?: {
+    q?: string;
+    status?: string;
+    classCode?: string;
+    courseId?: string;
+    limit?: number;
+    offset?: number;
+  },
+  options?: { signal?: AbortSignal }
+): Promise<KtnTeacherSearchResult> => ktnApi.searchAdminTeachers(params, options);
 

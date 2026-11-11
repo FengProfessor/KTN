@@ -19,6 +19,7 @@ import type {
   KtnClassItem,
   KtnTeacherRecord,
 } from '@/types/ktn.types';
+import { SearchableTeacherCombobox } from './SearchableTeacherCombobox';
 
 const DAY_OPTIONS = [
   { value: 1, label: 'Thứ 2', short: 'T2' },
@@ -226,7 +227,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       setExceptions([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isCreateMode, classItem?.id, classItem?.scheduleConfig?.updatedAt, todayStr]);
+  }, [open, isCreateMode, classItem?.id, classItem?.teacher_email, classItem?.scheduleConfig?.updatedAt, todayStr]);
 
   const toggleDayOfWeek = (day: number) => {
     setDaysOfWeek((prev) => {
@@ -598,23 +599,16 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
             {isAdmin && (
               <>
-                <div className="sm:col-span-2">
+                <div className="relative z-30 sm:col-span-2">
                   <label className="mb-1 block font-bold text-stone-700">
                     Giáo viên phụ trách (Chỉ Quản lý được đổi)
                   </label>
-                  <select
-                    data-testid="schedule-teacher-select"
+                  <SearchableTeacherCombobox
                     value={selectedTeacherEmail}
-                    onChange={(e) => setSelectedTeacherEmail(e.target.value)}
-                    className="w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-900"
-                  >
-                    <option value="">-- Chọn giáo viên phụ trách --</option>
-                    {selectableTeachers.map((t) => (
-                      <option key={t.code || t.email} value={t.email}>
-                        {t.name} ({t.email})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelectedTeacherEmail}
+                    teachers={selectableTeachers}
+                    disabled={isSubmitting}
+                  />
                 </div>
 
                 <div>

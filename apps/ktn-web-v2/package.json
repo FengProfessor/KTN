@@ -9,6 +9,7 @@
     "preview": "vite preview --port 4173 --host",
     "test:unit": "vitest run",
     "test:e2e": "node tests/e2e/verify-ui-v2.mjs",
+    "test:teacher-tiers": "node tests/e2e/teacher-tiers/run-teacher-tiers.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

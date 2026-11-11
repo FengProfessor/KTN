@@ -15,6 +15,7 @@ import {
   KeyRound,
   Loader2,
   Save,
+  Trash2,
 } from 'lucide-react';
 import type {
   KtnClassItem,
@@ -73,6 +74,7 @@ export interface TeacherDetailDrawerProps {
     pointsDelta: number;
     reason: string;
   }) => Promise<unknown>;
+  onDeleteTeacher?: (teacher: KtnTeacherRecord) => void;
 }
 
 export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
@@ -88,6 +90,7 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
   onAdjustForumPoints,
   onUpdateTeacher,
   onAdjustPoints,
+  onDeleteTeacher,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'info' | 'assignments' | 'teaching' | 'grading' | 'forum' | 'account'
@@ -959,6 +962,34 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                   </button>
                 </div>
               </form>
+
+              <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 shadow-2xs">
+                <div className="flex items-center gap-1.5 text-red-900">
+                  <Trash2 className="h-4 w-4 text-red-700" />
+                  <h3 className="font-display text-xs font-extrabold uppercase tracking-wide text-red-900">
+                    Xóa tài khoản giáo viên
+                  </h3>
+                </div>
+                <p className="mt-1 text-xs text-red-700">
+                  Hồ sơ giáo viên sẽ được lưu trữ (soft-delete), vô hiệu hóa quyền truy cập và ngăn các phiên đăng nhập cũ tiếp tục hoạt động. Hệ thống sẽ tự động gỡ phân công giáo viên khỏi các lớp học liên quan và chuyển các lớp đó về trạng thái &quot;Chưa phân công giáo viên&quot;. Toàn bộ lịch sử tin nhắn nhóm lớp, bài tập, chấm điểm và điểm danh được bảo toàn nguyên vẹn.
+                </p>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    data-testid="admin-drawer-delete-teacher-btn"
+                    disabled={isSaving || !teacher}
+                    onClick={() => {
+                      if (teacher && onDeleteTeacher) {
+                        onDeleteTeacher(teacher);
+                      }
+                    }}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-red-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-800 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Xóa giáo viên này</span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

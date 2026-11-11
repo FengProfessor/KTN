@@ -724,7 +724,7 @@ export function createLocalWorkerHarness() {
         matched.sort((a, b) => {
           if (b.score !== a.score) return b.score - a.score;
           if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
-          return String(a.row.code || '').localeCompare(String(b.row.code || ''));
+          return a.rowIdx - b.rowIdx;
         });
 
         const totalCount = matched.length;

@@ -2798,13 +2798,25 @@ function getTokenRevocationKey(rawToken, jti) {
   return s ? ('tok_' + s.slice(-36)) : '';
 }
 
-async function isTokenRevoked(env, rawToken, jti) {
+async function isTokenRevoked(env, rawToken, jti, userEmail) {
   const key1 = jti ? String(jti).trim() : '';
   const key2 = getTokenRevocationKey(rawToken, null);
-  if ((key1 && revokedTokenMemorySet.has(key1)) || (key2 && revokedTokenMemorySet.has(key2))) {
+  const cleanEmail = normalizeEmail(userEmail || '');
+  const emailKey = cleanEmail ? `REVOKED_EMAIL_${cleanEmail}` : '';
+  const emailShortKey = cleanEmail ? `EMAIL_${cleanEmail}` : '';
+  if (
+    (key1 && revokedTokenMemorySet.has(key1)) ||
+    (key2 && revokedTokenMemorySet.has(key2)) ||
+    (cleanEmail && (revokedTokenMemorySet.has(emailKey) || revokedTokenMemorySet.has(emailShortKey) || revokedTokenMemorySet.has(cleanEmail)))
+  ) {
     return true;
   }
-  const lookupIds = [key1 ? `REVOKED_${key1}` : '', key2 ? `REVOKED_${key2}` : ''].filter(Boolean);
+  const lookupIds = [
+    key1 ? `REVOKED_${key1}` : '',
+    key2 ? `REVOKED_${key2}` : '',
+    emailKey,
+    emailShortKey
+  ].filter(Boolean);
   if (lookupIds.length === 0) return false;
   try {
     const inParam = lookupIds.map(id => encodeURIComponent(id)).join(',');
@@ -2821,7 +2833,9 @@ async function isTokenRevoked(env, rawToken, jti) {
       for (const row of res.data) {
         const exp = Number(row?.blocked_content || 0);
         if (!exp || exp > now) {
-          const rawKey = String(row.id || '').replace(/^REVOKED_/, '');
+          const rawId = String(row.id || '');
+          revokedTokenMemorySet.add(rawId);
+          const rawKey = rawId.replace(/^REVOKED_/, '');
           if (rawKey) revokedTokenMemorySet.add(rawKey);
         }
       }
@@ -2829,7 +2843,11 @@ async function isTokenRevoked(env, rawToken, jti) {
   } catch {
     return true;
   }
-  return Boolean((key1 && revokedTokenMemorySet.has(key1)) || (key2 && revokedTokenMemorySet.has(key2)));
+  return Boolean(
+    (key1 && revokedTokenMemorySet.has(key1)) ||
+    (key2 && revokedTokenMemorySet.has(key2)) ||
+    (cleanEmail && (revokedTokenMemorySet.has(emailKey) || revokedTokenMemorySet.has(emailShortKey) || revokedTokenMemorySet.has(cleanEmail)))
+  );
 }
 
 async function revokeSessionTokenServerSide(env, rawToken, jti) {
@@ -2993,12 +3011,13 @@ async function extractSessionFromRequest(request, env) {
     const tok = authHeader.slice(7).trim();
     const verified = await verifySessionToken(tok, env.KTN_SESSION_SECRET);
     if (verified) {
-      if (await isTokenRevoked(env, tok, verified.jti)) return null;
+      if (await isTokenRevoked(env, tok, verified.jti, verified.email)) return null;
       return verified;
     }
     if (await isTokenRevoked(env, tok, null)) return null;
     const verifiedIz = await verifyIzTeachAccessToken(tok, env);
     if (verifiedIz) {
+      if (await isTokenRevoked(env, tok, verifiedIz.jti || null, verifiedIz.email)) return null;
       return verifiedIz;
     }
   }
@@ -3008,12 +3027,13 @@ async function extractSessionFromRequest(request, env) {
     const rawCookieTok = decodeURIComponent(match[1]);
     const verified = await verifySessionToken(rawCookieTok, env.KTN_SESSION_SECRET);
     if (verified) {
-      if (await isTokenRevoked(env, rawCookieTok, verified.jti)) return null;
+      if (await isTokenRevoked(env, rawCookieTok, verified.jti, verified.email)) return null;
       return verified;
     }
     if (await isTokenRevoked(env, rawCookieTok, null)) return null;
     const verifiedIz = await verifyIzTeachAccessToken(rawCookieTok, env);
     if (verifiedIz) {
+      if (await isTokenRevoked(env, rawCookieTok, verifiedIz.jti || null, verifiedIz.email)) return null;
       return verifiedIz;
     }
   }
@@ -3267,7 +3287,8 @@ function parseChatRoomDescriptor(rawRoomId) {
 async function isActiveTeacherSession(env, session) {
   if (!session || session.role !== 'teacher') return false;
   const email = normalizeEmail(session.email || '');
-  if (email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com') return true;
+  if (!email) return false;
+  if (revokedTokenMemorySet.has(`REVOKED_EMAIL_${email}`) || revokedTokenMemorySet.has(`EMAIL_${email}`) || revokedTokenMemorySet.has(email)) return false;
   const tRes = await supabaseRequest(env, `ktn_teachers?email=ilike.${encodeURIComponent(email)}&limit=1`);
   if (!tRes.ok || !Array.isArray(tRes.data) || tRes.data.length === 0) return false;
   return tRes.data[0].active !== false;
@@ -8628,12 +8649,14 @@ export default {
           }, 403);
         }
       } else if (session.role === 'teacher') {
-        const tRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(session.email)}&active=eq.true&limit=1`);
-        const isActiveTeacher = (tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0) ||
-          session.email === 'linh.lam@khongtunhi.com' ||
-          session.email === 'thu.ha@khongtunhi.com';
+        const tEmail = normalizeEmail(session.email || '');
+        if (revokedTokenMemorySet.has(`REVOKED_EMAIL_${tEmail}`) || revokedTokenMemorySet.has(`EMAIL_${tEmail}`) || revokedTokenMemorySet.has(tEmail)) {
+          return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE', message: 'Tài khoản giáo viên đã bị vô hiệu hóa hoặc thu hồi.' }, 403);
+        }
+        const tRes = await supabaseRequest(env, `ktn_teachers?email=ilike.${encodeURIComponent(tEmail)}&select=active&limit=1`);
+        const isActiveTeacher = tRes && tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0 && tRes.data[0].active !== false;
         if (!isActiveTeacher) {
-          return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE', message: 'Tài khoản giáo viên chưa được kích hoạt.' }, 403);
+          return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE', message: 'Tài khoản giáo viên chưa được kích hoạt hoặc đã ngừng hoạt động.' }, 403);
         }
       } else if (session.role !== 'admin') {
         return jsonResponse({ ok: false, message: 'Không có quyền truy cập danh sách bài giảng.' }, 403);
@@ -11495,9 +11518,12 @@ export default {
       const qCompact = qNorm.replace(/\s+/g, '');
       const qDigits = rawQ.replace(/\D+/g, '');
 
+      const rawActiveParam = String(url.searchParams.get('active') || '').trim().toLowerCase();
+      const rawActiveOnlyParam = String(url.searchParams.get('activeOnly') || '').trim().toLowerCase();
+      const isActiveFilter = rawActiveParam === 'true' || rawActiveParam === '1' || rawActiveOnlyParam === '1' || rawActiveOnlyParam === 'true' || session.role !== 'admin';
       const rawStatus = String(
         url.searchParams.get('status') ||
-        (url.searchParams.get('activeOnly') === '1' ? 'active' : 'all')
+        (isActiveFilter ? 'active' : 'all')
       ).trim().toLowerCase();
       const classCodeFilter = String(
         url.searchParams.get('classCode') ||
@@ -11559,10 +11585,14 @@ export default {
       };
 
       const scoreAndFilterTeacher = (tRow, classRows) => {
+        const rawAliases = Array.isArray(tRow.aliases) ? tRow.aliases : [];
+        if (rawAliases.includes('__status:deleted') || rawAliases.some(a => typeof a === 'string' && a.startsWith('__deleted_at:'))) {
+          return null;
+        }
         const { tEmail, tCode, tMeta, isActive, mergedAssignedClasses } = reconcileTeacherClasses(tRow, classRows);
         const assignedCourses = Array.isArray(tMeta.assignedCourses) ? tMeta.assignedCourses : [];
 
-        if (rawStatus === 'active' && !isActive) return null;
+        if ((rawStatus === 'active' || session.role !== 'admin') && !isActive) return null;
         if (['inactive', 'locked', 'suspended', 'disabled'].includes(rawStatus) && isActive) return null;
         if (['unassigned', 'no_class'].includes(rawStatus) && mergedAssignedClasses.length > 0) return null;
         if (['assigned', 'has_class'].includes(rawStatus) && mergedAssignedClasses.length === 0) return null;
@@ -11851,7 +11881,9 @@ export default {
           : '';
         const singleTeacherEmail = normalizeEmail(url.searchParams.get('teacherEmail') || url.searchParams.get('email') || inferredEmailFromQ || '');
         const singleTeacherCode = String(url.searchParams.get('code') || '').trim().toUpperCase();
-        const activeOnly = url.searchParams.get('activeOnly') === '1' || session.role !== 'admin';
+        const rawActiveParam = String(url.searchParams.get('active') || '').trim().toLowerCase();
+        const rawActiveOnlyParam = String(url.searchParams.get('activeOnly') || '').trim().toLowerCase();
+        const activeOnly = rawActiveParam === 'true' || rawActiveParam === '1' || rawActiveOnlyParam === '1' || rawActiveOnlyParam === 'true' || session.role !== 'admin';
         let teacherQuery = activeOnly ? 'ktn_teachers?active=eq.true&order=code.asc' : 'ktn_teachers?order=code.asc';
         if (singleTeacherEmail) {
           teacherQuery = `ktn_teachers?email=eq.${encodeURIComponent(singleTeacherEmail)}&limit=1`;
@@ -12056,6 +12088,13 @@ export default {
             pendingCourseRequestsCount: tCourseReqs.filter(r => r.status === 'pending').length
           };
         });
+        teachers = teachers.filter(t => {
+          const rawAliases = Array.isArray(t.aliases) ? t.aliases : [];
+          return !rawAliases.includes('__status:deleted') && !rawAliases.some(a => typeof a === 'string' && a.startsWith('__deleted_at:'));
+        });
+        if (activeOnly) {
+          teachers = teachers.filter(t => t.active !== false);
+        }
         if (q) {
           const tokens = q.split(' ').filter(Boolean);
           teachers = teachers.filter(t => {
@@ -12480,6 +12519,293 @@ export default {
                 ? `Đã tạo giáo viên ${tName} (${tEmail}) và cấp tài khoản đăng nhập thành công!`
                 : `Đã lưu hồ sơ giáo viên ${tName} (${tEmail}) và phân công ${verifiedAssignedClasses.length} lớp học!`)
             : `Đã lưu hồ sơ giáo viên ${tName} (${tEmail}) ở trạng thái chờ cấp tài khoản đăng nhập (${provisioningStatus}).`
+        });
+      }
+      if (request.method === 'DELETE') {
+        const session = await extractSessionFromRequest(request, env);
+        if (!session) {
+          return jsonResponse({
+            ok: false,
+            error: 'ADMIN_ONLY',
+            message: 'Chỉ Quản lý (Admin) mới có quyền thực hiện thao tác này.'
+          }, 401);
+        }
+        if (session.role !== 'admin') {
+          return jsonResponse({
+            ok: false,
+            error: 'ADMIN_ONLY',
+            message: 'Chỉ Quản lý (Admin) mới có quyền thực hiện thao tác này.'
+          }, 403);
+        }
+
+        let body = {};
+        try {
+          body = await request.json();
+        } catch {}
+
+        const queryEmail = normalizeEmail(url.searchParams.get('email') || body?.email || '');
+        const queryCode = String(url.searchParams.get('code') || body?.code || '').trim().toUpperCase();
+        const rawTargetId = String(
+          queryEmail ||
+          queryCode ||
+          url.searchParams.get('teacherId') ||
+          url.searchParams.get('id') ||
+          body?.teacherId ||
+          body?.id ||
+          ''
+        ).trim();
+
+        if (!rawTargetId) {
+          return jsonResponse({
+            ok: false,
+            error: 'MISSING_TEACHER_IDENTIFIER',
+            message: 'Vui lòng cung cấp mã giáo viên (code) hoặc email hợp lệ để xóa.'
+          }, 400);
+        }
+
+        const isEmailTarget = rawTargetId.includes('@');
+        const lookupQuery = isEmailTarget
+          ? `ktn_teachers?email=ilike.${encodeURIComponent(rawTargetId)}&limit=1`
+          : `ktn_teachers?code=eq.${encodeURIComponent(rawTargetId)}&limit=1`;
+        const teaLookupRes = await supabaseRequest(env, lookupQuery);
+        let targetTeacher = (teaLookupRes && teaLookupRes.ok && Array.isArray(teaLookupRes.data) && teaLookupRes.data[0]) || null;
+        if (!targetTeacher && !isEmailTarget) {
+          const idFallback = await supabaseRequest(env, `ktn_teachers?id=eq.${encodeURIComponent(rawTargetId)}&limit=1`);
+          targetTeacher = (idFallback && idFallback.ok && Array.isArray(idFallback.data) && idFallback.data[0]) || null;
+        }
+        if (!targetTeacher && !isEmailTarget) {
+          const emailFallback = await supabaseRequest(env, `ktn_teachers?email=ilike.${encodeURIComponent(rawTargetId)}&limit=1`);
+          targetTeacher = (emailFallback && emailFallback.ok && Array.isArray(emailFallback.data) && emailFallback.data[0]) || null;
+        }
+        if (!targetTeacher) {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_NOT_FOUND',
+            message: 'Không tìm thấy hồ sơ giáo viên tương ứng trong hệ thống.'
+          }, 404);
+        }
+
+        const targetEmail = normalizeEmail(targetTeacher.email || '');
+        const targetCode = String(targetTeacher.code || '').trim().toUpperCase();
+        const targetId = String(targetTeacher.id || '').trim();
+        const targetName = targetTeacher.name || targetEmail;
+
+        if (session.email && normalizeEmail(session.email) === targetEmail) {
+          return jsonResponse({
+            ok: false,
+            error: 'CANNOT_DELETE_SELF',
+            message: 'Không thể tự xóa tài khoản của chính mình.'
+          }, 400);
+        }
+
+        return await runWithHomeworkConcurrencyLock('TEACHER_MUTATE_' + targetEmail, async () => {
+          const nowIso = new Date().toISOString();
+          const existingAliases = Array.isArray(targetTeacher.aliases) ? targetTeacher.aliases : [];
+          const cleanAliases = existingAliases.filter(a => typeof a === 'string' && !a.startsWith('__status:'));
+          cleanAliases.push('__status:deleted', `__deleted_at:${nowIso}`, `__deleted_by:${normalizeEmail(session.email || '')}`);
+
+          const patchBody = {
+            active: false,
+            assigned_classes: [],
+            assigned_courses: [],
+            aliases: cleanAliases,
+            updated_at: nowIso
+          };
+
+          const patchFilter = targetCode
+            ? `code=eq.${encodeURIComponent(targetCode)}`
+            : targetEmail
+              ? `email=ilike.${encodeURIComponent(targetEmail)}`
+              : targetId
+                ? `id=eq.${encodeURIComponent(targetId)}`
+                : '';
+
+          const patchRes = await supabaseRequest(
+            env,
+            `ktn_teachers?${patchFilter}`,
+            {
+              method: 'PATCH',
+              body: patchBody
+            }
+          );
+          if (!patchRes || !patchRes.ok) {
+            return jsonResponse({
+              ok: false,
+              error: 'SUPABASE_TEACHER_SOFT_DELETE_FAILED',
+              message: 'Không thể cập nhật trạng thái xóa giáo viên trong Supabase.'
+            }, 502);
+          }
+
+          // Unassign classes
+          const [byEmailRes, byCodeRes] = await Promise.all([
+            supabaseRequest(env, `ktn_classes?teacher_email=eq.${encodeURIComponent(targetEmail)}&select=id`),
+            targetCode ? supabaseRequest(env, `ktn_classes?teacher_code=eq.${encodeURIComponent(targetCode)}&select=id`) : Promise.resolve({ ok: true, data: [] })
+          ]);
+          const matchedClasses = [
+            ...((byEmailRes && byEmailRes.ok && Array.isArray(byEmailRes.data)) ? byEmailRes.data : []),
+            ...((byCodeRes && byCodeRes.ok && Array.isArray(byCodeRes.data)) ? byCodeRes.data : [])
+          ];
+          const unassignedClasses = [];
+          for (const cls of matchedClasses) {
+            const cid = String(cls?.id || '').trim().toUpperCase();
+            if (cid && !unassignedClasses.includes(cid)) {
+              await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(cid)}`, {
+                method: 'PATCH',
+                body: {
+                  teacher_code: null,
+                  teacher_email: null,
+                  updated_at: nowIso
+                }
+              });
+              unassignedClasses.push(cid);
+            }
+          }
+          const metaClasses = Array.isArray(targetTeacher.assigned_classes) ? targetTeacher.assigned_classes : [];
+          for (const cid of metaClasses) {
+            const cleanCid = String(cid || '').trim().toUpperCase();
+            if (cleanCid && !unassignedClasses.includes(cleanCid)) {
+              await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(cleanCid)}`, {
+                method: 'PATCH',
+                body: {
+                  teacher_code: null,
+                  teacher_email: null,
+                  updated_at: nowIso
+                }
+              });
+              unassignedClasses.push(cleanCid);
+            }
+          }
+
+          // Unassign courses
+          const courseLookupRes = await supabaseRequest(
+            env,
+            `ktn_courses?teacher_email=eq.${encodeURIComponent(targetEmail)}&select=course_id`
+          );
+          const matchedCourses = (courseLookupRes && courseLookupRes.ok && Array.isArray(courseLookupRes.data)) ? courseLookupRes.data : [];
+          const unassignedCourses = [];
+          for (const crs of matchedCourses) {
+            const crsId = String(crs?.course_id || '').trim();
+            if (crsId && !unassignedCourses.includes(crsId)) {
+              await supabaseRequest(env, `ktn_courses?course_id=eq.${encodeURIComponent(crsId)}`, {
+                method: 'PATCH',
+                body: {
+                  teacher_email: null,
+                  updated_at: nowIso
+                }
+              });
+              unassignedCourses.push(crsId);
+            }
+          }
+          const metaCourses = Array.isArray(targetTeacher.assigned_courses) ? targetTeacher.assigned_courses : [];
+          for (const crsId of metaCourses) {
+            const cleanCrsId = String(crsId || '').trim();
+            if (cleanCrsId && !unassignedCourses.includes(cleanCrsId)) {
+              await supabaseRequest(env, `ktn_courses?course_id=eq.${encodeURIComponent(cleanCrsId)}`, {
+                method: 'PATCH',
+                body: {
+                  teacher_email: null,
+                  updated_at: nowIso
+                }
+              });
+              unassignedCourses.push(cleanCrsId);
+            }
+          }
+
+          // Invalidate active session tokens immediately
+          const revocationExp = String(Date.now() + 30 * 86400 * 1000);
+          await supabaseRequest(env, 'ktn_dlp_alerts', {
+            method: 'POST',
+            prefer: 'resolution=merge-duplicates,return=minimal',
+            body: {
+              id: `REVOKED_EMAIL_${targetEmail}`,
+              room_id: 'AUTH_REVOKED',
+              sender_email: targetEmail,
+              blocked_content: revocationExp,
+              reason: 'TEACHER_SOFT_DELETED_REVOKED',
+              resolved: true
+            }
+          }).catch(() => null);
+          revokedTokenMemorySet.add(`REVOKED_EMAIL_${targetEmail}`);
+          revokedTokenMemorySet.add(`EMAIL_${targetEmail}`);
+          revokedTokenMemorySet.add(targetEmail);
+          for (const [k, v] of verifiedIzTeachTokenCache.entries()) {
+            if (normalizeEmail(v?.session?.email || '') === targetEmail) {
+              verifiedIzTeachTokenCache.delete(k);
+            }
+          }
+
+          // Graceful izTeach upstream sync
+          let syncStatus = 'synced';
+          try {
+            const tMeta = extractTeacherMetaFromRow(targetTeacher);
+            const cognitoUid = tMeta.cognitoUserId || targetTeacher.cognito_user_id || null;
+            if (unassignedCourses.length > 0 || cognitoUid) {
+              const izRes = await revokeStudentCoursesOnIzTeach(env, {
+                email: targetEmail,
+                cognitoUserId: cognitoUid,
+                removeCourseIds: unassignedCourses
+              }).catch(() => {
+                syncStatus = 'needs_sync';
+                return null;
+              });
+              if (!izRes || izRes.ok === false) {
+                syncStatus = 'needs_sync';
+              }
+            }
+          } catch {
+            syncStatus = 'needs_sync';
+          }
+
+          // Admin audit log
+          await recordAdminAuditLog(env, {
+            actorEmail: session.email,
+            action: 'teacher_soft_delete',
+            targetType: 'teacher',
+            targetId: targetEmail,
+            reason: 'TEACHER_SOFT_DELETED',
+            metadata: {
+              teacherEmail: targetEmail,
+              teacherCode: targetCode,
+              unassignedClassesCount: unassignedClasses.length,
+              unassignedCoursesCount: unassignedCourses.length,
+              syncStatus
+            }
+          }).catch(() => null);
+
+          // Read-after-write verification
+          const verifyFilter = targetCode
+            ? `code=eq.${encodeURIComponent(targetCode)}`
+            : targetEmail
+              ? `email=ilike.${encodeURIComponent(targetEmail)}`
+              : targetId
+                ? `id=eq.${encodeURIComponent(targetId)}`
+                : '';
+          const verifyRes = await supabaseRequest(env, `ktn_teachers?${verifyFilter}&select=active&limit=1`);
+          const verifyRow = (verifyRes && verifyRes.ok && Array.isArray(verifyRes.data) && verifyRes.data[0]) || null;
+          if (!verifyRow || verifyRow.active !== false) {
+            return jsonResponse({
+              ok: false,
+              error: 'VERIFICATION_FAILED',
+              message: 'Không thể xác minh trạng thái soft-delete sau khi ghi cơ sở dữ liệu.'
+            }, 500);
+          }
+
+          return jsonResponse({
+            ok: true,
+            deleted: true,
+            teacherId: targetCode || targetId || targetEmail,
+            teacherEmail: targetEmail,
+            teacherName: targetName,
+            unassignedClassesCount: unassignedClasses.length,
+            unassignedClasses,
+            unassignedCoursesCount: unassignedCourses.length,
+            unassignedCourses,
+            sessionRevoked: true,
+            syncStatus,
+            message: syncStatus === 'needs_sync'
+              ? `Đã xóa giáo viên ${targetName} và gỡ phân công khỏi ${unassignedClasses.length} lớp, nhưng đồng bộ izTeach cần kiểm tra lại.`
+              : `Đã xóa giáo viên ${targetName} và gỡ phân công khỏi ${unassignedClasses.length} lớp thành công.`
+          }, 200);
         });
       }
     }

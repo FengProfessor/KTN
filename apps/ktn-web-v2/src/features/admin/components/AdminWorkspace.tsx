@@ -193,6 +193,9 @@ export const AdminWorkspace: React.FC = () => {
     number | null
   >(null);
 
+  // Safe Soft-Delete Teacher confirmation modal state (Milestone M3)
+  const [teacherToDelete, setTeacherToDelete] = useState<KtnTeacherRecord | null>(null);
+
   // Ephemeral One-Time Credential Handoff Banner (in-memory only, never persisted to localStorage)
   const [credentialHandoff, setCredentialHandoff] = useState<{
     name: string;
@@ -513,7 +516,13 @@ export const AdminWorkspace: React.FC = () => {
     Object.entries(demoTeacherOverridesRef.current).forEach(([em, row]) => {
       tMap.set(em.toLowerCase(), row);
     });
-    return Array.from(tMap.values());
+    return Array.from(tMap.values()).filter(
+      (t) =>
+        t.active !== false &&
+        t.status !== 'inactive' &&
+        !(t as { aliases?: string[] }).aliases?.includes('__status:deleted') &&
+        !(t as { deleted?: boolean }).deleted
+    );
   };
 
   const teachersQuery = useQuery<KtnTeacherRecord[]>({
@@ -1708,6 +1717,128 @@ export const AdminWorkspace: React.FC = () => {
       addToast({
         title: 'Chưa thể xóa lớp học',
         description: errMsg,
+        variant: 'error',
+      });
+    },
+  });
+
+  const deleteTeacherMutation = useMutation({
+    mutationFn: async (teacher: KtnTeacherRecord) => {
+      const teacherId = (teacher as { id?: string }).id || teacher.code || teacher.email;
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 200));
+        const emailKey = (teacher.email || '').toLowerCase();
+        if (emailKey) {
+          demoTeacherOverridesRef.current[emailKey] = {
+            ...(demoTeacherOverridesRef.current[emailKey] || teacher),
+            active: false,
+            status: 'inactive',
+            assigned_classes: [],
+            assigned_courses: [],
+          };
+        }
+        if (Array.isArray(demoClassesRef.current)) {
+          demoClassesRef.current = demoClassesRef.current.map((c) => {
+            if (
+              c.teacher_email?.toLowerCase() === emailKey ||
+              c.teacher_code === teacher.code
+            ) {
+              return { ...c, teacher_email: undefined, teacher_code: '' };
+            }
+            return c;
+          });
+        }
+        return {
+          ok: true,
+          deleted: true,
+          teacherId,
+          teacherEmail: teacher.email,
+          teacherName: teacher.name,
+          unassignedClassesCount: teacher.assigned_classes?.length ?? 0,
+          unassignedClasses: teacher.assigned_classes ?? [],
+          sessionRevoked: true,
+          syncStatus: 'synced',
+          message: 'Đã xóa giáo viên thành công (chế độ demo).',
+        };
+      }
+
+      return ktnApi.deleteTeacher({
+        teacherId,
+        email: teacher.email,
+        code: teacher.code,
+      });
+    },
+    onSuccess: (res, deletedTeacher) => {
+      const deletedEmail = (deletedTeacher.email || '').toLowerCase();
+      const deletedCode = deletedTeacher.code;
+      const deletedId = (deletedTeacher as { id?: string }).id;
+
+      // 1. Optimistic cache update for teacher search queries
+      queryClient.setQueriesData<KtnTeacherSearchResult>(
+        { queryKey: ['ktn-admin-teachers-search'] },
+        (prev) => {
+          if (!prev || !Array.isArray(prev.items)) return prev;
+          const remaining = prev.items.filter(
+            (t) =>
+              t.email.toLowerCase() !== deletedEmail &&
+              (!deletedCode || t.code !== deletedCode) &&
+              (!deletedId || (t as { id?: string }).id !== deletedId)
+          );
+          const removedCount = prev.items.length - remaining.length;
+          return {
+            ...prev,
+            items: remaining,
+            totalCount: Math.max(
+              0,
+              (prev.totalCount ?? (remaining.length + removedCount)) - removedCount
+            ),
+          };
+        }
+      );
+
+      // 2. Optimistic cache update for teacher list queries
+      queryClient.setQueriesData<KtnTeacherRecord[]>(
+        { queryKey: ['ktn-admin-teachers'] },
+        (prev) => {
+          if (!Array.isArray(prev)) return prev;
+          return prev.filter(
+            (t) =>
+              t.email.toLowerCase() !== deletedEmail &&
+              (!deletedCode || t.code !== deletedCode) &&
+              (!deletedId || (t as { id?: string }).id !== deletedId)
+          );
+        }
+      );
+
+      // 3. Invalidate relevant queries for zero-reload consistency
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers-search'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+      queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+
+      // 4. Close drawer if open teacher is deleted
+      if (
+        selectedTeacherKey &&
+        (selectedTeacherKey.toLowerCase() === deletedEmail ||
+          selectedTeacherKey === deletedCode ||
+          (deletedId && selectedTeacherKey === deletedId))
+      ) {
+        setSelectedTeacherKey(null);
+      }
+
+      // 5. Close confirmation modal
+      setTeacherToDelete(null);
+
+      // 6. Display success toast
+      addToast({
+        title: 'Đã xóa giáo viên thành công!',
+        variant: 'success',
+      });
+    },
+    onError: (err: Error) => {
+      addToast({
+        title: 'Không thể xóa giáo viên',
+        description: err.message,
         variant: 'error',
       });
     },
@@ -3316,6 +3447,91 @@ export const AdminWorkspace: React.FC = () => {
         </div>
       )}
 
+      {/* Single-Step Teacher Delete Confirmation Modal (Milestone M3) */}
+      {teacherToDelete && (
+        <div
+          data-testid="admin-delete-teacher-modal"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-2 border-b border-stone-200 pb-3">
+              <div>
+                <h3 className="flex items-center gap-1.5 font-display text-sm font-bold text-stone-900">
+                  <Trash2 className="h-4 w-4 text-red-800" />
+                  <span>Xóa giáo viên {teacherToDelete.name}?</span>
+                </h3>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  {teacherToDelete.email}
+                  {teacherToDelete.code ? ` · ${teacherToDelete.code}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Đóng hộp thoại xóa giáo viên"
+                disabled={deleteTeacherMutation.isPending}
+                onClick={() => setTeacherToDelete(null)}
+                className="rounded-lg p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {(teacherToDelete.assigned_classes?.length ?? 0) > 0 && (
+              <div
+                data-testid="delete-teacher-classes-warning"
+                className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                  <div>
+                    <p className="font-bold text-amber-900">
+                      Sẽ gỡ phân công khỏi {teacherToDelete.assigned_classes!.length} lớp ({teacherToDelete.assigned_classes!.join(', ')}).
+                    </p>
+                    <p className="mt-0.5 text-amber-800">
+                      Các lớp này sẽ được chuyển về trạng thái &quot;Chưa phân công giáo viên&quot;.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs text-stone-600">
+              <p>
+                Hồ sơ giáo viên sẽ được lưu trữ (soft-delete) và vô hiệu hóa tài khoản ngay lập tức. Toàn bộ lịch sử tin nhắn, bài tập, chấm điểm và điểm danh của lớp được bảo toàn.
+              </p>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2 border-t border-stone-100 pt-3">
+              <button
+                type="button"
+                data-testid="cancel-delete-teacher-btn"
+                disabled={deleteTeacherMutation.isPending}
+                onClick={() => setTeacherToDelete(null)}
+                className="rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-delete-teacher-btn"
+                disabled={deleteTeacherMutation.isPending}
+                onClick={() => deleteTeacherMutation.mutate(teacherToDelete)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900 disabled:opacity-50"
+              >
+                {deleteTeacherMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                <span>
+                  {deleteTeacherMutation.isPending ? 'Đang xóa giáo viên...' : 'Xác nhận xóa'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ClassScheduleModal
         open={scheduleModalOpen}
         mode={scheduleModalMode}
@@ -3795,14 +4011,6 @@ export const AdminWorkspace: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateTeacherModal(true)}
-                  className="inline-flex min-h-[32px] items-center gap-1 rounded-xl bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  <span>+ Tạo giáo viên</span>
-                </button>
               </div>
             </div>
 
@@ -3844,13 +4052,12 @@ export const AdminWorkspace: React.FC = () => {
                 {/* Mobile Compact Card List (<768px) */}
                 <div
                   data-testid="admin-teacher-mobile-list"
-                  className="mt-3 space-y-2 md:hidden"
+                  className="mt-3 space-y-2.5 md:hidden"
                 >
                   {filteredTeachersList.map((teacher) => {
                     const classes = Array.isArray(teacher.assigned_classes)
                       ? teacher.assigned_classes
                       : [];
-                    const managedStudentsCount = teacher.managedStudentsCount ?? 0;
                     const isLocked =
                       teacher.active === false ||
                       teacher.status === 'locked' ||
@@ -3862,48 +4069,90 @@ export const AdminWorkspace: React.FC = () => {
                         key={`mobile-${teacher.email}`}
                         data-testid={`admin-teacher-mobile-card-${teacher.email}`}
                         onClick={() => setSelectedTeacherKey(teacher.email)}
-                        className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50/70 p-3 text-xs transition-colors hover:border-red-200 hover:bg-red-50/30"
+                        className="cursor-pointer space-y-2 rounded-xl border border-stone-200 bg-stone-50/70 p-3 text-xs transition-colors hover:border-red-200 hover:bg-red-50/30"
                       >
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
+                        {/* Header Row: Tên + Trạng thái */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-1.5">
                             <span className="truncate font-bold text-stone-900">
                               {teacher.name}
                             </span>
-                            <span
-                              className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                isLocked
-                                  ? 'bg-red-100 text-red-900'
-                                  : 'bg-emerald-100 text-emerald-900'
-                              }`}
-                            >
-                              {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
-                            </span>
+                            {teacher.code && (
+                              <span className="shrink-0 rounded bg-stone-200/80 px-1 py-0.5 text-[9px] font-semibold text-stone-600">
+                                {teacher.code}
+                              </span>
+                            )}
                           </div>
+                          <span
+                            className={`shrink-0 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                              isLocked
+                                ? 'bg-red-100 text-red-900'
+                                : 'bg-emerald-100 text-emerald-900'
+                            }`}
+                          >
+                            {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
+                          </span>
+                        </div>
+
+                        {/* Content Row: Email & Lớp đang phụ trách */}
+                        <div className="space-y-1">
                           <div className="truncate text-[11px] text-stone-500">
                             {teacher.email}
                           </div>
-                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-stone-700">
-                            <span>{classes.length} lớp</span>
-                            <span>·</span>
-                            <span>{managedStudentsCount} học viên</span>
+                          <div className="text-[11px] text-stone-700">
+                            <span className="font-semibold text-stone-600">Lớp:</span>{' '}
+                            {classes.length > 0 ? (
+                              <span className="font-medium text-stone-800">
+                                {classes.join(', ')}
+                              </span>
+                            ) : (
+                              <span className="italic text-stone-400">
+                                Chưa phân công
+                              </span>
+                            )}
                           </div>
                         </div>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-stone-400" />
+
+                        {/* Action Buttons: Xem / Sửa & Xóa (< 768px / 390px mobile viewport) */}
+                        <div className="flex items-center gap-2 border-t border-stone-200/60 pt-2">
+                          <button
+                            type="button"
+                            data-testid={`admin-open-teacher-btn-mobile-${teacher.email}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTeacherKey(teacher.email);
+                            }}
+                            className="inline-flex min-h-[32px] flex-1 items-center justify-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-800 shadow-2xs transition-colors hover:bg-stone-50 active:bg-stone-100"
+                          >
+                            <span>Xem / Sửa</span>
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`admin-delete-teacher-btn-mobile-${teacher.email}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTeacherToDelete(teacher);
+                            }}
+                            className="inline-flex min-h-[32px] items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50/70 px-2.5 py-1 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 active:bg-red-200"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>Xóa</span>
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
 
-                {/* Desktop Concise Table (5 primary fields + Drawer action) */}
+                {/* Desktop Concise Table (5 columns: Tên, Email, Lớp đang phụ trách, Trạng thái, Thao tác) */}
                 <div className="mt-3 hidden overflow-x-auto md:block">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-stone-200 text-stone-500">
-                        <th className="pb-2 pr-2 font-bold">Tên giáo viên</th>
+                        <th className="pb-2 pr-2 font-bold">Tên</th>
                         <th className="pb-2 pr-2 font-bold">Email</th>
+                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">Lớp đang phụ trách</th>
                         <th className="whitespace-nowrap pb-2 pr-2 font-bold">Trạng thái</th>
-                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">Số lớp</th>
-                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">Số học viên</th>
                         <th className="whitespace-nowrap pb-2 text-right font-bold">Thao tác</th>
                       </tr>
                     </thead>
@@ -3993,6 +4242,7 @@ export const AdminWorkspace: React.FC = () => {
                             onClick={() => setSelectedTeacherKey(teacher.email)}
                             className="cursor-pointer transition-colors hover:bg-stone-50"
                           >
+                            {/* Col 1: Tên (+ sr-only accessibility & test selectors) */}
                             <td className="py-2.5 pr-2">
                               <div className="font-bold text-stone-900">{teacher.name}</div>
                               {teacher.code && (
@@ -4000,53 +4250,11 @@ export const AdminWorkspace: React.FC = () => {
                                   {teacher.code}
                                 </div>
                               )}
-                            </td>
-                            <td className="py-2.5 pr-2">
-                              <div className="text-[11px] font-medium text-stone-700">
-                                {teacher.email}
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap py-2.5 pr-2">
-                              <span
-                                className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
-                                  isLocked
-                                    ? 'bg-red-100 text-red-900'
-                                    : 'bg-emerald-100 text-emerald-900'
-                                }`}
-                              >
-                                {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
-                              </span>
-                            </td>
-                            <td className="py-2.5 pr-2">
-                              <div className="font-bold text-stone-900">
-                                {classes.length} lớp
-                              </div>
-                              {classes.length > 0 ? (
-                                <div className="mt-0.5 flex flex-wrap gap-1">
-                                  {classes.map((cls) => (
-                                    <span
-                                      key={cls}
-                                      className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900"
-                                    >
-                                      {cls}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-[10px] text-stone-400">
-                                  Chưa phân công lớp
-                                </span>
-                              )}
-                            </td>
-                            <td className="whitespace-nowrap py-2.5 pr-2">
-                              <div
-                                data-testid={`teacher-students-count-${teacher.email}`}
-                                className="font-bold text-stone-800"
-                              >
-                                Học viên phụ trách: {managedStudentsCount} HV
-                              </div>
-                              {/* Deep stats live in TeacherDetailDrawer; sr-only spans preserve test selectors */}
+                              {/* Deep stats live in TeacherDetailDrawer; sr-only preserves accessibility & test selectors */}
                               <div className="sr-only">
+                                <span data-testid={`teacher-students-count-${teacher.email}`}>
+                                  Học viên phụ trách: {managedStudentsCount} HV
+                                </span>
                                 <span data-testid={`teacher-courses-summary-${teacher.email}`}>
                                   Khóa phụ trách: {courses.length} khóa
                                 </span>
@@ -4090,19 +4298,78 @@ export const AdminWorkspace: React.FC = () => {
                                 </span>
                               </div>
                             </td>
-                            <td className="whitespace-nowrap py-2.5 text-right">
-                              <button
-                                type="button"
-                                data-testid={`admin-open-teacher-btn-${teacher.email}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedTeacherKey(teacher.email);
-                                }}
-                                className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs hover:bg-red-50"
+
+                            {/* Col 2: Email */}
+                            <td className="py-2.5 pr-2">
+                              <div className="text-[11px] font-medium text-stone-700">
+                                {teacher.email}
+                              </div>
+                            </td>
+
+                            {/* Col 3: Lớp đang phụ trách */}
+                            <td className="py-2.5 pr-2">
+                              <div className="font-bold text-stone-900">
+                                {classes.length} lớp
+                              </div>
+                              {classes.length > 0 ? (
+                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                  {classes.map((cls) => (
+                                    <span
+                                      key={cls}
+                                      className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900"
+                                    >
+                                      {cls}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-stone-400">
+                                  Chưa phân công lớp
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Col 4: Trạng thái */}
+                            <td className="whitespace-nowrap py-2.5 pr-2">
+                              <span
+                                className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
+                                  isLocked
+                                    ? 'bg-red-100 text-red-900'
+                                    : 'bg-emerald-100 text-emerald-900'
+                                }`}
                               >
-                                <span>Hồ sơ & Hiệu suất</span>
-                                <ChevronRight className="h-3.5 w-3.5" />
-                              </button>
+                                {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
+                              </span>
+                            </td>
+
+                            {/* Col 5: Thao tác (Xem / Sửa & Xóa) */}
+                            <td className="whitespace-nowrap py-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  data-testid={`admin-open-teacher-btn-${teacher.email}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTeacherKey(teacher.email);
+                                  }}
+                                  className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-stone-700 shadow-2xs hover:bg-stone-50 hover:text-stone-900"
+                                >
+                                  <span>Xem / Sửa</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  data-testid={`admin-delete-teacher-btn-${teacher.email}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setTeacherToDelete(teacher);
+                                  }}
+                                  className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700 shadow-2xs hover:bg-red-100 hover:text-red-800"
+                                  title="Xóa giáo viên"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                  <span>Xóa</span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -4857,6 +5124,7 @@ export const AdminWorkspace: React.FC = () => {
         isAdjustingPoints={adjustTeacherPointsMutation.isPending}
         onSaveTeacher={(payload) => updateTeacherDetailMutation.mutateAsync(payload)}
         onAdjustForumPoints={(payload) => adjustTeacherPointsMutation.mutateAsync(payload)}
+        onDeleteTeacher={(t) => setTeacherToDelete(t)}
       />
 
       {/* Order Detail Drawer (Phase 2.2 & 2.3 & Phase 3) */}

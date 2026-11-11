@@ -21,8 +21,9 @@ import {
   FileText,
   Sparkles,
 } from 'lucide-react';
-import { formatVnd } from '@/lib/utils';
+import { COURSE_DURATION_PRESET_OPTIONS, formatVnd } from '@/lib/utils';
 import type {
+  CourseDurationPreset,
   KtnClassItem,
   KtnOrder,
   OrderAccountDetailedStatus,
@@ -60,6 +61,7 @@ export interface OrderDetailDrawerProps {
     orderId: string;
     classCode?: string;
     studentEmail?: string;
+    durationPreset?: CourseDurationPreset;
   }) => Promise<unknown>;
   onOpenStudentProfile: (email: string) => void;
 }
@@ -207,6 +209,9 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
   const [selectedClassCode, setSelectedClassCode] = useState(
     () => order?.existing_student?.class_code || ''
   );
+  const [selectedDurationPreset, setSelectedDurationPreset] = useState<CourseDurationPreset>(
+    () => order?.duration_preset || order?.durationPreset || 'unlimited'
+  );
   const [showConfirmApproveModal, setShowConfirmApproveModal] = useState(false);
 
   const currentOrderId = order?.order_id || null;
@@ -227,6 +232,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
       )
     );
     setSelectedClassCode(order?.existing_student?.class_code || '');
+    setSelectedDurationPreset(order?.duration_preset || order?.durationPreset || 'unlimited');
     setShowConfirmApproveModal(false);
   }
 
@@ -240,6 +246,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
       setTxRefInput('');
       setReceivedAmountInput('890000');
       setSelectedClassCode('');
+      setSelectedDurationPreset('unlimited');
       setShowConfirmApproveModal(false);
       return;
     }
@@ -258,6 +265,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
       )
     );
     setSelectedClassCode(order.existing_student?.class_code || '');
+    setSelectedDurationPreset(order.duration_preset || order.durationPreset || 'unlimited');
     setShowConfirmApproveModal(false);
   }, [
     order?.order_id,
@@ -270,6 +278,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     order?.payment_received_amount,
     order?.amount,
     order?.existing_student?.class_code,
+    order?.duration_preset,
+    order?.durationPreset,
   ]);
 
   useEffect(() => {
@@ -325,7 +335,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     if (!order) {
       return { canActivate: false, reasons: ['Chưa chọn đơn hàng.'] };
     }
-    if (order.approval_status === 'approved' && accountDetailedStatus !== 'sync_error') {
+    if (
+      order.approval_status === 'approved' &&
+      accountDetailedStatus !== 'sync_error' &&
+      order.provisioning_status !== 'partial_failure'
+    ) {
       return { canActivate: false, reasons: ['Đơn hàng này đã được kích hoạt.'] };
     }
     const reasons: string[] = [];
@@ -1111,8 +1125,38 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               {order.approval_status === 'approved' && (
                 <div
                   data-testid="order-post-activation-status"
-                  className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3"
+                  className={`space-y-2 rounded-xl border p-3 ${
+                    order.provisioning_status === 'partial_failure' ||
+                    accountDetailedStatus === 'sync_error'
+                      ? 'border-amber-300 bg-amber-50/70'
+                      : 'border-emerald-200 bg-emerald-50/60'
+                  }`}
                 >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span
+                      data-testid="order-grant-sync-status-badge"
+                      className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-extrabold ${
+                        order.provisioning_status === 'partial_failure' ||
+                        accountDetailedStatus === 'sync_error'
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-emerald-700 text-white'
+                      }`}
+                    >
+                      {order.provisioning_status === 'partial_failure' ||
+                      accountDetailedStatus === 'sync_error'
+                        ? 'Cần hoàn tất đồng bộ thời hạn'
+                        : 'Đã cấp thành công'}
+                    </span>
+                    <span className="text-[11px] font-bold text-stone-700">
+                      Thời hạn học:{' '}
+                      {COURSE_DURATION_PRESET_OPTIONS.find(
+                        (o) => o.id === (order.duration_preset || order.durationPreset || 'unlimited')
+                      )?.label || 'Vĩnh viễn'}
+                      {order.limit_time || order.limitTime
+                        ? ` (Hạn: ${String(order.limit_time || order.limitTime).slice(0, 10)})`
+                        : ''}
+                    </span>
+                  </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div className="rounded-lg bg-white p-2 border border-emerald-200">
                       <span className="text-[10px] font-bold uppercase text-stone-500">
@@ -1142,7 +1186,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                         3. Trạng thái học tập
                       </span>
                       <p className="mt-0.5 font-bold text-emerald-900">
-                        Học viên có thể đăng nhập
+                        {order.provisioning_status === 'partial_failure' ||
+                        accountDetailedStatus === 'sync_error'
+                          ? 'Cần hoàn tất đồng bộ thời hạn'
+                          : 'Học viên có thể đăng nhập'}
                       </p>
                     </div>
                   </div>
@@ -1215,34 +1262,66 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 </div>
               )}
 
-              {/* Optional Live Class Assignment on Activation */}
-              {order.approval_status !== 'approved' && (
-                <div>
-                  <label className="block text-[11px] font-bold text-stone-700">
-                    Xếp lớp trực tiếp kèm theo khi kích hoạt (tùy chọn):
-                  </label>
-                  <select
-                    data-testid="order-class-select"
-                    value={selectedClassCode}
-                    onChange={(e) => setSelectedClassCode(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-bold text-stone-800"
+              {/* Course Duration Preset & Optional Live Class Assignment on Activation */}
+              {(order.approval_status !== 'approved' ||
+                order.provisioning_status === 'partial_failure' ||
+                accountDetailedStatus === 'sync_error') && (
+                <div className="space-y-2.5">
+                  <div
+                    data-testid="order-duration-selector"
+                    className="rounded-xl border border-stone-200 bg-stone-50/80 p-2.5"
                   >
-                    <option value="">— Không đổi / Chưa xếp lớp trực tiếp —</option>
-                    {classesList
-                      .filter((cls) => cls.active !== false)
-                      .map((cls) => (
-                        <option key={cls.id} value={cls.id}>
-                          {cls.id} · {cls.name}
-                        </option>
+                    <span className="block text-[11px] font-bold text-stone-800">
+                      Thời hạn học:
+                    </span>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          data-testid={`order-duration-preset-${opt.id}`}
+                          onClick={() => setSelectedDurationPreset(opt.id)}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                            selectedDurationPreset === opt.id
+                              ? 'bg-red-800 text-white shadow-2xs'
+                              : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
                       ))}
-                  </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700">
+                      Xếp lớp trực tiếp kèm theo khi kích hoạt (tùy chọn):
+                    </label>
+                    <select
+                      data-testid="order-class-select"
+                      value={selectedClassCode}
+                      onChange={(e) => setSelectedClassCode(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-bold text-stone-800"
+                    >
+                      <option value="">— Không đổi / Chưa xếp lớp trực tiếp —</option>
+                      {classesList
+                        .filter((cls) => cls.active !== false)
+                        .map((cls) => (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.id} · {cls.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
                 </div>
               )}
             </div>
           </section>
 
           {/* SECTION 5: KÍCH HOẠT KHÓA HỌC (PHASE 2.3) */}
-          {order.approval_status !== 'approved' && (
+          {(order.approval_status !== 'approved' ||
+            order.provisioning_status === 'partial_failure' ||
+            accountDetailedStatus === 'sync_error') && (
             <section
               data-testid="order-section-activation"
               className="rounded-2xl border-2 border-red-800/20 bg-white p-3.5 shadow-xs"
@@ -1287,7 +1366,12 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   ) : (
                     <CheckCircle2 className="h-4 w-4" />
                   )}
-                  <span>Xác nhận & Kích hoạt khóa học</span>
+                  <span>
+                    {order.provisioning_status === 'partial_failure' ||
+                    accountDetailedStatus === 'sync_error'
+                      ? 'Đồng bộ lại quyền & thời hạn'
+                      : 'Xác nhận & Kích hoạt khóa học'}
+                  </span>
                 </button>
               </div>
             </section>
@@ -1318,11 +1402,17 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               >
                 Học viên <strong>{order.student_name}</strong> sẽ được cấp khóa{' '}
                 <strong>{order.course_name}</strong> trên email{' '}
-                <strong>{effectiveEmail}</strong>.
+                <strong>{effectiveEmail}</strong> · Thời hạn học:{' '}
+                <strong>
+                  {COURSE_DURATION_PRESET_OPTIONS.find(
+                    (o) => o.id === selectedDurationPreset
+                  )?.label || 'Vĩnh viễn'}
+                </strong>
+                .
               </p>
 
               <p className="text-[11px] text-stone-600">
-                Hệ thống sẽ đồng bộ quyền khóa học trên izTeach + Supabase. Nếu email đã có tài khoản, mật khẩu cũ và các khóa hiện có được giữ nguyên.
+                Hệ thống sẽ đồng bộ quyền khóa học và thời hạn trên izTeach + Supabase. Nếu email đã có tài khoản, mật khẩu cũ và các khóa hiện có được giữ nguyên.
               </p>
 
               <div className="flex justify-end gap-2 pt-1">
@@ -1343,6 +1433,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                       orderId: order.order_id,
                       classCode: selectedClassCode || undefined,
                       studentEmail: effectiveEmail,
+                      durationPreset: selectedDurationPreset,
                     });
                     setShowConfirmApproveModal(false);
                   }}

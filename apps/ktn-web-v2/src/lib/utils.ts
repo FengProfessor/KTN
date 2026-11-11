@@ -708,6 +708,13 @@ export interface ResolvedStudentCourse {
   shortTitle: string;
   displayLabel: string;
   fullDisplayLabel: string;
+  userPermissionId?: string | null;
+  limitTime?: string | null;
+  expiresAt?: string | null;
+  durationPreset?: '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+  isExpired?: boolean;
+  syncStatus?: string;
+  updatedAt?: string | null;
 }
 
 export function resolveStudentOnlineCourses(
@@ -717,6 +724,13 @@ export function resolveStudentOnlineCourses(
     code?: string;
     title?: string;
     shortTitle?: string;
+    userPermissionId?: string | null;
+    limitTime?: string | null;
+    expiresAt?: string | null;
+    durationPreset?: '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+    isExpired?: boolean;
+    syncStatus?: string;
+    updatedAt?: string | null;
   } | string> | null,
   catalogCourses?: Array<{
     id: string;
@@ -738,7 +752,19 @@ export function resolveStudentOnlineCourses(
   // Deduplicate by canonical course ID while preserving order and best non-generic metadata
   const dedupedById = new Map<
     string,
-    { id: string; code: string; title: string; shortTitle: string }
+    {
+      id: string;
+      code: string;
+      title: string;
+      shortTitle: string;
+      userPermissionId?: string | null;
+      limitTime?: string | null;
+      expiresAt?: string | null;
+      durationPreset?: '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+      isExpired?: boolean;
+      syncStatus?: string;
+      updatedAt?: string | null;
+    }
   >();
 
   for (const item of rawCourses) {
@@ -780,13 +806,21 @@ export function resolveStudentOnlineCourses(
     const resolvedCode =
       cat?.code || itemCode || fallback?.code || rawId.slice(-6).toUpperCase();
 
+    const itemObj = typeof item === 'object' ? item : null;
     const existing = dedupedById.get(rawId);
     if (!existing) {
       dedupedById.set(rawId, {
         id: rawId,
         code: resolvedCode,
         title: resolvedTitle,
-        shortTitle: resolvedShortTitle
+        shortTitle: resolvedShortTitle,
+        userPermissionId: itemObj?.userPermissionId ?? null,
+        limitTime: itemObj?.limitTime ?? null,
+        expiresAt: itemObj?.expiresAt ?? null,
+        durationPreset: itemObj?.durationPreset,
+        isExpired: itemObj?.isExpired ?? false,
+        syncStatus: itemObj?.syncStatus || 'synced',
+        updatedAt: itemObj?.updatedAt ?? null,
       });
     } else {
       // Upgrade title if previous duplicate had a fallback suffix and current has real title
@@ -795,6 +829,35 @@ export function resolveStudentOnlineCourses(
       }
       if (existing.shortTitle.startsWith('Khóa (') && !resolvedShortTitle.startsWith('Khóa (')) {
         existing.shortTitle = resolvedShortTitle;
+      }
+      if (itemObj) {
+        if (!existing.userPermissionId && itemObj.userPermissionId) {
+          existing.userPermissionId = itemObj.userPermissionId;
+        }
+        // Prefer unlimited or non-expired entitlement when multiple permissions exist
+        if (existing.isExpired && itemObj.isExpired === false) {
+          existing.limitTime = itemObj.limitTime ?? null;
+          existing.expiresAt = itemObj.expiresAt ?? null;
+          existing.durationPreset = itemObj.durationPreset;
+          existing.isExpired = false;
+          if (itemObj.userPermissionId) existing.userPermissionId = itemObj.userPermissionId;
+        } else if (existing.limitTime && (itemObj.limitTime === null || itemObj.limitTime === undefined)) {
+          existing.limitTime = null;
+          existing.expiresAt = null;
+          existing.durationPreset = 'unlimited';
+          existing.isExpired = false;
+        } else if (
+          existing.limitTime &&
+          itemObj.limitTime &&
+          String(itemObj.limitTime) > String(existing.limitTime)
+        ) {
+          existing.limitTime = itemObj.limitTime;
+          existing.expiresAt = itemObj.expiresAt ?? existing.expiresAt;
+          existing.durationPreset = itemObj.durationPreset ?? existing.durationPreset;
+        }
+        if (itemObj.syncStatus && itemObj.syncStatus !== 'synced') {
+          existing.syncStatus = itemObj.syncStatus;
+        }
       }
     }
   }
@@ -902,6 +965,211 @@ export function normalizeVietnameseText(raw?: string | null): string {
 }
 
 export const normalizeViSearchText = normalizeVietnameseText;
+
+export type CourseDurationPresetOptionId = '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+
+export const COURSE_DURATION_PRESET_OPTIONS: Array<{
+  id: CourseDurationPresetOptionId;
+  label: string;
+}> = [
+  { id: '1w', label: '1 tuần' },
+  { id: '2w', label: '2 tuần' },
+  { id: '1m', label: '1 tháng' },
+  { id: '2m', label: '2 tháng' },
+  { id: '3m', label: '3 tháng' },
+  { id: 'unlimited', label: 'Vĩnh viễn' },
+];
+
+export function getHoChiMinhCalendarDateString(nowMs: number = Date.now()): string {
+  const ts = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+  return new Date(ts + 7 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+export function extractCalendarDateFromLimitTime(limitTime?: string | null): string | null {
+  if (limitTime === null || limitTime === undefined || limitTime === '') return null;
+  const s = String(limitTime).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.slice(0, 10);
+  }
+  const ts = Date.parse(s);
+  if (Number.isFinite(ts)) {
+    return getHoChiMinhCalendarDateString(ts);
+  }
+  return null;
+}
+
+export function addPresetToCalendarDate(
+  baseYmd: string | null | undefined,
+  preset: CourseDurationPresetOptionId
+): string | null {
+  if (!preset || preset === 'unlimited') return null;
+  const cleanYmd =
+    extractCalendarDateFromLimitTime(baseYmd) || getHoChiMinhCalendarDateString();
+  const m = cleanYmd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+
+  if (preset === '1w' || preset === '2w') {
+    const addDays = preset === '1w' ? 7 : 14;
+    const d = new Date(Date.UTC(year, month - 1, day + addDays));
+    return d.toISOString().slice(0, 10);
+  }
+
+  const addMonths = preset === '1m' ? 1 : preset === '2m' ? 2 : 3;
+  const totalMonths = year * 12 + (month - 1) + addMonths;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonth = (totalMonths % 12) + 1;
+  const maxDayInTargetMonth = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  const clampedDay = Math.min(day, maxDayInTargetMonth);
+  return `${String(targetYear).padStart(4, '0')}-${String(targetMonth).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`;
+}
+
+export function toIzTeachExpiresAtIso(limitTime?: string | null): string | null {
+  if (limitTime === null || limitTime === undefined || limitTime === '') return null;
+  const s = String(limitTime).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return `${s}T23:59:59.999Z`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    return s;
+  }
+  const ts = Date.parse(s);
+  if (Number.isFinite(ts)) {
+    return new Date(ts).toISOString();
+  }
+  return null;
+}
+
+export interface CourseExpirationDisplayInfo {
+  statusKey: 'unlimited' | 'active' | 'expiring_soon' | 'expired' | 'sync_error';
+  adminStatusLabel: 'Vĩnh viễn' | 'Còn hạn' | 'Sắp hết hạn' | 'Đã hết hạn' | 'Đồng bộ lỗi';
+  adminCompactText: string;
+  studentCardText: string;
+  isUnlimited: boolean;
+  isExpiringSoon: boolean;
+  isExpired: boolean;
+  isSyncError: boolean;
+  remainingMs: number | null;
+  remainingDays: number | null;
+  expiresAtIso: string | null;
+  limitDateYmd: string | null;
+}
+
+export function computeCourseExpirationInfo(
+  course?: {
+    limitTime?: string | null;
+    expiresAt?: string | null;
+    isExpired?: boolean;
+    syncStatus?: string | null;
+  } | null,
+  nowMs: number = Date.now()
+): CourseExpirationDisplayInfo {
+  const rawSync = String(course?.syncStatus || 'synced').trim().toLowerCase();
+  const isSyncError =
+    rawSync === 'partial_failure' || rawSync === 'sync_failed' || rawSync === 'error';
+
+  const rawLimit = course?.expiresAt || course?.limitTime || null;
+  const expiresAtIso = toIzTeachExpiresAtIso(rawLimit);
+  const limitDateYmd = extractCalendarDateFromLimitTime(rawLimit);
+
+  if (!expiresAtIso) {
+    if (course?.isExpired === true) {
+      return {
+        statusKey: isSyncError ? 'sync_error' : 'expired',
+        adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Đã hết hạn',
+        adminCompactText: isSyncError ? 'Đồng bộ lỗi' : 'Đã hết hạn',
+        studentCardText: 'Đã hết hạn · Gia hạn',
+        isUnlimited: false,
+        isExpiringSoon: false,
+        isExpired: true,
+        isSyncError,
+        remainingMs: 0,
+        remainingDays: 0,
+        expiresAtIso: null,
+        limitDateYmd: null,
+      };
+    }
+    return {
+      statusKey: isSyncError ? 'sync_error' : 'unlimited',
+      adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Vĩnh viễn',
+      adminCompactText: isSyncError ? 'Đồng bộ lỗi' : 'Vĩnh viễn',
+      studentCardText: 'Không giới hạn thời gian',
+      isUnlimited: true,
+      isExpiringSoon: false,
+      isExpired: false,
+      isSyncError,
+      remainingMs: null,
+      remainingDays: null,
+      expiresAtIso: null,
+      limitDateYmd: null,
+    };
+  }
+
+  const expMs = Date.parse(expiresAtIso);
+  const remainingMs = Number.isFinite(expMs) ? expMs - nowMs : 0;
+
+  if (remainingMs <= 0) {
+    return {
+      statusKey: isSyncError ? 'sync_error' : 'expired',
+      adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Đã hết hạn',
+      adminCompactText: isSyncError ? 'Đồng bộ lỗi' : 'Đã hết hạn',
+      studentCardText: 'Đã hết hạn · Gia hạn',
+      isUnlimited: false,
+      isExpiringSoon: false,
+      isExpired: true,
+      isSyncError,
+      remainingMs: 0,
+      remainingDays: 0,
+      expiresAtIso,
+      limitDateYmd,
+    };
+  }
+
+  const sevenDaysMs = 7 * 86400 * 1000;
+  const remainingDays = Math.max(1, Math.ceil(remainingMs / 86400000));
+
+  if (remainingMs <= sevenDaysMs) {
+    const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const hhmmss = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    const ddStr = String(days).padStart(2, '0');
+    return {
+      statusKey: isSyncError ? 'sync_error' : 'expiring_soon',
+      adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Sắp hết hạn',
+      adminCompactText: isSyncError ? `Còn ${remainingDays} ngày · Đồng bộ lỗi` : `Còn ${remainingDays} ngày`,
+      studentCardText: `Sắp hết hạn · ${ddStr} ngày ${hhmmss}`,
+      isUnlimited: false,
+      isExpiringSoon: true,
+      isExpired: false,
+      isSyncError,
+      remainingMs,
+      remainingDays,
+      expiresAtIso,
+      limitDateYmd,
+    };
+  }
+
+  return {
+    statusKey: isSyncError ? 'sync_error' : 'active',
+    adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Còn hạn',
+    adminCompactText: isSyncError ? `Còn ${remainingDays} ngày · Đồng bộ lỗi` : `Còn ${remainingDays} ngày`,
+    studentCardText: `Thời hạn học: còn ${remainingDays} ngày`,
+    isUnlimited: false,
+    isExpiringSoon: false,
+    isExpired: false,
+    isSyncError,
+    remainingMs,
+    remainingDays,
+    expiresAtIso,
+    limitDateYmd,
+  };
+}
+
 
 
 

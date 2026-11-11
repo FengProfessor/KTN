@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -16,7 +16,7 @@ import {
   Gamepad2,
   ArrowRight,
 } from 'lucide-react';
-import { ktnApi } from '@/services/api/ktnApiClient';
+import { ktnApi, getServerNowMs } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import {
@@ -28,6 +28,7 @@ import {
   DEMO_NOTIFICATIONS,
 } from '@/lib/demoData';
 import {
+  computeCourseExpirationInfo,
   formatRelativeTime,
   resolveHomeworkLink,
   resolveNotificationLink,
@@ -39,6 +40,8 @@ import {
   KtnHomework,
   KtnLessonUnit,
   KtnNotification,
+  KtnStudentRecord,
+  OnlineCourseEntitlement,
 } from '@/types/ktn.types';
 import {
   SectionHeading,
@@ -103,12 +106,25 @@ export const StudentHome: React.FC = () => {
     return list.find((c) => c.id === effectiveClassCode) || null;
   }, [effectiveClassCode, isDemoMode, classesQuery.data]);
 
+  const studentMeQuery = useQuery<KtnStudentRecord>({
+    queryKey: ['ktn-student-me', user?.email, isDemoMode],
+    queryFn: async () => ktnApi.getStudentMe(),
+    enabled: Boolean(user?.email) && !isDemoMode,
+    retry: false,
+  });
+
+  const liveOnlineCourses = useMemo<OnlineCourseEntitlement[]>(() => {
+    const fromMe = studentMeQuery.data?.online_courses;
+    if (Array.isArray(fromMe) && fromMe.length > 0) return fromMe;
+    return user?.onlineCourses || [];
+  }, [studentMeQuery.data?.online_courses, user?.onlineCourses]);
+
   // 3. Entitled courses based strictly on user session entitlements in live mode
   const myVideoCourses = useMemo(() => {
     if (isDemoMode) {
       return user?.hasOnlineCourses === false ? [] : DEMO_COURSES.slice(0, 2);
     }
-    const entitledList = user?.onlineCourses || [];
+    const entitledList = liveOnlineCourses;
     if (entitledList.length === 0) return [];
     const catalog = coursesCatalogQuery.data || [];
     return entitledList.map((ent) => {
@@ -126,9 +142,61 @@ export const StudentHome: React.FC = () => {
         }
       );
     });
-  }, [isDemoMode, user?.hasOnlineCourses, user?.onlineCourses, coursesCatalogQuery.data]);
+  }, [isDemoMode, user?.hasOnlineCourses, liveOnlineCourses, coursesCatalogQuery.data]);
 
   const primaryCourse = myVideoCourses[0] || null;
+  const primaryCourseEntitlement = useMemo<OnlineCourseEntitlement | null>(() => {
+    if (!primaryCourse) return null;
+    const found = liveOnlineCourses.find(
+      (c) => c.id === primaryCourse.id || c.code === primaryCourse.code
+    );
+    return (
+      found || {
+        id: primaryCourse.id,
+        code: primaryCourse.code,
+        title: primaryCourse.title,
+        shortTitle: primaryCourse.shortTitle || primaryCourse.title,
+        limitTime: null,
+        expiresAt: null,
+        isExpired: false,
+      }
+    );
+  }, [primaryCourse, liveOnlineCourses]);
+
+  const [nowMs, setNowMs] = useState<number>(() => getServerNowMs());
+  const primaryCourseExpInfo = useMemo(
+    () => computeCourseExpirationInfo(primaryCourseEntitlement, nowMs),
+    [primaryCourseEntitlement, nowMs]
+  );
+
+  useEffect(() => {
+    setNowMs(getServerNowMs());
+  }, [primaryCourseEntitlement?.limitTime, primaryCourseEntitlement?.expiresAt]);
+
+  useEffect(() => {
+    if (primaryCourseExpInfo.statusKey !== 'expiring_soon') return;
+    const timer = window.setInterval(() => {
+      setNowMs(getServerNowMs());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [primaryCourseExpInfo.statusKey]);
+
+  useEffect(() => {
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        setNowMs(getServerNowMs());
+        if (!isDemoMode && user?.email) {
+          studentMeQuery.refetch();
+        }
+      }
+    };
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+    return () => {
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+    };
+  }, [isDemoMode, user?.email, studentMeQuery]);
 
   // 4. Fetch units for primary entitled course to show real lesson title & progress
   const unitsQuery = useQuery<KtnLessonUnit[]>({
@@ -138,7 +206,10 @@ export const StudentHome: React.FC = () => {
       if (isDemoMode) return DEMO_LESSONS;
       return ktnApi.getCourseUnits(primaryCourse.id);
     },
-    enabled: Boolean(primaryCourse?.id) && (Boolean(user) || isDemoMode),
+    enabled:
+      Boolean(primaryCourse?.id) &&
+      !primaryCourseExpInfo.isExpired &&
+      (Boolean(user) || isDemoMode),
     retry: false,
   });
 
@@ -397,7 +468,7 @@ export const StudentHome: React.FC = () => {
                 <PlayCircle className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="truncate text-[10.5px] font-bold uppercase tracking-wide text-red-900">
                     {primaryCourse.shortTitle || primaryCourse.title}
                   </span>
@@ -406,6 +477,18 @@ export const StudentHome: React.FC = () => {
                       {progressPercent}%
                     </span>
                   )}
+                  <span
+                    data-testid="dashboard-course-expiration-badge"
+                    className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                      primaryCourseExpInfo.isExpired
+                        ? 'bg-red-100 text-red-900'
+                        : primaryCourseExpInfo.statusKey === 'expiring_soon'
+                        ? 'bg-amber-100 font-mono text-amber-900'
+                        : 'bg-stone-100 text-stone-700'
+                    }`}
+                  >
+                    {primaryCourseExpInfo.studentCardText}
+                  </span>
                 </div>
                 <p className="truncate font-display text-xs font-bold text-stone-900 sm:text-sm">
                   {nextLesson?.title || primaryCourse.title}
@@ -423,15 +506,21 @@ export const StudentHome: React.FC = () => {
               data-testid="dashboard-continue-learning-btn"
               onClick={() =>
                 navigate(
-                  nextLesson
+                  primaryCourseExpInfo.isExpired
+                    ? `/learning?courseId=${encodeURIComponent(primaryCourse.id)}`
+                    : nextLesson
                     ? `/learning?courseId=${encodeURIComponent(primaryCourse.id)}&lesson=${nextLesson.num}`
                     : `/learning?courseId=${encodeURIComponent(primaryCourse.id)}`
                 )
               }
-              className="inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-2 text-xs font-extrabold text-stone-950 shadow-2xs hover:bg-amber-300"
+              className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold shadow-2xs ${
+                primaryCourseExpInfo.isExpired
+                  ? 'bg-red-800 text-white hover:bg-red-900'
+                  : 'bg-amber-400 text-stone-950 hover:bg-amber-300'
+              }`}
             >
               <PlayCircle className="h-3.5 w-3.5 shrink-0" />
-              <span>Học tiếp</span>
+              <span>{primaryCourseExpInfo.isExpired ? 'Gia hạn' : 'Học tiếp'}</span>
             </button>
           </section>
         ) : null}

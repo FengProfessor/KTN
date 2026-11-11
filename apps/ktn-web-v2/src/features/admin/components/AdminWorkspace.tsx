@@ -30,6 +30,7 @@ import {
 import {
   ktnApi,
   KtnApiError,
+  getServerNowMs,
   filterAndPaginateTeachersClientSide,
   type KtnTeacherSearchResult,
 } from '@/services/api/ktnApiClient';
@@ -38,9 +39,14 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_COURSES } from '@/lib/demoData';
 import {
+  COURSE_DURATION_PRESET_OPTIONS,
+  addPresetToCalendarDate,
   disambiguateCatalogCourses,
+  extractCalendarDateFromLimitTime,
   formatVnd,
+  getHoChiMinhCalendarDateString,
   resolveStudentOnlineCourses,
+  toIzTeachExpiresAtIso,
 } from '@/lib/utils';
 import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
 import { StudentDetailDrawer } from '@/features/admin/components/StudentDetailDrawer';
@@ -52,6 +58,8 @@ import {
   PAYMENT_STATUS_META,
 } from '@/features/admin/components/OrderDetailDrawer';
 import {
+  CourseDurationMode,
+  CourseDurationPreset,
   KtnClassItem,
   KtnCourse,
   KtnCourseGrantRequest,
@@ -158,6 +166,8 @@ export const AdminWorkspace: React.FC = () => {
   const [newStuParent, setNewStuParent] = useState('');
   const [newStuClassCode, setNewStuClassCode] = useState('');
   const [newStuCourseIds, setNewStuCourseIds] = useState<string[]>([]);
+  const [newStuDurationPreset, setNewStuDurationPreset] =
+    useState<CourseDurationPreset>('unlimited');
   const [newStuIdempotencyKey, setNewStuIdempotencyKey] = useState(
     () => `PROV-UI-${Date.now()}`
   );
@@ -720,22 +730,31 @@ export const AdminWorkspace: React.FC = () => {
       orderId: string;
       classCode?: string;
       studentEmail?: string;
+      durationPreset?: CourseDurationPreset;
     }) => {
       setOrderDrawerError(null);
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 350));
+        const preset = params.durationPreset || 'unlimited';
+        const todayStr = getHoChiMinhCalendarDateString(getServerNowMs());
+        const limitTime = addPresetToCalendarDate(todayStr, preset);
         return {
-          message: 'Approved',
+          message: 'Đã cấp thành công',
           orderId: params.orderId,
           studentEmail: params.studentEmail || 'giahan@khongtunhi.com',
           accountCreated: true,
           existingAccount: false,
           initialPassword: 'KtnDemoOrder!2026',
+          syncStatus: 'synced' as const,
+          durationPreset: preset,
+          limitTime,
+          expiresAt: toIzTeachExpiresAtIso(limitTime),
         };
       }
       return ktnApi.approveOrder(params.orderId, params.classCode, {
         confirmActivation: true,
         studentEmail: params.studentEmail,
+        durationPreset: params.durationPreset,
       });
     },
     onSuccess: (res, vars) => {
@@ -760,10 +779,18 @@ export const AdminWorkspace: React.FC = () => {
           initialPassword: res.initialPassword,
         });
       }
-      addToast({
-        title: 'Đã xác nhận & kích hoạt khóa học thành công!',
-        variant: 'success',
-      });
+      if (res.syncStatus === 'partial_failure') {
+        addToast({
+          title: 'Cần hoàn tất đồng bộ thời hạn',
+          description: res.message,
+          variant: 'warning',
+        });
+      } else {
+        addToast({
+          title: res.message || 'Đã cấp thành công!',
+          variant: 'success',
+        });
+      }
     },
     onError: (err: Error) => {
       setOrderDrawerError(err.message);
@@ -831,7 +858,12 @@ export const AdminWorkspace: React.FC = () => {
     };
 
   const grantCoursesMutation = useMutation({
-    mutationFn: async (params: { email: string; courseIds: string[] }) => {
+    mutationFn: async (params: {
+      email: string;
+      courseIds: string[];
+      durationPreset?: CourseDurationPreset;
+      durationMode?: CourseDurationMode;
+    }) => {
       setDrawerActionError(null);
       if (!params.courseIds || params.courseIds.length === 0) {
         throw new Error('Vui lòng chọn ít nhất 1 khóa học trước khi cấp quyền.');
@@ -840,6 +872,10 @@ export const AdminWorkspace: React.FC = () => {
         await new Promise((r) => setTimeout(r, 250));
         const base = buildBaseDemoStudent(params.email);
         const existingCourses = base.online_courses || [];
+        const preset = params.durationPreset || 'unlimited';
+        const todayStr = getHoChiMinhCalendarDateString(getServerNowMs());
+        const limitTime = addPresetToCalendarDate(todayStr, preset);
+        const expiresAt = toIzTeachExpiresAtIso(limitTime);
         const addedCourses = DEMO_COURSES.filter((c) =>
           params.courseIds.includes(c.id)
         ).map((c) => ({
@@ -847,6 +883,11 @@ export const AdminWorkspace: React.FC = () => {
           code: c.code || c.id,
           title: c.title,
           shortTitle: c.shortTitle || c.title,
+          limitTime,
+          expiresAt,
+          durationPreset: preset,
+          isExpired: false,
+          syncStatus: 'synced' as const,
         }));
         const mergedMap = new Map<string, (typeof existingCourses)[number]>();
         [...existingCourses, ...addedCourses].forEach((c) => mergedMap.set(c.id, c));
@@ -860,6 +901,8 @@ export const AdminWorkspace: React.FC = () => {
       return ktnApi.grantStudentCourses({
         email: params.email,
         courseIds: params.courseIds,
+        durationPreset: params.durationPreset,
+        durationMode: params.durationMode,
       });
     },
     onSuccess: (res, vars) => {
@@ -873,6 +916,73 @@ export const AdminWorkspace: React.FC = () => {
       setDrawerActionError(err.message);
       addToast({
         title: 'Không thể cấp khóa học',
+        description: err.message,
+        variant: 'error',
+      });
+    },
+  });
+
+  const setCourseDurationMutation = useMutation({
+    mutationFn: async (params: {
+      studentEmail: string;
+      courseId: string;
+      preset: CourseDurationPreset;
+      mode?: CourseDurationMode;
+      clientRequestId?: string;
+    }) => {
+      setDrawerActionError(null);
+      if (isDemoMode) {
+        await new Promise((r) => setTimeout(r, 200));
+        const base = buildBaseDemoStudent(params.studentEmail);
+        const existingCourses = base.online_courses || [];
+        const todayStr = getHoChiMinhCalendarDateString(getServerNowMs());
+        const targetCourse = existingCourses.find((c) => c.id === params.courseId);
+        const currentLimitDate = extractCalendarDateFromLimitTime(
+          targetCourse?.limitTime || targetCourse?.expiresAt
+        );
+        const anchorDate =
+          params.mode === 'extend_from_current' &&
+          currentLimitDate &&
+          currentLimitDate > todayStr
+            ? currentLimitDate
+            : todayStr;
+        const limitTime = addPresetToCalendarDate(anchorDate, params.preset);
+        const expiresAt = toIzTeachExpiresAtIso(limitTime);
+        const nextCourses = existingCourses.map((c) =>
+          c.id === params.courseId
+            ? {
+                ...c,
+                limitTime,
+                expiresAt,
+                durationPreset: params.preset,
+                isExpired: false,
+                syncStatus: 'synced' as const,
+              }
+            : c
+        );
+        const updatedStudent: KtnStudentRecord = {
+          ...base,
+          online_courses: nextCourses,
+        };
+        return {
+          ok: true,
+          message: 'Đã cập nhật thời hạn khóa học thành công!',
+          student: updatedStudent,
+        };
+      }
+      return ktnApi.setStudentCourseDuration(params);
+    },
+    onSuccess: (res, vars) => {
+      handleStudentMutationSuccess(
+        res,
+        vars.studentEmail,
+        'Đã cập nhật thời hạn khóa học!'
+      );
+    },
+    onError: (err: Error) => {
+      setDrawerActionError(err.message);
+      addToast({
+        title: 'Không thể cập nhật thời hạn khóa học',
         description: err.message,
         variant: 'error',
       });
@@ -1140,6 +1250,7 @@ export const AdminWorkspace: React.FC = () => {
         parentName: newStuParent.trim() || undefined,
         classCode: newStuClassCode ? newStuClassCode : null,
         courseIds: newStuCourseIds,
+        durationPreset: newStuDurationPreset,
         idempotencyKey: scopedIdempotencyKey,
       });
     },
@@ -1169,11 +1280,20 @@ export const AdminWorkspace: React.FC = () => {
       setNewStuParent('');
       setNewStuClassCode('');
       setNewStuCourseIds([]);
+      setNewStuDurationPreset('unlimited');
       setNewStuIdempotencyKey(`PROV-UI-${Date.now()}`);
-      addToast({
-        title: res.message || 'Đã tạo & cấp quyền học viên thành công!',
-        variant: 'success',
-      });
+      if (res.syncStatus === 'partial_failure') {
+        addToast({
+          title: 'Cần hoàn tất đồng bộ thời hạn',
+          description: res.message,
+          variant: 'warning',
+        });
+      } else {
+        addToast({
+          title: res.message || 'Đã tạo & cấp quyền học viên thành công!',
+          variant: 'success',
+        });
+      }
     },
     onError: (err: Error) => {
       addToast({
@@ -1520,10 +1640,21 @@ export const AdminWorkspace: React.FC = () => {
 
   const retrySyncMutation = useMutation({
     mutationFn: async (payload: {
-      type: 'student_provision' | 'student_sync' | 'teacher_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
+      type:
+        | 'student_provision'
+        | 'student_sync'
+        | 'teacher_provision'
+        | 'order_approve'
+        | 'homework_sync'
+        | 'course_duration'
+        | 'bulk_sync';
       email?: string;
       orderId?: string;
       homeworkId?: string;
+      courseId?: string;
+      preset?: CourseDurationPreset;
+      mode?: CourseDurationMode;
+      limitTime?: string | null;
     }) => {
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 300));
@@ -2434,6 +2565,34 @@ export const AdminWorkspace: React.FC = () => {
                   })
                 )}
               </div>
+
+              {newStuCourseIds.length > 0 && (
+                <div
+                  data-testid="provision-student-duration-selector"
+                  className="mt-2 rounded-xl border border-stone-200 bg-stone-50 p-2"
+                >
+                  <span className="block text-[11px] font-bold text-stone-700">
+                    Thời hạn học:
+                  </span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        data-testid={`provision-student-duration-preset-${opt.id}`}
+                        onClick={() => setNewStuDurationPreset(opt.id)}
+                        className={`rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
+                          newStuDurationPreset === opt.id
+                            ? 'bg-red-800 text-white'
+                            : 'border border-stone-200 bg-white text-stone-700'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -5070,6 +5229,7 @@ export const AdminWorkspace: React.FC = () => {
         onClearError={() => setDrawerActionError(null)}
         isGrantingCourse={grantCoursesMutation.isPending}
         isRevokingCourse={revokeCourseMutation.isPending}
+        isSettingCourseDuration={setCourseDurationMutation.isPending}
         isAssigningClass={assignClassMutation.isPending}
         isReplacingCourses={replaceAllCoursesMutation.isPending}
         isUpdatingProfile={updateProfileMutation.isPending}
@@ -5085,6 +5245,7 @@ export const AdminWorkspace: React.FC = () => {
         )}
         onGrantCourses={(params) => grantCoursesMutation.mutateAsync(params)}
         onRevokeCourse={(params) => revokeCourseMutation.mutateAsync(params)}
+        onSetCourseDuration={(params) => setCourseDurationMutation.mutateAsync(params)}
         onAssignClass={(params) => assignClassMutation.mutateAsync(params)}
         onReplaceAllCourses={(params) => replaceAllCoursesMutation.mutateAsync(params)}
         onUpdateProfile={(params) => updateProfileMutation.mutateAsync(params)}

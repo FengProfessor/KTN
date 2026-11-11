@@ -3819,6 +3819,516 @@ function extractIzTeachOnlineCourseIds(permData) {
   return ids;
 }
 
+const VALID_COURSE_DURATION_PRESETS = new Set(['1w', '2w', '1m', '2m', '3m', 'unlimited']);
+
+function normalizeCourseDurationPreset(rawPreset) {
+  if (rawPreset === null || rawPreset === undefined || rawPreset === '') return null;
+  const s = String(rawPreset).trim().toLowerCase();
+  if (VALID_COURSE_DURATION_PRESETS.has(s)) return s;
+  if (s === 'forever' || s === 'permanent' || s === 'vinh_vien') return 'unlimited';
+  return null;
+}
+
+function isQaTestEmail(email) {
+  const clean = normalizeEmail(email || '');
+  return (
+    /^(?:e2e\.|qa[_.-]|test[_.-])/i.test(clean) ||
+    clean === 'hoangngan@khongtunhi.com' ||
+    clean === 'minhkhang@khongtunhi.com'
+  );
+}
+
+function resolveEffectiveRequestNowMs(request, emailOrSession = '') {
+  if (!request || typeof request.headers?.get !== 'function') return Date.now();
+  const simHeader = String(request.headers.get('X-KTN-QA-Simulated-Now') || '').trim();
+  if (!simHeader) return Date.now();
+  const email = typeof emailOrSession === 'string'
+    ? emailOrSession
+    : (emailOrSession?.email || '');
+  const role = typeof emailOrSession === 'object' && emailOrSession ? emailOrSession.role : '';
+  if (!isQaTestEmail(email) && role !== 'admin') return Date.now();
+  const parsedMs = /^\d{10,15}$/.test(simHeader) ? Number(simHeader) : Date.parse(simHeader);
+  if (Number.isFinite(parsedMs) && parsedMs > 946684800000 && parsedMs < 4102444800000) {
+    return parsedMs;
+  }
+  return Date.now();
+}
+
+function getHoChiMinhCalendarDateString(nowMs = Date.now()) {
+  const ts = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+  return new Date(ts + 7 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+function extractCalendarDateFromLimitTime(limitTime) {
+  if (limitTime === null || limitTime === undefined || limitTime === '') return null;
+  const s = String(limitTime).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.slice(0, 10);
+  }
+  const ts = Date.parse(s);
+  if (Number.isFinite(ts)) {
+    return getHoChiMinhCalendarDateString(ts);
+  }
+  return null;
+}
+
+function addPresetToCalendarDate(baseYmd, preset) {
+  const normPreset = normalizeCourseDurationPreset(preset);
+  if (!normPreset || normPreset === 'unlimited') return null;
+  const cleanYmd = extractCalendarDateFromLimitTime(baseYmd) || getHoChiMinhCalendarDateString();
+  const m = cleanYmd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+
+  if (normPreset === '1w' || normPreset === '2w') {
+    const addDays = normPreset === '1w' ? 7 : 14;
+    const d = new Date(Date.UTC(year, month - 1, day + addDays));
+    return d.toISOString().slice(0, 10);
+  }
+
+  const addMonths = normPreset === '1m' ? 1 : (normPreset === '2m' ? 2 : 3);
+  const totalMonths = year * 12 + (month - 1) + addMonths;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonth = (totalMonths % 12) + 1;
+  const maxDayInTargetMonth = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  const clampedDay = Math.min(day, maxDayInTargetMonth);
+  return `${String(targetYear).padStart(4, '0')}-${String(targetMonth).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`;
+}
+
+function toIzTeachExpiresAtIso(limitTime) {
+  if (limitTime === null || limitTime === undefined || limitTime === '') return null;
+  const s = String(limitTime).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return `${s}T23:59:59.999Z`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    return s;
+  }
+  const ts = Date.parse(s);
+  if (Number.isFinite(ts)) {
+    return new Date(ts).toISOString();
+  }
+  return null;
+}
+
+function isCourseLimitTimeExpired(limitTimeOrExpiresAt, explicitIsExpired = undefined, nowMs = Date.now()) {
+  if (limitTimeOrExpiresAt === null || limitTimeOrExpiresAt === undefined || limitTimeOrExpiresAt === '') {
+    return false;
+  }
+  const expiresIso = toIzTeachExpiresAtIso(limitTimeOrExpiresAt);
+  if (expiresIso) {
+    const expMs = Date.parse(expiresIso);
+    if (Number.isFinite(expMs)) {
+      return Number(nowMs) > expMs;
+    }
+  }
+  return Boolean(explicitIsExpired);
+}
+
+function computeTargetLimitTimeForCourse({
+  preset,
+  mode = 'set_from_now',
+  currentLimitTime = null,
+  nowMs = Date.now()
+}) {
+  const normPreset = normalizeCourseDurationPreset(preset);
+  if (!normPreset) {
+    return { ok: false, error: 'INVALID_DURATION_PRESET', limitTime: null, expiresAt: null };
+  }
+  if (normPreset === 'unlimited') {
+    return {
+      ok: true,
+      preset: 'unlimited',
+      effectiveMode: 'unlimited',
+      baseDateYmd: null,
+      limitTime: null,
+      expiresAt: null
+    };
+  }
+  const todayYmd = getHoChiMinhCalendarDateString(nowMs);
+  let baseDateYmd = todayYmd;
+  let effectiveMode = 'set_from_now';
+  if (mode === 'extend_from_current' && currentLimitTime) {
+    const curExpired = isCourseLimitTimeExpired(currentLimitTime, false, nowMs);
+    const curYmd = extractCalendarDateFromLimitTime(currentLimitTime);
+    if (!curExpired && curYmd && curYmd >= todayYmd) {
+      baseDateYmd = curYmd;
+      effectiveMode = 'extend_from_current';
+    }
+  }
+  const targetYmd = addPresetToCalendarDate(baseDateYmd, normPreset);
+  const expiresAt = toIzTeachExpiresAtIso(targetYmd);
+  return {
+    ok: true,
+    preset: normPreset,
+    effectiveMode,
+    baseDateYmd,
+    limitTime: targetYmd,
+    expiresAt
+  };
+}
+
+function extractIzTeachOnlineCourseEntitlements(permData, nowMs = Date.now()) {
+  const list = Array.isArray(permData)
+    ? permData
+    : (permData && typeof permData === 'object'
+      ? (permData.data && typeof permData.data === 'object' ? [permData.data] : [permData])
+      : []);
+  const byCourseId = new Map();
+
+  for (const item of list) {
+    const arr = Array.isArray(item?.onlineCourses) ? item.onlineCourses : [];
+    const topLevelPerms = Array.isArray(item?.permissions) ? item.permissions : [];
+    for (const c of arr) {
+      if (!c) continue;
+      const cid = String(c?.id || c?._id || c?.onlineCourseId || c?.productId || c || '').trim();
+      if (!cid) continue;
+
+      const courseNestedPerms = Array.isArray(c?.permissions) ? c.permissions : [];
+      const matchingTopPerms = topLevelPerms.filter(
+        tp => tp && Array.isArray(tp.onlineCourses) && tp.onlineCourses.some(oc => String(oc?.id || oc?._id || oc || '').trim().toLowerCase() === cid.toLowerCase())
+      );
+      const rawPerms = courseNestedPerms.length > 0 ? courseNestedPerms : matchingTopPerms;
+      const permIds = [];
+      let hasUnlimitedPerm = false;
+      let latestPermLimitIso = null;
+      let latestPermLimitMs = -Infinity;
+
+      for (const p of rawPerms) {
+        if (!p || typeof p !== 'object') continue;
+        const pid = String(p.userPermissionId || p._id || p.id || '').trim();
+        if (pid && !permIds.includes(pid)) permIds.push(pid);
+        if (p.limitTime === null || p.limitTime === undefined || p.limitTime === '') {
+          hasUnlimitedPerm = true;
+        } else {
+          const pIso = toIzTeachExpiresAtIso(p.limitTime);
+          const pMs = pIso ? Date.parse(pIso) : NaN;
+          if (Number.isFinite(pMs) && pMs > latestPermLimitMs) {
+            latestPermLimitMs = pMs;
+            latestPermLimitIso = pIso;
+          }
+        }
+      }
+
+      const topPermId = String(c?.userPermissionId || '').trim();
+      if (topPermId && !permIds.includes(topPermId)) {
+        permIds.push(topPermId);
+      }
+
+      let effectiveLimitIso = null;
+      if (rawPerms.length > 0) {
+        effectiveLimitIso = hasUnlimitedPerm ? null : latestPermLimitIso;
+      } else if (c?.limitTime !== undefined && c?.limitTime !== null && c?.limitTime !== '') {
+        effectiveLimitIso = toIzTeachExpiresAtIso(c.limitTime);
+      }
+      const effectiveLimitYmd = extractCalendarDateFromLimitTime(effectiveLimitIso);
+
+      const isExpired = effectiveLimitIso
+        ? isCourseLimitTimeExpired(effectiveLimitIso, c?.isExpired, nowMs)
+        : false;
+
+      const prev = byCourseId.get(cid);
+      if (!prev) {
+        byCourseId.set(cid, {
+          id: cid,
+          title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || c?.name || c?.title || 'Khóa học trực tuyến',
+          userPermissionId: permIds[0] || undefined,
+          userPermissionIds: permIds,
+          limitTime: effectiveLimitYmd,
+          expiresAt: effectiveLimitIso,
+          isExpired: Boolean(isExpired),
+          syncStatus: 'synced'
+        });
+      } else {
+        for (const pid of permIds) {
+          if (!prev.userPermissionIds.includes(pid)) prev.userPermissionIds.push(pid);
+        }
+        if (!prev.userPermissionId && prev.userPermissionIds[0]) {
+          prev.userPermissionId = prev.userPermissionIds[0];
+        }
+        if (prev.limitTime === null || effectiveLimitIso === null) {
+          prev.limitTime = null;
+          prev.expiresAt = null;
+          prev.isExpired = false;
+        } else if (effectiveLimitIso) {
+          const prevMs = Date.parse(prev.expiresAt || prev.limitTime) || 0;
+          const nextMs = Date.parse(effectiveLimitIso) || 0;
+          if (nextMs > prevMs) {
+            prev.limitTime = effectiveLimitYmd;
+            prev.expiresAt = effectiveLimitIso;
+            prev.isExpired = isCourseLimitTimeExpired(effectiveLimitIso, false, nowMs);
+          }
+        }
+      }
+    }
+  }
+
+  return Array.from(byCourseId.values());
+}
+
+async function setIzTeachCourseLimitedTimeWithVerification(env, {
+  cognitoUserId,
+  courseId,
+  limitTime,
+  preset = undefined,
+  existingPermData = null,
+  nowMs = Date.now()
+}) {
+  const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+  const cleanCourseId = String(courseId || '').trim();
+  if (!isValidCognitoUuid(cognitoUserId)) {
+    return {
+      ok: false,
+      status: 422,
+      error: 'INVALID_COGNITO_UUID',
+      message: 'Học viên chưa có Cognito UUID hợp lệ trên izTeach.'
+    };
+  }
+  if (!/^[0-9a-f]{24}$/i.test(cleanCourseId)) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'INVALID_COURSE_ID',
+      message: 'Mã khóa học (courseId) không hợp lệ.'
+    };
+  }
+
+  let adminToken = await getIzTeachAdminToken(env);
+  if (!adminToken) {
+    return {
+      ok: false,
+      status: 503,
+      error: 'MISSING_IZTEACH_ADMIN_TOKEN',
+      message: 'Không lấy được token quản trị izTeach để đặt thời hạn khóa học.'
+    };
+  }
+
+  let permData = existingPermData;
+  if (!isValidIzTeachPermissionPayload(permData)) {
+    let getRes = await fetch(
+      `${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(cognitoUserId)}&vendorId=${encodeURIComponent(vendorId)}`,
+      { headers: { Authorization: adminToken } }
+    );
+    if ((getRes.status === 401 || getRes.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+      const refreshed = await getIzTeachAdminToken(env, true);
+      if (refreshed) {
+        adminToken = refreshed;
+        getRes = await fetch(
+          `${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(cognitoUserId)}&vendorId=${encodeURIComponent(vendorId)}`,
+          { headers: { Authorization: adminToken } }
+        );
+      }
+    }
+    if (!getRes.ok) {
+      return {
+        ok: false,
+        status: getRes.status || 502,
+        error: 'IZTEACH_PERMISSION_READ_FAILED',
+        message: `Không đọc được quyền khóa học từ izTeach (HTTP ${getRes.status}).`
+      };
+    }
+    permData = await getRes.json().catch(() => null);
+  }
+
+  const initialEntitlements = extractIzTeachOnlineCourseEntitlements(permData, nowMs);
+  const courseEntry = initialEntitlements.find(
+    c => c.id.toLowerCase() === cleanCourseId.toLowerCase()
+  );
+  if (!courseEntry) {
+    return {
+      ok: false,
+      status: 404,
+      error: 'COURSE_NOT_GRANTED_ON_IZTEACH',
+      message: 'Học viên chưa được cấp khóa học này trên izTeach.'
+    };
+  }
+
+  const targetPermIds = Array.isArray(courseEntry.userPermissionIds) && courseEntry.userPermissionIds.length > 0
+    ? courseEntry.userPermissionIds
+    : (courseEntry.userPermissionId ? [courseEntry.userPermissionId] : []);
+
+  if (targetPermIds.length === 0) {
+    return {
+      ok: false,
+      status: 422,
+      error: 'MISSING_USER_PERMISSION_ID',
+      message: 'Không tìm thấy userPermissionId cho khóa học trên izTeach.'
+    };
+  }
+
+  const targetLimitYmd = limitTime === null || limitTime === undefined || limitTime === ''
+    ? null
+    : extractCalendarDateFromLimitTime(limitTime);
+
+  for (const permId of targetPermIds) {
+    const putUrl = `${IZTEACH_ENDPOINTS.userPermission}/set-limited-time/${encodeURIComponent(permId)}`;
+    let putRes = await fetch(putUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: adminToken
+      },
+      body: JSON.stringify({ limitTime: targetLimitYmd })
+    }).catch(err => ({ ok: false, status: 503, _err: err }));
+
+    if ((putRes?.status === 401 || putRes?.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+      const refreshed = await getIzTeachAdminToken(env, true);
+      if (refreshed) {
+        adminToken = refreshed;
+        putRes = await fetch(putUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: adminToken
+          },
+          body: JSON.stringify({ limitTime: targetLimitYmd })
+        }).catch(err => ({ ok: false, status: 503, _err: err }));
+      }
+    }
+
+    if (!putRes || !putRes.ok) {
+      const errTxt = putRes && typeof putRes.text === 'function'
+        ? await putRes.text().catch(() => '')
+        : (putRes?._err?.message || 'NETWORK_ERROR');
+      return {
+        ok: false,
+        status: putRes?.status || 502,
+        error: 'IZTEACH_SET_LIMITED_TIME_FAILED',
+        failedPermissionId: permId,
+        message: `Cập nhật thời hạn trên izTeach thất bại cho permission ${permId}: ${errTxt || ('HTTP ' + (putRes?.status || 502))}`
+      };
+    }
+  }
+
+  // Read-After-Write Verification trên GET /prod/user-permission
+  const verifyRes = await fetch(
+    `${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(cognitoUserId)}&vendorId=${encodeURIComponent(vendorId)}`,
+    { headers: { Authorization: adminToken } }
+  ).catch(err => ({ ok: false, status: 503, _err: err }));
+
+  if (!verifyRes || !verifyRes.ok) {
+    return {
+      ok: false,
+      status: verifyRes?.status || 502,
+      error: 'IZTEACH_LIMIT_TIME_VERIFY_FAILED',
+      message: `Không xác minh được thời hạn khóa học sau khi lưu trên izTeach (HTTP ${verifyRes?.status || 503}).`
+    };
+  }
+
+  const verifyData = await verifyRes.json().catch(() => null);
+  const verifiedEntitlements = extractIzTeachOnlineCourseEntitlements(verifyData, nowMs);
+  const verifiedCourse = verifiedEntitlements.find(
+    c => c.id.toLowerCase() === cleanCourseId.toLowerCase()
+  );
+
+  if (!verifiedCourse) {
+    return {
+      ok: false,
+      status: 502,
+      error: 'IZTEACH_COURSE_MISSING_AFTER_SET_LIMIT',
+      message: 'Không tìm thấy khóa học trên izTeach khi xác minh lại sau khi đặt hạn.'
+    };
+  }
+
+  const verifiedYmd = extractCalendarDateFromLimitTime(verifiedCourse.limitTime);
+  if (targetLimitYmd === null) {
+    if (verifiedCourse.limitTime !== null || verifiedCourse.isExpired === true) {
+      return {
+        ok: false,
+        status: 502,
+        error: 'IZTEACH_UNLIMITED_VERIFY_MISMATCH',
+        message: 'izTeach chưa xác nhận chuyển thời hạn khóa học về Vĩnh viễn (limitTime: null).'
+      };
+    }
+  } else if (verifiedYmd !== targetLimitYmd) {
+    return {
+      ok: false,
+      status: 502,
+      error: 'IZTEACH_LIMIT_TIME_VERIFY_MISMATCH',
+      expectedLimitTime: targetLimitYmd,
+      actualLimitTime: verifiedCourse.limitTime,
+      message: `izTeach chưa xác nhận lưu đúng ngày hết hạn (${targetLimitYmd} vs ${verifiedYmd || 'null'}).`
+    };
+  }
+
+  const normPreset = normalizeCourseDurationPreset(preset) || (targetLimitYmd === null ? 'unlimited' : undefined);
+  return {
+    ok: true,
+    verified: true,
+    courseId: verifiedCourse.id,
+    title: verifiedCourse.title,
+    userPermissionId: verifiedCourse.userPermissionId,
+    userPermissionIds: verifiedCourse.userPermissionIds,
+    updatedPermissionIds: targetPermIds,
+    limitTime: verifiedCourse.limitTime,
+    expiresAt: verifiedCourse.expiresAt,
+    durationPreset: normPreset,
+    isExpired: Boolean(verifiedCourse.isExpired),
+    syncStatus: 'synced',
+    allEntitlements: verifiedEntitlements
+  };
+}
+
+function enrichOnlineCourseMetadataItem(rawItem, nowMs = Date.now(), presetOverride = undefined) {
+  if (!rawItem) return null;
+  const isObj = typeof rawItem === 'object';
+  const cid = String(isObj ? (rawItem.id || rawItem._id || '') : rawItem).trim();
+  if (!cid) return null;
+  const masterMeta = MASTER_PRODUCT_MAPPING[cid] || {};
+  const rawTitle = isObj && typeof rawItem.title === 'string' ? rawItem.title.trim() : '';
+  const title = (rawTitle && rawTitle !== 'Khóa học trực tuyến')
+    ? rawTitle
+    : (masterMeta.shortTitle || masterMeta.title || rawTitle || 'Khóa học trực tuyến');
+
+  const rawLimit = isObj ? (rawItem.limitTime ?? rawItem.limit_time ?? null) : null;
+  const rawExpiresAt = isObj ? (rawItem.expiresAt ?? rawItem.expires_at ?? null) : null;
+  const limitTime = extractCalendarDateFromLimitTime(rawLimit ?? rawExpiresAt);
+  const expiresAt = limitTime
+    ? (typeof rawExpiresAt === 'string' && rawExpiresAt.includes('T') ? rawExpiresAt : toIzTeachExpiresAtIso(limitTime))
+    : null;
+  const isExpired = isCourseLimitTimeExpired(expiresAt || limitTime, false, nowMs);
+  const rawPreset = normalizeCourseDurationPreset(presetOverride ?? (isObj ? (rawItem.durationPreset ?? rawItem.duration_preset) : undefined));
+  const durationPreset = rawPreset || (limitTime ? undefined : 'unlimited');
+  const userPermissionId = isObj
+    ? (rawItem.userPermissionId || rawItem.user_permission_id || (Array.isArray(rawItem.userPermissionIds) && rawItem.userPermissionIds[0]) || undefined)
+    : undefined;
+  const syncStatus = (isObj && rawItem.syncStatus) ? String(rawItem.syncStatus) : 'synced';
+
+  const result = {
+    ...(isObj ? rawItem : {}),
+    id: cid,
+    title,
+    limitTime: limitTime || null,
+    expiresAt: expiresAt || null,
+    isExpired: Boolean(isExpired),
+    syncStatus
+  };
+  if (userPermissionId) {
+    result.userPermissionId = String(userPermissionId);
+  }
+  if (durationPreset) {
+    result.durationPreset = durationPreset;
+  }
+  return result;
+}
+
+function normalizeStudentOnlineCoursesList(courses, nowMs = Date.now()) {
+  if (!Array.isArray(courses)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of courses) {
+    const enriched = enrichOnlineCourseMetadataItem(item, nowMs);
+    if (!enriched || !enriched.id) continue;
+    const key = enriched.id.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(enriched);
+  }
+  return out;
+}
+
 function normalizeViSearchText(input) {
   if (!input) return '';
   return String(input)
@@ -3880,7 +4390,7 @@ function computeStudentAccountAndSyncStatus(row) {
   return { accountStatus, syncStatus };
 }
 
-function enrichStudentRowV3(row) {
+function enrichStudentRowV3(row, nowMs = Date.now()) {
   if (!row || typeof row !== 'object') return row;
   const studentCase = computeStudentCase(row);
   const { accountStatus, syncStatus } = computeStudentAccountAndSyncStatus(row);
@@ -3894,8 +4404,12 @@ function enrichStudentRowV3(row) {
     extractParentPhoneFromInternalNote(rawInternalNote) ||
     extractParentPhoneFromInternalNote(rawParentName) ||
     '';
+  const normalizedCourses = Array.isArray(row.online_courses)
+    ? normalizeStudentOnlineCoursesList(row.online_courses, nowMs)
+    : (Array.isArray(row.onlineCourses) ? normalizeStudentOnlineCoursesList(row.onlineCourses, nowMs) : row.online_courses);
   return {
     ...row,
+    ...(Array.isArray(normalizedCourses) ? { online_courses: normalizedCourses, onlineCourses: normalizedCourses } : {}),
     parent_name: resolvedParentName,
     parentName: resolvedParentName || undefined,
     parent_phone: resolvedParentPhone || null,
@@ -4498,12 +5012,14 @@ async function provisionStudentOnIzTeach(env, order) {
 
   // Tầng 3.5: Đọc các khóa học hiện có của học viên trên izTeach để cộng dồn (không ghi đè khóa cũ)
   let existingIzCourseIds = [];
+  let latestPermData = null;
   try {
     const permRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(cognitoUserId)}&vendorId=${encodeURIComponent(vendorId)}`, {
       headers: { Authorization: adminToken }
     });
     if (permRes.ok) {
       const permData = await permRes.json().catch(() => null);
+      latestPermData = permData;
       existingIzCourseIds = extractIzTeachOnlineCourseIds(permData);
     }
   } catch {}
@@ -4566,7 +5082,7 @@ async function provisionStudentOnIzTeach(env, order) {
   let verifiedIzCourseIds = order.replaceCourses === true
     ? Array.from(new Set(targetCourseIds))
     : Array.from(new Set([...existingIzCourseIds, ...targetCourseIds]));
-  if (missingCourseIds.length > 0 || coursesToRemove.length > 0) {
+  if (missingCourseIds.length > 0 || coursesToRemove.length > 0 || (targetCourseIds.length > 0 && !latestPermData)) {
     try {
       const verifyRes = await fetch(`${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(cognitoUserId)}&vendorId=${encodeURIComponent(vendorId)}`, {
         headers: { Authorization: adminToken }
@@ -4576,6 +5092,7 @@ async function provisionStudentOnIzTeach(env, order) {
       }
       const verifyData = await verifyRes.json().catch(() => null);
       if (verifyData && typeof verifyData === 'object') {
+        latestPermData = verifyData;
         verifiedIzCourseIds = extractIzTeachOnlineCourseIds(verifyData);
         const verifiedSet = new Set(verifiedIzCourseIds);
         const stillMissing = targetCourseIds.filter(cid => cid && !verifiedSet.has(cid));
@@ -4591,6 +5108,124 @@ async function provisionStudentOnIzTeach(env, order) {
       }
     } catch (verifyErr) {
       return { ok: false, error: 'Lỗi xác minh quyền khóa học trên izTeach: ' + (verifyErr?.message || 'NETWORK_ERROR'), cognitoUserId, accountCreated, existingAccount };
+    }
+  }
+
+  // Tầng 5.5: Đặt và xác minh thời hạn khóa học (limitTime) trên izTeach nếu có chọn thời hạn (durationPreset / targetLimitTime)
+  const effectiveNowMs = Number.isFinite(order.nowMs) ? order.nowMs : Date.now();
+  const requestedPreset = normalizeCourseDurationPreset(order.durationPreset ?? order.preset ?? null);
+  const requestedMode = String(order.durationMode || order.mode || 'set_from_now').trim().toLowerCase() === 'extend_from_current'
+    ? 'extend_from_current'
+    : 'set_from_now';
+  const hasExplicitDurationTarget = Boolean(
+    requestedPreset ||
+    order.targetLimitTime !== undefined ||
+    (order.targetLimitTimeByCourse && typeof order.targetLimitTimeByCourse === 'object')
+  );
+
+  const courseEntitlementsMap = {};
+  if (latestPermData && isValidIzTeachPermissionPayload(latestPermData)) {
+    for (const ent of extractIzTeachOnlineCourseEntitlements(latestPermData, effectiveNowMs)) {
+      courseEntitlementsMap[ent.id] = {
+        id: ent.id,
+        title: ent.title,
+        userPermissionId: ent.userPermissionId,
+        userPermissionIds: ent.userPermissionIds,
+        limitTime: ent.limitTime,
+        expiresAt: ent.expiresAt,
+        isExpired: Boolean(ent.isExpired),
+        syncStatus: 'synced'
+      };
+    }
+  }
+
+  if (hasExplicitDurationTarget && targetCourseIds.length > 0) {
+    const coursesToApplyDuration = Array.isArray(order.durationCourseIds) && order.durationCourseIds.length > 0
+      ? order.durationCourseIds.map(id => String(id || '').trim()).filter(Boolean)
+      : (order.replaceCourses === true && !order.applyDurationToAllTargetCourses
+          ? missingCourseIds
+          : targetCourseIds);
+
+    for (const cid of coursesToApplyDuration) {
+      const existingEnt = courseEntitlementsMap[cid] || null;
+      let targetLimit = null;
+      if (order.targetLimitTimeByCourse && order.targetLimitTimeByCourse[cid] !== undefined) {
+        targetLimit = extractCalendarDateFromLimitTime(order.targetLimitTimeByCourse[cid]);
+      } else if (order.targetLimitTime !== undefined) {
+        targetLimit = extractCalendarDateFromLimitTime(order.targetLimitTime);
+      } else if (requestedPreset) {
+        const calc = computeTargetLimitTimeForCourse({
+          preset: requestedPreset,
+          mode: requestedMode,
+          currentLimitTime: existingEnt?.limitTime || null,
+          nowMs: effectiveNowMs
+        });
+        if (!calc.ok) {
+          return {
+            ok: false,
+            partialFailure: true,
+            failedStep: 'izteach_duration_sync',
+            cognitoUserId,
+            izteachStudentId,
+            accountCreated,
+            existingAccount,
+            grantedCourseIds: targetCourseIds,
+            allCourseIds: verifiedIzCourseIds,
+            error: `Cần hoàn tất đồng bộ thời hạn: ${calc.message || 'Thời hạn không hợp lệ.'}`
+          };
+        }
+        targetLimit = calc.limitTime;
+      }
+
+      const needsRemoteLimitUpdate =
+        targetLimit !== null ||
+        Boolean(existingEnt && existingEnt.limitTime !== null) ||
+        !existingEnt;
+
+      if (needsRemoteLimitUpdate) {
+        const setRes = await setIzTeachCourseLimitedTimeWithVerification(env, {
+          cognitoUserId,
+          courseId: cid,
+          limitTime: targetLimit,
+          preset: requestedPreset || (targetLimit ? undefined : 'unlimited'),
+          existingPermData: latestPermData,
+          nowMs: effectiveNowMs
+        });
+        if (!setRes.ok) {
+          return {
+            ok: false,
+            partialFailure: true,
+            failedStep: 'izteach_duration_sync',
+            cognitoUserId,
+            izteachStudentId,
+            accountCreated,
+            existingAccount,
+            grantedCourseIds: targetCourseIds,
+            allCourseIds: verifiedIzCourseIds,
+            error: `Cần hoàn tất đồng bộ thời hạn: ${setRes.message || setRes.error || 'Chưa đặt được thời hạn trên izTeach.'}`
+          };
+        }
+        courseEntitlementsMap[cid] = {
+          id: cid,
+          title: setRes.title || existingEnt?.title || MASTER_PRODUCT_MAPPING[cid]?.shortTitle || 'Khóa học trực tuyến',
+          userPermissionId: setRes.userPermissionId,
+          userPermissionIds: setRes.userPermissionIds,
+          limitTime: setRes.limitTime,
+          expiresAt: setRes.expiresAt,
+          durationPreset: requestedPreset || (setRes.limitTime ? undefined : 'unlimited'),
+          isExpired: Boolean(setRes.isExpired),
+          syncStatus: 'synced'
+        };
+      } else if (existingEnt) {
+        courseEntitlementsMap[cid] = {
+          ...existingEnt,
+          durationPreset: requestedPreset || 'unlimited',
+          limitTime: null,
+          expiresAt: null,
+          isExpired: false,
+          syncStatus: 'synced'
+        };
+      }
     }
   }
 
@@ -4615,7 +5250,8 @@ async function provisionStudentOnIzTeach(env, order) {
     initialPassword: oneTimeInitialPassword,
     courseId: targetCourseIds[0] || (order.skipCourses ? null : DEFAULT_COURSE_ID),
     grantedCourseIds: targetCourseIds,
-    allCourseIds: verifiedIzCourseIds
+    allCourseIds: verifiedIzCourseIds,
+    courseEntitlementsMap
   };
 }
 
@@ -5252,6 +5888,8 @@ async function mergeAndUpsertStudentCourses(env, {
   addCourseIds = [],
   removeCourseIds = [],
   replaceCourseIds = null,
+  courseEntitlementOverrides = null,
+  nowMs = Date.now(),
   classCode = undefined,
   codeHint = '',
   accountStatus = undefined,
@@ -5273,7 +5911,7 @@ async function mergeAndUpsertStudentCourses(env, {
 
   const previousClassCode = String(existingRow?.class_code || '').trim().toUpperCase();
   const prevCourses = Array.isArray(existingRow?.online_courses) ? existingRow.online_courses : [];
-  const prevIds = prevCourses.map(c => String(c?.id || c || '').trim()).filter(Boolean);
+  const prevIds = prevCourses.map(c => String(c?.id || c?._id || c || '').trim()).filter(Boolean);
 
   let nextIds;
   if (Array.isArray(replaceCourseIds)) {
@@ -5284,14 +5922,31 @@ async function mergeAndUpsertStudentCourses(env, {
       .filter(id => !removeSet.has(id));
   }
 
+  const overrideMap = (courseEntitlementOverrides && typeof courseEntitlementOverrides === 'object')
+    ? courseEntitlementOverrides
+    : {};
+
   const onlineCoursesJson = nextIds.map(cid => {
     const meta = MASTER_PRODUCT_MAPPING[cid];
-    const prevObj = prevCourses.find(c => String(c?.id || '') === cid);
-    return {
+    const prevObj = prevCourses.find(c => String(c?.id || c?._id || c || '').trim().toLowerCase() === cid.toLowerCase());
+    const prevFields = (prevObj && typeof prevObj === 'object') ? { ...prevObj } : {};
+    const overrideObj = overrideMap[cid] || overrideMap[cid.toLowerCase()] || null;
+    const mergedRaw = {
+      ...prevFields,
+      ...(overrideObj && typeof overrideObj === 'object' ? overrideObj : {}),
       id: cid,
-      title: meta?.shortTitle || prevObj?.title || 'Khóa học trực tuyến'
+      title: meta?.shortTitle || overrideObj?.title || prevFields.title || 'Khóa học trực tuyến'
     };
-  });
+    if (
+      overrideObj &&
+      overrideObj.durationPreset === undefined &&
+      prevFields.durationPreset &&
+      extractCalendarDateFromLimitTime(mergedRaw.limitTime) === extractCalendarDateFromLimitTime(prevFields.limitTime)
+    ) {
+      mergedRaw.durationPreset = prevFields.durationPreset;
+    }
+    return enrichOnlineCourseMetadataItem(mergedRaw, nowMs);
+  }).filter(Boolean);
 
   const normalizedIncomingClass =
     classCode !== undefined
@@ -5632,8 +6287,8 @@ async function findLatestIncompleteStudentJobByEmail(env, rawEmail, rawOperation
     if (!row || typeof row !== 'object') return false;
     if (row.status !== 'partial_failure' && row.status !== 'failed') return false;
     if (opId && row.operation_id === opId) return true;
-    const rowEmail = normalizeEmail(row.target_email || row.request_payload?.email || '');
-    return Boolean(email && rowEmail === email && (!row.job_type || row.job_type === 'student_create'));
+    const rowEmail = normalizeEmail(row.target_email || row.request_payload?.email || row.request_payload?.studentEmail || '');
+    return Boolean(email && rowEmail === email && (!row.job_type || row.job_type === 'student_create' || row.job_type === 'course_duration'));
   };
 
   if (globalThis.__ktnProvisioningJobsMap) {
@@ -6265,7 +6920,15 @@ function enrichOrderForResponse(ord, existingStudentMap = null) {
     student_tracker_stage: studentTrackerStage,
     student_tracker_label: STAGE_LABELS[studentTrackerStage] || 'Đã tiếp nhận',
     provisioningStatus: provStatus,
-    last_sync_error: meta.last_sync_error || null
+    last_sync_error: meta.last_sync_error || null,
+    duration_preset: meta.duration_preset || null,
+    durationPreset: meta.duration_preset || null,
+    duration_mode: meta.duration_mode || null,
+    durationMode: meta.duration_mode || null,
+    limit_time: meta.limit_time ?? null,
+    limitTime: meta.limit_time ?? null,
+    expires_at: meta.expires_at ?? null,
+    expiresAt: meta.expires_at ?? null
   };
 }
 
@@ -6273,7 +6936,7 @@ function enrichOrderForResponse(ord, existingStudentMap = null) {
  * Orchestrator dùng chung cho cả Duyệt đơn thủ công (/api/ktn/orders/approve) và Duyệt tự động từ Webhook (/api/ktn/webhook/payment)
  * Giải quyết triệt để BUG BE-03 & BUG BE-04:
  * - Tách bạch trạng thái thanh toán (payment_status) và trạng thái cấp quyền (approval_status / provisioning_status)
- * - Kiểm tra kết quả của TỪNG bước ghi (izTeach account -> izTeach permissions -> Supabase ktn_orders -> Supabase ktn_students)
+ * - Kiểm tra kết quả của TỪNG bước ghi (izTeach account -> izTeach permissions -> izTeach duration -> Supabase ktn_orders -> Supabase ktn_students)
  * - Trả về partial_failure rõ ràng nếu izTeach thành công nhưng Supabase lỗi
  */
 async function approveAndProvisionOrder(env, {
@@ -6282,6 +6945,9 @@ async function approveAndProvisionOrder(env, {
   approvedBy = 'admin',
   paymentStatusOverride = undefined,
   classCode = undefined,
+  durationPreset = undefined,
+  durationMode = undefined,
+  nowMs = Date.now(),
   operationId = undefined
 }) {
   let opId = operationId || generateOperationId('PROV-ORD');
@@ -6319,6 +6985,14 @@ async function approveAndProvisionOrder(env, {
     }
 
     const { customerNote, meta: orderMeta } = extractOrderMetaFromRow(order);
+    const resolvedDurationPreset = normalizeCourseDurationPreset(
+      durationPreset ?? order.durationPreset ?? order.preset ?? orderMeta.duration_preset ?? null
+    );
+    const resolvedDurationMode = String(
+      durationMode || order.durationMode || order.mode || orderMeta.duration_mode || 'set_from_now'
+    ).trim().toLowerCase() === 'extend_from_current'
+      ? 'extend_from_current'
+      : 'set_from_now';
 
     const orderIdemKey = `order_approve:${cleanOrderId}`;
     const claim = await claimProvisioningJobAtomically(env, {
@@ -6328,7 +7002,13 @@ async function approveAndProvisionOrder(env, {
       actorEmail: approvedBy,
       targetEmail: normalizeEmail(order.student_email || order.studentEmail || ''),
       targetRole: 'student',
-      requestPayload: { orderId: cleanOrderId, approvedBy, classCode }
+      requestPayload: {
+        orderId: cleanOrderId,
+        approvedBy,
+        classCode,
+        durationPreset: resolvedDurationPreset,
+        durationMode: resolvedDurationMode
+      }
     });
     if (claim.operationId) opId = claim.operationId;
     if (!claim.claimed && claim.alreadyCompleted && claim.job) {
@@ -6359,6 +7039,7 @@ async function approveAndProvisionOrder(env, {
     const completedSteps = Array.isArray(claim.completedSteps) ? [...claim.completedSteps] : [];
     const targetEmailNorm = normalizeEmail(order.student_email || order.studentEmail || '');
     const priorAccountCreated = Boolean(claim.job?.response_payload?.account_created_in_job);
+    const priorLockedEntitlements = claim.job?.response_payload?.course_entitlements_map || null;
     await saveProvisioningJobState(env, {
       operation_id: opId,
       idempotency_key: orderIdemKey,
@@ -6369,15 +7050,23 @@ async function approveAndProvisionOrder(env, {
       status: 'running',
       sync_status: 'pending',
       completed_steps: completedSteps,
-      request_payload: { orderId: cleanOrderId, approvedBy, classCode }
+      request_payload: {
+        orderId: cleanOrderId,
+        approvedBy,
+        classCode,
+        durationPreset: resolvedDurationPreset,
+        durationMode: resolvedDurationMode
+      }
     });
 
-    // Bước 1 & 2: Tạo/xác minh tài khoản & cấp quyền khóa học trên izTeach (hỗ trợ resume các bước đã hoàn tất)
+    // Bước 1 & 2: Tạo/xác minh tài khoản & cấp quyền khóa học + thời hạn trên izTeach (hỗ trợ resume các bước đã hoàn tất)
     let prov = null;
     const orderCourseIds = resolveOrderCourseIds(order);
+    const requiresDurationStep = Boolean(resolvedDurationPreset);
     const alreadyProvisionedOrderIzTeach =
       completedSteps.includes('izteach_account') &&
       completedSteps.includes('izteach_permissions') &&
+      (!requiresDurationStep || completedSteps.includes('izteach_duration_sync')) &&
       isValidCognitoUuid(claim.cognitoUserId);
 
     if (alreadyProvisionedOrderIzTeach) {
@@ -6397,7 +7086,8 @@ async function approveAndProvisionOrder(env, {
         initialPassword: resumedPwd,
         courseId: orderCourseIds[0] || DEFAULT_COURSE_ID,
         grantedCourseIds: orderCourseIds,
-        allCourseIds: orderCourseIds
+        allCourseIds: orderCourseIds,
+        courseEntitlementsMap: priorLockedEntitlements || undefined
       };
     } else {
       prov = await provisionStudentOnIzTeach(env, {
@@ -6405,7 +7095,11 @@ async function approveAndProvisionOrder(env, {
         operationId: opId,
         cognito_user_id: order.cognito_user_id || order.assigned_user_id || claim.cognitoUserId || null,
         izteach_student_id: order.izteach_student_id || order.assigned_student_id || claim.izteachStudentId || null,
-        preserveAccountCreated: priorAccountCreated
+        preserveAccountCreated: priorAccountCreated,
+        durationPreset: resolvedDurationPreset || undefined,
+        durationMode: resolvedDurationMode,
+        durationCourseIds: orderCourseIds,
+        nowMs
       });
     }
 
@@ -6413,11 +7107,14 @@ async function approveAndProvisionOrder(env, {
       if (isValidCognitoUuid(prov.cognitoUserId) && !completedSteps.includes('izteach_account')) {
         completedSteps.push('izteach_account');
       }
+      if (prov.failedStep === 'izteach_duration_sync' && !completedSteps.includes('izteach_permissions')) {
+        completedSteps.push('izteach_permissions');
+      }
       const failedStepName = prov.failedStep || 'izteach_provision';
-      const syncFailStatus = completedSteps.length > 0 ? 'partial_failure' : 'sync_failed';
+      const syncFailStatus = (completedSteps.length > 0 || prov.partialFailure) ? 'partial_failure' : 'sync_failed';
       await saveProvisioningJobState(env, {
         operation_id: opId,
-        status: completedSteps.length > 0 ? 'partial_failure' : 'failed',
+        status: syncFailStatus === 'partial_failure' ? 'partial_failure' : 'failed',
         sync_status: syncFailStatus,
         completed_steps: completedSteps,
         failed_step: failedStepName,
@@ -6426,7 +7123,7 @@ async function approveAndProvisionOrder(env, {
         response_payload: {
           account_created_in_job: Boolean(prov.accountCreated || priorAccountCreated)
         },
-        error_code: 'IZTEACH_PROVISION_FAILED',
+        error_code: failedStepName === 'izteach_duration_sync' ? 'IZTEACH_DURATION_SYNC_FAILED' : 'IZTEACH_PROVISION_FAILED',
         error_message: prov.error || 'Lỗi cấp quyền trên izTeach',
         retryable: true
       });
@@ -6435,6 +7132,8 @@ async function approveAndProvisionOrder(env, {
           ...orderMeta,
           account_created: Boolean(prov.accountCreated || priorAccountCreated),
           provisioning_status: syncFailStatus,
+          duration_preset: resolvedDurationPreset || orderMeta.duration_preset || null,
+          duration_mode: resolvedDurationMode,
           last_sync_error: prov.error || 'IZTEACH_PROVISION_FAILED'
         };
         const errNow = new Date().toISOString();
@@ -6461,17 +7160,21 @@ async function approveAndProvisionOrder(env, {
         httpStatus: 502,
         operationId: opId,
         orderId: cleanOrderId,
+        partialFailure: syncFailStatus === 'partial_failure',
         syncStatus: syncFailStatus,
         retryable: true,
         completedSteps,
         failedStep: failedStepName,
-        error: 'IZTEACH_PROVISION_FAILED',
+        error: failedStepName === 'izteach_duration_sync' ? 'IZTEACH_DURATION_SYNC_FAILED' : 'IZTEACH_PROVISION_FAILED',
         message: prov.error || 'Chưa cấp được quyền học trên izTeach.'
       };
     }
 
     if (!completedSteps.includes('izteach_account')) completedSteps.push('izteach_account');
     if (!completedSteps.includes('izteach_permissions')) completedSteps.push('izteach_permissions');
+    if (requiresDurationStep && !completedSteps.includes('izteach_duration_sync')) {
+      completedSteps.push('izteach_duration_sync');
+    }
 
     // Bước 3: Cập nhật ktn_orders trên Supabase và KIỂM TRA KẾT QUẢ GHI
     const nowIso = new Date().toISOString();
@@ -6479,11 +7182,16 @@ async function approveAndProvisionOrder(env, {
       ? paymentStatusOverride
       : (order.payment_status || order.paymentStatus || 'pending_verification');
 
+    const primaryCourseEnt = prov.courseEntitlementsMap?.[prov.courseId || orderCourseIds[0]] || null;
     const updatedOrderMeta = {
       ...orderMeta,
       account_created: Boolean(prov.accountCreated),
       credential_handed_off: Boolean(orderMeta.credential_handed_off),
       provisioning_status: 'synced',
+      duration_preset: resolvedDurationPreset || orderMeta.duration_preset || (primaryCourseEnt?.limitTime ? undefined : 'unlimited'),
+      duration_mode: resolvedDurationMode,
+      limit_time: primaryCourseEnt ? primaryCourseEnt.limitTime : (orderMeta.limit_time ?? null),
+      expires_at: primaryCourseEnt ? primaryCourseEnt.expiresAt : (orderMeta.expires_at ?? null),
       last_sync_error: null
     };
 
@@ -6546,6 +7254,8 @@ async function approveAndProvisionOrder(env, {
       cognitoUserId: prov.cognitoUserId,
       izteachStudentId: prov.izteachStudentId,
       addCourseIds: prov.allCourseIds || prov.grantedCourseIds || [prov.courseId],
+      courseEntitlementOverrides: prov.courseEntitlementsMap || null,
+      nowMs,
       classCode: resolvedClassCode,
       codeHint: studentCode,
       accountStatus: 'active',
@@ -6596,8 +7306,12 @@ async function approveAndProvisionOrder(env, {
         failed_step: failedStep,
         cognito_user_id: prov.cognitoUserId,
         izteach_student_id: prov.izteachStudentId,
+        response_payload: {
+          account_created_in_job: Boolean(prov.accountCreated || priorAccountCreated),
+          course_entitlements_map: prov.courseEntitlementsMap || null
+        },
         error_code: failedStep.toUpperCase() + '_FAILED',
-        error_message: 'Đã cấp quyền trên izTeach nhưng lưu dữ liệu vào Supabase chưa hoàn tất.',
+        error_message: 'Cần hoàn tất đồng bộ thời hạn: Đã cấp quyền trên izTeach nhưng lưu dữ liệu vào Supabase chưa hoàn tất.',
         retryable: true
       });
       await logSyncEvent(env, {
@@ -6611,7 +7325,7 @@ async function approveAndProvisionOrder(env, {
         driftCode: !stuWriteOk ? 'A02_IZTEACH_WITHOUT_SUPABASE_STUDENT' : 'A08_ORDER_APPROVED_WITHOUT_COMPLETE_SYNC',
         errorCode: failedStep.toUpperCase() + '_FAILED',
         errorMessage: 'izTeach đã cấp quyền nhưng Supabase ghi thất bại ở bước ' + failedStep,
-        details: { orderId: cleanOrderId, email: prov.email, completedSteps, failedStep },
+        details: { orderId: cleanOrderId, email: prov.email, completedSteps, failedStep, durationPreset: resolvedDurationPreset },
         createdBy: approvedBy
       });
       return {
@@ -6634,7 +7348,7 @@ async function approveAndProvisionOrder(env, {
         credentialMode: prov.credentialMode,
         defaultPassword: prov.initialPassword,
         initialPassword: prov.initialPassword,
-        message: 'Đã cấp tài khoản/khóa học trên izTeach nhưng chưa lưu hoàn tất vào Supabase (' + failedStep + '). Vui lòng bấm Đồng bộ lại để hoàn tất.'
+        message: 'Cần hoàn tất đồng bộ thời hạn: Đã cấp tài khoản/khóa học trên izTeach nhưng chưa lưu hoàn tất vào Supabase (' + failedStep + '). Vui lòng bấm Đồng bộ lại để hoàn tất.'
       };
     }
 
@@ -6650,6 +7364,9 @@ async function approveAndProvisionOrder(env, {
         orderId: cleanOrderId,
         email: prov.email,
         grantedCourseIds: prov.grantedCourseIds,
+        durationPreset: resolvedDurationPreset || 'unlimited',
+        limitTime: primaryCourseEnt?.limitTime || null,
+        expiresAt: primaryCourseEnt?.expiresAt || null,
         accountCreated: prov.accountCreated,
         existingAccount: prov.existingAccount
       }
@@ -6668,14 +7385,18 @@ async function approveAndProvisionOrder(env, {
       studentEmail: prov.email,
       grantedCourseIds: prov.grantedCourseIds,
       allCourseIds: prov.allCourseIds,
-      student: updatedStu,
+      durationPreset: resolvedDurationPreset || 'unlimited',
+      limitTime: primaryCourseEnt?.limitTime || null,
+      expiresAt: primaryCourseEnt?.expiresAt || null,
+      courseEntitlement: primaryCourseEnt || null,
+      student: enrichStudentRowV3(updatedStu, nowMs),
       order: enrichOrderForResponse(ordWriteRes.data[0]),
       accountCreated: Boolean(prov.accountCreated),
       existingAccount: Boolean(prov.existingAccount),
       credentialMode: prov.credentialMode,
       defaultPassword: prov.initialPassword,
       initialPassword: prov.initialPassword,
-      message: `Đã duyệt đơn & kích hoạt cộng dồn ${prov.grantedCourseIds.length} khóa học trên izTeach và Supabase thành công!`
+      message: `Đã cấp thành công: Duyệt đơn & đồng bộ khóa học cùng thời hạn trên izTeach và Supabase hoàn tất!`
     };
   });
 }
@@ -6683,7 +7404,7 @@ async function approveAndProvisionOrder(env, {
 /**
  * Tự động đối chiếu quyền khóa học của 1 học viên trên izTeach và lưu đồng bộ vào Supabase ktn_students
  */
-async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, parentName, classCode, cognitoUserId, izteachStudentId, accessToken }) {
+async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, parentName, classCode, cognitoUserId, izteachStudentId, accessToken, nowMs = Date.now() }) {
   const cleanEmail = normalizeEmail(email);
   if (!cleanEmail) return null;
   const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
@@ -6745,6 +7466,7 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, pare
   const effectiveAccountStatus = lifecycle?.status || existingRow?.account_status || (isValidCognitoUuid(resolvedCognitoUid) ? 'active' : undefined);
 
   const izCourseIds = [];
+  const courseEntitlementOverrides = {};
   let fetchedIzPermOk = false;
   if (isValidCognitoUuid(resolvedCognitoUid) && !isSuspended) {
     const validIzAccessToken = (typeof accessToken === 'string' && accessToken.split('.').length === 3) ? accessToken : null;
@@ -6758,8 +7480,18 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, pare
           const pData = await pRes.json().catch(() => null);
           if (isValidIzTeachPermissionPayload(pData)) {
             fetchedIzPermOk = true;
-            for (const cid of extractIzTeachOnlineCourseIds(pData)) {
-              izCourseIds.push(cid);
+            for (const ent of extractIzTeachOnlineCourseEntitlements(pData, nowMs)) {
+              izCourseIds.push(ent.id);
+              courseEntitlementOverrides[ent.id] = {
+                id: ent.id,
+                title: ent.title,
+                userPermissionId: ent.userPermissionId,
+                userPermissionIds: ent.userPermissionIds,
+                limitTime: ent.limitTime,
+                expiresAt: ent.expiresAt,
+                isExpired: Boolean(ent.isExpired),
+                syncStatus: 'synced'
+              };
             }
           }
         }
@@ -6778,9 +7510,226 @@ async function syncStudentEntitlementFromIzTeach(env, { email, name, phone, pare
     izteachStudentId: resolvedStudentId,
     replaceCourseIds: isSuspended ? null : (fetchedIzPermOk ? izCourseIds : null),
     addCourseIds: isSuspended ? [] : (fetchedIzPermOk ? [] : izCourseIds),
+    courseEntitlementOverrides: fetchedIzPermOk ? courseEntitlementOverrides : null,
+    nowMs,
     accountStatus: effectiveAccountStatus,
     syncStatus: isValidCognitoUuid(resolvedCognitoUid) ? 'synced' : undefined
   });
+}
+
+async function reconcileStudentCourseEntitlementsForSession(env, sessionOrObj, dbStuRow, nowMs = Date.now()) {
+  const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+  const email = normalizeEmail(dbStuRow?.email || sessionOrObj?.email || '');
+  const prevCourses = Array.isArray(dbStuRow?.online_courses)
+    ? dbStuRow.online_courses
+    : [];
+  const cognitoUserId = isValidCognitoUuid(dbStuRow?.cognito_user_id)
+    ? String(dbStuRow.cognito_user_id).trim()
+    : (isValidCognitoUuid(sessionOrObj?.userId || sessionOrObj?.id)
+        ? String(sessionOrObj.userId || sessionOrObj.id).trim()
+        : null);
+
+  if (cognitoUserId) {
+    try {
+      let adminToken = await getIzTeachAdminToken(env);
+      const validStuTok = (typeof sessionOrObj?.izteachAccessToken === 'string' && sessionOrObj.izteachAccessToken.split('.').length === 3)
+        ? sessionOrObj.izteachAccessToken
+        : ((typeof sessionOrObj?.accessToken === 'string' && sessionOrObj.accessToken.split('.').length === 3) ? sessionOrObj.accessToken : null);
+      let tokenToUse = adminToken || validStuTok;
+      if (tokenToUse) {
+        const permUrl = `${IZTEACH_ENDPOINTS.userPermission}?userId=${encodeURIComponent(cognitoUserId)}&vendorId=${encodeURIComponent(vendorId)}`;
+        let pRes = await fetch(permUrl, { headers: { Authorization: tokenToUse } });
+        if ((pRes.status === 401 || pRes.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+          const refreshed = await getIzTeachAdminToken(env, true);
+          if (refreshed) {
+            adminToken = refreshed;
+            pRes = await fetch(permUrl, { headers: { Authorization: adminToken } });
+          }
+        }
+        if (pRes.ok) {
+          const pData = await pRes.json().catch(() => null);
+          if (isValidIzTeachPermissionPayload(pData)) {
+            const liveEntitlements = extractIzTeachOnlineCourseEntitlements(pData, nowMs);
+            const liveIds = [];
+            const overrides = {};
+            const mergedList = [];
+            let hasMetadataDiff = prevCourses.length !== liveEntitlements.length;
+
+            for (const ent of liveEntitlements) {
+              const cid = ent.id;
+              liveIds.push(cid);
+              const prevObj = prevCourses.find(c => String(c?.id || c?._id || c || '').trim().toLowerCase() === cid.toLowerCase());
+              const prevFields = (prevObj && typeof prevObj === 'object') ? { ...prevObj } : {};
+              const preservedPreset = (
+                prevFields.durationPreset &&
+                extractCalendarDateFromLimitTime(prevFields.limitTime) === extractCalendarDateFromLimitTime(ent.limitTime)
+              )
+                ? prevFields.durationPreset
+                : (ent.limitTime ? undefined : 'unlimited');
+              const isExp = isCourseLimitTimeExpired(ent.expiresAt || ent.limitTime, false, nowMs);
+
+              if (
+                !prevObj ||
+                extractCalendarDateFromLimitTime(prevFields.limitTime) !== extractCalendarDateFromLimitTime(ent.limitTime) ||
+                String(prevFields.userPermissionId || '') !== String(ent.userPermissionId || '') ||
+                Boolean(prevFields.isExpired) !== Boolean(isExp)
+              ) {
+                hasMetadataDiff = true;
+              }
+
+              const mergedItem = enrichOnlineCourseMetadataItem({
+                ...prevFields,
+                id: cid,
+                title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || ent.title || prevFields.title || 'Khóa học trực tuyến',
+                userPermissionId: ent.userPermissionId,
+                userPermissionIds: ent.userPermissionIds,
+                limitTime: ent.limitTime,
+                expiresAt: ent.expiresAt,
+                durationPreset: preservedPreset,
+                isExpired: Boolean(isExp),
+                syncStatus: prevFields.syncStatus === 'partial_failure' ? 'partial_failure' : 'synced'
+              }, nowMs);
+
+              if (mergedItem) {
+                mergedList.push(mergedItem);
+                overrides[cid] = mergedItem;
+              }
+            }
+
+            if (hasMetadataDiff && email && dbStuRow && nowMs <= Date.now() + 60000) {
+              await mergeAndUpsertStudentCourses(env, {
+                email,
+                name: dbStuRow.name,
+                phone: dbStuRow.phone,
+                cognitoUserId,
+                izteachStudentId: dbStuRow.izteach_student_id,
+                replaceCourseIds: liveIds,
+                courseEntitlementOverrides: overrides,
+                nowMs
+              }).catch(() => null);
+            }
+
+            return {
+              courses: mergedList,
+              liveFromIzTeach: true,
+              cognitoUserId
+            };
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return {
+    courses: normalizeStudentOnlineCoursesList(prevCourses, nowMs),
+    liveFromIzTeach: false,
+    cognitoUserId
+  };
+}
+
+async function verifyStudentCourseAccessServerSide(env, session, courseId, options = {}) {
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  const normCourseId = String(courseId || '').trim().toLowerCase();
+  const email = normalizeEmail(session?.email || '');
+  if (!email) {
+    return {
+      ok: false,
+      httpStatus: 401,
+      error: 'AUTH_REQUIRED',
+      message: 'Vui lòng đăng nhập để truy cập khóa học.'
+    };
+  }
+
+  const [stuRes, stuLifecycle] = await Promise.all([
+    supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&limit=1`),
+    getStudentLifecycleState(env, email).catch(() => null)
+  ]);
+  let stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+  const lifeStatus = stuLifecycle?.status || stuRow?.account_status || 'active';
+  if (lifeStatus === 'deleted' || lifeStatus === 'suspended' || lifeStatus === 'archived') {
+    return {
+      ok: false,
+      httpStatus: 403,
+      error: lifeStatus === 'deleted' ? 'ACCOUNT_DELETED' : (lifeStatus === 'archived' ? 'ACCOUNT_ARCHIVED' : 'ACCOUNT_SUSPENDED'),
+      message: 'Tài khoản học viên không còn hiệu lực truy cập bài giảng.'
+    };
+  }
+
+  if (!stuRow) {
+    const syncedStu = await syncStudentEntitlementFromIzTeach(env, {
+      email,
+      name: session?.name,
+      phone: '',
+      cognitoUserId: session?.userId || session?.id,
+      izteachStudentId: session?.studentId,
+      accessToken: session?.izteachAccessToken || session?.accessToken,
+      nowMs
+    });
+    if (syncedStu && !syncedStu.deleted) {
+      stuRow = syncedStu;
+    }
+  }
+
+  const reconciled = await reconcileStudentCourseEntitlementsForSession(env, session, stuRow, nowMs);
+  let courseEnt = reconciled.courses.find(c => String(c?.id || '').trim().toLowerCase() === normCourseId) || null;
+
+  if (!courseEnt && !reconciled.liveFromIzTeach) {
+    const syncedStu = await syncStudentEntitlementFromIzTeach(env, {
+      email,
+      name: stuRow?.name || session?.name,
+      phone: stuRow?.phone || '',
+      cognitoUserId: stuRow?.cognito_user_id || session?.userId || session?.id,
+      izteachStudentId: stuRow?.izteach_student_id || session?.studentId,
+      accessToken: session?.izteachAccessToken || session?.accessToken,
+      nowMs
+    });
+    if (syncedStu && Array.isArray(syncedStu.online_courses)) {
+      const normalizedSynced = normalizeStudentOnlineCoursesList(syncedStu.online_courses, nowMs);
+      courseEnt = normalizedSynced.find(c => String(c?.id || '').trim().toLowerCase() === normCourseId) || null;
+    }
+  }
+
+  if (!courseEnt) {
+    return {
+      ok: false,
+      httpStatus: 403,
+      error: 'COURSE_NOT_ENTITLED',
+      code: 'COURSE_NOT_ENTITLED',
+      courseId,
+      serverNow: new Date(nowMs).toISOString(),
+      message: 'Tài khoản của em chưa được cấp quyền truy cập khóa học này.'
+    };
+  }
+
+  const isExpired = isCourseLimitTimeExpired(courseEnt.expiresAt || courseEnt.limitTime, false, nowMs);
+  if (isExpired) {
+    return {
+      ok: false,
+      httpStatus: 403,
+      error: 'COURSE_EXPIRED',
+      code: 'COURSE_EXPIRED',
+      courseId,
+      userPermissionId: courseEnt.userPermissionId || null,
+      limitTime: courseEnt.limitTime || null,
+      expiresAt: courseEnt.expiresAt || null,
+      durationPreset: courseEnt.durationPreset || (courseEnt.limitTime ? undefined : 'unlimited'),
+      isExpired: true,
+      serverNow: new Date(nowMs).toISOString(),
+      message: 'Khóa học này đã hết thời hạn truy cập. Vui lòng liên hệ Quản lý để gia hạn.'
+    };
+  }
+
+  return {
+    ok: true,
+    httpStatus: 200,
+    courseId,
+    courseEntitlement: {
+      ...courseEnt,
+      isExpired: false
+    },
+    allCourses: reconciled.courses,
+    serverNow: new Date(nowMs).toISOString()
+  };
 }
 
 /**
@@ -6919,10 +7868,12 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
         if (cid === '6983672f409cc20002e530b8' || cid === '67bebce067dba000027d8119') continue;
         if (seen.has(cid)) continue;
         seen.add(cid);
-        out.push({
+        const enriched = enrichOnlineCourseMetadataItem({
+          ...(typeof item === 'object' && item ? item : {}),
           id: cid,
           title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || item?.title || 'Khóa học trực tuyến'
-        });
+        }, startedAtMs);
+        if (enriched) out.push(enriched);
       }
       return out;
     };
@@ -7023,16 +7974,32 @@ async function syncAllIzTeachStudentsToSupabase(env, options = {}) {
               permissionErrorCount++;
               return;
             }
-            const cIds = extractIzTeachOnlineCourseIds(pData);
-            if (cIds.length > 0 || !byEmail.has(stuRow.email) || safeOptions.reconcileAllPermissions) {
+            const ents = extractIzTeachOnlineCourseEntitlements(pData, startedAtMs);
+            if (ents.length > 0 || !byEmail.has(stuRow.email) || safeOptions.reconcileAllPermissions) {
               const prevCourses = Array.isArray(stuRow.online_courses) ? stuRow.online_courses : [];
               stuRow.online_courses = normalizeOnlineCourseEntries(
-                cIds.map(cid => {
+                ents.map(ent => {
+                  const cid = ent.id;
                   const prevObj = prevCourses.find(c => String(c?.id || c?._id || c || '') === String(cid));
-                  const prevTitle = typeof prevObj === 'object' && prevObj?.title && prevObj.title !== 'Khóa học trực tuyến' ? prevObj.title : '';
+                  const prevFields = (prevObj && typeof prevObj === 'object') ? { ...prevObj } : {};
+                  const prevTitle = prevFields.title && prevFields.title !== 'Khóa học trực tuyến' ? prevFields.title : '';
+                  const preservedPreset = (
+                    prevFields.durationPreset &&
+                    extractCalendarDateFromLimitTime(prevFields.limitTime) === extractCalendarDateFromLimitTime(ent.limitTime)
+                  )
+                    ? prevFields.durationPreset
+                    : (ent.limitTime ? undefined : 'unlimited');
                   return {
+                    ...prevFields,
                     id: cid,
-                    title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || prevTitle || 'Khóa học trực tuyến'
+                    title: MASTER_PRODUCT_MAPPING[cid]?.shortTitle || ent.title || prevTitle || 'Khóa học trực tuyến',
+                    userPermissionId: ent.userPermissionId,
+                    userPermissionIds: ent.userPermissionIds,
+                    limitTime: ent.limitTime,
+                    expiresAt: ent.expiresAt,
+                    durationPreset: preservedPreset,
+                    isExpired: Boolean(ent.isExpired),
+                    syncStatus: 'synced'
                   };
                 })
               );
@@ -8303,20 +9270,22 @@ export default {
               : 'Tài khoản học viên đang tạm khóa. Vui lòng liên hệ Quản lý để được hỗ trợ.'
           }, 403);
         }
+        const loginNowMs = resolveEffectiveRequestNowMs(request, email);
         const existingStuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&limit=1`);
         const existingStuRow = (existingStuRes.ok && Array.isArray(existingStuRes.data) && existingStuRes.data[0]) ? existingStuRes.data[0] : null;
-        if (existingStuRow && Array.isArray(existingStuRow.online_courses)) {
-          sbStudent = existingStuRow;
-        } else {
-          sbStudent = await syncStudentEntitlementFromIzTeach(env, {
-            email,
-            name: chosen.name,
-            phone: chosen.phone,
-            cognitoUserId: isValidCognitoUuid(chosen.id || chosen.userId) ? (chosen.id || chosen.userId) : undefined,
-            izteachStudentId: chosen.studentId,
-            accessToken: chosen.accessToken
-          });
-        }
+        // Luôn đối soát quyền & thời hạn thực tế từ izTeach khi đăng nhập, rơi về bản ghi Supabase nếu upstream lỗi tạm thời
+        const syncedLoginStu = await syncStudentEntitlementFromIzTeach(env, {
+          email,
+          name: chosen.name,
+          phone: chosen.phone,
+          cognitoUserId: isValidCognitoUuid(chosen.id || chosen.userId)
+            ? (chosen.id || chosen.userId)
+            : existingStuRow?.cognito_user_id,
+          izteachStudentId: chosen.studentId || existingStuRow?.izteach_student_id,
+          accessToken: chosen.accessToken,
+          nowMs: loginNowMs
+        }).catch(() => null);
+        sbStudent = syncedLoginStu || existingStuRow || null;
         if (sbStudent?.deleted || sbStudent?.account_status === 'deleted') {
           return jsonResponse({
             ok: false,
@@ -8336,7 +9305,7 @@ export default {
         if (sbStudent) {
           classCode = sbStudent.class_code || null;
           if (Array.isArray(sbStudent.online_courses)) {
-            onlineCourses = sbStudent.online_courses;
+            onlineCourses = normalizeStudentOnlineCoursesList(sbStudent.online_courses, loginNowMs);
           }
         }
       } else if (role === 'teacher') {
@@ -8354,6 +9323,7 @@ export default {
         }
       }
 
+      const sessionNowIso = new Date(resolveEffectiveRequestNowMs(request, email)).toISOString();
       const studentCase = role === 'student'
         ? computeStudentCase({ classCode, onlineCourses })
         : role;
@@ -8373,7 +9343,8 @@ export default {
         hasLiveClass: Boolean(classCode),
         hasOnlineCourses: onlineCourses.length > 0,
         onlineCourses,
-        studentCase
+        studentCase,
+        serverNow: sessionNowIso
       };
 
       const signedToken = await signSessionToken(sessionObj, env.KTN_SESSION_SECRET);
@@ -8385,6 +9356,7 @@ export default {
         session: sessionObj,
         user: sessionObj,
         token: signedToken,
+        serverNow: sessionNowIso,
         redirectUrl
       }, 200, {
         'Set-Cookie': `ktn_webapp_token=${cookieVal}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`
@@ -8399,7 +9371,14 @@ export default {
       if (!session) {
         return jsonResponse({ ok: false, authenticated: false }, 401);
       }
-      const cleanSession = { ...session, accessToken: undefined, izteachAccessToken: undefined };
+      const sessNowMs = resolveEffectiveRequestNowMs(request, session);
+      const sessNowIso = new Date(sessNowMs).toISOString();
+      const cleanSession = {
+        ...session,
+        accessToken: undefined,
+        izteachAccessToken: undefined,
+        serverNow: sessNowIso
+      };
       const effectiveRole = cleanSession.role || cleanSession.roles?.[0] || 'student';
       if (effectiveRole === 'student' && cleanSession.email) {
         try {
@@ -8425,33 +9404,32 @@ export default {
             }, 403);
           }
           cleanSession.accountStatus = lifeStatus;
-          if (dbStu) {
-            if (Array.isArray(dbStu.online_courses)) {
-              const authoritativeCourses = dbStu.online_courses
-                .map(c => {
-                  const cid = typeof c === 'string' ? c : c?.id;
-                  if (!cid) return null;
-                  return typeof c === 'object' && c
-                    ? { ...(MASTER_PRODUCT_MAPPING[cid] || {}), ...c, id: String(cid) }
-                    : { id: String(cid), ...(MASTER_PRODUCT_MAPPING[cid] || {}) };
-                })
-                .filter(Boolean);
-              cleanSession.onlineCourses = authoritativeCourses;
-              cleanSession.hasOnlineCourses = authoritativeCourses.length > 0;
-            }
-            if (dbStu.class_code !== undefined) {
-              cleanSession.classCode = dbStu.class_code || null;
-            }
-            cleanSession.hasLiveClass = Boolean(cleanSession.classCode);
-            cleanSession.studentCase =
-              cleanSession.hasOnlineCourses && cleanSession.hasLiveClass
-                ? 'both'
-                : cleanSession.hasLiveClass
-                  ? 'live_only'
-                  : cleanSession.hasOnlineCourses
-                    ? 'video_only'
-                    : 'none';
+          const reconciled = await reconcileStudentCourseEntitlementsForSession(env, session, dbStu, sessNowMs);
+          const effectiveStu = reconciled.studentRow || dbStu;
+          const normalizedCourses = Array.isArray(reconciled.courses) ? reconciled.courses : [];
+          const authoritativeCourses = normalizedCourses
+            .map(c => {
+              const cid = typeof c === 'string' ? c : c?.id;
+              if (!cid) return null;
+              return typeof c === 'object' && c
+                ? { ...(MASTER_PRODUCT_MAPPING[cid] || {}), ...c, id: String(cid) }
+                : { id: String(cid), ...(MASTER_PRODUCT_MAPPING[cid] || {}) };
+            })
+            .filter(Boolean);
+          cleanSession.onlineCourses = authoritativeCourses;
+          cleanSession.hasOnlineCourses = authoritativeCourses.length > 0;
+          if (effectiveStu && effectiveStu.class_code !== undefined) {
+            cleanSession.classCode = effectiveStu.class_code || null;
           }
+          cleanSession.hasLiveClass = Boolean(cleanSession.classCode);
+          cleanSession.studentCase =
+            cleanSession.hasOnlineCourses && cleanSession.hasLiveClass
+              ? 'both'
+              : cleanSession.hasLiveClass
+                ? 'live_only'
+                : cleanSession.hasOnlineCourses
+                  ? 'video_only'
+                  : 'none';
         } catch {}
       } else if (effectiveRole === 'teacher' && cleanSession.email) {
         try {
@@ -8494,7 +9472,9 @@ export default {
         ok: true,
         authenticated: true,
         session: cleanSession,
+        user: cleanSession,
         token: refreshedToken,
+        serverNow: sessNowIso,
         redirectUrl: getRoleTargetPage(effectiveRole)
       }, 200, {
         'Set-Cookie': `ktn_webapp_token=${cookieVal}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`
@@ -8606,48 +9586,23 @@ export default {
         return jsonResponse({ ok: false, error: 'INVALID_COURSE_ID', message: 'Mã khóa học (courseId) không hợp lệ.' }, 400);
       }
 
-      // Kiểm tra phân quyền truy cập bài giảng theo đúng vai trò trước khi dùng Admin Token gọi izTeach
+      const unitsNowMs = resolveEffectiveRequestNowMs(request, session);
+      const unitsNowIso = new Date(unitsNowMs).toISOString();
+      let verifiedCourseEntitlement = null;
+
+      // Kiểm tra phân quyền & thời hạn truy cập bài giảng server-side TRƯỚC KHI dùng Admin Token gọi izTeach
       if (session.role === 'student') {
-        const [stuRes, stuLifecycle] = await Promise.all([
-          supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`),
-          getStudentLifecycleState(env, session.email).catch(() => null)
-        ]);
-        let stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
-        const lifeStatus = stuLifecycle?.status || stuRow?.account_status || 'active';
-        if (lifeStatus === 'deleted' || lifeStatus === 'suspended' || lifeStatus === 'archived') {
+        const accessCheck = await verifyStudentCourseAccessServerSide(env, session, courseId, {
+          nowMs: unitsNowMs
+        });
+        if (!accessCheck.ok) {
+          const { httpStatus, ...errPayload } = accessCheck;
           return jsonResponse({
-            ok: false,
-            error: lifeStatus === 'deleted' ? 'ACCOUNT_DELETED' : (lifeStatus === 'archived' ? 'ACCOUNT_ARCHIVED' : 'ACCOUNT_SUSPENDED'),
-            message: 'Tài khoản học viên không còn hiệu lực truy cập bài giảng.'
-          }, 403);
+            ...errPayload,
+            serverNow: unitsNowIso
+          }, httpStatus || 403);
         }
-        let onlineList = stuRow
-          ? (Array.isArray(stuRow.online_courses) ? stuRow.online_courses : [])
-          : (Array.isArray(session.onlineCourses) ? session.onlineCourses : []);
-        let enrolledIds = new Set(onlineList.map(c => String(c?.id || c?._id || c || '').trim().toLowerCase()).filter(Boolean));
-
-        if (!stuRow && !enrolledIds.has(courseId.toLowerCase())) {
-          const syncedStu = await syncStudentEntitlementFromIzTeach(env, {
-            email: session.email,
-            name: session.name,
-            phone: '',
-            cognitoUserId: session.userId,
-            izteachStudentId: session.studentId,
-            accessToken: session.izteachAccessToken || session.accessToken
-          });
-          if (syncedStu && Array.isArray(syncedStu.online_courses)) {
-            enrolledIds = new Set(syncedStu.online_courses.map(c => String(c?.id || c?._id || c || '').trim().toLowerCase()).filter(Boolean));
-          }
-        }
-
-        if (!enrolledIds.has(courseId.toLowerCase())) {
-          return jsonResponse({
-            ok: false,
-            error: 'COURSE_NOT_ENTITLED',
-            courseId,
-            message: 'Tài khoản của em chưa được cấp quyền truy cập khóa học này.'
-          }, 403);
-        }
+        verifiedCourseEntitlement = accessCheck.courseEntitlement || null;
       } else if (session.role === 'teacher') {
         const tEmail = normalizeEmail(session.email || '');
         if (revokedTokenMemorySet.has(`REVOKED_EMAIL_${tEmail}`) || revokedTokenMemorySet.has(`EMAIL_${tEmail}`) || revokedTokenMemorySet.has(tEmail)) {
@@ -9063,6 +10018,8 @@ export default {
         return jsonResponse({
           ok: unitRes.ok,
           courseId,
+          courseEntitlement: verifiedCourseEntitlement || null,
+          serverNow: unitsNowIso,
           units,
           lessons: groupedLessons,
           mappingTable
@@ -9185,6 +10142,8 @@ export default {
       return jsonResponse({
         ok: unitRes.ok,
         courseId,
+        courseEntitlement: verifiedCourseEntitlement || null,
+        serverNow: unitsNowIso,
         units,
         lessons: units
       }, unitRes.ok ? 200 : unitRes.status);
@@ -9199,6 +10158,19 @@ export default {
         const courseId = String(url.searchParams.get('courseId') || DEFAULT_COURSE_ID).trim().toLowerCase();
         if (!/^[0-9a-f]{24}$/i.test(courseId)) {
           return jsonResponse({ ok: false, error: 'INVALID_COURSE_ID', message: 'Mã khóa học (courseId) không hợp lệ.' }, 400);
+        }
+        if (session.role === 'student') {
+          const hwCfgNowMs = resolveEffectiveRequestNowMs(request, session);
+          const accessCheck = await verifyStudentCourseAccessServerSide(env, session, courseId, {
+            nowMs: hwCfgNowMs
+          });
+          if (!accessCheck.ok) {
+            const { httpStatus, ...errPayload } = accessCheck;
+            return jsonResponse({
+              ...errPayload,
+              serverNow: new Date(hwCfgNowMs).toISOString()
+            }, httpStatus || 403);
+          }
         }
         const hwCfgRoom = `COURSE_HW_CONFIG:${courseId}`;
         const res = await supabaseRequest(env, `ktn_dlp_alerts?room_id=eq.${encodeURIComponent(hwCfgRoom)}&order=created_at.desc&limit=100`);
@@ -9462,18 +10434,22 @@ export default {
     if (path === '/api/ktn/students/me' && request.method === 'GET') {
       const session = await extractSessionFromRequest(request, env);
       if (!session) return jsonResponse({ ok: false, message: 'Chưa đăng nhập.' }, 401);
+      const meNowMs = resolveEffectiveRequestNowMs(request, session);
+      const meNowIso = new Date(meNowMs).toISOString();
       const sbRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(session.email)}&limit=1`);
       let stu = (Array.isArray(sbRes.data) && sbRes.data[0]) || null;
-      if (session.role === 'student' && (!stu || !Array.isArray(stu.online_courses))) {
-        const synced = await syncStudentEntitlementFromIzTeach(env, {
-          email: session.email,
-          name: stu?.name || session.name,
-          phone: stu?.phone || '',
-          cognitoUserId: stu?.cognito_user_id || session.userId,
-          izteachStudentId: stu?.izteach_student_id || session.studentId,
-          accessToken: session.izteachAccessToken || session.accessToken
-        });
-        if (synced) stu = synced;
+      if (session.role === 'student') {
+        const reconciled = await reconcileStudentCourseEntitlementsForSession(env, session, stu, meNowMs);
+        if (reconciled.studentRow) {
+          stu = reconciled.studentRow;
+        }
+        if (stu && Array.isArray(reconciled.courses)) {
+          stu = {
+            ...stu,
+            online_courses: reconciled.courses,
+            has_online_courses: reconciled.courses.length > 0
+          };
+        }
       }
       if (!stu) {
         stu = {
@@ -9488,7 +10464,8 @@ export default {
       }
       return jsonResponse({
         ok: true,
-        student: enrichStudentRowV3(stu)
+        serverNow: meNowIso,
+        student: enrichStudentRowV3(stu, meNowMs)
       });
     }
 
@@ -9920,6 +10897,9 @@ export default {
         ? body.courseIds
         : (body.courseId ? [body.courseId] : []);
       const resolvedCourseIds = rawCourseIds.length > 0 ? resolveOrderCourseIds(rawCourseIds) : [];
+      const durationPreset = normalizeCourseDurationPreset(body.durationPreset ?? body.preset, null);
+      const durationMode = body.durationMode === 'extend_from_current' ? 'extend_from_current' : 'set_from_now';
+      const provNowMs = resolveEffectiveRequestNowMs(request, session);
       const idempotencyKey = String(body.idempotencyKey || request.headers.get('Idempotency-Key') || '').trim();
 
       if (!email || !email.includes('@')) {
@@ -9952,7 +10932,9 @@ export default {
           parentName,
           parentPhone,
           classCode,
-          courseIds: resolvedCourseIds
+          courseIds: resolvedCourseIds,
+          durationPreset: durationPreset || undefined,
+          durationMode
         };
 
         let priorIncompleteJob = null;
@@ -10013,6 +10995,7 @@ export default {
         let prov = null;
         const alreadyProvisionedIzTeach = completedSteps.includes('izteach_account') &&
           (resolvedCourseIds.length === 0 || completedSteps.includes('izteach_permissions')) &&
+          (!durationPreset || completedSteps.includes('izteach_duration_sync')) &&
           isValidCognitoUuid(priorCognitoUserId);
 
         if (alreadyProvisionedIzTeach) {
@@ -10041,7 +11024,10 @@ export default {
             skipCourses: resolvedCourseIds.length === 0,
             replaceCourses: Boolean(body.replaceCourses),
             cognito_user_id: body.cognitoUserId || priorCognitoUserId || null,
-            preserveAccountCreated: priorAccountCreated
+            preserveAccountCreated: priorAccountCreated,
+            durationPreset,
+            durationMode,
+            nowMs: provNowMs
           });
         }
 
@@ -10050,6 +11036,9 @@ export default {
         if (!prov.ok) {
           if (isValidCognitoUuid(prov.cognitoUserId) && !completedSteps.includes('izteach_account')) {
             completedSteps.push('izteach_account');
+          }
+          if (prov.failedStep === 'izteach_duration_sync' && !completedSteps.includes('izteach_permissions')) {
+            completedSteps.push('izteach_permissions');
           }
           const failedStepName = prov.failedStep || 'izteach_account_provision';
           const jobStatus = completedSteps.length > 0 ? 'partial_failure' : 'failed';
@@ -10072,7 +11061,7 @@ export default {
               izteach_create_status: prov.izteachCreateStatus ?? null,
               izteach_response_shape: prov.izteachResponseShape ?? null
             },
-            error_code: 'IZTEACH_PROVISION_FAILED',
+            error_code: failedStepName === 'izteach_duration_sync' ? 'COURSE_DURATION_SYNC_FAILED' : 'IZTEACH_PROVISION_FAILED',
             error_message: prov.error || 'Lỗi tạo tài khoản trên izTeach',
             retryable: true
           });
@@ -10088,14 +11077,19 @@ export default {
             failedStep: failedStepName,
             cognitoUserId: prov.cognitoUserId || priorCognitoUserId || null,
             izteachStudentId: prov.izteachStudentId || priorIzteachStudentId || null,
-            error: 'IZTEACH_PROVISION_FAILED',
-            message: `Chưa khởi tạo được tài khoản học viên trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Vui lòng bấm Thử lại.`
+            error: failedStepName === 'izteach_duration_sync' ? 'COURSE_DURATION_SYNC_INCOMPLETE' : 'IZTEACH_PROVISION_FAILED',
+            message: failedStepName === 'izteach_duration_sync'
+              ? `Cần hoàn tất đồng bộ thời hạn (${prov.error || 'Lỗi đồng bộ thời hạn trên izTeach'}). Vui lòng bấm Đồng bộ lại.`
+              : `Chưa khởi tạo được tài khoản học viên trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Vui lòng bấm Thử lại.`
           }, 502);
         }
 
         if (!completedSteps.includes('izteach_account')) completedSteps.push('izteach_account');
         if (resolvedCourseIds.length > 0 && !completedSteps.includes('izteach_permissions')) {
           completedSteps.push('izteach_permissions');
+        }
+        if (durationPreset && resolvedCourseIds.length > 0 && !completedSteps.includes('izteach_duration_sync')) {
+          completedSteps.push('izteach_duration_sync');
         }
 
         const updatedStudent = await mergeAndUpsertStudentCourses(env, {
@@ -10108,13 +11102,15 @@ export default {
           izteachStudentId: prov.izteachStudentId,
           addCourseIds: body.replaceCourses ? [] : (Array.isArray(prov.allCourseIds) ? prov.allCourseIds : resolvedCourseIds),
           replaceCourseIds: body.replaceCourses ? resolvedCourseIds : null,
+          courseEntitlementOverrides: prov.courseEntitlementsMap || null,
           classCode: classCode || (body.replaceClass ? null : undefined),
           codeHint: body.code || '',
           accountStatus: 'active',
           syncStatus: 'synced',
           lastSyncError: null,
           internalNote,
-          actorEmail: session.email
+          actorEmail: session.email,
+          nowMs: provNowMs
         });
 
         if (!updatedStudent || updatedStudent.ok === false) {
@@ -10152,7 +11148,7 @@ export default {
             driftCode: 'A02_IZTEACH_WITHOUT_SUPABASE_STUDENT',
             errorCode: 'SUPABASE_UPSERT_FAILED',
             errorMessage: 'Đã tạo tài khoản izTeach nhưng chưa lưu được vào bảng ktn_students',
-            details: { email, name, classCode, courseIds: resolvedCourseIds, completedSteps },
+            details: { email, name, classCode, courseIds: resolvedCourseIds, durationPreset, completedSteps },
             createdBy: session.email
           });
           return jsonResponse({
@@ -10194,6 +11190,8 @@ export default {
           izteachStudentId: prov.izteachStudentId,
           grantedCourseIds: prov.grantedCourseIds,
           allCourseIds: prov.allCourseIds,
+          durationPreset: prov.durationPreset || durationPreset || null,
+          courseEntitlements: prov.courseEntitlementsMap || {},
           classCode: effectiveClassCode,
           classJoinedNotification: updatedStudent.classJoinedNotification || null,
           pushDispatch: updatedStudent.pushDispatch || null,
@@ -10238,6 +11236,7 @@ export default {
             name,
             classCode: effectiveClassCode,
             courseIds: resolvedCourseIds,
+            durationPreset: prov.durationPreset || durationPreset || null,
             cognitoUserId: prov.cognitoUserId,
             izteachStudentId: prov.izteachStudentId,
             accountCreated: Boolean(prov.accountCreated),
@@ -10248,6 +11247,560 @@ export default {
 
         return jsonResponse({
           ok: true,
+          ...responseSummary
+        });
+      });
+    }
+
+    // ------------------------------------------------------------------------
+    // B3.2b. QUẢN LÝ & GIA HẠN THỜI HẠN KHÓA HỌC VIDEO TRÊN IZTEACH + SUPABASE
+    // POST /api/ktn/admin/students/course-duration
+    // ------------------------------------------------------------------------
+    if (path === '/api/ktn/admin/students/course-duration' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || session.role !== 'admin') {
+        return jsonResponse({
+          ok: false,
+          error: 'ADMIN_ONLY',
+          message: 'Chỉ Quản lý (Admin) mới được thay đổi hoặc gia hạn thời hạn khóa học.'
+        }, 403);
+      }
+
+      const body = await request.json().catch(() => ({}));
+      const studentEmail = normalizeEmail(body.studentEmail || body.email || '');
+      const courseId = String(body.courseId || '').trim().toLowerCase();
+      const rawPreset = String(body.preset ?? body.durationPreset ?? '').trim().toLowerCase();
+      const preset = VALID_COURSE_DURATION_PRESETS.has(rawPreset) ? rawPreset : null;
+      const mode = body.mode === 'extend_from_current' ? 'extend_from_current' : 'set_from_now';
+      const clientRequestId = String(body.clientRequestId || body.idempotencyKey || request.headers.get('Idempotency-Key') || '').trim();
+      const reqNowMs = resolveEffectiveRequestNowMs(request, session);
+      const reqNowIso = new Date(reqNowMs).toISOString();
+
+      if (!studentEmail || !studentEmail.includes('@')) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_STUDENT_EMAIL',
+          message: 'Email học viên không hợp lệ.'
+        }, 400);
+      }
+      if (!/^[0-9a-f]{24}$/i.test(courseId)) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_COURSE_ID',
+          message: 'Mã khóa học (courseId) không hợp lệ.'
+        }, 400);
+      }
+      if (!preset) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_DURATION_PRESET',
+          message: 'Mốc thời hạn (preset) không hợp lệ. Chỉ chấp nhận: 1w, 2w, 1m, 2m, 3m, unlimited.'
+        }, 400);
+      }
+
+      const lockKey = `course_duration:${studentEmail}:${courseId}`;
+      return runWithProvisioningLock(lockKey, async () => {
+        const requestPayloadMeta = {
+          studentEmail,
+          courseId,
+          preset,
+          mode,
+          clientRequestId: clientRequestId || null
+        };
+
+        let priorIncompleteJob = null;
+        if (body.operationId || body.retry === true) {
+          const candidateJob = await findLatestIncompleteStudentJobByEmail(env, studentEmail, body.operationId);
+          if (
+            candidateJob &&
+            candidateJob.job_type === 'course_duration' &&
+            String(candidateJob.request_payload?.courseId || '').toLowerCase() === courseId
+          ) {
+            priorIncompleteJob = candidateJob;
+          }
+        }
+
+        const effectiveIdempotencyKey = priorIncompleteJob?.idempotency_key || clientRequestId || null;
+        const claim = await claimProvisioningJobAtomically(env, {
+          operationId: body.operationId || priorIncompleteJob?.operation_id || undefined,
+          idempotencyKey: effectiveIdempotencyKey,
+          jobType: 'course_duration',
+          actorEmail: session.email,
+          targetEmail: studentEmail,
+          targetRole: 'student',
+          requestPayload: requestPayloadMeta
+        });
+
+        if (claim.replayed && claim.job?.result_summary) {
+          return jsonResponse({
+            ok: true,
+            idempotentReplay: true,
+            operationId: claim.job.operation_id,
+            serverNow: reqNowIso,
+            ...claim.job.result_summary
+          });
+        }
+        if (claim.inProgress) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            inProgress: true,
+            operationId: claim.job?.operation_id || null,
+            error: 'COURSE_DURATION_UPDATE_IN_PROGRESS',
+            message: 'Thao tác cập nhật thời hạn khóa học này đang được xử lý. Vui lòng đợi trong giây lát.'
+          }, 409);
+        }
+
+        const opId = priorIncompleteJob?.operation_id || claim.operationId || generateOperationId('DUR-CRS');
+        const finalIdempotencyKey = priorIncompleteJob?.idempotency_key || effectiveIdempotencyKey || null;
+        const completedSteps = Array.from(new Set([
+          ...(Array.isArray(priorIncompleteJob?.completed_steps) ? priorIncompleteJob.completed_steps : []),
+          ...(Array.isArray(claim.completedSteps) ? claim.completedSteps : [])
+        ]));
+
+        // 1. Tra cứu học viên trên Supabase & izTeach để xác định Cognito UUID thật
+        const stuRes = await supabaseRequest(
+          env,
+          `ktn_students?email=eq.${encodeURIComponent(studentEmail)}&select=*&limit=1`
+        );
+        const existingStu = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+        let cognitoUserId = isValidCognitoUuid(existingStu?.cognito_user_id)
+          ? existingStu.cognito_user_id
+          : (isValidCognitoUuid(priorIncompleteJob?.cognito_user_id) ? priorIncompleteJob.cognito_user_id : null);
+        let izteachStudentId = existingStu?.izteach_student_id || null;
+
+        const adminToken = await getIzTeachAdminToken(env);
+        if (!adminToken) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            syncStatus: 'sync_failed',
+            error: 'MISSING_IZTEACH_ADMIN_TOKEN',
+            message: 'Cần hoàn tất đồng bộ thời hạn: Không lấy được Admin Token kết nối izTeach.'
+          }, 502);
+        }
+
+        const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+        if (!isValidCognitoUuid(cognitoUserId)) {
+          try {
+            const searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&email=${encodeURIComponent(studentEmail)}`, {
+              headers: { Authorization: adminToken }
+            });
+            if (searchRes.ok) {
+              const searchData = await searchRes.json().catch(() => null);
+              const list = extractIzTeachStudentRecords(searchData);
+              const found = list.find(u => normalizeEmail(u?.email || u?.user?.email) === studentEmail);
+              if (found) {
+                const identity = extractIdentityFromIzTeachRecord(found);
+                if (isValidCognitoUuid(identity.cognitoUserId)) {
+                  cognitoUserId = identity.cognitoUserId;
+                }
+                izteachStudentId = identity.izteachStudentId || izteachStudentId;
+              }
+            }
+          } catch {}
+        }
+
+        if (!isValidCognitoUuid(cognitoUserId)) {
+          return jsonResponse({
+            ok: false,
+            error: 'STUDENT_COGNITO_NOT_FOUND',
+            message: `Không tìm thấy tài khoản izTeach (Cognito UUID) của học viên ${studentEmail}. Vui lòng đồng bộ hoặc cấp khóa học trước.`
+          }, 404);
+        }
+
+        // 2. Kiểm tra khóa học đã được cấp hợp lệ trên izTeach
+        const permUrl = `${IZTEACH_ENDPOINTS.userPermission}?vendorId=${encodeURIComponent(vendorId)}&userId=${encodeURIComponent(cognitoUserId)}`;
+        const permResp = await fetch(permUrl, { headers: { Authorization: adminToken } });
+        if (!permResp.ok) {
+          return jsonResponse({
+            ok: false,
+            retryable: true,
+            syncStatus: 'sync_failed',
+            error: 'IZTEACH_PERMISSION_READ_FAILED',
+            message: `Cần hoàn tất đồng bộ thời hạn: Không đọc được quyền khóa học trên izTeach (HTTP ${permResp.status}).`
+          }, 502);
+        }
+        const permPayload = await permResp.json().catch(() => null);
+
+        const currentEntList = extractIzTeachOnlineCourseEntitlements(permPayload, reqNowMs);
+        const currentIzEnt = currentEntList.find(ent => String(ent.id).toLowerCase() === courseId) || null;
+        const existingStuCourses = normalizeStudentOnlineCoursesList(existingStu?.online_courses || [], reqNowMs);
+        const currentStuCourse = existingStuCourses.find(c => String(c.id).toLowerCase() === courseId) || null;
+
+        if (!currentIzEnt && !currentStuCourse) {
+          return jsonResponse({
+            ok: false,
+            error: 'COURSE_NOT_GRANTED',
+            courseId,
+            message: 'Học viên chưa được cấp khóa học này nên chưa thể đặt hoặc gia hạn thời hạn.'
+          }, 400);
+        }
+
+        // Nếu khóa học có trên Supabase nhưng chưa có permission trên izTeach, cấp bù permission trên izTeach trước
+        if (!currentIzEnt) {
+          const addUrl = `${IZTEACH_ENDPOINTS.userPermission}/add-products/${encodeURIComponent(cognitoUserId)}`;
+          await fetch(addUrl, {
+            method: 'PUT',
+            headers: {
+              Authorization: adminToken,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              vendorId,
+              onlineCourses: [courseId],
+              testCategories: []
+            })
+          });
+        }
+
+        const previousLimitTime = currentIzEnt?.limitTime ?? currentStuCourse?.limitTime ?? null;
+
+        // 3. Tính ngày hết hạn trên server (chống cộng trùng khi retry partial_failure - E15)
+        const lockedLimitTimeFromPriorJob =
+          priorIncompleteJob?.response_payload &&
+          priorIncompleteJob.response_payload.locked_target_limit_time !== undefined
+            ? priorIncompleteJob.response_payload.locked_target_limit_time
+            : (claim.job?.response_payload && claim.job.response_payload.locked_target_limit_time !== undefined
+                ? claim.job.response_payload.locked_target_limit_time
+                : undefined);
+
+        let targetLimitTime;
+        if (lockedLimitTimeFromPriorJob !== undefined) {
+          targetLimitTime = lockedLimitTimeFromPriorJob;
+        } else if (
+          body.qaOverrideLimitTime !== undefined &&
+          isQaTestEmail(studentEmail) &&
+          (body.qaOverrideLimitTime === null || /^\d{4}-\d{2}-\d{2}$/.test(String(body.qaOverrideLimitTime).trim()))
+        ) {
+          targetLimitTime = body.qaOverrideLimitTime === null ? null : String(body.qaOverrideLimitTime).trim();
+        } else {
+          const calc = computeTargetLimitTimeForCourse({
+            preset,
+            mode,
+            currentLimitTime: previousLimitTime,
+            nowMs: reqNowMs
+          });
+          targetLimitTime = calc.limitTime;
+        }
+
+        // Cho phép giả lập lỗi upstream izTeach trên tài khoản QA để kiểm thử E14
+        if (body.simulateIzTeachFailure === true && isQaTestEmail(studentEmail)) {
+          await saveProvisioningJobState(env, {
+            operation_id: opId,
+            idempotency_key: finalIdempotencyKey,
+            job_type: 'course_duration',
+            actor_email: session.email,
+            target_email: studentEmail,
+            target_role: 'student',
+            status: 'failed',
+            sync_status: 'sync_failed',
+            completed_steps: [],
+            failed_step: 'izteach_duration_sync',
+            cognito_user_id: cognitoUserId,
+            izteach_student_id: izteachStudentId,
+            request_payload: requestPayloadMeta,
+            error_code: 'SIMULATED_IZTEACH_DURATION_FAILURE',
+            error_message: 'Lỗi giả lập kết nối set-limited-time trên izTeach (QA E14).',
+            retryable: true
+          });
+          return jsonResponse({
+            ok: false,
+            operationId: opId,
+            retryable: true,
+            syncStatus: 'sync_failed',
+            error: 'IZTEACH_DURATION_SYNC_FAILED',
+            message: 'Cần hoàn tất đồng bộ thời hạn: Không cập nhật được thời hạn trên izTeach (QA simulated upstream error).'
+          }, 502);
+        }
+
+        // 4. Gọi PUT /prod/user-permission/set-limited-time/{userPermissionId} & GET xác nhận lại
+        const durRes = await setIzTeachCourseLimitedTimeWithVerification(env, {
+          adminToken,
+          cognitoUserId,
+          courseId,
+          limitTime: targetLimitTime,
+          preset,
+          existingPermData: currentIzEnt ? permPayload : null,
+          nowMs: reqNowMs
+        });
+
+        if (!durRes.ok) {
+          await saveProvisioningJobState(env, {
+            operation_id: opId,
+            idempotency_key: finalIdempotencyKey,
+            job_type: 'course_duration',
+            actor_email: session.email,
+            target_email: studentEmail,
+            target_role: 'student',
+            status: 'failed',
+            sync_status: 'sync_failed',
+            completed_steps: [],
+            failed_step: 'izteach_duration_sync',
+            cognito_user_id: cognitoUserId,
+            izteach_student_id: izteachStudentId,
+            request_payload: requestPayloadMeta,
+            error_code: 'IZTEACH_DURATION_SYNC_FAILED',
+            error_message: durRes.error || 'Lỗi đặt thời hạn trên izTeach',
+            retryable: true
+          });
+          await logSyncEvent(env, {
+            operationId: opId,
+            eventType: 'course_duration_update',
+            sourceSystem: 'ktn_admin',
+            targetSystem: 'izteach',
+            entityType: 'student_course',
+            entityKey: `${studentEmail}:${courseId}`,
+            status: 'sync_failed',
+            errorCode: 'IZTEACH_DURATION_SYNC_FAILED',
+            errorMessage: durRes.error || 'Lỗi đặt thời hạn trên izTeach',
+            details: { studentEmail, courseId, preset, mode, targetLimitTime },
+            createdBy: session.email
+          });
+          return jsonResponse({
+            ok: false,
+            operationId: opId,
+            idempotencyKey: finalIdempotencyKey,
+            retryable: true,
+            syncStatus: 'sync_failed',
+            code: 'IZTEACH_SET_LIMITED_TIME_FAILED',
+            error: 'IZTEACH_DURATION_SYNC_FAILED',
+            message: `Cần hoàn tất đồng bộ thời hạn: ${durRes.error || 'Không lưu được thời hạn trên izTeach'}.`
+          }, 502);
+        }
+
+        if (!completedSteps.includes('izteach_duration_sync')) {
+          completedSteps.push('izteach_duration_sync');
+        }
+
+        // Cho phép giả lập lỗi Supabase sau khi izTeach thành công trên tài khoản QA để kiểm thử E15 (partial_failure & safe retry)
+        const simulateSbFailure = Boolean(body.simulateSupabaseFailure === true && isQaTestEmail(studentEmail));
+        let updatedStudent = null;
+        if (!simulateSbFailure) {
+          updatedStudent = await mergeAndUpsertStudentCourses(env, {
+            email: studentEmail,
+            name: existingStu?.name || studentEmail.split('@')[0],
+            phone: existingStu?.phone || '',
+            cognitoUserId,
+            izteachStudentId,
+            addCourseIds: [courseId],
+            courseEntitlementOverrides: {
+              [courseId]: {
+                ...(durRes.entitlement || {}),
+                id: courseId,
+                userPermissionId: durRes.userPermissionId,
+                limitTime: durRes.limitTime,
+                expiresAt: durRes.expiresAt,
+                durationPreset: preset,
+                isExpired: Boolean(durRes.isExpired),
+                syncStatus: 'synced'
+              }
+            },
+            accountStatus: existingStu?.account_status || 'active',
+            syncStatus: 'synced',
+            lastSyncError: null,
+            actorEmail: session.email,
+            nowMs: reqNowMs
+          });
+        }
+
+        if (simulateSbFailure || !updatedStudent || updatedStudent.ok === false) {
+          await saveProvisioningJobState(env, {
+            operation_id: opId,
+            idempotency_key: finalIdempotencyKey,
+            job_type: 'course_duration',
+            actor_email: session.email,
+            target_email: studentEmail,
+            target_role: 'student',
+            status: 'partial_failure',
+            sync_status: 'partial_failure',
+            completed_steps: completedSteps,
+            failed_step: 'supabase_student_upsert',
+            cognito_user_id: cognitoUserId,
+            izteach_student_id: izteachStudentId,
+            request_payload: requestPayloadMeta,
+            response_payload: {
+              locked_target_limit_time: durRes.limitTime,
+              locked_preset: preset,
+              locked_mode: mode,
+              course_id: courseId,
+              user_permission_id: durRes.userPermissionId
+            },
+            error_code: 'SUPABASE_DURATION_SYNC_FAILED',
+            error_message: 'Đã cập nhật hạn khóa học trên izTeach nhưng lưu vào Supabase thất bại.',
+            retryable: true
+          });
+          await logSyncEvent(env, {
+            operationId: opId,
+            eventType: 'course_duration_update',
+            sourceSystem: 'izteach',
+            targetSystem: 'supabase',
+            entityType: 'student_course',
+            entityKey: `${studentEmail}:${courseId}`,
+            status: 'partial_failure',
+            errorCode: 'SUPABASE_DURATION_SYNC_FAILED',
+            errorMessage: 'Đã đặt hạn trên izTeach nhưng chưa lưu được vào ktn_students.online_courses',
+            details: {
+              studentEmail,
+              courseId,
+              preset,
+              mode,
+              previousLimitTime,
+              lockedTargetLimitTime: durRes.limitTime,
+              userPermissionId: durRes.userPermissionId
+            },
+            createdBy: session.email
+          });
+          return jsonResponse({
+            ok: false,
+            operationId: opId,
+            idempotencyKey: finalIdempotencyKey,
+            partialFailure: true,
+            retryable: true,
+            syncStatus: 'partial_failure',
+            completedSteps,
+            failedStep: 'supabase_student_upsert',
+            courseId,
+            preset,
+            mode,
+            limitTime: durRes.limitTime,
+            expiresAt: durRes.expiresAt,
+            lockedTargetLimitTime: durRes.limitTime,
+            courseEntitlement: enrichOnlineCourseMetadataItem(
+              {
+                ...(currentStuCourse || {}),
+                id: courseId,
+                userPermissionId: durRes.userPermissionId,
+                limitTime: durRes.limitTime,
+                expiresAt: durRes.expiresAt,
+                durationPreset: preset,
+                isExpired: Boolean(durRes.isExpired),
+                syncStatus: 'partial_failure'
+              },
+              { durationPreset: preset, syncStatus: 'partial_failure' },
+              reqNowMs
+            ),
+            code: 'COURSE_DURATION_PARTIAL_FAILURE',
+            error: 'COURSE_DURATION_PARTIAL_FAILURE',
+            message: 'Cần hoàn tất đồng bộ thời hạn: Đã cập nhật hạn trên izTeach nhưng lưu hồ sơ Supabase chưa thành công. Vui lòng bấm Đồng bộ lại (hệ thống giữ nguyên ngày đích, không cộng trùng thời hạn).'
+          }, 502);
+        }
+
+        if (!completedSteps.includes('supabase_student_upsert')) {
+          completedSteps.push('supabase_student_upsert');
+        }
+
+        const updatedCourses = normalizeStudentOnlineCoursesList(updatedStudent.online_courses || [], reqNowMs);
+        const updatedCourseEntitlement =
+          updatedCourses.find(c => String(c.id).toLowerCase() === courseId) ||
+          enrichOnlineCourseMetadataItem(
+            {
+              id: courseId,
+              userPermissionId: durRes.userPermissionId,
+              limitTime: durRes.limitTime,
+              expiresAt: durRes.expiresAt,
+              durationPreset: preset,
+              isExpired: Boolean(durRes.isExpired),
+              syncStatus: 'synced'
+            },
+            { durationPreset: preset, syncStatus: 'synced' },
+            reqNowMs
+          );
+
+        const responseSummary = {
+          operationId: opId,
+          idempotencyKey: finalIdempotencyKey,
+          syncStatus: 'synced',
+          studentEmail,
+          courseId,
+          preset,
+          mode,
+          previousLimitTime,
+          anchorDate: previousLimitTime,
+          limitTime: updatedCourseEntitlement.limitTime,
+          expiresAt: updatedCourseEntitlement.expiresAt,
+          isExpired: Boolean(updatedCourseEntitlement.isExpired),
+          userPermissionId: updatedCourseEntitlement.userPermissionId || durRes.userPermissionId,
+          updatedPermissionIds: durRes.updatedPermissionIds || [],
+          courseEntitlement: updatedCourseEntitlement,
+          student: enrichStudentRowV3(updatedStudent, reqNowMs),
+          updatedAt: reqNowIso,
+          message: updatedCourseEntitlement.limitTime
+            ? `Đã cập nhật thời hạn khóa học (${updatedCourseEntitlement.title}) đến hết ngày ${updatedCourseEntitlement.limitTime}.`
+            : `Đã chuyển thời hạn khóa học (${updatedCourseEntitlement.title}) sang Vĩnh viễn.`
+        };
+
+        await Promise.all([
+          saveProvisioningJobState(env, {
+            operation_id: opId,
+            idempotency_key: finalIdempotencyKey,
+            job_type: 'course_duration',
+            actor_email: session.email,
+            target_email: studentEmail,
+            target_role: 'student',
+            status: 'completed',
+            sync_status: 'synced',
+            completed_steps: completedSteps,
+            failed_step: null,
+            cognito_user_id: cognitoUserId,
+            izteach_student_id: izteachStudentId,
+            request_payload: requestPayloadMeta,
+            response_payload: {
+              locked_target_limit_time: durRes.limitTime,
+              locked_preset: preset,
+              locked_mode: mode,
+              course_id: courseId,
+              user_permission_id: durRes.userPermissionId
+            },
+            result_summary: responseSummary
+          }),
+          logSyncEvent(env, {
+            operationId: opId,
+            eventType: 'course_duration_update',
+            sourceSystem: 'ktn_admin',
+            targetSystem: 'izteach+supabase',
+            entityType: 'student_course',
+            entityKey: `${studentEmail}:${courseId}`,
+            status: 'synced',
+            details: {
+              studentEmail,
+              courseId,
+              preset,
+              mode,
+              previousLimitTime,
+              newLimitTime: updatedCourseEntitlement.limitTime,
+              expiresAt: updatedCourseEntitlement.expiresAt,
+              userPermissionId: updatedCourseEntitlement.userPermissionId
+            },
+            createdBy: session.email
+          }),
+          recordAdminAuditLog(env, {
+            actorEmail: session.email,
+            actorRole: 'admin',
+            action: 'student_course_duration_updated',
+            targetType: 'student',
+            targetId: studentEmail,
+            reason: mode === 'extend_from_current'
+              ? `Gia hạn thêm (${preset}) cho khóa ${courseId}`
+              : `Đặt thời hạn (${preset}) cho khóa ${courseId}`,
+            metadata: {
+              operationId: opId,
+              courseId,
+              preset,
+              mode,
+              previousLimitTime,
+              newLimitTime: updatedCourseEntitlement.limitTime,
+              expiresAt: updatedCourseEntitlement.expiresAt,
+              userPermissionId: updatedCourseEntitlement.userPermissionId,
+              syncStatus: 'synced',
+              updatedAt: reqNowIso
+            }
+          })
+        ]);
+
+        return jsonResponse({
+          ok: true,
+          serverNow: reqNowIso,
           ...responseSummary
         });
       });
@@ -10268,6 +11821,9 @@ export default {
       const rawCourseIds = Array.isArray(body.courseIds)
         ? body.courseIds
         : (body.courseId ? [body.courseId] : []);
+      const durationPreset = normalizeCourseDurationPreset(body.durationPreset ?? body.preset, null);
+      const durationMode = body.durationMode === 'extend_from_current' ? 'extend_from_current' : 'set_from_now';
+      const coursesNowMs = resolveEffectiveRequestNowMs(request, session);
 
       let existingStu = null;
       const stuCheck = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&select=*&limit=1`);
@@ -10329,16 +11885,24 @@ export default {
           courseIds: resolvedIds,
           skipCourses: resolvedIds.length === 0,
           replaceCourses: action === 'set',
-          cognito_user_id: cognitoUserId
+          cognito_user_id: cognitoUserId,
+          durationPreset: (action === 'grant' || action === 'set') ? durationPreset : null,
+          durationMode,
+          nowMs: coursesNowMs
         });
         provResult = prov;
         if (!prov.ok && action !== 'assign_class') {
+          const isDurationFail = prov.failedStep === 'izteach_duration_sync';
           return jsonResponse({
             ok: false,
             retryable: true,
-            syncStatus: 'sync_failed',
-            error: 'IZTEACH_PROVISION_FAILED',
-            message: `Chưa tạo hoặc kích hoạt được tài khoản đăng nhập trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Hồ sơ chưa được lưu — vui lòng bấm thử lại.`
+            partialFailure: isDurationFail,
+            syncStatus: isDurationFail ? 'partial_failure' : 'sync_failed',
+            failedStep: prov.failedStep || null,
+            error: isDurationFail ? 'COURSE_DURATION_SYNC_INCOMPLETE' : 'IZTEACH_PROVISION_FAILED',
+            message: isDurationFail
+              ? `Cần hoàn tất đồng bộ thời hạn (${prov.error || 'Chưa lưu được thời hạn trên izTeach'}). Vui lòng thử lại.`
+              : `Chưa tạo hoặc kích hoạt được tài khoản đăng nhập trên izTeach (${prov.error || 'Lỗi dịch vụ upstream'}). Hồ sơ chưa được lưu — vui lòng bấm thử lại.`
           }, 502);
         }
         if (prov.ok) {
@@ -10415,12 +11979,14 @@ export default {
         addCourseIds: action === 'grant' ? resolvedIds : [],
         removeCourseIds: action === 'revoke' ? resolvedIds : [],
         replaceCourseIds: action === 'set' ? resolvedIds : null,
+        courseEntitlementOverrides: provResult?.courseEntitlementsMap || null,
         classCode: body.classCode !== undefined ? body.classCode : undefined,
         codeHint: body.code || '',
         accountStatus: computedAccountStatus,
         syncStatus: computedSyncStatus,
         lastSyncError: computedLastSyncError,
-        actorEmail: session.email
+        actorEmail: session.email,
+        nowMs: coursesNowMs
       });
 
       if (!updatedStudent || updatedStudent.ok === false) {
@@ -13645,6 +15211,14 @@ export default {
         nextMeta.credential_handed_off_by = body.credentialHandedOff ? session.email : null;
       }
 
+      if (body.durationPreset !== undefined || body.preset !== undefined) {
+        const parsedDurPreset = normalizeCourseDurationPreset(body.durationPreset ?? body.preset, null);
+        if (parsedDurPreset && existingOrd.approval_status !== 'approved') {
+          nextMeta.duration_preset = parsedDurPreset;
+          nextMeta.duration_mode = body.durationMode === 'extend_from_current' ? 'extend_from_current' : 'set_from_now';
+        }
+      }
+
       if (body.cancelOrder === true) {
         patchPayload.approval_status = 'cancelled';
       } else if (body.restoreOrder === true && existingOrd.approval_status === 'cancelled') {
@@ -13843,13 +15417,17 @@ export default {
       const paymentStatusOverride = body.paymentStatus
         ? String(body.paymentStatus).trim()
         : (body.markPaid === true ? 'paid' : undefined);
+      const approveNowMs = resolveEffectiveRequestNowMs(request, session);
 
       const result = await approveAndProvisionOrder(env, {
         orderId,
         orderInput: mergedOrd || body.order || null,
         approvedBy: session.email,
         paymentStatusOverride,
-        classCode: body.classCode
+        classCode: body.classCode,
+        durationPreset: body.durationPreset ?? body.preset,
+        durationMode: body.durationMode ?? body.mode,
+        nowMs: approveNowMs
       });
 
       const { httpStatus, ...payload } = result;
@@ -14598,10 +16176,158 @@ export default {
 
       if (targetEmail || body.operationId) {
         const priorJob = await findLatestIncompleteStudentJobByEmail(env, targetEmail, body.operationId);
-        const resolvedEmail = targetEmail || normalizeEmail(priorJob?.target_email || priorJob?.request_payload?.email || '');
+        const resolvedEmail = targetEmail || normalizeEmail(priorJob?.target_email || priorJob?.request_payload?.email || priorJob?.request_payload?.studentEmail || '');
         if (!resolvedEmail) {
           return jsonResponse({ ok: false, message: 'Không tìm thấy email học viên cần đồng bộ lại.' }, 400);
         }
+
+        // Nếu tác vụ cần đồng bộ lại là cập nhật thời hạn khóa học (course_duration), dùng ngày đích đã chốt (locked_target_limit_time) để đối soát an toàn, tuyệt đối không cộng thêm 1 tháng lần nữa (E15)
+        if (retryType === 'course_duration' || priorJob?.job_type === 'course_duration') {
+          const retryNowMs = resolveEffectiveRequestNowMs(request, session);
+          const jobReq = (priorJob && priorJob.request_payload && typeof priorJob.request_payload === 'object')
+            ? priorJob.request_payload
+            : {};
+          const jobResp = (priorJob && priorJob.response_payload && typeof priorJob.response_payload === 'object')
+            ? priorJob.response_payload
+            : {};
+          const retryCourseId = String(body.courseId || jobReq.courseId || jobResp.course_id || '').trim().toLowerCase();
+          const retryPreset = normalizeCourseDurationPreset(body.preset ?? jobReq.preset ?? jobResp.locked_preset, 'unlimited');
+          const retryMode = (body.mode || jobReq.mode || jobResp.locked_mode) === 'extend_from_current'
+            ? 'extend_from_current'
+            : 'set_from_now';
+          const opId = priorJob?.operation_id || body.operationId || generateOperationId('DUR-CRS');
+          const idemKey = priorJob?.idempotency_key || body.idempotencyKey || null;
+
+          const stuLookup = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(resolvedEmail)}&select=*&limit=1`);
+          const existingStu = (stuLookup.ok && Array.isArray(stuLookup.data) && stuLookup.data[0]) ? stuLookup.data[0] : null;
+          let cognitoUserId = isValidCognitoUuid(existingStu?.cognito_user_id)
+            ? existingStu.cognito_user_id
+            : (isValidCognitoUuid(priorJob?.cognito_user_id) ? priorJob.cognito_user_id : null);
+          const izteachStudentId = existingStu?.izteach_student_id || priorJob?.izteach_student_id || null;
+
+          if (!retryCourseId || !isValidCognitoUuid(cognitoUserId)) {
+            return jsonResponse({
+              ok: false,
+              retryable: true,
+              error: 'INVALID_DURATION_RETRY_CONTEXT',
+              message: 'Không xác định được khóa học hoặc Cognito UUID của học viên để đồng bộ lại thời hạn.'
+            }, 400);
+          }
+
+          let lockedTargetLimitTime = jobResp.locked_target_limit_time !== undefined
+            ? jobResp.locked_target_limit_time
+            : (body.limitTime !== undefined ? body.limitTime : undefined);
+          if (lockedTargetLimitTime === undefined) {
+            const calc = computeTargetLimitTimeForCourse({
+              preset: retryPreset,
+              mode: retryMode,
+              currentLimitTime: null,
+              nowMs: retryNowMs
+            });
+            lockedTargetLimitTime = calc.limitTime;
+          }
+
+          const durRes = await setIzTeachCourseLimitedTimeWithVerification(env, {
+            cognitoUserId,
+            courseId: retryCourseId,
+            limitTime: lockedTargetLimitTime,
+            preset: retryPreset,
+            nowMs: retryNowMs
+          });
+          if (!durRes.ok) {
+            return jsonResponse({
+              ok: false,
+              operationId: opId,
+              retryable: true,
+              syncStatus: 'sync_failed',
+              error: 'IZTEACH_DURATION_RETRY_FAILED',
+              message: `Cần hoàn tất đồng bộ thời hạn: ${durRes.error || 'Chưa xác nhận được hạn trên izTeach'}.`
+            }, 502);
+          }
+
+          const updatedStudent = await mergeAndUpsertStudentCourses(env, {
+            email: resolvedEmail,
+            name: existingStu?.name || resolvedEmail.split('@')[0],
+            phone: existingStu?.phone || '',
+            cognitoUserId,
+            izteachStudentId,
+            addCourseIds: [retryCourseId],
+            courseEntitlementOverrides: {
+              [retryCourseId]: {
+                ...(durRes.entitlement || {}),
+                id: retryCourseId,
+                userPermissionId: durRes.userPermissionId,
+                limitTime: durRes.limitTime,
+                expiresAt: durRes.expiresAt,
+                durationPreset: retryPreset,
+                isExpired: Boolean(durRes.isExpired),
+                syncStatus: 'synced'
+              }
+            },
+            accountStatus: existingStu?.account_status || 'active',
+            syncStatus: 'synced',
+            lastSyncError: null,
+            actorEmail: session.email,
+            nowMs: retryNowMs
+          });
+
+          if (!updatedStudent || updatedStudent.ok === false) {
+            return jsonResponse({
+              ok: false,
+              operationId: opId,
+              retryable: true,
+              syncStatus: 'partial_failure',
+              error: 'SUPABASE_DURATION_RETRY_FAILED',
+              message: 'Đã xác nhận thời hạn trên izTeach nhưng chưa lưu được vào Supabase. Vui lòng thử lại.'
+            }, 502);
+          }
+
+          const updatedCourses = normalizeStudentOnlineCoursesList(updatedStudent.online_courses || [], retryNowMs);
+          const updatedCourseEntitlement = updatedCourses.find(c => String(c.id).toLowerCase() === retryCourseId) || null;
+          const retryDurSummary = {
+            operationId: opId,
+            idempotencyKey: idemKey,
+            syncStatus: 'synced',
+            studentEmail: resolvedEmail,
+            courseId: retryCourseId,
+            preset: retryPreset,
+            mode: retryMode,
+            limitTime: updatedCourseEntitlement?.limitTime ?? durRes.limitTime,
+            expiresAt: updatedCourseEntitlement?.expiresAt ?? durRes.expiresAt,
+            isExpired: Boolean(updatedCourseEntitlement?.isExpired ?? durRes.isExpired),
+            courseEntitlement: updatedCourseEntitlement,
+            student: enrichStudentRowV3(updatedStudent, retryNowMs),
+            message: `Đã hoàn tất đối soát và đồng bộ thời hạn khóa học cho ${resolvedEmail} thành công!`
+          };
+
+          await saveProvisioningJobState(env, {
+            operation_id: opId,
+            idempotency_key: idemKey,
+            job_type: 'course_duration',
+            actor_email: session.email,
+            target_email: resolvedEmail,
+            target_role: 'student',
+            status: 'completed',
+            sync_status: 'synced',
+            completed_steps: ['izteach_duration_sync', 'supabase_student_upsert'],
+            failed_step: null,
+            cognito_user_id: cognitoUserId,
+            izteach_student_id: izteachStudentId,
+            request_payload: jobReq,
+            response_payload: {
+              ...jobResp,
+              locked_target_limit_time: durRes.limitTime
+            },
+            result_summary: retryDurSummary
+          });
+
+          return jsonResponse({
+            ok: true,
+            serverNow: new Date(retryNowMs).toISOString(),
+            ...retryDurSummary
+          });
+        }
+
         const stuLookup = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(resolvedEmail)}&limit=1`);
         const existingStu = (stuLookup.ok && Array.isArray(stuLookup.data) && stuLookup.data[0]) ? stuLookup.data[0] : null;
         const jobReq = (priorJob && priorJob.request_payload && typeof priorJob.request_payload === 'object')
@@ -15732,31 +17458,25 @@ export default {
             message: 'Số thứ tự bài học trực tuyến không tồn tại trong khóa học.'
           }, 400);
         }
-        // Nếu Supabase chưa có bản ghi học viên, đối chiếu trực tiếp với izTeach và đồng bộ vào ktn_students
-        if (!sbStudent && !enrolledCourseIds.has(courseId)) {
-          const syncedStu = await syncStudentEntitlementFromIzTeach(env, {
-            email: session.email,
-            name: session.name,
-            phone: '',
-            cognitoUserId: session.userId,
-            izteachStudentId: session.studentId,
-            accessToken: session.izteachAccessToken || session.accessToken
-          });
-          if (syncedStu) {
-            sbStudent = syncedStu;
-            realClassCode = String(sbStudent.class_code || realClassCode || '').trim().toUpperCase() || null;
-            realOnlineCourses = Array.isArray(sbStudent.online_courses) ? sbStudent.online_courses : [];
-            enrolledCourseIds = new Set(
-              realOnlineCourses.map(c => String(c?.id || c || '').trim()).filter(Boolean)
-            );
-          }
-        }
-        if (!enrolledCourseIds.has(courseId)) {
+        const hwNowMs = resolveEffectiveRequestNowMs(request, session);
+        const accessCheck = await verifyStudentCourseAccessServerSide(env, session, courseId, {
+          existingStuRow: sbStudent,
+          nowMs: hwNowMs
+        });
+        if (!accessCheck.ok) {
+          const { httpStatus, ...errPayload } = accessCheck;
           return jsonResponse({
-            ok: false,
-            error: 'COURSE_NOT_ENTITLED',
-            message: 'Em chưa đăng ký khóa học này nên chưa thể nộp bài tập.'
-          }, 403);
+            ...errPayload,
+            serverNow: new Date(hwNowMs).toISOString()
+          }, httpStatus || 403);
+        }
+        if (accessCheck.studentRow) {
+          sbStudent = accessCheck.studentRow;
+          realClassCode = String(sbStudent.class_code || realClassCode || '').trim().toUpperCase() || null;
+          realOnlineCourses = Array.isArray(sbStudent.online_courses) ? sbStudent.online_courses : [];
+          enrolledCourseIds = new Set(
+            realOnlineCourses.map(c => String(c?.id || c || '').trim()).filter(Boolean)
+          );
         }
       }
 
@@ -20668,6 +22388,8 @@ export default {
       );
       const existingStu = (stuLookup.ok && Array.isArray(stuLookup.data) && stuLookup.data[0]) || null;
       const resolvedCourseIds = resolveOrderCourseIds([targetReq.course_id]);
+      const reqDurationPreset = normalizeCourseDurationPreset(body.durationPreset ?? body.preset ?? targetReq.duration_preset, null);
+      const reqNowMs = resolveEffectiveRequestNowMs(request, session);
 
       const prov = await provisionStudentOnIzTeach(env, {
         student_email: targetReq.student_email,
@@ -20676,15 +22398,20 @@ export default {
         courseIds: resolvedCourseIds,
         skipCourses: false,
         replaceCourses: false,
-        cognito_user_id: existingStu?.cognito_user_id || null
+        cognito_user_id: existingStu?.cognito_user_id || null,
+        durationPreset: reqDurationPreset,
+        durationMode: body.durationMode === 'extend_from_current' ? 'extend_from_current' : 'set_from_now',
+        nowMs: reqNowMs
       });
 
       if (!prov.ok) {
         return jsonResponse({
           ok: false,
           retryable: true,
-          error: 'IZTEACH_COURSE_GRANT_FAILED',
-          message: `Chưa cấp được khóa học trên izTeach (${prov.error || 'Lỗi upstream'}). Yêu cầu vẫn giữ ở trạng thái Chờ duyệt để bấm thử lại.`
+          error: prov.failedStep === 'izteach_duration_sync' ? 'COURSE_DURATION_SYNC_INCOMPLETE' : 'IZTEACH_COURSE_GRANT_FAILED',
+          message: prov.failedStep === 'izteach_duration_sync'
+            ? `Cần hoàn tất đồng bộ thời hạn (${prov.error || 'Lỗi đồng bộ thời hạn trên izTeach'}).`
+            : `Chưa cấp được khóa học trên izTeach (${prov.error || 'Lỗi upstream'}). Yêu cầu vẫn giữ ở trạng thái Chờ duyệt để bấm thử lại.`
         }, 502);
       }
 
@@ -20696,8 +22423,10 @@ export default {
         cognitoUserId: prov.cognitoUserId || existingStu?.cognito_user_id || null,
         izteachStudentId: prov.izteachStudentId || existingStu?.izteach_student_id || null,
         addCourseIds: resolvedCourseIds,
+        courseEntitlementOverrides: prov.courseEntitlementsMap || null,
         accountStatus: 'active',
-        syncStatus: 'synced'
+        syncStatus: 'synced',
+        nowMs: reqNowMs
       });
 
       const updated = await saveCourseGrantRequest(env, {

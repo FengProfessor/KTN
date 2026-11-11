@@ -22,12 +22,18 @@ import {
   Lock,
   Archive,
   RotateCcw,
+  Clock,
 } from 'lucide-react';
 import {
+  COURSE_DURATION_PRESET_OPTIONS,
+  computeCourseExpirationInfo,
   disambiguateCatalogCourses,
   resolveStudentOnlineCourses,
 } from '@/lib/utils';
+import { getServerNowMs } from '@/services/api/ktnApiClient';
 import type {
+  CourseDurationMode,
+  CourseDurationPreset,
   KtnClassItem,
   KtnCourse,
   KtnStudentRecord,
@@ -51,7 +57,19 @@ export interface StudentDetailDrawerProps {
   isUpdatingProfile: boolean;
   isResyncing: boolean;
   isManagingLifecycle?: boolean;
-  onGrantCourses: (params: { email: string; courseIds: string[] }) => Promise<unknown>;
+  isSettingCourseDuration?: boolean;
+  onGrantCourses: (params: {
+    email: string;
+    courseIds: string[];
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
+  }) => Promise<unknown>;
+  onSetCourseDuration?: (params: {
+    studentEmail: string;
+    courseId: string;
+    preset: CourseDurationPreset;
+    mode: CourseDurationMode;
+  }) => Promise<unknown>;
   onRevokeCourse: (params: { email: string; courseId: string }) => Promise<unknown>;
   onAssignClass: (params: { email: string; classCode: string | null }) => Promise<unknown>;
   onReplaceAllCourses: (params: { email: string; courseIds: string[] }) => Promise<unknown>;
@@ -90,7 +108,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   isUpdatingProfile,
   isResyncing,
   isManagingLifecycle = false,
+  isSettingCourseDuration = false,
   onGrantCourses,
+  onSetCourseDuration,
   onRevokeCourse,
   onAssignClass,
   onReplaceAllCourses,
@@ -106,11 +126,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   const [editPhone, setEditPhone] = useState('');
   const [editParent, setEditParent] = useState('');
 
-  // Section B: Course Grant / Revoke / Replace state (Always starts neutral!)
+  // Section B: Course Grant / Revoke / Replace / Duration state (Always starts neutral!)
   const [courseDropdownId, setCourseDropdownId] = useState('');
   const [selectedGrantCourseIds, setSelectedGrantCourseIds] = useState<string[]>([]);
+  const [grantDurationPreset, setGrantDurationPreset] =
+    useState<CourseDurationPreset>('unlimited');
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [coursePendingRevokeId, setCoursePendingRevokeId] = useState<string | null>(null);
+  const [activeRenewCourseId, setActiveRenewCourseId] = useState<string | null>(null);
+  const [renewPreset, setRenewPreset] = useState<CourseDurationPreset>('1m');
+  const [renewMode, setRenewMode] = useState<CourseDurationMode>('extend_from_current');
   const [showReplaceAllMode, setShowReplaceAllMode] = useState(false);
   const [replaceTargetCourseIds, setReplaceTargetCourseIds] = useState<string[]>([]);
   const [replaceConfirmedCheck, setReplaceConfirmedCheck] = useState(false);
@@ -145,8 +170,12 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     setEditParent(student.parent_name || '');
     setCourseDropdownId('');
     setSelectedGrantCourseIds([]);
+    setGrantDurationPreset('unlimited');
     setCourseSearchQuery('');
     setCoursePendingRevokeId(null);
+    setActiveRenewCourseId(null);
+    setRenewPreset('1m');
+    setRenewMode('extend_from_current');
     setShowReplaceAllMode(false);
     setReplaceTargetCourseIds([]);
     setReplaceConfirmedCheck(false);
@@ -374,7 +403,8 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     isReplacingCourses ||
     isUpdatingProfile ||
     isResyncing ||
-    isManagingLifecycle;
+    isManagingLifecycle ||
+    isSettingCourseDuration;
 
   const handleDropdownCourseChange = (val: string) => {
     setCourseDropdownId(val);
@@ -408,11 +438,29 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
       await onGrantCourses({
         email: student.email,
         courseIds: selectedGrantCourseIds,
+        durationPreset: grantDurationPreset,
+        durationMode: 'set_from_now',
       });
       setSelectedGrantCourseIds([]);
       setCourseDropdownId('');
     } catch {
       // Error is handled and displayed via actionError prop
+    }
+  };
+
+  const handleSaveCourseDuration = async (courseId: string) => {
+    if (!onSetCourseDuration || isSettingCourseDuration) return;
+    onClearError();
+    try {
+      await onSetCourseDuration({
+        studentEmail: student.email,
+        courseId,
+        preset: renewPreset,
+        mode: renewMode,
+      });
+      setActiveRenewCourseId(null);
+    } catch {
+      // Error is displayed via actionError prop
     }
   };
 
@@ -837,37 +885,180 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   Học viên chưa được cấp khóa học trực tuyến nào.
                 </div>
               ) : (
-                entitledCourses.map((course) => (
-                  <div
-                    key={course.id}
-                    data-testid={`drawer-granted-course-${course.id}`}
-                    className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200/80 bg-emerald-50/60 px-3 py-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="rounded bg-emerald-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                          {course.code}
-                        </span>
-                        <p className="truncate text-xs font-bold text-stone-900">
-                          {course.fullDisplayLabel}
-                        </p>
-                      </div>
-                      <p className="mt-0.5 font-mono text-[10px] text-stone-500">
-                        ID: {course.id}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      data-testid={`drawer-revoke-course-btn-${course.id}`}
-                      disabled={isRevokingCourse}
-                      onClick={() => setCoursePendingRevokeId(course.id)}
-                      className="inline-flex min-h-[30px] shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 hover:bg-red-50 disabled:opacity-50"
+                entitledCourses.map((course) => {
+                  const expInfo = computeCourseExpirationInfo(course, getServerNowMs());
+                  const hasExistingLimit = Boolean(course.limitTime || course.expiresAt);
+                  const isRenewPanelOpen = activeRenewCourseId === course.id;
+                  const statusToneClass =
+                    expInfo.statusKey === 'sync_error'
+                      ? 'border-amber-300 bg-amber-100 text-amber-900'
+                      : expInfo.statusKey === 'expired'
+                      ? 'border-red-300 bg-red-100 text-red-900'
+                      : expInfo.statusKey === 'expiring_soon'
+                      ? 'border-amber-300 bg-amber-50 text-amber-900'
+                      : expInfo.statusKey === 'unlimited'
+                      ? 'border-stone-200 bg-white text-stone-700'
+                      : 'border-emerald-200 bg-white text-emerald-800';
+                  const rowToneClass =
+                    expInfo.statusKey === 'expired'
+                      ? 'border-red-200 bg-red-50/50'
+                      : expInfo.statusKey === 'sync_error'
+                      ? 'border-amber-200 bg-amber-50/50'
+                      : 'border-emerald-200/80 bg-emerald-50/60';
+
+                  return (
+                    <div
+                      key={course.id}
+                      data-testid={`drawer-granted-course-${course.id}`}
+                      className={`rounded-xl border px-3 py-2 ${rowToneClass}`}
                     >
-                      <Trash2 className="h-3 w-3" />
-                      <span>Thu hồi</span>
-                    </button>
-                  </div>
-                ))
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded bg-emerald-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                              {course.code}
+                            </span>
+                            <p
+                              data-testid={`drawer-granted-course-summary-${course.id}`}
+                              className="truncate text-xs font-bold text-stone-900"
+                            >
+                              {course.displayLabel || course.fullDisplayLabel} · {expInfo.adminCompactText}
+                            </p>
+                            <span
+                              data-testid={`drawer-granted-course-status-${course.id}`}
+                              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${statusToneClass}`}
+                            >
+                              {expInfo.adminStatusLabel}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 font-mono text-[10px] text-stone-500">
+                            ID: {course.id}
+                            {expInfo.limitDateYmd ? ` · Hạn: ${expInfo.limitDateYmd}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {onSetCourseDuration && (
+                            <button
+                              type="button"
+                              data-testid={`drawer-renew-course-btn-${course.id}`}
+                              disabled={isSettingCourseDuration}
+                              onClick={() => {
+                                if (isRenewPanelOpen) {
+                                  setActiveRenewCourseId(null);
+                                } else {
+                                  setActiveRenewCourseId(course.id);
+                                  setRenewPreset(course.durationPreset || '1m');
+                                  setRenewMode(
+                                    hasExistingLimit && !expInfo.isExpired
+                                      ? 'extend_from_current'
+                                      : 'set_from_now',
+                                  );
+                                }
+                              }}
+                              className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-900 hover:bg-amber-50 disabled:opacity-50"
+                            >
+                              <span>Gia hạn</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            data-testid={`drawer-revoke-course-btn-${course.id}`}
+                            disabled={isRevokingCourse}
+                            onClick={() => setCoursePendingRevokeId(course.id)}
+                            className="inline-flex min-h-[30px] shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span>Thu hồi</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {isRenewPanelOpen && onSetCourseDuration && (
+                        <div
+                          data-testid={`drawer-renew-panel-${course.id}`}
+                          className="mt-2.5 space-y-2 rounded-lg border border-stone-200 bg-white p-2.5 text-xs"
+                        >
+                          <div>
+                            <span className="block text-[11px] font-bold text-stone-700">
+                              Thời hạn học:
+                            </span>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  data-testid={`drawer-renew-preset-${course.id}-${opt.id}`}
+                                  onClick={() => setRenewPreset(opt.id)}
+                                  className={`rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
+                                    renewPreset === opt.id
+                                      ? 'bg-red-800 text-white'
+                                      : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {hasExistingLimit && renewPreset !== 'unlimited' && (
+                            <div
+                              data-testid={`drawer-renew-mode-selector-${course.id}`}
+                              className="flex flex-wrap gap-1.5 pt-0.5"
+                            >
+                              <button
+                                type="button"
+                                data-testid={`drawer-renew-mode-extend-${course.id}`}
+                                onClick={() => setRenewMode('extend_from_current')}
+                                className={`rounded-lg border px-2 py-1 text-[11px] font-bold ${
+                                  renewMode === 'extend_from_current'
+                                    ? 'border-amber-600 bg-amber-50 text-amber-900'
+                                    : 'border-stone-200 bg-white text-stone-600'
+                                }`}
+                              >
+                                Gia hạn thêm từ hạn hiện tại
+                              </button>
+                              <button
+                                type="button"
+                                data-testid={`drawer-renew-mode-reset-${course.id}`}
+                                onClick={() => setRenewMode('set_from_now')}
+                                className={`rounded-lg border px-2 py-1 text-[11px] font-bold ${
+                                  renewMode === 'set_from_now'
+                                    ? 'border-amber-600 bg-amber-50 text-amber-900'
+                                    : 'border-stone-200 bg-white text-stone-600'
+                                }`}
+                              >
+                                Đặt lại hạn từ hôm nay
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="flex justify-end gap-1.5 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setActiveRenewCourseId(null)}
+                              className="rounded-lg border border-stone-200 px-2.5 py-1 text-[11px] font-bold text-stone-600"
+                            >
+                              Đóng
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`drawer-save-duration-btn-${course.id}`}
+                              disabled={isSettingCourseDuration}
+                              onClick={() => handleSaveCourseDuration(course.id)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-red-800 px-3 py-1 text-[11px] font-bold text-white hover:bg-red-900 disabled:opacity-50"
+                            >
+                              {isSettingCourseDuration && (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              )}
+                              <span>Lưu thời hạn</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
 
@@ -1027,6 +1218,33 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     </div>
                   </div>
 
+                  {/* Course Duration Preset Selector */}
+                  <div
+                    data-testid="drawer-grant-duration-selector"
+                    className="rounded-xl border border-stone-200 bg-stone-50/70 p-2.5"
+                  >
+                    <span className="block text-[11px] font-bold text-stone-800">
+                      Thời hạn học:
+                    </span>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          data-testid={`drawer-grant-duration-preset-${opt.id}`}
+                          onClick={() => setGrantDurationPreset(opt.id)}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                            grantDurationPreset === opt.id
+                              ? 'bg-red-800 text-white shadow-2xs'
+                              : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Preview Box Before Confirming Grant */}
                   {selectedCoursesPreview.length > 0 && (
                     <div
@@ -1034,7 +1252,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       className="rounded-xl border border-amber-200 bg-amber-50/70 p-2.5 text-xs text-amber-950"
                     >
                       <p className="font-bold text-amber-900">
-                        Xem trước thay đổi (Cấp thêm {selectedCoursesPreview.length} khóa học):
+                        Xem trước thay đổi (Cấp thêm {selectedCoursesPreview.length} khóa học ·{' '}
+                        {COURSE_DURATION_PRESET_OPTIONS.find((o) => o.id === grantDurationPreset)
+                          ?.label || 'Vĩnh viễn'}
+                        ):
                       </p>
                       <ul className="mt-1 space-y-0.5 text-[11px]">
                         {selectedCoursesPreview.map((c) => (

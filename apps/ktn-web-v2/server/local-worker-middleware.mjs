@@ -149,6 +149,8 @@ export function createLocalWorkerHarness() {
       failMessagesGet: false,
       failHomeworkPost: false,
       failStudentCoursesPost: false,
+      failSetLimitedTime: false,
+      failStudentSupabasePatch: false,
       strictPreV3TeacherSchema: false,
       zeroRowsTeacherPatch: false,
       failTeacherPatchByCodeEq: false,
@@ -475,10 +477,51 @@ export function createLocalWorkerHarness() {
         '424d2085-8685-4a49-a5e8-8fb63b0c85c5': [],
         ...syntheticPermsByUid
       },
+      permissionRecordsByUid: {},
       homeworkPosts: []
     },
     autoId: 1000
   };
+
+  function getOrInitPermissionRecords(uid) {
+    if (!uid) return [];
+    const courseIds = (state.izteach.permissionsByUid[uid] || []).map(String);
+    let records = state.izteach.permissionRecordsByUid[uid];
+    if (!Array.isArray(records)) {
+      records = courseIds.map((cid, idx) => ({
+        _id: `perm_${uid.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}_${cid.slice(-6)}_${idx}`,
+        id: `perm_${uid.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}_${cid.slice(-6)}_${idx}`,
+        userId: uid,
+        limitTime: null,
+        isExpired: false,
+        onlineCourses: [cid]
+      }));
+      state.izteach.permissionRecordsByUid[uid] = records;
+      return records;
+    }
+    // Sync any newly added or removed courseIds in permissionsByUid
+    const existingCourseSet = new Set();
+    for (const r of records) {
+      for (const c of r.onlineCourses || []) existingCourseSet.add(String(c));
+    }
+    for (const cid of courseIds) {
+      if (!existingCourseSet.has(cid)) {
+        const pid = `perm_${uid.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}_${cid.slice(-6)}_${++state.autoId}`;
+        records.push({
+          _id: pid,
+          id: pid,
+          userId: uid,
+          limitTime: null,
+          isExpired: false,
+          onlineCourses: [cid]
+        });
+      }
+    }
+    const allowedSet = new Set(courseIds);
+    const filtered = records.filter(r => (r.onlineCourses || []).some(c => allowedSet.has(String(c))));
+    state.izteach.permissionRecordsByUid[uid] = filtered;
+    return filtered;
+  }
 
   function normalizeViMock(str) {
     return String(str || '')
@@ -795,7 +838,11 @@ export function createLocalWorkerHarness() {
           headers: { 'Content-Type': 'application/json' }
         });
       }
-      if (table.startsWith('ktn_students') && (method === 'POST' || method === 'PATCH') && state.faults.failStudentCoursesPost) {
+      if (
+        table.startsWith('ktn_students') &&
+        (method === 'POST' || method === 'PATCH') &&
+        (state.faults.failStudentCoursesPost || state.faults.failStudentSupabasePatch)
+      ) {
         return new Response(JSON.stringify({ message: 'Simulated database write error for student entitlements' }), {
           status: 503,
           headers: { 'Content-Type': 'application/json' }
@@ -1059,11 +1106,35 @@ export function createLocalWorkerHarness() {
 
       if (p.endsWith('/prod/user-permission') && method === 'GET') {
         const uid = u.searchParams.get('userId');
+        const permRecords = getOrInitPermissionRecords(uid);
+        const nowMs = Date.now();
+        const permissions = permRecords.map(r => {
+          const isExp = r.limitTime ? Date.parse(r.limitTime) < nowMs : false;
+          r.isExpired = isExp;
+          return { ...r, isExpired: isExp };
+        });
         const courses = state.izteach.permissionsByUid[uid] || [];
-        return new Response(JSON.stringify([{
+        const onlineCourses = courses.map(id => {
+          const matchingPerms = permissions.filter(pr => (pr.onlineCourses || []).map(String).includes(String(id)));
+          const hasActivePerm = matchingPerms.length === 0 ? true : matchingPerms.some(pr => !pr.isExpired);
+          return {
+            _id: id,
+            id,
+            isExpired: !hasActivePerm,
+            permissions: matchingPerms.map(pr => ({
+              _id: pr._id || pr.id,
+              id: pr._id || pr.id,
+              userPermissionId: pr._id || pr.id,
+              limitTime: pr.limitTime,
+              isExpired: pr.isExpired
+            }))
+          };
+        });
+        return new Response(JSON.stringify({
           userId: uid,
-          onlineCourses: courses.map(id => ({ _id: id, id }))
-        }]), {
+          onlineCourses,
+          permissions
+        }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -1081,6 +1152,7 @@ export function createLocalWorkerHarness() {
         const current = new Set(state.izteach.permissionsByUid[uid] || []);
         for (const cid of (body.productIds || body.onlineCourses || [])) current.add(String(cid));
         state.izteach.permissionsByUid[uid] = Array.from(current);
+        getOrInitPermissionRecords(uid);
         return new Response(JSON.stringify({ ok: true, onlineCourses: state.izteach.permissionsByUid[uid] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
@@ -1099,7 +1171,46 @@ export function createLocalWorkerHarness() {
         const toRemove = new Set((body.productIds || body.onlineCourses || []).map(String));
         const current = (state.izteach.permissionsByUid[uid] || []).filter(cid => !toRemove.has(String(cid)));
         state.izteach.permissionsByUid[uid] = current;
+        getOrInitPermissionRecords(uid);
         return new Response(JSON.stringify({ ok: true, onlineCourses: current }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (p.includes('/prod/user-permission/set-limited-time/') && method === 'PUT') {
+        if (state.faults.failSetLimitedTime) {
+          return new Response(JSON.stringify({ message: 'Simulated izTeach set-limited-time 502 error' }), {
+            status: 502,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        const permId = decodeURIComponent(p.split('/set-limited-time/')[1]);
+        const body = init.body ? JSON.parse(init.body) : {};
+        const rawLimit = body.limitTime;
+        let normalizedIso = null;
+        if (rawLimit !== null && rawLimit !== undefined && String(rawLimit).trim() !== '') {
+          const ymd = String(rawLimit).trim().slice(0, 10);
+          normalizedIso = `${ymd}T23:59:59.999Z`;
+        }
+        let updatedRecord = null;
+        for (const uid of Object.keys(state.izteach.permissionsByUid)) {
+          const recs = getOrInitPermissionRecords(uid);
+          for (const rec of recs) {
+            if (String(rec._id || rec.id) === String(permId)) {
+              rec.limitTime = normalizedIso;
+              rec.isExpired = normalizedIso ? Date.parse(normalizedIso) < Date.now() : false;
+              updatedRecord = rec;
+            }
+          }
+        }
+        if (!updatedRecord) {
+          return new Response(JSON.stringify({ message: 'UserPermission not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        return new Response(JSON.stringify(updatedRecord), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         });

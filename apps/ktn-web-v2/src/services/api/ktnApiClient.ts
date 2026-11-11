@@ -1,6 +1,8 @@
 import type {
   ClassScheduleConfig,
   ClassScheduleException,
+  CourseDurationMode,
+  CourseDurationPreset,
   CustomClassSession,
   KtnAttendanceResponse,
   KtnClassItem,
@@ -27,6 +29,7 @@ import type {
   KtnTeacherSearchResult,
   KtnUserSession,
   KtnVietQrPaymentInfo,
+  OnlineCourseEntitlement,
   OrderContactStatus,
   OrderPaymentDetailedStatus,
   UpcomingClassSession,
@@ -200,6 +203,7 @@ export function resolveUploadedMediaUrl(url?: string | null): string {
 export class KtnApiError extends Error {
   public readonly status: number;
   public readonly code?: string;
+  public readonly syncStatus?: string;
   public readonly isNetworkError: boolean;
   public readonly dlpBlocked: boolean;
 
@@ -207,6 +211,7 @@ export class KtnApiError extends Error {
     message: string;
     status: number;
     code?: string;
+    syncStatus?: string;
     isNetworkError?: boolean;
     dlpBlocked?: boolean;
   }) {
@@ -214,12 +219,62 @@ export class KtnApiError extends Error {
     this.name = 'KtnApiError';
     this.status = options.status;
     this.code = options.code;
+    this.syncStatus = options.syncStatus;
     this.isNetworkError = Boolean(options.isNetworkError);
     this.dlpBlocked = Boolean(options.dlpBlocked);
   }
 }
 
 let inMemorySession: KtnUserSession | null = null;
+let serverClockOffsetMs = 0;
+let simulatedServerNowOffsetMs: number | null = null;
+
+export function updateServerClockFromIso(serverNowIso?: string | null): void {
+  if (!serverNowIso || typeof serverNowIso !== 'string') return;
+  const parsed = Date.parse(serverNowIso);
+  if (Number.isFinite(parsed)) {
+    serverClockOffsetMs = parsed - Date.now();
+  }
+}
+
+export function setSimulatedServerNowForTest(isoOrEpochMs: string | number | null): void {
+  if (isoOrEpochMs === null || isoOrEpochMs === undefined || isoOrEpochMs === '') {
+    simulatedServerNowOffsetMs = null;
+    if (typeof window !== 'undefined') {
+      delete (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__;
+    }
+    return;
+  }
+  const parsed =
+    typeof isoOrEpochMs === 'number'
+      ? isoOrEpochMs
+      : /^\d{10,15}$/.test(String(isoOrEpochMs).trim())
+      ? Number(isoOrEpochMs)
+      : Date.parse(String(isoOrEpochMs));
+  if (Number.isFinite(parsed)) {
+    simulatedServerNowOffsetMs = parsed - Date.now();
+    if (typeof window !== 'undefined') {
+      (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__ =
+        new Date(parsed).toISOString();
+    }
+  }
+}
+
+export function getServerNowMs(): number {
+  if (typeof window !== 'undefined') {
+    const winSim = (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__;
+    if (typeof winSim === 'string' && winSim.trim()) {
+      const parsed = Date.parse(winSim.trim());
+      if (Number.isFinite(parsed) && simulatedServerNowOffsetMs === null) {
+        return parsed;
+      }
+    }
+  }
+  if (simulatedServerNowOffsetMs !== null) {
+    return Date.now() + simulatedServerNowOffsetMs;
+  }
+  return Date.now() + serverClockOffsetMs;
+}
 
 export function getStoredSession(): KtnUserSession | null {
   let raw: string | null = null;
@@ -333,6 +388,12 @@ export async function ktnRequest<T>(
   ) {
     headers.set('Authorization', `Bearer ${session.token}`);
   }
+  if (typeof window !== 'undefined') {
+    const winSim = (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__;
+    if (typeof winSim === 'string' && winSim.trim() && !headers.has('X-KTN-QA-Simulated-Now')) {
+      headers.set('X-KTN-QA-Simulated-Now', winSim.trim());
+    }
+  }
 
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 12000;
@@ -377,6 +438,18 @@ export async function ktnRequest<T>(
     data = null;
   }
 
+  if (data) {
+    if (typeof data.serverNow === 'string') {
+      updateServerClockFromIso(data.serverNow);
+    } else if (
+      data.session &&
+      typeof data.session === 'object' &&
+      typeof (data.session as Record<string, unknown>).serverNow === 'string'
+    ) {
+      updateServerClockFromIso((data.session as Record<string, unknown>).serverNow as string);
+    }
+  }
+
   if (!res.ok || (data && data.ok === false)) {
     throw new KtnApiError({
       message:
@@ -384,6 +457,7 @@ export async function ktnRequest<T>(
         `Yêu cầu không thành công (HTTP ${res.status})`,
       status: res.status || 500,
       code: typeof data?.error === 'string' ? data.error : undefined,
+      syncStatus: typeof data?.syncStatus === 'string' ? data.syncStatus : undefined,
       dlpBlocked: Boolean(data?.dlpBlocked)
     });
   }
@@ -487,9 +561,32 @@ export const ktnApi = {
   },
 
   async getCourseUnits(courseId: string): Promise<KtnLessonUnit[]> {
-    const res = await ktnRequest<{ ok: boolean; units: Array<Record<string, unknown>> }>(
+    const res = await ktnRequest<{
+      ok: boolean;
+      units: Array<Record<string, unknown>>;
+      courseEntitlement?: OnlineCourseEntitlement | null;
+    }>(
       `/api/ktn/courses/units?courseId=${encodeURIComponent(courseId)}`
     );
+    if (res.courseEntitlement && res.courseEntitlement.id) {
+      const currentSession = getStoredSession();
+      if (currentSession && Array.isArray(currentSession.onlineCourses)) {
+        const idx = currentSession.onlineCourses.findIndex(
+          (c) => String(c.id) === String(res.courseEntitlement!.id)
+        );
+        if (idx >= 0) {
+          const nextOnlineCourses = [...currentSession.onlineCourses];
+          nextOnlineCourses[idx] = {
+            ...nextOnlineCourses[idx],
+            ...res.courseEntitlement,
+          };
+          saveStoredSession({
+            ...currentSession,
+            onlineCourses: nextOnlineCourses,
+          });
+        }
+      }
+    }
     const rawUnits = Array.isArray(res.units) ? res.units : [];
     const vendorId = '3529cd2b-7af6-4fda-887c-392a79393d6a';
     const sorted = [...rawUnits].sort(
@@ -1441,6 +1538,8 @@ export const ktnApi = {
     parentName?: string;
     classCode?: string | null;
     courseIds?: string[];
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
     note?: string;
     idempotencyKey?: string;
     operationId?: string;
@@ -1457,6 +1556,39 @@ export const ktnApi = {
     );
   },
 
+  async setStudentCourseDuration(payload: {
+    studentEmail: string;
+    courseId: string;
+    preset: CourseDurationPreset;
+    mode?: CourseDurationMode;
+    clientRequestId?: string;
+  }): Promise<{
+    ok: boolean;
+    operationId: string;
+    idempotentReplay?: boolean;
+    studentEmail: string;
+    courseId: string;
+    userPermissionId?: string | null;
+    preset: CourseDurationPreset;
+    mode: CourseDurationMode;
+    limitTime: string | null;
+    expiresAt: string | null;
+    isExpired: boolean;
+    syncStatus: string;
+    courseEntitlement?: OnlineCourseEntitlement;
+    student?: KtnStudentRecord;
+    serverNow?: string;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/admin/students/course-duration', {
+      method: 'POST',
+      headers: payload.clientRequestId
+        ? { 'Idempotency-Key': payload.clientRequestId }
+        : undefined,
+      body: JSON.stringify(payload)
+    });
+  },
+
   async manageStudentCourses(payload: {
     action: 'grant' | 'revoke' | 'set' | 'assign_class';
     email: string;
@@ -1465,6 +1597,8 @@ export const ktnApi = {
     parentName?: string;
     courseIds?: string[];
     classCode?: string | null;
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
   }): Promise<{
     student: KtnStudentRecord;
     message: string;
@@ -1496,6 +1630,8 @@ export const ktnApi = {
   async grantStudentCourses(params: {
     email: string;
     courseIds: string[];
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
   }) {
     const cleanIds = Array.from(
       new Set((params.courseIds || []).map((id) => String(id || '').trim()).filter(Boolean))
@@ -1510,7 +1646,9 @@ export const ktnApi = {
     return this.manageStudentCourses({
       action: 'grant',
       email: params.email.trim(),
-      courseIds: cleanIds
+      courseIds: cleanIds,
+      ...(params.durationPreset ? { durationPreset: params.durationPreset } : {}),
+      ...(params.durationMode ? { durationMode: params.durationMode } : {})
     });
   },
 
@@ -1852,6 +1990,8 @@ export const ktnApi = {
     requestId: string;
     decision: 'approve' | 'reject';
     reviewNote?: string;
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
   }): Promise<{
     ok: boolean;
     request: KtnCourseGrantRequest;
@@ -2117,6 +2257,8 @@ export const ktnApi = {
     credentialHandedOff?: boolean;
     cancelOrder?: boolean;
     restoreOrder?: boolean;
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
   }): Promise<{ ok: boolean; order: KtnOrder; message: string }> {
     return ktnRequest('/api/ktn/orders/update', {
       method: 'POST',
@@ -2127,7 +2269,12 @@ export const ktnApi = {
   async approveOrder(
     orderId: string,
     classCode?: string,
-    options?: { confirmActivation?: boolean; studentEmail?: string }
+    options?: {
+      confirmActivation?: boolean;
+      studentEmail?: string;
+      durationPreset?: CourseDurationPreset;
+      durationMode?: CourseDurationMode;
+    }
   ): Promise<{
     message: string;
     studentEmail: string;
@@ -2152,7 +2299,9 @@ export const ktnApi = {
         orderId,
         classCode,
         confirmActivation: options?.confirmActivation ?? true,
-        ...(options?.studentEmail ? { studentEmail: options.studentEmail } : {})
+        ...(options?.studentEmail ? { studentEmail: options.studentEmail } : {}),
+        ...(options?.durationPreset ? { durationPreset: options.durationPreset } : {}),
+        ...(options?.durationMode ? { durationMode: options.durationMode } : {})
       })
     });
     return res;
@@ -2232,10 +2381,20 @@ export const ktnApi = {
   },
 
   async retrySyncItem(payload: {
-    type: 'student_provision' | 'student_sync' | 'teacher_provision' | 'order_approve' | 'homework_sync' | 'bulk_sync';
+    type:
+      | 'student_provision'
+      | 'student_sync'
+      | 'teacher_provision'
+      | 'order_approve'
+      | 'homework_sync'
+      | 'course_duration'
+      | 'bulk_sync';
     email?: string;
     orderId?: string;
     homeworkId?: string;
+    courseId?: string;
+    preset?: CourseDurationPreset;
+    mode?: CourseDurationMode;
   }): Promise<{ ok: boolean; syncStatus?: string; message?: string }> {
     return ktnRequest('/api/ktn/admin/sync-retry', {
       method: 'POST',

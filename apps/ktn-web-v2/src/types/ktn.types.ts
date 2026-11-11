@@ -1,5 +1,7 @@
 export type UserRole = 'student' | 'teacher' | 'admin';
 export type StudentCase = 'both' | 'online_only' | 'sll_only' | 'unassigned';
+export type CourseDurationPreset = '1w' | '2w' | '1m' | '2m' | '3m' | 'unlimited';
+export type CourseDurationMode = 'set_from_now' | 'extend_from_current';
 
 export interface OnlineCourseEntitlement {
   id: string;
@@ -7,6 +9,13 @@ export interface OnlineCourseEntitlement {
   code?: string;
   title: string;
   shortTitle?: string;
+  userPermissionId?: string | null;
+  limitTime?: string | null;
+  expiresAt?: string | null;
+  durationPreset?: CourseDurationPreset;
+  isExpired?: boolean;
+  syncStatus?: string;
+  updatedAt?: string | null;
 }
 
 export interface KtnUserSession {
@@ -28,6 +37,7 @@ export interface KtnUserSession {
   onlineCourses: OnlineCourseEntitlement[];
   studentCase?: StudentCase | string;
   token?: string;
+  serverNow?: string;
 }
 
 export interface KtnCourse {
@@ -726,6 +736,14 @@ export interface KtnOrder {
   student_tracker_label?: string;
   provisioning_status?: string;
   provisioningStatus?: string;
+  duration_preset?: CourseDurationPreset;
+  durationPreset?: CourseDurationPreset;
+  duration_mode?: CourseDurationMode;
+  durationMode?: CourseDurationMode;
+  limit_time?: string | null;
+  limitTime?: string | null;
+  expires_at?: string | null;
+  expiresAt?: string | null;
   assigned_user_id?: string | null;
   assigned_student_id?: string | null;
   approved_at?: string | null;
@@ -754,10 +772,14 @@ export interface KtnSyncDriftItem {
       | 'teacher_provision'
       | 'order_approve'
       | 'homework_sync'
+      | 'course_duration'
       | 'bulk_sync';
     email?: string;
     orderId?: string;
     homeworkId?: string;
+    courseId?: string;
+    preset?: CourseDurationPreset;
+    mode?: CourseDurationMode;
   };
 }
 

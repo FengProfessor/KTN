@@ -29,11 +29,15 @@ import {
 import { HlsVideoPlayer, VideoPlayerStatus } from './HlsVideoPlayer';
 import { HomeworkPanel } from './HomeworkPanel';
 import { LessonForumPanel } from './LessonForumPanel';
-import { KtnApiError, ktnApi } from '@/services/api/ktnApiClient';
+import { KtnApiError, getServerNowMs, ktnApi } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { DEMO_COURSES, DEMO_HOMEWORKS, DEMO_LESSONS } from '@/lib/demoData';
-import { disambiguateCatalogCourses, formatVnd } from '@/lib/utils';
+import {
+  computeCourseExpirationInfo,
+  disambiguateCatalogCourses,
+  formatVnd,
+} from '@/lib/utils';
 import {
   KtnCourse,
   KtnHomework,
@@ -41,6 +45,7 @@ import {
   KtnOrder,
   KtnStudentRecord,
   KtnVietQrPaymentInfo,
+  OnlineCourseEntitlement,
   StudentOrderTrackerStage,
 } from '@/types/ktn.types';
 
@@ -216,12 +221,21 @@ export const LearningPage: React.FC = () => {
     return (coursesQuery.data || []).filter((c) => !c.isBundle);
   }, [isDemoMode, coursesQuery.data]);
 
-  const entitledCourseIdSet = useMemo(() => {
-    const ids = new Set<string>((user?.onlineCourses || []).map((c) => c.id).filter(Boolean));
+  const entitledCourseMap = useMemo(() => {
+    const map = new Map<string, OnlineCourseEntitlement>();
+    for (const c of user?.onlineCourses || []) {
+      if (c?.id) map.set(c.id, c);
+    }
     if (!isDemoMode) {
       for (const c of studentMeQuery.data?.online_courses || []) {
-        const cid = typeof c === 'string' ? c : c?.id;
-        if (cid) ids.add(cid);
+        if (typeof c === 'string') {
+          if (!map.has(c)) {
+            map.set(c, { id: c, code: c, title: c });
+          }
+        } else if (c?.id) {
+          const prev = map.get(c.id);
+          map.set(c.id, { ...prev, ...c });
+        }
       }
       for (const ord of myOrdersQuery.data || []) {
         if (
@@ -230,12 +244,32 @@ export const LearningPage: React.FC = () => {
           ord.provisioningStatus !== 'sync_failed' &&
           ord.course_id
         ) {
-          ids.add(ord.course_id);
+          const prev = map.get(ord.course_id);
+          if (!prev) {
+            map.set(ord.course_id, {
+              id: ord.course_id,
+              code: ord.course_id,
+              title: ord.course_name || ord.course_id,
+              limitTime: ord.limit_time || ord.limitTime || null,
+              expiresAt: ord.expires_at || ord.expiresAt || null,
+              durationPreset: ord.duration_preset || ord.durationPreset,
+              isExpired: false,
+            });
+          }
         }
       }
     }
-    return ids;
+    return map;
   }, [user?.onlineCourses, isDemoMode, studentMeQuery.data?.online_courses, myOrdersQuery.data]);
+
+  const entitledCourseIdSet = useMemo(
+    () => new Set<string>(entitledCourseMap.keys()),
+    [entitledCourseMap]
+  );
+
+  const getCourseEntitlement = (courseId: string): OnlineCourseEntitlement | null => {
+    return entitledCourseMap.get(courseId) || null;
+  };
 
   // If studentMeQuery or myOrdersQuery detects a newly unlocked course not yet in user.onlineCourses, refresh session
   useEffect(() => {
@@ -300,6 +334,57 @@ export const LearningPage: React.FC = () => {
           })
     );
   }, [coursesList, selectedCourseId, isDemoMode]);
+
+  const [nowMs, setNowMs] = useState<number>(() => getServerNowMs());
+  const activeCourseEntitlement = useMemo(
+    () => getCourseEntitlement(activeCourse.id),
+    [entitledCourseMap, activeCourse.id]
+  );
+  const activeCourseExpInfo = useMemo(
+    () => computeCourseExpirationInfo(activeCourseEntitlement, nowMs),
+    [activeCourseEntitlement, nowMs]
+  );
+
+  const hasAnyExpiringSoonCourse = useMemo(() => {
+    if (activeCourseExpInfo.statusKey === 'expiring_soon') return true;
+    for (const ent of entitledCourseMap.values()) {
+      const info = computeCourseExpirationInfo(ent, nowMs);
+      if (info.statusKey === 'expiring_soon') return true;
+    }
+    return false;
+  }, [activeCourseExpInfo.statusKey, entitledCourseMap, nowMs]);
+
+  useEffect(() => {
+    setNowMs(getServerNowMs());
+  }, [activeCourseEntitlement?.limitTime, activeCourseEntitlement?.expiresAt, activeCourse.id]);
+
+  // Update clock every 1s client-side from server timestamp when any course is <= 7 days remaining (never poll API every second)
+  useEffect(() => {
+    if (!hasAnyExpiringSoonCourse) return;
+    const timer = window.setInterval(() => {
+      setNowMs(getServerNowMs());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [hasAnyExpiringSoonCourse]);
+
+  // Re-sync when tab is reopened/focused
+  useEffect(() => {
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        setNowMs(getServerNowMs());
+        if (!isDemoMode && user?.role === 'student') {
+          studentMeQuery.refetch();
+          restoreSession().catch(() => null);
+        }
+      }
+    };
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+    return () => {
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+    };
+  }, [isDemoMode, user?.role, studentMeQuery, restoreSession]);
 
   // Open Registration Modal and auto-fill from session/profile (Phase 4.3)
   const openRegistrationModal = (course: KtnCourse) => {
@@ -679,6 +764,22 @@ export const LearningPage: React.FC = () => {
     },
   });
 
+  // When countdown transitions to expired, immediately re-verify permissions server-side
+  useEffect(() => {
+    if (
+      !isDemoMode &&
+      user?.role === 'student' &&
+      isCourseEntitled(activeCourse.id) &&
+      activeCourseExpInfo.isExpired
+    ) {
+      studentMeQuery.refetch();
+      restoreSession().catch(() => null);
+      if (!unitsQuery.isError) {
+        unitsQuery.refetch();
+      }
+    }
+  }, [activeCourseExpInfo.isExpired, activeCourse.id, isDemoMode, user?.role]);
+
   // Determine video player status override
   const playerStatusOverride: VideoPlayerStatus | null = useMemo(() => {
     if (videoDemoScenario === 'loading') return 'loading';
@@ -687,9 +788,24 @@ export const LearningPage: React.FC = () => {
     if (videoDemoScenario === 'playing') return 'playing';
     if (videoDemoScenario === 'paused') return 'paused';
 
+    if (
+      user?.role === 'student' &&
+      isCourseEntitled(activeCourse.id) &&
+      activeCourseExpInfo.isExpired
+    ) {
+      return 'expired';
+    }
+
     if (unitsQuery.isLoading) return 'loading';
     if (unitsQuery.isError) {
       const err = unitsQuery.error as KtnApiError;
+      if (
+        err?.code === 'COURSE_EXPIRED' ||
+        String(err?.message || '').includes('COURSE_EXPIRED') ||
+        String(err?.message || '').includes('Thời hạn truy cập khóa học đã kết thúc')
+      ) {
+        return 'expired';
+      }
       if (
         err?.status === 403 ||
         err?.code === 'COURSE_NOT_ENTITLED' ||
@@ -704,6 +820,10 @@ export const LearningPage: React.FC = () => {
     return null;
   }, [
     videoDemoScenario,
+    user?.role,
+    activeCourse.id,
+    activeCourseExpInfo.isExpired,
+    entitledCourseIdSet,
     unitsQuery.isLoading,
     unitsQuery.isError,
     unitsQuery.error,
@@ -725,13 +845,29 @@ export const LearningPage: React.FC = () => {
   };
 
   const totalCurriculumCount =
-    groupedMainLessons.length > 0 ? groupedMainLessons.length : lessons.length;
+    groupedMainLessons.length > 0
+      ? groupedMainLessons.length
+      : lessons.length > 0
+      ? lessons.length
+      : activeCourse.lessonsCount || 15;
   const completedCount =
     groupedMainLessons.length > 0
       ? groupedMainLessons.filter(
           (g) => completedLessons[`${activeCourse.id}:${g.lessonNum}`]
         ).length
-      : lessons.filter((l) => completedLessons[`${activeCourse.id}:${l.num}`]).length;
+      : lessons.length > 0
+      ? lessons.filter((l) => completedLessons[`${activeCourse.id}:${l.num}`]).length
+      : Object.keys(completedLessons).filter(
+          (k) => k.startsWith(`${activeCourse.id}:`) && completedLessons[k]
+        ).length;
+
+  const activeCourseSubmittedHomeworks = useMemo(
+    () =>
+      (homeworksQuery.data || []).filter(
+        (h) => String(h.course_id) === String(activeCourse.id)
+      ),
+    [homeworksQuery.data, activeCourse.id]
+  );
 
   const myOrdersList = myOrdersQuery.data || [];
 
@@ -834,6 +970,31 @@ export const LearningPage: React.FC = () => {
           >
             Tiến độ: {completedCount}/{totalCurriculumCount} bài
           </span>
+          {user?.role === 'student' && isCourseEntitled(activeCourse.id) && (
+            activeCourseExpInfo.isExpired ? (
+              <button
+                type="button"
+                data-testid="learning-active-course-countdown"
+                onClick={() => openRegistrationModal(activeCourse)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-red-300 bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-900 hover:bg-red-200"
+              >
+                <Clock className="h-3 w-3 text-red-800" />
+                <span>{activeCourseExpInfo.studentCardText}</span>
+              </button>
+            ) : (
+              <span
+                data-testid="learning-active-course-countdown"
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold ring-1 ${
+                  activeCourseExpInfo.statusKey === 'expiring_soon'
+                    ? 'bg-amber-50 font-mono text-amber-900 ring-amber-300'
+                    : 'bg-stone-100 text-stone-700 ring-stone-200'
+                }`}
+              >
+                <Clock className="h-3 w-3 shrink-0" />
+                <span>{activeCourseExpInfo.studentCardText}</span>
+              </span>
+            )
+          )}
         </div>
 
         {/* Course Level Pills (Single-line horizontal scroll on mobile, entitled courses first) */}
@@ -886,7 +1047,9 @@ export const LearningPage: React.FC = () => {
         {/* Left Column: Prominent Lesson Banner + Video Player + 3 Clear Tabs */}
         <div className="space-y-3 sm:space-y-4 lg:col-span-8">
           {/* Phase 3A: Prominent Active Lesson Header Banner */}
-          {activeLesson && playerStatusOverride !== 'unentitled' && (
+          {activeLesson &&
+            playerStatusOverride !== 'unentitled' &&
+            playerStatusOverride !== 'expired' && (
             <div
               data-testid="lesson-header-banner"
               className="rounded-xl border border-stone-200 bg-white px-3.5 py-3 shadow-2xs sm:px-4"
@@ -967,8 +1130,16 @@ export const LearningPage: React.FC = () => {
           <HlsVideoPlayer
             lessonTitle={activeLesson?.title || 'Bài giảng tiếng Trung KTN'}
             courseName={activeCourse.title}
-            streamUrl={activeLesson?.streamUrl || activeLesson?.video || null}
-            fallbackVideoUrl={activeLesson?.video || null}
+            streamUrl={
+              playerStatusOverride === 'expired' || playerStatusOverride === 'unentitled'
+                ? null
+                : activeLesson?.streamUrl || activeLesson?.video || null
+            }
+            fallbackVideoUrl={
+              playerStatusOverride === 'expired' || playerStatusOverride === 'unentitled'
+                ? null
+                : activeLesson?.video || null
+            }
             statusOverride={playerStatusOverride}
             unentitledReason={
               unitsQuery.error instanceof Error ? unitsQuery.error.message : undefined
@@ -997,6 +1168,7 @@ export const LearningPage: React.FC = () => {
           {/* Sub-part Video Switcher (When a lesson has multiple video parts like 3.1/3.2 or 13.1/13.2) */}
           {activeLesson &&
             playerStatusOverride !== 'unentitled' &&
+            playerStatusOverride !== 'expired' &&
             activeLessonGroup &&
             activeLessonGroup.subUnits.length > 1 && (
               <div
@@ -1042,8 +1214,34 @@ export const LearningPage: React.FC = () => {
               </div>
             )}
 
+          {playerStatusOverride === 'expired' && (
+            <div
+              data-testid="expired-course-preserved-progress-box"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-950"
+            >
+              <div>
+                <p className="font-bold text-amber-900">
+                  Tiến độ học ({completedCount}/{totalCurriculumCount} bài) và bài tập đã nộp ({activeCourseSubmittedHomeworks.length} bài) được bảo lưu nguyên vẹn.
+                </p>
+                <p className="mt-0.5 text-[11px] text-amber-800">
+                  Sau khi gia hạn khóa học, em sẽ tiếp tục học từ bài đang dở mà không cần tạo tài khoản mới.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="expired-course-renew-inline-btn"
+                onClick={() => openRegistrationModal(activeCourse)}
+                className="rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+              >
+                Đã hết hạn · Gia hạn
+              </button>
+            </div>
+          )}
+
           {/* Mobile Lesson Drawer Trigger & Content Tabs (Only when entitled and lessons exist) */}
-          {activeLesson && playerStatusOverride !== 'unentitled' && (
+          {activeLesson &&
+            playerStatusOverride !== 'unentitled' &&
+            playerStatusOverride !== 'expired' && (
             <>
               <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 lg:hidden">
                 <div className="min-w-0">
@@ -1955,35 +2153,75 @@ export const LearningPage: React.FC = () => {
             <div className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {myEntitledCourses.map((course) => {
                 const isSelected = activeCourse.id === course.id;
+                const courseExp = computeCourseExpirationInfo(
+                  getCourseEntitlement(course.id),
+                  nowMs
+                );
                 return (
                   <div
                     key={course.id}
                     data-testid={`my-entitled-course-card-${course.id}`}
                     className={`flex items-center justify-between gap-2.5 rounded-xl border p-2.5 transition-colors ${
-                      isSelected
+                      courseExp.isExpired
+                        ? 'border-red-200 bg-red-50/40'
+                        : isSelected
                         ? 'border-red-800 bg-red-50/50'
                         : 'border-stone-200 bg-stone-50/70 hover:bg-stone-100/80'
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      <span className="inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-900">
-                        Đã mở khóa · {course.lessonsCount || 15} bài
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span
+                          className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                            courseExp.isExpired
+                              ? 'bg-red-100 text-red-900'
+                              : 'bg-emerald-100 text-emerald-900'
+                          }`}
+                        >
+                          {courseExp.isExpired ? 'Đã hết hạn' : 'Đã mở khóa'} ·{' '}
+                          {course.lessonsCount || 15} bài
+                        </span>
+                        <span
+                          data-testid={`my-course-expiration-badge-${course.id}`}
+                          className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                            courseExp.isExpired
+                              ? 'bg-red-200 text-red-950'
+                              : courseExp.statusKey === 'expiring_soon'
+                              ? 'bg-amber-100 font-mono text-amber-900'
+                              : 'bg-stone-100 text-stone-700'
+                          }`}
+                        >
+                          {courseExp.studentCardText}
+                        </span>
+                      </div>
                       <p className="mt-1 truncate text-xs font-bold text-stone-900">
                         {course.title}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCourseId(course.id);
-                        setSelectedLessonNum(1);
-                        syncUrlParams(course.id, 1, activeTab);
-                      }}
-                      className="shrink-0 rounded-lg bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
-                    >
-                      {isSelected ? 'Đang học' : 'Vào học'}
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {courseExp.isExpired ? (
+                        <button
+                          type="button"
+                          data-testid={`renew-my-course-btn-${course.id}`}
+                          onClick={() => openRegistrationModal(course)}
+                          className="shrink-0 rounded-lg bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                        >
+                          Gia hạn
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCourseId(course.id);
+                            setSelectedLessonNum(1);
+                            syncUrlParams(course.id, 1, activeTab);
+                          }}
+                          className="shrink-0 rounded-lg bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
+                        >
+                          {isSelected ? 'Đang học' : 'Vào học'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

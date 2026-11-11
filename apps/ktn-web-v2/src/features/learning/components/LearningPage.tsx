@@ -764,22 +764,6 @@ export const LearningPage: React.FC = () => {
     },
   });
 
-  // When countdown transitions to expired, immediately re-verify permissions server-side
-  useEffect(() => {
-    if (
-      !isDemoMode &&
-      user?.role === 'student' &&
-      isCourseEntitled(activeCourse.id) &&
-      activeCourseExpInfo.isExpired
-    ) {
-      studentMeQuery.refetch();
-      restoreSession().catch(() => null);
-      if (!unitsQuery.isError) {
-        unitsQuery.refetch();
-      }
-    }
-  }, [activeCourseExpInfo.isExpired, activeCourse.id, isDemoMode, user?.role]);
-
   // Determine video player status override
   const playerStatusOverride: VideoPlayerStatus | null = useMemo(() => {
     if (videoDemoScenario === 'loading') return 'loading';
@@ -802,6 +786,7 @@ export const LearningPage: React.FC = () => {
       if (
         err?.code === 'COURSE_EXPIRED' ||
         String(err?.message || '').includes('COURSE_EXPIRED') ||
+        String(err?.message || '').includes('hết thời hạn truy cập') ||
         String(err?.message || '').includes('Thời hạn truy cập khóa học đã kết thúc')
       ) {
         return 'expired';
@@ -827,6 +812,28 @@ export const LearningPage: React.FC = () => {
     unitsQuery.isLoading,
     unitsQuery.isError,
     unitsQuery.error,
+  ]);
+
+  // When countdown transitions to expired or server returns 403 COURSE_EXPIRED, immediately re-verify permissions server-side
+  useEffect(() => {
+    if (
+      !isDemoMode &&
+      user?.role === 'student' &&
+      isCourseEntitled(activeCourse.id) &&
+      (activeCourseExpInfo.isExpired || playerStatusOverride === 'expired')
+    ) {
+      studentMeQuery.refetch();
+      restoreSession().catch(() => null);
+      if (activeCourseExpInfo.isExpired && !unitsQuery.isError) {
+        unitsQuery.refetch();
+      }
+    }
+  }, [
+    activeCourseExpInfo.isExpired,
+    playerStatusOverride,
+    activeCourse.id,
+    isDemoMode,
+    user?.role,
   ]);
 
   const activeLessonNumber = Number(activeLesson?.lessonNumber || activeLesson?.num || 1);
@@ -971,7 +978,7 @@ export const LearningPage: React.FC = () => {
             Tiến độ: {completedCount}/{totalCurriculumCount} bài
           </span>
           {user?.role === 'student' && isCourseEntitled(activeCourse.id) && (
-            activeCourseExpInfo.isExpired ? (
+            activeCourseExpInfo.isExpired || playerStatusOverride === 'expired' ? (
               <button
                 type="button"
                 data-testid="learning-active-course-countdown"
@@ -979,7 +986,11 @@ export const LearningPage: React.FC = () => {
                 className="inline-flex shrink-0 items-center gap-1 rounded-full border border-red-300 bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-900 hover:bg-red-200"
               >
                 <Clock className="h-3 w-3 text-red-800" />
-                <span>{activeCourseExpInfo.studentCardText}</span>
+                <span>
+                  {activeCourseExpInfo.isExpired
+                    ? activeCourseExpInfo.studentCardText
+                    : 'Đã hết hạn · Gia hạn'}
+                </span>
               </button>
             ) : (
               <span

@@ -5900,6 +5900,7 @@ async function mergeAndUpsertStudentCourses(env, {
   actorEmail = 'admin@khongtunhi.com'
 }) {
   const cleanEmail = normalizeEmail(email);
+  return runWithProvisioningLock(`student_row_upsert:${cleanEmail}`, async () => {
   const nowIso = new Date().toISOString();
 
   // Tra cứu hồ sơ học viên hiện có trong Supabase ktn_students
@@ -6162,6 +6163,7 @@ async function mergeAndUpsertStudentCourses(env, {
     pushDispatch: classJoinedNotification?.pushResult || null,
     ok: true
   };
+  });
 }
 
 // ============================================================================
@@ -6278,14 +6280,19 @@ async function saveProvisioningJobState(env, jobRecord) {
   return merged;
 }
 
-async function findLatestIncompleteStudentJobByEmail(env, rawEmail, rawOperationId = '') {
+async function findLatestIncompleteStudentJobByEmail(env, rawEmail, rawOperationId = '', rawCourseId = '') {
   const email = normalizeEmail(rawEmail);
   const opId = String(rawOperationId || '').trim();
+  const filterCourseId = String(rawCourseId || '').trim().toLowerCase();
   if (!email && !opId) return null;
 
   const isMatchingIncomplete = (row) => {
     if (!row || typeof row !== 'object') return false;
     if (row.status !== 'partial_failure' && row.status !== 'failed') return false;
+    if (filterCourseId) {
+      const rowCourseId = String(row.request_payload?.courseId || row.response_payload?.course_id || '').trim().toLowerCase();
+      if (rowCourseId && rowCourseId !== filterCourseId) return false;
+    }
     if (opId && row.operation_id === opId) return true;
     const rowEmail = normalizeEmail(row.target_email || row.request_payload?.email || row.request_payload?.studentEmail || '');
     return Boolean(email && rowEmail === email && (!row.job_type || row.job_type === 'student_create' || row.job_type === 'course_duration'));
@@ -6322,7 +6329,7 @@ async function findLatestIncompleteStudentJobByEmail(env, rawEmail, rawOperation
         for (const item of fbRes.data) {
           try {
             const parsed = JSON.parse(item.blocked_content || '{}');
-            if (isMatchingIncomplete(parsed) && normalizeEmail(parsed.target_email || parsed.request_payload?.email) === email) {
+            if (isMatchingIncomplete(parsed) && normalizeEmail(parsed.target_email || parsed.request_payload?.email || parsed.request_payload?.studentEmail) === email) {
               return parsed;
             }
           } catch {}
@@ -11298,7 +11305,7 @@ export default {
         }, 400);
       }
 
-      const lockKey = `course_duration:${studentEmail}:${courseId}`;
+      const lockKey = `course_duration:${studentEmail}`;
       return runWithProvisioningLock(lockKey, async () => {
         const requestPayloadMeta = {
           studentEmail,
@@ -11310,7 +11317,7 @@ export default {
 
         let priorIncompleteJob = null;
         if (body.operationId || body.retry === true) {
-          const candidateJob = await findLatestIncompleteStudentJobByEmail(env, studentEmail, body.operationId);
+          const candidateJob = await findLatestIncompleteStudentJobByEmail(env, studentEmail, body.operationId, courseId);
           if (
             candidateJob &&
             candidateJob.job_type === 'course_duration' &&
@@ -11369,7 +11376,7 @@ export default {
           : (isValidCognitoUuid(priorIncompleteJob?.cognito_user_id) ? priorIncompleteJob.cognito_user_id : null);
         let izteachStudentId = existingStu?.izteach_student_id || null;
 
-        const adminToken = await getIzTeachAdminToken(env);
+        let adminToken = await getIzTeachAdminToken(env);
         if (!adminToken) {
           return jsonResponse({
             ok: false,
@@ -11383,9 +11390,18 @@ export default {
         const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
         if (!isValidCognitoUuid(cognitoUserId)) {
           try {
-            const searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&email=${encodeURIComponent(studentEmail)}`, {
+            let searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&email=${encodeURIComponent(studentEmail)}`, {
               headers: { Authorization: adminToken }
             });
+            if ((searchRes.status === 401 || searchRes.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+              const refreshed = await getIzTeachAdminToken(env, true);
+              if (refreshed) {
+                adminToken = refreshed;
+                searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&email=${encodeURIComponent(studentEmail)}`, {
+                  headers: { Authorization: adminToken }
+                });
+              }
+            }
             if (searchRes.ok) {
               const searchData = await searchRes.json().catch(() => null);
               const list = extractIzTeachStudentRecords(searchData);
@@ -11411,7 +11427,14 @@ export default {
 
         // 2. Kiểm tra khóa học đã được cấp hợp lệ trên izTeach
         const permUrl = `${IZTEACH_ENDPOINTS.userPermission}?vendorId=${encodeURIComponent(vendorId)}&userId=${encodeURIComponent(cognitoUserId)}`;
-        const permResp = await fetch(permUrl, { headers: { Authorization: adminToken } });
+        let permResp = await fetch(permUrl, { headers: { Authorization: adminToken } });
+        if ((permResp.status === 401 || permResp.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+          const refreshed = await getIzTeachAdminToken(env, true);
+          if (refreshed) {
+            adminToken = refreshed;
+            permResp = await fetch(permUrl, { headers: { Authorization: adminToken } });
+          }
+        }
         if (!permResp.ok) {
           return jsonResponse({
             ok: false,
@@ -11440,7 +11463,7 @@ export default {
         // Nếu khóa học có trên Supabase nhưng chưa có permission trên izTeach, cấp bù permission trên izTeach trước
         if (!currentIzEnt) {
           const addUrl = `${IZTEACH_ENDPOINTS.userPermission}/add-products/${encodeURIComponent(cognitoUserId)}`;
-          await fetch(addUrl, {
+          let addRes = await fetch(addUrl, {
             method: 'PUT',
             headers: {
               Authorization: adminToken,
@@ -11451,7 +11474,36 @@ export default {
               onlineCourses: [courseId],
               testCategories: []
             })
-          });
+          }).catch(err => ({ ok: false, status: 503, _err: err }));
+          if ((addRes?.status === 401 || addRes?.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+            const refreshed = await getIzTeachAdminToken(env, true);
+            if (refreshed) {
+              adminToken = refreshed;
+              addRes = await fetch(addUrl, {
+                method: 'PUT',
+                headers: {
+                  Authorization: adminToken,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  vendorId,
+                  onlineCourses: [courseId],
+                  testCategories: []
+                })
+              }).catch(err => ({ ok: false, status: 503, _err: err }));
+            }
+          }
+          if (!addRes || !addRes.ok) {
+            return jsonResponse({
+              ok: false,
+              operationId: opId,
+              retryable: true,
+              syncStatus: 'sync_failed',
+              code: 'IZTEACH_ADD_PRODUCTS_FAILED',
+              error: 'IZTEACH_ADD_PRODUCTS_FAILED',
+              message: `Cần hoàn tất đồng bộ thời hạn: Không cấp bù được quyền khóa học trên izTeach trước khi đặt hạn (HTTP ${addRes?.status || 503}).`
+            }, 502);
+          }
         }
 
         const previousLimitTime = currentIzEnt?.limitTime ?? currentStuCourse?.limitTime ?? null;
@@ -16175,7 +16227,7 @@ export default {
       }
 
       if (targetEmail || body.operationId) {
-        const priorJob = await findLatestIncompleteStudentJobByEmail(env, targetEmail, body.operationId);
+        const priorJob = await findLatestIncompleteStudentJobByEmail(env, targetEmail, body.operationId, body.courseId);
         const resolvedEmail = targetEmail || normalizeEmail(priorJob?.target_email || priorJob?.request_payload?.email || priorJob?.request_payload?.studentEmail || '');
         if (!resolvedEmail) {
           return jsonResponse({ ok: false, message: 'Không tìm thấy email học viên cần đồng bộ lại.' }, 400);

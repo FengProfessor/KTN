@@ -938,4 +938,68 @@ describe('KTN × izTeach Course Expiration & Live Countdown Suite (E01–E20)', 
     );
     expect(afterClassHsk.limitTime).toBe('2027-02-11');
   });
+
+  it('Adversarial Edge Cases: Serializes concurrent multi-course duration updates for the same student and auto-heals missing izTeach permission', async () => {
+    const simulatedNow = '2026-11-11T10:00:00+07:00';
+    // 1. Concurrent updates to Course A (1w -> 2026-11-18) and Course B (2m -> 2027-01-11) for hoangngan@khongtunhi.com
+    const [resA, resB] = await Promise.all([
+      callWorker('/api/ktn/admin/students/course-duration', {
+        method: 'POST',
+        token: adminToken,
+        simulatedNowIso: simulatedNow,
+        body: {
+          studentEmail: 'hoangngan@khongtunhi.com',
+          courseId: COURSE_HSK1_ID,
+          preset: '1w',
+          mode: 'set_from_now',
+        },
+      }),
+      callWorker('/api/ktn/admin/students/course-duration', {
+        method: 'POST',
+        token: adminToken,
+        simulatedNowIso: simulatedNow,
+        body: {
+          studentEmail: 'hoangngan@khongtunhi.com',
+          courseId: COURSE_CFK_ID,
+          preset: '2m',
+          mode: 'set_from_now',
+        },
+      }),
+    ]);
+
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+
+    const stuRow = harness.state.tables.ktn_students.find(
+      (s: any) => s.email === 'hoangngan@khongtunhi.com'
+    );
+    const savedA = stuRow.online_courses.find((c: any) => c.id === COURSE_HSK1_ID);
+    const savedB = stuRow.online_courses.find((c: any) => c.id === COURSE_CFK_ID);
+    expect(savedA.limitTime).toBe('2026-11-18');
+    expect(savedA.durationPreset).toBe('1w');
+    expect(savedB.limitTime).toBe('2027-01-11');
+    expect(savedB.durationPreset).toBe('2m');
+
+    // 2. Simulate manual deletion of COURSE_HSK1_ID permission on izTeach while still in Supabase online_courses
+    const uid = 'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68';
+    harness.state.izteach.permissionsByUid[uid] = [COURSE_CFK_ID];
+    harness.state.izteach.permissionRecordsByUid[uid] = (
+      harness.state.izteach.permissionRecordsByUid[uid] || []
+    ).filter((r: any) => !r.onlineCourses.includes(COURSE_HSK1_ID));
+
+    const healRes = await callWorker('/api/ktn/admin/students/course-duration', {
+      method: 'POST',
+      token: adminToken,
+      simulatedNowIso: simulatedNow,
+      body: {
+        studentEmail: 'hoangngan@khongtunhi.com',
+        courseId: COURSE_HSK1_ID,
+        preset: '1m',
+        mode: 'set_from_now',
+      },
+    });
+    expect(healRes.status).toBe(200);
+    expect(healRes.data.limitTime).toBe('2026-12-11');
+    expect(harness.state.izteach.permissionsByUid[uid]).toContain(COURSE_HSK1_ID);
+  });
 });

@@ -451,12 +451,44 @@ export async function ktnRequest<T>(
   }
 
   if (!res.ok || (data && data.ok === false)) {
+    const errCode =
+      (typeof data?.code === 'string' && data.code) ||
+      (typeof data?.error === 'string' && data.error) ||
+      undefined;
+    if (errCode === 'COURSE_EXPIRED' && typeof data?.courseId === 'string') {
+      const currentSession = getStoredSession();
+      if (currentSession && Array.isArray(currentSession.onlineCourses)) {
+        const expCourseId = data.courseId.trim().toLowerCase();
+        const idx = currentSession.onlineCourses.findIndex(
+          (c) => String(c.id || '').trim().toLowerCase() === expCourseId
+        );
+        if (idx >= 0) {
+          const nextOnlineCourses = [...currentSession.onlineCourses];
+          nextOnlineCourses[idx] = {
+            ...nextOnlineCourses[idx],
+            limitTime:
+              typeof data.limitTime === 'string'
+                ? data.limitTime
+                : nextOnlineCourses[idx].limitTime ?? null,
+            expiresAt:
+              typeof data.expiresAt === 'string'
+                ? data.expiresAt
+                : nextOnlineCourses[idx].expiresAt ?? null,
+            isExpired: true
+          };
+          saveStoredSession({
+            ...currentSession,
+            onlineCourses: nextOnlineCourses
+          });
+        }
+      }
+    }
     throw new KtnApiError({
       message:
         (typeof data?.message === 'string' && data.message) ||
         `Yêu cầu không thành công (HTTP ${res.status})`,
       status: res.status || 500,
-      code: typeof data?.error === 'string' ? data.error : undefined,
+      code: errCode,
       syncStatus: typeof data?.syncStatus === 'string' ? data.syncStatus : undefined,
       dlpBlocked: Boolean(data?.dlpBlocked)
     });

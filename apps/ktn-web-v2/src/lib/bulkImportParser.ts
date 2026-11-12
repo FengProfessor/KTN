@@ -237,45 +237,108 @@ export function parseKtnCenterBulkCsv(
     startTeacherSeq?: number;
     startStudentSeq?: number;
     existingTeachers?: Array<{ code?: string; email?: string; name?: string }>;
-    existingStudents?: Array<{ code?: string; email?: string; name?: string }>;
+    existingStudents?: Array<{ code?: string; email?: string; name?: string; phone?: string; class_code?: string; classCode?: string }>;
     defaultPassword?: string;
   } = {}
 ): BulkImportParseResult {
+  const existingTeacherByKey = new Map<string, { code: string; email: string; seqNum: number }>();
   let maxTeacherSeq = Math.max(0, Number(options.startTeacherSeq ? options.startTeacherSeq - 1 : 0));
   if (Array.isArray(options.existingTeachers)) {
     for (const t of options.existingTeachers) {
       const codeStr = String(t?.code || '').trim().toUpperCase();
       const emailStr = String(t?.email || '').trim().toLowerCase();
+      let seqNum = Infinity;
       const mCode = codeStr.match(/^GV(\d+)$/i);
       if (mCode) {
         const n = Number(mCode[1]);
-        if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
+        if (Number.isFinite(n)) {
+          seqNum = Math.min(seqNum, n);
+          if (n > maxTeacherSeq) maxTeacherSeq = n;
+        }
       }
       const mEmail = emailStr.match(/^gv(\d+)@khongtunhi\.com$/i);
       if (mEmail) {
         const n = Number(mEmail[1]);
-        if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
+        if (Number.isFinite(n)) {
+          seqNum = Math.min(seqNum, n);
+          if (n > maxTeacherSeq) maxTeacherSeq = n;
+        }
+      }
+      if (!options.startTeacherSeq && t?.name && (codeStr || emailStr)) {
+        const ident = normalizeBulkTeacherIdentity(String(t.name));
+        if (!ident.isUnassigned) {
+          const resolvedCode = codeStr || (mEmail ? `GV${String(Number(mEmail[1])).padStart(3, '0')}` : '');
+          const resolvedEmail = emailStr || (resolvedCode ? `${resolvedCode.toLowerCase()}@khongtunhi.com` : '');
+          if (resolvedCode && resolvedEmail) {
+            const prev = existingTeacherByKey.get(ident.key);
+            if (!prev || seqNum < prev.seqNum) {
+              existingTeacherByKey.set(ident.key, {
+                code: resolvedCode,
+                email: resolvedEmail,
+                seqNum
+              });
+            }
+          }
+        }
       }
     }
   }
 
+  const existingStudentCandidates: Array<{
+    code: string;
+    email: string;
+    classCode: string;
+    normName: string;
+    cleanPhone: string;
+    seqNum: number;
+    used: boolean;
+  }> = [];
   let maxStudentSeq = Math.max(0, Number(options.startStudentSeq ? options.startStudentSeq - 1 : 0));
   if (Array.isArray(options.existingStudents)) {
     for (const s of options.existingStudents) {
       const codeStr = String(s?.code || '').trim();
       const emailStr = String(s?.email || '').trim().toLowerCase();
+      let seqNum = Infinity;
       const mCode = codeStr.match(/^2026(\d{4,})$/);
       if (mCode) {
         const n = Number(mCode[1]);
-        if (Number.isFinite(n) && n > maxStudentSeq) maxStudentSeq = n;
+        if (Number.isFinite(n)) {
+          seqNum = Math.min(seqNum, n);
+          if (n > maxStudentSeq) maxStudentSeq = n;
+        }
       }
       const mEmail = emailStr.match(/^2026(\d{4,})@khongtunhi\.com$/i);
       if (mEmail) {
         const n = Number(mEmail[1]);
-        if (Number.isFinite(n) && n > maxStudentSeq) maxStudentSeq = n;
+        if (Number.isFinite(n)) {
+          seqNum = Math.min(seqNum, n);
+          if (n > maxStudentSeq) maxStudentSeq = n;
+        }
+      }
+      if (!options.startStudentSeq && s?.name && (mCode || mEmail)) {
+        const resolvedCode = codeStr || (mEmail ? `2026${mEmail[1]}` : '');
+        const resolvedEmail = emailStr || (resolvedCode ? `${resolvedCode.toLowerCase()}@khongtunhi.com` : '');
+        const clsCode = String(s?.class_code || s?.classCode || '').trim().toUpperCase();
+        const normName = stripViAccents(String(s.name || ''))
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, ' ')
+          .trim();
+        const cleanPhone = cleanBulkPhoneValue(String(s?.phone || '')).phone;
+        if (resolvedCode && resolvedEmail && normName) {
+          existingStudentCandidates.push({
+            code: resolvedCode,
+            email: resolvedEmail,
+            classCode: clsCode,
+            normName,
+            cleanPhone,
+            seqNum,
+            used: false
+          });
+        }
       }
     }
   }
+  existingStudentCandidates.sort((a, b) => a.seqNum - b.seqNum);
 
   const rows = tokenizeMultilineCsv(rawCsvText);
   const warnings: string[] = [];
@@ -437,11 +500,19 @@ export function parseKtnCenterBulkCsv(
 
   const teachers: BulkImportParsedTeacher[] = [];
   for (const tEntry of teachersByKey.values()) {
-    const code = `GV${String(nextTeacherSeq).padStart(3, '0')}`;
-    const email = `${code.toLowerCase()}@khongtunhi.com`;
-    nextTeacherSeq += 1;
-    tEntry.code = code;
-    tEntry.email = email;
+    const existingMatch = existingTeacherByKey.get(tEntry.key);
+    if (existingMatch && existingMatch.code && existingMatch.email) {
+      tEntry.code = existingMatch.code;
+      tEntry.email = existingMatch.email;
+      tEntry.isExisting = true;
+    } else {
+      const code = `GV${String(nextTeacherSeq).padStart(3, '0')}`;
+      const email = `${code.toLowerCase()}@khongtunhi.com`;
+      nextTeacherSeq += 1;
+      tEntry.code = code;
+      tEntry.email = email;
+      tEntry.isExisting = false;
+    }
     tEntry.defaultPassword = defaultPassword;
     teachers.push(tEntry);
   }
@@ -457,9 +528,34 @@ export function parseKtnCenterBulkCsv(
 
   let nextStudentSeq = maxStudentSeq + 1;
   const students: BulkImportParsedStudent[] = rawStudents.map((stu) => {
-    const code = `2026${String(nextStudentSeq).padStart(4, '0')}`;
-    const email = `${code}@khongtunhi.com`;
-    nextStudentSeq += 1;
+    const stuClass = String(stu.classCode || '').trim().toUpperCase();
+    const stuNormName = stripViAccents(String(stu.name || ''))
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    const stuPhone = String(stu.phone || '').trim();
+
+    let matchedCand = existingStudentCandidates.find(
+      (c) => !c.used && c.classCode === stuClass && c.normName === stuNormName && c.cleanPhone === stuPhone
+    );
+    if (!matchedCand) {
+      matchedCand = existingStudentCandidates.find(
+        (c) => !c.used && c.classCode === stuClass && c.normName === stuNormName && (!c.cleanPhone || !stuPhone)
+      );
+    }
+
+    let code = '';
+    let email = '';
+    if (matchedCand) {
+      matchedCand.used = true;
+      code = matchedCand.code;
+      email = matchedCand.email;
+    } else {
+      code = `2026${String(nextStudentSeq).padStart(4, '0')}`;
+      email = `${code}@khongtunhi.com`;
+      nextStudentSeq += 1;
+    }
+
     const tEntry = teachersByKey.get(stu.teacherKey);
     return {
       code,

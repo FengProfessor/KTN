@@ -1653,6 +1653,142 @@ describe('C1 & C2 — Class Lifecycle, Auto Chat Group & Safe Soft-Delete UX', (
       ).not.toBeInTheDocument();
     });
   });
+
+  it('supports Admin Reset Password in StudentDetailDrawer and TeacherDetailDrawer and Bulk Import Modal in AdminWorkspace', async () => {
+    const resetSpy = vi.spyOn(ktnApi, 'resetUserPassword').mockResolvedValue({
+      ok: true,
+      email: 'hoangngan@khongtunhi.com',
+      role: 'student',
+      newPassword: '12345678',
+      customPassword: true,
+      message: 'Đã đặt lại mật khẩu học viên về "12345678" thành công!',
+    });
+
+    // 1. StudentDetailDrawer Reset Password
+    const { unmount: unmountStu } = render(
+      <StudentDetailDrawer {...createStudentDrawerProps()} />
+    );
+    expect(screen.getByTestId('student-reset-password-section')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('drawer-reset-password-btn'));
+
+    await waitFor(() => {
+      expect(resetSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'hoangngan@khongtunhi.com',
+          role: 'student',
+          newPassword: '12345678',
+        })
+      );
+      expect(screen.getByTestId('drawer-reset-password-feedback')).toHaveTextContent(
+        'Đã đặt lại mật khẩu học viên về "12345678" thành công!'
+      );
+    });
+    unmountStu();
+
+    // 2. TeacherDetailDrawer Reset Password
+    resetSpy.mockResolvedValueOnce({
+      ok: true,
+      email: 'gv001@khongtunhi.com',
+      role: 'teacher',
+      newPassword: '12345678',
+      customPassword: true,
+      message: 'Đã đặt lại mật khẩu giáo viên Cô Thùy về "12345678" thành công!',
+    });
+
+    const sampleTeacher: KtnTeacherRecord = {
+      code: 'GV001',
+      email: 'gv001@khongtunhi.com',
+      name: 'Cô Thùy',
+      phone: '',
+      specialty: 'Giáo viên Tiếng Trung Thiếu Nhi',
+      assigned_classes: ['LOMINI23-CHO'],
+      assigned_courses: [],
+      active: true,
+      provisioningStatus: 'ready_to_login',
+      readyToLogin: true,
+      syncStatus: 'synced',
+      scheduledSessionsCount: 8,
+      activitySessionsCount: 0,
+      confirmedSessionsCount: 0,
+      gradedHomeworksCount: 0,
+      pendingHomeworksCount: 0,
+      forumAnswersCount: 0,
+      acceptedAnswersCount: 0,
+      helpfulVotesCount: 0,
+      videoGuidesCount: 0,
+      monthlyContributionPoints: 0,
+      totalContributionPoints: 0,
+      courseRequestsCount: 0,
+      pendingCourseRequestsCount: 0,
+    };
+
+    const { unmount: unmountTea } = render(
+      <TeacherDetailDrawer
+        teacher={sampleTeacher}
+        open={true}
+        onClose={vi.fn()}
+        classesList={SAMPLE_CLASSES}
+        catalogCourses={SAMPLE_COURSES}
+        isSaving={false}
+        onSaveTeacher={vi.fn().mockResolvedValue({ ok: true })}
+      />
+    );
+    expect(screen.getByTestId('drawer-reset-password-btn')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('drawer-reset-password-btn'));
+
+    await waitFor(() => {
+      expect(resetSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'gv001@khongtunhi.com',
+          role: 'teacher',
+          newPassword: '12345678',
+        })
+      );
+      expect(screen.getByTestId('drawer-reset-password-feedback')).toHaveTextContent(
+        'Đã đặt lại mật khẩu giáo viên Cô Thùy về "12345678" thành công!'
+      );
+    });
+    unmountTea();
+
+    // 3. AdminWorkspace Bulk Import Modal
+    useUiStore.setState({ isDemoMode: true });
+    useAuthStore.setState({
+      user: {
+        id: 'ADM-01',
+        email: 'quanly@khongtunhi.com',
+        name: 'Quản lý KTN',
+        role: 'admin',
+        roles: ['admin'],
+        classCode: null,
+        hasLiveClass: false,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/admin/students']}>
+          <Routes>
+            <Route path="/admin/:tab" element={<AdminWorkspace />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    const openBulkBtn = await screen.findByTestId('open-bulk-import-modal-btn');
+    fireEvent.click(openBulkBtn);
+    expect(screen.getByTestId('bulk-import-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('bulk-import-load-sample-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('bulk-import-preview-section')).toBeInTheDocument();
+      expect(screen.getByTestId('bulk-preview-class-count')).toHaveTextContent('100 lớp');
+      expect(screen.getByTestId('bulk-preview-teacher-count')).toHaveTextContent('54 GV');
+      expect(screen.getByTestId('bulk-preview-student-count')).toHaveTextContent('299 học viên');
+    });
+  });
 });
 
 

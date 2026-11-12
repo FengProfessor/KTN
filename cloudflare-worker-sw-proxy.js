@@ -4392,18 +4392,48 @@ function computeStudentAccountAndSyncStatus(row) {
     /^2026\d{4,}$/i.test(String(row?.code || '').trim()) ||
     /^2026\d{4,}@khongtunhi\.com$/i.test(String(row?.email || '').trim());
   let accountStatus = row?.account_status || '';
-  if (!accountStatus) {
-    if (hasCognito || isKtn2026Code) accountStatus = 'ready_to_login';
+  if (!accountStatus || (isKtn2026Code && !hasCourses && accountStatus === 'pending_activation')) {
+    if (hasCognito || isKtn2026Code) accountStatus = isKtn2026Code ? 'active' : 'ready_to_login';
     else if (hasClass || hasCourses) accountStatus = 'pending_activation';
     else accountStatus = 'unassigned';
   }
   let syncStatus = row?.sync_status || '';
-  if (!syncStatus) {
-    if (row?.last_sync_error) syncStatus = 'partial_failure';
+  if (!syncStatus || (isKtn2026Code && !hasCourses && (syncStatus === 'pending_activation' || syncStatus === 'pending_sync'))) {
+    if (row?.last_sync_error && !(isKtn2026Code && !hasCourses)) syncStatus = 'partial_failure';
     else if (!hasCognito && !isKtn2026Code && (hasCourses || hasClass)) syncStatus = 'pending_sync';
     else syncStatus = 'synced';
   }
   return { accountStatus, syncStatus };
+}
+
+async function fetchAllKtnStudents(env, selectCols = '*', orderClause = 'updated_at.desc') {
+  const firstRes = await supabaseRequest(
+    env,
+    `ktn_students?select=${selectCols}&order=${orderClause}&limit=1000&offset=0`
+  ).catch(() => ({ ok: false, data: [] }));
+  if (!firstRes || !firstRes.ok || !Array.isArray(firstRes.data)) {
+    return firstRes || { ok: false, data: [] };
+  }
+  let combined = firstRes.data;
+  if (combined.length === 1000) {
+    const secondRes = await supabaseRequest(
+      env,
+      `ktn_students?select=${selectCols}&order=${orderClause}&limit=1000&offset=1000`
+    ).catch(() => ({ ok: false, data: [] }));
+    if (secondRes && secondRes.ok && Array.isArray(secondRes.data)) {
+      combined = combined.concat(secondRes.data);
+      if (secondRes.data.length === 1000) {
+        const thirdRes = await supabaseRequest(
+          env,
+          `ktn_students?select=${selectCols}&order=${orderClause}&limit=1000&offset=2000`
+        ).catch(() => ({ ok: false, data: [] }));
+        if (thirdRes && thirdRes.ok && Array.isArray(thirdRes.data)) {
+          combined = combined.concat(thirdRes.data);
+        }
+      }
+    }
+  }
+  return { ...firstRes, data: combined };
 }
 
 function enrichStudentRowV3(row, nowMs = Date.now()) {
@@ -8693,37 +8723,89 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
   const existingStudents = Array.isArray(options.existingStudents) ? options.existingStudents : [];
   const defaultPassword = String(options.defaultPassword || '12345678').trim() || '12345678';
 
+  const existingTeacherByKey = new Map();
   let maxTeacherSeq = Math.max(0, Number(options.startTeacherSeq ? options.startTeacherSeq - 1 : 0));
   for (const t of existingTeachers) {
     const codeStr = String(t?.code || '').trim().toUpperCase();
     const emailStr = String(t?.email || '').trim().toLowerCase();
+    let seqNum = Infinity;
     const mCode = codeStr.match(/^GV(\d+)$/i);
     if (mCode) {
       const n = Number(mCode[1]);
-      if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
+      if (Number.isFinite(n)) {
+        seqNum = Math.min(seqNum, n);
+        if (n > maxTeacherSeq) maxTeacherSeq = n;
+      }
     }
     const mEmail = emailStr.match(/^gv(\d+)@khongtunhi\.com$/i);
     if (mEmail) {
       const n = Number(mEmail[1]);
-      if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
+      if (Number.isFinite(n)) {
+        seqNum = Math.min(seqNum, n);
+        if (n > maxTeacherSeq) maxTeacherSeq = n;
+      }
+    }
+    if (!options.startTeacherSeq && t?.name && (codeStr || emailStr)) {
+      const ident = normalizeBulkTeacherIdentity(String(t.name));
+      if (!ident.isUnassigned) {
+        const resolvedCode = codeStr || (mEmail ? `GV${String(Number(mEmail[1])).padStart(3, '0')}` : '');
+        const resolvedEmail = emailStr || (resolvedCode ? `${resolvedCode.toLowerCase()}@khongtunhi.com` : '');
+        if (resolvedCode && resolvedEmail) {
+          const prev = existingTeacherByKey.get(ident.key);
+          if (!prev || seqNum < prev.seqNum) {
+            existingTeacherByKey.set(ident.key, {
+              code: resolvedCode,
+              email: resolvedEmail,
+              seqNum
+            });
+          }
+        }
+      }
     }
   }
 
+  const existingStudentCandidates = [];
   let maxStudentSeq = Math.max(0, Number(options.startStudentSeq ? options.startStudentSeq - 1 : 0));
   for (const s of existingStudents) {
     const codeStr = String(s?.code || '').trim();
     const emailStr = String(s?.email || '').trim().toLowerCase();
+    let seqNum = Infinity;
     const mCode = codeStr.match(/^2026(\d{4,})$/);
     if (mCode) {
       const n = Number(mCode[1]);
-      if (Number.isFinite(n) && n > maxStudentSeq) maxStudentSeq = n;
+      if (Number.isFinite(n)) {
+        seqNum = Math.min(seqNum, n);
+        if (n > maxStudentSeq) maxStudentSeq = n;
+      }
     }
     const mEmail = emailStr.match(/^2026(\d{4,})@khongtunhi\.com$/i);
     if (mEmail) {
       const n = Number(mEmail[1]);
-      if (Number.isFinite(n) && n > maxStudentSeq) maxStudentSeq = n;
+      if (Number.isFinite(n)) {
+        seqNum = Math.min(seqNum, n);
+        if (n > maxStudentSeq) maxStudentSeq = n;
+      }
+    }
+    if (!options.startStudentSeq && s?.name && (mCode || mEmail)) {
+      const resolvedCode = codeStr || (mEmail ? `2026${mEmail[1]}` : '');
+      const resolvedEmail = emailStr || (resolvedCode ? `${resolvedCode.toLowerCase()}@khongtunhi.com` : '');
+      const clsCode = String(s?.class_code || s?.classCode || '').trim().toUpperCase();
+      const normName = normalizeViSearchText(String(s.name || '')).replace(/[^a-z0-9]+/g, ' ').trim();
+      const cleanPhone = cleanBulkPhoneValue(String(s?.phone || '')).phone;
+      if (resolvedCode && resolvedEmail && normName) {
+        existingStudentCandidates.push({
+          code: resolvedCode,
+          email: resolvedEmail,
+          classCode: clsCode,
+          normName,
+          cleanPhone,
+          seqNum,
+          used: false
+        });
+      }
     }
   }
+  existingStudentCandidates.sort((a, b) => a.seqNum - b.seqNum);
 
   const rawRows = tokenizeMultilineCsv(csvText);
   const warnings = [];
@@ -8878,11 +8960,19 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
   let nextTeacherSeq = maxTeacherSeq + 1;
   const teachers = [];
   for (const tEntry of teachersByKey.values()) {
-    const code = `GV${String(nextTeacherSeq).padStart(3, '0')}`;
-    const email = `${code.toLowerCase()}@khongtunhi.com`;
-    nextTeacherSeq += 1;
-    tEntry.code = code;
-    tEntry.email = email;
+    const existingMatch = existingTeacherByKey.get(tEntry.key);
+    if (existingMatch && existingMatch.code && existingMatch.email) {
+      tEntry.code = existingMatch.code;
+      tEntry.email = existingMatch.email;
+      tEntry.isExisting = true;
+    } else {
+      const code = `GV${String(nextTeacherSeq).padStart(3, '0')}`;
+      const email = `${code.toLowerCase()}@khongtunhi.com`;
+      nextTeacherSeq += 1;
+      tEntry.code = code;
+      tEntry.email = email;
+      tEntry.isExisting = false;
+    }
     tEntry.defaultPassword = defaultPassword;
     teachers.push(tEntry);
   }
@@ -8899,9 +8989,33 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
 
   let nextStudentSeq = maxStudentSeq + 1;
   const students = rawStudents.map((stu) => {
-    const code = `2026${String(nextStudentSeq).padStart(4, '0')}`;
-    const email = `${code}@khongtunhi.com`;
-    nextStudentSeq += 1;
+    const stuClass = String(stu.classCode || '').trim().toUpperCase();
+    const stuNormName = normalizeViSearchText(String(stu.name || '')).replace(/[^a-z0-9]+/g, ' ').trim();
+    const stuPhone = String(stu.phone || '').trim();
+
+    let matchedCand = existingStudentCandidates.find(
+      (c) => !c.used && c.classCode === stuClass && c.normName === stuNormName && c.cleanPhone === stuPhone
+    );
+    if (!matchedCand) {
+      matchedCand = existingStudentCandidates.find(
+        (c) => !c.used && c.classCode === stuClass && c.normName === stuNormName && (!c.cleanPhone || !stuPhone)
+      );
+    }
+
+    let code = '';
+    let email = '';
+    let isExisting = false;
+    if (matchedCand) {
+      matchedCand.used = true;
+      code = matchedCand.code;
+      email = matchedCand.email;
+      isExisting = true;
+    } else {
+      code = `2026${String(nextStudentSeq).padStart(4, '0')}`;
+      email = `${code}@khongtunhi.com`;
+      nextStudentSeq += 1;
+    }
+
     const tEntry = teachersByKey.get(stu.teacherKey);
     const accountStatus = stu.isArchived ? 'archived' : 'active';
     return {
@@ -8918,6 +9032,7 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
       teacherEmail: tEntry?.email || '',
       teacherName: tEntry?.name || stu.teacherDisplayName || 'Chưa phân công',
       isArchived: stu.isArchived,
+      isExisting,
       status: accountStatus,
       accountStatus,
       defaultPassword,
@@ -10703,8 +10818,8 @@ export default {
       const defaultPassword = String(body.defaultPassword || '12345678').trim() || '12345678';
 
       const [teaRes, stuRes] = await Promise.all([
-        supabaseRequest(env, 'ktn_teachers?select=code,email,name,aliases&order=updated_at.desc&limit=1000').catch(() => ({ ok: false, data: [] })),
-        supabaseRequest(env, 'ktn_students?select=code,email,name,class_code&order=updated_at.desc&limit=5000').catch(() => ({ ok: false, data: [] }))
+        supabaseRequest(env, 'ktn_teachers?select=*&order=code.asc&limit=1000').catch(() => ({ ok: false, data: [] })),
+        fetchAllKtnStudents(env, '*')
       ]);
       const existingTeachers = (teaRes.ok && Array.isArray(teaRes.data)) ? teaRes.data : [];
       const existingStudents = (stuRes.ok && Array.isArray(stuRes.data)) ? stuRes.data : [];
@@ -10741,24 +10856,43 @@ export default {
       }
 
       const nowIso = new Date().toISOString();
+      const forceResetPasswords = body.forceResetPasswords === true;
 
-      // 1. Upsert ktn_teachers với HMAC mật khẩu mặc định 12345678
+      const existingTeacherByCodeOrEmail = new Map();
+      for (const et of existingTeachers) {
+        if (et?.code) existingTeacherByCodeOrEmail.set(String(et.code).trim().toUpperCase(), et);
+        if (et?.email) existingTeacherByCodeOrEmail.set(normalizeEmail(et.email), et);
+      }
+
+      // 1. Upsert ktn_teachers với HMAC mật khẩu mặc định 12345678 (bảo toàn mật khẩu đã đổi nếu đã tồn tại)
       const teacherRowsWithMeta = await Promise.all(
         parsed.teachers.map(async (t) => {
-          const pwdHmac = await computeTeacherCredentialHmac(t.email, defaultPassword, env.KTN_SESSION_SECRET);
+          const existingTeaRow =
+            existingTeacherByCodeOrEmail.get(String(t.code || '').trim().toUpperCase()) ||
+            existingTeacherByCodeOrEmail.get(normalizeEmail(t.email));
+          const existingMeta = existingTeaRow ? extractTeacherMetaFromRow(existingTeaRow) : null;
+          const keepCustomPwd = Boolean(!forceResetPasswords && existingMeta?.customPassword && existingMeta?.passwordHmac);
+          const pwdHmac = keepCustomPwd
+            ? existingMeta.passwordHmac
+            : await computeTeacherCredentialHmac(t.email, defaultPassword, env.KTN_SESSION_SECRET);
+          const mergedClasses = Array.from(
+            new Set([...(existingMeta?.assignedClasses || []), ...t.assignedClasses])
+          );
           const aliases = [
             '__status:ready_to_login',
             `__pwd_hmac:${pwdHmac}`,
-            ...t.assignedClasses.map((c) => `__class:${c}`)
+            ...(keepCustomPwd ? ['__pwd_custom:1'] : []),
+            ...mergedClasses.map((c) => `__class:${c}`)
           ];
+          const resolvedPhone = String(existingTeaRow?.phone || '').trim();
           return {
             fullRow: {
               code: t.code,
               name: t.name,
               email: t.email,
-              phone: '',
+              phone: resolvedPhone,
               specialty: 'Giáo viên Tiếng Trung Thiếu Nhi',
-              assigned_classes: t.assignedClasses,
+              assigned_classes: mergedClasses,
               aliases,
               active: true,
               provisioning_status: 'ready_to_login',
@@ -10769,7 +10903,7 @@ export default {
               code: t.code,
               name: t.name,
               email: t.email,
-              phone: '',
+              phone: resolvedPhone,
               specialty: 'Giáo viên Tiếng Trung Thiếu Nhi',
               aliases,
               active: true
@@ -10845,6 +10979,14 @@ export default {
           online_courses: [],
           account_status: s.accountStatus,
           sync_status: 'synced',
+          search_text: buildStudentSearchText({
+            code: s.code,
+            email: s.email,
+            name: s.name,
+            phone: s.phone || '',
+            parent_name: s.parentName || '',
+            class_code: s.classCode
+          }),
           updated_at: nowIso
         }));
         const v2Rows = chunk.map((s) => ({
@@ -10874,31 +11016,53 @@ export default {
         }
       }
 
-      // 4. Lưu STUDENT_CREDENTIAL_META (HMAC mật khẩu mặc định) & STUDENT_LIFECYCLE (cho nhóm BẢO LƯU)
-      const credAlertRows = await Promise.all(
-        parsed.students.map(async (s) => {
-          const pwdHmac = await computeTeacherCredentialHmac(s.email, defaultPassword, env.KTN_SESSION_SECRET);
-          return {
-            id: `STU_CRED_${s.email}`,
-            room_id: 'STUDENT_CREDENTIAL_META',
-            sender_email: s.email,
-            sender_name: s.name,
-            sender_role: 'student',
-            blocked_content: JSON.stringify({
-              email: s.email,
-              code: s.code,
-              passwordHmac: pwdHmac,
-              pwdHmac,
-              customPassword: false,
-              updatedAt: nowIso,
-              updatedBy: session.email
-            }),
-            reason: 'STUDENT_DEFAULT_PASSWORD',
-            resolved: true,
-            created_at: nowIso
-          };
-        })
-      );
+      // 4. Lưu STUDENT_CREDENTIAL_META (HMAC mật khẩu mặc định, bảo toàn nếu HV đã tự đổi mật khẩu) & STUDENT_LIFECYCLE (cho nhóm BẢO LƯU)
+      const existingStuCredRes = await supabaseRequest(
+        env,
+        'ktn_dlp_alerts?room_id=eq.STUDENT_CREDENTIAL_META&order=created_at.desc&limit=1000'
+      ).catch(() => ({ ok: false, data: [] }));
+      const customPwdEmails = new Set();
+      if (!forceResetPasswords && existingStuCredRes?.ok && Array.isArray(existingStuCredRes.data)) {
+        for (const r of existingStuCredRes.data) {
+          try {
+            const p = JSON.parse(String(r?.blocked_content || '{}'));
+            const em = normalizeEmail(p?.email || r?.sender_email || '');
+            if (em && p?.customPassword === true && (p?.passwordHmac || p?.pwdHmac)) {
+              customPwdEmails.add(em);
+            }
+          } catch (_) {}
+        }
+      }
+
+      const credAlertRows = (
+        await Promise.all(
+          parsed.students.map(async (s) => {
+            if (customPwdEmails.has(normalizeEmail(s.email))) {
+              return null;
+            }
+            const pwdHmac = await computeTeacherCredentialHmac(s.email, defaultPassword, env.KTN_SESSION_SECRET);
+            return {
+              id: `STU_CRED_${s.email}`,
+              room_id: 'STUDENT_CREDENTIAL_META',
+              sender_email: s.email,
+              sender_name: s.name,
+              sender_role: 'student',
+              blocked_content: JSON.stringify({
+                email: s.email,
+                code: s.code,
+                passwordHmac: pwdHmac,
+                pwdHmac,
+                customPassword: false,
+                updatedAt: nowIso,
+                updatedBy: session.email
+              }),
+              reason: 'STUDENT_DEFAULT_PASSWORD',
+              resolved: true,
+              created_at: nowIso
+            };
+          })
+        )
+      ).filter(Boolean);
       const archivedLifecycleRows = parsed.students
         .filter((s) => s.isArchived)
         .map((s) => ({
@@ -13353,9 +13517,21 @@ export default {
       let izteachStudentId = body.izteachStudentId || existingStu?.izteach_student_id || null;
       let provResult = null;
       let assignClassProvisionFailed = false;
+      const isKtnInternal2026Account =
+        /^2026\d{4,}@khongtunhi\.com$/i.test(email) ||
+        /^2026\d{4,}$/i.test(String(existingStu?.code || body.code || '').trim());
+      const skipIzTeachForInternalLiveClass =
+        isKtnInternal2026Account &&
+        resolvedIds.length === 0 &&
+        action === 'assign_class' &&
+        body.requireAccountProvisioning !== true;
 
       // Nếu cấp thêm khóa học, đối soát toàn bộ khóa học (set), hoặc xếp vào lớp trực tiếp, tạo/kích hoạt tài khoản trên izTeach!
-      if ((action === 'grant' || action === 'set' || action === 'assign_class') && (resolvedIds.length > 0 || body.classCode || action === 'set')) {
+      if (
+        !skipIzTeachForInternalLiveClass &&
+        (action === 'grant' || action === 'set' || action === 'assign_class') &&
+        (resolvedIds.length > 0 || body.classCode || action === 'set')
+      ) {
         const prov = await provisionStudentOnIzTeach(env, {
           student_email: email,
           student_name: body.name || existingStu?.name || email.split('@')[0],
@@ -13435,16 +13611,21 @@ export default {
 
       // Giải quyết triệt để BUG BE-05: Nếu xếp lớp nhưng chưa tạo được tài khoản trên izTeach và học viên chưa từng có cognito_user_id,
       // ghi nhận rõ trạng thái pending_activation thay vì báo giả 'synced'
-      const hasValidAccount = isValidCognitoUuid(cognitoUserId);
-      const computedAccountStatus = hasValidAccount ? 'active' : 'pending_activation';
+      const hasValidAccount =
+        isValidCognitoUuid(cognitoUserId) ||
+        (isKtnInternal2026Account && resolvedIds.length === 0);
+      const computedAccountStatus =
+        action === 'update_profile' && existingStu?.account_status === 'archived' && !body.classCode
+          ? 'archived'
+          : (hasValidAccount ? 'active' : 'pending_activation');
       let computedSyncStatus = 'synced';
       let computedLastSyncError = null;
       if (assignClassProvisionFailed && !hasValidAccount) {
         computedSyncStatus = 'pending_activation';
         computedLastSyncError = provResult?.error || 'IZTEACH_ACCOUNT_PENDING';
       } else if (action === 'assign_class' && !provResult) {
-        computedSyncStatus = existingStu?.sync_status || (hasValidAccount ? 'synced' : 'pending_activation');
-        computedLastSyncError = existingStu?.last_sync_error !== undefined ? existingStu.last_sync_error : null;
+        computedSyncStatus = hasValidAccount ? 'synced' : (existingStu?.sync_status || 'pending_activation');
+        computedLastSyncError = hasValidAccount ? null : (existingStu?.last_sync_error !== undefined ? existingStu.last_sync_error : null);
       }
 
       const updatedStudent = await mergeAndUpsertStudentCourses(env, {
@@ -13529,7 +13710,7 @@ export default {
           supabaseRequest(env, 'ktn_classes?active=eq.true&order=created_at.asc,id.asc'),
           supabaseRequest(env, 'ktn_teachers?active=eq.true'),
           loadAllClassScheduleConfigs(env),
-          supabaseRequest(env, 'ktn_students?select=*&order=updated_at.desc&limit=2000').catch(() => ({ ok: false, data: [] })),
+          fetchAllKtnStudents(env, '*'),
           loadAllStudentLifecycleStates(env).catch(() => new Map())
         ]);
         const rawClasses = Array.isArray(sbRes.data) ? sbRes.data : [];
@@ -14952,7 +15133,7 @@ export default {
         ] = await Promise.all([
           supabaseRequest(env, teacherQuery),
           supabaseRequest(env, 'ktn_classes?select=id,name,teacher_code,teacher_email,schedule,active').catch(() => ({ ok: false })),
-          supabaseRequest(env, 'ktn_students?select=*&order=updated_at.desc&limit=2000').catch(() => ({ ok: false })),
+          fetchAllKtnStudents(env, '*'),
           supabaseRequest(env, 'ktn_homeworks?select=id,class_code,status,score,teacher_feedback,updated_at&limit=1000').catch(() => ({ ok: false })),
           supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.ATTENDANCE_LOG&limit=500').catch(() => ({ ok: false })),
           loadAllForumAnswers(env).catch(() => []),
@@ -15228,8 +15409,14 @@ export default {
         ) ? 'ready_to_login' : 'pending_external_provisioning';
         let syncError = null;
 
-        // Nếu yêu cầu đồng bộ tài khoản đăng nhập lên izTeach (mặc định bật khi tạo giáo viên mới)
-        if (body.provisionOnIzTeach !== false) {
+        const isExistingInternalGvTeacher =
+          Boolean(existingTeaRow && !wasSoftDeleted && existingMeta.passwordHmac && /^GV\d+$/i.test(tCode));
+
+        // Nếu yêu cầu đồng bộ tài khoản đăng nhập lên izTeach (mặc định bật khi tạo giáo viên mới, bỏ qua nếu là GVxxx nội bộ đã có HMAC và không gán khóa video)
+        if (
+          body.provisionOnIzTeach !== false &&
+          !(isExistingInternalGvTeacher && assignedCourses.length === 0 && body.provisionOnIzTeach !== true)
+        ) {
           const prov = await provisionStudentOnIzTeach(env, {
             student_email: tEmail,
             student_name: tName,

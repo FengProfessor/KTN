@@ -405,5 +405,142 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       );
       expect(gvAfterResetRes.status).toBe(200);
     });
+
+    it('re-imports idempotently without duplicating GVxxx/2026xxxx codes, preserves custom passwords, and keeps 2026xxxx students active on profile edit / class change', async () => {
+      // 1. First import
+      const firstImportRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/bulk-import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            csvText: sampleImportCsv,
+            dryRun: false,
+            defaultPassword: '12345678',
+          }),
+        }),
+        harness.env
+      );
+      expect(firstImportRes.status).toBe(200);
+      const firstData = await firstImportRes.json();
+      const firstTeacher = firstData.teachers[0];
+      const firstStudent = firstData.students[0];
+
+      // 2. Student changes password to custompwd88
+      const stuLoginRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: firstStudent.code,
+            password: '12345678',
+          }),
+        }),
+        harness.env
+      );
+      const stuSession = await stuLoginRes.json();
+      await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${stuSession.sessionToken}`,
+          },
+          body: JSON.stringify({
+            currentPassword: '12345678',
+            newPassword: 'custompwd88',
+          }),
+        }),
+        harness.env
+      );
+
+      // 3. Re-import same CSV + 1 new student row -> existing teacher & students reuse codes, new student gets next code
+      const expandedCsv = [
+        sampleImportCsv,
+        '"LỘ 2 · Nhóm 1\nT2-T4_ 20h-21h",Cô Hồng,Trần Học Viên Mới,0911223344,Mẹ Trần Mai',
+      ].join('\n');
+
+      const secondDryRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/bulk-import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            csvText: expandedCsv,
+            dryRun: true,
+          }),
+        }),
+        harness.env
+      );
+      expect(secondDryRes.status).toBe(200);
+      const secondDryData = await secondDryRes.json();
+      expect(secondDryData.teachers.length).toBe(1);
+      expect(secondDryData.teachers[0].code).toBe(firstTeacher.code);
+      expect(secondDryData.teachers[0].isExisting).toBe(true);
+      expect(secondDryData.students[0].code).toBe(firstStudent.code);
+      expect(secondDryData.students[0].isExisting).toBe(true);
+      expect(secondDryData.students[3].isExisting).toBe(false);
+      expect(secondDryData.students[3].code).not.toBe(firstStudent.code);
+
+      // 4. Execute second import (dryRun: false) and verify custompwd88 is preserved
+      const secondLiveRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/bulk-import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            csvText: expandedCsv,
+            dryRun: false,
+          }),
+        }),
+        harness.env
+      );
+      expect(secondLiveRes.status).toBe(200);
+
+      const customPwdStillWorksRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: firstStudent.code,
+            password: 'custompwd88',
+          }),
+        }),
+        harness.env
+      );
+      expect(customPwdStillWorksRes.status).toBe(200);
+
+      // 5. Admin edits 2026xxxx student profile & reassigns class via /api/ktn/students/courses -> remains active & synced
+      const updateProfileRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/students/courses', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            action: 'update_profile',
+            email: firstStudent.email,
+            name: 'Bùi Đức Huy (Đã sửa)',
+            phone: '0912240079',
+            parentName: 'Mẹ Bùi Hằng (Zalo)',
+          }),
+        }),
+        harness.env
+      );
+      expect(updateProfileRes.status).toBe(200);
+      const updateProfileData = await updateProfileRes.json();
+      expect(updateProfileData.ok).toBe(true);
+      expect(updateProfileData.accountStatus).toBe('active');
+      expect(updateProfileData.syncStatus).toBe('synced');
+      expect(updateProfileData.readyToLogin).toBe(true);
+      expect(updateProfileData.student.name).toBe('Bùi Đức Huy (Đã sửa)');
+    });
   });
 });

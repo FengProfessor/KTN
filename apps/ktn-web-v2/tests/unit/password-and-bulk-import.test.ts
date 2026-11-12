@@ -46,22 +46,22 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(result.summary.activeClassCount).toBe(99);
       expect(result.summary.archivedClassCount).toBe(1);
       expect(result.summary.teacherCount).toBe(44);
-      expect(result.summary.studentCount).toBe(299);
-      expect(result.summary.activeStudentCount).toBe(291);
+      expect(result.summary.studentCount).toBe(303);
+      expect(result.summary.activeStudentCount).toBe(295);
       expect(result.summary.archivedStudentCount).toBe(8);
 
-      // Check canonical class codes
+      // Check canonical class codes (no -CHO ungrouped classes after Excel border alignment)
       const classCodes = result.classes.map((c) => c.code);
-      expect(classCodes).toContain('LOMINI23-CHO');
+      expect(classCodes).not.toContain('LOMINI23-CHO');
       expect(classCodes).toContain('LOMINI23-N01');
-      expect(classCodes).toContain('LO2-CHO');
+      expect(classCodes).toContain('LOMINI23-N04');
       expect(classCodes).toContain('LO2-N01');
       expect(classCodes).toContain('LO2-N22');
       expect(classCodes).toContain('HSK-N01');
       expect(classCodes).toContain('HSK-N21');
       expect(classCodes).toContain('1BT-N01');
-      expect(classCodes).toContain('1V1-CHO');
       expect(classCodes).toContain('1V1-N01');
+      expect(classCodes).toContain('1V1-N17');
       expect(classCodes).toContain('BAOLUU-N01');
 
       // Check schedule extraction from multi-line cell
@@ -78,7 +78,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
         'LO2-N13',
         'LO5-N01',
         'LO5-N03',
-        'LO7-N03',
+        'LO7-N04',
         'HSK-N07',
         'HSK-N12',
         'HSK-N13',
@@ -87,7 +87,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       const gv027 = result.teachers.find((t) => t.code === 'GV027');
       expect(gv027?.email).toBe('gv027@khongtunhi.com');
       expect(gv027?.name).toBe('Cô Hà Thùy');
-      expect(gv027?.assignedClasses).toEqual(['LOMINI23-CHO', 'HSK-N16', '1V1-N08']);
+      expect(gv027?.assignedClasses).toEqual(['LOMINI23-N01', 'LOMINI23-N02', 'HSK-N16', '1V1-N08']);
 
       expect(result.teachers[42].code).toBe('GV043');
       expect(result.teachers[42].email).toBe('gv043@khongtunhi.com');
@@ -118,10 +118,11 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(cleanedPhones).toContain('0902396116');
       expect(cleanedPhones).toContain('0914341531');
 
-      // Check phone-in-student-name recovery (0948000580 in HSK-N20 / HSK-N21)
+      // Check swapped column recovery (0948000580 -> Khánh Ngân in HSK-N21)
       const recoveredStudents = result.students.filter((s) => s.phone === '0948000580');
       expect(recoveredStudents.length).toBeGreaterThanOrEqual(1);
-      expect(recoveredStudents[0].name).toContain('Học viên (PH');
+      expect(recoveredStudents[0].name).toBe('Khánh Ngân');
+      expect(recoveredStudents[0].classCode).toBe('HSK-N21');
 
       // Check BẢO LƯU students are marked archived
       const archivedStudents = result.students.filter((s) => s.status === 'archived');
@@ -662,7 +663,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
         'LO2-N13',
         'LO5-N01',
         'LO5-N03',
-        'LO7-N03',
+        'LO7-N04',
         'HSK-N07',
         'HSK-N12',
         'HSK-N13',
@@ -680,7 +681,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(gv027Login.status).toBe(200);
       const gv027Data = await gv027Login.json();
       expect(gv027Data.user.name).toBe('Cô Hà Thùy');
-      expect(gv027Data.user.assignedClasses).toEqual(['LOMINI23-CHO', 'HSK-N16', '1V1-N08']);
+      expect(gv027Data.user.assignedClasses).toEqual(['LOMINI23-N01', 'LOMINI23-N02', 'HSK-N16', '1V1-N08']);
 
       const gv027RoomsRes = await harness.workerModule.fetch(
         new Request('http://localhost/api/ktn/messages/rooms', {

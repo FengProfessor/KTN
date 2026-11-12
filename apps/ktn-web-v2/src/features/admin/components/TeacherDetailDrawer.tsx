@@ -1020,7 +1020,7 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                 </div>
               </div>
 
-              <form
+                <form
                 onSubmit={async (e) => {
                   e.preventDefault();
                   const targetPwd = newPassword.trim() || '12345678';
@@ -1038,7 +1038,6 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                         res.message ||
                         `Đã đặt lại mật khẩu giáo viên ${teacher.code || teacher.email} thành "${targetPwd}".`,
                     });
-                    await handleSave(undefined, targetPwd);
                   } catch (err: unknown) {
                     setResetPasswordFeedback({
                       ok: false,
@@ -1066,7 +1065,7 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
                 </div>
                 <input
                   type="text"
-                  data-testid="admin-reset-teacher-password-input"
+                  data-testid="drawer-reset-password-input"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Nhập mật khẩu mới (mặc định 12345678)..."

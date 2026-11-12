@@ -316,7 +316,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
         (student as unknown as Record<string, unknown>).sync_status ||
         ''
     ).toLowerCase();
-    const hasCognito = Boolean(student.cognito_user_id);
+    const isKtn2026Student =
+      /^2026\d{4,}$/i.test(String(student.code || '').trim()) ||
+      /^2026\d{4,}@khongtunhi\.com$/i.test(String(student.email || '').trim());
+    const hasCognito = Boolean(student.cognito_user_id) || isKtn2026Student;
     const hasSyncErr = Boolean(
       student.last_sync_error ||
         rawSync === 'sync_failed' ||

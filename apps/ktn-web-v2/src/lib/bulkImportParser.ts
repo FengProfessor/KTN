@@ -193,13 +193,15 @@ export function normalizeBulkTeacherIdentity(rawTeacherCell: string): {
       isUnassigned: true
     };
   }
-  const strippedPrefix = trimmed.replace(/^(cô|co|thầy|thay|gv|giáo viên|giao vien)\s+/i, '').trim();
+  const isMalePrefix = /^thầy\b|^thay\b/i.test(trimmed);
+  const strippedPrefix = trimmed.replace(/^(cô\s*giáo|co\s*giao|thầy\s*giáo|thay\s*giao|cô|co|thầy|thay|gv|giáo viên|giao vien)\s+/i, '').trim();
   const words = (strippedPrefix || trimmed)
     .split(' ')
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
   const cleanName = words.join(' ');
-  const displayName = `Cô ${cleanName}`;
+  const prefix = isMalePrefix ? 'Thầy ' : 'Cô ';
+  const displayName = `${prefix}${cleanName}`;
   const key = stripViAccents(cleanName).toLowerCase().replace(/[^a-z0-9]+/g, '');
   return {
     key: key || '__unassigned__',
@@ -234,9 +236,47 @@ export function parseKtnCenterBulkCsv(
   options: {
     startTeacherSeq?: number;
     startStudentSeq?: number;
+    existingTeachers?: Array<{ code?: string; email?: string; name?: string }>;
+    existingStudents?: Array<{ code?: string; email?: string; name?: string }>;
     defaultPassword?: string;
   } = {}
 ): BulkImportParseResult {
+  let maxTeacherSeq = Math.max(0, Number(options.startTeacherSeq ? options.startTeacherSeq - 1 : 0));
+  if (Array.isArray(options.existingTeachers)) {
+    for (const t of options.existingTeachers) {
+      const codeStr = String(t?.code || '').trim().toUpperCase();
+      const emailStr = String(t?.email || '').trim().toLowerCase();
+      const mCode = codeStr.match(/^GV(\d+)$/i);
+      if (mCode) {
+        const n = Number(mCode[1]);
+        if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
+      }
+      const mEmail = emailStr.match(/^gv(\d+)@khongtunhi\.com$/i);
+      if (mEmail) {
+        const n = Number(mEmail[1]);
+        if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
+      }
+    }
+  }
+
+  let maxStudentSeq = Math.max(0, Number(options.startStudentSeq ? options.startStudentSeq - 1 : 0));
+  if (Array.isArray(options.existingStudents)) {
+    for (const s of options.existingStudents) {
+      const codeStr = String(s?.code || '').trim();
+      const emailStr = String(s?.email || '').trim().toLowerCase();
+      const mCode = codeStr.match(/^2026(\d{4,})$/);
+      if (mCode) {
+        const n = Number(mCode[1]);
+        if (Number.isFinite(n) && n > maxStudentSeq) maxStudentSeq = n;
+      }
+      const mEmail = emailStr.match(/^2026(\d{4,})@khongtunhi\.com$/i);
+      if (mEmail) {
+        const n = Number(mEmail[1]);
+        if (Number.isFinite(n) && n > maxStudentSeq) maxStudentSeq = n;
+      }
+    }
+  }
+
   const rows = tokenizeMultilineCsv(rawCsvText);
   const warnings: string[] = [];
   const classesMap = new Map<string, BulkImportParsedClass>();
@@ -392,7 +432,7 @@ export function parseKtnCenterBulkCsv(
     });
   }
 
-  let nextTeacherSeq = Math.max(1, Number(options.startTeacherSeq || 1));
+  let nextTeacherSeq = maxTeacherSeq + 1;
   const defaultPassword = String(options.defaultPassword || '12345678');
 
   const teachers: BulkImportParsedTeacher[] = [];
@@ -415,7 +455,7 @@ export function parseKtnCenterBulkCsv(
     }
   }
 
-  let nextStudentSeq = Math.max(1, Number(options.startStudentSeq || 1));
+  let nextStudentSeq = maxStudentSeq + 1;
   const students: BulkImportParsedStudent[] = rawStudents.map((stu) => {
     const code = `2026${String(nextStudentSeq).padStart(4, '0')}`;
     const email = `${code}@khongtunhi.com`;

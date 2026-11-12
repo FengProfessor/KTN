@@ -8539,152 +8539,151 @@ function tokenizeMultilineCsv(rawText) {
   return rows;
 }
 
-function deriveCanonicalClassCode(rawClassTitle) {
-  const title = String(rawClassTitle || '').replace(/\s+/g, ' ').trim();
-  const norm = normalizeViSearchText(title);
-  if (!norm) {
-    return { classCode: 'KTN-N01', isArchived: false };
+function deriveCanonicalClassCode(rawClassCell) {
+  const lines = String(rawClassCell || '')
+    .split(/\r?\n+/)
+    .map((l) => l.replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return {
+      code: 'KTN-N01',
+      classCode: 'KTN-N01',
+      title: 'KTN-N01',
+      schedule: 'Đang cập nhật lịch học',
+      isArchived: false
+    };
   }
 
-  let prefix = 'KTN';
-  let isArchived = false;
+  const titleLine = lines[0];
+  const scheduleLine = lines.slice(1).join(' · ').trim() || 'Đang cập nhật lịch học';
+  const upperNoAccent = normalizeViSearchText(titleLine).toUpperCase().replace(/\s+/g, ' ').trim();
 
-  if (/lo\s*mini\s*23/.test(norm)) {
-    prefix = 'LOMINI23';
-  } else if (/^lo\s*(\d+)/.test(norm) || /\blo\s*(\d+)/.test(norm)) {
-    const m = norm.match(/\blo\s*(\d+)/);
-    prefix = `LO${m ? m[1] : '1'}`;
-  } else if (/\bhsk\b/.test(norm)) {
+  const isArchived = upperNoAccent.includes('BAO LUU');
+  const isUnassignedGroup =
+    upperNoAccent.includes('CHUA RO NHOM') ||
+    upperNoAccent.includes('CHO XEP NHOM') ||
+    upperNoAccent.includes('CHUA XEP NHOM');
+  const groupMatch = upperNoAccent.match(/NHOM\s*(\d+)/i);
+  const groupSuffix = groupMatch
+    ? `N${String(parseInt(groupMatch[1], 10)).padStart(2, '0')}`
+    : isUnassignedGroup
+      ? 'CHO'
+      : 'N01';
+
+  let prefix = '';
+  const loMiniMatch = upperNoAccent.match(/LO\s*MINI\s*(\d+)/i);
+  const loMatch = upperNoAccent.match(/\bLO\s*(\d+)/i);
+  if (loMiniMatch) {
+    prefix = `LOMINI${loMiniMatch[1]}`;
+  } else if (loMatch) {
+    prefix = `LO${loMatch[1]}`;
+  } else if (upperNoAccent.includes('HSK')) {
     prefix = 'HSK';
-  } else if (/1\s*buoi|1bt/.test(norm)) {
+  } else if (upperNoAccent.includes('1 BUOI') || upperNoAccent.includes('1BT')) {
     prefix = '1BT';
-  } else if (/1\s*-\s*1|1v1|1\s*kem\s*1/.test(norm)) {
+  } else if (upperNoAccent.includes('1-1') || upperNoAccent.includes('1V1') || upperNoAccent.includes('1:1') || upperNoAccent.includes('1 KEM 1')) {
     prefix = '1V1';
-  } else if (/bao\s*luu/.test(norm)) {
+  } else if (isArchived) {
     prefix = 'BAOLUU';
-    isArchived = true;
   } else {
-    const leftPart = norm.split(/[·|-]/)[0] || norm;
-    prefix = leftPart.replace(/[^a-z0-9]/g, '').toUpperCase().slice(0, 10) || 'KTN';
-  }
-
-  let groupSuffix = 'N01';
-  if (/chua\s*ro\s*nhom|\bcho\b/.test(norm)) {
-    groupSuffix = 'CHO';
-  } else {
-    const gm = norm.match(/nhom\s*(\d+)/);
-    if (gm && gm[1]) {
-      const gNum = Number(gm[1]);
-      groupSuffix = `N${String(gNum).padStart(2, '0')}`;
-    } else if (/^[a-z0-9]+-(?:cho|n\d+)$/i.test(title.trim())) {
-      return { classCode: title.trim().toUpperCase(), isArchived };
+    const explicitCode = upperNoAccent.replace(/[^A-Z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!groupMatch && !isUnassignedGroup && explicitCode) {
+      const cleanCode = explicitCode.slice(0, 24);
+      return {
+        code: cleanCode,
+        classCode: cleanCode,
+        title: titleLine,
+        schedule: scheduleLine,
+        isArchived
+      };
     }
+    prefix = explicitCode.split('-')[0] || 'LOP';
   }
 
+  const fullCode = `${prefix}-${groupSuffix}`;
   return {
-    classCode: `${prefix}-${groupSuffix}`,
+    code: fullCode,
+    classCode: fullCode,
+    title: titleLine,
+    schedule: scheduleLine,
     isArchived
   };
 }
 
-const BULK_TEACHER_CANONICAL_MAP = {
-  'lam my linh': 'Cô Lâm Mỹ Linh',
-  'my linh': 'Cô Lâm Mỹ Linh',
-  'linh': 'Cô Lâm Mỹ Linh',
-  'nguyen thi thu ha': 'Cô Nguyễn Thị Thu Hà',
-  'thu ha': 'Cô Nguyễn Thị Thu Hà',
-  'ha': 'Cô Nguyễn Thị Thu Hà',
-  'bui thi ngoc anh': 'Cô Bùi Thị Ngọc Ánh',
-  'ngoc anh': 'Cô Bùi Thị Ngọc Ánh',
-  'anh': 'Cô Bùi Thị Ngọc Ánh',
-  'phuong anh': 'Cô Phương Anh',
-  'phuong thao': 'Cô Phương Thảo',
-  'thao': 'Cô Phương Thảo',
-  'duong thi hong': 'Cô Dương Thị Hồng',
-  'hong': 'Cô Dương Thị Hồng',
-  'hong nhung': 'Cô Hồng Nhung',
-  'nhung': 'Cô Hồng Nhung',
-  'quynh anh': 'Cô Quỳnh Anh',
-  'dieu linh': 'Cô Diệu Linh',
-  'thanh tan': 'Cô Thanh Tân',
-  'tieu binh': 'Cô Tiểu Bình',
-  'binh': 'Cô Tiểu Bình',
-  'bich phuong': 'Cô Bích Phương',
-  'phuong': 'Cô Bích Phương',
-  'xuan thuong': 'Cô Xuân Thương',
-  'thuong': 'Cô Xuân Thương',
-  'hoai': 'Cô Hoài',
-  'huyen': 'Cô Huyền',
-  'lan': 'Cô Lan',
-  'mai': 'Cô Mai',
-  'tam': 'Cô Tâm',
-  'ngan': 'Cô Ngân',
-  'trang': 'Cô Trang'
-};
-
 function normalizeBulkTeacherIdentity(rawTeacher) {
-  const raw = String(rawTeacher || '').replace(/\s+/g, ' ').trim();
-  const rawNorm = normalizeViSearchText(raw);
+  const trimmed = String(rawTeacher || '').replace(/\s+/g, ' ').trim();
+  const rawNorm = normalizeViSearchText(trimmed);
   if (
-    !raw ||
+    !trimmed ||
     rawNorm.includes('chua phan cong') ||
     rawNorm.includes('chua ro') ||
     rawNorm === 'trong' ||
     rawNorm === 'n/a'
   ) {
-    return { key: '', displayName: '', rawName: '' };
-  }
-  const isMalePrefix = /^thầy\b|^thay\b/i.test(raw);
-  const stripped = raw
-    .replace(/^(?:cô\s*giáo|co\s*giao|thầy\s*giáo|thay\s*giao|cô|co|thầy|thay)\s+/i, '')
-    .trim();
-  const normCore = normalizeViSearchText(stripped);
-  if (!normCore) {
-    return { key: '', displayName: '', rawName: raw };
-  }
-  const canonicalDisplay = BULK_TEACHER_CANONICAL_MAP[normCore];
-  if (canonicalDisplay) {
-    const canonicalKey = normalizeViSearchText(
-      canonicalDisplay.replace(/^(?:cô|thầy)\s+/i, '')
-    );
     return {
-      key: canonicalKey,
-      displayName: canonicalDisplay,
-      rawName: raw
+      key: '__unassigned__',
+      displayName: 'Chưa phân công',
+      cleanName: 'Chưa phân công',
+      rawName: '',
+      isUnassigned: true
     };
   }
-  const titledCore = stripped
+  const isMalePrefix = /^thầy\b|^thay\b/i.test(trimmed);
+  const strippedPrefix = trimmed
+    .replace(/^(?:cô\s*giáo|co\s*giao|thầy\s*giáo|thay\s*giao|giáo\s*viên|giao\s*vien|cô|co|thầy|thay|gv)\s+/i, '')
+    .trim();
+  const words = (strippedPrefix || trimmed)
     .split(' ')
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  const cleanName = words.join(' ');
   const prefix = isMalePrefix ? 'Thầy ' : 'Cô ';
+  const displayName = `${prefix}${cleanName}`;
+  const key = normalizeViSearchText(cleanName).replace(/[^a-z0-9]+/g, '');
+  if (!key) {
+    return {
+      key: '__unassigned__',
+      displayName: 'Chưa phân công',
+      cleanName: 'Chưa phân công',
+      rawName: trimmed,
+      isUnassigned: true
+    };
+  }
   return {
-    key: normCore,
-    displayName: `${prefix}${titledCore}`,
-    rawName: raw
+    key,
+    displayName,
+    cleanName,
+    rawName: trimmed,
+    isUnassigned: false
   };
 }
 
 function cleanBulkPhoneValue(rawPhone) {
   const raw = String(rawPhone || '').trim();
   if (!raw) {
-    return { phone: '', cleaned: false, hadLetters: false, addedLeadingZero: false, original: '' };
+    return { phone: '', cleaned: false, warning: null, original: '' };
   }
-  const hadLetters = /[a-zA-Z]/.test(raw);
-  let digits = raw.replace(/\D/g, '');
-  let addedLeadingZero = false;
-  if (digits.startsWith('84') && digits.length === 11) {
-    digits = '0' + digits.slice(2);
-  } else if (digits.length === 9 && /^[35789]/.test(digits)) {
-    digits = '0' + digits;
-    addedLeadingZero = true;
+  const hadTrailingLetters = /[a-zA-Z]/.test(raw);
+  let digits = raw.replace(/\D+/g, '');
+  if (!digits) {
+    return {
+      phone: '',
+      cleaned: true,
+      warning: `SĐT không hợp lệ ("${raw}") đã được làm trống.`,
+      original: raw
+    };
   }
+  if (digits.startsWith('84') && digits.length >= 11) {
+    digits = `0${digits.slice(2)}`;
+  } else if (digits.length === 9 && !digits.startsWith('0')) {
+    digits = `0${digits}`;
+  }
+  const cleaned = hadTrailingLetters || digits !== raw.replace(/\s+/g, '');
+  const warning = cleaned ? `Đã làm sạch SĐT "${raw}" -> "${digits}".` : null;
   return {
     phone: digits,
-    cleaned: hadLetters || addedLeadingZero,
-    hadLetters,
-    addedLeadingZero,
+    cleaned,
+    warning,
     original: raw
   };
 }
@@ -8694,8 +8693,7 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
   const existingStudents = Array.isArray(options.existingStudents) ? options.existingStudents : [];
   const defaultPassword = String(options.defaultPassword || '12345678').trim() || '12345678';
 
-  let maxTeacherSeq = Number(options.startTeacherSeq || 0);
-  const existingTeacherByKey = new Map();
+  let maxTeacherSeq = Math.max(0, Number(options.startTeacherSeq ? options.startTeacherSeq - 1 : 0));
   for (const t of existingTeachers) {
     const codeStr = String(t?.code || '').trim().toUpperCase();
     const emailStr = String(t?.email || '').trim().toLowerCase();
@@ -8709,19 +8707,9 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
       const n = Number(mEmail[1]);
       if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
     }
-    if (mCode || mEmail) {
-      const normIdentity = normalizeBulkTeacherIdentity(t?.name || '');
-      if (normIdentity.key && !existingTeacherByKey.has(normIdentity.key)) {
-        existingTeacherByKey.set(normIdentity.key, {
-          code: codeStr || `GV${String(mEmail[1]).padStart(3, '0')}`,
-          email: emailStr || `${codeStr.toLowerCase()}@khongtunhi.com`,
-          name: t?.name || normIdentity.displayName
-        });
-      }
-    }
   }
 
-  let maxStudentSeq = Number(options.startStudentSeq || 0);
+  let maxStudentSeq = Math.max(0, Number(options.startStudentSeq ? options.startStudentSeq - 1 : 0));
   for (const s of existingStudents) {
     const codeStr = String(s?.code || '').trim();
     const emailStr = String(s?.email || '').trim().toLowerCase();
@@ -8740,180 +8728,92 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
   const rawRows = tokenizeMultilineCsv(csvText);
   const warnings = [];
   const classesMap = new Map();
-  const teachersMap = new Map();
-  const students = [];
+  const teachersByKey = new Map();
+  const rawStudents = [];
 
   let currentClass = null;
+  let currentTeacher = normalizeBulkTeacherIdentity('');
 
-  for (let rIdx = 0; rIdx < rawRows.length; rIdx++) {
-    const row = rawRows[rIdx];
+  for (let idx = 0; idx < rawRows.length; idx += 1) {
+    const row = rawRows[idx];
     const col0 = String(row[0] || '').trim();
     const col1 = String(row[1] || '').trim();
     const col2 = String(row[2] || '').trim();
     const col3 = String(row[3] || '').trim();
     const col4 = String(row[4] || '').trim();
 
+    if (!col0 && !col1 && !col2 && !col3 && !col4) {
+      continue;
+    }
+
     // Bỏ qua dòng tiêu đề lặp lại (LỚP · LỊCH HỌC, GIÁO VIÊN, HỌC SINH, SĐT, PHỤ HUYNH)
     const norm0 = normalizeViSearchText(col0);
+    const norm1 = normalizeViSearchText(col1);
     const norm2 = normalizeViSearchText(col2);
     if (
       (norm0.includes('lop') && norm0.includes('lich hoc')) ||
-      (norm2 === 'hoc sinh' && normalizeViSearchText(col1).includes('giao vien'))
+      (norm1.includes('giao vien') && norm2.includes('hoc sinh'))
     ) {
       continue;
     }
 
     if (col0) {
-      const lines = col0
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      const classTitle = (lines[0] || col0).replace(/\s+/g, ' ').trim();
-      const rawSched = lines.length > 1 ? lines.slice(1).join(' | ') : '';
-      const cleanSchedule = rawSched
-        ? rawSched.replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
-        : 'Đang cập nhật';
-      const { classCode, isArchived } = deriveCanonicalClassCode(classTitle);
+      currentClass = deriveCanonicalClassCode(col0);
+    }
 
-      let teacherInfo = null;
-      if (col1) {
-        teacherInfo = normalizeBulkTeacherIdentity(col1);
-      } else if (currentClass?.teacherKey) {
-        teacherInfo = {
-          key: currentClass.teacherKey,
-          displayName: currentClass.teacherName,
-          rawName: currentClass.teacherRaw
-        };
+    if (col1) {
+      currentTeacher = normalizeBulkTeacherIdentity(col1);
+    } else if (col0 && !col1) {
+      // Dòng mở đầu lớp mới nhưng cột GIÁO VIÊN để trống -> Chưa phân công (không kế thừa GV lớp trước)
+      currentTeacher = normalizeBulkTeacherIdentity('');
+    }
+
+    if (!currentClass) {
+      warnings.push(`Dòng ${idx + 1}: Bỏ qua vì chưa xác định được Lớp học.`);
+      continue;
+    }
+
+    if (!classesMap.has(currentClass.code)) {
+      classesMap.set(currentClass.code, {
+        code: currentClass.code,
+        classCode: currentClass.code,
+        name: currentClass.title,
+        title: currentClass.title,
+        schedule: currentClass.schedule,
+        teacherKey: currentTeacher.key,
+        teacherDisplayName: currentTeacher.displayName,
+        teacherName: currentTeacher.displayName,
+        teacherCode: '',
+        teacherEmail: '',
+        isArchived: currentClass.isArchived,
+        active: !currentClass.isArchived,
+        studentCount: 0
+      });
+    } else {
+      const existingCls = classesMap.get(currentClass.code);
+      if (existingCls.teacherKey === '__unassigned__' && !currentTeacher.isUnassigned) {
+        existingCls.teacherKey = currentTeacher.key;
+        existingCls.teacherDisplayName = currentTeacher.displayName;
+        existingCls.teacherName = currentTeacher.displayName;
       }
+    }
 
-      let teacherObj = null;
-      if (teacherInfo && teacherInfo.key) {
-        teacherObj = teachersMap.get(teacherInfo.key);
-        if (!teacherObj) {
-          const existingMatch = existingTeacherByKey.get(teacherInfo.key);
-          if (existingMatch) {
-            teacherObj = {
-              code: existingMatch.code,
-              email: existingMatch.email,
-              name: teacherInfo.displayName || existingMatch.name,
-              rawVariants: [teacherInfo.rawName].filter(Boolean),
-              assignedClasses: [],
-              studentCount: 0,
-              defaultPassword,
-              existingInDb: true
-            };
-          } else {
-            maxTeacherSeq += 1;
-            const tCode = `GV${String(maxTeacherSeq).padStart(3, '0')}`;
-            const tEmail = `${tCode.toLowerCase()}@khongtunhi.com`;
-            teacherObj = {
-              code: tCode,
-              email: tEmail,
-              name: teacherInfo.displayName,
-              rawVariants: [teacherInfo.rawName].filter(Boolean),
-              assignedClasses: [],
-              studentCount: 0,
-              defaultPassword,
-              existingInDb: false
-            };
-          }
-          teachersMap.set(teacherInfo.key, teacherObj);
-        } else if (teacherInfo.rawName && !teacherObj.rawVariants.includes(teacherInfo.rawName)) {
-          teacherObj.rawVariants.push(teacherInfo.rawName);
-        }
-        if (!teacherObj.assignedClasses.includes(classCode)) {
-          teacherObj.assignedClasses.push(classCode);
-        }
+    if (!currentTeacher.isUnassigned) {
+      if (!teachersByKey.has(currentTeacher.key)) {
+        teachersByKey.set(currentTeacher.key, {
+          key: currentTeacher.key,
+          code: '',
+          email: '',
+          name: currentTeacher.displayName,
+          assignedClasses: [],
+          studentCount: 0,
+          defaultPassword,
+          isExisting: false
+        });
       }
-
-      let clsEntry = classesMap.get(classCode);
-      if (!clsEntry) {
-        clsEntry = {
-          code: classCode,
-          classCode,
-          name: classTitle,
-          title: classTitle,
-          schedule: cleanSchedule,
-          teacherKey: teacherInfo?.key || '__unassigned__',
-          teacherCode: teacherObj?.code || '',
-          teacherEmail: teacherObj?.email || '',
-          teacherName: teacherObj?.name || (col1 || 'Chưa phân công'),
-          teacherDisplayName: teacherObj?.name || (col1 || 'Chưa phân công'),
-          isArchived,
-          active: !isArchived,
-          studentCount: 0
-        };
-        classesMap.set(classCode, clsEntry);
-      } else {
-        if (cleanSchedule && cleanSchedule !== 'Đang cập nhật' && clsEntry.schedule === 'Đang cập nhật') {
-          clsEntry.schedule = cleanSchedule;
-        }
-        if (teacherObj && !clsEntry.teacherEmail) {
-          clsEntry.teacherCode = teacherObj.code;
-          clsEntry.teacherEmail = teacherObj.email;
-          clsEntry.teacherName = teacherObj.name;
-          clsEntry.teacherDisplayName = teacherObj.name;
-        }
-      }
-
-      currentClass = {
-        classCode,
-        classTitle,
-        schedule: clsEntry.schedule,
-        isArchived,
-        teacherKey: teacherInfo?.key || '',
-        teacherCode: teacherObj?.code || null,
-        teacherEmail: teacherObj?.email || null,
-        teacherName: teacherObj?.name || ''
-      };
-    } else if (col1 && currentClass) {
-      // Dòng kế tiếp của lớp nhưng có ghi giáo viên bổ sung
-      const teacherInfo = normalizeBulkTeacherIdentity(col1);
-      if (teacherInfo.key) {
-        let teacherObj = teachersMap.get(teacherInfo.key);
-        if (!teacherObj) {
-          const existingMatch = existingTeacherByKey.get(teacherInfo.key);
-          if (existingMatch) {
-            teacherObj = {
-              code: existingMatch.code,
-              email: existingMatch.email,
-              name: teacherInfo.displayName || existingMatch.name,
-              rawVariants: [teacherInfo.rawName].filter(Boolean),
-              assignedClasses: [],
-              studentCount: 0,
-              defaultPassword,
-              existingInDb: true
-            };
-          } else {
-            maxTeacherSeq += 1;
-            const tCode = `GV${String(maxTeacherSeq).padStart(3, '0')}`;
-            const tEmail = `${tCode.toLowerCase()}@khongtunhi.com`;
-            teacherObj = {
-              code: tCode,
-              email: tEmail,
-              name: teacherInfo.displayName,
-              rawVariants: [teacherInfo.rawName].filter(Boolean),
-              assignedClasses: [],
-              studentCount: 0,
-              defaultPassword,
-              existingInDb: false
-            };
-          }
-          teachersMap.set(teacherInfo.key, teacherObj);
-        }
-        if (!teacherObj.assignedClasses.includes(currentClass.classCode)) {
-          teacherObj.assignedClasses.push(currentClass.classCode);
-        }
-        currentClass.teacherKey = teacherInfo.key;
-        currentClass.teacherCode = teacherObj.code;
-        currentClass.teacherEmail = teacherObj.email;
-        currentClass.teacherName = teacherObj.name;
-        const clsEntry = classesMap.get(currentClass.classCode);
-        if (clsEntry && !clsEntry.teacherEmail) {
-          clsEntry.teacherCode = teacherObj.code;
-          clsEntry.teacherEmail = teacherObj.email;
-          clsEntry.teacherName = teacherObj.name;
-        }
+      const tEntry = teachersByKey.get(currentTeacher.key);
+      if (!currentClass.isArchived && !tEntry.assignedClasses.includes(currentClass.code)) {
+        tEntry.assignedClasses.push(currentClass.code);
       }
     }
 
@@ -8921,103 +8821,113 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
       continue;
     }
 
-    if (!currentClass) {
-      currentClass = {
-        classCode: 'KTN-CHO',
-        classTitle: 'Lớp chờ xếp nhóm',
-        schedule: 'Đang cập nhật',
-        isArchived: false,
-        teacherKey: '',
-        teacherCode: null,
-        teacherEmail: null,
-        teacherName: ''
-      };
-    }
-
     let studentName = col2.replace(/\s+/g, ' ').trim();
-    let rawPhoneToClean = col3;
+    let rawPhone = col3.trim();
     const parentName = col4.replace(/\s+/g, ' ').trim();
-    const rowWarnings = [];
 
     // Phát hiện trường hợp cột Học sinh bị ghi nhầm SĐT (như 0948000580 ở HSK · Nhóm 20 & 21)
-    const compactStu = studentName.replace(/[\s.-]/g, '');
-    if (/^0?\d{9,10}[a-zA-Z]?$/.test(compactStu)) {
-      const movedPhone = cleanBulkPhoneValue(compactStu).phone;
-      if (!rawPhoneToClean) {
-        rawPhoneToClean = movedPhone;
+    const compactStu = studentName.replace(/\s+/g, '');
+    const studentLooksLikePhone =
+      /^0?\d{8,11}[a-zA-Z]*$/.test(compactStu) &&
+      !/[a-zA-ZÀ-ỹ]{2,}/.test(studentName);
+    if (studentLooksLikePhone) {
+      if (!rawPhone) {
+        rawPhone = studentName;
       }
-      const fallbackStuName = parentName
-        ? `Học viên (PH ${parentName})`
-        : `Học viên (${movedPhone})`;
-      const warnMsg = `Dòng ${rIdx + 1} (${currentClass.classCode}): Cột Học sinh ghi SĐT "${studentName}" -> chuyển sang SĐT "${movedPhone}" và đặt tên "${fallbackStuName}".`;
-      warnings.push({
-        rowNumber: rIdx + 1,
-        classCode: currentClass.classCode,
-        type: 'PHONE_IN_STUDENT_NAME',
-        message: warnMsg
-      });
-      rowWarnings.push(warnMsg);
-      studentName = fallbackStuName;
-    }
-
-    const phoneResult = cleanBulkPhoneValue(rawPhoneToClean);
-    if (phoneResult.cleaned) {
-      const warnMsg = `Dòng ${rIdx + 1} (${currentClass.classCode} - ${studentName}): Đã chuẩn hóa SĐT "${phoneResult.original}" -> "${phoneResult.phone}".`;
-      warnings.push({
-        rowNumber: rIdx + 1,
-        classCode: currentClass.classCode,
-        type: 'PHONE_NORMALIZED',
-        message: warnMsg
-      });
-      rowWarnings.push(warnMsg);
+      const fallbackParent = parentName || 'Chưa rõ';
+      warnings.push(
+        `Dòng ${idx + 1} (${currentClass.code}): Cột Học sinh chứa SĐT "${studentName}" -> chuyển sang SĐT và đặt tên tạm "Học viên (PH ${fallbackParent})".`
+      );
+      studentName = `Học viên (PH ${fallbackParent})`;
     }
 
     if (!studentName) {
-      studentName = parentName
-        ? `Học viên (PH ${parentName})`
-        : `Học viên (${phoneResult.phone || 'Chưa rõ tên'})`;
+      if (parentName || rawPhone) {
+        studentName = `Học viên (PH ${parentName || rawPhone})`;
+        warnings.push(`Dòng ${idx + 1} (${currentClass.code}): Thiếu tên học sinh -> đặt tên tạm "${studentName}".`);
+      } else {
+        continue;
+      }
     }
 
-    maxStudentSeq += 1;
-    const stuCode = `2026${String(maxStudentSeq).padStart(4, '0')}`;
-    const stuEmail = `${stuCode}@khongtunhi.com`;
-    const accountStatus = currentClass.isArchived ? 'archived' : 'active';
-
-    const clsEntry = classesMap.get(currentClass.classCode);
-    if (clsEntry) {
-      clsEntry.studentCount += 1;
-    }
-    if (currentClass.teacherKey && teachersMap.has(currentClass.teacherKey)) {
-      teachersMap.get(currentClass.teacherKey).studentCount += 1;
+    const cleanedPhone = cleanBulkPhoneValue(rawPhone);
+    if (cleanedPhone.warning) {
+      warnings.push(`Dòng ${idx + 1} (${currentClass.code} - ${studentName}): ${cleanedPhone.warning}`);
     }
 
-    students.push({
-      rowNumber: rIdx + 1,
-      rowIndex: rIdx + 1,
-      code: stuCode,
-      email: stuEmail,
+    const clsEntry = classesMap.get(currentClass.code);
+    clsEntry.studentCount += 1;
+    if (clsEntry.teacherKey !== '__unassigned__' && teachersByKey.has(clsEntry.teacherKey)) {
+      teachersByKey.get(clsEntry.teacherKey).studentCount += 1;
+    }
+
+    rawStudents.push({
       name: studentName,
-      phone: phoneResult.phone,
+      phone: cleanedPhone.phone,
       parentName,
-      classCode: currentClass.classCode,
-      className: currentClass.classTitle,
-      classTitle: currentClass.classTitle,
+      classCode: currentClass.code,
+      classTitle: currentClass.title,
       schedule: currentClass.schedule,
-      teacherCode: currentClass.teacherCode || '',
-      teacherEmail: currentClass.teacherEmail || '',
-      teacherName: currentClass.teacherName || 'Chưa phân công',
+      teacherKey: clsEntry.teacherKey,
+      teacherDisplayName: clsEntry.teacherDisplayName,
       isArchived: currentClass.isArchived,
-      status: accountStatus,
-      accountStatus,
-      defaultPassword,
-      warnings: rowWarnings
+      rowIndex: idx + 1
     });
   }
 
+  let nextTeacherSeq = maxTeacherSeq + 1;
+  const teachers = [];
+  for (const tEntry of teachersByKey.values()) {
+    const code = `GV${String(nextTeacherSeq).padStart(3, '0')}`;
+    const email = `${code.toLowerCase()}@khongtunhi.com`;
+    nextTeacherSeq += 1;
+    tEntry.code = code;
+    tEntry.email = email;
+    tEntry.defaultPassword = defaultPassword;
+    teachers.push(tEntry);
+  }
+
+  for (const cls of classesMap.values()) {
+    const tEntry = teachersByKey.get(cls.teacherKey);
+    if (tEntry) {
+      cls.teacherCode = tEntry.code;
+      cls.teacherEmail = tEntry.email;
+      cls.teacherDisplayName = tEntry.name;
+      cls.teacherName = tEntry.name;
+    }
+  }
+
+  let nextStudentSeq = maxStudentSeq + 1;
+  const students = rawStudents.map((stu) => {
+    const code = `2026${String(nextStudentSeq).padStart(4, '0')}`;
+    const email = `${code}@khongtunhi.com`;
+    nextStudentSeq += 1;
+    const tEntry = teachersByKey.get(stu.teacherKey);
+    const accountStatus = stu.isArchived ? 'archived' : 'active';
+    return {
+      code,
+      email,
+      name: stu.name,
+      phone: stu.phone,
+      parentName: stu.parentName,
+      classCode: stu.classCode,
+      className: stu.classTitle,
+      classTitle: stu.classTitle,
+      schedule: stu.schedule,
+      teacherCode: tEntry?.code || '',
+      teacherEmail: tEntry?.email || '',
+      teacherName: tEntry?.name || stu.teacherDisplayName || 'Chưa phân công',
+      isArchived: stu.isArchived,
+      status: accountStatus,
+      accountStatus,
+      defaultPassword,
+      rowIndex: stu.rowIndex
+    };
+  });
+
   const classes = Array.from(classesMap.values());
-  const teachers = Array.from(teachersMap.values());
-  const activeStudentsCount = students.filter((s) => !s.isArchived).length;
-  const archivedStudentsCount = students.filter((s) => s.isArchived).length;
+  const activeStudentsCount = students.filter((s) => s.status !== 'archived').length;
+  const archivedStudentsCount = students.filter((s) => s.status === 'archived').length;
   const activeClassesCount = classes.filter((c) => !c.isArchived).length;
   const archivedClassesCount = classes.filter((c) => c.isArchived).length;
 
@@ -9907,7 +9817,7 @@ export default {
         supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&limit=1`),
         supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&limit=1`),
         getStudentCredentialMeta(env, email).catch(() => null),
-        isRotAdmin ? getAdminCredentialMeta(env, email).catch(() => null) : Promise.resolve(null)
+        getAdminCredentialMeta(env, email).catch(() => null)
       ]);
       const preloadedStuRow =
         existingStuLoginRes.ok && Array.isArray(existingStuLoginRes.data) && existingStuLoginRes.data[0]
@@ -9985,7 +9895,7 @@ export default {
       );
       let chosen = isStaffAccount ? staffHit : (stuHit || staffHit);
 
-      if (isRotAdmin && admCredMeta?.passwordHmac && candidateHmac === admCredMeta.passwordHmac) {
+      if (admCredMeta?.passwordHmac && candidateHmac === admCredMeta.passwordHmac) {
         chosen = staffHit || {
           id: '2c01e488-d866-4341-a0db-644fe6ba1202',
           userId: '2c01e488-d866-4341-a0db-644fe6ba1202',
@@ -10024,10 +9934,10 @@ export default {
           !tMeta.customPassword && !tMeta.passwordHmac && isKtnGvCode && password === '12345678';
         const allowLegacyRotated = !tMeta.customPassword && matchesRotated;
 
-        if (tMeta.passwordHmac && !matchesTeacherHmac && !allowLegacyRotated) {
+        if (tMeta.passwordHmac && !matchesTeacherHmac && !allowLegacyRotated && (tMeta.customPassword || !chosen)) {
           return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
         }
-        if (!tMeta.passwordHmac && isKtnGvCode && !isValidCognitoUuid(tMeta.cognitoUserId) && !allowDefaultTeacherPwd && !allowLegacyRotated) {
+        if (!tMeta.passwordHmac && !chosen && isKtnGvCode && !isValidCognitoUuid(tMeta.cognitoUserId) && !allowDefaultTeacherPwd && !allowLegacyRotated) {
           return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
         }
         if (!chosen && (matchesTeacherHmac || allowDefaultTeacherPwd || allowLegacyRotated)) {
@@ -10043,7 +9953,7 @@ export default {
       }
 
       // Cho phép học sinh có STUDENT_CREDENTIAL_META (hoặc học sinh KTN 2026xxxx với mật khẩu mặc định 12345678) đăng nhập trực tiếp qua HMAC
-      if (!sbTeacher && !isRotAdmin && (stuCredMeta || preloadedStuRow)) {
+      if (!sbTeacher && !isRotAdmin && !admCredMeta?.passwordHmac && (stuCredMeta || preloadedStuRow)) {
         const isKtn2026Student =
           /^2026\d{4,}$/i.test(String(preloadedStuRow?.code || '').trim()) ||
           /^2026\d{4,}@khongtunhi\.com$/i.test(email);
@@ -10054,15 +9964,15 @@ export default {
         const allowDefaultStudentPwd =
           !stuCredMeta?.customPassword &&
           !stuCredMeta?.passwordHmac &&
-          (isKtn2026Student || !hasStuCognito) &&
+          isKtn2026Student &&
           Boolean(preloadedStuRow) &&
           password === '12345678';
 
         if (stuCredMeta?.passwordHmac && !matchesStuHmac) {
-          if (stuCredMeta.customPassword || !hasStuCognito) {
+          if (stuCredMeta.customPassword || !hasStuCognito || !chosen) {
             return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
           }
-        } else if (!stuCredMeta?.passwordHmac && (isKtn2026Student || !hasStuCognito) && preloadedStuRow && !allowDefaultStudentPwd && !matchesRotated) {
+        } else if (!stuCredMeta?.passwordHmac && !chosen && (isKtn2026Student || !hasStuCognito) && preloadedStuRow && !allowDefaultStudentPwd && !matchesRotated) {
           return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
         }
 
@@ -10456,7 +10366,7 @@ export default {
             currentValid = true;
           } else if (rotatedSecret.length >= 8 && currentPassword === rotatedSecret) {
             currentValid = true;
-          } else if (!tMeta.passwordHmac) {
+          } else {
             const b64Cur = btoa(unescape(encodeURIComponent(currentPassword)));
             const probeRes = await fetch(IZTEACH_ENDPOINTS.staffSignin, {
               method: 'POST',
@@ -10566,11 +10476,11 @@ export default {
       if (stuCredMeta?.passwordHmac && currentHmac === stuCredMeta.passwordHmac) {
         currentValid = true;
       } else if (!stuCredMeta?.customPassword) {
-        if (!stuCredMeta?.passwordHmac && (isKtn2026Student || (stuRow && !isValidCognitoUuid(stuRow.cognito_user_id))) && currentPassword === '12345678') {
+        if (!stuCredMeta?.passwordHmac && isKtn2026Student && currentPassword === '12345678') {
           currentValid = true;
         } else if (rotatedSecret.length >= 8 && currentPassword === rotatedSecret) {
           currentValid = true;
-        } else if (!stuCredMeta?.passwordHmac) {
+        } else {
           const b64Cur = btoa(unescape(encodeURIComponent(currentPassword)));
           const probeRes = await fetch(IZTEACH_ENDPOINTS.studentSignin, {
             method: 'POST',
@@ -10793,15 +10703,17 @@ export default {
       const defaultPassword = String(body.defaultPassword || '12345678').trim() || '12345678';
 
       const [teaRes, stuRes] = await Promise.all([
-        supabaseRequest(env, 'ktn_teachers?select=code,email,name,aliases&limit=1000').catch(() => ({ ok: false, data: [] })),
-        supabaseRequest(env, 'ktn_students?select=code,email,name,class_code&limit=5000').catch(() => ({ ok: false, data: [] }))
+        supabaseRequest(env, 'ktn_teachers?select=code,email,name,aliases&order=updated_at.desc&limit=1000').catch(() => ({ ok: false, data: [] })),
+        supabaseRequest(env, 'ktn_students?select=code,email,name,class_code&order=updated_at.desc&limit=5000').catch(() => ({ ok: false, data: [] }))
       ]);
       const existingTeachers = (teaRes.ok && Array.isArray(teaRes.data)) ? teaRes.data : [];
       const existingStudents = (stuRes.ok && Array.isArray(stuRes.data)) ? stuRes.data : [];
 
       const parsed = parseKtnCenterBulkCsv(rawCsv, {
-        existingTeachers,
-        existingStudents,
+        startTeacherSeq: body.startTeacherSeq ? Number(body.startTeacherSeq) : undefined,
+        startStudentSeq: body.startStudentSeq ? Number(body.startStudentSeq) : undefined,
+        existingTeachers: body.startTeacherSeq ? [] : existingTeachers,
+        existingStudents: body.startStudentSeq ? [] : existingStudents,
         defaultPassword
       });
 
@@ -13617,7 +13529,7 @@ export default {
           supabaseRequest(env, 'ktn_classes?active=eq.true&order=created_at.asc,id.asc'),
           supabaseRequest(env, 'ktn_teachers?active=eq.true'),
           loadAllClassScheduleConfigs(env),
-          supabaseRequest(env, 'ktn_students?select=*&limit=2000').catch(() => ({ ok: false, data: [] })),
+          supabaseRequest(env, 'ktn_students?select=*&order=updated_at.desc&limit=2000').catch(() => ({ ok: false, data: [] })),
           loadAllStudentLifecycleStates(env).catch(() => new Map())
         ]);
         const rawClasses = Array.isArray(sbRes.data) ? sbRes.data : [];
@@ -15040,7 +14952,7 @@ export default {
         ] = await Promise.all([
           supabaseRequest(env, teacherQuery),
           supabaseRequest(env, 'ktn_classes?select=id,name,teacher_code,teacher_email,schedule,active').catch(() => ({ ok: false })),
-          supabaseRequest(env, 'ktn_students?select=*&limit=2000').catch(() => ({ ok: false })),
+          supabaseRequest(env, 'ktn_students?select=*&order=updated_at.desc&limit=2000').catch(() => ({ ok: false })),
           supabaseRequest(env, 'ktn_homeworks?select=id,class_code,status,score,teacher_feedback,updated_at&limit=1000').catch(() => ({ ok: false })),
           supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.ATTENDANCE_LOG&limit=500').catch(() => ({ ok: false })),
           loadAllForumAnswers(env).catch(() => []),
@@ -15346,17 +15258,21 @@ export default {
           }
         }
 
-        // Chỉ tính HMAC cho mật khẩu riêng của giáo viên (explicitTeacherPassword hoặc prov.initialPassword)
-        // hoặc mật khẩu khởi tạo khi thực sự đã đồng bộ izTeach thành công (provisionOnIzTeach !== false).
-        // Tuyệt đối không dùng mật khẩu nhân sự chung để đánh dấu ready_to_login cho hồ sơ nội bộ chưa cấp tài khoản.
-        const effectiveTeacherPwd = String(
-          explicitTeacherPassword ||
-          initialPassword ||
-          (body.provisionOnIzTeach !== false && provisioningStatus === 'ready_to_login' ? (env.KTN_STAFF_AND_TEST_PASSWORD || '') : '')
-        ).trim();
+        // Chỉ tính HMAC mới khi:
+        // 1) Admin truyền mật khẩu mới tường minh (explicitTeacherPassword.length >= 6), HOẶC
+        // 2) Giáo viên mới tạo / khôi phục từ soft-delete (!existingTeaRow || wasSoftDeleted) hoặc chưa từng có passwordHmac trong DB (!existingMeta.passwordHmac).
+        // Tuyệt đối KHÔNG ghi đè passwordHmac hiện có khi Admin chỉ sửa thông tin hồ sơ/lớp học của giáo viên!
         let passwordHmac = existingMeta.passwordHmac || null;
-        if (provisioningStatus === 'ready_to_login' && effectiveTeacherPwd.length >= 6) {
-          passwordHmac = await computeTeacherCredentialHmac(tEmail, effectiveTeacherPwd, env.KTN_SESSION_SECRET);
+        if (explicitTeacherPassword.length >= 6) {
+          passwordHmac = await computeTeacherCredentialHmac(tEmail, explicitTeacherPassword, env.KTN_SESSION_SECRET);
+        } else if ((!existingTeaRow || wasSoftDeleted || !existingMeta.passwordHmac) && provisioningStatus === 'ready_to_login') {
+          const fallbackInitPwd = String(
+            initialPassword ||
+            (body.provisionOnIzTeach !== false ? (env.KTN_STAFF_AND_TEST_PASSWORD || '') : '')
+          ).trim();
+          if (fallbackInitPwd.length >= 6) {
+            passwordHmac = await computeTeacherCredentialHmac(tEmail, fallbackInitPwd, env.KTN_SESSION_SECRET);
+          }
         }
 
         const userDefinedAliases = Array.isArray(existingTeaRow?.aliases)

@@ -7,6 +7,7 @@ import { signTestSessionToken } from '../e2e/teacher-tiers/test-harness-utils.mj
 import {
   parseKtnCenterBulkCsv,
   deriveCanonicalClassCode,
+  normalizeBulkTeacherIdentity,
   cleanBulkPhoneValue,
   KTN_CENTER_SAMPLE_CSV,
 } from '../../src/lib/bulkImportParser';
@@ -44,7 +45,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(result.summary.classCount).toBe(100);
       expect(result.summary.activeClassCount).toBe(99);
       expect(result.summary.archivedClassCount).toBe(1);
-      expect(result.summary.teacherCount).toBe(54);
+      expect(result.summary.teacherCount).toBe(43);
       expect(result.summary.studentCount).toBe(299);
       expect(result.summary.activeStudentCount).toBe(291);
       expect(result.summary.archivedStudentCount).toBe(8);
@@ -68,11 +69,34 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(lo2N01?.title).toBe('LỘ 2 · Nhóm 1');
       expect(lo2N01?.schedule).toBe('T2-T4 20h-21h');
 
-      // Check teacher codes and emails
+      // Check canonical teacher codes, emails, and merged class assignments (GV001..GV043)
       expect(result.teachers[0].code).toBe('GV001');
       expect(result.teachers[0].email).toBe('gv001@khongtunhi.com');
-      expect(result.teachers[53].code).toBe('GV054');
-      expect(result.teachers[53].email).toBe('gv054@khongtunhi.com');
+      expect(result.teachers[0].name).toBe('Cô Đặng Thùy Dương');
+      expect(result.teachers[0].assignedClasses).toEqual([
+        'LO2-N02',
+        'LO2-N13',
+        'LO5-N01',
+        'LO5-N03',
+        'LO7-N03',
+        'HSK-N07',
+        'HSK-N12',
+        'HSK-N13',
+      ]);
+
+      const gv027 = result.teachers.find((t) => t.code === 'GV027');
+      expect(gv027?.email).toBe('gv027@khongtunhi.com');
+      expect(gv027?.name).toBe('Cô Hà Thùy');
+      expect(gv027?.assignedClasses).toEqual(['LOMINI23-CHO', 'HSK-N16', '1V1-N08']);
+
+      expect(result.teachers[42].code).toBe('GV043');
+      expect(result.teachers[42].email).toBe('gv043@khongtunhi.com');
+      expect(result.teachers[42].name).toBe('Cô Hồng Điệp');
+
+      const gv044Ident = normalizeBulkTeacherIdentity('Cô Phương Thảo');
+      expect(gv044Ident.preferredCode).toBe('GV044');
+      expect(gv044Ident.preferredEmail).toBe('gv044@khongtunhi.com');
+      expect(gv044Ident.displayName).toBe('Cô Phương Thảo');
 
       // Check student codes and emails
       expect(result.students[0].code).toBe('20260001');
@@ -541,6 +565,63 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(updateProfileData.syncStatus).toBe('synced');
       expect(updateProfileData.readyToLogin).toBe(true);
       expect(updateProfileData.student.name).toBe('Bùi Đức Huy (Đã sửa)');
+    });
+
+    it('resolves canonical teachers GV001..GV044 on bulk-import and prunes duplicate GV045+ rows', async () => {
+      const importRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/bulk-import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            csvText: KTN_CENTER_SAMPLE_CSV,
+            dryRun: false,
+            defaultPassword: '12345678',
+          }),
+        }),
+        harness.env
+      );
+      expect(importRes.status).toBe(200);
+      const importData = await importRes.json();
+      expect(importData.ok).toBe(true);
+      expect(importData.summary.teacherCount).toBe(43);
+
+      const gv001Login = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: 'GV001', password: '12345678' }),
+        }),
+        harness.env
+      );
+      expect(gv001Login.status).toBe(200);
+      const gv001Data = await gv001Login.json();
+      expect(gv001Data.user.name).toBe('Cô Đặng Thùy Dương');
+      expect(gv001Data.user.assignedClasses).toEqual([
+        'LO2-N02',
+        'LO2-N13',
+        'LO5-N01',
+        'LO5-N03',
+        'LO7-N03',
+        'HSK-N07',
+        'HSK-N12',
+        'HSK-N13',
+      ]);
+
+      const gv027Login = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: 'GV027', password: '12345678' }),
+        }),
+        harness.env
+      );
+      expect(gv027Login.status).toBe(200);
+      const gv027Data = await gv027Login.json();
+      expect(gv027Data.user.name).toBe('Cô Hà Thùy');
+      expect(gv027Data.user.assignedClasses).toEqual(['LOMINI23-CHO', 'HSK-N16', '1V1-N08']);
     });
   });
 });

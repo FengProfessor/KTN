@@ -18,6 +18,8 @@ export interface BulkImportParsedTeacher {
   code: string;
   email: string;
   name: string;
+  preferredCode?: string;
+  preferredEmail?: string;
   assignedClasses: string[];
   defaultPassword: string;
   isExisting: boolean;
@@ -177,36 +179,134 @@ export function deriveCanonicalClassCode(rawClassCell: string): {
   };
 }
 
+export interface CanonicalTeacherDefinition {
+  code: string;
+  email: string;
+  cleanName: string;
+  displayName: string;
+  key: string;
+  keys: string[];
+}
+
+export const KTN_CANONICAL_TEACHER_DEFINITIONS: CanonicalTeacherDefinition[] = [
+  { code: 'GV001', email: 'gv001@khongtunhi.com', cleanName: 'Đặng Thùy Dương', displayName: 'Cô Đặng Thùy Dương', key: 'dangthuyduong', keys: ['dangduong', 'dangthuyduong', 'thuyduong'] },
+  { code: 'GV002', email: 'gv002@khongtunhi.com', cleanName: 'Thu Phương', displayName: 'Cô Thu Phương', key: 'thuphuong', keys: ['thuphuong'] },
+  { code: 'GV003', email: 'gv003@khongtunhi.com', cleanName: 'Linh Chi', displayName: 'Cô Linh Chi', key: 'linhchi', keys: ['chi', 'linhchi'] },
+  { code: 'GV004', email: 'gv004@khongtunhi.com', cleanName: 'Quỳnh Chi', displayName: 'Cô Quỳnh Chi', key: 'quynhchi', keys: ['quynhchi'] },
+  { code: 'GV005', email: 'gv005@khongtunhi.com', cleanName: 'Linh SCP', displayName: 'Cô Linh SCP', key: 'linhscp', keys: ['linh', 'linhscp'] },
+  { code: 'GV006', email: 'gv006@khongtunhi.com', cleanName: 'Nguyễn Thị Huyền', displayName: 'Cô Nguyễn Thị Huyền', key: 'nguyenthihuyen', keys: ['nguyenthihuyen'] },
+  { code: 'GV007', email: 'gv007@khongtunhi.com', cleanName: 'Đinh Huyền', displayName: 'Cô Đinh Huyền', key: 'dinhhuyen', keys: ['dinhhuyen'] },
+  { code: 'GV008', email: 'gv008@khongtunhi.com', cleanName: 'Bùi Huyền', displayName: 'Cô Bùi Huyền', key: 'buihuyen', keys: ['buihuyen'] },
+  { code: 'GV009', email: 'gv009@khongtunhi.com', cleanName: 'Thanh Huyền', displayName: 'Cô Thanh Huyền', key: 'thanhhuyen', keys: ['thanhhuyen'] },
+  { code: 'GV010', email: 'gv010@khongtunhi.com', cleanName: 'Huyền', displayName: 'Cô Huyền', key: 'huyen', keys: ['huyen', 'huyenchuaroho'] },
+  { code: 'GV011', email: 'gv011@khongtunhi.com', cleanName: 'Đỗ Bình', displayName: 'Cô Đỗ Bình', key: 'dobinh', keys: ['dobinh'] },
+  { code: 'GV012', email: 'gv012@khongtunhi.com', cleanName: 'Ánh Nguyệt', displayName: 'Cô Ánh Nguyệt', key: 'anhnguyet', keys: ['anhnguyet', 'nguyet'] },
+  { code: 'GV013', email: 'gv013@khongtunhi.com', cleanName: 'Nguyễn Hà', displayName: 'Cô Nguyễn Hà', key: 'nguyenha', keys: ['ha', 'hanguyen', 'nguyenha'] },
+  { code: 'GV014', email: 'gv014@khongtunhi.com', cleanName: 'Lê Lý', displayName: 'Cô Lê Lý', key: 'lely', keys: ['lely'] },
+  { code: 'GV015', email: 'gv015@khongtunhi.com', cleanName: 'Diệu Thảo', displayName: 'Cô Diệu Thảo', key: 'dieuthao', keys: ['dieuthao'] },
+  { code: 'GV016', email: 'gv016@khongtunhi.com', cleanName: 'Đào Nhẫn', displayName: 'Cô Đào Nhẫn', key: 'daonhan', keys: ['daonhan'] },
+  { code: 'GV017', email: 'gv017@khongtunhi.com', cleanName: 'Thúy Hằng', displayName: 'Cô Thúy Hằng', key: 'thuyhang', keys: ['hang', 'thuyhang'] },
+  { code: 'GV018', email: 'gv018@khongtunhi.com', cleanName: 'Ánh Ly', displayName: 'Cô Ánh Ly', key: 'anhly', keys: ['anhly'] },
+  { code: 'GV019', email: 'gv019@khongtunhi.com', cleanName: 'Trần Phương Anh', displayName: 'Cô Trần Phương Anh', key: 'tranphuonganh', keys: ['tranphuonganh'] },
+  { code: 'GV020', email: 'gv020@khongtunhi.com', cleanName: 'Việt Linh', displayName: 'Cô Việt Linh', key: 'vietlinh', keys: ['vietlinh'] },
+  { code: 'GV021', email: 'gv021@khongtunhi.com', cleanName: 'Minh Ngọc', displayName: 'Cô Minh Ngọc', key: 'minhngoc', keys: ['minhngoc'] },
+  { code: 'GV022', email: 'gv022@khongtunhi.com', cleanName: 'Ngọc Anh', displayName: 'Cô Ngọc Anh', key: 'ngocanh', keys: ['ngocanh'] },
+  { code: 'GV023', email: 'gv023@khongtunhi.com', cleanName: 'Thanh Ngọc', displayName: 'Cô Thanh Ngọc', key: 'thanhngoc', keys: ['ngoc', 'thanhngoc'] },
+  { code: 'GV024', email: 'gv024@khongtunhi.com', cleanName: 'Linh Trang', displayName: 'Cô Linh Trang', key: 'linhtrang', keys: ['linhtrang'] },
+  { code: 'GV025', email: 'gv025@khongtunhi.com', cleanName: 'Kim Trang', displayName: 'Cô Kim Trang', key: 'kimtrang', keys: ['kimtrang', 'trang'] },
+  { code: 'GV026', email: 'gv026@khongtunhi.com', cleanName: 'Tào Quỳnh', displayName: 'Cô Tào Quỳnh', key: 'taoquynh', keys: ['taoquynh'] },
+  { code: 'GV027', email: 'gv027@khongtunhi.com', cleanName: 'Hà Thùy', displayName: 'Cô Hà Thùy', key: 'hathuy', keys: ['hathuy', 'thuy'] },
+  { code: 'GV028', email: 'gv028@khongtunhi.com', cleanName: 'Lý Kim Anh', displayName: 'Cô Lý Kim Anh', key: 'lykimanh', keys: ['lykimanh'] },
+  { code: 'GV029', email: 'gv029@khongtunhi.com', cleanName: 'Trinh Phạm', displayName: 'Cô Trinh Phạm', key: 'trinhpham', keys: ['trinhpham'] },
+  { code: 'GV030', email: 'gv030@khongtunhi.com', cleanName: 'Minh Hà', displayName: 'Cô Minh Hà', key: 'minhha', keys: ['minhha'] },
+  { code: 'GV031', email: 'gv031@khongtunhi.com', cleanName: 'Hiểu Linh', displayName: 'Cô Hiểu Linh', key: 'hieulinh', keys: ['hieulinh'] },
+  { code: 'GV032', email: 'gv032@khongtunhi.com', cleanName: 'Duyên', displayName: 'Cô Duyên', key: 'duyen', keys: ['duyen'] },
+  { code: 'GV033', email: 'gv033@khongtunhi.com', cleanName: 'Kim Ngân', displayName: 'Cô Kim Ngân', key: 'kimngan', keys: ['kimngan'] },
+  { code: 'GV034', email: 'gv034@khongtunhi.com', cleanName: 'Hân Giang', displayName: 'Cô Hân Giang', key: 'hangiang', keys: ['hangiang'] },
+  { code: 'GV035', email: 'gv035@khongtunhi.com', cleanName: 'Khánh Linh', displayName: 'Cô Khánh Linh', key: 'khanhlinh', keys: ['khanhlinh'] },
+  { code: 'GV036', email: 'gv036@khongtunhi.com', cleanName: 'Trâm', displayName: 'Cô Trâm', key: 'tram', keys: ['tram'] },
+  { code: 'GV037', email: 'gv037@khongtunhi.com', cleanName: 'Thoa', displayName: 'Cô Thoa', key: 'thoa', keys: ['thoa'] },
+  { code: 'GV038', email: 'gv038@khongtunhi.com', cleanName: 'Cầm (Bản Ngữ)', displayName: 'Cô Cầm (Bản Ngữ)', key: 'cambanngu', keys: ['cambanngu'] },
+  { code: 'GV039', email: 'gv039@khongtunhi.com', cleanName: 'Hà My', displayName: 'Cô Hà My', key: 'hamy', keys: ['hamy'] },
+  { code: 'GV040', email: 'gv040@khongtunhi.com', cleanName: 'Thùy Linh', displayName: 'Cô Thùy Linh', key: 'thuylinh', keys: ['thuylinh'] },
+  { code: 'GV041', email: 'gv041@khongtunhi.com', cleanName: 'Vy', displayName: 'Cô Vy', key: 'vy', keys: ['vy'] },
+  { code: 'GV042', email: 'gv042@khongtunhi.com', cleanName: 'Hoàng Hiền', displayName: 'Cô Hoàng Hiền', key: 'hoanghien', keys: ['hoanghien'] },
+  { code: 'GV043', email: 'gv043@khongtunhi.com', cleanName: 'Hồng Điệp', displayName: 'Cô Hồng Điệp', key: 'hongdiep', keys: ['hongdiep'] },
+  { code: 'GV044', email: 'gv044@khongtunhi.com', cleanName: 'Phương Thảo', displayName: 'Cô Phương Thảo', key: 'phuongthao', keys: ['phuongthao'] }
+];
+
+const CANONICAL_TEACHER_BY_ALIAS_KEY = new Map<string, CanonicalTeacherDefinition>();
+for (const def of KTN_CANONICAL_TEACHER_DEFINITIONS) {
+  for (const k of def.keys) {
+    CANONICAL_TEACHER_BY_ALIAS_KEY.set(k, def);
+  }
+}
+
 export function normalizeBulkTeacherIdentity(rawTeacherCell: string): {
   key: string;
   displayName: string;
   cleanName: string;
+  preferredCode: string;
+  preferredEmail: string;
   isUnassigned: boolean;
 } {
   const trimmed = String(rawTeacherCell || '').replace(/\s+/g, ' ').trim();
   const noAccent = stripViAccents(trimmed).toLowerCase();
-  if (!trimmed || noAccent.includes('chua phan cong') || noAccent === 'trong' || noAccent === 'n/a') {
+  if (
+    !trimmed ||
+    noAccent.includes('chua phan cong') ||
+    noAccent.includes('chua ro') ||
+    noAccent === 'trong' ||
+    noAccent === 'n/a'
+  ) {
     return {
       key: '__unassigned__',
       displayName: 'Chưa phân công',
       cleanName: 'Chưa phân công',
+      preferredCode: '',
+      preferredEmail: '',
       isUnassigned: true
     };
   }
   const isMalePrefix = /^thầy\b|^thay\b/i.test(trimmed);
-  const strippedPrefix = trimmed.replace(/^(cô\s*giáo|co\s*giao|thầy\s*giáo|thay\s*giao|cô|co|thầy|thay|gv|giáo viên|giao vien)\s+/i, '').trim();
+  const strippedPrefix = trimmed
+    .replace(/^(cô\s*giáo|co\s*giao|thầy\s*giáo|thay\s*giao|cô|co|thầy|thay|gv|giáo viên|giao vien)\s+/i, '')
+    .trim();
   const words = (strippedPrefix || trimmed)
     .split(' ')
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
   const cleanName = words.join(' ');
+  const rawKey = stripViAccents(cleanName).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (!rawKey) {
+    return {
+      key: '__unassigned__',
+      displayName: 'Chưa phân công',
+      cleanName: 'Chưa phân công',
+      preferredCode: '',
+      preferredEmail: '',
+      isUnassigned: true
+    };
+  }
+  const canonical = CANONICAL_TEACHER_BY_ALIAS_KEY.get(rawKey);
+  if (canonical) {
+    return {
+      key: canonical.key,
+      displayName: canonical.displayName,
+      cleanName: canonical.cleanName,
+      preferredCode: canonical.code,
+      preferredEmail: canonical.email,
+      isUnassigned: false
+    };
+  }
   const prefix = isMalePrefix ? 'Thầy ' : 'Cô ';
   const displayName = `${prefix}${cleanName}`;
-  const key = stripViAccents(cleanName).toLowerCase().replace(/[^a-z0-9]+/g, '');
   return {
-    key: key || '__unassigned__',
+    key: rawKey,
     displayName,
     cleanName,
+    preferredCode: '',
+    preferredEmail: '',
     isUnassigned: false
   };
 }
@@ -242,18 +342,20 @@ export function parseKtnCenterBulkCsv(
   } = {}
 ): BulkImportParseResult {
   const existingTeacherByKey = new Map<string, { code: string; email: string; seqNum: number }>();
-  let maxTeacherSeq = Math.max(0, Number(options.startTeacherSeq ? options.startTeacherSeq - 1 : 0));
+  const existingCodeOrEmailSet = new Set<string>();
+  let maxTeacherSeq = Math.max(44, Number(options.startTeacherSeq ? options.startTeacherSeq - 1 : 44));
   if (Array.isArray(options.existingTeachers)) {
     for (const t of options.existingTeachers) {
       const codeStr = String(t?.code || '').trim().toUpperCase();
       const emailStr = String(t?.email || '').trim().toLowerCase();
+      if (codeStr) existingCodeOrEmailSet.add(codeStr);
+      if (emailStr) existingCodeOrEmailSet.add(emailStr);
       let seqNum = Infinity;
       const mCode = codeStr.match(/^GV(\d+)$/i);
       if (mCode) {
         const n = Number(mCode[1]);
         if (Number.isFinite(n)) {
           seqNum = Math.min(seqNum, n);
-          if (n > maxTeacherSeq) maxTeacherSeq = n;
         }
       }
       const mEmail = emailStr.match(/^gv(\d+)@khongtunhi\.com$/i);
@@ -261,22 +363,32 @@ export function parseKtnCenterBulkCsv(
         const n = Number(mEmail[1]);
         if (Number.isFinite(n)) {
           seqNum = Math.min(seqNum, n);
-          if (n > maxTeacherSeq) maxTeacherSeq = n;
         }
       }
       if (!options.startTeacherSeq && t?.name && (codeStr || emailStr)) {
         const ident = normalizeBulkTeacherIdentity(String(t.name));
         if (!ident.isUnassigned) {
-          const resolvedCode = codeStr || (mEmail ? `GV${String(Number(mEmail[1])).padStart(3, '0')}` : '');
-          const resolvedEmail = emailStr || (resolvedCode ? `${resolvedCode.toLowerCase()}@khongtunhi.com` : '');
-          if (resolvedCode && resolvedEmail) {
-            const prev = existingTeacherByKey.get(ident.key);
-            if (!prev || seqNum < prev.seqNum) {
-              existingTeacherByKey.set(ident.key, {
-                code: resolvedCode,
-                email: resolvedEmail,
-                seqNum
-              });
+          if (ident.preferredCode && ident.preferredEmail) {
+            existingTeacherByKey.set(ident.key, {
+              code: ident.preferredCode,
+              email: ident.preferredEmail,
+              seqNum: Number(ident.preferredCode.slice(2)) || 1
+            });
+          } else {
+            if (Number.isFinite(seqNum) && seqNum > maxTeacherSeq) {
+              maxTeacherSeq = seqNum;
+            }
+            const resolvedCode = codeStr || (mEmail ? `GV${String(Number(mEmail[1])).padStart(3, '0')}` : '');
+            const resolvedEmail = emailStr || (resolvedCode ? `${resolvedCode.toLowerCase()}@khongtunhi.com` : '');
+            if (resolvedCode && resolvedEmail && (!Number.isFinite(seqNum) || seqNum > 44)) {
+              const prev = existingTeacherByKey.get(ident.key);
+              if (!prev || seqNum < prev.seqNum) {
+                existingTeacherByKey.set(ident.key, {
+                  code: resolvedCode,
+                  email: resolvedEmail,
+                  seqNum
+                });
+              }
             }
           }
         }
@@ -363,12 +475,7 @@ export function parseKtnCenterBulkCsv(
     schedule: string;
     isArchived: boolean;
   } | null = null;
-  let currentTeacher = {
-    key: '__unassigned__',
-    displayName: 'Chưa phân công',
-    cleanName: 'Chưa phân công',
-    isUnassigned: true
-  };
+  let currentTeacher = normalizeBulkTeacherIdentity('');
 
   for (let idx = 0; idx < rows.length; idx += 1) {
     const row = rows[idx];
@@ -430,9 +537,11 @@ export function parseKtnCenterBulkCsv(
       if (!teachersByKey.has(currentTeacher.key)) {
         teachersByKey.set(currentTeacher.key, {
           key: currentTeacher.key,
-          code: '',
-          email: '',
+          code: currentTeacher.preferredCode || '',
+          email: currentTeacher.preferredEmail || '',
           name: currentTeacher.displayName,
+          preferredCode: currentTeacher.preferredCode || '',
+          preferredEmail: currentTeacher.preferredEmail || '',
           assignedClasses: [],
           defaultPassword: options.defaultPassword || '12345678',
           isExisting: false
@@ -495,27 +604,37 @@ export function parseKtnCenterBulkCsv(
     });
   }
 
-  let nextTeacherSeq = maxTeacherSeq + 1;
+  let nextTeacherSeq = Math.max(45, maxTeacherSeq + 1);
   const defaultPassword = String(options.defaultPassword || '12345678');
 
   const teachers: BulkImportParsedTeacher[] = [];
   for (const tEntry of teachersByKey.values()) {
-    const existingMatch = existingTeacherByKey.get(tEntry.key);
-    if (existingMatch && existingMatch.code && existingMatch.email) {
-      tEntry.code = existingMatch.code;
-      tEntry.email = existingMatch.email;
-      tEntry.isExisting = true;
+    if (tEntry.preferredCode && tEntry.preferredEmail) {
+      tEntry.code = tEntry.preferredCode;
+      tEntry.email = tEntry.preferredEmail;
+      tEntry.isExisting =
+        existingCodeOrEmailSet.has(tEntry.preferredCode) ||
+        existingCodeOrEmailSet.has(tEntry.preferredEmail) ||
+        existingTeacherByKey.has(tEntry.key);
     } else {
-      const code = `GV${String(nextTeacherSeq).padStart(3, '0')}`;
-      const email = `${code.toLowerCase()}@khongtunhi.com`;
-      nextTeacherSeq += 1;
-      tEntry.code = code;
-      tEntry.email = email;
-      tEntry.isExisting = false;
+      const existingMatch = existingTeacherByKey.get(tEntry.key);
+      if (existingMatch && existingMatch.code && existingMatch.email) {
+        tEntry.code = existingMatch.code;
+        tEntry.email = existingMatch.email;
+        tEntry.isExisting = true;
+      } else {
+        const code = `GV${String(nextTeacherSeq).padStart(3, '0')}`;
+        const email = `${code.toLowerCase()}@khongtunhi.com`;
+        nextTeacherSeq += 1;
+        tEntry.code = code;
+        tEntry.email = email;
+        tEntry.isExisting = false;
+      }
     }
     tEntry.defaultPassword = defaultPassword;
     teachers.push(tEntry);
   }
+  teachers.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 
   for (const cls of classesMap.values()) {
     const tEntry = teachersByKey.get(cls.teacherKey);

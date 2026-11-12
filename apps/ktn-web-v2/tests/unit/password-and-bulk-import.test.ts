@@ -45,7 +45,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(result.summary.classCount).toBe(100);
       expect(result.summary.activeClassCount).toBe(99);
       expect(result.summary.archivedClassCount).toBe(1);
-      expect(result.summary.teacherCount).toBe(43);
+      expect(result.summary.teacherCount).toBe(44);
       expect(result.summary.studentCount).toBe(299);
       expect(result.summary.activeStudentCount).toBe(291);
       expect(result.summary.archivedStudentCount).toBe(8);
@@ -69,7 +69,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(lo2N01?.title).toBe('LỘ 2 · Nhóm 1');
       expect(lo2N01?.schedule).toBe('T2-T4 20h-21h');
 
-      // Check canonical teacher codes, emails, and merged class assignments (GV001..GV043)
+      // Check canonical teacher codes, emails, and merged class assignments (GV001..GV044)
       expect(result.teachers[0].code).toBe('GV001');
       expect(result.teachers[0].email).toBe('gv001@khongtunhi.com');
       expect(result.teachers[0].name).toBe('Cô Đặng Thùy Dương');
@@ -93,10 +93,18 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(result.teachers[42].email).toBe('gv043@khongtunhi.com');
       expect(result.teachers[42].name).toBe('Cô Hồng Điệp');
 
-      const gv044Ident = normalizeBulkTeacherIdentity('Cô Phương Thảo');
-      expect(gv044Ident.preferredCode).toBe('GV044');
-      expect(gv044Ident.preferredEmail).toBe('gv044@khongtunhi.com');
-      expect(gv044Ident.displayName).toBe('Cô Phương Thảo');
+      expect(result.teachers[43].code).toBe('GV044');
+      expect(result.teachers[43].email).toBe('gv044@khongtunhi.com');
+      expect(result.teachers[43].name).toBe('Cô Phương Thảo');
+      expect(result.teachers[43].assignedClasses).toEqual(['LO2-N18']);
+
+      const gv001ParenIdent = normalizeBulkTeacherIdentity('Cô Đặng Thùy Dương (Tổ trưởng)');
+      expect(gv001ParenIdent.preferredCode).toBe('GV001');
+      expect(gv001ParenIdent.preferredEmail).toBe('gv001@khongtunhi.com');
+
+      const gv038ShortIdent = normalizeBulkTeacherIdentity('Cô Cầm');
+      expect(gv038ShortIdent.preferredCode).toBe('GV038');
+      expect(gv038ShortIdent.preferredEmail).toBe('gv038@khongtunhi.com');
 
       // Check student codes and emails
       expect(result.students[0].code).toBe('20260001');
@@ -567,7 +575,52 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(updateProfileData.student.name).toBe('Bùi Đức Huy (Đã sửa)');
     });
 
-    it('resolves canonical teachers GV001..GV044 on bulk-import and prunes duplicate GV045+ rows', async () => {
+    it('resolves canonical teachers GV001..GV044 on bulk-import, prunes duplicate GV045+ rows, clears revocation, and preserves custom passwords on re-import', async () => {
+      // Seed pre-canonical displaced GV001, duplicate GV045, and revoked GV027
+      harness.state.tables.ktn_teachers.push(
+        {
+          code: 'GV001',
+          email: 'gv001@khongtunhi.com',
+          name: 'Cô Hà Thùy',
+          phone: '0900000001',
+          specialty: 'Giáo viên Tiếng Trung Thiếu Nhi',
+          assigned_classes: ['LOMINI23-CHO'],
+          aliases: ['__status:ready_to_login', '__pwd_hmac:deadbeef', '__pwd_custom:1', '__class:LOMINI23-CHO'],
+          active: true,
+        },
+        {
+          code: 'GV045',
+          email: 'gv045@khongtunhi.com',
+          name: 'Cô Đặng Thùy Dương',
+          phone: '0911223344',
+          specialty: 'Giáo viên Tiếng Trung Thiếu Nhi',
+          assigned_classes: ['LO2-N02'],
+          aliases: ['__status:ready_to_login', '__class:LO2-N02'],
+          active: true,
+        },
+        {
+          code: 'GV027',
+          email: 'gv027@khongtunhi.com',
+          name: 'Cô Hà Thùy',
+          phone: '',
+          specialty: 'Giáo viên Tiếng Trung Thiếu Nhi',
+          assigned_classes: [],
+          aliases: ['__status:deleted'],
+          active: false,
+        }
+      );
+      harness.state.tables.ktn_dlp_alerts.push({
+        id: 'REVOKED_EMAIL_gv027@khongtunhi.com',
+        room_id: 'AUTH_REVOKED',
+        sender_email: 'gv027@khongtunhi.com',
+        sender_name: 'Cô Hà Thùy',
+        sender_role: 'teacher',
+        blocked_content: String(Date.now() + 86400000),
+        reason: 'TEACHER_SOFT_DELETED_REVOKED',
+        resolved: true,
+        created_at: new Date().toISOString(),
+      });
+
       const importRes = await harness.workerModule.fetch(
         new Request('http://localhost/api/ktn/admin/bulk-import', {
           method: 'POST',
@@ -586,8 +639,13 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(importRes.status).toBe(200);
       const importData = await importRes.json();
       expect(importData.ok).toBe(true);
-      expect(importData.summary.teacherCount).toBe(43);
+      expect(importData.summary.teacherCount).toBe(44);
 
+      // Verify duplicate GV045 row was pruned from ktn_teachers
+      const leftoverGv045 = harness.state.tables.ktn_teachers.find((t: any) => t.code === 'GV045');
+      expect(leftoverGv045).toBeUndefined();
+
+      // Verify GV001 was reset from displaced 'Cô Hà Thùy' to 'Cô Đặng Thùy Dương' with default password 12345678
       const gv001Login = await harness.workerModule.fetch(
         new Request('http://localhost/api/ktn/auth/login', {
           method: 'POST',
@@ -610,6 +668,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
         'HSK-N13',
       ]);
 
+      // Verify GV027 login AND authenticated endpoint access (AUTH_REVOKED cleared)
       const gv027Login = await harness.workerModule.fetch(
         new Request('http://localhost/api/ktn/auth/login', {
           method: 'POST',
@@ -622,6 +681,73 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       const gv027Data = await gv027Login.json();
       expect(gv027Data.user.name).toBe('Cô Hà Thùy');
       expect(gv027Data.user.assignedClasses).toEqual(['LOMINI23-CHO', 'HSK-N16', '1V1-N08']);
+
+      const gv027RoomsRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/messages/rooms', {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${gv027Data.sessionToken}` },
+        }),
+        harness.env
+      );
+      expect(gv027RoomsRes.status).toBe(200);
+
+      // Verify GV044 (Cô Phương Thảo) login and LO2-N18 class assignment
+      const gv044Login = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: 'GV044', password: '12345678' }),
+        }),
+        harness.env
+      );
+      expect(gv044Login.status).toBe(200);
+      const gv044Data = await gv044Login.json();
+      expect(gv044Data.user.name).toBe('Cô Phương Thảo');
+      expect(gv044Data.user.assignedClasses).toEqual(['LO2-N18']);
+
+      // Now GV001 changes her password -> re-running bulk-import preserves her custom password
+      const changePwdRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${gv001Data.sessionToken}`,
+          },
+          body: JSON.stringify({
+            currentPassword: '12345678',
+            newPassword: 'duongCustom2026',
+          }),
+        }),
+        harness.env
+      );
+      expect(changePwdRes.status).toBe(200);
+
+      const reImportRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/bulk-import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            csvText: KTN_CENTER_SAMPLE_CSV,
+            dryRun: false,
+            defaultPassword: '12345678',
+          }),
+        }),
+        harness.env
+      );
+      expect(reImportRes.status).toBe(200);
+
+      const gv001CustomLogin = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: 'GV001', password: 'duongCustom2026' }),
+        }),
+        harness.env
+      );
+      expect(gv001CustomLogin.status).toBe(200);
     });
   });
 });

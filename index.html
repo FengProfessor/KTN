@@ -646,6 +646,25 @@
         this.formSubmitted = true;
         this.formSuccessMsg = 'Cảm ơn phụ huynh ' + nameTrim + '! Khổng Tử Nhí sẽ liên hệ số ' + this.phone + ' trong ít phút.';
 
+        try {
+            if (typeof window.ktnFireLeadConversion === 'function') {
+                window.ktnFireLeadConversion({ source: 'hoc_thu_0d', value: 1.0 });
+            } else {
+                window.dataLayer = window.dataLayer || [];
+                if (typeof window.gtag !== 'function') {
+                    window.gtag = function() { window.dataLayer.push(arguments); };
+                }
+                window.gtag('event', 'conversion', {
+                    'send_to': 'AW-18528467582/IW2MCIv9uqQdEP70h4NF',
+                    'value': 1.0,
+                    'currency': 'VND'
+                });
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState(null, '', (window.location.pathname || '/') + '?dang-ky-thanh-cong=1#dang-ky');
+                }
+            }
+        } catch (convErr) {}
+
         if (window.KTN_GOOGLE_SHEET_WEBHOOK) {
             fetch(window.KTN_GOOGLE_SHEET_WEBHOOK, {
                 method: 'POST',
@@ -837,7 +856,7 @@
                     <span class="absolute top-0 right-0 w-2 h-2 bg-green-500 border border-white rounded-full"></span>
                 </a>
                 <!-- Phone icon header -->
-                <a href="tel:0988974685" class="hidden xl:flex items-center gap-1.5 text-primary font-bold hover:text-red-700 transition group shrink-0 whitespace-nowrap" title="Hotline 24/7: 098 897 46 85">
+                <a href="tel:0988974685" onclick="return window.gtag_report_conversion ? window.gtag_report_conversion('tel:0988974685') : true;" class="hidden xl:flex items-center gap-1.5 text-primary font-bold hover:text-red-700 transition group shrink-0 whitespace-nowrap" title="Hotline 24/7: 098 897 46 85">
                     <div class="w-8 h-8 rounded-full bg-red-50 border border-red-200 text-primary flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm shrink-0">
                         <i class="fa-solid fa-phone text-xs" style="animation: phoneRing 2s infinite"></i>
                     </div>
@@ -845,7 +864,7 @@
                 <!-- Student Login Button -->
                 <button type="button" onclick="window.openKtnLogin && window.openKtnLogin()" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px] lg:text-xs transition shadow-xs whitespace-nowrap shrink-0" title="Đăng nhập Cổng Học Viên & Xem Video Bài Giảng">
                     <i class="fa-solid fa-user-graduate text-primary text-xs"></i>
-                    <span class="whitespace-nowrap">Đăng Nhập</span>
+                    <span class="whitespace-nowrap">📒 Sổ Liên Lạc</span>
                 </button>
                 <!-- Main CTA Header -->
                 <a href="#dang-ky" class="hidden sm:inline-flex items-center relative overflow-hidden bg-gradient-to-r from-primary via-red-600 to-rose-700 text-white font-black text-[11px] lg:text-xs py-2 px-3 lg:px-3.5 min-h-[36px] lg:min-h-[38px] rounded-full shadow-md hover:shadow-lg hover:scale-105 transition-all border border-amber-300/40 whitespace-nowrap shrink-0">
@@ -875,7 +894,7 @@
             <div class="grid grid-cols-2 gap-2.5 mt-1">
                 <button type="button" @click="mobileMenu = false; window.openKtnLogin && window.openKtnLogin()" class="flex items-center justify-center gap-1.5 bg-amber-50 text-amber-900 py-2.5 min-h-[40px] rounded-xl border border-amber-300 font-bold text-xs shadow-sm hover:bg-amber-100 transition whitespace-nowrap">
                     <i class="fa-solid fa-user-graduate text-primary text-xs"></i>
-                    <span class="whitespace-nowrap">Đăng Nhập Học Viên</span>
+                    <span class="whitespace-nowrap">📒 Sổ Liên Lạc</span>
                 </button>
                 <a href="#video-bai-giang" @click="mobileMenu = false" class="flex items-center justify-center gap-1.5 bg-red-50 text-primary py-2.5 min-h-[40px] rounded-xl border border-red-200 font-bold text-xs shadow-sm hover:bg-red-100 transition whitespace-nowrap">
                     <i class="fa-solid fa-film text-xs"></i>
@@ -883,7 +902,7 @@
                 </a>
             </div>
             <div class="grid grid-cols-2 gap-3 mt-2">
-                <a href="tel:0988974685" class="flex items-center justify-center gap-2 bg-red-50 text-primary py-2.5 min-h-[40px] rounded-xl border border-red-200 font-bold text-xs shadow-sm hover:bg-red-100 transition whitespace-nowrap">
+                <a href="tel:0988974685" onclick="return window.gtag_report_conversion ? window.gtag_report_conversion('tel:0988974685') : true;" class="flex items-center justify-center gap-2 bg-red-50 text-primary py-2.5 min-h-[40px] rounded-xl border border-red-200 font-bold text-xs shadow-sm hover:bg-red-100 transition whitespace-nowrap">
                     <i class="fa-solid fa-phone text-xs" style="animation: phoneRing 2s infinite"></i>
                     <span class="whitespace-nowrap">Gọi Hotline</span>
                 </a>
@@ -2343,8 +2362,12 @@
     <div class="ktn-modal-body">
       <form id="ktn-lead-form" onsubmit="event.preventDefault(); ktnSubmitRegistration(event);">
         <div style="margin-bottom:14px;">
-          <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Họ và tên của bé / phụ huynh <span style="color:#dc2626;">*</span></label>
-          <input id="lead-name" type="text" required placeholder="VD: Bé Minh Khang, Mẹ Thu Hà..." style="width:100%;padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;" />
+          <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Họ và tên học viên (bé) <span style="color:#dc2626;">*</span></label>
+          <input id="lead-name" type="text" required placeholder="VD: Bé Nguyễn Minh Khang" style="width:100%;padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;" />
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Họ và tên phụ huynh <span style="color:#dc2626;">*</span></label>
+          <input id="lead-parent-name" type="text" required placeholder="VD: Mẹ Thu Hà / Bố Minh Đức" style="width:100%;padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;" />
         </div>
         <div style="margin-bottom:14px;">
           <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Số điện thoại / Zalo phụ huynh <span style="color:#dc2626;">*</span></label>
@@ -2669,7 +2692,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
   }, true);
 
   window.__ktnPushOrderToCloudState = async function(newOrder) {
-    if (!newOrder || !newOrder.orderId) return false;
+    if (!newOrder || !newOrder.studentName) return null;
     try {
       // [SEC-01 & DATA-01 FIXED] Gửi đơn hàng qua Trạm gác cổng Cloudflare Worker vào bảng ktn_orders của Supabase
       // Tuyệt đối không nhúng mật khẩu Admin izTeach trên trình duyệt và không ghi vào ô SEO Description!
@@ -2679,9 +2702,11 @@ if (!window.ktnSwitchFromVideoToRegister) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newOrder)
       });
-      return Boolean(res && res.ok);
+      if (!res || !res.ok) return null;
+      var data = await res.json().catch(function() { return null; });
+      return (data && data.ok) ? (data.order || true) : null;
     } catch (err) {
-      return false;
+      return null;
     }
   };
 
@@ -2697,6 +2722,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
     }
 
     var name = (document.getElementById('lead-name')?.value || '').trim();
+    var parentName = (document.getElementById('lead-parent-name')?.value || '').trim();
     var phone = (document.getElementById('lead-phone')?.value || '').trim();
     var email = (document.getElementById('lead-email')?.value || '').trim().toLowerCase();
     var courseId = document.getElementById('lead-course-select')?.value;
@@ -2705,26 +2731,27 @@ if (!window.ktnSwitchFromVideoToRegister) {
     var course = (window.KTN_COURSES || []).find(function(c) { return c.id === courseId; }) || { title: 'Khóa học Tiếng Trung Khổng Tử Nhí' };
 
     var newOrder = {
-      orderId: 'ORD-' + Date.now().toString().slice(-6),
       studentName: name,
-      studentEmail: email || (phone ? ('hv_' + phone.replace(/\D/g, '') + '@gmail.com') : ('hv_' + Date.now().toString().slice(-4) + '@gmail.com')),
+      parentName: parentName,
+      // Tuyệt đối không tự ghép Gmail giả từ số điện thoại khi thiếu email
+      studentEmail: email || '',
       phone: phone,
       courseId: courseId,
       courseName: course.title,
-      amount: (window.KTN_PAYMENT_CONFIG && window.KTN_PAYMENT_CONFIG.defaultAmount) || 890000,
       paymentMethod: 'VietQR',
       paymentStatus: 'pending_verification',
       approvalStatus: 'pending',
+      source: 'website',
       note: note,
       createdAt: new Date().toISOString(),
       createdAtDisplay: new Date().toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'}) + ' · ' + new Date().toLocaleDateString('vi-VN')
     };
 
-    var pushedOk = false;
+    var savedOrder = null;
     if (typeof window.__ktnPushOrderToCloudState === 'function') {
-      pushedOk = await window.__ktnPushOrderToCloudState(newOrder);
+      savedOrder = await window.__ktnPushOrderToCloudState(newOrder);
     }
-    if (!pushedOk) {
+    if (!savedOrder) {
       isSubmitting = false;
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -2733,6 +2760,11 @@ if (!window.ktnSwitchFromVideoToRegister) {
       }
       alert('Chưa gửi được đăng ký lên máy chủ. Vui lòng thử lại nhé.');
       return;
+    }
+
+    if (typeof savedOrder === 'object' && savedOrder.order_id) {
+      newOrder.orderId = savedOrder.order_id;
+      newOrder.amount = savedOrder.amount;
     }
 
     try {
@@ -2774,7 +2806,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name,
+          name: parentName ? (parentName + ' (PH bé ' + name + ')') : name,
           phone: phone,
           email: newOrder.studentEmail,
           address: 'Đăng ký khóa học: ' + course.title,
@@ -2793,10 +2825,103 @@ if (!window.ktnSwitchFromVideoToRegister) {
 
     if (formEl) formEl.style.display = 'none';
     if (msgEl) {
-      msgEl.innerHTML = 'Thầy/cô Học Viện Khổng Tử Nhí đã ghi nhận đăng ký khóa học <strong>' + escapeHtml(course.title) + '</strong> của bé <strong>' + escapeHtml(name) + '</strong>.<br><br>Ban giáo vụ sẽ liên hệ ngay qua SĐT/Zalo <strong>' + escapeHtml(phone) + '</strong> để xác nhận và kích hoạt tài khoản học tập cho con.';
+      msgEl.innerHTML = 'Thầy/cô Học Viện Khổng Tử Nhí đã ghi nhận đăng ký khóa học <strong>' + escapeHtml(course.title) + '</strong> của bé <strong>' + escapeHtml(name) + '</strong>' + (parentName ? (' (Phụ huynh: <strong>' + escapeHtml(parentName) + '</strong>)') : '') + '.<br><br>Ban giáo vụ sẽ liên hệ ngay qua SĐT/Zalo <strong>' + escapeHtml(phone) + '</strong> để xác nhận và kích hoạt tài khoản học tập cho con.';
     }
     if (successBox) successBox.style.display = 'block';
+    if (typeof window.ktnFireLeadConversion === 'function') {
+      window.ktnFireLeadConversion({ source: 'course_modal', value: 1.0 });
+    }
   };
+
+  // Google Ads Tag (AW-18528467582) & Lead Form Conversion (AW-18528467582/IW2MCIv9uqQdEP70h4NF)
+  ;(function() {
+    window.dataLayer = window.dataLayer || [];
+    if (typeof window.gtag !== 'function') {
+      window.gtag = function() { window.dataLayer.push(arguments); };
+    }
+    if (!document.querySelector('script[src*="googletagmanager.com/gtag/js?id=AW-18528467582"]')) {
+      var gs = document.createElement('script');
+      gs.async = true;
+      gs.src = 'https://www.googletagmanager.com/gtag/js?id=AW-18528467582';
+      document.head.appendChild(gs);
+      window.gtag('js', new Date());
+      window.gtag('config', 'AW-18528467582');
+    }
+
+    window.ktnFireLeadConversion = function(meta) {
+      try {
+        var now = Date.now();
+        if (window.__ktnLastLeadConvAt && (now - window.__ktnLastLeadConvAt < 2500)) return;
+        window.__ktnLastLeadConvAt = now;
+        window.dataLayer = window.dataLayer || [];
+        if (typeof window.gtag !== 'function') {
+          window.gtag = function() { window.dataLayer.push(arguments); };
+        }
+        window.gtag('event', 'conversion', {
+          'send_to': 'AW-18528467582/IW2MCIv9uqQdEP70h4NF',
+          'value': (meta && meta.value) ? Number(meta.value) : 1.0,
+          'currency': 'VND'
+        });
+        if (!(meta && meta.keepUrl) && window.history && window.history.replaceState) {
+          var curPath = window.location.pathname || '/';
+          window.history.replaceState(null, '', curPath + '?dang-ky-thanh-cong=1#dang-ky');
+        }
+      } catch (err) {}
+    };
+
+    // Event snippet for Nhấp để gọi (Click to call) conversion: AW-18528467582/qIBnCK7XhrIdEP70h4NF
+    window.gtag_report_conversion = function(url) {
+      try {
+        var now = Date.now();
+        if (window.__ktnLastCallConvAt && (now - window.__ktnLastCallConvAt < 1500)) {
+          return true;
+        }
+        window.__ktnLastCallConvAt = now;
+        var callback = function() {
+          if (typeof url !== 'undefined' && url && url.indexOf('tel:') !== 0) {
+            window.location = url;
+          }
+        };
+        window.dataLayer = window.dataLayer || [];
+        if (typeof window.gtag !== 'function') {
+          window.gtag = function() { window.dataLayer.push(arguments); };
+        }
+        window.gtag('event', 'conversion', {
+          'send_to': 'AW-18528467582/qIBnCK7XhrIdEP70h4NF',
+          'value': 1.0,
+          'currency': 'VND',
+          'event_callback': callback
+        });
+      } catch (err) {}
+      return true;
+    };
+    window.ktnFireCallConversion = window.gtag_report_conversion;
+
+    if (!window.__ktnTelClickBound) {
+      window.__ktnTelClickBound = true;
+      document.addEventListener('click', function(ev) {
+        var telLink = ev.target && ev.target.closest ? ev.target.closest('a[href^="tel:"]') : null;
+        if (telLink && typeof window.gtag_report_conversion === 'function') {
+          window.gtag_report_conversion(telLink.getAttribute('href'));
+        }
+      }, true);
+    }
+
+    var qs = window.location.search || '';
+    if (qs.indexOf('dang-ky-thanh-cong=1') !== -1 || qs.indexOf('thank-you=1') !== -1) {
+      setTimeout(function() {
+        window.ktnFireLeadConversion({ source: 'thank_you_page', value: 1.0, keepUrl: true });
+        var dkEl = document.getElementById('dang-ky');
+        if (dkEl) {
+          dkEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          var okBoxes = dkEl.querySelectorAll('[x-show="formSubmitted"]');
+          okBoxes.forEach(function(b) { b.style.display = 'block'; b.removeAttribute('x-cloak'); });
+          var fBoxes = dkEl.querySelectorAll('form[x-show="!formSubmitted"]');
+          fBoxes.forEach(function(f) { f.style.display = 'none'; });
+        }
+      }, 350);
+    }
+  })();
 
   // Drain queued actions if any clicks occurred before runtime script loaded
   if (window.__ktnQueue && window.__ktnQueue.length) {
@@ -4442,7 +4567,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
                 <span>Hotline 24/7: 098 897 46 85</span>
             </div>
             <!-- Icon Button -->
-            <a href="tel:0988974685" class="relative w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-red-500 to-primary flex items-center justify-center text-white shadow-lg shadow-red-600/30 hover:scale-110 active:scale-95 transition-all border-2 border-white cursor-pointer shrink-0" aria-label="Hotline">
+            <a href="tel:0988974685" onclick="return window.gtag_report_conversion ? window.gtag_report_conversion('tel:0988974685') : true;" class="relative w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-red-500 to-primary flex items-center justify-center text-white shadow-lg shadow-red-600/30 hover:scale-110 active:scale-95 transition-all border-2 border-white cursor-pointer shrink-0" aria-label="Hotline">
                 <i class="fa-solid fa-phone text-sm sm:text-base" style="animation: phoneRing 2s infinite"></i>
                 <span class="absolute top-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full shadow-sm"></span>
             </a>
@@ -4500,7 +4625,9 @@ if (!window.ktnSwitchFromVideoToRegister) {
                     overlay.classList.remove('opacity-0', 'invisible');
                     overlay.classList.add('opacity-100', 'visible');
                 }
+                return;
             }
+            window.location.href = 'sll-hocsinh.html';
         };
         window.openKtnActiveCode = function() {
             var navBar = document.querySelector('#__next > main > div.mx-auto.max-w-screen-3xl > div.fixed.inset-x-0.top-0');

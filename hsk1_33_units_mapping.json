@@ -1,0 +1,1153 @@
+{
+  "courseId": "6adadba969897b0002482ca5",
+  "chapterId": "6adadbaf69897b0002482cb5",
+  "totalUnits": 33,
+  "mainLessonsCount": 15,
+  "workbookUnitsCount": 2,
+  "mappingTable": [
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adadbcaf75fe5000247ca71",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 1,
+      "partNumber": "1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 1",
+      "titleZh": "AI小语，你好！",
+      "titleVi": "Xin chào AI Tiểu Ngữ!",
+      "partLabel": "Bài giảng chính",
+      "resourceIds": [
+        "6adadc45f8c3c60002a2b3c1"
+      ],
+      "duration": "13:35",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adadc3b69897b0002482d22",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 2,
+      "partNumber": "2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 2",
+      "titleZh": "我叫李文",
+      "titleVi": "Mình tên là Lý Văn",
+      "partLabel": "Bài giảng chính",
+      "resourceIds": [
+        "6adadd60f8c3c60002a2b3c2"
+      ],
+      "duration": "12:01",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adae08769897b000248340a",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 3,
+      "partNumber": "3.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 3.1",
+      "titleZh": "我是中国人",
+      "titleVi": "Tôi là người Trung Quốc",
+      "partLabel": "Phần 3.1 — Từ mới & Bài khóa 1",
+      "resourceIds": [
+        "6adf16b358da95000267ef60"
+      ],
+      "duration": "10:50",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf1a4fe2681300028de082",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 3,
+      "partNumber": "3.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 3.2",
+      "titleZh": "我是中国人",
+      "titleVi": "Tôi là người Trung Quốc",
+      "partLabel": "Phần 3.2 — Bài khóa 2 & Ngữ pháp",
+      "resourceIds": [
+        "6adf188558da95000267ef62"
+      ],
+      "duration": "12:51",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf1b51e2681300028de363",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 4,
+      "partNumber": "4.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 4.1",
+      "titleZh": "这是我的一家",
+      "titleVi": "Đây là gia đình của tôi",
+      "partLabel": "Phần 4.1 — Từ mới gia đình",
+      "resourceIds": [
+        "6adf1a87edf12a00022cde3c"
+      ],
+      "duration": "07:04",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf1c22e2681300028de711",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 4,
+      "partNumber": "4.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 4.2",
+      "titleZh": "这是我的一家",
+      "titleVi": "Đây là gia đình của tôi",
+      "partLabel": "Phần 4.2 — Bài khóa 1 & Đại từ chỉ thị",
+      "resourceIds": [
+        "6adf1b8aedf12a00022cde3f"
+      ],
+      "duration": "05:16",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf1d00e2681300028de9a6",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 4,
+      "partNumber": "4.3",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 4.3",
+      "titleZh": "这是我的一家",
+      "titleVi": "Đây là gia đình của tôi",
+      "partLabel": "Phần 4.3 — Bài khóa 2 & Lượng từ",
+      "resourceIds": [
+        "6adf1c5cedf12a00022cde43"
+      ],
+      "duration": "06:15",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf1e12e5b2290002718830",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 4,
+      "partNumber": "4.4",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 4.4",
+      "titleZh": "这是我的一家",
+      "titleVi": "Đây là gia đình của tôi",
+      "partLabel": "Phần 4.4 — Tổng kết & Luyện tập",
+      "resourceIds": [
+        "6adf1d4258da95000267ef72"
+      ],
+      "duration": "07:59",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf1fade5b2290002718df9",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 5,
+      "partNumber": "5.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 5.1",
+      "titleZh": "今天我休息",
+      "titleVi": "Hôm nay tôi được nghỉ",
+      "partLabel": "Phần 5.1 — Từ mới & Ngày tháng",
+      "resourceIds": [
+        "6adf1e7cedf12a00022cde53"
+      ],
+      "duration": "08:49",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf2171e5b22900027194df",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 5,
+      "partNumber": "5.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 5.2",
+      "titleZh": "今天我休息",
+      "titleVi": "Hôm nay tôi được nghỉ",
+      "partLabel": "Phần 5.2 — Bài khóa & Ngữ pháp",
+      "resourceIds": [
+        "6adf2015ff3e240002282e5e"
+      ],
+      "duration": "10:07",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf22e9e5b22900027199e7",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 6,
+      "partNumber": "6.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 6.1",
+      "titleZh": "你的手机号是多少？",
+      "titleVi": "Số điện thoại của bạn là bao nhiêu?",
+      "partLabel": "Phần 6.1 — Từ mới & Số đếm",
+      "resourceIds": [
+        "6adf21dbff3e240002282e6c"
+      ],
+      "duration": "08:37",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf3932e8e0af00026814ef",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 6,
+      "partNumber": "6.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 6.2",
+      "titleZh": "你的手机号是多少？",
+      "titleVi": "Số điện thoại của bạn là bao nhiêu?",
+      "partLabel": "Phần 6.2 — Bài khóa & Hỏi số điện thoại",
+      "resourceIds": [
+        "6adf384637e34400025dfc49"
+      ],
+      "duration": "12:22",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf3578b3cfe60002ab5a55",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 7,
+      "partNumber": "7.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 7.1",
+      "titleZh": "我晚上六点半下班",
+      "titleVi": "Tôi tan làm lúc sáu rưỡi tối",
+      "partLabel": "Phần 7.1 — Từ mới & Cách nói giờ",
+      "resourceIds": [
+        "6adf34321d93990002196230"
+      ],
+      "duration": "15:31",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf3633b3cfe60002ab5cf4",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 7,
+      "partNumber": "7.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 7.2",
+      "titleZh": "我晚上六点半下班",
+      "titleVi": "Tôi tan làm lúc sáu rưỡi tối",
+      "partLabel": "Phần 7.2 — Bài khóa & Lịch sinh hoạt",
+      "resourceIds": [
+        "6adf359b1d9399000219623e"
+      ],
+      "duration": "06:29",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf3707b3cfe60002ab5fd6",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 8,
+      "partNumber": "8.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 8.1",
+      "titleZh": "我爸爸也在医院工作",
+      "titleVi": "Bố tôi cũng làm việc ở bệnh viện",
+      "partLabel": "Phần 8.1 — Từ mới nghề nghiệp & Nơi làm việc",
+      "resourceIds": [
+        "6adf366037e34400025dfc39"
+      ],
+      "duration": "06:59",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf37f61d600a0002d466ae",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 8,
+      "partNumber": "8.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 8.2",
+      "titleZh": "我爸爸也在医院工作",
+      "titleVi": "Bố tôi cũng làm việc ở bệnh viện",
+      "partLabel": "Phần 8.2 — Bài khóa & Giới từ 在",
+      "resourceIds": [
+        "6adf374337e34400025dfc3f"
+      ],
+      "duration": "07:44",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae52ef17b101100026bb5d7",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 9,
+      "partNumber": "9.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 9.1",
+      "titleZh": "我明天上午在学校学习",
+      "titleVi": "Sáng mai tôi học ở trường",
+      "partLabel": "Phần 9.1 — Từ mới trường học & Thời gian",
+      "resourceIds": [
+        "6ae52a57a6947f0002b2407a"
+      ],
+      "duration": "12:59",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae532927b101100026bb9f3",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 9,
+      "partNumber": "9.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 9.2",
+      "titleZh": "我明天上午在学校学习",
+      "titleVi": "Sáng mai tôi học ở trường",
+      "partLabel": "Phần 9.2 — Bài khóa & Trật tự câu",
+      "resourceIds": [
+        "6ae52f6af9f5190002993c47"
+      ],
+      "duration": "06:08",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae546eaa1908400020410e3",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 10,
+      "partNumber": "10.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 10.1",
+      "titleZh": "这儿的苹果真便宜！",
+      "titleVi": "Táo ở đây rẻ thật đấy!",
+      "partLabel": "Phần 10.1 — Từ mới hoa quả & Mua sắm",
+      "resourceIds": [
+        "6ae53844f133e40002a7083d"
+      ],
+      "duration": "11:59",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae547d1a1908400020412fd",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 10,
+      "partNumber": "10.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 10.2",
+      "titleZh": "这儿的苹果真便宜！",
+      "titleVi": "Táo ở đây rẻ thật đấy!",
+      "partLabel": "Phần 10.2 — Bài khóa & Hỏi giá tiền",
+      "resourceIds": [
+        "6ae54742f133e40002a70842"
+      ],
+      "duration": "07:12",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae54a51fab31400021bee3b",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 11,
+      "partNumber": "11.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 11.1",
+      "titleZh": "我读大学呢",
+      "titleVi": "Tôi đang học đại học",
+      "partLabel": "Phần 11.1 — Từ mới học tập & Trường lớp",
+      "resourceIds": [
+        "6ae54811f133e40002a70843"
+      ],
+      "duration": "09:30",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae54abdfab31400021befb0",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 11,
+      "partNumber": "11.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 11.2",
+      "titleZh": "我读大学呢",
+      "titleVi": "Tôi đang học đại học",
+      "partLabel": "Phần 11.2 — Bài khóa & Trợ từ 呢",
+      "resourceIds": [
+        "6ae54a7d238c0700028dced8"
+      ],
+      "duration": "07:46",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae54f37a1908400020426c9",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 12,
+      "partNumber": "12.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 12.1",
+      "titleZh": "昨天下了雪了",
+      "titleVi": "Hôm qua có tuyết rơi rồi",
+      "partLabel": "Phần 12.1 — Từ mới thời tiết",
+      "resourceIds": [
+        "6ae54af4a8aec300024f0915"
+      ],
+      "duration": "12:38",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae54fe0a1908400020428a5",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 12,
+      "partNumber": "12.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 12.2",
+      "titleZh": "昨天下了雪了",
+      "titleVi": "Hôm qua có tuyết rơi rồi",
+      "partLabel": "Phần 12.2 — Bài khóa & Trợ từ 了",
+      "resourceIds": [
+        "6ae54f7b4b62f10002342205"
+      ],
+      "duration": "05:36",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae5504aa1908400020429c9",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 12,
+      "partNumber": "12.3",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 12.3",
+      "titleZh": "昨天下了雪了",
+      "titleVi": "Hôm qua có tuyết rơi rồi",
+      "partLabel": "Phần 12.3 — Luyện tập tổng hợp Bài 12",
+      "resourceIds": [
+        "6ae54ffc4b62f1000234220b"
+      ],
+      "duration": "05:25",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae550b3a190840002042a62",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 13,
+      "partNumber": "13.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 13.1",
+      "titleZh": "请给我一杯茶",
+      "titleVi": "Xin cho tôi một cốc trà",
+      "partLabel": "Phần 13.1 — Từ mới đồ uống & Gọi món",
+      "resourceIds": [
+        "6ae55062a8aec300024f0936"
+      ],
+      "duration": "03:49",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae550fefab31400021bff7a",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 13,
+      "partNumber": "13.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 13.2",
+      "titleZh": "请给我一杯茶",
+      "titleVi": "Xin cho tôi một cốc trà",
+      "partLabel": "Phần 13.2 — Bài khóa & Câu cầu khiến 请/给",
+      "resourceIds": [
+        "6ae550d34b62f10002342211"
+      ],
+      "duration": "05:25",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae558d7fab31400021c1676",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 14,
+      "partNumber": "14.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 14.1",
+      "titleZh": "我看了一个电影",
+      "titleVi": "Tôi đã xem một bộ phim",
+      "partLabel": "Phần 14.1 — Từ mới giải trí & Điện ảnh",
+      "resourceIds": [
+        "6ae55149a8aec300024f0945"
+      ],
+      "duration": "10:28",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae56b19b734640002ce823d",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 14,
+      "partNumber": "14.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 14.2",
+      "titleZh": "我看了一个电影",
+      "titleVi": "Tôi đã xem một bộ phim",
+      "partLabel": "Phần 14.2 — Bài khóa & Động từ + 了",
+      "resourceIds": [
+        "6ae56486e8c772000259fd59"
+      ],
+      "duration": "08:54",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae56d92b734640002ce863a",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 15,
+      "partNumber": "15.1",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 15.1",
+      "titleZh": "大兴机场见！",
+      "titleVi": "Hẹn gặp ở sân bay Đại Hưng!",
+      "partLabel": "Phần 15.1 — Từ mới giao thông & Sân bay",
+      "resourceIds": [
+        "6ae56bb4e8c772000259fd66"
+      ],
+      "duration": "08:30",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae56f7f9902f90002d5ebdc",
+      "altUnitId": null,
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 15,
+      "partNumber": "15.2",
+      "unitType": "lesson",
+      "rawTitle": "HSK1_Bài 15.2",
+      "titleZh": "大兴机场见！",
+      "titleVi": "Hẹn gặp ở sân bay Đại Hưng!",
+      "partLabel": "Phần 15.2 — Bài khóa & Tổng kết HSK 1",
+      "resourceIds": [
+        "6ae56ddde8c772000259fd6d"
+      ],
+      "duration": "06:46",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6adf21c2e2681300028dfa46",
+      "altUnitId": "6aed8dd944034f00029b2b12",
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 16,
+      "partNumber": "SBT 1.1",
+      "unitType": "workbook",
+      "rawTitle": "HSK1_SBT 1.1: Sách bài tập (Phần 1 - Trang 1 đến 78)",
+      "titleZh": "HSK 1 练习册（上）",
+      "titleVi": "Chữa Sách bài tập HSK 1 — Phần 1 (Trang 1–78)",
+      "partLabel": "Chữa Sách bài tập Phần 1 (Trang 1–78)",
+      "resourceIds": [
+        "6adf20d8e8e0af00026808bf"
+      ],
+      "duration": "11:19",
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "courseId": "6adadba969897b0002482ca5",
+      "unitId": "6ae56c9db734640002ce8446",
+      "altUnitId": "6aed934844034f00029b3d9e",
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "lessonNumber": 17,
+      "partNumber": "SBT 1.2",
+      "unitType": "workbook",
+      "rawTitle": "HSK1_SBT 1.2: Sách bài tập (Phần 2 - Trang 79 đến 150)",
+      "titleZh": "HSK 1 练习册（下）",
+      "titleVi": "Chữa Sách bài tập HSK 1 — Phần 2 (Trang 79–150)",
+      "partLabel": "Chữa Sách bài tập Phần 2 (Trang 79–150)",
+      "resourceIds": [
+        "6ae5671be8c772000259fd61"
+      ],
+      "duration": "13:10",
+      "confidence": "HIGH",
+      "verified": true
+    }
+  ],
+  "workbookLessons": [
+    {
+      "id": 16,
+      "num": 16,
+      "courseId": "6adadba969897b0002482ca5",
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "unitId": "6adf21c2e2681300028dfa46",
+      "unitIds": [
+        "6adf21c2e2681300028dfa46",
+        "6aed8dd944034f00029b2b12"
+      ],
+      "unitType": "workbook",
+      "partNumber": "SBT 1.1",
+      "rawTitle": "HSK1_SBT 1.1: Sách bài tập (Phần 1 - Trang 1 đến 78)",
+      "titleZh": "HSK 1 练习册（上）",
+      "titleVi": "Chữa Sách bài tập HSK 1 — Phần 1 (Trang 1–78)",
+      "parts": [
+        {
+          "unitId": "6adf21c2e2681300028dfa46",
+          "partNumber": "SBT 1.1",
+          "rawTitle": "HSK1_SBT 1.1: Sách bài tập (Phần 1 - Trang 1 đến 78)",
+          "title": "Chữa Sách bài tập Phần 1 (Trang 1–78)",
+          "videoId": "6adf20d8e8e0af00026808bf",
+          "duration": "11:19",
+          "durationSec": 679,
+          "url": "https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6adf20d8e8e0af00026808bf/playlist.m3u8"
+        }
+      ],
+      "duration": "11:19",
+      "sgkPage": null,
+      "sbtPage": 11,
+      "voVietPage": null,
+      "grammar": "Hướng dẫn giải chi tiết và luyện nghe Sách bài tập New HSK 1 (3.0) — Trang 1–78.",
+      "homework": {
+        "status": "unsubmitted",
+        "score": null,
+        "submittedAt": null,
+        "note": "",
+        "teacherComment": null
+      },
+      "homeworkAssignment": {
+        "assigned": false,
+        "mandatory": false,
+        "title": "Tự luyện Sách bài tập (SBT 1.1)",
+        "instructions": "Chưa có bài tập cần nộp cho bài này. Học viên có thể tự đối chiếu đáp án Sách bài tập trang 1–78 theo video chữa bài.",
+        "relatedPages": "SBT trang 1–78",
+        "allowedTypes": [
+          "audio",
+          "image",
+          "pdf"
+        ],
+        "maxFiles": 3,
+        "deadline": null,
+        "completionCriteria": null
+      },
+      "audioTracks": [
+        {
+          "id": "hsk1-sbt-1-l1-听读练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 1 — Nghe & Đọc (听读练)",
+          "category": "mp3_sbt",
+          "filename": "听读练.mp3",
+          "relPath": "audio/sbt/第01课/听读练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC01%E8%AF%BE/%E5%90%AC%E8%AF%BB%E7%BB%83.mp3",
+          "size": 6121685,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l1-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 1 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第01课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC01%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 4214744,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l2-听读练 - phần bài tập .mp3",
+          "name": "MP3 Luyện nghe SBT Bài 2 — Nghe & Đọc (听读练)",
+          "category": "mp3_sbt",
+          "filename": "听读练 - phần bài tập .mp3",
+          "relPath": "audio/sbt/第02课/听读练 - phần bài tập .mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC02%E8%AF%BE/%E5%90%AC%E8%AF%BB%E7%BB%83%20-%20ph%E1%BA%A7n%20b%C3%A0i%20t%E1%BA%ADp%20.mp3",
+          "size": 4223918,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l2-语音.Phần luyện nghe phát âm mp3.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 2 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.Phần luyện nghe phát âm mp3.mp3",
+          "relPath": "audio/sbt/第02课/语音.Phần luyện nghe phát âm mp3.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC02%E8%AF%BE/%E8%AF%AD%E9%9F%B3.Ph%E1%BA%A7n%20luy%E1%BB%87n%20nghe%20ph%C3%A1t%20%C3%A2m%20mp3.mp3",
+          "size": 6871868,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l3-Phần bài tập.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 3 (Phần bài tập.mp3)",
+          "category": "mp3_sbt",
+          "filename": "Phần bài tập.mp3",
+          "relPath": "audio/sbt/第03课/Phần bài tập.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC03%E8%AF%BE/Ph%E1%BA%A7n%20b%C3%A0i%20t%E1%BA%ADp.mp3",
+          "size": 4690958,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l3-phần luyện nghe .mp3",
+          "name": "MP3 Luyện nghe SBT Bài 3 (phần luyện nghe .mp3)",
+          "category": "mp3_sbt",
+          "filename": "phần luyện nghe .mp3",
+          "relPath": "audio/sbt/第03课/phần luyện nghe .mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC03%E8%AF%BE/ph%E1%BA%A7n%20luy%E1%BB%87n%20nghe%20.mp3",
+          "size": 4472450,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l4-听读练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 4 — Nghe & Đọc (听读练)",
+          "category": "mp3_sbt",
+          "filename": "听读练.mp3",
+          "relPath": "audio/sbt/第04课/听读练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC04%E8%AF%BE/%E5%90%AC%E8%AF%BB%E7%BB%83.mp3",
+          "size": 4208072,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l4-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 4 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第04课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC04%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 8077832,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l4-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 4 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第04课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC04%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 3147224,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l5-听读练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 5 — Nghe & Đọc (听读练)",
+          "category": "mp3_sbt",
+          "filename": "听读练.mp3",
+          "relPath": "audio/sbt/第05课/听读练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC05%E8%AF%BE/%E5%90%AC%E8%AF%BB%E7%BB%83.mp3",
+          "size": 3100103,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l5-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 5 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第05课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC05%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 7330985,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l5-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 5 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第05课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC05%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 2367434,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l6-听读练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 6 — Nghe & Đọc (听读练)",
+          "category": "mp3_sbt",
+          "filename": "听读练.mp3",
+          "relPath": "audio/sbt/第06课/听读练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC06%E8%AF%BE/%E5%90%AC%E8%AF%BB%E7%BB%83.mp3",
+          "size": 1987547,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l6-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 6 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第06课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC06%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 8285498,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l6-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 6 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第06课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC06%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 2215646,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l7-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 7 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第07课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC07%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 7911449,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l7-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 7 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第07课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC07%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 4468280,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l8-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 8 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第08课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC08%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 7973582,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l8-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 8 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第08课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC08%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 3122204,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l9-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 9 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第09课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC09%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 7926044,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-1-l9-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 9 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第09课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC09%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 2982509,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        }
+      ],
+      "materials": [
+        {
+          "id": "hsk1-sbt-1-pdf",
+          "title": "SBT HSK 1 (3.0) — Phần 1 (Trang 1–78)",
+          "type": "sbt_pdf",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SBT.pdf#page=11",
+          "fileUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SBT.pdf",
+          "objectKey": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SBT.pdf",
+          "page": 11,
+          "size": 49047337,
+          "mimeType": "application/pdf",
+          "actionLabel": "Xem bài tập (Trang 11)",
+          "canView": true,
+          "canDownload": true,
+          "httpStatus": 200
+        }
+      ],
+      "confidence": "HIGH",
+      "verified": true
+    },
+    {
+      "id": 17,
+      "num": 17,
+      "courseId": "6adadba969897b0002482ca5",
+      "chapterId": "6adadbaf69897b0002482cb5",
+      "unitId": "6ae56c9db734640002ce8446",
+      "unitIds": [
+        "6ae56c9db734640002ce8446",
+        "6aed934844034f00029b3d9e"
+      ],
+      "unitType": "workbook",
+      "partNumber": "SBT 1.2",
+      "rawTitle": "HSK1_SBT 1.2: Sách bài tập (Phần 2 - Trang 79 đến 150)",
+      "titleZh": "HSK 1 练习册（下）",
+      "titleVi": "Chữa Sách bài tập HSK 1 — Phần 2 (Trang 79–150)",
+      "parts": [
+        {
+          "unitId": "6ae56c9db734640002ce8446",
+          "partNumber": "SBT 1.2",
+          "rawTitle": "HSK1_SBT 1.2: Sách bài tập (Phần 2 - Trang 79 đến 150)",
+          "title": "Chữa Sách bài tập Phần 2 (Trang 79–150)",
+          "videoId": "6ae5671be8c772000259fd61",
+          "duration": "13:10",
+          "durationSec": 790,
+          "url": "https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6ae5671be8c772000259fd61/playlist.m3u8"
+        }
+      ],
+      "duration": "13:10",
+      "sgkPage": null,
+      "sbtPage": 79,
+      "voVietPage": null,
+      "grammar": "Hướng dẫn giải chi tiết và luyện nghe Sách bài tập New HSK 1 (3.0) — Trang 79–150.",
+      "homework": {
+        "status": "unsubmitted",
+        "score": null,
+        "submittedAt": null,
+        "note": "",
+        "teacherComment": null
+      },
+      "homeworkAssignment": {
+        "assigned": false,
+        "mandatory": false,
+        "title": "Tự luyện Sách bài tập (SBT 1.2)",
+        "instructions": "Chưa có bài tập cần nộp cho bài này. Học viên có thể tự đối chiếu đáp án Sách bài tập trang 79–150 theo video chữa bài.",
+        "relatedPages": "SBT trang 79–150",
+        "allowedTypes": [
+          "audio",
+          "image",
+          "pdf"
+        ],
+        "maxFiles": 3,
+        "deadline": null,
+        "completionCriteria": null
+      },
+      "audioTracks": [
+        {
+          "id": "hsk1-sbt-2-l10-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 10 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第10课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC10%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 7978169,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l10-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 10 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第10课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC10%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 3053399,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l11-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 11 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第11课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC11%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 8001521,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l11-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 11 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第11课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC11%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 3460391,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l12-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 12 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第12课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC12%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 8127038,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l12-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 12 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第12课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC12%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 3029630,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l13-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 13 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第13课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC13%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 7986926,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l13-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 13 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第13课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC13%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 3068411,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l14-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 14 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第14课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC14%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 8081168,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l14-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 14 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第14课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC14%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 2888684,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l15-模拟测练.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 15 (模拟测练.mp3)",
+          "category": "mp3_sbt",
+          "filename": "模拟测练.mp3",
+          "relPath": "audio/sbt/第15课/模拟测练.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC15%E8%AF%BE/%E6%A8%A1%E6%8B%9F%E6%B5%8B%E7%BB%83.mp3",
+          "size": 8259227,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        },
+        {
+          "id": "hsk1-sbt-2-l15-语音.mp3",
+          "name": "MP3 Luyện nghe SBT Bài 15 — Ngữ âm (语音)",
+          "category": "mp3_sbt",
+          "filename": "语音.mp3",
+          "relPath": "audio/sbt/第15课/语音.mp3",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/audio/sbt/%E7%AC%AC15%E8%AF%BE/%E8%AF%AD%E9%9F%B3.mp3",
+          "size": 2917457,
+          "mimeType": "audio/mpeg",
+          "httpStatus": 200
+        }
+      ],
+      "materials": [
+        {
+          "id": "hsk1-sbt-2-pdf",
+          "title": "SBT HSK 1 (3.0) — Phần 2 (Trang 79–150)",
+          "type": "sbt_pdf",
+          "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SBT.pdf#page=79",
+          "fileUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SBT.pdf",
+          "objectKey": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/hsk1-3.0/docs/HSK1_SBT.pdf",
+          "page": 79,
+          "size": 49047337,
+          "mimeType": "application/pdf",
+          "actionLabel": "Xem bài tập (Trang 79)",
+          "canView": true,
+          "canDownload": true,
+          "httpStatus": 200
+        }
+      ],
+      "confidence": "HIGH",
+      "verified": true
+    }
+  ]
+}

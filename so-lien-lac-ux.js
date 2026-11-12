@@ -2262,10 +2262,25 @@
     if (matched) {
       const sMail = String(matched.email || '').toLowerCase();
       const sName = String(matched.name || '').toLowerCase();
-      if (sMail === 'taphong2002@gmail.com' || sName.includes('ta phong')) {
+      const isTaPhongMatch = sMail === 'taphong2002@gmail.com' || sName.includes('ta phong');
+      if (isTaPhongMatch) {
         matched.hasOnlineCourses = true;
         if (!Array.isArray(matched.courseIds) || matched.courseIds.length === 0) {
           matched.courseIds = ['6adadba969897b0002482ca5'];
+        }
+      } else if (!matched.classCode) {
+        const savedEntMatch = Array.isArray(this.state?.studentEntitlements)
+          ? this.state.studentEntitlements.find(e =>
+              (e.code && (e.code === matched.code || e.code === accountId)) ||
+              (e.email && sMail && String(e.email).toLowerCase() === sMail)
+            )
+          : null;
+        const sessionClassCode = String(acc.classCode || acc.class_code || session?.classCode || '').trim();
+        if (!savedEntMatch && sessionClassCode) {
+          matched.classCode = sessionClassCode;
+          matched.className = matched.className || `Lớp ${sessionClassCode}`;
+          matched.hasLiveClass = true;
+          matched.caseType = this.computeStudentCase(matched);
         }
       }
     }
@@ -2295,24 +2310,27 @@
             )
           : null;
 
-        const hasSavedOnline = isTaPhong ? true : Boolean(savedEnt?.hasOnlineCourses);
+        const hasSavedOnline = isTaPhong ? true : Boolean(savedEnt?.hasOnlineCourses || acc.hasOnlineCourses || session?.hasOnlineCourses);
         const savedCourseIds = hasSavedOnline ? ['6adadba969897b0002482ca5'] : [];
+        const sessionClassCode = String(acc.classCode || acc.class_code || session?.classCode || (izMatch && izMatch.classCode) || '').trim();
+        const resolvedClassCode = isTaPhong ? '' : (savedEnt ? (savedEnt.classCode || '') : sessionClassCode);
+        const resolvedClassName = isTaPhong ? 'Lớp HSK 1 Cơ Bản' : (savedEnt?.className || (resolvedClassCode ? `Lớp ${resolvedClassCode}` : ''));
 
         matched = {
           name: displayName,
           parent: 'Phụ huynh ' + displayName,
           email: studentEmail,
           phone: (izMatch && izMatch.phone) || '',
-          progress: savedEnt?.progress || (hasSavedOnline ? 'Tự học HSK1 3.0' : 'Chưa xếp lớp'),
+          progress: savedEnt?.progress || (resolvedClassCode ? `Lớp ${resolvedClassCode}` : (hasSavedOnline ? 'Tự học HSK1 3.0' : 'Chưa xếp lớp')),
           code: isTaPhong ? 'KTN-2026-TAPHON' : customCode,
           userId: studentUserId,
-          className: isTaPhong ? 'Lớp HSK 1 Cơ Bản' : (savedEnt?.className || ''),
-          classCode: savedEnt?.classCode || '',
+          className: resolvedClassName,
+          classCode: resolvedClassCode,
           hasOnlineCourses: hasSavedOnline,
-          hasLiveClass: Boolean(savedEnt?.classCode),
+          hasLiveClass: Boolean(resolvedClassCode),
           unsubmittedCurrent: false,
           courseIds: savedCourseIds,
-          attendance: savedEnt?.attendance || (hasSavedOnline ? 'Tự học trực tuyến' : 'Chưa xếp lớp'),
+          attendance: savedEnt?.attendance || (resolvedClassCode ? 'Đang học lớp trực tiếp' : (hasSavedOnline ? 'Tự học trực tuyến' : 'Chưa xếp lớp')),
           target: savedEnt?.target || 'Làm quen phát âm Pinyin & từ vựng tiếng Trung cơ bản',
           note: savedEnt?.note || 'Tài khoản học viên',
           isDynamicSession: true
@@ -3594,12 +3612,12 @@
     const badge = $('badge-courses-count');
     if (badge) badge.textContent = `${activeCourses.length} khóa`;
     const statusBadge = $('badge-courses-status');
-    if (statusBadge) statusBadge.textContent = `${activeCourses.length} khóa đang kích hoạt cho ${stu ? stu.name : 'bạn'}`;
+    if (statusBadge) statusBadge.textContent = `${activeCourses.length} khóa`;
     const list = $('parent-courses-list');
     if (!list) return;
 
     if (!activeCourses.length) {
-      list.innerHTML = `<div class="empty-box" style="padding:20px;text-align:center;">Tài khoản của <strong>${esc(stu ? stu.name : 'học viên')}</strong> hiện chưa đăng ký khóa học nào.<br><span style="font-size:12.5px;color:var(--sub);">Khi Quản lý trung tâm xếp lớp hoặc mở khóa học cho con, nội dung sẽ hiển thị tại đây.</span></div>`;
+      list.innerHTML = `<div class="empty-box" style="padding:20px;text-align:center;">Tài khoản của <strong>${esc(stu ? stu.name : 'học viên')}</strong> hiện chưa đăng ký khóa học nào.</div>`;
       return;
     }
 
@@ -3607,31 +3625,27 @@
       const lessons = Array.isArray(course.lessons) ? course.lessons : [];
       return `
       <article class="card course-hub-card" data-course-id="${esc(course.id)}">
-        <div class="course-card-media" onclick="app.openCourseLesson('${esc(course.id)}', 0)" style="cursor:pointer;" title="Bấm để vào học ${esc(course.title)}">
+        <div class="course-card-media" onclick="app.openCourseLesson('${esc(course.id)}', 0)" style="cursor:pointer;" title="${esc(course.title)}">
           <img src="${esc(course.thumb)}" data-fb="${esc(course.fallbackThumb)}" onerror="if(this.dataset.fb&&this.src!==this.dataset.fb)this.src=this.dataset.fb" alt="${esc(course.title)}" width="320" height="180" decoding="async" class="course-card-thumb">
           <span class="course-level-badge">${esc(course.badge || course.level || 'Khóa học')}</span>
-          <span class="course-progress-badge">${course.progressPct || 0}% hoàn thành</span>
+          <span class="course-progress-badge">${course.progressPct || 0}%</span>
           <div class="course-card-play-overlay">
-            <span class="course-card-play-btn">▶ Vào học bài giảng ngay</span>
+            <span class="course-card-play-btn">▶ Vào học</span>
           </div>
         </div>
         <div class="course-card-body">
-          <div class="course-card-meta">Giảng viên: <strong>${esc(course.teacher || 'Thầy Khổng Tử Nhí')}</strong> · ${esc(course.completedText || `${lessons.length} bài học`)}</div>
-          <h4 class="course-card-title" onclick="app.openCourseLesson('${esc(course.id)}', 0)" style="cursor:pointer;" title="Bấm để vào học ${esc(course.title)}">${esc(course.title)}</h4>
+          <div class="course-card-meta">👨‍🏫 <strong>${esc(course.teacher || 'Thầy Khổng Tử Nhí')}</strong> · ${esc(course.completedText || `${lessons.length} bài`)}</div>
+          <h4 class="course-card-title" onclick="app.openCourseLesson('${esc(course.id)}', 0)" style="cursor:pointer;" title="${esc(course.title)}">${esc(course.title)}</h4>
           <div class="progress-track" style="margin:8px 0 12px;"><div class="progress-fill" style="width:${course.progressPct || 0}%;background:${(course.progressPct === 100) ? '#10B981' : 'var(--primary)'};"></div></div>
           
           <div class="course-card-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
             <button type="button" onclick="app.openCourseLesson('${esc(course.id)}', 0)" data-open-course="${esc(course.id)}" data-lesson-idx="0" class="btn-primary" style="text-align:center;flex:1;padding:10px 16px;font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;box-shadow:0 3px 10px rgba(220,38,38,0.25);">
-              ▶ Vào học bài giảng ngay
-            </button>
-            <button type="button" onclick="app.switchParentSubtab('docs')" class="btn-ghost" style="padding:10px 14px;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;">
-              📚 Kho tài liệu (5 PDF) →
+              ▶ Vào học &amp; Nộp bài
             </button>
           </div>
 
           <div class="course-lessons-header" style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
-            <span>DANH SÁCH BÀI HỌC (${lessons.length})</span>
-            <span style="font-size:11px;font-weight:normal;color:#94a3b8;">Bấm để học từng bài</span>
+            <span>BÀI HỌC (${lessons.length})</span>
           </div>
 
           <div class="course-lessons-list" style="max-height:240px;overflow-y:auto;padding-right:4px;">
@@ -3829,9 +3843,11 @@
   app.renderLearnWorkspace = function (course, lessonIdx = 0) {
     if (!course) course = this.onlineCourses[0];
     if (!course) return;
-    const lessons = Array.isArray(course.lessons) && course.lessons.length > 0 ? course.lessons : [];
+    const lessons = Array.isArray(course.lessons) && course.lessons.length > 0
+      ? course.lessons
+      : [{ title: course.title || 'Bài học', duration: '--:--', done: false }];
     const safeIdx = (typeof lessonIdx === 'number' && lessonIdx >= 0 && lessonIdx < lessons.length) ? lessonIdx : 0;
-    const lesson = lessons[safeIdx] || lessons[0];
+    const lesson = lessons[safeIdx] || lessons[0] || { title: course.title || 'Bài học', duration: '--:--', done: false };
     const videos = Array.isArray(lesson.videos) ? lesson.videos : [];
     const hasVideos = videos.length > 0;
     const hasAudio = (Array.isArray(lesson.sgkAudio) && lesson.sgkAudio.length > 0) || (Array.isArray(lesson.sbtAudio) && lesson.sbtAudio.length > 0);
@@ -3839,6 +3855,8 @@
     // Update topbar title
     const headerTitle = $('learn-page-header-title');
     if (headerTitle) headerTitle.textContent = `${lesson.title}`;
+    const dlgTitle = $('course-player-title');
+    if (dlgTitle) dlgTitle.textContent = `${lesson.title}`;
 
     // 1. Media Stage Card (Làn bài giảng chính)
     const mediaCard = $('learn-stage-media-card');
@@ -7986,8 +8004,8 @@
    */
   class KtnChatClient {
     constructor(options = {}) {
-      this.wsUrl = options.wsUrl || this._resolveWsUrl();
-      this.restEndpoint = options.restEndpoint || '/api/chat';
+      this.wsUrl = options.wsUrl || null;
+      this.restEndpoint = options.restEndpoint || '/api/ktn/messages';
       this.channelName = options.channelName || 'ktn_class_chat';
       this.tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
       this.ws = null;
@@ -8007,19 +8025,13 @@
       this._initBroadcastChannel();
     }
 
-    _resolveWsUrl() {
-      if (typeof location === 'undefined') return 'ws://127.0.0.1:4173/ws/chat';
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${proto}//${location.host}/ws/chat`;
-    }
-
     _initBroadcastChannel() {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         try {
           this.broadcastChannel = new BroadcastChannel(this.channelName);
           this.broadcastChannel.onmessage = (event) => this._handleBroadcast(event.data);
         } catch (e) {
-          console.warn('[KtnChatClient] BroadcastChannel unavailable, using WS-only:', e);
+          console.warn('[KtnChatClient] BroadcastChannel unavailable:', e);
         }
       }
     }
@@ -8028,12 +8040,6 @@
       if (!data || data.originTabId === this.tabId) return;
 
       switch (data.type) {
-        case 'OPTIMISTIC_SEND':
-          if (data.message && !this.seenMessageIds.has(data.message.id)) {
-            this.seenMessageIds.add(data.message.id);
-            this.onMessageReceived(data.message, 'broadcast_optimistic');
-          }
-          break;
         case 'MESSAGE_ACK':
           if (data.messageId) {
             this.onStatusChanged(data.messageId, 'sent');
@@ -8052,6 +8058,13 @@
       this.currentUser = user;
       this.currentClassCode = String(classCode || '').trim().toUpperCase();
       this.currentRoom = 'class:' + this.currentClassCode;
+
+      // Default mode uses confirmed REST (/api/ktn/messages) + BroadcastChannel without dead /ws/chat
+      if (!this.wsUrl) {
+        this.onStatusChanged(null, 'connected');
+        this._flushPendingQueue();
+        return;
+      }
 
       if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
         this.joinRoom(this.currentRoom);
@@ -8105,9 +8118,17 @@
         case 'ack':
           if (event.action === 'chat_message' && event.payload?.messageId) {
             const mid = event.payload.messageId;
+            const confirmedMsg = this.pendingQueue.get(mid);
             this.pendingQueue.delete(mid);
             this.onStatusChanged(mid, 'sent');
             this._broadcast({ type: 'MESSAGE_ACK', messageId: mid, originTabId: this.tabId });
+            if (confirmedMsg) {
+              this._broadcast({
+                type: 'MESSAGE_DELIVERED',
+                message: { ...confirmedMsg, status: 'sent' },
+                originTabId: this.tabId
+              });
+            }
           }
           break;
         case 'broadcast_message':
@@ -8144,6 +8165,7 @@
     }
 
     _scheduleReconnect() {
+      if (!this.wsUrl) return;
       if (this.reconnectTimer) return;
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
         return;
@@ -8177,12 +8199,7 @@
       this.seenMessageIds.add(message.id);
       this.pendingQueue.set(message.id, message);
 
-      this._broadcast({
-        type: 'OPTIMISTIC_SEND',
-        message: message,
-        originTabId: this.tabId
-      });
-
+      // BUG CHAT-06 Fix: Never broadcast OPTIMISTIC_SEND before server confirmation
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({
           type: 'chat_message',
@@ -8196,15 +8213,46 @@
 
     async _dispatchRestFallback(message) {
       try {
-        const res = await fetch(`${this.restEndpoint}/message`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ classCode: this.currentClassCode, text: message.text, attachment: message.attachment, id: message.id })
-        });
-        if (res.ok) {
+        const roomId = this.currentRoom || ('class:' + (this.currentClassCode || 'YCT2-04'));
+        const payload = {
+          id: message.id,
+          roomId,
+          classCode: this.currentClassCode,
+          text: message.text || '',
+          attachment: message.attachment || null
+        };
+        let ok = false;
+        let savedMessage = null;
+
+        if (typeof window !== 'undefined' && window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+          const data = await window.KtnWebApp.apiRequest(this.restEndpoint, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+          });
+          ok = Boolean(data && (data.ok || data.message));
+          savedMessage = data?.message || null;
+        } else {
+          const res = await fetch(this.restEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          ok = res.ok;
+          if (res.ok) {
+            const data = await res.json().catch(() => null);
+            savedMessage = data?.message || null;
+          }
+        }
+
+        if (ok) {
           this.pendingQueue.delete(message.id);
           this.onStatusChanged(message.id, 'sent');
           this._broadcast({ type: 'MESSAGE_ACK', messageId: message.id, originTabId: this.tabId });
+          this._broadcast({
+            type: 'MESSAGE_DELIVERED',
+            message: savedMessage || { ...message, status: 'sent' },
+            originTabId: this.tabId
+          });
         } else {
           this.onStatusChanged(message.id, 'error');
         }
@@ -8232,6 +8280,8 @@
             room: this.currentRoom,
             payload: msg
           }));
+        } else {
+          this._dispatchRestFallback(msg);
         }
       }
     }
@@ -8267,34 +8317,40 @@
     const activeStu = self.getActiveParentStudent ? self.getActiveParentStudent() : self.students[0];
     const classCode = (self.currentRole === 'teacher' && self.teacherClassFilter && self.teacherClassFilter !== 'ALL')
       ? self.teacherClassFilter
-      : (activeStu?.classCode || 'YCT2-04');
+      : (activeStu?.classCode || '');
 
-    this.chatClient.connect(
-      { id: self.currentRole === 'teacher' ? (self.state.teacherCode || 'GV-KTN-08') : (activeStu?.code || 'KTN-2026-089'), role: self.currentRole },
-      classCode
-    );
+    if (classCode) {
+      this.chatClient.connect(
+        { id: self.currentRole === 'teacher' ? (self.state.teacherCode || 'GV-KTN-08') : (activeStu?.code || 'KTN-2026-089'), role: self.currentRole },
+        classCode
+      );
+    }
     return this.chatClient;
   };
 
   app.fetchChatHistory = async function (classCode) {
     if (!classCode) return;
     try {
-      const res = await fetch(`/api/chat/history?classCode=${encodeURIComponent(classCode)}&limit=50`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && Array.isArray(data.messages)) {
-          let updated = false;
-          if (!Array.isArray(this.state.messages)) this.state.messages = [];
-          for (const serverMsg of data.messages) {
-            if (!this.state.messages.some(m => m.id === serverMsg.id)) {
-              this.state.messages.push(serverMsg);
-              updated = true;
-            }
+      const roomId = `class:${String(classCode).trim().toUpperCase()}`;
+      let data = null;
+      if (typeof window !== 'undefined' && window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        data = await window.KtnWebApp.apiRequest(`/api/ktn/messages?roomId=${encodeURIComponent(roomId)}`);
+      } else {
+        const res = await fetch(`/api/ktn/messages?roomId=${encodeURIComponent(roomId)}`);
+        if (res.ok) data = await res.json();
+      }
+      if (data && Array.isArray(data.messages)) {
+        let updated = false;
+        if (!Array.isArray(this.state.messages)) this.state.messages = [];
+        for (const serverMsg of data.messages) {
+          if (!this.state.messages.some(m => m.id === serverMsg.id)) {
+            this.state.messages.push(serverMsg);
+            updated = true;
           }
-          if (updated) {
-            this.saveState();
-            this.renderChatStreams();
-          }
+        }
+        if (updated) {
+          this.saveState();
+          this.renderChatStreams();
         }
       }
     } catch {}
@@ -9465,6 +9521,7 @@
         if (typeof alert === 'function') alert('Trình duyệt chưa cấp quyền truy cập Microphone.');
         return false;
       }
+      if (typeof window !== 'undefined') window.__isRequestingMic = true;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         this.audioChunks = [];
@@ -9489,6 +9546,10 @@
       } catch (err) {
         console.warn('[AudioRecorder] Không thể mở microphone:', err);
         return false;
+      } finally {
+        if (typeof window !== 'undefined') {
+          setTimeout(() => { window.__isRequestingMic = false; }, 1500);
+        }
       }
     },
     stopRecording() {
@@ -12258,6 +12319,14 @@
       localStorage.setItem(LEGACY_STORAGE_KEY, serialized);
       this.normalizeExperience();
 
+      const isBusyRecording = Boolean(
+        (typeof window !== 'undefined' && (window.isRecording || window.__isRecordingClassEx || window.__isRequestingMic)) ||
+        this.audioRecorder?.isRecording
+      );
+      if (isBusyRecording) {
+        return true;
+      }
+
       const activeEl = document.activeElement;
       const activeTag = activeEl?.tagName;
       const isTypingInDynamicAdminOrQuickForm = (activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA') &&
@@ -12280,7 +12349,13 @@
       if (typeof window.syncPortalState === 'function') {
         window.syncPortalState();
       } else if (typeof window.showCoursesDashboard === 'function') {
-        window.showCoursesDashboard();
+        const learningEl = document.getElementById('view-course-learning');
+        const paneContact = document.getElementById('pane-contactbook');
+        const isInClassroom = (learningEl && learningEl.style.display === 'block') || String(window.location.hash || '').startsWith('#/khoa/');
+        const isInContactBook = (paneContact && paneContact.style.display !== 'none') || /^#\/(nhom-lop|so-lien-lac|lop)(\/|$)/i.test(String(window.location.hash || ''));
+        if (!isInClassroom && !isInContactBook) {
+          window.showCoursesDashboard();
+        }
       }
       return true;
     } catch {
@@ -12298,8 +12373,12 @@
     }, 25000);
     if (!this._boundFocusCloudPull) {
       this._boundFocusCloudPull = true;
-      window.addEventListener('focus', () => { this.pullSilentCloudState(true); });
+      window.addEventListener('focus', () => {
+        if (window.isRecording || window.__isRecordingClassEx || window.__isRequestingMic || this.audioRecorder?.isRecording) return;
+        this.pullSilentCloudState(true);
+      });
       document.addEventListener('visibilitychange', () => {
+        if (window.isRecording || window.__isRecordingClassEx || window.__isRequestingMic || this.audioRecorder?.isRecording) return;
         if (!document.hidden) this.pullSilentCloudState(true);
       });
     }

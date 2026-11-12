@@ -1,0 +1,359 @@
+{
+  "suite": "KTN Class Lifecycle, Auto Chat Group & Push Notification Matrix (N01-N33)",
+  "generatedAt": "2026-11-10T20:04:32.458Z",
+  "totalScenarios": 33,
+  "passedScenarios": 33,
+  "failedScenarios": 0,
+  "blockedScenarios": 0,
+  "pushVerificationLevels": {
+    "PUSH_ACCEPTED": {
+      "status": "PASS",
+      "detail": "Verified RFC 8291 aes128gcm encrypted payload + VAPID ES256 JWT generation and HTTP 201 acceptance across class_created, class_joined, class_teacher_changed, chat_group_message, schedule_changed, session_cancelled, class_reminder, homework_assigned, homework_submitted, homework_graded."
+    },
+    "SERVICE_WORKER_DISPLAYED": {
+      "status": "PASS",
+      "detail": "Verified /sw.js push event listener -> registration.showNotification() -> POST /api/ktn/push/ack transitions deviceDisplayConfirmed=true and notificationclick -> resolveSwColdOpenUrl() deep-link routing."
+    },
+    "DEVICE_VERIFIED": {
+      "androidOpen": "PASS (Playwright Chromium Service Worker + NotificationCenter bell/badge/toast verified)",
+      "androidBackground": "BLOCKED_NO_PHYSICAL_DEVICE_IN_CLI (hocvien@khongtunhi.com has 3 real FCM Android subscriptions in Supabase; physical lock-screen banner tap requires human QA phone)",
+      "androidClosedUi": "BLOCKED_NO_PHYSICAL_DEVICE_IN_CLI (Service Worker cold-open URL resolution verified in headless Chromium; OS tray click when app swiped closed requires human QA phone)",
+      "iphoneHomeScreenPwa": "NOT_TESTED_DEVICE (No physical iPhone with iOS 16.4+ Home Screen Web App attached to Windows CLI runner)"
+    }
+  },
+  "liveSupabasePushSubscriptionAudit": {
+    "audited": true,
+    "totalRows": 9,
+    "accounts": {
+      "haiyen442k8@gmail.com": {
+        "role": "teacher",
+        "classCode": "NGUVAN06",
+        "totalEndpoints": 2,
+        "realFcmCount": 2,
+        "realApnsCount": 0,
+        "syntheticCount": 0,
+        "latestUpdatedAt": "2026-11-10T12:15:55.56+00:00"
+      },
+      "e2e.hs.a@khongtunhi.com": {
+        "role": "student",
+        "classCode": "YCT2-04",
+        "totalEndpoints": 2,
+        "realFcmCount": 0,
+        "realApnsCount": 0,
+        "syntheticCount": 2,
+        "latestUpdatedAt": "2026-11-10T01:37:42.936+00:00"
+      },
+      "phuonganh21828@gmail.com": {
+        "role": "teacher",
+        "classCode": null,
+        "totalEndpoints": 1,
+        "realFcmCount": 1,
+        "realApnsCount": 0,
+        "syntheticCount": 0,
+        "latestUpdatedAt": "2026-11-09T14:40:08.138+00:00"
+      },
+      "quanly@khongtunhi.com": {
+        "role": "admin",
+        "classCode": null,
+        "totalEndpoints": 1,
+        "realFcmCount": 1,
+        "realApnsCount": 0,
+        "syntheticCount": 0,
+        "latestUpdatedAt": "2026-11-09T14:32:11.116+00:00"
+      },
+      "huyenthienyi2829@gmail.con": {
+        "role": "teacher",
+        "classCode": null,
+        "totalEndpoints": 1,
+        "realFcmCount": 1,
+        "realApnsCount": 0,
+        "syntheticCount": 0,
+        "latestUpdatedAt": "2026-11-09T02:23:30.448+00:00"
+      },
+      "hieuanh0112@gmail.com": {
+        "role": "teacher",
+        "classCode": null,
+        "totalEndpoints": 1,
+        "realFcmCount": 1,
+        "realApnsCount": 0,
+        "syntheticCount": 0,
+        "latestUpdatedAt": "2026-11-07T14:04:07.818+00:00"
+      },
+      "jinzhuang203@gmail.com": {
+        "role": "teacher",
+        "classCode": null,
+        "totalEndpoints": 1,
+        "realFcmCount": 1,
+        "realApnsCount": 0,
+        "syntheticCount": 0,
+        "latestUpdatedAt": "2026-11-07T09:10:40.123+00:00"
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "N01",
+      "group": "Group A",
+      "title": "Admin tạo lớp mới (chưa có học viên) -> Lớp và nhóm chat xuất hiện ngay",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "status=200, roomId=class:YCT2-05, studentCount=0, inAdminRooms=true"
+    },
+    {
+      "id": "N02",
+      "group": "Group A",
+      "title": "Tạo lớp gán Teacher A -> Teacher A thấy nhóm lớp và nhận thông báo class_created (in-app + Web Push)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "notifId=CLASS_CREATED_YCT2-05_1wdhtnq, teacherAHasRoom=true, pushEndpoints=https://fcm.googleapis.com/fcm/send/QA_TEACHER_A_ANDROID"
+    },
+    {
+      "id": "N03",
+      "group": "Group A",
+      "title": "Teacher B không phụ trách -> Không nhận notification, không thấy nhóm, không đọc được tin nhắn (403)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "teacherBNotif=false, teacherBRoom=false, readStatus=403"
+    },
+    {
+      "id": "N04",
+      "group": "Group A",
+      "title": "Admin tạo lớp không có giáo viên hợp lệ -> Hiện \"Chưa phân công giáo viên\", tin ghim null, không gán nhầm Cô Lâm Mỹ Linh & không phát push",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "status=200, pushDeliveries=0, teacher_name=Chưa phân công giáo viên, pinned=null, cleanedPinBy=quanly@khongtunhi.com"
+    },
+    {
+      "id": "N05",
+      "group": "Group A",
+      "title": "Retry request tạo lớp (idempotent replay + 409 chống ghi đè) & đổi giáo viên B3 chuẩn xác",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "idempotentReplay=true, dupStatus=409, notifCount=1, oldTeacherAccess=403, oldTeacherNotif=CLASS_TEACHER_UNASSIGNED_YCT2-05_1wdhtnq_TO_15ybt0t"
+    },
+    {
+      "id": "N06",
+      "group": "Group A",
+      "title": "Teacher A bấm notification class_created -> Mở đúng lớp vừa tạo (/teacher/classes?class=YCT2-05)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "actionUrl=/custom-page/so-lien-lac-test#/teacher/classes?class=YCT2-05&roomId=class%3AYCT2-05, swColdOpen=/custom-page/so-lien-lac-test#/teacher/classes?class=YCT2-05&roomId=class%3AYCT2-05"
+    },
+    {
+      "id": "N07",
+      "group": "Group B",
+      "title": "Admin thêm Student A vào lớp -> Student A thấy lớp và nhóm chat class:YCT2-05 ngay lập tức",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "stuARooms=class:YCT2-05,course:6adadba969897b0002482ca5, classStudentCount=1"
+    },
+    {
+      "id": "N08",
+      "group": "Group B",
+      "title": "Student A đã bật push -> Nhận thông báo gia nhập lớp (class_joined) có tên lớp, giáo viên và deep-link",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "notifId=CLASS_JOINED_YCT2-05_1nugz5t_YCT2-04, pushDeliveries=https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
+    },
+    {
+      "id": "N09",
+      "group": "Group B",
+      "title": "Student B ngoài lớp -> Không nhận thông báo class_joined và không thấy nhóm class:YCT2-05",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "stuBHasJoinNotif=false, stuBHasQaRoom=false"
+    },
+    {
+      "id": "N10",
+      "group": "Group B",
+      "title": "Teacher A tạo học viên mới vào lớp phụ trách -> Học viên được ghi nhận và có thông báo class_joined in-app",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "status=200, studentClass=YCT2-05, inAppNotifRows=1"
+    },
+    {
+      "id": "N11",
+      "group": "Group B",
+      "title": "Gán lại cùng lớp do retry -> Không tạo sự kiện hoặc phát push trùng",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "retryPushCount=0, stuAJoinNotifCount=1"
+    },
+    {
+      "id": "N12",
+      "group": "Group B",
+      "title": "Chuyển học viên sang lớp khác -> Mất quyền nhóm cũ ngay lập tức (403) mặc dù dùng JWT cũ; quyền nhóm mới hoạt động đúng",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "oldRoomStatus=403, newRoomStatus=200"
+    },
+    {
+      "id": "N13",
+      "group": "Group C",
+      "title": "Teacher A gửi tin đầu tiên vào nhóm lớp mới -> Student A nhận thông báo in-app và Web Push",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "msgId=MSG-IDEM-h8abqc__msg-teacher-first-1, stuAChatNotif=NOTIF-MSG-YCT2-05-MSG-IDEM-h8abqc__msg-teacher-first-1, pushEndpoints=https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
+    },
+    {
+      "id": "N14",
+      "group": "Group C",
+      "title": "Student A trả lời trong nhóm lớp -> Teacher A nhận thông báo in-app và Web Push",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "msgId=MSG-IDEM-138d3tb__msg-student-a-reply-1, teacherAChatNotif=NOTIF-TMSG-YCT2-05-MSG-IDEM-138d3tb__msg-student-a-reply-1, pushEndpoints=https://fcm.googleapis.com/fcm/send/QA_TEACHER_A_ANDROID"
+    },
+    {
+      "id": "N15",
+      "group": "Group C",
+      "title": "Admin gửi thông báo trong nhóm -> Chỉ thành viên lớp (Teacher A + Student A) nhận, ngoài lớp không nhận",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "pushCount=2, endpoints=https://fcm.googleapis.com/fcm/send/QA_TEACHER_A_ANDROID,https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
+    },
+    {
+      "id": "N16",
+      "group": "Group C",
+      "title": "Gửi liên tiếp nhiều tin & retry cùng clientMessageId -> Retry không tạo bản ghi hay push trùng; tin mới có eventId riêng",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "retryIdempotent=true, retryPushCount=0, burstPushCount=1"
+    },
+    {
+      "id": "N17",
+      "group": "Group C",
+      "title": "Student B ngoài lớp cố gửi tin vào nhóm -> Bị chặn 403, không lưu tin và không phát push",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "status=403, msgCountBefore=4, msgCountAfter=4, pushCount=0"
+    },
+    {
+      "id": "N18",
+      "group": "Group C",
+      "title": "Service Worker hiển thị thông báo (POST /api/ktn/push/ack -> deviceDisplayConfirmed=true) & nhấn push mở đúng class:YCT2-05",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "shown=1, ackStatus=200, deviceDisplayConfirmed=true, coldOpenUrl=/custom-page/so-lien-lac-test#/chat?room=class%3AYCT2-05"
+    },
+    {
+      "id": "N19",
+      "group": "Group D",
+      "title": "Lớp mới chưa xác nhận lịch -> Scheduler không tự phát nhắc giờ (remindedSessionsCount=0)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "remindedSessionsCount=0, pushCount=0"
+    },
+    {
+      "id": "N20",
+      "group": "Group D",
+      "title": "Admin xác nhận lịch -> Thành viên hợp lệ (Teacher A + Student A) nhận schedule_changed; tạo lớp kèm lịch chỉ gửi 1 push duy nhất",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "scheduleStatus=confirmed, confirmPushCount=2, comboPushCount=1"
+    },
+    {
+      "id": "N21",
+      "group": "Group D",
+      "title": "Scheduler chạy trước giờ học 30 phút -> Teacher A & Student A nhận đúng 1 reminder (in-app + Web Push)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "remindedSessionsCount=1, pushCount=2, notifId=REMIND_YCT2-05_2026-11-13_30_e2e.hs.a@khongtunhi.com"
+    },
+    {
+      "id": "N22",
+      "group": "Group D",
+      "title": "Scheduler retry cùng mốc buổi học -> Không gửi trùng (remindedSessionsCount=0, pushCount=0)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "remindedSessionsCount=0, pushCount=0"
+    },
+    {
+      "id": "N23",
+      "group": "Group D",
+      "title": "Teacher A giao bài tập -> Student A nhận homework_assigned (in-app + Web Push)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "notifId=NOTIF-ASSIGN-YCT2-05-S1-2026-11-10T20:04:31.243Z, pushEndpoints=https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
+    },
+    {
+      "id": "N24",
+      "group": "Group D",
+      "title": "Student A nộp bài -> Giáo viên phụ trách (Teacher A) nhận thông báo homework_submitted (in-app + Web Push)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "homeworkId=HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1, notifId=NOTIF-SUB-HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1-2026-11-10T20:04:31.252Z, pushEndpoints=https://fcm.googleapis.com/fcm/send/QA_TEACHER_A_ANDROID"
+    },
+    {
+      "id": "N25",
+      "group": "Group D",
+      "title": "Teacher A chấm bài -> Student A nhận thông báo kết quả homework_graded (in-app + Web Push)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "notifId=NOTIF-GRADED-HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1-graded-10, score=10, pushEndpoints=https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
+    },
+    {
+      "id": "N26",
+      "group": "Group D",
+      "title": "Hoãn/hủy buổi học -> Phát thông báo session_cancelled; không nhắc lịch cũ sai vào ngày đã hủy",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "cancelPushCount=2, cancelledSessionReminders=0"
+    },
+    {
+      "id": "N27",
+      "group": "Group E",
+      "title": "Admin xóa lớp đang có học viên -> Bị chặn 409 CLASS_HAS_ACTIVE_STUDENTS, dữ liệu lớp giữ nguyên",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "status=409, activeStudentCount=1, active=true"
+    },
+    {
+      "id": "N28",
+      "group": "Group E",
+      "title": "Chuyển hết học viên rồi xóa lớp -> Soft-delete thành công (active=false, gỡ phân công giáo viên)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "status=200, softDeleted=true, dbActive=false"
+    },
+    {
+      "id": "N29",
+      "group": "Group E",
+      "title": "Danh sách nhóm chat và danh sách lớp active sau xóa -> Nhóm class:YCT2-05 không còn hiển thị cho bất kỳ vai trò nào",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "admin=false, teacherA=false, studentA=false, activeClasses=false"
+    },
+    {
+      "id": "N30",
+      "group": "Group E",
+      "title": "Thử đọc/gửi tin sau xóa bằng roomId cũ -> Bị chặn 403 CLASS_ARCHIVED_OR_INACTIVE, không gửi push",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "sendStatus=403, readStatus=403, pushCount=0"
+    },
+    {
+      "id": "N31",
+      "group": "Group E",
+      "title": "Cron kiểm tra nhắc lịch trên lớp đã xóa -> Không gửi reminder (remindedSessionsCount=0, pushCount=0)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "remindedSessionsCount=0, pushCount=0"
+    },
+    {
+      "id": "N32",
+      "group": "Group E",
+      "title": "Subscription cũ / JWT cũ còn classCode lớp đã xóa -> Không được dùng để cấp quyền hoặc phát push (403)",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "scheduleStatus=403, hwSubmitStatus=403, pushCount=0"
+    },
+    {
+      "id": "N33",
+      "group": "Group E",
+      "title": "Kiểm tra database sau soft-delete -> Tin nhắn, buổi học, bài tập và điểm số được bảo toàn 100%",
+      "status": "PASS",
+      "passed": true,
+      "evidence": "messages=4, homeworks=1, sessions=1, classActive=false"
+    }
+  ]
+}

@@ -1,0 +1,472 @@
+{
+  "sessionTag": "LIVE-CUTOVER-1793941938951",
+  "startedAt": "2026-11-06T05:12:18.951Z",
+  "liveReactUrl": "https://khongtunhi.com/custom-page/so-lien-lac-test",
+  "workerVersionId": "d66c3334-6c78-41f7-86f5-dd62a2b0ab7e",
+  "rollbackWorkerVersionId": "32ac03d1-9822-4371-9926-9e8311485c89",
+  "websiteChecks": {
+    "desktop-1440": {
+      "loadMs": 2189.06,
+      "hasReactRoot": true,
+      "releaseTag": "v3.0.0",
+      "commitSha": "b1cb988",
+      "hasLegacyDom": false,
+      "scrollWidth": 1440,
+      "innerWidth": 1440,
+      "hasHorizontalOverflow": false,
+      "fcpMs": 1592,
+      "requestCount": 75,
+      "totalJsCssBytes": 189831,
+      "consoleErrors": [
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch"
+      ],
+      "pageErrors": [],
+      "failedStatuses": []
+    },
+    "mobile-390": {
+      "loadMs": 2178.91,
+      "hasReactRoot": true,
+      "releaseTag": "v3.0.0",
+      "commitSha": "b1cb988",
+      "hasLegacyDom": false,
+      "scrollWidth": 390,
+      "innerWidth": 390,
+      "hasHorizontalOverflow": false,
+      "fcpMs": 1448,
+      "requestCount": 76,
+      "totalJsCssBytes": 189836,
+      "consoleErrors": [
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch"
+      ],
+      "pageErrors": [],
+      "failedStatuses": []
+    },
+    "mobile-360": {
+      "loadMs": 2086.78,
+      "hasReactRoot": true,
+      "releaseTag": "v3.0.0",
+      "commitSha": "b1cb988",
+      "hasLegacyDom": false,
+      "scrollWidth": 360,
+      "innerWidth": 360,
+      "hasHorizontalOverflow": false,
+      "fcpMs": 1356,
+      "requestCount": 76,
+      "totalJsCssBytes": 189830,
+      "consoleErrors": [
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch",
+        "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi.com/_next/static/ch"
+      ],
+      "pageErrors": [],
+      "failedStatuses": []
+    }
+  },
+  "workerEndpoints": [
+    {
+      "endpoint": "/api/ktn/auth/session",
+      "label": "auth/session (Admin)",
+      "status": 200,
+      "ms": 169.13,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/courses",
+      "label": "courses (Public)",
+      "status": 200,
+      "ms": 180.32,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/courses/units?courseId=6adadba969897b0002482ca5",
+      "label": "courses/units (Student A)",
+      "status": 200,
+      "ms": 1037.04,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/students/me",
+      "label": "students/me (Student A)",
+      "status": 200,
+      "ms": 277.21,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/students",
+      "label": "students (Admin)",
+      "status": 200,
+      "ms": 1053,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/admin/students/search?q=ngan&limit=20",
+      "label": "admin/students/search (V3)",
+      "status": 200,
+      "ms": 960.77,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/classes",
+      "label": "classes (Admin)",
+      "status": 200,
+      "ms": 425.37,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/teachers",
+      "label": "teachers (Admin)",
+      "status": 200,
+      "ms": 263.69,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/homeworks",
+      "label": "homeworks (Teacher A)",
+      "status": 200,
+      "ms": 523.36,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/messages?roomId=class:YCT2-04",
+      "label": "messages (Student A)",
+      "status": 200,
+      "ms": 1118.27,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/notifications",
+      "label": "notifications (Student A)",
+      "status": 200,
+      "ms": 739.35,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    },
+    {
+      "endpoint": "/api/ktn/admin/sync-status",
+      "label": "admin/sync-status (V3)",
+      "status": 200,
+      "ms": 666.3,
+      "ok": true,
+      "cors": "*",
+      "cacheControl": "no-store",
+      "isJson": true
+    }
+  ],
+  "authChecks": {
+    "izTeachRootAdminSignin": {
+      "ok": true
+    },
+    "adminLogin": {
+      "email": "quanly@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 1172.97,
+      "role": "admin"
+    },
+    "teacherALogin": {
+      "email": "linh.lam@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 809.58,
+      "role": "teacher"
+    },
+    "teacherBLogin": {
+      "email": "thu.ha@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 593.61,
+      "role": "teacher"
+    },
+    "studentALogin": {
+      "email": "e2e.hs.a@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 1636.2,
+      "role": "student",
+      "classCode": "YCT2-04"
+    },
+    "studentBLogin": {
+      "email": "e2e.hs.b@khongtunhi.com",
+      "ok": true,
+      "status": 200,
+      "ms": 1604.52,
+      "role": "student",
+      "classCode": "YCT3-02"
+    }
+  },
+  "goldenPaths": {
+    "test1_studentLearningVideoHomework": true,
+    "test2_teacherAudioAndGrading": true,
+    "test3_studentReceivesGradeAndDeepLink": true,
+    "test4_twoWayChatVoiceAndRbac": true,
+    "test5_adminProvisionStudentAndIdempotency": true,
+    "test6_adminCreateTeacherAndRoleVerify": true,
+    "test7_adminSearchAndPaginationOver1000": true,
+    "test8_threeWayReconcileAndCleanup": true
+  },
+  "studentProvisionAndCourseSync": {
+    "v3ProvisionEndpointOnLiveStatus": 200,
+    "idempotentReplayStatus": 200,
+    "idempotentReplayFlag": true,
+    "adminUiLoginMs": 3675.97,
+    "openStudentsMs": 893.76,
+    "grant1UiMs": 3455.16,
+    "handoffBannerState": {
+      "bannerVisible": true,
+      "hasExistingNotice": true,
+      "hasInitPassword": false
+    },
+    "afterGrant1": {
+      "supabaseClassCode": null,
+      "supabaseHasLiveClass": false,
+      "supabaseOnlineCourses": [
+        "6adadba969897b0002482ca5"
+      ],
+      "izTeachOnlineCourses": [
+        "6adadba969897b0002482ca5"
+      ],
+      "autoAssignedToWrongClass": false
+    },
+    "afterGrant2ExistingAccount": {
+      "workerStatus": 200,
+      "supabaseCognitoUserIdUnchanged": true,
+      "supabaseOnlineCourses": [
+        "6adadba969897b0002482ca5",
+        "65e7704a9ea90c00080d5195"
+      ],
+      "izTeachOnlineCourses": [
+        "6adadba969897b0002482ca5",
+        "65e7704a9ea90c00080d5195"
+      ],
+      "studentBReactLearningState": {
+        "hasHskCourseSelector": true,
+        "isUnentitledBlocked": false
+      }
+    },
+    "afterDuplicateRequest": {
+      "workerStatus": 200,
+      "idempotentReplayFlag": true,
+      "supabaseCoursesCount": 2,
+      "noDuplicateCourseEntries": true
+    }
+  },
+  "teacherVerification": {
+    "v3TeacherProvisionEndpointStatus": 200,
+    "uiDisplayedInitialPassword": true,
+    "liveSupabaseActuallySavedNewTeacher": true,
+    "newTeacherReactV2Login": {
+      "role": "teacher",
+      "hasTeacherHome": true,
+      "hasAdminHome": false,
+      "assignedClasses": [
+        "YCT2-04"
+      ]
+    },
+    "existingTeacherALoginOk": true,
+    "existingTeacherARole": "teacher",
+    "ownClassYCT204Status": 200,
+    "ownClassStudentsCount": 7,
+    "otherClassYCT302Status": 403,
+    "grantCourseAsTeacherStatus": 403,
+    "crossClassPrivateRoomStatusOnLiveV3": 403
+  },
+  "videoPlayback": {
+    "courseId": "6adadba969897b0002482ca5",
+    "hlsManifestStatus": 200,
+    "hlsSegmentStatus": 200,
+    "hls403Or404": 0,
+    "studentLoginMs": 4505.36,
+    "openCourseMs": 100.61,
+    "totalVideoStartMs": 1375.54,
+    "found": true,
+    "readyState": 4,
+    "videoWidth": 858,
+    "videoHeight": 480,
+    "duration": 814.98,
+    "timeToFirstFrameMs": 959.8,
+    "currentTimeAfterPlay": 0.18,
+    "pausedOk": true,
+    "seekedTime": 10,
+    "activeHash": "#/learning?courseId=6adadba969897b0002482ca5&lesson=1",
+    "lesson2Switch": {
+      "switched": true,
+      "hash": "#/learning?courseId=6adadba969897b0002482ca5&lesson=2"
+    },
+    "mobileBrowserPlayback": {
+      "found": true,
+      "viewport": "390x844",
+      "readyState": 4,
+      "videoWidth": 858,
+      "videoHeight": 480,
+      "duration": 814.98,
+      "timeToFirstFrameMs": 1065.1,
+      "currentTimeAfterPlay": 0.18,
+      "horizontalOverflowPx": 0
+    }
+  },
+  "homeworkAndGrading": {
+    "s3UploadOk": true,
+    "fileUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793942014265-ktn-react-v2-e2e-1793942014523.wav",
+    "homeworkId": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1",
+    "teacherReceivedSubmittedNotification": true,
+    "teacherAudioAndFormPrep": {
+      "audioPlayerPresent": true,
+      "audioSrc": "https://d21acfi38wn3iy.cloudfront.net/resource/homeworks/3529cd2b-7af6-4fda-887c-392a79393d6a/e2e_hs_a_khongtunhi_com/1793942014265-ktn-react-v2-e2e-1793942014523.wav"
+    },
+    "supabaseStatusAfterGrade": "graded",
+    "supabaseScoreAfterGrade": 9.5,
+    "studentSeesScoreAfterReload": 9.5,
+    "studentSeesFeedbackAfterReload": "[LIVE-CUTOVER-1793941938951] Cô khen con phát âm thanh điệu rất chuẩn trên React V2!",
+    "studentGradedDomState": {
+      "feedbackBoxVisible": true,
+      "scoreBadgeText": "Điểm: 9.5 / 10",
+      "commentText": "[LIVE-CUTOVER-1793941938951] Cô khen con phát âm thanh điệu rất chuẩn trên React V2!"
+    }
+  },
+  "chatAndNotifications": {
+    "studentTextDeliveredToTeacher": true,
+    "stuToTeaDeliveryMs": 2265.06,
+    "teacherReplyDeliveredToStudent": true,
+    "teaToStuDeliveryMs": 1999.33,
+    "teacherReceivedVoiceWithAudio": true,
+    "notificationsCount": 5,
+    "hasTeacherHomeworkSubmittedNotification": true,
+    "hasGradedNotification": true,
+    "hasChatNotification": true,
+    "notifDeepLinkClick": {
+      "clicked": true,
+      "hashAfterClick": "#/learning?courseId=6adadba969897b0002482ca5&lesson=1&tab=homework"
+    },
+    "markReadStatus": 200,
+    "notifPersistedRead": true,
+    "unrelatedAccountIsolation": {
+      "studentBReadYct2ChatStatus": 403,
+      "studentBPostYct2ChatStatus": 403,
+      "teacherBPrivateRoomStudentAStatus": 403
+    }
+  },
+  "searchBenchmarks": {
+    "reactUiSearchMs": 1533.68,
+    "accentedSearchCount": 9,
+    "unaccentedSearchCount": 9,
+    "emailSearchCount": 1,
+    "paginationBeyond1000": {
+      "totalCount": 1046,
+      "offset1000Returned": 46,
+      "getAllStudentsReturned": 1046
+    }
+  },
+  "reconcileDryRun": {
+    "status": 200,
+    "ok": true,
+    "dryRun": true,
+    "repairMode": false,
+    "summary": {
+      "healthyCount": 1046,
+      "needsResyncCount": 2,
+      "manualReviewCount": 0,
+      "totalStudents": 1046,
+      "totalTeachers": 2,
+      "totalOrders": 0,
+      "driftTotal": 2,
+      "totalDriftItems": 2
+    },
+    "driftItemsCount": 2
+  },
+  "cleanup": {
+    "createdRecords": [
+      {
+        "table": "ktn_homeworks",
+        "id": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1"
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793942028510-hkto"
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793942030785-zi5i"
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793942033907-1ck9"
+      }
+    ],
+    "cleanedUp": [
+      {
+        "entity": "e2e.hs.b@khongtunhi.com",
+        "revokeStatus": 200,
+        "restoreClassStatus": 200
+      },
+      {
+        "table": "ktn_homeworks",
+        "id": "HW-e2e.hs.a@khongtunhi.com-6adadba969897b0002482ca5-L1",
+        "deleteStatus": 204
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793942028510-hkto",
+        "deleteStatus": 204
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793942030785-zi5i",
+        "deleteStatus": 204
+      },
+      {
+        "table": "ktn_messages",
+        "id": "MSG-1793942033907-1ck9",
+        "deleteStatus": 204
+      }
+    ],
+    "finalVerification": {
+      "supabaseStudentRange": "0-0/1046",
+      "activeTeachers": [
+        {
+          "code": "GV-KTN-12",
+          "email": "thu.ha@khongtunhi.com",
+          "active": true
+        },
+        {
+          "code": "GV-KTN-08",
+          "email": "linh.lam@khongtunhi.com",
+          "active": true
+        }
+      ]
+    }
+  },
+  "completedAt": "2026-11-06T05:14:12.547Z"
+}

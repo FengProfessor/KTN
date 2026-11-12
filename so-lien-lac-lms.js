@@ -737,10 +737,32 @@
       const cls = (app.classes || []).find(c => c.id === stu.classCode);
       return cls ? [cls] : [];
     },
+    normalizeRoomKey(rawRoom) {
+      const s = String(rawRoom || '').trim();
+      if (!s) return { key: '', apiRoomId: '', isPrivate: false, isCourse: false };
+      if (/^student:/i.test(s)) {
+        const em = s.replace(/^student:/i, '').trim().toLowerCase();
+        return { key: 'student:' + em, apiRoomId: 'student:' + em, isPrivate: true, isCourse: false, studentEmail: em };
+      }
+      if (/^course:/i.test(s)) {
+        let cid = s.replace(/^course:/i, '').trim().toLowerCase();
+        if (cid === '65e7688d524c58000836593b') cid = '65e7704a9ea90c00080d5195';
+        return { key: 'course:' + cid, apiRoomId: 'course:' + cid, isPrivate: false, isCourse: true, courseId: cid };
+      }
+      const cls = s.replace(/^class:/i, '').trim().toUpperCase();
+      return { key: cls, apiRoomId: 'class:' + cls, isPrivate: false, isCourse: false, classCode: cls };
+    },
     roomMessages(classId) {
-      const up = String(classId || '').toUpperCase();
+      const norm = D.normalizeRoomKey(classId);
+      const upKey = String(norm.key || '').toUpperCase();
+      const upApi = String(norm.apiRoomId || '').toUpperCase();
       return (app.state?.messages || [])
-        .filter(m => m && !m.blocked && String(m.classCode || '').toUpperCase() === up)
+        .filter(m => {
+          if (!m || m.blocked) return false;
+          const mCls = String(m.classCode || '').toUpperCase();
+          const mRoom = String(m.roomId || '').toUpperCase();
+          return (upKey && (mCls === upKey || mRoom === upKey)) || (upApi && (mCls === upApi || mRoom === upApi));
+        })
         .sort((a, b) => (Date.parse(a.timestamp || '') || 0) - (Date.parse(b.timestamp || '') || 0));
     },
     orders() {
@@ -794,7 +816,8 @@
   const initials = name => {
     const n = String(name || '?').trim();
     if (/^ban quản lý/i.test(n)) return 'QL';
-    return n.replace(/^(Bé|Cô|Thầy)\s+/i, '').split(/\s+/).slice(-2).map(w => w[0] || '').join('').toUpperCase() || '?';
+    const cleaned = n.replace(/\([^)]*\)/g, ' ').replace(/^(Bé|Cô|Thầy)\s+/i, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').trim();
+    return (cleaned || n).split(/\s+/).filter(Boolean).slice(-2).map(w => w[0] || '').join('').toUpperCase() || '?';
   };
   const shortTeacher = n => String(n || '').trim();
 
@@ -851,23 +874,31 @@
     const stu = app.getActiveParentStudent ? app.getActiveParentStudent() : null;
     const caseType = app.computeStudentCase ? app.computeStudentCase(stu) : 'both';
     const items = [];
+    const room = (stu && stu.classCode) || 'course:6adadba969897b0002482ca5';
+    const unread = room ? unreadOf('parent', room) : 0;
     if (caseType === 'both' || caseType === 'sll_only') {
-      const room = stu && stu.classCode;
-      const unread = room ? unreadOf('parent', room) : 0;
       items.push({ id: 'homework', label: 'Bài tập', icon: 'book', native: true, enter: () => app.switchParentSubtab('homework') });
-      items.push({ id: 'groups', label: 'Nhóm lớp', icon: 'chat', count: unread, hot: unread > 0 });
     }
     if (caseType === 'both' || caseType === 'online_only' || caseType === 'unassigned') {
       items.push({ id: 'courses', label: 'Khóa học online', icon: 'play', native: true, enter: () => app.switchParentSubtab('courses') });
     }
+    items.push({ id: 'groups', label: 'Nhóm lớp', icon: 'chat', count: unread, hot: unread > 0 });
     return items;
   }
 
   const PAGE_TITLES = {
-    dash: 'Tổng quan', classes: 'Lớp học', students: 'Học viên', teachers: 'Giáo viên', courses: 'Khóa học online',
-    orders: 'Quản lý Đơn hàng & Duyệt 1 chạm',
-    'course-grade': 'Chấm bài theo Khóa học Online',
-    homework: 'Bài tập Lớp học', groups: 'Nhóm lớp', alerts: 'Cảnh báo an toàn', grade: 'Chấm bài Lớp học', assign: 'Giao bài'
+    dash: '📊 Tổng quan',
+    classes: '🏫 Lớp học',
+    students: '🎓 Học viên',
+    teachers: '👩‍🏫 Giáo viên',
+    courses: '🎬 Khóa học',
+    orders: '💳 Đơn hàng',
+    'course-grade': '✍️ Chấm bài',
+    homework: '📝 Bài tập',
+    groups: '💬 Nhóm lớp',
+    alerts: '🛡️ Cảnh báo',
+    grade: '✍️ Chấm bài Lớp học',
+    assign: '📋 Giao bài'
   };
 
   function currentPage(r) {
@@ -969,7 +1000,7 @@
   function renderSide(r, page) {
     const side = $('lms-side');
     if (!side) return;
-    const roleLabel = r === 'admin' ? 'Quản lý trung tâm' : r === 'teacher' ? 'Giáo viên' : 'Học viên & Phụ huynh';
+    const roleLabel = r === 'admin' ? 'Sổ liên lạc · Quản lý' : r === 'teacher' ? 'Sổ liên lạc · Giáo viên' : 'Sổ liên lạc · Học viên';
     const items = navItems(r);
     let html = `<div class="lms-brand"><img src="assets/logo.jpg" alt="" width="34" height="34"><div><b>Khổng Tử Nhí</b><small>${esc(roleLabel)}</small></div></div><nav class="lms-nav">`;
     items.forEach(n => {
@@ -989,10 +1020,10 @@
   function renderTop(r, page) {
     const top = $('lms-top');
     if (!top) return;
-    let title = PAGE_TITLES[page] || '';
+    let title = PAGE_TITLES[page] || '📒 Sổ liên lạc';
     let sub = '';
-    if (r === 'parent' && page === 'courses') title = 'Khóa học online';
-    if (r === 'parent' && page === 'homework') title = 'Bài tập';
+    if (r === 'parent' && page === 'courses') title = '📒 Sổ liên lạc · Khóa học';
+    if (r === 'parent' && page === 'homework') title = '📒 Sổ liên lạc · Bài tập';
     const u = userInfo(r);
     const search = r === 'admin'
       ? `<label class="lms-search">${I('search')}<input id="lms-global-search" type="search" placeholder="Tìm học viên theo tên, email, SĐT" value="${esc(L.stuQuery)}" onkeydown="if(event.key==='Enter'){app.lmsSearchStudents(this.value)}"></label>`
@@ -1299,12 +1330,12 @@
       return `<tr class="lms-click" onclick="app.lmsGo('classes')"><td><b>${esc(c.id)}</b><small class="lms-sub">${esc(shortTeacher(c.teacherName))} · ${n} HV</small></td><td class="lms-num">${cur}/${tl}${bar(cur * 100 / tl)}</td><td>${sTag}</td></tr>`;
     }).join('') || `<tr><td colspan="3" class="lms-empty">Chưa có lớp.</td></tr>`;
 
-    return pageHead('Tổng quan', esc(today()), btn('Mở lớp', 'app.openAdminCreateClassModal()', { icon: 'plus' }) + btn('Thêm học viên', "app.openAdminProvisionModal('student')", { pri: true, icon: 'plus' })) +
+    return pageHead('📒 Sổ liên lạc · Tổng quan', esc(today()), btn('Mở lớp', 'app.openAdminCreateClassModal()', { icon: 'plus' }) + btn('Thêm HV', "app.openAdminProvisionModal('student')", { pri: true, icon: 'plus' })) +
       `<div class="lms-kpis">
-        <div class="lms-card lms-kpi"><div class="l">Học viên đang học</div><div class="v">${inClass}</div><div class="s">/ ${rows.length} tài khoản</div></div>
-        <div class="lms-card lms-kpi"><div class="l">Lớp đang mở</div><div class="v">${classes.length}</div><div class="s${empty.length ? ' bad' : ''}">${empty.length ? `${empty.length} lớp chưa có học viên` : 'Đủ học viên'}</div></div>
-        <div class="lms-card lms-kpi"><div class="l">Đã nộp bài buổi hiện tại</div><div class="v">${rate}%</div>${bar(rate)}<div class="s">${done}/${total} học viên</div></div>
-        <div class="lms-card lms-kpi"><div class="l">Bài chờ chấm</div><div class="v">${pend.length}</div><div class="s${overdue.length ? ' bad' : ''}">${overdue.length ? `${overdue.length} bài quá 24 giờ` : 'Không có bài quá hạn'}</div></div>
+        <div class="lms-card lms-kpi"><div class="l">Học viên</div><div class="v">${inClass}</div><div class="s">/ ${rows.length} TK</div></div>
+        <div class="lms-card lms-kpi"><div class="l">Lớp học</div><div class="v">${classes.length}</div><div class="s${empty.length ? ' bad' : ''}">${empty.length ? `${empty.length} lớp trống` : 'Đủ HV'}</div></div>
+        <div class="lms-card lms-kpi"><div class="l">Nộp bài</div><div class="v">${rate}%</div>${bar(rate)}<div class="s">${done}/${total} HV</div></div>
+        <div class="lms-card lms-kpi"><div class="l">Chờ chấm</div><div class="v">${pend.length}</div><div class="s${overdue.length ? ' bad' : ''}">${overdue.length ? `${overdue.length} quá hạn` : 'Đúng hạn'}</div></div>
       </div>
       <div class="lms-grid2">
         <div class="lms-card"><div class="lms-card-h"><h2>Cần xử lý</h2><span class="lms-muted">${todos.length} việc</span></div>${todoHtml}</div>
@@ -1479,10 +1510,10 @@
     const classTargetPage = r === 'teacher' ? 'grade' : 'homework';
     return `<div class="lms-mode-switch" role="tablist" aria-label="Chế độ chấm bài">
       <button type="button" class="${activeMode === 'course' ? 'on' : ''}" onclick="app.lmsGo('course-grade')">
-        🎓 Chấm bài theo Khóa học Online (Học viên tự do)${pendCourse ? `<i>${pendCourse}</i>` : ''}
+        🎓 Khóa Online${pendCourse ? `<i>${pendCourse}</i>` : ''}
       </button>
       <button type="button" class="${activeMode === 'class' ? 'on' : ''}" onclick="app.lmsGo('${classTargetPage}')">
-        🏫 Chấm bài theo Lớp học cố định${pendClass ? `<i>${pendClass}</i>` : ''}
+        🏫 Lớp học${pendClass ? `<i>${pendClass}</i>` : ''}
       </button>
     </div>`;
   }
@@ -1528,14 +1559,14 @@
       : '—';
     const uniqueOnlineStudents = new Set(allCourseHws.map(h => String(h.studentEmail || h.userId || h.studentName || '').toLowerCase()).filter(Boolean)).size;
 
-    // Thẻ chọn khóa học (All + 3 khóa học thật trên izTeach)
+    // Thẻ chọn khóa học (cuộn ngang gọn gàng trên mobile)
     const allCardActive = selectedCourse === 'ALL';
     const courseCardsHtml = `
       <div class="lms-course-cards">
         <button type="button" class="lms-course-card${allCardActive ? ' on' : ''}" onclick="app.lmsSet('cgCourse','ALL'); app.lmsSet('cgLesson','');">
           <div class="lms-course-card-top">
-            <span class="lms-course-card-title">🌐 Tất cả Khóa học Online (3)</span>
-            ${totalPendingAll ? tag('warn', `${totalPendingAll} chờ chấm`) : tag('ok', 'Đã chấm hết')}
+            <span class="lms-course-card-title">🌐 Tất cả khóa</span>
+            ${totalPendingAll ? tag('warn', `${totalPendingAll} chờ`) : tag('ok', 'Đã chấm')}
           </div>
           <div class="lms-course-card-sub">HSK1 3.0 · Chinese For Kids · Tiếng Trung Tổng Hợp</div>
           <div class="lms-course-card-stats">
@@ -1551,7 +1582,7 @@
           return `<button type="button" class="lms-course-card${isOn ? ' on' : ''}" onclick="app.lmsSet('cgCourse','${esc(c.id)}'); app.lmsSet('cgLesson','');">
             <div class="lms-course-card-top">
               <span class="lms-course-card-title">${c.icon} ${esc(c.title)}</span>
-              ${cPend ? tag('warn', `${cPend} chờ chấm`) : tag('ok', `${cGraded}/${cList.length} đã chấm`)}
+              ${cPend ? tag('warn', `${cPend} chờ`) : tag('ok', `${cGraded}/${cList.length}`)}
             </div>
             <div class="lms-course-card-sub">${esc(c.fullTitle)} · ${c.totalLessons} bài giảng</div>
             <div class="lms-course-card-stats">
@@ -1566,13 +1597,13 @@
     const tabs = [
       ['pending', 'Chờ chấm', counts.pending],
       ['graded', 'Đã chấm', counts.graded],
-      ['all', 'Tất cả bài nộp', counts.all]
+      ['all', 'Tất cả', counts.all]
     ].map(([k, l, n]) => `<button type="button" class="lms-tab${L.cgTab === k ? ' on' : ''}" onclick="app.lmsSet('cgTab','${k}')">${l} <span class="c">${n}</span></button>`).join('');
 
     const maxLessonCount = selectedCourse !== 'ALL' && ONLINE_COURSES_CATALOG[selectedCourse]
       ? ONLINE_COURSES_CATALOG[selectedCourse].totalLessons
       : 15;
-    let lessonOptions = `<option value="">Mọi bài học (Bài 1–${maxLessonCount})</option>`;
+    let lessonOptions = `<option value="">Mọi bài (1–${maxLessonCount})</option>`;
     for (let i = 1; i <= maxLessonCount; i++) {
       lessonOptions += `<option value="${i}"${String(L.cgLesson) === String(i) ? ' selected' : ''}>Bài ${i}</option>`;
     }
@@ -1584,21 +1615,21 @@
       const hasImage = (h.attachments || []).some(a => a.mediaType === 'image');
       const hasSbt = /\[Kết quả SBT tương tác:/i.test(String(h.parentNote || ''));
       const stBadge = h.status === 'GRADED'
-        ? tag('ok', `✓ Đã chấm: ${h.score}/10`)
+        ? tag('ok', `✓ ${h.score}/10`)
         : D.isOverdue(h)
-          ? tag('err', '⏳ Quá 24 giờ')
+          ? tag('err', '⏳ Quá 24h')
           : tag('warn', '⏳ Chờ chấm');
-      const classBadge = tag('blue', '🎓 Học viên tự do · Không thuộc lớp', false);
+      const classBadge = tag('blue', '🎓 Khóa Online', false);
 
       const attBadges = [];
-      if (hasSbt) attBadges.push(`<span class="lms-pill" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;">🎯 SBT tương tác</span>`);
-      if (hasImage) attBadges.push(`<span class="lms-pill">🖼️ Ảnh vở viết</span>`);
-      if (hasAudio) attBadges.push(`<span class="lms-pill">🎙️ Ghi âm phát âm</span>`);
-      if (!hasImage && !hasAudio && files > 0) attBadges.push(`<span class="lms-pill">📎 ${files} tệp S3</span>`);
+      if (hasSbt) attBadges.push(`<span class="lms-pill" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;">🎯 SBT</span>`);
+      if (hasImage) attBadges.push(`<span class="lms-pill">🖼️ Ảnh</span>`);
+      if (hasAudio) attBadges.push(`<span class="lms-pill">🎙️ Ghi âm</span>`);
+      if (!hasImage && !hasAudio && files > 0) attBadges.push(`<span class="lms-pill">📎 ${files} tệp</span>`);
 
       const actionBtn = h.status === 'GRADED'
-        ? btn('Xem / Sửa điểm', `app.lmsOpenGrade('${esc(h.id)}')`, { sm: true })
-        : btn('✍️ Chấm bài ngay', `app.lmsOpenGrade('${esc(h.id)}')`, { sm: true, pri: true });
+        ? btn('Xem', `app.lmsOpenGrade('${esc(h.id)}')`, { sm: true })
+        : btn('✍️ Chấm', `app.lmsOpenGrade('${esc(h.id)}')`, { sm: true, pri: true });
 
       return `<tr class="lms-click" onclick="if(!event.target.closest('button,a'))app.lmsOpenGrade('${esc(h.id)}')">
         <td>
@@ -1607,7 +1638,7 @@
             <div>
               <b>${esc(h.studentName || 'Học viên')}</b>
               <small>${esc(h.studentEmail || '—')}</small>
-              <div style="margin-top:3px;">${classBadge}</div>
+              <div class="hide-m" style="margin-top:3px;">${classBadge}</div>
             </div>
           </div>
         </td>
@@ -1616,9 +1647,9 @@
             ${tag('blue', `${cMeta.icon} ${cMeta.title}`, false)}
             <b>Bài ${esc(String(h.lessonNum || 1))}</b>
           </div>
-          <small class="lms-sub">${esc(h.lessonTitle || h.title || '')}</small>
+          <small class="lms-sub hide-m">${esc(h.lessonTitle || h.title || '')}</small>
         </td>
-        <td>
+        <td class="hide-m">
           <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;">${attBadges.join('') || '<span class="lms-faint">Bài nộp trực tuyến</span>'}</div>
           <small class="lms-sub" style="display:block;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(String(h.parentNote || '').replace(/\[Kết quả SBT tương tác:[\s\S]*?\]/i, '').trim())}</small>
         </td>
@@ -1629,44 +1660,44 @@
         <td>${stBadge}</td>
         <td class="lms-r">${actionBtn}</td>
       </tr>`;
-    }).join('') || `<tr><td colspan="6" class="lms-empty">Không có bài nộp nào trong bộ lọc hiện tại.</td></tr>`;
+    }).join('') || `<tr><td colspan="6" class="lms-empty">Chưa có bài nộp nào.</td></tr>`;
 
     const syncStatusTxt = L.izHw.status === 'loading'
-      ? 'Đang đồng bộ bài nộp trực tiếp từ izTeach Cloud…'
+      ? 'Đang đồng bộ bài nộp…'
       : L.izHw.status === 'ok'
-        ? `Đồng bộ trực tiếp từ izTeach Cloud (${allCourseHws.length} bài nộp từ các khóa học online)`
-        : 'Hệ thống chấm bài dành riêng cho học viên tự học các khóa trực tuyến (không nằm trong lớp học cố định)';
+        ? `Đồng bộ Cloud (${allCourseHws.length} bài nộp)`
+        : 'Chấm bài khóa học trực tuyến';
 
     return pageHead(
-      'Chấm bài theo Khóa học Online',
+      '📒 Sổ liên lạc · Chấm bài Khóa Online',
       syncStatusTxt,
-      btn('Đồng bộ izTeach Cloud', 'app.lmsFetchCourseHomeworks(true)', { icon: 'cal', pri: false })
+      btn('Đồng bộ', 'app.lmsFetchCourseHomeworks(true)', { icon: 'cal', pri: false })
     ) +
     renderGradeModeSwitch('course') +
-    `<div class="lms-kpis" style="margin-bottom:16px;">
-      <div class="lms-card lms-kpi"><div class="l">Tổng bài nộp Khóa Online</div><div class="v">${allCourseHws.length}</div><div class="s">Trên 3 khóa học trực tuyến</div></div>
-      <div class="lms-card lms-kpi"><div class="l">Bài chờ giáo viên chấm</div><div class="v" style="color:${totalPendingAll ? '#B91C1C' : '#059669'};">${totalPendingAll}</div><div class="s">${totalPendingAll ? 'Cần chấm & gửi nhận xét' : 'Đã chấm hoàn tất 100%'}</div></div>
-      <div class="lms-card lms-kpi"><div class="l">Đã chấm & phản hồi</div><div class="v">${totalGradedAll}</div><div class="s">Điểm TB: ${avgScore} / 10</div></div>
-      <div class="lms-card lms-kpi"><div class="l">Học viên tự do nộp bài</div><div class="v">${uniqueOnlineStudents}</div><div class="s">Không cần thuộc lớp cố định</div></div>
+    `<div class="lms-kpis" style="margin-bottom:14px;">
+      <div class="lms-card lms-kpi"><div class="l">Tổng bài nộp</div><div class="v">${allCourseHws.length}</div><div class="s">Khóa Online</div></div>
+      <div class="lms-card lms-kpi"><div class="l">Chờ chấm</div><div class="v" style="color:${totalPendingAll ? '#B91C1C' : '#059669'};">${totalPendingAll}</div><div class="s">${totalPendingAll ? 'Cần chấm điểm' : 'Hoàn tất 100%'}</div></div>
+      <div class="lms-card lms-kpi"><div class="l">Đã chấm</div><div class="v">${totalGradedAll}</div><div class="s">TB: ${avgScore} / 10</div></div>
+      <div class="lms-card lms-kpi"><div class="l">Học viên</div><div class="v">${uniqueOnlineStudents}</div><div class="s">Tự học Online</div></div>
     </div>` +
     courseCardsHtml +
     `<div class="lms-card">
       <div class="lms-tabs">${tabs}</div>
       <div class="lms-toolbar">
-        <label class="lms-field">${I('search')}<input id="lms-cg-search" type="search" placeholder="Tìm học viên, email, tên bài học..." value="${esc(L.cgQuery || '')}" oninput="app.lmsSet('cgQuery', this.value)"></label>
+        <label class="lms-field">${I('search')}<input id="lms-cg-search" type="search" placeholder="Tìm học viên, bài học..." value="${esc(L.cgQuery || '')}" oninput="app.lmsSet('cgQuery', this.value)"></label>
         <label class="lms-field"><select onchange="app.lmsSet('cgLesson', this.value)" aria-label="Lọc theo bài học">${lessonOptions}</select></label>
-        <span class="lms-toolbar-r">${list.length} bài nộp</span>
+        <span class="lms-toolbar-r">${list.length} bài</span>
       </div>
       <div class="lms-table-wrap">
         <table class="lms-table">
           <thead>
             <tr>
-              <th>Học viên (Khóa Online)</th>
-              <th>Khóa học & Bài giảng</th>
-              <th>Bài làm & Tệp S3</th>
-              <th class="hide-m">Thời gian nộp</th>
-              <th>Trạng thái / Điểm</th>
-              <th>Thao tác</th>
+              <th>Học viên</th>
+              <th>Khóa & Bài</th>
+              <th class="hide-m">Bài làm & Tệp</th>
+              <th class="hide-m">Thời gian</th>
+              <th>Trạng thái</th>
+              <th>Chấm</th>
             </tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
@@ -1690,23 +1721,23 @@
     const rows = list.map(h => {
       const idx = D.studentIdxByCode(h.studentCode);
       const lesson = Number(h.lessonNum || h.lessonNumber) || 0;
-      const st = h.status === 'GRADED' ? tag('ok', 'Đã chấm') : D.isOverdue(h) ? tag('err', 'Quá 24 giờ') : tag('warn', 'Chờ chấm');
+      const st = h.status === 'GRADED' ? tag('ok', 'Đã chấm') : D.isOverdue(h) ? tag('err', 'Quá 24h') : tag('warn', 'Chờ chấm');
       const cls = (app.classes || []).find(c => c.id === h.classCode);
       return `<tr>
         <td><b>${esc(h.studentName || '')}</b><small class="lms-sub">${esc(h.title || '')}</small></td>
-        <td>${esc(h.classCode || 'Khóa Online')}<small class="lms-sub">${esc(cls ? shortTeacher(cls.teacherName) : (h.courseTitle || 'Học viên tự do'))}</small></td>
-        <td class="lms-num">${esc(h.lesson || (lesson ? 'Buổi ' + lesson : '—'))}</td>
+        <td>${esc(h.classCode || 'Khóa Online')}<small class="lms-sub hide-m">${esc(cls ? shortTeacher(cls.teacherName) : (h.courseTitle || 'Học viên tự do'))}</small></td>
+        <td class="lms-num hide-m">${esc(h.lesson || (lesson ? 'Buổi ' + lesson : '—'))}</td>
         <td class="lms-num hide-m">${esc(fmt(h))}</td>
         <td>${st}</td>
-        <td class="lms-num">${h.status === 'GRADED' && h.score != null ? esc(String(h.score)) : '—'}</td>
+        <td class="lms-num hide-m">${h.status === 'GRADED' && h.score != null ? esc(String(h.score)) : '—'}</td>
         <td class="lms-r">${btn(h.status === 'GRADED' ? 'Xem' : 'Chấm', `app.lmsOpenGrade('${esc(h.id)}')`, { sm: true, pri: h.status !== 'GRADED' })}</td>
       </tr>`;
     }).join('') || `<tr><td colspan="7" class="lms-empty">Không có bài nộp.</td></tr>`;
-    return pageHead('Bài tập theo Lớp học', '') +
+    return pageHead('📒 Sổ liên lạc · Bài tập Lớp học', '') +
       renderGradeModeSwitch('class') +
       `<div class="lms-card"><div class="lms-tabs">${tabs}</div>
         <div class="lms-toolbar"><label class="lms-field"><select onchange="app.lmsSet('hwClass', this.value)" aria-label="Lọc theo lớp">${classOpts}</select></label><span class="lms-toolbar-r">${list.length !== all.length ? `${list.length} kết quả` : ''}</span></div>
-        <div class="lms-table-wrap"><table class="lms-table"><thead><tr><th>Học viên</th><th>Lớp / Khóa</th><th>Buổi</th><th class="hide-m">Nộp lúc</th><th>Trạng thái</th><th>Điểm</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        <div class="lms-table-wrap"><table class="lms-table"><thead><tr><th>Học viên</th><th>Lớp / Khóa</th><th class="hide-m">Buổi</th><th class="hide-m">Nộp lúc</th><th>Trạng thái</th><th class="hide-m">Điểm</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }
 
   /* ---------------- Giáo viên: hàng chờ chấm + bấm mới mở bài ---------------- */
@@ -1748,7 +1779,7 @@
 
   function pageTeacherGrade() {
     const classes = D.visibleClasses('teacher');
-    if (!classes.length) return pageHead('Chấm bài theo Lớp học', '') + renderGradeModeSwitch('class') + `<div class="lms-card lms-empty">Bạn chưa được phân công lớp trực tiếp nào. Bạn có thể chuyển sang tab <b>Chấm bài theo Khóa học Online</b> ở trên.</div>`;
+    if (!classes.length) return pageHead('📒 Sổ liên lạc · Chấm bài Lớp học', '') + renderGradeModeSwitch('class') + `<div class="lms-card lms-empty">Chưa được phân lớp trực tiếp. Hãy chuyển sang <b>🎓 Khóa Online</b> ở trên.</div>`;
     const cur = classes.some(c => c.id === app.teacherClassFilter) ? app.teacherClassFilter : classes[0].id;
     const data = gradeData(cur);
     if (!['pending', 'graded', 'missing'].includes(L.gradeTab)) L.gradeTab = 'pending';
@@ -1776,7 +1807,7 @@
         const files = (h.attachments || []).length;
         const right = h.status === 'GRADED'
           ? `<span class="lms-score">${esc(String(h.score ?? '—'))}</span>${btn('Xem', `app.lmsOpenGrade('${esc(h.id)}')`, { sm: true })}`
-          : `${D.isOverdue(h) ? tag('err', 'Quá 24 giờ', true) : ''}${btn('Chấm', `app.lmsOpenGrade('${esc(h.id)}')`, { sm: true, pri: true })}`;
+          : `${D.isOverdue(h) ? tag('err', 'Quá 24h', true) : ''}${btn('Chấm', `app.lmsOpenGrade('${esc(h.id)}')`, { sm: true, pri: true })}`;
         return `<li class="lms-q lms-click" onclick="if(!event.target.closest('button'))app.lmsOpenGrade('${esc(h.id)}')">
           <div class="lms-av sm">${esc(initials(s.name))}</div>
           <div class="lms-q-main"><b>${esc(s.name)}</b><small>Buổi ${n || '—'}${h.title ? ' · ' + esc(h.title) : ''}</small></div>
@@ -1785,7 +1816,7 @@
         </li>`;
       }).join('') || `<li class="lms-empty">${L.gradeTab === 'graded' ? 'Chưa có bài đã chấm.' : 'Không còn bài chờ chấm.'}</li>`;
     }
-    return pageHead('Chấm bài theo Lớp học', '') + renderGradeModeSwitch('class') + classTabs +
+    return pageHead('📒 Sổ liên lạc · Chấm bài Lớp học', '') + renderGradeModeSwitch('class') + classTabs +
       `<div class="lms-card"><div class="lms-tabs">${tabs}</div><ul class="lms-queue">${rows}</ul></div>`;
   }
 
@@ -2179,7 +2210,7 @@
       </tr>`;
     }).join('') || `<tr><td colspan="6" class="lms-empty">Không tìm thấy đơn hàng nào phù hợp.</td></tr>`;
 
-    return pageHead('Quản lý Đơn hàng & Duyệt 1 chạm', 'Tự động kích hoạt tài khoản học viên và cấp quyền khóa học trực tuyến',
+    return pageHead('📒 Sổ liên lạc · Đơn hàng', 'Duyệt 1 chạm & mở khóa học tự động',
       btn('Làm mới', 'app.lmsRefreshOrders()', { icon: 'cal' })) +
       `<div class="lms-card">
         <div class="lms-tabs">${tabs}</div>
@@ -2259,30 +2290,194 @@
     return `<a class="lms-att-card" href="${esc(a.url || '#')}" target="_blank" rel="noopener">${I('dl')}<div><b>${esc(a.title || 'Tài liệu')}</b><small>Tài liệu</small></div></a>`;
   }
 
-  function pageGroups(r) {
+  L.groupFilter = L.groupFilter || 'group';
+  L.pinnedByRoom = L.pinnedByRoom || {};
+  L.serverPrivateThreads = L.serverPrivateThreads || [];
+
+  function getAvailableRoomsForRole(r) {
     const classes = D.visibleClasses(r);
-    if (!classes.length) {
-      return pageHead('Nhóm lớp', '') + `<div class="lms-card lms-empty">${r === 'teacher' ? 'Bạn chưa được phân công lớp nào.' : 'Chưa có lớp để tham gia nhóm.'}</div>`;
+    const groupRooms = classes.map(c => ({
+      id: c.id,
+      apiRoomId: 'class:' + c.id,
+      label: `🏫 Lớp ${c.id}`,
+      shortLabel: c.id,
+      badge: roomBadge(c.id),
+      subtitle: `${shortTeacher(c.teacherName || 'Cô Lâm Mỹ Linh')} · ${D.classStudents(c.id).length} học viên`,
+      kind: 'class'
+    }));
+
+    if (r === 'teacher' || r === 'admin') {
+      [
+        { cid: '6adadba969897b0002482ca5', title: 'HSK1 3.0', badge: 'H1' },
+        { cid: '65e7704a9ea90c00080d5195', title: 'Chinese For Kids', badge: 'CK' },
+        { cid: '65e733b0e3317300084c5ce4', title: 'Tiếng Trung Tổng Hợp', badge: 'TH' }
+      ].forEach(crs => {
+        groupRooms.push({
+          id: 'course:' + crs.cid,
+          apiRoomId: 'course:' + crs.cid,
+          label: `🎬 Khóa ${crs.title}`,
+          shortLabel: `Khóa ${crs.title}`,
+          badge: crs.badge,
+          subtitle: `Cô Lâm Mỹ Linh · Nhóm học viên khóa ${crs.title}`,
+          kind: 'course'
+        });
+      });
+    } else {
+      const stu = app.getActiveParentStudent ? app.getActiveParentStudent() : null;
+      const stuCourseIds = Array.isArray(stu?.courseIds) && stu.courseIds.length
+        ? stu.courseIds
+        : ['6adadba969897b0002482ca5'];
+      stuCourseIds.forEach(cid => {
+        const normCid = cid === '65e7688d524c58000836593b' ? '65e7704a9ea90c00080d5195' : cid;
+        const cMeta = ONLINE_COURSES_CATALOG[normCid];
+        const title = cMeta ? cMeta.title : 'HSK1 3.0';
+        if (!groupRooms.some(g => g.id === 'course:' + normCid)) {
+          groupRooms.push({
+            id: 'course:' + normCid,
+            apiRoomId: 'course:' + normCid,
+            label: `🎬 ${title}`,
+            shortLabel: title,
+            badge: 'KH',
+            subtitle: `Cô Lâm Mỹ Linh & các bạn cùng khóa ${title}`,
+            kind: 'course'
+          });
+        }
+      });
+    }
+
+    const privateRooms = [];
+    if (r === 'teacher' || r === 'admin') {
+      const seenEmails = new Set();
+      (L.serverPrivateThreads || []).forEach(th => {
+        const em = String(th.studentEmail || '').trim().toLowerCase();
+        if (!em || seenEmails.has(em)) return;
+        seenEmails.add(em);
+        privateRooms.push({
+          id: 'student:' + em,
+          apiRoomId: 'student:' + em,
+          label: `👩‍🏫 ${th.studentName || em}`,
+          shortLabel: th.studentName || em,
+          badge: initials(th.studentName || em),
+          subtitle: `Hộp thư riêng 1-1 · ${em}`,
+          lastMessage: th.lastMessage || '',
+          lastTimestamp: th.lastTimestamp || '',
+          unread: Boolean(th.unread),
+          kind: 'student'
+        });
+      });
+      D.roster().forEach(({ s }) => {
+        const em = String(s.email || '').trim().toLowerCase();
+        if (!em || seenEmails.has(em)) return;
+        seenEmails.add(em);
+        privateRooms.push({
+          id: 'student:' + em,
+          apiRoomId: 'student:' + em,
+          label: `👩‍🏫 ${s.name}${s.classCode ? ' (' + s.classCode + ')' : ''}`,
+          shortLabel: s.name,
+          badge: initials(s.name),
+          subtitle: `Hộp thư riêng 1-1 · ${em}${s.classCode ? ' · Lớp ' + s.classCode : ''}`,
+          kind: 'student'
+        });
+      });
+      if (!seenEmails.has('taphong2002@gmail.com')) {
+        privateRooms.push({
+          id: 'student:taphong2002@gmail.com',
+          apiRoomId: 'student:taphong2002@gmail.com',
+          label: '👩‍🏫 Tạ Phong (Online)',
+          shortLabel: 'Tạ Phong',
+          badge: 'TP',
+          subtitle: 'Hộp thư riêng 1-1 · taphong2002@gmail.com',
+          kind: 'student'
+        });
+      }
+    } else {
+      const stu = app.getActiveParentStudent ? app.getActiveParentStudent() : null;
+      const ownEmail = String(window.sllAuth?.session?.account?.email || stu?.email || 'hocsinh@khongtunhi.com').trim().toLowerCase();
+      privateRooms.push({
+        id: 'student:' + ownEmail,
+        apiRoomId: 'student:' + ownEmail,
+        label: '👩‍🏫 Nhắn riêng Cô Lâm Mỹ Linh',
+        shortLabel: 'Nhắn riêng Cô',
+        badge: '1:1',
+        subtitle: 'Kênh trao đổi riêng 1-1 giữa Học viên & Cô giáo',
+        kind: 'student'
+      });
+    }
+
+    return { groupRooms, privateRooms, allRooms: [...groupRooms, ...privateRooms] };
+  }
+
+  function getDefaultPinForRoom(roomMeta) {
+    if (!roomMeta) return 'Chào mừng các con đến với Nhóm lớp! Cùng trao đổi bài học và hỏi bài Cô tại đây nhé.';
+    if (roomMeta.kind === 'course') {
+      return `Chào mừng học viên ${roomMeta.shortLabel}! Có câu hỏi bài giảng hoặc phát âm hãy nhắn vào nhóm nhé.`;
+    }
+    return `Chào mừng lớp ${roomMeta.shortLabel}! Các con theo dõi thông báo lịch học và trao đổi bài tại đây nhé.`;
+  }
+
+  function pageGroups(r) {
+    const { groupRooms, privateRooms, allRooms } = getAvailableRoomsForRole(r);
+    if (!allRooms.length) {
+      return pageHead('💬 Nhóm lớp', '') + `<div class="lms-card lms-empty">Chưa có nhóm lớp để tham gia.</div>`;
     }
     let room = L.room[r];
-    if (!classes.some(c => c.id === room)) room = (r === 'teacher' && app.teacherClassFilter && classes.some(c => c.id === app.teacherClassFilter)) ? app.teacherClassFilter : classes[0].id;
+    if (!allRooms.some(x => x.id === room)) {
+      if (L.groupFilter === 'private' && privateRooms.length) {
+        room = privateRooms[0].id;
+      } else if (r === 'teacher' && app.teacherClassFilter && groupRooms.some(c => c.id === app.teacherClassFilter)) {
+        room = app.teacherClassFilter;
+      } else {
+        room = (groupRooms[0] || allRooms[0]).id;
+      }
+    }
     L.room[r] = room;
-    const cls = classes.find(c => c.id === room);
+    const isPrivate = String(room).startsWith('student:');
+    L.groupFilter = isPrivate ? 'private' : 'group';
+
+    const activeList = isPrivate ? privateRooms : groupRooms;
+    const activeMeta = allRooms.find(x => x.id === room) || activeList[0] || allRooms[0];
     const msgs = D.roomMessages(room);
 
-    const roomList = classes.length > 1
-      ? `<div class="lms-rooms">${classes.map(c => {
+    const filterToggleHtml = `<div class="lms-group-mode-bar" style="display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid #E2E8F0;background:#F8FAFC;flex-wrap:wrap;align-items:center;">
+      <button type="button" id="btn-lms-mode-group" onclick="app.lmsSetGroupFilter('group')" style="padding:6px 12px;border-radius:8px;font-size:12.5px;font-weight:800;border:1px solid ${!isPrivate ? '#DC2626' : '#CBD5E1'};background:${!isPrivate ? '#FEF2F2' : '#FFFFFF'};color:${!isPrivate ? '#B91C1C' : '#475569'};cursor:pointer;">
+        ${r === 'parent' ? '👥 Nhóm chung' : '👥 Nhóm Lớp & Khóa'}
+      </button>
+      <button type="button" id="btn-lms-mode-private" onclick="app.lmsSetGroupFilter('private')" style="padding:6px 12px;border-radius:8px;font-size:12.5px;font-weight:800;border:1px solid ${isPrivate ? '#DC2626' : '#CBD5E1'};background:${isPrivate ? '#FEF2F2' : '#FFFFFF'};color:${isPrivate ? '#B91C1C' : '#475569'};cursor:pointer;">
+        ${r === 'parent' ? '👩‍🏫 Nhắn riêng Cô' : `👩‍🏫 Nhắn riêng HS (1-1) (${privateRooms.length})`}
+      </button>
+    </div>`;
+
+    const roomList = activeList.length > 0
+      ? `<div class="lms-rooms">${activeList.map(c => {
         const ms = D.roomMessages(c.id);
         const last = ms[ms.length - 1];
-        const un = c.id === room ? 0 : unreadOf(r, c.id);
+        const un = c.id === room ? 0 : (unreadOf(r, c.id) || (c.unread ? 1 : 0));
         const who = last ? ((last.senderRole || last.sender) === 'admin' ? 'Quản lý' : String(last.senderName || '').split(' ').slice(-2).join(' ')) : '';
-        const prev = last ? `${who ? esc(who) + ': ' : ''}${esc(last.text || (last.attachment ? '[Tệp đính kèm]' : ''))}` : 'Chưa có tin nhắn';
-        return `<button type="button" class="lms-room${c.id === room ? ' on' : ''}" onclick="app.lmsOpenRoom('${esc(c.id)}')">
-          <span class="lms-room-av">${esc(roomBadge(c.id))}</span>
-          <span class="lms-room-txt"><b>${esc(c.id)}</b><small>${prev}</small></span>
+        const prev = last
+          ? `${who ? esc(who) + ': ' : ''}${esc(last.text || (last.attachment ? '[Tệp đính kèm]' : ''))}`
+          : (c.lastMessage ? esc(c.lastMessage) : 'Chưa có tin nhắn');
+        return `<button type="button" class="lms-room${c.id === room ? ' on' : ''}" data-room-id="${esc(c.id)}" onclick="app.lmsOpenRoom('${esc(c.id)}')">
+          <span class="lms-room-av">${esc(c.badge)}</span>
+          <span class="lms-room-txt"><b>${esc(c.shortLabel)}</b><small>${prev}</small></span>
           <span class="lms-room-meta">${last ? esc(hhmm(Date.parse(last.timestamp || '') || Date.now())) : ''}${un ? `<i>${un}</i>` : ''}</span>
         </button>`;
       }).join('')}</div>`
+      : '';
+
+    const canPin = (r === 'teacher' || r === 'admin') && !isPrivate;
+    const rawPinnedText = L.pinnedByRoom[activeMeta.apiRoomId]?.content || getDefaultPinForRoom(activeMeta);
+    const pinnedText = String(rawPinnedText).replace(/^(?:📌\s*)+/u, '').trim() || getDefaultPinForRoom(activeMeta);
+    const pinnedBannerHtml = !isPrivate
+      ? `<div id="lms-pinned-banner" style="padding:8px 12px;background:#FFFBEB;border-bottom:1px solid #FDE68A;font-size:12.5px;color:#92400E;">
+          <div style="display:flex;align-items:flex-start;gap:6px;">
+            <span>📌</span>
+            <div style="flex:1;line-height:1.4;"><strong>Thông báo lớp:</strong> <span id="lms-pinned-text">${esc(pinnedText)}</span></div>
+          </div>
+          ${canPin ? `<div style="display:flex;gap:6px;margin-top:6px;">
+            <input id="lms-pin-input" type="text" placeholder="Nhập thông báo ghim đầu nhóm..." style="flex:1;padding:5px 9px;border:1px solid #FCD34D;border-radius:6px;font-size:12px;background:#FFF;">
+            <button type="button" id="btn-lms-pin-save" onclick="app.lmsPinRoomAnnouncement()" style="background:#D97706;color:#FFF;border:none;padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;">📌 Ghim</button>
+          </div>` : ''}
+        </div>`
       : '';
 
     let lastDay = '';
@@ -2294,84 +2489,163 @@
       lastDay = day;
       const sr = m.senderRole || m.sender;
       const mine = sr === me;
+      const pinBtn = canPin && m.text
+        ? ` <button type="button" class="lms-pin-msg-btn" data-pin-text="${esc(m.text)}" onclick="app.lmsPinRoomAnnouncement(this.getAttribute('data-pin-text'))" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;border-radius:5px;padding:1px 5px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;">📌 Ghim</button>`
+        : '';
       return `${sep}<div class="lms-msg${mine ? ' mine' : ''}${sr === 'teacher' ? ' t' : ''}">
         ${mine ? '' : `<div class="lms-av sm">${esc(initials(m.senderName))}</div>`}
         <div class="lms-msg-body">
-          <div class="lms-msg-nm">${mine ? '' : `${esc(m.senderName || '')} ${fold(m.senderName).includes(fold(roleName(sr))) ? '' : `<em>${esc(roleName(sr))}</em> `}`}<i>${esc(hhmm(t))}</i></div>
+          <div class="lms-msg-nm">${mine ? '' : `${esc(m.senderName || '')} ${fold(m.senderName).includes(fold(roleName(sr))) ? '' : `<em>${esc(roleName(sr))}</em> `}`}<i>${esc(hhmm(t))}</i>${pinBtn}</div>
           ${m.text ? `<div class="lms-bub">${esc(m.text)}</div>` : ''}
           ${renderAttachment(m)}
         </div>
       </div>`;
-    }).join('') : `<div class="lms-chat-empty">Chưa có tin nhắn.</div>`;
+    }).join('') : `<div class="lms-chat-empty">Chưa có tin nhắn trong lớp. Hãy gửi lời chào đầu tiên!</div>`;
 
-    const members = D.classStudents(room).length;
     const locked = r === 'teacher' && app.state?.teacherChatLocked;
+    const placeholderText = isPrivate
+      ? (r === 'parent' ? 'Nhắn riêng cho Cô giáo…' : `Nhắn riêng cho ${activeMeta.shortLabel}…`)
+      : `Nhắn vào ${activeMeta.label}…`;
     const compose = locked
       ? `<div class="lms-compose-lock">Quyền nhắn tin của giáo viên đang bị Quản lý tạm khóa.</div>`
       : `<form class="lms-compose" onsubmit="event.preventDefault(); app.lmsSendGroup();">
-          <label class="lms-field grow"><input id="lms-group-input" type="text" maxlength="4000" autocomplete="off" placeholder="Nhắn cho cả lớp ${esc(room)}…" oninput="app.lmsGroupDlpHint(this.value)"></label>
+          <label class="lms-field grow"><input id="lms-group-input" type="text" maxlength="4000" autocomplete="off" placeholder="${esc(placeholderText)}" oninput="app.lmsGroupDlpHint(this.value)"></label>
           <button type="submit" class="lms-btn pri">${I('send')}Gửi</button>
         </form>
         <div id="lms-group-dlp" class="lms-dlp hidden">Không gửi số điện thoại, Zalo hoặc liên kết cá nhân.</div>`;
 
-    return pageHead('Nhóm lớp', '') +
-      `<div class="lms-card lms-chat${roomList ? '' : ' single'}">
-        ${roomList}
-        <div class="lms-conv">
-          <div class="lms-conv-h"><div><b>Lớp ${esc(room)}</b><small>${esc(shortTeacher(cls && cls.teacherName))} · ${members} học viên</small></div></div>
-          <div class="lms-msgs" id="lms-msgs">${msgHtml}</div>
-          ${compose}
+    return pageHead('💬 Nhóm lớp', '') +
+      `<div class="lms-card" style="overflow:hidden;">
+        ${filterToggleHtml}
+        <div class="lms-chat${roomList ? '' : ' single'}" style="border:none;border-radius:0;">
+          ${roomList}
+          <div class="lms-conv">
+            <div class="lms-conv-h"><div><b>${esc(activeMeta.label)}</b><small>${esc(activeMeta.subtitle)}</small></div></div>
+            ${pinnedBannerHtml}
+            <div class="lms-msgs" id="lms-msgs">${msgHtml}</div>
+            ${compose}
+          </div>
         </div>
       </div>`;
   }
 
+  app.lmsSetGroupFilter = function (mode) {
+    const r = role();
+    L.groupFilter = mode === 'private' ? 'private' : 'group';
+    const { groupRooms, privateRooms } = getAvailableRoomsForRole(r);
+    if (L.groupFilter === 'private' && privateRooms.length) {
+      L.room[r] = privateRooms[0].id;
+    } else if (groupRooms.length) {
+      L.room[r] = groupRooms[0].id;
+    }
+    applyShell();
+    if (L.room[r]) app.lmsSyncRoomMessages(L.room[r], false);
+  };
+
+  app.lmsPinRoomAnnouncement = async function (customText) {
+    const r = role();
+    const room = L.room[r];
+    if (!room) return false;
+    const norm = D.normalizeRoomKey(room);
+    const input = $('lms-pin-input');
+    const content = String(typeof customText === 'string' ? customText : (input ? input.value : '')).trim();
+    if (!content) return false;
+    if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+      const res = await window.KtnWebApp.apiRequest('/api/ktn/messages/pin', {
+        method: 'POST',
+        body: { roomId: norm.apiRoomId, content }
+      });
+      if (res && res.ok && res.data?.ok && res.data?.pinnedMessage) {
+        L.pinnedByRoom[norm.apiRoomId] = res.data.pinnedMessage;
+      } else {
+        L.pinnedByRoom[norm.apiRoomId] = { roomId: norm.apiRoomId, content };
+      }
+    } else {
+      L.pinnedByRoom[norm.apiRoomId] = { roomId: norm.apiRoomId, content };
+    }
+    if (input && typeof customText !== 'string') input.value = '';
+    const txtEl = $('lms-pinned-text');
+    if (txtEl) txtEl.textContent = content.replace(/^(?:📌\s*)+/u, '').trim() || content;
+    app.showToast?.('📌 Đã ghim thông báo đầu nhóm!');
+    return true;
+  };
+
   const _roomSyncTs = {};
   app.lmsSyncRoomMessages = async function (room, silent = false) {
-    const cleanRoom = String(room || '').trim().toUpperCase();
+    const norm = D.normalizeRoomKey(room);
+    const cleanRoom = norm.key;
+    const apiRoomId = norm.apiRoomId;
     if (!cleanRoom || !window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return false;
     const nowTs = Date.now();
-    if (silent && _roomSyncTs[cleanRoom] && (nowTs - _roomSyncTs[cleanRoom] < 2500)) return false;
-    _roomSyncTs[cleanRoom] = nowTs;
+    if (silent && _roomSyncTs[apiRoomId] && (nowTs - _roomSyncTs[apiRoomId] < 2500)) return false;
+    _roomSyncTs[apiRoomId] = nowTs;
     try {
-      const res = await window.KtnWebApp.apiRequest('/api/ktn/messages?roomId=' + encodeURIComponent('class:' + cleanRoom));
+      const curRole = role();
+      const [res, roomsRes] = await Promise.all([
+        window.KtnWebApp.apiRequest('/api/ktn/messages?roomId=' + encodeURIComponent(apiRoomId)),
+        (curRole === 'teacher' || curRole === 'admin')
+          ? window.KtnWebApp.apiRequest('/api/ktn/messages/rooms').catch(() => null)
+          : Promise.resolve(null)
+      ]);
+      if (roomsRes && roomsRes.ok && Array.isArray(roomsRes.data?.privateThreads)) {
+        L.serverPrivateThreads = roomsRes.data.privateThreads;
+      }
       if (!res || !res.ok || !Array.isArray(res.data?.messages)) return false;
+      if (res.data?.pinnedMessage && res.data.pinnedMessage.content) {
+        L.pinnedByRoom[apiRoomId] = res.data.pinnedMessage;
+      }
       if (!Array.isArray(app.state.messages)) app.state.messages = [];
       let changed = false;
+      const upClean = String(cleanRoom).toUpperCase();
+      const upApi = String(apiRoomId).toUpperCase();
+      const otherRoomMsgs = app.state.messages.filter(ex => {
+        if (!ex) return false;
+        const exCls = String(ex.classCode || '').toUpperCase();
+        const exRoom = String(ex.roomId || '').toUpperCase();
+        return exCls !== upClean && exCls !== upApi && exRoom !== upClean && exRoom !== upApi;
+      });
+      const roomMsgs = [];
+      const seenIds = new Set();
+
       res.data.messages.forEach(m => {
         if (!m || (!m.content && !m.text)) return;
-        const msgId = String(m.id || '');
+        const msgId = String(m.id || '').trim();
+        if (msgId && seenIds.has(msgId)) return;
+        if (msgId) seenIds.add(msgId);
         const msgText = String(m.content || m.text || '').trim();
         const msgTs = Date.parse(m.created_at || m.timestamp || '') || Date.now();
         const sRoleRaw = String(m.sender_role || m.senderRole || 'student').toLowerCase();
         const mappedRole = sRoleRaw === 'student' ? 'parent' : sRoleRaw;
-        const alreadyExists = app.state.messages.some(ex => {
-          if (!ex) return false;
-          if (msgId && String(ex.id || '') === msgId) return true;
-          const exCls = String(ex.classCode || '').toUpperCase();
+        const dupRecent = roomMsgs.some(ex => {
           const exTxt = String(ex.text || '').trim();
           const exTs = Date.parse(ex.timestamp || '') || 0;
-          return exCls === cleanRoom && exTxt === msgText && Math.abs(exTs - msgTs) < 8000;
+          return ex.senderRole === mappedRole && exTxt === msgText && Math.abs(exTs - msgTs) < 4000;
         });
-        if (!alreadyExists) {
-          app.state.messages.push({
-            id: msgId || ('SB-' + msgTs + '-' + Math.random().toString(36).slice(2, 6)),
-            classCode: cleanRoom,
-            roomId: 'class:' + cleanRoom,
-            studentCode: '',
-            sender: mappedRole,
-            senderRole: mappedRole,
-            senderEmail: m.sender_email || '',
-            senderName: m.sender_name || m.sender_email || 'Học viên',
-            time: hhmm(msgTs),
-            timestamp: new Date(msgTs).toISOString(),
-            text: msgText,
-            attachment: m.attachment_url ? { type: 'file', url: m.attachment_url, title: 'Tệp đính kèm' } : null,
-            status: 'sent',
-            blocked: false
-          });
-          changed = true;
-        }
+        if (dupRecent) return;
+        roomMsgs.push({
+          id: msgId || ('SB-' + msgTs + '-' + Math.random().toString(36).slice(2, 6)),
+          classCode: cleanRoom,
+          roomId: apiRoomId,
+          studentCode: '',
+          sender: mappedRole,
+          senderRole: mappedRole,
+          senderEmail: m.sender_email || '',
+          senderName: m.sender_name || m.sender_email || 'Học viên',
+          time: hhmm(msgTs),
+          timestamp: new Date(msgTs).toISOString(),
+          text: msgText,
+          attachment: m.attachment_url ? { type: 'file', url: m.attachment_url, title: 'Tệp đính kèm' } : null,
+          status: 'sent',
+          blocked: false
+        });
       });
+
+      const prevRoomMsgs = D.roomMessages(room);
+      if (prevRoomMsgs.length !== roomMsgs.length || prevRoomMsgs.some((p, i) => p.id !== roomMsgs[i]?.id)) {
+        app.state.messages = [...otherRoomMsgs, ...roomMsgs];
+        changed = true;
+      }
+
       if (changed) {
         const curInput = $('lms-group-input');
         const draftVal = curInput ? curInput.value : '';
@@ -2391,7 +2665,9 @@
   };
 
   app.lmsOpenRoom = function (id) {
-    L.room[role()] = id;
+    const r = role();
+    L.room[r] = id;
+    L.groupFilter = String(id || '').startsWith('student:') ? 'private' : 'group';
     applyShell();
     app.lmsSyncRoomMessages(id, false);
     setTimeout(() => $('lms-group-input')?.focus(), 0);
@@ -2404,13 +2680,19 @@
     hint.classList.toggle('hidden', !blocked);
   };
 
-  app.lmsSendGroup = function () {
+  app.lmsSendGroup = async function () {
+    if (L._sendingGroupMsg) return false;
     const r = role();
     const input = $('lms-group-input');
     const text = String(input ? input.value : '').trim();
     const room = L.room[r];
     if (!text || !room) return false;
-    if (!D.visibleClasses(r).some(c => c.id === room)) { app.showToast('Bạn không thuộc nhóm lớp này.'); return false; }
+    const norm = D.normalizeRoomKey(room);
+    const { allRooms } = getAvailableRoomsForRole(r);
+    if (!allRooms.some(c => c.id === room || c.apiRoomId === norm.apiRoomId)) {
+      app.showToast('Bạn không thuộc nhóm lớp này.');
+      return false;
+    }
     if (r === 'teacher' && app.state?.teacherChatLocked) { app.showToast('Quyền nhắn tin đang bị khóa.'); return false; }
     const dlp = window.KTN_DLP ? window.KTN_DLP.inspect(text) : { blocked: false, reasons: [] };
     if (dlp.blocked) {
@@ -2430,37 +2712,62 @@
     const name = r === 'admin' ? (window.sllAuth?.session?.account?.name || 'Ban Quản Lý')
       : r === 'teacher' ? (app.state?.teacherName || 'Giáo viên')
         : ((stu && stu.parent) || ('Phụ huynh ' + ((stu && stu.name) || '')));
-    const now = new Date();
+
+    L._sendingGroupMsg = true;
+    const clientMessageId = 'cmsg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    let savedServerMsg = null;
+    let errMsg = '';
+    try {
+      if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        const res = await window.KtnWebApp.apiRequest('/api/ktn/messages', {
+          method: 'POST',
+          body: { roomId: norm.apiRoomId, classCode: norm.classCode || norm.key, content: text, clientMessageId }
+        });
+        if (res && res.ok && res.data?.ok && res.data?.message && res.data.message.id) {
+          savedServerMsg = res.data.message;
+        } else {
+          errMsg = res?.data?.message || 'Chưa gửi được. Tin nhắn vẫn đang được giữ trên thiết bị.';
+        }
+      } else {
+        errMsg = 'Chưa gửi được. Tin nhắn vẫn đang được giữ trên thiết bị.';
+      }
+    } catch (e) {
+      errMsg = 'Chưa gửi được. Tin nhắn vẫn đang được giữ trên thiết bị.';
+    } finally {
+      L._sendingGroupMsg = false;
+    }
+
+    if (!savedServerMsg || !savedServerMsg.id) {
+      try { localStorage.setItem('ktn_sll_draft_' + norm.apiRoomId, text); } catch {}
+      app.showToast(errMsg || 'Chưa gửi được. Tin nhắn vẫn đang được giữ trên thiết bị.');
+      return false;
+    }
+    try { localStorage.removeItem('ktn_sll_draft_' + norm.apiRoomId); } catch {}
+
+    const msgTs = Date.parse(savedServerMsg.created_at || '') || Date.now();
     const msg = {
-      id: 'GRP-' + now.getTime() + '-' + Math.floor(1000 + Math.random() * 9000),
-      classCode: room,
-      roomId: 'class:' + room,
+      id: savedServerMsg.id,
+      clientMessageId,
+      classCode: norm.key,
+      roomId: norm.apiRoomId,
       studentCode: stu ? stu.code : '',
       sender: r,
       senderRole: r,
-      senderName: name,
-      time: hhmm(now.getTime()),
-      timestamp: now.toISOString(),
+      senderName: savedServerMsg.sender_name || name,
+      time: hhmm(msgTs),
+      timestamp: new Date(msgTs).toISOString(),
       text,
       attachment: null,
       status: 'sent',
       blocked: false
     };
     if (!Array.isArray(app.state.messages)) app.state.messages = [];
-    app.state.messages.push(msg);
+    if (!app.state.messages.some(ex => ex && ex.id === msg.id)) {
+      app.state.messages.push(msg);
+    }
     if (input) input.value = '';
     app.lmsGroupDlpHint('');
     app.saveState();
-    if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
-      window.KtnWebApp.apiRequest('/api/ktn/messages', {
-        method: 'POST',
-        body: { roomId: 'class:' + room, classCode: room, content: text }
-      }).then(res => {
-        if (res && res.ok && res.data?.message?.id) {
-          msg.id = res.data.message.id;
-        }
-      }).catch(() => {});
-    }
     markSeen(r, room);
     applyShell();
     setTimeout(() => $('lms-group-input')?.focus(), 0);
@@ -3019,27 +3326,28 @@
         });
 
         (ctx.classCodes || []).forEach(cls => {
+          const normCls = String(cls || '').toUpperCase();
           const alreadyHasRoomChatNotif = items.some(ex =>
             ex && (ex.type === 'CLASS_CHAT_MESSAGE' || ex.type === 'CHAT_MESSAGE') &&
-            String(ex.metadata?.classCode || '').toUpperCase() === String(cls).toUpperCase()
+            String(ex.metadata?.classCode || '').toUpperCase() === normCls
           );
           if (alreadyHasRoomChatNotif) return;
           const roomMsgs = D.roomMessages(cls).filter(m => (m.senderRole || m.sender) !== 'teacher');
           const lastParentMsg = roomMsgs[roomMsgs.length - 1];
-          if (lastParentMsg && lastParentMsg.text) {
+          if (lastParentMsg && lastParentMsg.text && lastParentMsg.id) {
             pushItem({
-              id: 'notif_teacher_msg_' + lastParentMsg.id,
+              id: `NOTIF-TMSG-${normCls}-${lastParentMsg.id}`,
               recipient_role: 'teacher',
               recipient_id: 'ALL',
               type: 'CLASS_CHAT_MESSAGE',
               category: 'comm',
               priority: 'MEDIUM',
               title: 'Tin nhắn mới từ học sinh.',
-              body: `${lastParentMsg.senderName || 'Học sinh'} (${cls}): ${String(lastParentMsg.text).slice(0, 60)}`,
-              action_url: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(cls)}`,
+              body: `${lastParentMsg.senderName || 'Học sinh'} (${normCls}): ${String(lastParentMsg.text).slice(0, 60)}`,
+              action_url: `/custom-page/so-lien-lac-test?view=groups&room=${encodeURIComponent(normCls)}`,
               timestamp: Date.parse(lastParentMsg.timestamp || '') || (now - 540000),
               cta: 'Xem tin nhắn →',
-              metadata: { classCode: cls }
+              metadata: { classCode: normCls }
             });
           }
         });
@@ -3065,6 +3373,13 @@
             Number(existing.metadata.lessonNum || 0) === Number(h.lessonNum || 0)
           );
           if (alreadyHasSameLessonNotif) return;
+          const rawCId = String(h.courseId || '');
+          const isLiveClassHw = rawCId.toUpperCase().startsWith('CLASS_') || Number(h.lessonNum) >= 100;
+          const liveCls = String(h.classCode || rawCId.replace(/^CLASS_/i, '')).trim();
+          const sNum = Number(h.lessonNum) >= 100 ? Math.floor(Number(h.lessonNum) / 100) : (Number(h.lessonNum) || 1);
+          const hwActionUrl = isLiveClassHw && liveCls
+            ? `#/lop/${liveCls.toLowerCase()}/buoi/${sNum}`
+            : (ctx.isPortal ? `#/khoa/${rawCId}/bai/${sNum}` : `/custom-page/so-lien-lac-test?course=${rawCId}&lesson=${lIdx}`);
           pushItem({
             id: canonicalNotifId,
             recipient_role: 'student',
@@ -3073,26 +3388,26 @@
             category: 'academic',
             priority: 'HIGH',
             title: 'Cô giáo vừa nhận xét.',
-            body: `${h.courseTitle || 'Bài tập'} · Bài ${h.lessonNum}${h.score != null ? (' (' + h.score + 'đ)') : ''}`,
-            action_url: `/custom-page/so-lien-lac-test?course=${h.courseId}&lesson=${lIdx}`,
+            body: `${h.courseTitle || (isLiveClassHw && liveCls ? 'Lớp ' + liveCls : 'Bài tập')} · ${isLiveClassHw ? 'Buổi ' + sNum : 'Bài ' + h.lessonNum}${h.score != null ? (' (' + h.score + 'đ)') : ''}`,
+            action_url: hwActionUrl,
             timestamp: D.hwTime(h) || (now - (idx + 1) * 240000),
             cta: 'Xem nhận xét →',
-            metadata: { courseId: h.courseId, lessonNum: h.lessonNum, lessonIdx: lIdx, homeworkId: canonicalHwId }
+            metadata: { courseId: h.courseId, classCode: isLiveClassHw ? liveCls : '', lessonNum: h.lessonNum, lessonIdx: lIdx, homeworkId: canonicalHwId }
           });
         });
 
-        const clsCode = ctx.classCodes && ctx.classCodes[0] ? ctx.classCodes[0] : '';
+        const clsCode = ctx.classCodes && ctx.classCodes[0] ? String(ctx.classCodes[0]).toUpperCase() : '';
         if (clsCode) {
           const alreadyHasClsChatNotif = items.some(ex =>
             ex && (ex.type === 'CLASS_CHAT_MESSAGE' || ex.type === 'CHAT_MESSAGE') &&
-            String(ex.metadata?.classCode || '').toUpperCase() === String(clsCode).toUpperCase()
+            String(ex.metadata?.classCode || '').toUpperCase() === clsCode
           );
           if (!alreadyHasClsChatNotif) {
             const roomMsgs = D.roomMessages(clsCode).filter(m => (m.senderRole || m.sender) === 'teacher');
             const lastTeacherMsg = roomMsgs[roomMsgs.length - 1];
-            if (lastTeacherMsg && lastTeacherMsg.text) {
+            if (lastTeacherMsg && lastTeacherMsg.text && lastTeacherMsg.id) {
               pushItem({
-                id: 'notif_stu_msg_' + lastTeacherMsg.id,
+                id: `NOTIF-MSG-${clsCode}-${lastTeacherMsg.id}`,
                 recipient_role: 'student',
                 recipient_id: ctx.email,
                 type: 'CLASS_CHAT_MESSAGE',
@@ -3185,6 +3500,7 @@
       this.isOpen = true;
       drawer.classList.remove('hidden');
       this.renderNotificationCenter();
+      this.pullCloudNotifications();
     },
 
     closeNotificationCenter() {
@@ -3222,7 +3538,7 @@
       ].map(([k, l, c]) => `<button type="button" class="ktn-tab-item${this.activeTab === k ? ' active' : ''}" onclick="window.KTN_NOTIF.switchNotifTab('${k}')">${esc(l)} <i>${c}</i></button>`).join('');
 
       const listHtml = filtered.length ? filtered.map(item => `
-        <div class="ktn-notif-item ${item.read_status ? 'is-read' : 'is-unread'} pri-${esc(item.priority || 'MEDIUM')}" onclick="window.KTN_NOTIF.handleNotificationItemClick('${esc(item.id)}')">
+        <div class="ktn-notif-item ${item.read_status ? 'is-read' : 'is-unread'} pri-${esc(item.priority || 'MEDIUM')}" data-notif-id="${esc(item.id)}" onclick="window.KTN_NOTIF.handleNotificationItemClick('${esc(item.id)}')">
           <div class="ktn-category-avatar cat-${esc(item.category || 'academic')}">
             ${this.getCategoryIcon(item.category)}
           </div>
@@ -3264,7 +3580,7 @@
               <span id="ktn-notif-total-badge" class="ktn-notif-count-pill">${unreadList.length > 0 ? `${unreadList.length} chưa đọc` : 'Đã đọc hết'}</span>
             </div>
             <div class="ktn-notif-header-actions">
-              <button type="button" class="btn-text-action" onclick="window.KTN_NOTIF.markAllNotificationsRead()">✓ Đọc tất cả</button>
+              <button type="button" id="ktn-btn-mark-all-read" class="btn-text-action" onclick="window.KTN_NOTIF.markAllNotificationsRead()">✓ Đọc tất cả</button>
               <button type="button" class="btn-icon-close" onclick="window.KTN_NOTIF.closeNotificationCenter()" aria-label="Đóng">✕</button>
             </div>
           </header>
@@ -3278,15 +3594,16 @@
       this.recalculateUnreadBadge();
     },
 
-    markNotificationRead(notifId) {
+    async markNotificationRead(notifId) {
       if (!notifId) return;
+      const nid = String(notifId).trim();
       const set = this.getReadSet();
-      set.add(notifId);
+      set.add(nid);
       this.saveReadSet(set);
       const custom = this.getCustomEvents();
       let changed = false;
       custom.forEach(c => {
-        if (c.id === notifId && !c.read_status) {
+        if (c.id === nid && !c.read_status) {
           c.read_status = true;
           changed = true;
         }
@@ -3295,14 +3612,23 @@
       this.recalculateUnreadBadge();
       if (this.isOpen) this.renderNotificationCenter();
       try {
-        this._notifChannel?.postMessage({ type: 'NOTIF_MARK_READ', originTabId: CURRENT_TAB_ID, notifId });
+        this._notifChannel?.postMessage({ type: 'NOTIF_MARK_READ', originTabId: CURRENT_TAB_ID, notifId: nid });
       } catch {}
+      if (window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        try {
+          await window.KtnWebApp.apiRequest('/api/ktn/notifications/read', {
+            method: 'PATCH',
+            body: { ids: [nid] }
+          });
+        } catch {}
+      }
     },
 
-    markAllNotificationsRead() {
+    async markAllNotificationsRead() {
       const set = this.getReadSet();
       const all = this.buildRoleNotifications();
-      all.forEach(n => set.add(n.id));
+      const ids = all.map(n => String(n.id || '').trim()).filter(Boolean);
+      ids.forEach(id => set.add(id));
       this.saveReadSet(set);
       const custom = this.getCustomEvents();
       custom.forEach(c => { c.read_status = true; });
@@ -3312,12 +3638,20 @@
       try {
         this._notifChannel?.postMessage({ type: 'NOTIF_MARK_ALL_READ', originTabId: CURRENT_TAB_ID });
       } catch {}
+      if (ids.length > 0 && window.KtnWebApp && typeof window.KtnWebApp.apiRequest === 'function') {
+        try {
+          await window.KtnWebApp.apiRequest('/api/ktn/notifications/read', {
+            method: 'PATCH',
+            body: { ids }
+          });
+        } catch {}
+      }
     },
 
-    handleNotificationItemClick(notifId) {
+    async handleNotificationItemClick(notifId) {
       const all = this.buildRoleNotifications();
       const item = all.find(n => n.id === notifId);
-      this.markNotificationRead(notifId);
+      await this.markNotificationRead(notifId);
       this.closeNotificationCenter();
       if (item) {
         this.handleNotificationDeepLink(item.action_url, item);
@@ -3331,11 +3665,24 @@
       // 1. Ngữ cảnh Cổng Học Viên Trực Tuyến (Student Online Portal)
       if (ctx.isPortal) {
         const rawUrl = String(actionUrl || '');
+        const isChat = Boolean(item && (item.type === 'CLASS_CHAT_MESSAGE' || item.type === 'CHAT_MESSAGE'));
         if ((rawUrl.startsWith('#/lop') || rawUrl.startsWith('#/khoa')) && typeof window.navigateStudentHash === 'function') {
           window.navigateStudentHash(rawUrl);
+          setTimeout(() => {
+            if (isChat) {
+              const chatBox = document.getElementById('student-chat-messages') || document.getElementById('student-chat-input');
+              if (chatBox) chatBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else if (rawUrl.startsWith('#/lop')) {
+              const hwBox = document.getElementById('class-active-session-box') || document.getElementById('student-homework-list');
+              if (hwBox) hwBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+              const fbBox = document.getElementById('hw-graded-feedback-box') || document.getElementById('interactive-workbook-section');
+              if (fbBox) fbBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 300);
           return;
         }
-        if ((item && (item.type === 'CLASS_CHAT_MESSAGE' || item.type === 'CHAT_MESSAGE')) || (rawUrl.includes('view=groups'))) {
+        if (isChat || rawUrl.includes('view=groups')) {
           const targetCls = String(meta.classCode || (ctx.classCodes && ctx.classCodes[0]) || '').trim().toLowerCase();
           if (targetCls && typeof window.navigateStudentHash === 'function') {
             window.navigateStudentHash(`#/lop/${targetCls}/buoi/1`);
@@ -3554,15 +3901,29 @@
         if (!items.length) return;
 
         const custom = this.getCustomEvents();
-        const existingIds = new Set(custom.map(c => c.id));
+        const existingMap = new Map(custom.map(c => [c.id, c]));
         const readSet = this.getReadSet();
-        let addedAny = false;
+        let readSetChanged = false;
+        let customChanged = false;
         const now = Date.now();
         const ctx = this.getActiveContext();
 
         items.slice().reverse().forEach(rawItem => {
           if (!rawItem || !rawItem.id) return;
-          if (existingIds.has(rawItem.id) || PROCESSED_MSG_IDS.has(rawItem.id)) return;
+          if (rawItem.read === true && !readSet.has(rawItem.id)) {
+            readSet.add(rawItem.id);
+            readSetChanged = true;
+          }
+          const isRead = Boolean(rawItem.read || readSet.has(rawItem.id));
+          if (existingMap.has(rawItem.id)) {
+            const ex = existingMap.get(rawItem.id);
+            if (ex && ex.read_status !== isRead) {
+              ex.read_status = isRead;
+              customChanged = true;
+            }
+            return;
+          }
+          if (PROCESSED_MSG_IDS.has(rawItem.id)) return;
           const rawType = String(rawItem.type || 'academic').toLowerCase();
           const isChat = rawType === 'chat_message' || rawType === 'class_chat_message';
           const isOrder = rawType === 'order_pending' || rawType === 'order_created';
@@ -3578,7 +3939,7 @@
             action_url: rawItem.actionUrl || rawItem.action_url || '/custom-page/so-lien-lac-test',
             cta: isChat ? 'Xem tin nhắn →' : 'Xem ngay →',
             timestamp: rawItem.createdAt ? new Date(rawItem.createdAt).getTime() : now,
-            read_status: readSet.has(rawItem.id),
+            read_status: isRead,
             metadata: {
               studentEmail: ctx.email,
               studentCode: ctx.code,
@@ -3590,12 +3951,13 @@
           };
           if (!this.evaluateRecipientMatch(item, ctx)) return;
           PROCESSED_MSG_IDS.add(item.id);
-          existingIds.add(item.id);
+          existingMap.set(item.id, item);
           custom.unshift(item);
-          addedAny = true;
+          customChanged = true;
         });
 
-        if (addedAny) {
+        if (readSetChanged) this.saveReadSet(readSet);
+        if (customChanged || readSetChanged) {
           this.saveCustomEvents(custom);
           this.recalculateUnreadBadge();
           if (this.isOpen) this.renderNotificationCenter();
@@ -3609,7 +3971,7 @@
       return false;
     },
 
-    VAPID_PUBLIC_KEY: 'BFWxJ4T_sakVqTfRjAQOpN7RghDoQRo9owPWy_W1lvdoVYpqFdLJRmEOYgQEPPiEHpotoaixRt8oq2_R4VH8afM',
+    VAPID_PUBLIC_KEY: 'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM',
 
     urlBase64ToUint8Array(base64String) {
       const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -3637,15 +3999,29 @@
         if (!reg || !reg.pushManager) return null;
 
         await navigator.serviceWorker.ready;
+        const appServerKey = this.urlBase64ToUint8Array(this.VAPID_PUBLIC_KEY);
         let sub = await reg.pushManager.getSubscription();
+        let previousEndpoint = '';
+        if (sub && sub.options && sub.options.applicationServerKey) {
+          const actualKey = new Uint8Array(sub.options.applicationServerKey);
+          let keyMatches = actualKey.length === appServerKey.length;
+          for (let i = 0; keyMatches && i < actualKey.length; i++) {
+            if (actualKey[i] !== appServerKey[i]) keyMatches = false;
+          }
+          if (!keyMatches) {
+            previousEndpoint = sub.endpoint || '';
+            await sub.unsubscribe().catch(() => false);
+            sub = null;
+          }
+        }
         if (!sub) {
           sub = await reg.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: this.urlBase64ToUint8Array(this.VAPID_PUBLIC_KEY)
+            applicationServerKey: appServerKey
           });
         }
         if (sub) {
-          await this.savePushSubscriptionToCloud(sub.toJSON());
+          await this.savePushSubscriptionToCloud(sub.toJSON(), previousEndpoint);
         }
         return sub;
       } catch {
@@ -3653,12 +4029,9 @@
       }
     },
 
-    async savePushSubscriptionToCloud(subJson) {
+    async savePushSubscriptionToCloud(subJson, previousEndpoint) {
       try {
         if (!subJson || !subJson.endpoint || !subJson.keys) return false;
-        const lastSavedEp = localStorage.getItem('ktn_saved_push_ep_v1');
-        if (lastSavedEp === subJson.endpoint) return true;
-
         if (!window.KtnWebApp || typeof window.KtnWebApp.apiRequest !== 'function') return false;
         const ctx = this.getActiveContext();
         const res = await window.KtnWebApp.apiRequest('/api/ktn/push/subscribe', {
@@ -3667,7 +4040,8 @@
             email: ctx.email || '',
             role: ctx.role || 'student',
             classCode: (ctx.classCodes && ctx.classCodes[0]) || null,
-            subscription: subJson
+            subscription: subJson,
+            ...(previousEndpoint ? { previousEndpoint } : {})
           }
         });
         if (res && res.ok) {

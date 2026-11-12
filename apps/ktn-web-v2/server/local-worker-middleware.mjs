@@ -1018,7 +1018,7 @@ export function createLocalWorkerHarness() {
         } catch {
           decodedPwd = String(body.password || '');
         }
-        if (decodedPwd.length < 6 || decodedPwd === 'wrong-password') {
+        if (decodedPwd.length < 6 || decodedPwd === 'wrong-password' || /^(?:wrong|invalid|bad)[-_]/i.test(decodedPwd)) {
           return new Response(JSON.stringify({ message: 'Invalid credentials' }), {
             status: 401,
             headers: { 'Content-Type': 'application/json' }
@@ -1026,7 +1026,7 @@ export function createLocalWorkerHarness() {
         }
 
         const stu = state.tables.ktn_students.find(s => s.email.toLowerCase() === email);
-        if (stu) {
+        if (stu && (stu.cognito_user_id || !/^2026\d{4,}$/i.test(String(stu.code || '').trim()))) {
           return new Response(JSON.stringify({
             accessToken: 'mock-student-jwt-' + stu.code,
             id: stu.cognito_user_id || stu.code,
@@ -1040,7 +1040,7 @@ export function createLocalWorkerHarness() {
         }
 
         const teacher = state.tables.ktn_teachers.find(t => t.email.toLowerCase() === email);
-        if (teacher) {
+        if (teacher && (teacher.cognito_user_id || !/^GV\d+$/i.test(String(teacher.code || '').trim()))) {
           return new Response(JSON.stringify({
             accessToken: 'mock-teacher-jwt-' + teacher.code,
             id: teacher.code,

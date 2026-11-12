@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,6 +6,8 @@ import {
   LogOut,
   CheckCheck,
   Sparkles,
+  KeyRound,
+  X,
 } from 'lucide-react';
 import { DemoControlBar } from '@/components/shared/DemoControlBar';
 import { RoleBottomNavigation } from '@/app/navigation/RoleBottomNavigation';
@@ -40,6 +42,70 @@ export const AppShell: React.FC = () => {
   const initializedNotifsForUserRef = useRef<string>('');
   const bellButtonRef = useRef<HTMLButtonElement | null>(null);
   const notifDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  const [changePwdModalOpen, setChangePwdModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwdError, setPwdError] = useState<string | null>(null);
+  const [pwdSubmitting, setPwdSubmitting] = useState(false);
+
+  const handleOpenChangePwdModal = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setPwdError(null);
+    setChangePwdModalOpen(true);
+  };
+
+  const handleSubmitChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwdError(null);
+    const minLen = effectiveRole === 'admin' ? 8 : 6;
+    if (!currentPassword.trim()) {
+      setPwdError('Vui lòng nhập mật khẩu hiện tại.');
+      return;
+    }
+    if (newPassword.trim().length < minLen) {
+      setPwdError(`Mật khẩu mới cần tối thiểu ${minLen} ký tự.`);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwdError('Xác nhận mật khẩu mới không khớp.');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPwdError('Mật khẩu mới phải khác mật khẩu hiện tại.');
+      return;
+    }
+    if (isDemoMode) {
+      addToast({
+        title: 'Đã đổi mật khẩu (Demo)',
+        description: 'Mật khẩu mới đã được ghi nhận trong phiên dùng thử.',
+        variant: 'success',
+      });
+      setChangePwdModalOpen(false);
+      return;
+    }
+    setPwdSubmitting(true);
+    try {
+      const res = await ktnApi.changePassword({
+        currentPassword,
+        newPassword,
+      });
+      addToast({
+        title: 'Đổi mật khẩu thành công',
+        description: res.message || 'Bạn có thể dùng mật khẩu mới cho lần đăng nhập tiếp theo.',
+        variant: 'success',
+      });
+      setChangePwdModalOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Không thể đổi mật khẩu. Vui lòng kiểm tra lại.';
+      setPwdError(msg);
+    } finally {
+      setPwdSubmitting(false);
+    }
+  };
 
   // Close notification dropdown automatically when navigating to another page
   useEffect(() => {
@@ -678,16 +744,29 @@ export const AppShell: React.FC = () => {
               </div>
 
               {(user || isDemoMode) ? (
-                <button
-                  type="button"
-                  data-testid="logout-btn"
-                  onClick={handleLogout}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 hover:bg-red-50 hover:text-red-800"
-                  title="Đăng xuất"
-                  aria-label="Đăng xuất"
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    data-testid="open-change-password-modal-btn"
+                    onClick={handleOpenChangePwdModal}
+                    className="inline-flex h-9 items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 px-2.5 text-xs font-bold text-stone-700 hover:bg-amber-50 hover:border-amber-300 hover:text-red-900"
+                    title="Đổi mật khẩu"
+                    aria-label="Đổi mật khẩu"
+                  >
+                    <KeyRound className="h-3.5 w-3.5 text-red-800" />
+                    <span className="hidden sm:inline">Đổi mật khẩu</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="logout-btn"
+                    onClick={handleLogout}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 hover:bg-red-50 hover:text-red-800"
+                    title="Đăng xuất"
+                    aria-label="Đăng xuất"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </button>
+                </>
               ) : isRestoringLiveSession ? null : (
                 <button
                   type="button"
@@ -719,6 +798,118 @@ export const AppShell: React.FC = () => {
 
           {/* Global Full-Screen Image Lightbox Portal */}
           <ChatImageLightbox />
+
+          {/* Change Password Modal */}
+          {changePwdModalOpen && (
+            <div
+              data-testid="change-password-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Đổi mật khẩu"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+            >
+              <div className="w-full max-w-md overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-red-100 text-red-800">
+                      <KeyRound className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <h3 className="font-display text-sm font-bold text-stone-900">
+                        Đổi mật khẩu tài khoản
+                      </h3>
+                      <p className="text-[11px] text-stone-500">
+                        {user?.code ? `${user.code} · ` : ''}
+                        {user?.email || 'Tài khoản đang đăng nhập'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setChangePwdModalOpen(false)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-200/60 hover:text-stone-700"
+                    aria-label="Đóng"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubmitChangePassword} className="space-y-3.5 p-4">
+                  {pwdError && (
+                    <div
+                      data-testid="change-password-error"
+                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800"
+                    >
+                      {pwdError}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-stone-700">
+                      Mật khẩu hiện tại
+                    </label>
+                    <input
+                      type="password"
+                      data-testid="change-password-current-input"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Nhập mật khẩu hiện tại (mặc định: 12345678)"
+                      autoComplete="current-password"
+                      className="w-full rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-red-700 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-stone-700">
+                      Mật khẩu mới
+                    </label>
+                    <input
+                      type="password"
+                      data-testid="change-password-new-input"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder={`Tối thiểu ${effectiveRole === 'admin' ? 8 : 6} ký tự`}
+                      autoComplete="new-password"
+                      className="w-full rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-red-700 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-stone-700">
+                      Xác nhận mật khẩu mới
+                    </label>
+                    <input
+                      type="password"
+                      data-testid="change-password-confirm-input"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Nhập lại mật khẩu mới"
+                      autoComplete="new-password"
+                      className="w-full rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-red-700 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setChangePwdModalOpen(false)}
+                      className="rounded-xl border border-stone-200 px-3.5 py-2 text-xs font-bold text-stone-600 hover:bg-stone-100"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="submit"
+                      data-testid="change-password-submit-btn"
+                      disabled={pwdSubmitting}
+                      className="rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-900 disabled:opacity-50"
+                    >
+                      {pwdSubmitting ? 'Đang lưu...' : 'Lưu mật khẩu mới'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -2461,6 +2461,107 @@ export const ktnApi = {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  },
+
+  async changePassword(payload: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<{
+    ok: boolean;
+    email?: string;
+    role?: string;
+    customPassword?: boolean;
+    updatedAt?: string;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async resetUserPassword(payload: {
+    email: string;
+    role?: 'student' | 'teacher';
+    newPassword?: string;
+  }): Promise<{
+    ok: boolean;
+    email: string;
+    role: 'student' | 'teacher';
+    newPassword?: string;
+    customPassword?: boolean;
+    updatedAt?: string;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/admin/users/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async bulkImportCenterData(payload: {
+    csvText: string;
+    dryRun?: boolean;
+    defaultPassword?: string;
+  }): Promise<{
+    ok: boolean;
+    dryRun: boolean;
+    defaultPassword: string;
+    summary: {
+      classCount: number;
+      activeClassCount: number;
+      archivedClassCount: number;
+      teacherCount: number;
+      studentCount: number;
+      activeStudentCount: number;
+      archivedStudentCount: number;
+      warningCount: number;
+      defaultPassword: string;
+    };
+    classes: Array<{
+      code: string;
+      title: string;
+      schedule: string;
+      teacherKey: string;
+      teacherDisplayName: string;
+      teacherCode: string;
+      teacherEmail: string;
+      isArchived: boolean;
+      studentCount: number;
+    }>;
+    teachers: Array<{
+      key: string;
+      code: string;
+      email: string;
+      name: string;
+      assignedClasses: string[];
+      defaultPassword: string;
+      isExisting: boolean;
+    }>;
+    students: Array<{
+      code: string;
+      email: string;
+      name: string;
+      phone: string;
+      parentName: string;
+      classCode: string;
+      classTitle: string;
+      schedule: string;
+      teacherCode: string;
+      teacherEmail: string;
+      teacherName: string;
+      status: 'active' | 'archived';
+      defaultPassword: string;
+      rowIndex: number;
+    }>;
+    warnings: string[];
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/admin/bulk-import', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      timeoutMs: 30000
+    });
   }
 };
 

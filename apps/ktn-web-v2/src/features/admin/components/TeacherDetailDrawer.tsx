@@ -22,6 +22,7 @@ import type {
   KtnCourse,
   KtnTeacherRecord,
 } from '@/types/ktn.types';
+import { ktnApi } from '@/services/api/ktnApiClient';
 
 export interface TeacherDetailDrawerProps {
   teacher: KtnTeacherRecord | null;
@@ -103,7 +104,12 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
   const [notes, setNotes] = useState('');
   const [assignedClasses, setAssignedClasses] = useState<string[]>([]);
   const [assignedCourses, setAssignedCourses] = useState<string[]>([]);
-  const [newPassword, setNewPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('12345678');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetPasswordFeedback, setResetPasswordFeedback] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
 
   // Forum points adjustment state
   const [pointsDeltaInput, setPointsDeltaInput] = useState<string>('5');
@@ -122,7 +128,8 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
     setAssignedCourses(
       Array.isArray(teacher.assigned_courses) ? teacher.assigned_courses : []
     );
-    setNewPassword('');
+    setNewPassword('12345678');
+    setResetPasswordFeedback(null);
     setPointsDeltaInput('5');
     setPointsReasonInput('');
   }, [teacher?.code, teacher?.email]);
@@ -349,6 +356,89 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
 
         {/* Body */}
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          {/* Quick Reset Password Card (always available when not on Account tab, and rendered inside Account tab when activeTab === 'account') */}
+          {activeTab !== 'account' && (
+            <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3 shadow-2xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5 text-red-800" />
+                  <span className="font-display text-xs font-bold text-stone-900">
+                    Mật khẩu đăng nhập ({teacher.code || teacher.email})
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <input
+                    type="text"
+                    data-testid="drawer-reset-password-input"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="12345678"
+                    className="w-28 rounded-lg border border-stone-300 bg-white px-2.5 py-1 font-mono text-xs font-bold text-stone-900"
+                  />
+                  <button
+                    type="button"
+                    data-testid="drawer-reset-password-btn"
+                    disabled={
+                      isResettingPassword ||
+                      isSaving ||
+                      (newPassword.trim().length > 0 && newPassword.trim().length < 6)
+                    }
+                    onClick={async () => {
+                      const targetPwd = newPassword.trim() || '12345678';
+                      setIsResettingPassword(true);
+                      setResetPasswordFeedback(null);
+                      try {
+                        const res = await ktnApi.resetUserPassword({
+                          email: teacher.email,
+                          role: 'teacher',
+                          newPassword: targetPwd,
+                        });
+                        setResetPasswordFeedback({
+                          ok: true,
+                          message:
+                            res.message ||
+                            `Đã đặt lại mật khẩu giáo viên ${teacher.code || teacher.email} thành "${targetPwd}".`,
+                        });
+                      } catch (err: unknown) {
+                        setResetPasswordFeedback({
+                          ok: false,
+                          message:
+                            err instanceof Error
+                              ? err.message
+                              : 'Không thể đặt lại mật khẩu giáo viên.',
+                        });
+                      } finally {
+                        setIsResettingPassword(false);
+                      }
+                    }}
+                    className="inline-flex min-h-[30px] items-center gap-1 rounded-lg bg-red-800 px-3 py-1 text-xs font-bold text-white hover:bg-red-900 disabled:opacity-50"
+                  >
+                    {isResettingPassword ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <KeyRound className="h-3.5 w-3.5" />
+                    )}
+                    <span>
+                      {newPassword.trim() && newPassword.trim() !== '12345678'
+                        ? `Đặt lại mật khẩu (${newPassword.trim()})`
+                        : 'Đặt lại mật khẩu (12345678)'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+              {resetPasswordFeedback && (
+                <p
+                  data-testid="drawer-reset-password-feedback"
+                  className={`mt-1.5 text-[11px] font-semibold ${
+                    resetPasswordFeedback.ok ? 'text-emerald-800' : 'text-red-800'
+                  }`}
+                >
+                  {resetPasswordFeedback.message}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* TAB 1: THÔNG TIN */}
           {activeTab === 'info' && (
             <form
@@ -931,34 +1021,84 @@ export const TeacherDetailDrawer: React.FC<TeacherDetailDrawerProps> = ({
               </div>
 
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  if (!newPassword.trim()) return;
-                  handleSave(undefined, newPassword.trim());
+                  const targetPwd = newPassword.trim() || '12345678';
+                  setIsResettingPassword(true);
+                  setResetPasswordFeedback(null);
+                  try {
+                    const res = await ktnApi.resetUserPassword({
+                      email: teacher.email,
+                      role: 'teacher',
+                      newPassword: targetPwd,
+                    });
+                    setResetPasswordFeedback({
+                      ok: true,
+                      message:
+                        res.message ||
+                        `Đã đặt lại mật khẩu giáo viên ${teacher.code || teacher.email} thành "${targetPwd}".`,
+                    });
+                    await handleSave(undefined, targetPwd);
+                  } catch (err: unknown) {
+                    setResetPasswordFeedback({
+                      ok: false,
+                      message:
+                        err instanceof Error
+                          ? err.message
+                          : 'Không thể đặt lại mật khẩu giáo viên.',
+                    });
+                  } finally {
+                    setIsResettingPassword(false);
+                  }
                 }}
                 className="space-y-3 rounded-xl border border-stone-200 bg-white p-4 shadow-2xs"
               >
-                <div className="flex items-center gap-1.5">
-                  <KeyRound className="h-4 w-4 text-red-800" />
-                  <h4 className="font-display text-xs font-bold text-stone-900">
-                    Đặt lại mật khẩu đăng nhập giáo viên
-                  </h4>
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <KeyRound className="h-4 w-4 text-red-800" />
+                    <h4 className="font-display text-xs font-bold text-stone-900">
+                      Đặt lại mật khẩu đăng nhập giáo viên
+                    </h4>
+                  </div>
+                  <span className="rounded bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-900">
+                    Mặc định: 12345678
+                  </span>
                 </div>
                 <input
                   type="text"
                   data-testid="admin-reset-teacher-password-input"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Nhập mật khẩu mới (tối thiểu 8 ký tự)..."
-                  className="w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900"
+                  placeholder="Nhập mật khẩu mới (mặc định 12345678)..."
+                  className="w-full rounded-xl border border-stone-300 px-3 py-2 font-mono text-xs font-bold text-stone-900"
                 />
+                {resetPasswordFeedback && (
+                  <p
+                    data-testid="drawer-reset-password-feedback"
+                    className={`text-xs font-semibold ${
+                      resetPasswordFeedback.ok ? 'text-emerald-800' : 'text-red-800'
+                    }`}
+                  >
+                    {resetPasswordFeedback.message}
+                  </p>
+                )}
                 <div className="flex justify-end">
                   <button
                     type="submit"
-                    disabled={isSaving || newPassword.trim().length < 6}
+                    data-testid="drawer-reset-password-btn"
+                    disabled={
+                      isSaving ||
+                      isResettingPassword ||
+                      (newPassword.trim().length > 0 && newPassword.trim().length < 6)
+                    }
                     className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-red-900 disabled:opacity-50"
                   >
-                    <span>Cập nhật mật khẩu</span>
+                    {isResettingPassword && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <span>
+                      {newPassword.trim() && newPassword.trim() !== '12345678'
+                        ? `Đặt lại mật khẩu (${newPassword.trim()})`
+                        : 'Đặt lại mật khẩu (12345678)'}
+                    </span>
                   </button>
                 </div>
               </form>

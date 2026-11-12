@@ -3077,7 +3077,7 @@ function extractTeacherMetaFromRow(row) {
         cognitoUserId = s.slice(6).trim();
       } else if (s.startsWith('__pwd_hmac:')) {
         pwdHmac = s.slice(11).trim();
-      } else if (s === '__pwd_custom:1') {
+      } else if (s === '__pwd_custom:1' || s === '__custom_pwd:1') {
         customPassword = true;
       }
     }
@@ -4388,16 +4388,19 @@ function computeStudentAccountAndSyncStatus(row) {
   const hasClass = Boolean(row?.class_code);
   const courses = Array.isArray(row?.online_courses) ? row.online_courses : [];
   const hasCourses = courses.length > 0;
+  const isKtn2026Code =
+    /^2026\d{4,}$/i.test(String(row?.code || '').trim()) ||
+    /^2026\d{4,}@khongtunhi\.com$/i.test(String(row?.email || '').trim());
   let accountStatus = row?.account_status || '';
   if (!accountStatus) {
-    if (hasCognito) accountStatus = 'ready_to_login';
+    if (hasCognito || isKtn2026Code) accountStatus = 'ready_to_login';
     else if (hasClass || hasCourses) accountStatus = 'pending_activation';
     else accountStatus = 'unassigned';
   }
   let syncStatus = row?.sync_status || '';
   if (!syncStatus) {
     if (row?.last_sync_error) syncStatus = 'partial_failure';
-    else if (!hasCognito && (hasCourses || hasClass)) syncStatus = 'pending_sync';
+    else if (!hasCognito && !isKtn2026Code && (hasCourses || hasClass)) syncStatus = 'pending_sync';
     else syncStatus = 'synced';
   }
   return { accountStatus, syncStatus };
@@ -8305,6 +8308,747 @@ async function saveStudentLifecycleState(env, email, stateObj, actorSession) {
   return saved;
 }
 
+async function getStudentCredentialMeta(env, email) {
+  const cleanEmail = normalizeEmail(email || '');
+  if (!cleanEmail) return null;
+  const id = `STU_CRED_${cleanEmail}`;
+  const res = await supabaseRequest(
+    env,
+    `ktn_dlp_alerts?id=eq.${encodeURIComponent(id)}&room_id=eq.STUDENT_CREDENTIAL_META&limit=1`
+  );
+  if (res.ok && Array.isArray(res.data) && res.data[0]) {
+    try {
+      const parsed = JSON.parse(res.data[0].blocked_content || '{}');
+      const pwdHmac = parsed.passwordHmac || parsed.pwdHmac || null;
+      return {
+        ...parsed,
+        email: cleanEmail,
+        passwordHmac: pwdHmac,
+        pwdHmac,
+        customPassword: Boolean(parsed.customPassword)
+      };
+    } catch {}
+  }
+  return null;
+}
+
+async function saveStudentCredentialMeta(env, email, metaObj, actorSession) {
+  const cleanEmail = normalizeEmail(email || '');
+  const id = `STU_CRED_${cleanEmail}`;
+  const nowIso = new Date().toISOString();
+  const pwdHmac = metaObj?.passwordHmac || metaObj?.pwdHmac || null;
+  const payload = {
+    ...metaObj,
+    email: cleanEmail,
+    passwordHmac: pwdHmac,
+    pwdHmac,
+    customPassword: Boolean(metaObj?.customPassword),
+    updatedAt: nowIso,
+    updatedBy: actorSession?.email || 'system@khongtunhi.com'
+  };
+  return upsertStructuredAlertRecord(env, {
+    id,
+    roomId: 'STUDENT_CREDENTIAL_META',
+    senderEmail: cleanEmail,
+    senderName: actorSession?.name || actorSession?.email || cleanEmail,
+    senderRole: actorSession?.role || 'student',
+    payload,
+    reason: payload.customPassword ? 'STUDENT_CUSTOM_PASSWORD' : 'STUDENT_DEFAULT_PASSWORD'
+  });
+}
+
+async function getAdminCredentialMeta(env, email) {
+  const cleanEmail = normalizeEmail(email || '');
+  if (!cleanEmail) return null;
+  const id = `ADM_CRED_${cleanEmail}`;
+  const res = await supabaseRequest(
+    env,
+    `ktn_dlp_alerts?id=eq.${encodeURIComponent(id)}&room_id=eq.ADMIN_CREDENTIAL_META&limit=1`
+  );
+  if (res.ok && Array.isArray(res.data) && res.data[0]) {
+    try {
+      const parsed = JSON.parse(res.data[0].blocked_content || '{}');
+      const pwdHmac = parsed.passwordHmac || parsed.pwdHmac || null;
+      return {
+        ...parsed,
+        email: cleanEmail,
+        passwordHmac: pwdHmac,
+        pwdHmac,
+        customPassword: Boolean(parsed.customPassword)
+      };
+    } catch {}
+  }
+  return null;
+}
+
+async function saveAdminCredentialMeta(env, email, metaObj, actorSession) {
+  const cleanEmail = normalizeEmail(email || '');
+  const id = `ADM_CRED_${cleanEmail}`;
+  const nowIso = new Date().toISOString();
+  const pwdHmac = metaObj?.passwordHmac || metaObj?.pwdHmac || null;
+  const payload = {
+    ...metaObj,
+    email: cleanEmail,
+    passwordHmac: pwdHmac,
+    pwdHmac,
+    customPassword: Boolean(metaObj?.customPassword),
+    updatedAt: nowIso,
+    updatedBy: actorSession?.email || cleanEmail
+  };
+  return upsertStructuredAlertRecord(env, {
+    id,
+    roomId: 'ADMIN_CREDENTIAL_META',
+    senderEmail: cleanEmail,
+    senderName: actorSession?.name || actorSession?.email || cleanEmail,
+    senderRole: 'admin',
+    payload,
+    reason: 'ADMIN_CUSTOM_PASSWORD'
+  });
+}
+
+async function updateTeacherCredentialHmacInDb(env, teacherRow, newPassword, customPassword = true) {
+  if (!teacherRow || !teacherRow.email) {
+    return { ok: false, status: 404, error: 'TEACHER_NOT_FOUND' };
+  }
+  const tEmail = normalizeEmail(teacherRow.email);
+  const tCode = String(teacherRow.code || '').trim();
+  const nowIso = new Date().toISOString();
+  const passwordHmac = await computeTeacherCredentialHmac(tEmail, newPassword, env.KTN_SESSION_SECRET);
+  const existingAliases = Array.isArray(teacherRow.aliases) ? teacherRow.aliases : [];
+  const filteredAliases = existingAliases.filter(
+    (a) =>
+      typeof a === 'string' &&
+      !a.startsWith('__pwd_hmac:') &&
+      !a.startsWith('__status:pending') &&
+      a !== '__pwd_custom:1' &&
+      a !== '__custom_pwd:1'
+  );
+  if (!filteredAliases.some((a) => a.startsWith('__status:'))) {
+    filteredAliases.push('__status:ready_to_login');
+  }
+  filteredAliases.push(`__pwd_hmac:${passwordHmac}`);
+  if (customPassword) {
+    filteredAliases.push('__pwd_custom:1', '__custom_pwd:1');
+  }
+
+  const filterExpr = tCode
+    ? `code=eq.${encodeURIComponent(tCode)}`
+    : `email=eq.${encodeURIComponent(tEmail)}`;
+
+  let patchRes = await supabaseRequest(env, `ktn_teachers?${filterExpr}`, {
+    method: 'PATCH',
+    prefer: 'return=representation',
+    body: {
+      aliases: filteredAliases,
+      provisioning_status: 'ready_to_login',
+      sync_status: 'synced',
+      updated_at: nowIso
+    }
+  });
+  if ((!patchRes || !patchRes.ok) && patchRes?.status === 400) {
+    patchRes = await supabaseRequest(env, `ktn_teachers?${filterExpr}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        aliases: filteredAliases
+      }
+    });
+  }
+  if ((!patchRes || !patchRes.ok || (Array.isArray(patchRes.data) && patchRes.data.length === 0)) && tEmail && tCode) {
+    const emailFilter = `email=eq.${encodeURIComponent(tEmail)}`;
+    patchRes = await supabaseRequest(env, `ktn_teachers?${emailFilter}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        aliases: filteredAliases
+      }
+    });
+  }
+  return {
+    ok: Boolean(patchRes && patchRes.ok),
+    status: patchRes?.status || 500,
+    passwordHmac,
+    aliases: filteredAliases,
+    teacher: Array.isArray(patchRes?.data) && patchRes.data[0] ? patchRes.data[0] : { ...teacherRow, aliases: filteredAliases }
+  };
+}
+
+function tokenizeMultilineCsv(rawText) {
+  const text = String(rawText || '').replace(/^\uFEFF/, '');
+  if (!text.trim()) return [];
+
+  // Detect primary delimiter outside quotes (comma vs tab)
+  let commaCount = 0;
+  let tabCount = 0;
+  let inQ = false;
+  for (let i = 0; i < Math.min(text.length, 2000); i++) {
+    const ch = text[i];
+    if (ch === '"') inQ = !inQ;
+    else if (!inQ) {
+      if (ch === ',') commaCount++;
+      else if (ch === '\t') tabCount++;
+    }
+  }
+  const delimiter = tabCount > commaCount ? '\t' : ',';
+
+  const rows = [];
+  let currentRow = [];
+  let currentCell = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const nextCh = text[i + 1];
+
+    if (ch === '"') {
+      if (insideQuotes && nextCh === '"') {
+        currentCell += '"';
+        i++;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+      continue;
+    }
+
+    if (!insideQuotes && ch === delimiter) {
+      currentRow.push(currentCell);
+      currentCell = '';
+      continue;
+    }
+
+    if (!insideQuotes && (ch === '\r' || ch === '\n')) {
+      if (ch === '\r' && nextCh === '\n') {
+        i++;
+      }
+      currentRow.push(currentCell);
+      if (currentRow.some((c) => String(c || '').trim() !== '')) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = '';
+      continue;
+    }
+
+    currentCell += ch;
+  }
+
+  currentRow.push(currentCell);
+  if (currentRow.some((c) => String(c || '').trim() !== '')) {
+    rows.push(currentRow);
+  }
+  return rows;
+}
+
+function deriveCanonicalClassCode(rawClassTitle) {
+  const title = String(rawClassTitle || '').replace(/\s+/g, ' ').trim();
+  const norm = normalizeViSearchText(title);
+  if (!norm) {
+    return { classCode: 'KTN-N01', isArchived: false };
+  }
+
+  let prefix = 'KTN';
+  let isArchived = false;
+
+  if (/lo\s*mini\s*23/.test(norm)) {
+    prefix = 'LOMINI23';
+  } else if (/^lo\s*(\d+)/.test(norm) || /\blo\s*(\d+)/.test(norm)) {
+    const m = norm.match(/\blo\s*(\d+)/);
+    prefix = `LO${m ? m[1] : '1'}`;
+  } else if (/\bhsk\b/.test(norm)) {
+    prefix = 'HSK';
+  } else if (/1\s*buoi|1bt/.test(norm)) {
+    prefix = '1BT';
+  } else if (/1\s*-\s*1|1v1|1\s*kem\s*1/.test(norm)) {
+    prefix = '1V1';
+  } else if (/bao\s*luu/.test(norm)) {
+    prefix = 'BAOLUU';
+    isArchived = true;
+  } else {
+    const leftPart = norm.split(/[·|-]/)[0] || norm;
+    prefix = leftPart.replace(/[^a-z0-9]/g, '').toUpperCase().slice(0, 10) || 'KTN';
+  }
+
+  let groupSuffix = 'N01';
+  if (/chua\s*ro\s*nhom|\bcho\b/.test(norm)) {
+    groupSuffix = 'CHO';
+  } else {
+    const gm = norm.match(/nhom\s*(\d+)/);
+    if (gm && gm[1]) {
+      const gNum = Number(gm[1]);
+      groupSuffix = `N${String(gNum).padStart(2, '0')}`;
+    } else if (/^[a-z0-9]+-(?:cho|n\d+)$/i.test(title.trim())) {
+      return { classCode: title.trim().toUpperCase(), isArchived };
+    }
+  }
+
+  return {
+    classCode: `${prefix}-${groupSuffix}`,
+    isArchived
+  };
+}
+
+const BULK_TEACHER_CANONICAL_MAP = {
+  'lam my linh': 'Cô Lâm Mỹ Linh',
+  'my linh': 'Cô Lâm Mỹ Linh',
+  'linh': 'Cô Lâm Mỹ Linh',
+  'nguyen thi thu ha': 'Cô Nguyễn Thị Thu Hà',
+  'thu ha': 'Cô Nguyễn Thị Thu Hà',
+  'ha': 'Cô Nguyễn Thị Thu Hà',
+  'bui thi ngoc anh': 'Cô Bùi Thị Ngọc Ánh',
+  'ngoc anh': 'Cô Bùi Thị Ngọc Ánh',
+  'anh': 'Cô Bùi Thị Ngọc Ánh',
+  'phuong anh': 'Cô Phương Anh',
+  'phuong thao': 'Cô Phương Thảo',
+  'thao': 'Cô Phương Thảo',
+  'duong thi hong': 'Cô Dương Thị Hồng',
+  'hong': 'Cô Dương Thị Hồng',
+  'hong nhung': 'Cô Hồng Nhung',
+  'nhung': 'Cô Hồng Nhung',
+  'quynh anh': 'Cô Quỳnh Anh',
+  'dieu linh': 'Cô Diệu Linh',
+  'thanh tan': 'Cô Thanh Tân',
+  'tieu binh': 'Cô Tiểu Bình',
+  'binh': 'Cô Tiểu Bình',
+  'bich phuong': 'Cô Bích Phương',
+  'phuong': 'Cô Bích Phương',
+  'xuan thuong': 'Cô Xuân Thương',
+  'thuong': 'Cô Xuân Thương',
+  'hoai': 'Cô Hoài',
+  'huyen': 'Cô Huyền',
+  'lan': 'Cô Lan',
+  'mai': 'Cô Mai',
+  'tam': 'Cô Tâm',
+  'ngan': 'Cô Ngân',
+  'trang': 'Cô Trang'
+};
+
+function normalizeBulkTeacherIdentity(rawTeacher) {
+  const raw = String(rawTeacher || '').replace(/\s+/g, ' ').trim();
+  const rawNorm = normalizeViSearchText(raw);
+  if (
+    !raw ||
+    rawNorm.includes('chua phan cong') ||
+    rawNorm.includes('chua ro') ||
+    rawNorm === 'trong' ||
+    rawNorm === 'n/a'
+  ) {
+    return { key: '', displayName: '', rawName: '' };
+  }
+  const isMalePrefix = /^thầy\b|^thay\b/i.test(raw);
+  const stripped = raw
+    .replace(/^(?:cô\s*giáo|co\s*giao|thầy\s*giáo|thay\s*giao|cô|co|thầy|thay)\s+/i, '')
+    .trim();
+  const normCore = normalizeViSearchText(stripped);
+  if (!normCore) {
+    return { key: '', displayName: '', rawName: raw };
+  }
+  const canonicalDisplay = BULK_TEACHER_CANONICAL_MAP[normCore];
+  if (canonicalDisplay) {
+    const canonicalKey = normalizeViSearchText(
+      canonicalDisplay.replace(/^(?:cô|thầy)\s+/i, '')
+    );
+    return {
+      key: canonicalKey,
+      displayName: canonicalDisplay,
+      rawName: raw
+    };
+  }
+  const titledCore = stripped
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+  const prefix = isMalePrefix ? 'Thầy ' : 'Cô ';
+  return {
+    key: normCore,
+    displayName: `${prefix}${titledCore}`,
+    rawName: raw
+  };
+}
+
+function cleanBulkPhoneValue(rawPhone) {
+  const raw = String(rawPhone || '').trim();
+  if (!raw) {
+    return { phone: '', cleaned: false, hadLetters: false, addedLeadingZero: false, original: '' };
+  }
+  const hadLetters = /[a-zA-Z]/.test(raw);
+  let digits = raw.replace(/\D/g, '');
+  let addedLeadingZero = false;
+  if (digits.startsWith('84') && digits.length === 11) {
+    digits = '0' + digits.slice(2);
+  } else if (digits.length === 9 && /^[35789]/.test(digits)) {
+    digits = '0' + digits;
+    addedLeadingZero = true;
+  }
+  return {
+    phone: digits,
+    cleaned: hadLetters || addedLeadingZero,
+    hadLetters,
+    addedLeadingZero,
+    original: raw
+  };
+}
+
+function parseKtnCenterBulkCsv(csvText, options = {}) {
+  const existingTeachers = Array.isArray(options.existingTeachers) ? options.existingTeachers : [];
+  const existingStudents = Array.isArray(options.existingStudents) ? options.existingStudents : [];
+  const defaultPassword = String(options.defaultPassword || '12345678').trim() || '12345678';
+
+  let maxTeacherSeq = Number(options.startTeacherSeq || 0);
+  const existingTeacherByKey = new Map();
+  for (const t of existingTeachers) {
+    const codeStr = String(t?.code || '').trim().toUpperCase();
+    const emailStr = String(t?.email || '').trim().toLowerCase();
+    const mCode = codeStr.match(/^GV(\d+)$/i);
+    if (mCode) {
+      const n = Number(mCode[1]);
+      if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
+    }
+    const mEmail = emailStr.match(/^gv(\d+)@khongtunhi\.com$/i);
+    if (mEmail) {
+      const n = Number(mEmail[1]);
+      if (Number.isFinite(n) && n > maxTeacherSeq) maxTeacherSeq = n;
+    }
+    if (mCode || mEmail) {
+      const normIdentity = normalizeBulkTeacherIdentity(t?.name || '');
+      if (normIdentity.key && !existingTeacherByKey.has(normIdentity.key)) {
+        existingTeacherByKey.set(normIdentity.key, {
+          code: codeStr || `GV${String(mEmail[1]).padStart(3, '0')}`,
+          email: emailStr || `${codeStr.toLowerCase()}@khongtunhi.com`,
+          name: t?.name || normIdentity.displayName
+        });
+      }
+    }
+  }
+
+  let maxStudentSeq = Number(options.startStudentSeq || 0);
+  for (const s of existingStudents) {
+    const codeStr = String(s?.code || '').trim();
+    const emailStr = String(s?.email || '').trim().toLowerCase();
+    const mCode = codeStr.match(/^2026(\d{4,})$/);
+    if (mCode) {
+      const n = Number(mCode[1]);
+      if (Number.isFinite(n) && n > maxStudentSeq) maxStudentSeq = n;
+    }
+    const mEmail = emailStr.match(/^2026(\d{4,})@khongtunhi\.com$/i);
+    if (mEmail) {
+      const n = Number(mEmail[1]);
+      if (Number.isFinite(n) && n > maxStudentSeq) maxStudentSeq = n;
+    }
+  }
+
+  const rawRows = tokenizeMultilineCsv(csvText);
+  const warnings = [];
+  const classesMap = new Map();
+  const teachersMap = new Map();
+  const students = [];
+
+  let currentClass = null;
+
+  for (let rIdx = 0; rIdx < rawRows.length; rIdx++) {
+    const row = rawRows[rIdx];
+    const col0 = String(row[0] || '').trim();
+    const col1 = String(row[1] || '').trim();
+    const col2 = String(row[2] || '').trim();
+    const col3 = String(row[3] || '').trim();
+    const col4 = String(row[4] || '').trim();
+
+    // Bỏ qua dòng tiêu đề lặp lại (LỚP · LỊCH HỌC, GIÁO VIÊN, HỌC SINH, SĐT, PHỤ HUYNH)
+    const norm0 = normalizeViSearchText(col0);
+    const norm2 = normalizeViSearchText(col2);
+    if (
+      (norm0.includes('lop') && norm0.includes('lich hoc')) ||
+      (norm2 === 'hoc sinh' && normalizeViSearchText(col1).includes('giao vien'))
+    ) {
+      continue;
+    }
+
+    if (col0) {
+      const lines = col0
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const classTitle = (lines[0] || col0).replace(/\s+/g, ' ').trim();
+      const rawSched = lines.length > 1 ? lines.slice(1).join(' | ') : '';
+      const cleanSchedule = rawSched
+        ? rawSched.replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
+        : 'Đang cập nhật';
+      const { classCode, isArchived } = deriveCanonicalClassCode(classTitle);
+
+      let teacherInfo = null;
+      if (col1) {
+        teacherInfo = normalizeBulkTeacherIdentity(col1);
+      } else if (currentClass?.teacherKey) {
+        teacherInfo = {
+          key: currentClass.teacherKey,
+          displayName: currentClass.teacherName,
+          rawName: currentClass.teacherRaw
+        };
+      }
+
+      let teacherObj = null;
+      if (teacherInfo && teacherInfo.key) {
+        teacherObj = teachersMap.get(teacherInfo.key);
+        if (!teacherObj) {
+          const existingMatch = existingTeacherByKey.get(teacherInfo.key);
+          if (existingMatch) {
+            teacherObj = {
+              code: existingMatch.code,
+              email: existingMatch.email,
+              name: teacherInfo.displayName || existingMatch.name,
+              rawVariants: [teacherInfo.rawName].filter(Boolean),
+              assignedClasses: [],
+              studentCount: 0,
+              defaultPassword,
+              existingInDb: true
+            };
+          } else {
+            maxTeacherSeq += 1;
+            const tCode = `GV${String(maxTeacherSeq).padStart(3, '0')}`;
+            const tEmail = `${tCode.toLowerCase()}@khongtunhi.com`;
+            teacherObj = {
+              code: tCode,
+              email: tEmail,
+              name: teacherInfo.displayName,
+              rawVariants: [teacherInfo.rawName].filter(Boolean),
+              assignedClasses: [],
+              studentCount: 0,
+              defaultPassword,
+              existingInDb: false
+            };
+          }
+          teachersMap.set(teacherInfo.key, teacherObj);
+        } else if (teacherInfo.rawName && !teacherObj.rawVariants.includes(teacherInfo.rawName)) {
+          teacherObj.rawVariants.push(teacherInfo.rawName);
+        }
+        if (!teacherObj.assignedClasses.includes(classCode)) {
+          teacherObj.assignedClasses.push(classCode);
+        }
+      }
+
+      let clsEntry = classesMap.get(classCode);
+      if (!clsEntry) {
+        clsEntry = {
+          code: classCode,
+          classCode,
+          name: classTitle,
+          title: classTitle,
+          schedule: cleanSchedule,
+          teacherKey: teacherInfo?.key || '__unassigned__',
+          teacherCode: teacherObj?.code || '',
+          teacherEmail: teacherObj?.email || '',
+          teacherName: teacherObj?.name || (col1 || 'Chưa phân công'),
+          teacherDisplayName: teacherObj?.name || (col1 || 'Chưa phân công'),
+          isArchived,
+          active: !isArchived,
+          studentCount: 0
+        };
+        classesMap.set(classCode, clsEntry);
+      } else {
+        if (cleanSchedule && cleanSchedule !== 'Đang cập nhật' && clsEntry.schedule === 'Đang cập nhật') {
+          clsEntry.schedule = cleanSchedule;
+        }
+        if (teacherObj && !clsEntry.teacherEmail) {
+          clsEntry.teacherCode = teacherObj.code;
+          clsEntry.teacherEmail = teacherObj.email;
+          clsEntry.teacherName = teacherObj.name;
+          clsEntry.teacherDisplayName = teacherObj.name;
+        }
+      }
+
+      currentClass = {
+        classCode,
+        classTitle,
+        schedule: clsEntry.schedule,
+        isArchived,
+        teacherKey: teacherInfo?.key || '',
+        teacherCode: teacherObj?.code || null,
+        teacherEmail: teacherObj?.email || null,
+        teacherName: teacherObj?.name || ''
+      };
+    } else if (col1 && currentClass) {
+      // Dòng kế tiếp của lớp nhưng có ghi giáo viên bổ sung
+      const teacherInfo = normalizeBulkTeacherIdentity(col1);
+      if (teacherInfo.key) {
+        let teacherObj = teachersMap.get(teacherInfo.key);
+        if (!teacherObj) {
+          const existingMatch = existingTeacherByKey.get(teacherInfo.key);
+          if (existingMatch) {
+            teacherObj = {
+              code: existingMatch.code,
+              email: existingMatch.email,
+              name: teacherInfo.displayName || existingMatch.name,
+              rawVariants: [teacherInfo.rawName].filter(Boolean),
+              assignedClasses: [],
+              studentCount: 0,
+              defaultPassword,
+              existingInDb: true
+            };
+          } else {
+            maxTeacherSeq += 1;
+            const tCode = `GV${String(maxTeacherSeq).padStart(3, '0')}`;
+            const tEmail = `${tCode.toLowerCase()}@khongtunhi.com`;
+            teacherObj = {
+              code: tCode,
+              email: tEmail,
+              name: teacherInfo.displayName,
+              rawVariants: [teacherInfo.rawName].filter(Boolean),
+              assignedClasses: [],
+              studentCount: 0,
+              defaultPassword,
+              existingInDb: false
+            };
+          }
+          teachersMap.set(teacherInfo.key, teacherObj);
+        }
+        if (!teacherObj.assignedClasses.includes(currentClass.classCode)) {
+          teacherObj.assignedClasses.push(currentClass.classCode);
+        }
+        currentClass.teacherKey = teacherInfo.key;
+        currentClass.teacherCode = teacherObj.code;
+        currentClass.teacherEmail = teacherObj.email;
+        currentClass.teacherName = teacherObj.name;
+        const clsEntry = classesMap.get(currentClass.classCode);
+        if (clsEntry && !clsEntry.teacherEmail) {
+          clsEntry.teacherCode = teacherObj.code;
+          clsEntry.teacherEmail = teacherObj.email;
+          clsEntry.teacherName = teacherObj.name;
+        }
+      }
+    }
+
+    if (!col2 && !col3 && !col4) {
+      continue;
+    }
+
+    if (!currentClass) {
+      currentClass = {
+        classCode: 'KTN-CHO',
+        classTitle: 'Lớp chờ xếp nhóm',
+        schedule: 'Đang cập nhật',
+        isArchived: false,
+        teacherKey: '',
+        teacherCode: null,
+        teacherEmail: null,
+        teacherName: ''
+      };
+    }
+
+    let studentName = col2.replace(/\s+/g, ' ').trim();
+    let rawPhoneToClean = col3;
+    const parentName = col4.replace(/\s+/g, ' ').trim();
+    const rowWarnings = [];
+
+    // Phát hiện trường hợp cột Học sinh bị ghi nhầm SĐT (như 0948000580 ở HSK · Nhóm 20 & 21)
+    const compactStu = studentName.replace(/[\s.-]/g, '');
+    if (/^0?\d{9,10}[a-zA-Z]?$/.test(compactStu)) {
+      const movedPhone = cleanBulkPhoneValue(compactStu).phone;
+      if (!rawPhoneToClean) {
+        rawPhoneToClean = movedPhone;
+      }
+      const fallbackStuName = parentName
+        ? `Học viên (PH ${parentName})`
+        : `Học viên (${movedPhone})`;
+      const warnMsg = `Dòng ${rIdx + 1} (${currentClass.classCode}): Cột Học sinh ghi SĐT "${studentName}" -> chuyển sang SĐT "${movedPhone}" và đặt tên "${fallbackStuName}".`;
+      warnings.push({
+        rowNumber: rIdx + 1,
+        classCode: currentClass.classCode,
+        type: 'PHONE_IN_STUDENT_NAME',
+        message: warnMsg
+      });
+      rowWarnings.push(warnMsg);
+      studentName = fallbackStuName;
+    }
+
+    const phoneResult = cleanBulkPhoneValue(rawPhoneToClean);
+    if (phoneResult.cleaned) {
+      const warnMsg = `Dòng ${rIdx + 1} (${currentClass.classCode} - ${studentName}): Đã chuẩn hóa SĐT "${phoneResult.original}" -> "${phoneResult.phone}".`;
+      warnings.push({
+        rowNumber: rIdx + 1,
+        classCode: currentClass.classCode,
+        type: 'PHONE_NORMALIZED',
+        message: warnMsg
+      });
+      rowWarnings.push(warnMsg);
+    }
+
+    if (!studentName) {
+      studentName = parentName
+        ? `Học viên (PH ${parentName})`
+        : `Học viên (${phoneResult.phone || 'Chưa rõ tên'})`;
+    }
+
+    maxStudentSeq += 1;
+    const stuCode = `2026${String(maxStudentSeq).padStart(4, '0')}`;
+    const stuEmail = `${stuCode}@khongtunhi.com`;
+    const accountStatus = currentClass.isArchived ? 'archived' : 'active';
+
+    const clsEntry = classesMap.get(currentClass.classCode);
+    if (clsEntry) {
+      clsEntry.studentCount += 1;
+    }
+    if (currentClass.teacherKey && teachersMap.has(currentClass.teacherKey)) {
+      teachersMap.get(currentClass.teacherKey).studentCount += 1;
+    }
+
+    students.push({
+      rowNumber: rIdx + 1,
+      rowIndex: rIdx + 1,
+      code: stuCode,
+      email: stuEmail,
+      name: studentName,
+      phone: phoneResult.phone,
+      parentName,
+      classCode: currentClass.classCode,
+      className: currentClass.classTitle,
+      classTitle: currentClass.classTitle,
+      schedule: currentClass.schedule,
+      teacherCode: currentClass.teacherCode || '',
+      teacherEmail: currentClass.teacherEmail || '',
+      teacherName: currentClass.teacherName || 'Chưa phân công',
+      isArchived: currentClass.isArchived,
+      status: accountStatus,
+      accountStatus,
+      defaultPassword,
+      warnings: rowWarnings
+    });
+  }
+
+  const classes = Array.from(classesMap.values());
+  const teachers = Array.from(teachersMap.values());
+  const activeStudentsCount = students.filter((s) => !s.isArchived).length;
+  const archivedStudentsCount = students.filter((s) => s.isArchived).length;
+  const activeClassesCount = classes.filter((c) => !c.isArchived).length;
+  const archivedClassesCount = classes.filter((c) => c.isArchived).length;
+
+  return {
+    classes,
+    teachers,
+    students,
+    warnings,
+    defaultPassword,
+    summary: {
+      classCount: classes.length,
+      totalClasses: classes.length,
+      activeClassCount: activeClassesCount,
+      activeClassesCount,
+      archivedClassCount: archivedClassesCount,
+      archivedClassesCount,
+      teacherCount: teachers.length,
+      totalTeachers: teachers.length,
+      studentCount: students.length,
+      totalStudents: students.length,
+      activeStudentCount: activeStudentsCount,
+      activeStudentsCount,
+      archivedStudentCount: archivedStudentsCount,
+      archivedStudentsCount,
+      warningCount: warnings.length,
+      warningsCount: warnings.length,
+      defaultPassword
+    }
+  };
+}
+
 async function loadAllCourseGrantRequests(env) {
   const byId = new Map();
   const [tblRes, alertRes] = await Promise.all([
@@ -9091,7 +9835,9 @@ export default {
     // ------------------------------------------------------------------------
     if (path === '/api/ktn/auth/login' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
-      const rawIdentifier = String(body.email || body.phone || body.code || body.username || '').trim();
+      const rawIdentifier = String(
+        body.email || body.identifier || body.phone || body.code || body.username || ''
+      ).trim();
       let email = normalizeEmail(rawIdentifier);
       const password = String(body.password || '');
       if (!email || !password) {
@@ -9157,8 +9903,56 @@ export default {
       const matchesRotated = rotatedSecret.length >= 8 && password === rotatedSecret;
       const matchesAdminSecret = isRotAdmin && adminSecret.length >= 8 && adminSecret !== '123456' && password === adminSecret;
 
-      if (ROTATED_ACCOUNTS_SET.has(email) && password.length < 8 && !matchesAdminSecret) {
+      const [tRes, existingStuLoginRes, stuCredMeta, admCredMeta] = await Promise.all([
+        supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&limit=1`),
+        supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&limit=1`),
+        getStudentCredentialMeta(env, email).catch(() => null),
+        isRotAdmin ? getAdminCredentialMeta(env, email).catch(() => null) : Promise.resolve(null)
+      ]);
+      const preloadedStuRow =
+        existingStuLoginRes.ok && Array.isArray(existingStuLoginRes.data) && existingStuLoginRes.data[0]
+          ? existingStuLoginRes.data[0]
+          : null;
+      let sbTeacher = null;
+      if (tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0) {
+        const teacherRow = tRes.data[0];
+        if (teacherRow.active === false) {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_INACTIVE',
+            message: 'Tài khoản giáo viên này đã ngừng hoạt động. Vui lòng liên hệ Quản lý học vụ.'
+          }, 403);
+        }
+        sbTeacher = teacherRow;
+      }
+      const preloadedTeacherMeta = sbTeacher ? extractTeacherMetaFromRow(sbTeacher) : null;
+      const hasAnyCustomPassword = Boolean(
+        stuCredMeta?.customPassword || preloadedTeacherMeta?.customPassword || admCredMeta?.customPassword
+      );
+
+      if (ROTATED_ACCOUNTS_SET.has(email) && !hasAnyCustomPassword && password.length < 8 && !matchesAdminSecret) {
         return jsonResponse({ ok: false, message: 'Mật khẩu cũ đã được thu hồi để bảo mật. Vui lòng đăng nhập bằng mật khẩu mới.' }, 401);
+      }
+
+      const candidateHmac =
+        password.length >= 6
+          ? await computeTeacherCredentialHmac(email, password, env.KTN_SESSION_SECRET)
+          : '';
+
+      if (admCredMeta?.customPassword && admCredMeta?.passwordHmac) {
+        if (!candidateHmac || candidateHmac !== admCredMeta.passwordHmac) {
+          return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
+        }
+      }
+      if (preloadedTeacherMeta?.customPassword && preloadedTeacherMeta?.passwordHmac) {
+        if (!candidateHmac || candidateHmac !== preloadedTeacherMeta.passwordHmac) {
+          return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
+        }
+      }
+      if (!sbTeacher && stuCredMeta?.customPassword && stuCredMeta?.passwordHmac) {
+        if (!candidateHmac || candidateHmac !== stuCredMeta.passwordHmac) {
+          return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
+        }
       }
 
       const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
@@ -9171,9 +9965,9 @@ export default {
       ]);
 
       let staffHit = staffProbe.status === 'fulfilled' && staffProbe.value.ok && staffProbe.value.data?.accessToken ? staffProbe.value.data : null;
-      const stuHit = stuProbe.status === 'fulfilled' && stuProbe.value.ok && stuProbe.value.data?.accessToken ? stuProbe.value.data : null;
+      let stuHit = stuProbe.status === 'fulfilled' && stuProbe.value.ok && stuProbe.value.data?.accessToken ? stuProbe.value.data : null;
 
-      if (!staffHit && isRotAdmin) {
+      if (!staffHit && isRotAdmin && !admCredMeta?.customPassword) {
         try {
           const fallbackEmail = email === 'hocvienkhongtunhi123@gmail.com' ? 'quanly@khongtunhi.com' : 'hocvienkhongtunhi123@gmail.com';
           const fallbackPayload = JSON.stringify({ email: fallbackEmail, password: b64Password, vendorId });
@@ -9191,7 +9985,15 @@ export default {
       );
       let chosen = isStaffAccount ? staffHit : (stuHit || staffHit);
 
-      if (!chosen && ROTATED_ACCOUNTS_SET.has(email) && (matchesRotated || matchesAdminSecret)) {
+      if (isRotAdmin && admCredMeta?.passwordHmac && candidateHmac === admCredMeta.passwordHmac) {
+        chosen = staffHit || {
+          id: '2c01e488-d866-4341-a0db-644fe6ba1202',
+          userId: '2c01e488-d866-4341-a0db-644fe6ba1202',
+          email,
+          roles: ['root', 'admin'],
+          type: 'admin'
+        };
+      } else if (!chosen && ROTATED_ACCOUNTS_SET.has(email) && !hasAnyCustomPassword && (matchesRotated || matchesAdminSecret)) {
         const isRotTeacher = email === 'linh.lam@khongtunhi.com' || email === 'thu.ha@khongtunhi.com';
         chosen = {
           id: isRotAdmin ? '2c01e488-d866-4341-a0db-644fe6ba1202' : email,
@@ -9202,22 +10004,9 @@ export default {
         };
       }
 
-      // Cho phép giáo viên mới được tạo trong ktn_teachers (active = true, ready_to_login) đăng nhập bằng mật khẩu được cấp (passwordHmac / matchesRotated) hoặc tài khoản izTeach; chặn giáo viên inactive hoặc pending_external_provisioning
-      let sbTeacher = null;
-      const tRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&limit=1`);
-      if (tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0) {
-        const teacherRow = tRes.data[0];
-        if (teacherRow.active === false) {
-          return jsonResponse({
-            ok: false,
-            error: 'TEACHER_INACTIVE',
-            message: 'Tài khoản giáo viên này đã ngừng hoạt động. Vui lòng liên hệ Quản lý học vụ.'
-          }, 403);
-        }
-        sbTeacher = teacherRow;
-      }
+      // Cho phép giáo viên mới được tạo trong ktn_teachers (active = true, ready_to_login) đăng nhập bằng mật khẩu được cấp (passwordHmac / default 12345678 / matchesRotated) hoặc tài khoản izTeach; chặn giáo viên inactive hoặc pending_external_provisioning
       if (sbTeacher) {
-        const tMeta = extractTeacherMetaFromRow(sbTeacher);
+        const tMeta = preloadedTeacherMeta || extractTeacherMetaFromRow(sbTeacher);
         if (tMeta.provisioningStatus === 'pending_external_provisioning') {
           return jsonResponse({
             ok: false,
@@ -9225,25 +10014,69 @@ export default {
             message: 'Tài khoản giáo viên này đang chờ kích hoạt đồng bộ (pending_external_provisioning). Vui lòng liên hệ Quản lý học vụ.'
           }, 403);
         }
-        if (!chosen) {
-          let matchesTeacherCredential = false;
-          if (tMeta.passwordHmac && password.length >= 6) {
-            const candidateHmac = await computeTeacherCredentialHmac(email, password, env.KTN_SESSION_SECRET);
-            if (candidateHmac === tMeta.passwordHmac) {
-              matchesTeacherCredential = true;
-            }
+        const isKtnGvCode =
+          /^gv\d+$/i.test(String(sbTeacher.code || '').trim()) ||
+          /^gv\d+@khongtunhi\.com$/i.test(email);
+        const matchesTeacherHmac = Boolean(
+          tMeta.passwordHmac && candidateHmac && candidateHmac === tMeta.passwordHmac
+        );
+        const allowDefaultTeacherPwd =
+          !tMeta.customPassword && !tMeta.passwordHmac && isKtnGvCode && password === '12345678';
+        const allowLegacyRotated = !tMeta.customPassword && matchesRotated;
+
+        if (tMeta.passwordHmac && !matchesTeacherHmac && !allowLegacyRotated) {
+          return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
+        }
+        if (!tMeta.passwordHmac && isKtnGvCode && !isValidCognitoUuid(tMeta.cognitoUserId) && !allowDefaultTeacherPwd && !allowLegacyRotated) {
+          return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
+        }
+        if (!chosen && (matchesTeacherHmac || allowDefaultTeacherPwd || allowLegacyRotated)) {
+          chosen = {
+            id: tMeta.cognitoUserId || sbTeacher.code || email,
+            userId: tMeta.cognitoUserId || sbTeacher.code || email,
+            email,
+            name: sbTeacher.name,
+            roles: ['teacher'],
+            type: 'teacher'
+          };
+        }
+      }
+
+      // Cho phép học sinh có STUDENT_CREDENTIAL_META (hoặc học sinh KTN 2026xxxx với mật khẩu mặc định 12345678) đăng nhập trực tiếp qua HMAC
+      if (!sbTeacher && !isRotAdmin && (stuCredMeta || preloadedStuRow)) {
+        const isKtn2026Student =
+          /^2026\d{4,}$/i.test(String(preloadedStuRow?.code || '').trim()) ||
+          /^2026\d{4,}@khongtunhi\.com$/i.test(email);
+        const hasStuCognito = isValidCognitoUuid(preloadedStuRow?.cognito_user_id);
+        const matchesStuHmac = Boolean(
+          stuCredMeta?.passwordHmac && candidateHmac && candidateHmac === stuCredMeta.passwordHmac
+        );
+        const allowDefaultStudentPwd =
+          !stuCredMeta?.customPassword &&
+          !stuCredMeta?.passwordHmac &&
+          (isKtn2026Student || !hasStuCognito) &&
+          Boolean(preloadedStuRow) &&
+          password === '12345678';
+
+        if (stuCredMeta?.passwordHmac && !matchesStuHmac) {
+          if (stuCredMeta.customPassword || !hasStuCognito) {
+            return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
           }
-          const allowLegacyRotated = !tMeta.customPassword && matchesRotated;
-          if (matchesTeacherCredential || allowLegacyRotated) {
-            chosen = {
-              id: tMeta.cognitoUserId || sbTeacher.code || email,
-              userId: tMeta.cognitoUserId || sbTeacher.code || email,
-              email,
-              name: sbTeacher.name,
-              roles: ['teacher'],
-              type: 'teacher'
-            };
-          }
+        } else if (!stuCredMeta?.passwordHmac && (isKtn2026Student || !hasStuCognito) && preloadedStuRow && !allowDefaultStudentPwd && !matchesRotated) {
+          return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
+        }
+
+        if (!chosen && (matchesStuHmac || allowDefaultStudentPwd)) {
+          chosen = {
+            id: preloadedStuRow?.cognito_user_id || preloadedStuRow?.code || email,
+            userId: preloadedStuRow?.cognito_user_id || preloadedStuRow?.code || email,
+            studentId: preloadedStuRow?.izteach_student_id || preloadedStuRow?.code || email,
+            email,
+            name: preloadedStuRow?.name || email.split('@')[0],
+            phone: preloadedStuRow?.phone || '',
+            roles: ['student'],
+            type: 'student'
+          };
         }
       }
 
@@ -9291,20 +10124,26 @@ export default {
           }, 403);
         }
         const loginNowMs = resolveEffectiveRequestNowMs(request, email);
-        const existingStuRes = await supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&limit=1`);
-        const existingStuRow = (existingStuRes.ok && Array.isArray(existingStuRes.data) && existingStuRes.data[0]) ? existingStuRes.data[0] : null;
-        // Luôn đối soát quyền & thời hạn thực tế từ izTeach khi đăng nhập, rơi về bản ghi Supabase nếu upstream lỗi tạm thời
-        const syncedLoginStu = await syncStudentEntitlementFromIzTeach(env, {
-          email,
-          name: chosen.name,
-          phone: chosen.phone,
-          cognitoUserId: isValidCognitoUuid(chosen.id || chosen.userId)
-            ? (chosen.id || chosen.userId)
-            : existingStuRow?.cognito_user_id,
-          izteachStudentId: chosen.studentId || existingStuRow?.izteach_student_id,
-          accessToken: chosen.accessToken,
-          nowMs: loginNowMs
-        }).catch(() => null);
+        const existingStuRow = preloadedStuRow;
+        const hasIzTeachIdentity = Boolean(
+          chosen.accessToken ||
+          isValidCognitoUuid(chosen.id || chosen.userId) ||
+          isValidCognitoUuid(existingStuRow?.cognito_user_id)
+        );
+        // Luôn đối soát quyền & thời hạn thực tế từ izTeach khi đăng nhập (nếu tài khoản có liên kết izTeach), rơi về bản ghi Supabase nếu là tài khoản nội bộ KTN hoặc upstream lỗi tạm thời
+        const syncedLoginStu = (hasIzTeachIdentity || !existingStuRow)
+          ? await syncStudentEntitlementFromIzTeach(env, {
+              email,
+              name: chosen.name,
+              phone: chosen.phone,
+              cognitoUserId: isValidCognitoUuid(chosen.id || chosen.userId)
+                ? (chosen.id || chosen.userId)
+                : existingStuRow?.cognito_user_id,
+              izteachStudentId: chosen.studentId || existingStuRow?.izteach_student_id,
+              accessToken: chosen.accessToken,
+              nowMs: loginNowMs
+            }).catch(() => null)
+          : null;
         sbStudent = syncedLoginStu || existingStuRow || null;
         if (sbStudent?.deleted || sbStudent?.account_status === 'deleted') {
           return jsonResponse({
@@ -9376,6 +10215,7 @@ export default {
         session: sessionObj,
         user: sessionObj,
         token: signedToken,
+        sessionToken: signedToken,
         serverNow: sessionNowIso,
         redirectUrl
       }, 200, {
@@ -9543,6 +10383,661 @@ export default {
       }
 
       return jsonResponse({ ok: true, revoked: true }, 200, clearCookieHeader);
+    }
+
+    // ------------------------------------------------------------------------
+    // B1.2. ĐỔI MẬT KHẨU 2 CHIỀU, ADMIN ĐẶT LẠI MẬT KHẨU & NHẬP HÀNG LOẠT
+    // ------------------------------------------------------------------------
+    if (path === '/api/ktn/auth/change-password' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || !session.email) {
+        return jsonResponse({
+          ok: false,
+          error: 'AUTH_REQUIRED',
+          message: 'Vui lòng đăng nhập để đổi mật khẩu.'
+        }, 401);
+      }
+
+      const body = await request.json().catch(() => ({}));
+      const currentPassword = String(body.currentPassword || body.oldPassword || '');
+      const newPassword = String(body.newPassword || '');
+      const email = normalizeEmail(session.email);
+      const role = String(session.role || session.roles?.[0] || 'student').toLowerCase();
+      const minLength = role === 'admin' ? 8 : 6;
+
+      if (!currentPassword || !newPassword) {
+        return jsonResponse({
+          ok: false,
+          error: 'MISSING_PASSWORD_FIELDS',
+          message: 'Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới.'
+        }, 400);
+      }
+      if (newPassword.length < minLength) {
+        return jsonResponse({
+          ok: false,
+          error: 'PASSWORD_TOO_SHORT',
+          message: `Mật khẩu mới cần có ít nhất ${minLength} ký tự.`
+        }, 400);
+      }
+      if (currentPassword === newPassword) {
+        return jsonResponse({
+          ok: false,
+          error: 'PASSWORD_UNCHANGED',
+          message: 'Mật khẩu mới phải khác mật khẩu hiện tại.'
+        }, 400);
+      }
+
+      const currentHmac = await computeTeacherCredentialHmac(email, currentPassword, env.KTN_SESSION_SECRET);
+      const newHmac = await computeTeacherCredentialHmac(email, newPassword, env.KTN_SESSION_SECRET);
+      const rotatedSecret = String(env.KTN_STAFF_AND_TEST_PASSWORD || '').trim();
+      const adminSecret = String(env.IZTEACH_ADMIN_PASSWORD || '').trim();
+      const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+
+      if (role === 'teacher') {
+        const teaRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&limit=1`);
+        const teaRow = (teaRes.ok && Array.isArray(teaRes.data) && teaRes.data[0]) || null;
+        if (!teaRow) {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_NOT_FOUND',
+            message: 'Không tìm thấy hồ sơ giáo viên để cập nhật mật khẩu.'
+          }, 404);
+        }
+        const tMeta = extractTeacherMetaFromRow(teaRow);
+        const isKtnGvCode =
+          /^gv\d+$/i.test(String(teaRow.code || '').trim()) ||
+          /^gv\d+@khongtunhi\.com$/i.test(email);
+
+        let currentValid = false;
+        if (tMeta.passwordHmac && currentHmac === tMeta.passwordHmac) {
+          currentValid = true;
+        } else if (!tMeta.customPassword) {
+          if (!tMeta.passwordHmac && isKtnGvCode && currentPassword === '12345678') {
+            currentValid = true;
+          } else if (rotatedSecret.length >= 8 && currentPassword === rotatedSecret) {
+            currentValid = true;
+          } else if (!tMeta.passwordHmac) {
+            const b64Cur = btoa(unescape(encodeURIComponent(currentPassword)));
+            const probeRes = await fetch(IZTEACH_ENDPOINTS.staffSignin, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password: b64Cur, vendorId })
+            }).catch(() => null);
+            const probeData = probeRes?.ok ? await probeRes.json().catch(() => null) : null;
+            if (probeData?.accessToken) {
+              currentValid = true;
+            }
+          }
+        }
+
+        if (!currentValid) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_CURRENT_PASSWORD',
+            message: 'Mật khẩu hiện tại chưa chính xác. Vui lòng kiểm tra lại.'
+          }, 401);
+        }
+
+        const updRes = await updateTeacherCredentialHmacInDb(env, teaRow, newPassword, true);
+        if (!updRes.ok) {
+          return jsonResponse({
+            ok: false,
+            error: 'PASSWORD_UPDATE_FAILED',
+            message: 'Không thể lưu mật khẩu mới. Vui lòng thử lại.'
+          }, 502);
+        }
+
+        return jsonResponse({
+          ok: true,
+          email,
+          role: 'teacher',
+          customPassword: true,
+          message: 'Đã đổi mật khẩu giáo viên thành công!'
+        });
+      }
+
+      if (role === 'admin') {
+        const admMeta = await getAdminCredentialMeta(env, email).catch(() => null);
+        let currentValid = false;
+        if (admMeta?.passwordHmac && currentHmac === admMeta.passwordHmac) {
+          currentValid = true;
+        } else if (!admMeta?.customPassword) {
+          if (
+            (rotatedSecret.length >= 8 && currentPassword === rotatedSecret) ||
+            (adminSecret.length >= 8 && currentPassword === adminSecret)
+          ) {
+            currentValid = true;
+          } else {
+            const b64Cur = btoa(unescape(encodeURIComponent(currentPassword)));
+            const probeRes = await fetch(IZTEACH_ENDPOINTS.staffSignin, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password: b64Cur, vendorId })
+            }).catch(() => null);
+            const probeData = probeRes?.ok ? await probeRes.json().catch(() => null) : null;
+            if (probeData?.accessToken) {
+              currentValid = true;
+            }
+          }
+        }
+
+        if (!currentValid) {
+          return jsonResponse({
+            ok: false,
+            error: 'INVALID_CURRENT_PASSWORD',
+            message: 'Mật khẩu hiện tại chưa chính xác. Vui lòng kiểm tra lại.'
+          }, 401);
+        }
+
+        const saveAdm = await saveAdminCredentialMeta(
+          env,
+          email,
+          { passwordHmac: newHmac, pwdHmac: newHmac, customPassword: true },
+          session
+        );
+        if (!saveAdm.ok) {
+          return jsonResponse({
+            ok: false,
+            error: 'PASSWORD_UPDATE_FAILED',
+            message: 'Không thể lưu mật khẩu mới. Vui lòng thử lại.'
+          }, 502);
+        }
+
+        return jsonResponse({
+          ok: true,
+          email,
+          role: 'admin',
+          customPassword: true,
+          message: 'Đã đổi mật khẩu Quản lý thành công!'
+        });
+      }
+
+      // Mặc định: Học sinh (student)
+      const [stuRes, stuCredMeta] = await Promise.all([
+        supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&limit=1`),
+        getStudentCredentialMeta(env, email).catch(() => null)
+      ]);
+      const stuRow = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) || null;
+      const isKtn2026Student =
+        /^2026\d{4,}$/i.test(String(stuRow?.code || '').trim()) ||
+        /^2026\d{4,}@khongtunhi\.com$/i.test(email);
+
+      let currentValid = false;
+      if (stuCredMeta?.passwordHmac && currentHmac === stuCredMeta.passwordHmac) {
+        currentValid = true;
+      } else if (!stuCredMeta?.customPassword) {
+        if (!stuCredMeta?.passwordHmac && (isKtn2026Student || (stuRow && !isValidCognitoUuid(stuRow.cognito_user_id))) && currentPassword === '12345678') {
+          currentValid = true;
+        } else if (rotatedSecret.length >= 8 && currentPassword === rotatedSecret) {
+          currentValid = true;
+        } else if (!stuCredMeta?.passwordHmac) {
+          const b64Cur = btoa(unescape(encodeURIComponent(currentPassword)));
+          const probeRes = await fetch(IZTEACH_ENDPOINTS.studentSignin, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password: b64Cur, vendorId })
+          }).catch(() => null);
+          const probeData = probeRes?.ok ? await probeRes.json().catch(() => null) : null;
+          if (probeData?.accessToken) {
+            currentValid = true;
+          }
+        }
+      }
+
+      if (!currentValid) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_CURRENT_PASSWORD',
+          message: 'Mật khẩu hiện tại chưa chính xác. Vui lòng kiểm tra lại.'
+        }, 401);
+      }
+
+      const saveStu = await saveStudentCredentialMeta(
+        env,
+        email,
+        { passwordHmac: newHmac, pwdHmac: newHmac, customPassword: true },
+        session
+      );
+      if (!saveStu.ok) {
+        return jsonResponse({
+          ok: false,
+          error: 'PASSWORD_UPDATE_FAILED',
+          message: 'Không thể lưu mật khẩu mới. Vui lòng thử lại.'
+        }, 502);
+      }
+
+      return jsonResponse({
+        ok: true,
+        email,
+        role: 'student',
+        customPassword: true,
+        message: 'Đã đổi mật khẩu thành công!'
+      });
+    }
+
+    if (path === '/api/ktn/admin/users/reset-password' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || session.role !== 'admin') {
+        return jsonResponse({
+          ok: false,
+          error: 'ADMIN_ONLY',
+          message: 'Chỉ Quản lý (Admin) mới có quyền đặt lại mật khẩu người dùng.'
+        }, session ? 403 : 401);
+      }
+
+      const body = await request.json().catch(() => ({}));
+      const rawIdentifier = String(body.email || body.code || body.userId || '').trim();
+      if (!rawIdentifier) {
+        return jsonResponse({
+          ok: false,
+          error: 'MISSING_IDENTIFIER',
+          message: 'Vui lòng cung cấp email hoặc mã số người dùng cần đặt lại mật khẩu.'
+        }, 400);
+      }
+      const targetPassword = String(body.newPassword || '12345678').trim() || '12345678';
+      if (targetPassword.length < 6) {
+        return jsonResponse({
+          ok: false,
+          error: 'PASSWORD_TOO_SHORT',
+          message: 'Mật khẩu đặt lại phải có ít nhất 6 ký tự.'
+        }, 400);
+      }
+
+      let resolvedEmail = normalizeEmail(rawIdentifier);
+      let requestedRole = String(body.role || '').trim().toLowerCase();
+
+      // Tra cứu giáo viên và học sinh theo email hoặc code
+      const safeLookup = rawIdentifier.replace(/[,()]/g, '').trim();
+      const [teaLookup, stuLookup] = await Promise.all([
+        supabaseRequest(
+          env,
+          safeLookup.includes('@')
+            ? `ktn_teachers?email=eq.${encodeURIComponent(resolvedEmail)}&limit=1`
+            : `ktn_teachers?or=(code.ilike.${encodeURIComponent(safeLookup)},email.eq.${encodeURIComponent(resolvedEmail)})&limit=1`
+        ),
+        supabaseRequest(
+          env,
+          safeLookup.includes('@')
+            ? `ktn_students?email=eq.${encodeURIComponent(resolvedEmail)}&limit=1`
+            : `ktn_students?or=(code.ilike.${encodeURIComponent(safeLookup)},email.eq.${encodeURIComponent(resolvedEmail)})&limit=1`
+        )
+      ]);
+      const matchedTeacher = (teaLookup.ok && Array.isArray(teaLookup.data) && teaLookup.data[0]) || null;
+      const matchedStudent = (stuLookup.ok && Array.isArray(stuLookup.data) && stuLookup.data[0]) || null;
+
+      if (!requestedRole) {
+        if (matchedTeacher && !matchedStudent) requestedRole = 'teacher';
+        else if (matchedStudent && !matchedTeacher) requestedRole = 'student';
+        else if (/^gv\d+/i.test(safeLookup)) requestedRole = 'teacher';
+        else requestedRole = 'student';
+      }
+
+      if (requestedRole === 'teacher') {
+        if (!matchedTeacher) {
+          return jsonResponse({
+            ok: false,
+            error: 'TEACHER_NOT_FOUND',
+            message: 'Không tìm thấy hồ sơ giáo viên cần đặt lại mật khẩu.'
+          }, 404);
+        }
+        resolvedEmail = normalizeEmail(matchedTeacher.email);
+        const updRes = await updateTeacherCredentialHmacInDb(env, matchedTeacher, targetPassword, true);
+        if (!updRes.ok) {
+          return jsonResponse({
+            ok: false,
+            error: 'RESET_PASSWORD_FAILED',
+            message: 'Không thể cập nhật mật khẩu giáo viên trên cơ sở dữ liệu.'
+          }, 502);
+        }
+
+        await recordAdminAuditLog(env, {
+          actorEmail: session.email,
+          action: 'admin_reset_password',
+          targetType: 'teacher',
+          targetId: resolvedEmail,
+          reason: 'ADMIN_PASSWORD_RESET',
+          metadata: {
+            email: resolvedEmail,
+            code: matchedTeacher.code || null,
+            role: 'teacher'
+          }
+        }).catch(() => null);
+
+        return jsonResponse({
+          ok: true,
+          email: resolvedEmail,
+          code: matchedTeacher.code || null,
+          role: 'teacher',
+          newPassword: targetPassword,
+          customPassword: true,
+          message: `Đã đặt lại mật khẩu giáo viên ${matchedTeacher.name || resolvedEmail} về "${targetPassword}" thành công!`
+        });
+      }
+
+      if (!matchedStudent && !safeLookup.includes('@')) {
+        return jsonResponse({
+          ok: false,
+          error: 'STUDENT_NOT_FOUND',
+          message: 'Không tìm thấy hồ sơ học viên cần đặt lại mật khẩu.'
+        }, 404);
+      }
+      if (matchedStudent?.email) {
+        resolvedEmail = normalizeEmail(matchedStudent.email);
+      }
+
+      const newHmac = await computeTeacherCredentialHmac(resolvedEmail, targetPassword, env.KTN_SESSION_SECRET);
+      const saveStu = await saveStudentCredentialMeta(
+        env,
+        resolvedEmail,
+        {
+          passwordHmac: newHmac,
+          pwdHmac: newHmac,
+          customPassword: true,
+          resetByAdmin: true
+        },
+        session
+      );
+      if (!saveStu.ok) {
+        return jsonResponse({
+          ok: false,
+          error: 'RESET_PASSWORD_FAILED',
+          message: 'Không thể lưu mật khẩu mới cho học viên.'
+        }, 502);
+      }
+
+      await recordAdminAuditLog(env, {
+        actorEmail: session.email,
+        action: 'admin_reset_password',
+        targetType: 'student',
+        targetId: resolvedEmail,
+        reason: 'ADMIN_PASSWORD_RESET',
+        metadata: {
+          email: resolvedEmail,
+          code: matchedStudent?.code || null,
+          role: 'student'
+        }
+      }).catch(() => null);
+
+      return jsonResponse({
+        ok: true,
+        email: resolvedEmail,
+        code: matchedStudent?.code || null,
+        role: 'student',
+        newPassword: targetPassword,
+        customPassword: true,
+        message: `Đã đặt lại mật khẩu học viên ${matchedStudent?.name || resolvedEmail} về "${targetPassword}" thành công!`
+      });
+    }
+
+    if (path === '/api/ktn/admin/bulk-import' && request.method === 'POST') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session || session.role !== 'admin') {
+        return jsonResponse({
+          ok: false,
+          error: 'ADMIN_ONLY',
+          message: 'Chỉ Quản lý (Admin) mới có quyền nhập dữ liệu hàng loạt.'
+        }, session ? 403 : 401);
+      }
+
+      const body = await request.json().catch(() => ({}));
+      const rawCsv = String(body.csvText || body.csv || body.rawText || '');
+      if (!rawCsv.trim()) {
+        return jsonResponse({
+          ok: false,
+          error: 'EMPTY_CSV',
+          message: 'Vui lòng dán hoặc tải lên dữ liệu CSV/Excel cần phân tích.'
+        }, 400);
+      }
+
+      const dryRun = body.dryRun !== false;
+      const defaultPassword = String(body.defaultPassword || '12345678').trim() || '12345678';
+
+      const [teaRes, stuRes] = await Promise.all([
+        supabaseRequest(env, 'ktn_teachers?select=code,email,name,aliases&limit=1000').catch(() => ({ ok: false, data: [] })),
+        supabaseRequest(env, 'ktn_students?select=code,email,name,class_code&limit=5000').catch(() => ({ ok: false, data: [] }))
+      ]);
+      const existingTeachers = (teaRes.ok && Array.isArray(teaRes.data)) ? teaRes.data : [];
+      const existingStudents = (stuRes.ok && Array.isArray(stuRes.data)) ? stuRes.data : [];
+
+      const parsed = parseKtnCenterBulkCsv(rawCsv, {
+        existingTeachers,
+        existingStudents,
+        defaultPassword
+      });
+
+      if (parsed.students.length === 0 && parsed.classes.length === 0) {
+        return jsonResponse({
+          ok: false,
+          error: 'NO_VALID_ROWS',
+          message: 'Không tìm thấy dòng dữ liệu hợp lệ nào trong nội dung CSV.'
+        }, 400);
+      }
+
+      if (dryRun) {
+        return jsonResponse({
+          ok: true,
+          dryRun: true,
+          imported: false,
+          defaultPassword: parsed.defaultPassword,
+          summary: parsed.summary,
+          classes: parsed.classes,
+          teachers: parsed.teachers,
+          students: parsed.students,
+          warnings: parsed.warnings,
+          message: `Phân tích thành công: ${parsed.summary.totalClasses} lớp, ${parsed.summary.totalTeachers} giáo viên, ${parsed.summary.totalStudents} học viên (${parsed.summary.warningsCount} cảnh báo).`
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+
+      // 1. Upsert ktn_teachers với HMAC mật khẩu mặc định 12345678
+      const teacherRowsWithMeta = await Promise.all(
+        parsed.teachers.map(async (t) => {
+          const pwdHmac = await computeTeacherCredentialHmac(t.email, defaultPassword, env.KTN_SESSION_SECRET);
+          const aliases = [
+            '__status:ready_to_login',
+            `__pwd_hmac:${pwdHmac}`,
+            ...t.assignedClasses.map((c) => `__class:${c}`)
+          ];
+          return {
+            fullRow: {
+              code: t.code,
+              name: t.name,
+              email: t.email,
+              phone: '',
+              specialty: 'Giáo viên Tiếng Trung Thiếu Nhi',
+              assigned_classes: t.assignedClasses,
+              aliases,
+              active: true,
+              provisioning_status: 'ready_to_login',
+              sync_status: 'synced',
+              updated_at: nowIso
+            },
+            baseRow: {
+              code: t.code,
+              name: t.name,
+              email: t.email,
+              phone: '',
+              specialty: 'Giáo viên Tiếng Trung Thiếu Nhi',
+              aliases,
+              active: true
+            }
+          };
+        })
+      );
+
+      if (teacherRowsWithMeta.length > 0) {
+        let tUpsert = await supabaseRequest(env, 'ktn_teachers?on_conflict=code', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=minimal',
+          body: teacherRowsWithMeta.map((x) => x.fullRow)
+        });
+        if (!tUpsert || !tUpsert.ok) {
+          tUpsert = await supabaseRequest(env, 'ktn_teachers?on_conflict=code', {
+            method: 'POST',
+            prefer: 'resolution=merge-duplicates,return=minimal',
+            body: teacherRowsWithMeta.map((x) => x.baseRow)
+          });
+        }
+        if (!tUpsert || !tUpsert.ok) {
+          for (const item of teacherRowsWithMeta) {
+            await supabaseRequest(env, 'ktn_teachers', {
+              method: 'POST',
+              prefer: 'resolution=merge-duplicates,return=minimal',
+              body: item.baseRow
+            }).catch(() => null);
+          }
+        }
+      }
+
+      // 2. Upsert ktn_classes
+      const classRows = parsed.classes.map((c) => ({
+        id: c.classCode,
+        name: c.name,
+        schedule: c.schedule || 'Đang cập nhật',
+        teacher_code: c.teacherCode || null,
+        teacher_email: c.teacherEmail || null,
+        active: !c.isArchived,
+        updated_at: nowIso
+      }));
+      if (classRows.length > 0) {
+        const clsUpsert = await supabaseRequest(env, 'ktn_classes?on_conflict=id', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=minimal',
+          body: classRows
+        });
+        if (!clsUpsert || !clsUpsert.ok) {
+          for (const cRow of classRows) {
+            await supabaseRequest(env, 'ktn_classes', {
+              method: 'POST',
+              prefer: 'resolution=merge-duplicates,return=minimal',
+              body: cRow
+            }).catch(() => null);
+          }
+        }
+      }
+
+      // 3. Upsert ktn_students theo lô 100 bản ghi
+      const stuBatchSize = 100;
+      for (let i = 0; i < parsed.students.length; i += stuBatchSize) {
+        const chunk = parsed.students.slice(i, i + stuBatchSize);
+        const v3Rows = chunk.map((s) => ({
+          code: s.code,
+          email: s.email,
+          name: s.name,
+          phone: s.phone || '',
+          parent_name: s.parentName || '',
+          class_code: s.classCode,
+          has_live_class: true,
+          has_online_courses: false,
+          online_courses: [],
+          account_status: s.accountStatus,
+          sync_status: 'synced',
+          updated_at: nowIso
+        }));
+        const v2Rows = chunk.map((s) => ({
+          code: s.code,
+          email: s.email,
+          name: s.name,
+          phone: s.phone || '',
+          parent_name: s.parentName || '',
+          class_code: s.classCode,
+          has_live_class: true,
+          has_online_courses: false,
+          online_courses: [],
+          updated_at: nowIso
+        }));
+
+        let sUpsert = await supabaseRequest(env, 'ktn_students?on_conflict=email', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=minimal',
+          body: v3Rows
+        });
+        if (!sUpsert || !sUpsert.ok) {
+          sUpsert = await supabaseRequest(env, 'ktn_students?on_conflict=email', {
+            method: 'POST',
+            prefer: 'resolution=merge-duplicates,return=minimal',
+            body: v2Rows
+          });
+        }
+      }
+
+      // 4. Lưu STUDENT_CREDENTIAL_META (HMAC mật khẩu mặc định) & STUDENT_LIFECYCLE (cho nhóm BẢO LƯU)
+      const credAlertRows = await Promise.all(
+        parsed.students.map(async (s) => {
+          const pwdHmac = await computeTeacherCredentialHmac(s.email, defaultPassword, env.KTN_SESSION_SECRET);
+          return {
+            id: `STU_CRED_${s.email}`,
+            room_id: 'STUDENT_CREDENTIAL_META',
+            sender_email: s.email,
+            sender_name: s.name,
+            sender_role: 'student',
+            blocked_content: JSON.stringify({
+              email: s.email,
+              code: s.code,
+              passwordHmac: pwdHmac,
+              pwdHmac,
+              customPassword: false,
+              updatedAt: nowIso,
+              updatedBy: session.email
+            }),
+            reason: 'STUDENT_DEFAULT_PASSWORD',
+            resolved: true,
+            created_at: nowIso
+          };
+        })
+      );
+      const archivedLifecycleRows = parsed.students
+        .filter((s) => s.isArchived)
+        .map((s) => ({
+          id: `STU_LIFE_${s.email}`,
+          room_id: 'STUDENT_LIFECYCLE',
+          sender_email: s.email,
+          sender_name: session.name || session.email,
+          sender_role: 'admin',
+          blocked_content: JSON.stringify({
+            email: s.email,
+            status: 'archived',
+            reason: 'BULK_IMPORT_BAO_LUU',
+            updatedAt: nowIso,
+            updatedBy: session.email
+          }),
+          reason: 'STUDENT_LIFECYCLE_ARCHIVED',
+          resolved: true,
+          created_at: nowIso
+        }));
+
+      const allAlertRows = [...credAlertRows, ...archivedLifecycleRows];
+      for (let i = 0; i < allAlertRows.length; i += 100) {
+        const chunk = allAlertRows.slice(i, i + 100);
+        await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=minimal',
+          body: chunk
+        }).catch(() => null);
+      }
+
+      await recordAdminAuditLog(env, {
+        actorEmail: session.email,
+        action: 'admin_bulk_import',
+        targetType: 'center_data',
+        targetId: `CLASSES:${parsed.summary.totalClasses}_TEACHERS:${parsed.summary.totalTeachers}_STUDENTS:${parsed.summary.totalStudents}`,
+        reason: 'BULK_IMPORT_CENTER_CSV',
+        metadata: parsed.summary
+      }).catch(() => null);
+
+      return jsonResponse({
+        ok: true,
+        dryRun: false,
+        imported: true,
+        defaultPassword: parsed.defaultPassword,
+        summary: parsed.summary,
+        classes: parsed.classes,
+        teachers: parsed.teachers,
+        students: parsed.students,
+        warnings: parsed.warnings,
+        message: `Đã khởi tạo thành công ${parsed.summary.totalClasses} lớp, ${parsed.summary.totalTeachers} giáo viên và ${parsed.summary.totalStudents} học viên!`
+      });
     }
 
     // ------------------------------------------------------------------------
@@ -13432,6 +14927,8 @@ export default {
       const items = pagedEntries.map(({ raw: t, tEmail, tCode, tMeta, isActive, mergedAssignedClasses, assignedCourses, matchScore }) => {
         const pStatus = tMeta.provisioningStatus || (
           isValidCognitoUuid(tMeta.cognitoUserId) ||
+          Boolean(tMeta.passwordHmac) ||
+          /^GV\d+$/i.test(tCode) ||
           tEmail === 'linh.lam@khongtunhi.com' ||
           tEmail === 'thu.ha@khongtunhi.com'
             ? 'ready_to_login'
@@ -13576,6 +15073,8 @@ export default {
           const tMeta = extractTeacherMetaFromRow(t);
           const pStatus = tMeta.provisioningStatus || (
             isValidCognitoUuid(tMeta.cognitoUserId) ||
+            Boolean(tMeta.passwordHmac) ||
+            /^GV\d+$/i.test(tCode) ||
             tEmail === 'linh.lam@khongtunhi.com' ||
             tEmail === 'thu.ha@khongtunhi.com'
               ? 'ready_to_login'

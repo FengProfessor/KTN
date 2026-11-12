@@ -23,6 +23,7 @@ import {
   Archive,
   RotateCcw,
   Clock,
+  KeyRound,
 } from 'lucide-react';
 import {
   COURSE_DURATION_PRESET_OPTIONS,
@@ -35,7 +36,7 @@ import {
   resolveStudentOnlineCourses,
   type CourseDurationUnitOption,
 } from '@/lib/utils';
-import { getServerNowMs } from '@/services/api/ktnApiClient';
+import { getServerNowMs, ktnApi } from '@/services/api/ktnApiClient';
 import type {
   CourseDurationMode,
   CourseDurationPreset,
@@ -155,6 +156,12 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   >(null);
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [deleteConfirmChecked, setDeleteConfirmChecked] = useState(false);
+  const [resetPasswordInput, setResetPasswordInput] = useState('12345678');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetPasswordFeedback, setResetPasswordFeedback] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
   const [lastLifecycleFeedback, setLastLifecycleFeedback] = useState<{
     action: 'suspend' | 'archive' | 'restore' | 'delete';
     status: string;
@@ -190,6 +197,8 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     setLifecycleReason('');
     setDeleteConfirmChecked(false);
     setLastLifecycleFeedback(null);
+    setResetPasswordInput('12345678');
+    setResetPasswordFeedback(null);
   }, [student?.email]);
 
   // Handle Escape key to close drawer
@@ -1802,6 +1811,94 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               >
                 Chi tiết lỗi đồng bộ gần nhất: <strong>{student.last_sync_error}</strong>
               </p>
+            )}
+          </section>
+
+          {/* =============================================================== */}
+          {/* ĐẶT LẠI MẬT KHẨU HỌC VIÊN (MẶC ĐỊNH 12345678)                     */}
+          {/* =============================================================== */}
+          <section
+            data-testid="student-reset-password-section"
+            className="rounded-xl border border-stone-200 bg-white p-3.5 shadow-2xs"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-stone-700">
+                <KeyRound className="h-3.5 w-3.5 text-red-800" />
+                <span>Đặt lại mật khẩu học viên</span>
+              </h3>
+              <span className="rounded-md bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-900">
+                Mặc định: 12345678
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-stone-600">
+              Cấp lại mật khẩu đăng nhập cho học viên <strong className="font-mono">{student.code || student.email}</strong> (1 chạm về <code className="font-mono font-bold">12345678</code> hoặc nhập mật khẩu tùy chọn tối thiểu 6 ký tự).
+            </p>
+            <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                type="text"
+                data-testid="drawer-reset-password-input"
+                value={resetPasswordInput}
+                onChange={(e) => setResetPasswordInput(e.target.value)}
+                placeholder="12345678"
+                className="w-full rounded-xl border border-stone-300 px-3 py-1.5 font-mono text-xs font-bold text-stone-900 sm:w-44"
+              />
+              <button
+                type="button"
+                data-testid="drawer-reset-password-btn"
+                disabled={isResettingPassword || (resetPasswordInput.trim().length > 0 && resetPasswordInput.trim().length < 6)}
+                onClick={async () => {
+                  const targetPwd = resetPasswordInput.trim() || '12345678';
+                  setIsResettingPassword(true);
+                  setResetPasswordFeedback(null);
+                  try {
+                    const res = await ktnApi.resetUserPassword({
+                      email: student.email,
+                      role: 'student',
+                      newPassword: targetPwd,
+                    });
+                    setResetPasswordFeedback({
+                      ok: true,
+                      message:
+                        res.message ||
+                        `Đã đặt lại mật khẩu cho ${student.code || student.email} thành "${targetPwd}".`,
+                    });
+                  } catch (err: unknown) {
+                    setResetPasswordFeedback({
+                      ok: false,
+                      message:
+                        err instanceof Error
+                          ? err.message
+                          : 'Không thể đặt lại mật khẩu học viên.',
+                    });
+                  } finally {
+                    setIsResettingPassword(false);
+                  }
+                }}
+                className="inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900 disabled:opacity-50"
+              >
+                {isResettingPassword ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <KeyRound className="h-3.5 w-3.5" />
+                )}
+                <span>
+                  {resetPasswordInput.trim() && resetPasswordInput.trim() !== '12345678'
+                    ? `Đặt lại mật khẩu (${resetPasswordInput.trim()})`
+                    : 'Đặt lại mật khẩu (12345678)'}
+                </span>
+              </button>
+            </div>
+            {resetPasswordFeedback && (
+              <div
+                data-testid="drawer-reset-password-feedback"
+                className={`mt-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium ${
+                  resetPasswordFeedback.ok
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                    : 'border-red-200 bg-red-50 text-red-800'
+                }`}
+              >
+                {resetPasswordFeedback.message}
+              </div>
             )}
           </section>
 

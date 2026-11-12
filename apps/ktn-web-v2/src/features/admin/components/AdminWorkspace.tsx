@@ -26,7 +26,13 @@ import {
   Award,
   BookOpen,
   Trash2,
+  Upload,
 } from 'lucide-react';
+import {
+  parseKtnCenterBulkCsv,
+  KTN_CENTER_SAMPLE_CSV,
+  type BulkImportParseResult,
+} from '@/lib/bulkImportParser';
 import {
   ktnApi,
   KtnApiError,
@@ -184,6 +190,109 @@ export const AdminWorkspace: React.FC = () => {
   const [newTeacherPhone, setNewTeacherPhone] = useState('');
   const [newTeacherCode, setNewTeacherCode] = useState('');
   const [newTeacherClasses, setNewTeacherClasses] = useState<string[]>([]);
+
+  // Bulk Import Modal state
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [bulkCsvText, setBulkCsvText] = useState('');
+  const [bulkDefaultPassword, setBulkDefaultPassword] = useState('12345678');
+  const [bulkPreviewResult, setBulkPreviewResult] = useState<BulkImportParseResult | null>(null);
+  const [bulkPreviewTab, setBulkPreviewTab] = useState<
+    'classes' | 'teachers' | 'students' | 'warnings'
+  >('classes');
+  const [isAnalyzingBulk, setIsAnalyzingBulk] = useState(false);
+  const [isExecutingBulk, setIsExecutingBulk] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
+  const handlePreviewBulkImport = async (overrideCsvText?: string) => {
+    const raw = (overrideCsvText ?? bulkCsvText).trim();
+    if (!raw) {
+      setBulkError('Vui lòng dán dữ liệu CSV/Excel hoặc bấm "Tải dữ liệu mẫu của Trung tâm".');
+      return;
+    }
+    setBulkError(null);
+    setIsAnalyzingBulk(true);
+    try {
+      const localPreview = parseKtnCenterBulkCsv(raw, {
+        defaultPassword: bulkDefaultPassword.trim() || '12345678',
+      });
+      setBulkPreviewResult(localPreview);
+      if (!isDemoMode) {
+        const serverPreview = await ktnApi.bulkImportCenterData({
+          csvText: raw,
+          dryRun: true,
+          defaultPassword: bulkDefaultPassword.trim() || '12345678',
+        });
+        if (serverPreview?.ok) {
+          setBulkPreviewResult({
+            classes: serverPreview.classes,
+            teachers: serverPreview.teachers,
+            students: serverPreview.students,
+            warnings: serverPreview.warnings,
+            summary: serverPreview.summary,
+          });
+        }
+      }
+    } catch (err: unknown) {
+      // Keep local preview if available, or show error
+      if (!bulkPreviewResult) {
+        setBulkError(
+          err instanceof Error ? err.message : 'Không thể phân tích dữ liệu CSV.'
+        );
+      }
+    } finally {
+      setIsAnalyzingBulk(false);
+    }
+  };
+
+  const handleConfirmBulkImport = async () => {
+    const raw = bulkCsvText.trim();
+    if (!raw) {
+      setBulkError('Vui lòng dán dữ liệu CSV trước khi tạo hàng loạt.');
+      return;
+    }
+    setBulkError(null);
+    setIsExecutingBulk(true);
+    try {
+      if (isDemoMode) {
+        const parsed = parseKtnCenterBulkCsv(raw, {
+          defaultPassword: bulkDefaultPassword.trim() || '12345678',
+        });
+        setBulkPreviewResult(parsed);
+        addToast({
+          title: 'Đã tạo hàng loạt thành công (Demo)',
+          description: `Đã tạo ${parsed.summary.classCount} lớp, ${parsed.summary.teacherCount} giáo viên, ${parsed.summary.studentCount} học viên.`,
+          variant: 'success',
+        });
+        setShowBulkImportModal(false);
+        return;
+      }
+      const res = await ktnApi.bulkImportCenterData({
+        csvText: raw,
+        dryRun: false,
+        defaultPassword: bulkDefaultPassword.trim() || '12345678',
+      });
+      queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+      queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers-search'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-admin-overview'] });
+      addToast({
+        title: 'Đã nhập hàng loạt thành công!',
+        description:
+          res.message ||
+          `Đã khởi tạo ${res.summary.classCount} lớp, ${res.summary.teacherCount} giáo viên và ${res.summary.studentCount} học sinh.`,
+        variant: 'success',
+      });
+      setShowBulkImportModal(false);
+    } catch (err: unknown) {
+      setBulkError(
+        err instanceof Error ? err.message : 'Không thể thực thi nhập hàng loạt.'
+      );
+    } finally {
+      setIsExecutingBulk(false);
+    }
+  };
 
   // Official Class Schedule & Create Class modal state
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
@@ -2365,7 +2474,19 @@ export const AdminWorkspace: React.FC = () => {
           ))}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="open-bulk-import-modal-btn"
+            onClick={() => {
+              setBulkError(null);
+              setShowBulkImportModal(true);
+            }}
+            className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-red-900 hover:bg-amber-100"
+          >
+            <Upload className="h-3.5 w-3.5 text-red-800" />
+            <span>Nhập hàng loạt (Excel/CSV)</span>
+          </button>
           <button
             type="button"
             data-testid="admin-open-create-student-btn"
@@ -2431,6 +2552,412 @@ export const AdminWorkspace: React.FC = () => {
               >
                 <X className="h-3.5 w-3.5" />
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 0: Bulk Import Classes · Teachers · Students (Excel/CSV) */}
+      {showBulkImportModal && (
+        <div
+          data-testid="bulk-import-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Nhập hàng loạt Lớp · Giáo viên · Học sinh"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-xs sm:p-5"
+        >
+          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-stone-200 bg-stone-50 px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-red-100 text-red-800">
+                  <Upload className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="font-display text-sm font-extrabold text-stone-900 sm:text-base">
+                    Nhập hàng loạt Lớp · Giáo viên · Học sinh (Excel / CSV)
+                  </h2>
+                  <p className="text-[11px] text-stone-500">
+                    Tự động chuẩn hóa mã lớp (<code className="font-mono">LO2-N01</code>, <code className="font-mono">HSK-N01</code>...), mã Giáo viên (<code className="font-mono">GV001@khongtunhi.com</code>), mã Học sinh (<code className="font-mono">20260001@khongtunhi.com</code>) & mật khẩu mặc định <code className="font-mono font-bold text-red-800">12345678</code>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBulkImportModal(false)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-500 hover:bg-stone-100"
+                aria-label="Đóng"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              {bulkError && (
+                <div
+                  data-testid="bulk-import-error"
+                  className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-800"
+                >
+                  {bulkError}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-stone-800">
+                    Dữ liệu 5 cột (<code className="font-mono">LỚP · LỊCH HỌC, GIÁO VIÊN, HỌC SINH, SĐT, PHỤ HUYNH</code>)
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="bulk-import-load-sample-btn"
+                      onClick={() => {
+                        setBulkCsvText(KTN_CENTER_SAMPLE_CSV);
+                        handlePreviewBulkImport(KTN_CENTER_SAMPLE_CSV);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-amber-100"
+                    >
+                      <span>Tải dữ liệu mẫu của Trung tâm</span>
+                    </button>
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-50">
+                      <span>Chọn file .CSV</span>
+                      <input
+                        type="file"
+                        accept=".csv,.tsv,.txt"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const content = String(reader.result || '');
+                            setBulkCsvText(content);
+                            handlePreviewBulkImport(content);
+                          };
+                          reader.readAsText(file, 'utf-8');
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <textarea
+                  rows={5}
+                  data-testid="bulk-import-csv-textarea"
+                  value={bulkCsvText}
+                  onChange={(e) => setBulkCsvText(e.target.value)}
+                  placeholder={'Dán trực tiếp bảng dữ liệu từ Excel hoặc CSV 5 cột:\n"LỘ 2 · Nhóm 1\nT2-T4_ 20h-21h",Cô Hồng,Bùi Đức Huy,0366753257,Mẹ Bùi Hằng'}
+                  className="w-full rounded-xl border border-stone-300 p-3 font-mono text-xs text-stone-900 focus:border-red-800 focus:outline-none"
+                />
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-stone-700">Mật khẩu mặc định:</span>
+                    <input
+                      type="text"
+                      data-testid="bulk-import-default-password-input"
+                      value={bulkDefaultPassword}
+                      onChange={(e) => setBulkDefaultPassword(e.target.value)}
+                      className="w-32 rounded-lg border border-stone-300 px-2.5 py-1 font-mono text-xs font-bold text-red-900"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="bulk-import-preview-btn"
+                    disabled={isAnalyzingBulk}
+                    onClick={() => handlePreviewBulkImport()}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50"
+                  >
+                    {isAnalyzingBulk && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <span>Phân tích & Xem trước</span>
+                  </button>
+                </div>
+              </div>
+
+              {bulkPreviewResult && (
+                <div data-testid="bulk-import-preview-section" className="space-y-3">
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                    <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                      <span className="block text-[11px] font-semibold text-stone-500">
+                        Tổng số Lớp học
+                      </span>
+                      <span
+                        data-testid="bulk-preview-class-count"
+                        className="mt-0.5 block font-display text-lg font-extrabold text-stone-900"
+                      >
+                        {bulkPreviewResult.summary.classCount} lớp
+                      </span>
+                      <span className="text-[11px] text-stone-600">
+                        {bulkPreviewResult.summary.activeClassCount} đang học ·{' '}
+                        {bulkPreviewResult.summary.archivedClassCount} bảo lưu
+                      </span>
+                    </div>
+
+                    <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                      <span className="block text-[11px] font-semibold text-stone-500">
+                        Giáo viên phụ trách
+                      </span>
+                      <span
+                        data-testid="bulk-preview-teacher-count"
+                        className="mt-0.5 block font-display text-lg font-extrabold text-red-900"
+                      >
+                        {bulkPreviewResult.summary.teacherCount} GV
+                      </span>
+                      <span className="font-mono text-[11px] text-stone-600">
+                        {bulkPreviewResult.teachers[0]?.code || 'GV001'} →{' '}
+                        {bulkPreviewResult.teachers[bulkPreviewResult.teachers.length - 1]?.code || 'GVxxx'}
+                      </span>
+                    </div>
+
+                    <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                      <span className="block text-[11px] font-semibold text-stone-500">
+                        Tổng số Học sinh
+                      </span>
+                      <span
+                        data-testid="bulk-preview-student-count"
+                        className="mt-0.5 block font-display text-lg font-extrabold text-emerald-900"
+                      >
+                        {bulkPreviewResult.summary.studentCount} học viên
+                      </span>
+                      <span className="text-[11px] text-stone-600">
+                        {bulkPreviewResult.summary.activeStudentCount} đang học ·{' '}
+                        {bulkPreviewResult.summary.archivedStudentCount} bảo lưu
+                      </span>
+                    </div>
+
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                      <span className="block text-[11px] font-semibold text-amber-900">
+                        Mật khẩu mặc định & Cảnh báo
+                      </span>
+                      <span className="mt-0.5 block font-mono text-base font-extrabold text-red-800">
+                        {bulkPreviewResult.summary.defaultPassword}
+                      </span>
+                      <span className="text-[11px] font-medium text-amber-900">
+                        {bulkPreviewResult.summary.warningCount} ghi chú chuẩn hóa SĐT/tên
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Preview Sub-tabs */}
+                  <div className="flex flex-wrap items-center gap-1.5 border-b border-stone-200 pb-2">
+                    {(
+                      [
+                        {
+                          id: 'classes',
+                          label: `Lớp học (${bulkPreviewResult.classes.length})`,
+                        },
+                        {
+                          id: 'teachers',
+                          label: `Giáo viên (${bulkPreviewResult.teachers.length})`,
+                        },
+                        {
+                          id: 'students',
+                          label: `Học sinh (${bulkPreviewResult.students.length})`,
+                        },
+                        {
+                          id: 'warnings',
+                          label: `Chuẩn hóa tự động (${bulkPreviewResult.warnings.length})`,
+                        },
+                      ] as const
+                    ).map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setBulkPreviewTab(tab.id)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                          bulkPreviewTab === tab.id
+                            ? 'bg-red-800 text-white'
+                            : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Preview Table Content */}
+                  <div className="max-h-72 overflow-y-auto rounded-xl border border-stone-200">
+                    {bulkPreviewTab === 'classes' && (
+                      <table className="w-full text-left text-xs">
+                        <thead className="sticky top-0 bg-stone-100 text-[11px] font-bold uppercase text-stone-600">
+                          <tr>
+                            <th className="px-3 py-2">Mã lớp</th>
+                            <th className="px-3 py-2">Tên lớp</th>
+                            <th className="px-3 py-2">Lịch học</th>
+                            <th className="px-3 py-2">Giáo viên</th>
+                            <th className="px-3 py-2">Sĩ số</th>
+                            <th className="px-3 py-2">Trạng thái</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                          {bulkPreviewResult.classes.map((cls) => (
+                            <tr key={cls.code} className="hover:bg-stone-50">
+                              <td className="px-3 py-2 font-mono font-bold text-red-900">
+                                {cls.code}
+                              </td>
+                              <td className="px-3 py-2 font-semibold text-stone-900">
+                                {cls.title}
+                              </td>
+                              <td className="px-3 py-2 text-stone-600">{cls.schedule}</td>
+                              <td className="px-3 py-2">
+                                <span className="font-semibold text-stone-800">
+                                  {cls.teacherDisplayName}
+                                </span>{' '}
+                                {cls.teacherCode && (
+                                  <span className="font-mono text-[11px] text-stone-500">
+                                    ({cls.teacherCode})
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 font-bold text-stone-800">
+                                {cls.studentCount} HV
+                              </td>
+                              <td className="px-3 py-2">
+                                {cls.isArchived ? (
+                                  <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                    Bảo lưu (Archived)
+                                  </span>
+                                ) : (
+                                  <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
+                                    Đang hoạt động
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {bulkPreviewTab === 'teachers' && (
+                      <table className="w-full text-left text-xs">
+                        <thead className="sticky top-0 bg-stone-100 text-[11px] font-bold uppercase text-stone-600">
+                          <tr>
+                            <th className="px-3 py-2">Mã GV</th>
+                            <th className="px-3 py-2">Tên giáo viên</th>
+                            <th className="px-3 py-2">Email đăng nhập</th>
+                            <th className="px-3 py-2">Mật khẩu mặc định</th>
+                            <th className="px-3 py-2">Lớp phụ trách</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                          {bulkPreviewResult.teachers.map((t) => (
+                            <tr key={t.code} className="hover:bg-stone-50">
+                              <td className="px-3 py-2 font-mono font-bold text-red-900">
+                                {t.code}
+                              </td>
+                              <td className="px-3 py-2 font-semibold text-stone-900">
+                                {t.name}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-stone-700">{t.email}</td>
+                              <td className="px-3 py-2 font-mono font-bold text-stone-800">
+                                {t.defaultPassword}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-[11px] text-stone-600">
+                                {t.assignedClasses.join(', ') || 'Chưa gán lớp'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {bulkPreviewTab === 'students' && (
+                      <table className="w-full text-left text-xs">
+                        <thead className="sticky top-0 bg-stone-100 text-[11px] font-bold uppercase text-stone-600">
+                          <tr>
+                            <th className="px-3 py-2">Mã HS</th>
+                            <th className="px-3 py-2">Email đăng nhập</th>
+                            <th className="px-3 py-2">Họ tên học sinh</th>
+                            <th className="px-3 py-2">SĐT</th>
+                            <th className="px-3 py-2">Phụ huynh</th>
+                            <th className="px-3 py-2">Lớp</th>
+                            <th className="px-3 py-2">Trạng thái</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                          {bulkPreviewResult.students.map((s) => (
+                            <tr key={s.code} className="hover:bg-stone-50">
+                              <td className="px-3 py-2 font-mono font-bold text-red-900">
+                                {s.code}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-stone-700">{s.email}</td>
+                              <td className="px-3 py-2 font-semibold text-stone-900">
+                                {s.name}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-stone-700">
+                                {s.phone || '—'}
+                              </td>
+                              <td className="px-3 py-2 text-stone-600">
+                                {s.parentName || '—'}
+                              </td>
+                              <td className="px-3 py-2 font-mono font-bold text-stone-800">
+                                {s.classCode}
+                              </td>
+                              <td className="px-3 py-2">
+                                {s.status === 'archived' ? (
+                                  <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                    Bảo lưu
+                                  </span>
+                                ) : (
+                                  <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
+                                    Đang học
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {bulkPreviewTab === 'warnings' && (
+                      <div className="space-y-1.5 p-3 text-xs">
+                        {bulkPreviewResult.warnings.length === 0 ? (
+                          <p className="text-stone-500">Không có cảnh báo dữ liệu.</p>
+                        ) : (
+                          bulkPreviewResult.warnings.map((w, i) => (
+                            <div
+                              key={i}
+                              className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-1.5 text-amber-950"
+                            >
+                              • {typeof w === 'string' ? w : (w as { message?: string })?.message || JSON.stringify(w)}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-stone-200 bg-stone-50 px-4 py-3">
+              <p className="text-[11px] text-stone-600">
+                Học sinh đăng nhập bằng <strong className="font-mono">2026xxxx</strong> (hoặc{' '}
+                <strong className="font-mono">2026xxxx@khongtunhi.com</strong>) · Giáo viên bằng{' '}
+                <strong className="font-mono">GVxxx</strong> · Mật khẩu:{' '}
+                <strong className="font-mono text-red-800">{bulkDefaultPassword}</strong>
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkImportModal(false)}
+                  className="rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="button"
+                  data-testid="bulk-import-confirm-btn"
+                  disabled={isExecutingBulk || !bulkCsvText.trim()}
+                  onClick={handleConfirmBulkImport}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-900 disabled:opacity-50"
+                >
+                  {isExecutingBulk && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>Xác nhận tạo hàng loạt</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1301,6 +1301,22 @@ export function computeCourseExpirationInfo(
   };
 }
 
+export function formatExerciseDisplayTitle(
+  ex: { num?: number | null; title?: string | null },
+  fallbackIndex: number,
+  tr: (vi: string, en: string) => string
+): string {
+  const num = Number(ex.num || fallbackIndex + 1) || fallbackIndex + 1;
+  const raw = String(ex.title || '').trim();
+  const cleaned = raw
+    .replace(/^(?:(?:Bài|Ex\.?|Exercise)\s*\d+\s*[:.\-–]\s*)+/i, '')
+    .trim();
+  if (!cleaned) {
+    return raw || `${tr('Bài', 'Ex.')} ${num}`;
+  }
+  return `${tr('Bài', 'Ex.')} ${num}: ${cleaned}`;
+}
+
 
 
 

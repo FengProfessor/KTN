@@ -38,6 +38,7 @@ import {
 } from '@/lib/demoData';
 import { KtnClassItem, KtnClassSession, KtnHomework } from '@/types/ktn.types';
 import { useI18n, translateScheduleText, translateDayLabel } from '@/i18n';
+import { formatExerciseDisplayTitle } from '@/lib/utils';
 
 export const ClassroomsPage: React.FC = () => {
   const { lang, isEn, tr } = useI18n();
@@ -216,7 +217,9 @@ export const ClassroomsPage: React.FC = () => {
     const hws = homeworksQuery.data || [];
     const withUnsubmitted = list.find((s) => {
       const sNum = Number(s.sessionNum || s.session_num || 1);
-      const exs = s.exercises || [];
+      const exs = (s.exercises || []).filter(
+        (ex) => user?.role !== 'student' || ex.status !== 'draft'
+      );
       if (exs.length === 0) return false;
       return exs.some((ex, idx) => {
         const exNum = Number(ex.num || idx + 1);
@@ -232,12 +235,17 @@ export const ClassroomsPage: React.FC = () => {
     });
     const targetSession =
       withUnsubmitted ||
-      list.find((s) => (s.exercises && s.exercises.length > 0) || Boolean(s.summary));
+      list.find((s) => {
+        const visibleExs = (s.exercises || []).filter(
+          (ex) => user?.role !== 'student' || ex.status !== 'draft'
+        );
+        return visibleExs.length > 0 || Boolean(s.summary);
+      });
     if (targetSession) {
       const sNum = Number(targetSession.sessionNum || targetSession.session_num || 1);
       setSelectedSessionNum(sNum);
     }
-  }, [hasDeepLinkSession, sessionsQuery.data, homeworksQuery.data, activeClassCode]);
+  }, [hasDeepLinkSession, sessionsQuery.data, homeworksQuery.data, activeClassCode, user?.role]);
 
   const submitLiveClassHwMutation = useMutation({
     mutationFn: async (payload: {
@@ -613,7 +621,7 @@ export const ClassroomsPage: React.FC = () => {
                           {session.title || session.session_title}
                         </p>
                         <p className="text-[11px] text-stone-500">
-                          {session.exercises?.length || 0} {tr('bài tập', 'exercises')}
+                          {(session.exercises || []).filter((ex) => user?.role !== 'student' || ex.status !== 'draft').length} {tr('bài tập', 'exercises')}
                         </p>
                       </div>
                     </button>
@@ -701,7 +709,7 @@ export const ClassroomsPage: React.FC = () => {
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     <p className="text-xs font-bold text-stone-900">
-                                      {ex.title}
+                                      {formatExerciseDisplayTitle(ex, idx, tr)}
                                     </p>
                                     {ex.dueDate && (
                                       <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700">
@@ -715,6 +723,14 @@ export const ClassroomsPage: React.FC = () => {
                                       >
                                         <CheckCircle2 className="h-3 w-3" />
                                         {tr('Đã chấm:', 'Graded:')} {matchedHw.score}/10
+                                      </span>
+                                    ) : matchedHw?.status === 'revision_requested' ? (
+                                      <span
+                                        data-testid={`classroom-hw-status-${liveLessonNum}`}
+                                        className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-900"
+                                      >
+                                        <AlertCircle className="h-3 w-3" />
+                                        {tr('Cần sửa', 'Revision requested')}
                                       </span>
                                     ) : matchedHw ? (
                                       <span

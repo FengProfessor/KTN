@@ -616,6 +616,7 @@ function resolveSwColdOpenUrl(data) {
   const raw = String((data && (data.url || data.action_url || data.actionUrl)) || '').trim();
   const type = String((data && (data.eventType || data.type)) || '').trim();
   const classCode = String((data && data.classCode) || '').replace(/^class:/i, '').trim().toUpperCase();
+  const courseId = String((data && data.courseId) || '').trim();
   const roomId = String((data && data.roomId) || '').trim();
   const homeworkId = String((data && data.homeworkId) || '').trim();
   let working = raw;
@@ -675,6 +676,16 @@ function resolveSwColdOpenUrl(data) {
       type === 'homework_assigned'
     ) {
       route = classCode ? ('/classrooms?class=' + encodeURIComponent(classCode)) : '/classrooms';
+    } else if (type === 'homework_graded') {
+      if (classCode) {
+        route = '/classrooms?class=' + encodeURIComponent(classCode);
+      } else if (/^CLASS_([A-Z0-9_-]+)/i.test(courseId)) {
+        route = '/classrooms?class=' + encodeURIComponent(courseId.slice(6).toUpperCase());
+      } else if (courseId) {
+        route = '/learning?courseId=' + encodeURIComponent(courseId) + '&tab=homework';
+      } else {
+        route = '/notifications';
+      }
     } else if (
       type === 'chat_group_message' ||
       type === 'chat_private_message' ||
@@ -696,7 +707,7 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = resolveSwColdOpenUrl(data);
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      const portalClient = windowClients.find((c) => c && typeof c.url === 'string' && c.url.includes('/custom-page/so-lien-lac'));
+      const portalClient = windowClients.find((c) => c && typeof c.url === 'string' && c.url.includes('/custom-page/so-lien-lac-test'));
       if (portalClient) {
         portalClient.postMessage({ type: 'KTN_NOTIFICATION_CLICKED', targetUrl, data });
         if ('focus' in portalClient) return portalClient.focus();
@@ -3343,7 +3354,7 @@ async function deriveDeterministicInitialPassword(env, operationId, email) {
   return `Ktn@${hex.slice(0, 6).toUpperCase()}9!`;
 }
 
-async function getTeacherAssignedClassCodes(env, teacherEmail) {
+async function getTeacherAssignedClassCodes(env, teacherEmail, preloadedClassesRes = null) {
   const email = normalizeEmail(teacherEmail || '');
   if (!email) return [];
   const tRes = await supabaseRequest(
@@ -3358,10 +3369,12 @@ async function getTeacherAssignedClassCodes(env, teacherEmail) {
   const classSet = new Set(meta.assignedClasses);
 
   // Đối chiếu nguồn sự thật từ ktn_classes để loại bỏ lớp đã lưu trữ (active=false) hoặc lớp đã chuyển sang giáo viên khác
-  const allClsRes = await supabaseRequest(
-    env,
-    'ktn_classes?select=id,teacher_email,teacher_code,active&order=created_at.asc,id.asc'
-  );
+  const allClsRes = (preloadedClassesRes && preloadedClassesRes.ok && Array.isArray(preloadedClassesRes.data))
+    ? preloadedClassesRes
+    : await supabaseRequest(
+        env,
+        'ktn_classes?select=id,teacher_email,teacher_code,active&order=created_at.asc,id.asc'
+      );
   const teacherCode = String(tRow?.code || tRow?.teacher_code || '').trim();
   if (allClsRes.ok && Array.isArray(allClsRes.data)) {
     const seenClassIds = new Set();
@@ -10388,15 +10401,20 @@ function resolveCustomPageTarget(normPath, vendorSetting, customPages) {
   return null;
 }
 
-function buildSllHeadInjection() {
+function buildSllHeadInjection(includePwaTags = true) {
+  const tags = includePwaTags
+    ? [
+        '<link rel="manifest" href="/manifest.json">',
+        '<meta name="theme-color" content="#991B1B">',
+        '<meta name="apple-mobile-web-app-capable" content="yes">',
+        '<meta name="apple-mobile-web-app-status-bar-style" content="default">',
+        '<meta name="apple-mobile-web-app-title" content="Khổng Tử Nhí">',
+        '<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">',
+        '<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">'
+      ]
+    : [];
   return [
-    '<link rel="manifest" href="/manifest.json">',
-    '<meta name="theme-color" content="#991B1B">',
-    '<meta name="apple-mobile-web-app-capable" content="yes">',
-    '<meta name="apple-mobile-web-app-status-bar-style" content="default">',
-    '<meta name="apple-mobile-web-app-title" content="Khổng Tử Nhí">',
-    '<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">',
-    '<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png">',
+    ...tags,
     '<link rel="preconnect" href="https://fonts.googleapis.com">',
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
     '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@500;700&family=JetBrains+Mono:wght@500;700&display=swap">',
@@ -10443,7 +10461,9 @@ function renderCustomPageHtmlResponse(request, target, sections, vendorSetting, 
   let headInjectHtml = '';
   let bodyPrefixHtml = '';
   if (target.isSoLienLac) {
-    headInjectHtml = buildSllHeadInjection();
+    const reqPath = String(url?.pathname || '').toLowerCase();
+    const isV2PortalPath = reqPath === '/custom-page/so-lien-lac-test' || reqPath.startsWith('/custom-page/so-lien-lac-test/');
+    headInjectHtml = buildSllHeadInjection(isV2PortalPath);
   } else {
     const extScripts = Array.isArray(vendorSetting?.learn?.externalScript)
       ? vendorSetting.learn.externalScript
@@ -10717,7 +10737,8 @@ async function handleKtnOriginWithFailover(request, env, url) {
       const cType = String(originRes.headers.get('content-type') || '').toLowerCase();
       if (path.startsWith('/custom-page/so-lien-lac') && request.method === 'GET' && cType.includes('text/html')) {
         let html = await originRes.text();
-        const pwaHeadTags = html.includes('rel="manifest"')
+        const isV2PortalPath = path === '/custom-page/so-lien-lac-test' || path.startsWith('/custom-page/so-lien-lac-test/');
+        const pwaHeadTags = !isV2PortalPath || html.includes('rel="manifest"')
           ? ''
           : `<link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#991B1B"><link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png"><link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Khổng Tử Nhí">`;
         const portalInitScript = `${pwaHeadTags}<script>(function(){window.__KTN_EMBED_MODE__=true;try{Storage.prototype.removeItem.call(localStorage,'ol-credentials-auth-user');Storage.prototype.removeItem.call(sessionStorage,'ol-credentials-auth-user');}catch(e){}})();</script>`;
@@ -23046,6 +23067,7 @@ export default {
       let preloadedScheduleEvtRes = null;
       let preloadedForumQs = null;
       let preloadedForumFollows = null;
+      let teacherSessionActive = false;
 
       const items = [];
       let scopedClassesForScheduleEvents = new Set();
@@ -23419,9 +23441,10 @@ export default {
         clsActiveRes = nonStuClsRes;
         registerClassRows(clsActiveRes);
         preloadedScheduleEvtRes = schedEvtWaveRes;
+        teacherSessionActive = Boolean(isTeacherActive);
         const [assignedClasses, assignedCourseIds] = isTeacherActive
           ? await Promise.all([
-              getTeacherAssignedClassCodes(env, session.email),
+              getTeacherAssignedClassCodes(env, session.email, nonStuClsRes),
               getTeacherAssignedCourseIds(env, session.email)
             ])
           : [[], []];
@@ -23680,22 +23703,8 @@ export default {
           });
         }
       } else if (session.role === 'teacher') {
-        const [userAlertsRes, nonStuClsRes, schedEvtWaveRes, isTeacherActive] = await Promise.all([
-          supabaseRequest(env, userCombinedAlertsUrl).catch(() => ({ ok: false, data: [] })),
-          supabaseRequest(env, 'ktn_classes?select=id,active,teacher_email,teacher_code').catch(() => ({ ok: false, data: [] })),
-          supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20').catch(() => ({ ok: false, data: [] })),
-          isActiveTeacherSession(env, session)
-        ]);
-        const parsedAlerts = parseUserCombinedAlerts(userAlertsRes);
-        userPrefs = parsedAlerts.userPrefs;
-        lifecycleNotifRes = { ok: userAlertsRes.ok, data: parsedAlerts.lifecycleRows };
-        reminderLogRes = { ok: userAlertsRes.ok, data: parsedAlerts.reminderRows };
-        readStateRes = { ok: userAlertsRes.ok, data: parsedAlerts.readRows };
-        clsActiveRes = nonStuClsRes;
-        registerClassRows(clsActiveRes);
-        preloadedScheduleEvtRes = schedEvtWaveRes;
         // Giáo viên đang hoạt động thấy thông báo trong hệ thống (in-app) cho câu hỏi mới/mở hoặc câu hỏi chính mình đang nhận xử lý
-        if (isTeacherActive) {
+        if (teacherSessionActive) {
           for (const q of forumQs.slice(0, 15)) {
             if (q.status === 'hidden') continue;
             const claimedEmail = normalizeEmail(q.claimed_by_teacher_email || '');

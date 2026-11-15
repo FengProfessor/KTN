@@ -241,7 +241,8 @@ async function createWorkerHarness() {
       ktn_teacher_contribution_events: [],
       ktn_admin_audit_logs: []
     },
-    pushDeliveries: []
+    pushDeliveries: [],
+    supabaseQueries: []
   };
 
   function evalClause(row, rawClause) {
@@ -293,6 +294,7 @@ async function createWorkerHarness() {
 
     if (u.hostname === 'mock-supabase.local') {
       const table = u.pathname.replace(/^\/rest\/v1\//, '');
+      state.supabaseQueries.push({ method, table, search: u.search });
       if (table.startsWith('rpc/')) {
         return new Response(JSON.stringify({ message: 'RPC omitted' }), { status: 404 });
       }
@@ -424,6 +426,13 @@ async function createWorkerHarness() {
     if (u.hostname === 'fcm.googleapis.com' || u.hostname === 'web.push.apple.com') {
       state.pushDeliveries.push({ endpoint: urlStr, method, at: Date.now() });
       return new Response('', { status: 201 });
+    }
+
+    if (u.pathname.startsWith('/custom-page/so-lien-lac')) {
+      return new Response('<!doctype html><html><head><title>KTN</title></head><body>OK</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      });
     }
 
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -1014,7 +1023,105 @@ async function run() {
   assert.strictEqual(delHwPost.status, 403);
   pass('N25', 'Deleted student record (!stuRow) cannot leak stale JWT classCode across notifications, rooms, sessions, chat, or homeworks', 'verified');
 
-  console.log('\nSUMMARY: 25/25 KTN LIFECYCLE & PWA ACCEPTANCE CHECKS (N01–N25) PASSED');
+  // N26: Teacher GET /api/ktn/notifications executes zero duplicate Supabase queries for classes/alerts/schedule
+  h.state.supabaseQueries.length = 0;
+  const teaNotifsN26 = await h.callApi('/api/ktn/notifications', {
+    headers: { Authorization: `Bearer ${teacherYTok}` }
+  });
+  assert.strictEqual(teaNotifsN26.status, 200);
+  const clsScanCount = h.state.supabaseQueries.filter(
+    (q) => q.method === 'GET' && q.table === 'ktn_classes' && q.search.includes('teacher_email')
+  ).length;
+  const schedWaveCount = h.state.supabaseQueries.filter(
+    (q) => q.method === 'GET' && q.table === 'ktn_dlp_alerts' && q.search.includes('CLASS_SCHEDULE_EVENT')
+  ).length;
+  const combinedAlertsCount = h.state.supabaseQueries.filter(
+    (q) => q.method === 'GET' && q.table === 'ktn_dlp_alerts' && q.search.includes('NOTIF_PREFS')
+  ).length;
+  assert.strictEqual(clsScanCount, 1, `Expected 1 ktn_classes scan for teacher notifications, got ${clsScanCount}`);
+  assert.strictEqual(schedWaveCount, 1, `Expected 1 CLASS_SCHEDULE_EVENT query for teacher notifications, got ${schedWaveCount}`);
+  assert.strictEqual(combinedAlertsCount, 1, `Expected 1 combined user alerts query for teacher notifications, got ${combinedAlertsCount}`);
+  pass('N26', 'Teacher GET /api/ktn/notifications eliminates duplicate Supabase queries', `classes=${clsScanCount}, sched=${schedWaveCount}, alerts=${combinedAlertsCount}`);
+
+  // N27: Worker HTML pass-through injects V2 manifest ONLY on /custom-page/so-lien-lac-test (never V1 /custom-page/so-lien-lac)
+  const v1HtmlRes = await h.callApi('/custom-page/so-lien-lac');
+  const v2HtmlRes = await h.callApi('/custom-page/so-lien-lac-test');
+  assert.strictEqual(v1HtmlRes.status, 200);
+  assert.strictEqual(v2HtmlRes.status, 200);
+  assert.ok(!v1HtmlRes.text.includes('rel="manifest"'), 'V1 /custom-page/so-lien-lac MUST NOT receive V2 manifest.json');
+  assert.ok(v2HtmlRes.text.includes('<link rel="manifest" href="/manifest.json">'), 'V2 /custom-page/so-lien-lac-test must include manifest.json');
+  pass('N27', 'V1 /custom-page/so-lien-lac stays unpolluted by V2 PWA manifest tags while V2 /so-lien-lac-test receives manifest', 'verified');
+
+  // N28: SW parity (root sw.js === apps/ktn-web-v2/public/sw.js), homework_graded cold-open routing, and strict V2 notificationclick focus
+  const swRootBuf = fs.readFileSync(path.join(ROOT_DIR, 'sw.js'));
+  const swPublicBuf = fs.readFileSync(path.join(ROOT_DIR, 'apps/ktn-web-v2/public/sw.js'));
+  assert.strictEqual(Buffer.compare(swRootBuf, swPublicBuf), 0, 'sw.js and apps/ktn-web-v2/public/sw.js must be byte-identical');
+  const swListeners = {};
+  const v1Posted = [];
+  const v2Posted = [];
+  let openedUrl = null;
+  const swSandbox = {
+    URL,
+    URLSearchParams,
+    self: {
+      location: { origin: 'https://khongtunhi.com' },
+      addEventListener: (ev, fn) => {
+        swListeners[ev] = fn;
+      },
+      skipWaiting: () => Promise.resolve(),
+      clients: {
+        claim: () => Promise.resolve(),
+        matchAll: async () => [
+          {
+            url: 'https://khongtunhi.com/custom-page/so-lien-lac',
+            postMessage: (m) => v1Posted.push(m),
+            focus: async () => {}
+          },
+          {
+            url: 'https://khongtunhi.com/custom-page/so-lien-lac-test#/dashboard',
+            postMessage: (m) => v2Posted.push(m),
+            focus: async () => {}
+          }
+        ],
+        openWindow: async (u) => {
+          openedUrl = u;
+        }
+      },
+      registration: { showNotification: async () => {} }
+    },
+    caches: {
+      open: async () => ({ put: async () => {}, addAll: async () => {}, match: async () => null }),
+      keys: async () => [],
+      delete: async () => true,
+      match: async () => null
+    },
+    fetch: async () => new Response('ok', { status: 200 }),
+    Response,
+    Promise
+  };
+  vm.runInNewContext(swRes.text, swSandbox, { filename: 'worker-sw.js' });
+  const gradedLiveUrl = swSandbox.resolveSwColdOpenUrl({ eventType: 'homework_graded', classCode: 'CLS-A' });
+  const gradedCourseUrl = swSandbox.resolveSwColdOpenUrl({ eventType: 'homework_graded', courseId: '6adadba969897b0002482ca5' });
+  assert.strictEqual(gradedLiveUrl, '/custom-page/so-lien-lac-test#/classrooms?class=CLS-A');
+  assert.strictEqual(gradedCourseUrl, '/custom-page/so-lien-lac-test#/learning?courseId=6adadba969897b0002482ca5&tab=homework');
+
+  let clickWait = Promise.resolve();
+  swListeners.notificationclick({
+    notification: {
+      close: () => {},
+      data: { eventType: 'homework_graded', classCode: 'CLS-A' }
+    },
+    waitUntil: (p) => {
+      clickWait = p;
+    }
+  });
+  await clickWait;
+  assert.strictEqual(v1Posted.length, 0, 'V1 tab MUST NOT hijack V2 Service Worker push click');
+  assert.strictEqual(v2Posted.length, 1, 'V2 /custom-page/so-lien-lac-test tab must receive KTN_NOTIFICATION_CLICKED');
+  assert.strictEqual(v2Posted[0].targetUrl, '/custom-page/so-lien-lac-test#/classrooms?class=CLS-A');
+  pass('N28', 'SW files match byte-for-byte, homework_graded cold-open routes accurately, and notificationclick isolates V1 vs V2 tabs', `opened=${String(openedUrl)}, v2Posted=${v2Posted.length}`);
+
+  console.log('\nSUMMARY: 28/28 KTN LIFECYCLE & PWA ACCEPTANCE CHECKS (N01–N28) PASSED');
 }
 
 run().catch((err) => {

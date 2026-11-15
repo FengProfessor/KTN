@@ -57,7 +57,11 @@ import {
   KtnHomework,
   KtnStudentRecord,
 } from '@/types/ktn.types';
-import { formatChatTimestamp, formatRelativeTime } from '@/lib/utils';
+import {
+  formatChatTimestamp,
+  formatRelativeTime,
+  formatExerciseDisplayTitle,
+} from '@/lib/utils';
 
 export interface TeacherAttachmentUploadItem extends KtnExerciseAttachment {
   uploading?: boolean;
@@ -68,22 +72,6 @@ export interface TeacherAttachmentUploadItem extends KtnExerciseAttachment {
 }
 
 const MAX_EXERCISE_ATTACHMENTS = 5;
-
-function formatExerciseDisplayTitle(
-  ex: Pick<KtnSessionExercise, 'num' | 'title'>,
-  fallbackIndex: number,
-  tr: (vi: string, en: string) => string
-): string {
-  const num = Number(ex.num || fallbackIndex + 1) || fallbackIndex + 1;
-  const raw = String(ex.title || '').trim();
-  const cleaned = raw
-    .replace(/^(?:(?:Bài|Ex\.?|Exercise)\s*\d+\s*[:.\-–]\s*)+/i, '')
-    .trim();
-  if (!cleaned) {
-    return raw || `${tr('Bài', 'Ex.')} ${num}`;
-  }
-  return `${tr('Bài', 'Ex.')} ${num}: ${cleaned}`;
-}
 
 function formatSessionShortDate(raw?: string | null): string {
   if (!raw) return '';
@@ -464,7 +452,7 @@ export const TeacherWorkspace: React.FC = () => {
       }
       return ktnApi.getStudents(effectiveClassId || undefined);
     },
-    enabled: Boolean(user) || isDemoMode,
+    enabled: (Boolean(user) && Boolean(effectiveClassId)) || isDemoMode,
   });
 
   const handleRevokedClassAccess = async (err: unknown, classCode?: string) => {

@@ -592,4 +592,177 @@ describe('KTN Master Refactor Acceptance Suite (Agent A / B / C / D)', () => {
       Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: origSw });
     }
   });
+
+  it('ClassroomsPage hides drafts from sidebar counter, cleans duplicated Bài N: prefix, and displays Cần sửa badge for revision_requested', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 'stu-rev-1',
+        email: 'hoangngan@khongtunhi.com',
+        name: 'Hoàng Ngân',
+        role: 'student',
+        roles: ['student'],
+        classCode: 'YCT2-04',
+        assignedClasses: ['YCT2-04'],
+        hasLiveClass: true,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([
+      {
+        id: 'YCT2-04',
+        name: 'Lớp YCT2-04',
+        teacher_code: 'GV-01',
+        schedule: 'T3-T5 19:00',
+        teacher_name: 'Cô Lâm Linh',
+        teacher_email: 'linh.lam@khongtunhi.com',
+        total_lessons: 24,
+        current_lesson: 1,
+        active: true,
+      },
+    ]);
+    vi.spyOn(ktnApi, 'getClassSessions').mockResolvedValue([
+      {
+        id: 'YCT2-04::1',
+        classCode: 'YCT2-04',
+        session_num: 1,
+        sessionNum: 1,
+        session_title: 'Buổi 1: Thanh điệu',
+        title: 'Buổi 1: Thanh điệu',
+        updatedAt: '2026-11-15T10:00:00.000Z',
+        exercises: [
+          {
+            id: 'ex-pub-1',
+            num: 1,
+            title: 'Bài 1: Bài 1: Luyện nghe thanh điệu',
+            prompt: 'Nghe và lặp lại',
+            type: 'audio',
+            status: 'published',
+          },
+          {
+            id: 'ex-draft-2',
+            num: 2,
+            title: 'Phiếu nháp chưa giao',
+            prompt: 'Nháp giáo viên',
+            type: 'text',
+            status: 'draft',
+          },
+        ],
+      },
+    ]);
+    vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([
+      {
+        id: 'hw-rev-101',
+        student_email: 'hoangngan@khongtunhi.com',
+        student_name: 'Hoàng Ngân',
+        course_id: 'CLASS_YCT2-04',
+        class_code: 'YCT2-04',
+        lesson_num: 101,
+        lesson_title: 'Luyện nghe thanh điệu',
+        file_url: '',
+        file_type: 'audio',
+        attachments: [],
+        status: 'revision_requested',
+        score: null,
+        teacher_feedback: 'Con thu âm lại rõ thanh 3 nhé!',
+        student_note: 'Em nộp bài 1',
+        submitted_at: '2026-11-15T11:00:00.000Z',
+      },
+    ]);
+
+    renderWithQuery(<ClassroomsPage />, ['/classrooms?class=YCT2-04&session=1']);
+
+    const badge = await screen.findByTestId('classroom-hw-status-101');
+    expect(badge).toHaveTextContent('Cần sửa');
+    expect(badge).not.toHaveTextContent('Đã nộp');
+
+    const card = await screen.findByTestId('classroom-exercise-101');
+    expect(card).toHaveTextContent('Bài 1: Luyện nghe thanh điệu');
+    expect(card).not.toHaveTextContent('Bài 1: Bài 1:');
+
+    expect(screen.queryByText('Phiếu nháp chưa giao')).not.toBeInTheDocument();
+    expect(screen.getByText('1 bài tập')).toBeInTheDocument();
+  });
+
+  it('TeacherWorkspace skips getStudents(undefined) full-table call when no class is selected on Assign tab', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 't-scope-1',
+        email: 'linh.lam@khongtunhi.com',
+        name: 'Cô Lâm Linh',
+        role: 'teacher',
+        roles: ['teacher'],
+        classCode: 'YCT2-04',
+        assignedClasses: ['YCT2-04'],
+        hasLiveClass: true,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    const classesSpy = vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([
+      {
+        id: 'YCT2-04',
+        name: 'Lớp YCT2-04',
+        teacher_code: 'GV-01',
+        schedule: 'T3-T5 19:00',
+        teacher_name: 'Cô Lâm Linh',
+        teacher_email: 'linh.lam@khongtunhi.com',
+        total_lessons: 24,
+        current_lesson: 1,
+        active: true,
+      },
+    ]);
+    vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getClassSessions').mockResolvedValue([]);
+    const studentsSpy = vi.spyOn(ktnApi, 'getStudents').mockResolvedValue([]);
+
+    renderWithQuery(<TeacherWorkspace />, ['/teacher?tab=sessions']);
+
+    const classSel = (await screen.findByTestId('teacher-exercise-class-select')) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(classesSpy).toHaveBeenCalled();
+    });
+    expect(classSel.value).toBe('');
+    expect(studentsSpy).not.toHaveBeenCalled();
+  });
+
+  it('StudentHome requests paginated notifications { limit: 50, offset: 0 } to share cache with NotificationCenter/AppShell', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 'stu-home-1',
+        email: 'hoangngan@khongtunhi.com',
+        name: 'Hoàng Ngân',
+        role: 'student',
+        roles: ['student'],
+        classCode: 'YCT2-04',
+        assignedClasses: ['YCT2-04'],
+        hasLiveClass: true,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    vi.spyOn(ktnApi, 'getStudentMe').mockResolvedValue({
+      ok: true,
+      student: {
+        code: 'HS-01',
+        name: 'Hoàng Ngân',
+        email: 'hoangngan@khongtunhi.com',
+        class_code: 'YCT2-04',
+        online_courses: [],
+      },
+    } as never);
+    vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getClassSessions').mockResolvedValue([]);
+    const notifSpy = vi.spyOn(ktnApi, 'getNotifications').mockResolvedValue({
+      notifications: [],
+      readIds: [],
+    });
+
+    renderWithQuery(<StudentHome />, ['/']);
+
+    await waitFor(() => {
+      expect(notifSpy).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    });
+  });
 });

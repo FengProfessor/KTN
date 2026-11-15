@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -63,6 +63,7 @@ export const StudentHome: React.FC = () => {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const completedLessons = useUiStore((s) => s.completedLessons);
   const { lang, isEn, tr } = useI18n();
+  const lastFocusSyncAtRef = useRef<number>(0);
 
   const effectiveClassCode = isDemoMode
     ? user?.classCode || DEMO_CLASSES[0].id
@@ -193,7 +194,9 @@ export const StudentHome: React.FC = () => {
     const onVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
         setNowMs(getServerNowMs());
-        if (!isDemoMode && user?.email) {
+        const now = Date.now();
+        if (!isDemoMode && user?.email && now - lastFocusSyncAtRef.current >= 15000) {
+          lastFocusSyncAtRef.current = now;
           studentMeQuery.refetch();
         }
       }
@@ -275,9 +278,10 @@ export const StudentHome: React.FC = () => {
           readIds: DEMO_NOTIFICATIONS.filter((n) => n.read).map((n) => n.id),
         };
       }
-      return ktnApi.getNotifications();
+      return ktnApi.getNotifications({ limit: 50, offset: 0 });
     },
     enabled: Boolean(user) || isDemoMode,
+    staleTime: 10000,
   });
 
   const markReadMutation = useMutation({

@@ -252,6 +252,7 @@ function resolveSwColdOpenUrl(data) {
   const raw = String((data && (data.url || data.action_url || data.actionUrl)) || '').trim();
   const type = String((data && (data.eventType || data.type)) || '').trim();
   const classCode = String((data && data.classCode) || '').replace(/^class:/i, '').trim().toUpperCase();
+  const courseId = String((data && data.courseId) || '').trim();
   const roomId = String((data && data.roomId) || '').trim();
   const homeworkId = String((data && data.homeworkId) || '').trim();
   let working = raw;
@@ -311,6 +312,16 @@ function resolveSwColdOpenUrl(data) {
       type === 'homework_assigned'
     ) {
       route = classCode ? ('/classrooms?class=' + encodeURIComponent(classCode)) : '/classrooms';
+    } else if (type === 'homework_graded') {
+      if (classCode) {
+        route = '/classrooms?class=' + encodeURIComponent(classCode);
+      } else if (/^CLASS_([A-Z0-9_-]+)/i.test(courseId)) {
+        route = '/classrooms?class=' + encodeURIComponent(courseId.slice(6).toUpperCase());
+      } else if (courseId) {
+        route = '/learning?courseId=' + encodeURIComponent(courseId) + '&tab=homework';
+      } else {
+        route = '/notifications';
+      }
     } else if (
       type === 'chat_group_message' ||
       type === 'chat_private_message' ||
@@ -334,7 +345,7 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      const portalClient = windowClients.find((c) => c && typeof c.url === 'string' && c.url.includes('/custom-page/so-lien-lac'));
+      const portalClient = windowClients.find((c) => c && typeof c.url === 'string' && c.url.includes('/custom-page/so-lien-lac-test'));
       if (portalClient) {
         portalClient.postMessage({ type: 'KTN_NOTIFICATION_CLICKED', targetUrl, data });
         if ('focus' in portalClient) return portalClient.focus();

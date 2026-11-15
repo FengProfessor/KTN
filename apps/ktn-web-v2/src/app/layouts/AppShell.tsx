@@ -189,8 +189,11 @@ export const AppShell: React.FC = () => {
 
   const isRestoringLiveSession = isRestoring && !isDemoMode && !user;
   const effectiveRole = user?.role || 'student';
+  const onChatRoute = location.pathname === '/chat' || location.pathname.startsWith('/chat/');
 
-  const { data: chatRooms = [] } = useChatRooms();
+  const { data: chatRooms = [] } = useChatRooms({
+    refetchInterval: onChatRoute ? false : 60000,
+  });
   const totalUnreadChat = useMemo(
     () => chatRooms.reduce((sum, r) => sum + (Number(r.unreadCount) || 0), 0),
     [chatRooms]
@@ -680,12 +683,12 @@ export const AppShell: React.FC = () => {
                       ? tr('Cài ứng dụng Khổng Tử Nhí lên máy tính / điện thoại', 'Install Khổng Tử Nhí Desktop App')
                       : tr('Hướng dẫn cài đặt ứng dụng Desktop & nhận thông báo đẩy', 'Install Desktop App & Push guide')
                   }
-                  aria-label={tr('Cài App', 'Install App')}
+                  aria-label={tr('Cài Khổng Tử Nhí', 'Install Khổng Tử Nhí')}
                   className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 text-[11px] font-bold text-red-800 shadow-2xs transition-colors hover:bg-red-100 disabled:opacity-50 sm:h-9 sm:px-2.5"
                 >
                   <Download className="h-3.5 w-3.5 shrink-0" />
                   <span className="hidden md:inline">
-                    {canNativeInstall ? tr('Cài App', 'Install App') : tr('Cài Desktop', 'Desktop App')}
+                    {tr('Cài Khổng Tử Nhí', 'Install Khổng Tử Nhí')}
                   </span>
                 </button>
               )}

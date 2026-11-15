@@ -1119,9 +1119,126 @@ async function run() {
   assert.strictEqual(v1Posted.length, 0, 'V1 tab MUST NOT hijack V2 Service Worker push click');
   assert.strictEqual(v2Posted.length, 1, 'V2 /custom-page/so-lien-lac-test tab must receive KTN_NOTIFICATION_CLICKED');
   assert.strictEqual(v2Posted[0].targetUrl, '/custom-page/so-lien-lac-test#/classrooms?class=CLS-A');
-  pass('N28', 'SW files match byte-for-byte, homework_graded cold-open routes accurately, and notificationclick isolates V1 vs V2 tabs', `opened=${String(openedUrl)}, v2Posted=${v2Posted.length}`);
 
-  console.log('\nSUMMARY: 28/28 KTN LIFECYCLE & PWA ACCEPTANCE CHECKS (N01–N28) PASSED');
+  // N28b: When ONLY V1 /custom-page/so-lien-lac tab is open (no V2 client), notificationclick MUST openWindow(V2) and NEVER navigate V1
+  const v1OnlyListeners = {};
+  let v1Navigated = false;
+  let v1OnlyOpenedUrl = null;
+  const v1OnlySandbox = {
+    URL,
+    URLSearchParams,
+    self: {
+      location: { origin: 'https://khongtunhi.com' },
+      addEventListener: (ev, fn) => {
+        v1OnlyListeners[ev] = fn;
+      },
+      skipWaiting: () => Promise.resolve(),
+      clients: {
+        claim: () => Promise.resolve(),
+        matchAll: async () => [
+          {
+            url: 'https://khongtunhi.com/custom-page/so-lien-lac',
+            navigate: async () => {
+              v1Navigated = true;
+              return null;
+            },
+            postMessage: () => {},
+            focus: async () => {}
+          }
+        ],
+        openWindow: async (u) => {
+          v1OnlyOpenedUrl = u;
+        }
+      },
+      registration: { showNotification: async () => {} }
+    },
+    caches: {
+      open: async () => ({ put: async () => {}, addAll: async () => {}, match: async () => null }),
+      keys: async () => [],
+      delete: async () => true,
+      match: async () => null
+    },
+    fetch: async () => new Response('ok', { status: 200 }),
+    Response,
+    Promise
+  };
+  vm.runInNewContext(swRes.text, v1OnlySandbox, { filename: 'worker-sw-v1-only.js' });
+  let v1OnlyClickWait = Promise.resolve();
+  v1OnlyListeners.notificationclick({
+    notification: {
+      close: () => {},
+      data: { eventType: 'homework_graded', classCode: 'CLS-A' }
+    },
+    waitUntil: (p) => {
+      v1OnlyClickWait = p;
+    }
+  });
+  await v1OnlyClickWait;
+  assert.strictEqual(v1Navigated, false, 'Service Worker MUST NEVER navigate/hijack V1 /custom-page/so-lien-lac tab');
+  assert.strictEqual(v1OnlyOpenedUrl, '/custom-page/so-lien-lac-test#/classrooms?class=CLS-A');
+  pass('N28', 'SW files match byte-for-byte, homework_graded cold-open routes accurately, and V1-only tab never gets hijacked on notificationclick', `opened=${String(v1OnlyOpenedUrl)}, v2Posted=${v2Posted.length}`);
+
+  // N29: /api/ktn/vocab serves HTTP 200 JSON array with CORS headers (eliminates browser console CORS/404 errors)
+  const vocabRes = await h.callApi('/api/ktn/vocab?level=hsk1');
+  assert.strictEqual(vocabRes.status, 200, `Expected 200 for /api/ktn/vocab, got ${vocabRes.status}`);
+  assert.strictEqual(vocabRes.headers.get('access-control-allow-origin'), '*', 'Expected CORS Access-Control-Allow-Origin: * on /api/ktn/vocab');
+  assert.ok(Array.isArray(vocabRes.data), 'Expected JSON array payload from /api/ktn/vocab');
+  pass('N29', 'GET /api/ktn/vocab returns HTTP 200 JSON array with CORS headers', `len=${vocabRes.data.length}`);
+
+  // N30: Teacher 1-1 notification scoping avoids starvation when >15 other-class student:* messages arrive, AND teacher_code unassign cleans ktn_classes
+  const stuHTokN30 = await h.loginToken('student.h@khongtunhi.com', 'TestStrongPassword!2026');
+  const n30MsgRes = await h.callApi('/api/ktn/messages', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${stuHTokN30}` },
+    body: { roomId: 'student:student.h@khongtunhi.com', content: 'Tin nhắn riêng cho thầy cô B', clientMessageId: 'n30-stu-h-msg' }
+  });
+  assert.strictEqual(n30MsgRes.status, 200, `Expected student H 1-1 send 200, got ${n30MsgRes.status}`);
+  for (let i = 1; i <= 20; i += 1) {
+    h.state.tables.ktn_messages.push({
+      id: `MSG-FLOOD-OTHER-${i}`,
+      room_id: `student:other.student.${i}@khongtunhi.com`,
+      class_code: 'CLS-OTHER',
+      sender_email: `other.student.${i}@khongtunhi.com`,
+      sender_name: `Other ${i}`,
+      sender_role: 'student',
+      content: `Tin nhắn lớp khác #${i}`,
+      created_at: new Date(Date.now() + 1000 + i * 10).toISOString()
+    });
+  }
+  const teaNotifsN30 = await h.callApi('/api/ktn/notifications', {
+    headers: { Authorization: `Bearer ${teacherYTok}` }
+  });
+  assert.strictEqual(teaNotifsN30.status, 200);
+  assert.ok(
+    (teaNotifsN30.data?.notifications || []).some((n) => String(n.roomId || '').toLowerCase() === 'student:student.h@khongtunhi.com'),
+    'Teacher Y must still see student H 1-1 notification even after 20+ other-class student:* messages'
+  );
+  // Test teacher_code-only class unassignment via POST /api/ktn/teachers
+  h.state.tables.ktn_classes.push({
+    id: 'CLS-CODE-ONLY',
+    name: 'Lớp Code Only',
+    teacher_code: 'GV-Y',
+    teacher_email: '',
+    active: true
+  });
+  const unassignCodeRes = await h.callApi('/api/ktn/teachers', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminTok}` },
+    body: {
+      code: 'GV-Y',
+      name: 'Cô Y',
+      email: 'teacher.y@khongtunhi.com',
+      assignedClasses: ['CLS-B'],
+      active: true
+    }
+  });
+  assert.strictEqual(unassignCodeRes.status, 200);
+  const clsCodeOnlyAfter = h.state.tables.ktn_classes.find((c) => c.id === 'CLS-CODE-ONLY');
+  assert.strictEqual(clsCodeOnlyAfter.teacher_code, null, 'POST /api/ktn/teachers must clear teacher_code on unassigned classes');
+  assert.strictEqual(clsCodeOnlyAfter.teacher_email, null);
+  pass('N30', 'Teacher 1-1 notifications resist >15 global student:* flooding and POST /api/ktn/teachers clears teacher_code-only classes', 'verified');
+
+  console.log('\nSUMMARY: 30/30 KTN LIFECYCLE & PWA ACCEPTANCE CHECKS (N01–N30) PASSED');
 }
 
 run().catch((err) => {

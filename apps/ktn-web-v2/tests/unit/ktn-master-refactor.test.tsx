@@ -9,7 +9,8 @@ import { ClassroomsPage } from '@/features/classrooms/components/ClassroomsPage'
 import { ChatLayout } from '@/features/chat/components/ChatLayout';
 import { AppShell } from '@/app/layouts/AppShell';
 import { chatApi } from '@/features/chat/services/chatApi';
-import { ktnApi } from '@/services/api/ktnApiClient';
+import { ktnApi, KtnApiError } from '@/services/api/ktnApiClient';
+import { syncRemoteVocabulary } from '@/features/games/services/vocabularyService';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
@@ -515,6 +516,7 @@ describe('KTN Master Refactor Acceptance Suite (Agent A / B / C / D)', () => {
 
     // Desktop PWA Install button appears cleanly; clicking opens Windows/macOS guide when native prompt isn't emitted
     const pwaBtn = await screen.findByTestId('header-pwa-install-btn');
+    expect(pwaBtn).toHaveTextContent(/Cài Khổng Tử Nhí|Install Khổng Tử Nhí/);
     fireEvent.click(pwaBtn);
     expect(await screen.findByTestId('pwa-install-guide-modal')).toBeInTheDocument();
     expect(screen.getByTestId('pwa-install-guide-modal')).toHaveTextContent(/Windows|macOS/);
@@ -764,5 +766,213 @@ describe('KTN Master Refactor Acceptance Suite (Agent A / B / C / D)', () => {
     await waitFor(() => {
       expect(notifSpy).toHaveBeenCalledWith({ limit: 50, offset: 0 });
     });
+  });
+
+  it('H12-H15: Edit preserves prior exercises, 409 conflict alerts cleanly, and class transfer hides old class homework', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 't-h12',
+        email: 'linh.lam@khongtunhi.com',
+        name: 'Cô Lâm Linh',
+        role: 'teacher',
+        roles: ['teacher'],
+        classCode: 'YCT2-04',
+        assignedClasses: ['YCT2-04'],
+        hasLiveClass: true,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([
+      {
+        id: 'YCT2-04',
+        name: 'Lớp YCT2-04',
+        teacher_code: 'GV-01',
+        schedule: 'T3-T5 19:00',
+        teacher_name: 'Cô Lâm Linh',
+        teacher_email: 'linh.lam@khongtunhi.com',
+        total_lessons: 24,
+        current_lesson: 1,
+        active: true,
+      },
+    ]);
+    vi.spyOn(ktnApi, 'getStudents').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getClassSessions').mockResolvedValue([
+      {
+        id: 'YCT2-04__S3',
+        classCode: 'YCT2-04',
+        session_num: 3,
+        sessionNum: 3,
+        session_title: 'Buổi 3: Gia đình',
+        title: 'Buổi 3: Gia đình',
+        updatedAt: '2026-11-15T10:00:00.000Z',
+        exercises: [
+          {
+            id: 'EX-1',
+            num: 1,
+            type: 'audio',
+            title: 'Bài 1: Nghe hội thoại',
+            prompt: 'Nghe file đính kèm',
+            submissionType: 'audio',
+            status: 'published',
+            attachments: [{ id: 'att-1', name: 'bai1.pdf', url: 'https://cdn.example/bai1.pdf', sizeBytes: 1024, mimeType: 'application/pdf' }],
+          },
+          {
+            id: 'EX-2',
+            num: 2,
+            type: 'audio',
+            title: 'Bài 2: Đọc đoạn văn',
+            prompt: 'Thu âm 30 giây',
+            submissionType: 'audio',
+            status: 'published',
+            attachments: [],
+          },
+        ],
+      },
+    ]);
+
+    const saveSpy = vi
+      .spyOn(ktnApi, 'saveClassSession')
+      .mockRejectedValueOnce(
+        new KtnApiError({
+          message: 'Phiên đã được cập nhật ở tab khác',
+          status: 409,
+          code: 'SESSION_CONFLICT',
+        })
+      )
+      .mockResolvedValueOnce({
+        id: 'YCT2-04__S3',
+        classCode: 'YCT2-04',
+        session_num: 3,
+        sessionNum: 3,
+        session_title: 'Buổi 3: Gia đình',
+        title: 'Buổi 3: Gia đình',
+        updatedAt: '2026-11-15T10:05:00.000Z',
+        exercises: [
+          {
+            id: 'EX-1',
+            num: 1,
+            type: 'audio',
+            title: 'Bài 1: Nghe hội thoại (Đã sửa)',
+            prompt: 'Nghe file đính kèm',
+            submissionType: 'audio',
+            status: 'published',
+            attachments: [{ id: 'att-1', name: 'bai1.pdf', url: 'https://cdn.example/bai1.pdf', sizeBytes: 1024, mimeType: 'application/pdf' }],
+          },
+          {
+            id: 'EX-2',
+            num: 2,
+            type: 'audio',
+            title: 'Bài 2: Đọc đoạn văn',
+            prompt: 'Thu âm 30 giây',
+            submissionType: 'audio',
+            status: 'published',
+            attachments: [],
+          },
+        ],
+      });
+
+    renderWithQuery(<TeacherWorkspace />, ['/teacher?tab=sessions']);
+
+    const classSel = await screen.findByTestId('teacher-exercise-class-select');
+    await waitFor(() => {
+      expect(classSel.querySelector('option[value="YCT2-04"]')).toBeTruthy();
+    });
+    fireEvent.change(classSel, { target: { value: 'YCT2-04' } });
+
+    const editBtn = await screen.findByTestId('teacher-edit-saved-exercise-btn-EX-1');
+    fireEvent.click(editBtn);
+
+    const titleInput = (await screen.findByTestId('teacher-exercise-title-input')) as HTMLInputElement;
+    fireEvent.change(titleInput, { target: { value: 'Bài 1: Nghe hội thoại (Đã sửa)' } });
+
+    fireEvent.click(screen.getByTestId('teacher-save-session-btn'));
+    fireEvent.click(await screen.findByTestId('teacher-confirm-overwrite-btn'));
+
+    // H15: 409 conflict displays explicit warning without wiping session data
+    const errEl = await screen.findByTestId('teacher-attachment-error');
+    expect(errEl).toBeInTheDocument();
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+
+    // H12: Retry after refresh sends update_exercise preserving EX-1 + EX-2
+    fireEvent.click(screen.getByTestId('teacher-save-session-btn'));
+    fireEvent.click(await screen.findByTestId('teacher-confirm-overwrite-btn'));
+    await waitFor(() => {
+      expect(saveSpy).toHaveBeenCalledTimes(2);
+    });
+    expect(saveSpy.mock.calls[1][0]).toMatchObject({
+      mode: 'update_exercise',
+      exercise: expect.objectContaining({ id: 'EX-1' }),
+    });
+    expect(screen.getByTestId('teacher-saved-exercise-EX-2')).toBeInTheDocument();
+  });
+
+  it('H14: Student transferred from Class A to Class B sees only Class B assignments on ClassroomsPage', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 'stu-h14',
+        email: 'student.a@khongtunhi.com',
+        name: 'Minh Anh',
+        role: 'student',
+        roles: ['student'],
+        classCode: 'CLS-B',
+        assignedClasses: ['CLS-B'],
+        hasLiveClass: true,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([
+      {
+        id: 'CLS-B',
+        name: 'Lớp B',
+        teacher_code: 'GV-B',
+        schedule: 'T2-T4',
+        teacher_name: 'Cô B',
+        teacher_email: 'b@khongtunhi.com',
+        total_lessons: 20,
+        current_lesson: 1,
+        active: true,
+      },
+    ]);
+    vi.spyOn(ktnApi, 'getClassSessions').mockResolvedValue([
+      {
+        id: 'CLS-B__S1',
+        classCode: 'CLS-B',
+        session_num: 1,
+        sessionNum: 1,
+        session_title: 'Buổi 1 Lớp B',
+        title: 'Buổi 1 Lớp B',
+        exercises: [{ id: 'EX-B1', num: 1, type: 'audio', title: 'Bài tập Lớp B', prompt: 'Đọc từ mới', submissionType: 'audio', status: 'published' }],
+      },
+      {
+        id: 'CLS-A__S1',
+        classCode: 'CLS-A',
+        session_num: 1,
+        sessionNum: 1,
+        session_title: 'Buổi 1 Lớp A Cũ',
+        title: 'Buổi 1 Lớp A Cũ',
+        exercises: [{ id: 'EX-A1', num: 1, type: 'audio', title: 'Bài tập Lớp A Cũ', prompt: 'Không được hiển thị', submissionType: 'audio', status: 'published' }],
+      },
+    ]);
+    vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([]);
+
+    renderWithQuery(<ClassroomsPage />, ['/classrooms']);
+
+    expect(await screen.findByText(/Bài tập Lớp B/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bài tập Lớp A Cũ/)).not.toBeInTheDocument();
+  });
+
+  it('D3 & CORS: syncRemoteVocabulary uses same-origin /api/ktn/vocab (never hardcoded cross-origin workers.dev)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
+    const words = await syncRemoteVocabulary('hsk1');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const calledUrl = String(fetchSpy.mock.calls[0][0]);
+    expect(calledUrl).toBe('/api/ktn/vocab?level=hsk1');
+    expect(calledUrl).not.toContain('workers.dev');
+    expect(words.length).toBeGreaterThan(0);
   });
 });

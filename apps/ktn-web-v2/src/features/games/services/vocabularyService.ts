@@ -9,7 +9,14 @@ import type { GameWord, GameLevelDef, GameRecordsMap } from '../types/game.types
 
 const STORAGE_KEY_HIGH_SCORES = 'ktn_games_high_scores';
 const STORAGE_KEY_DYNAMIC_VOCAB = 'ktn_games_dynamic_vocab';
-const PROXY_WORKER_BASE = 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+
+function getVocabApiBase(): string {
+  const envBase = import.meta.env?.VITE_KTN_API_BASE;
+  if (typeof envBase === 'string' && envBase.trim()) {
+    return envBase.trim().replace(/\/$/, '');
+  }
+  return '';
+}
 
 // In-memory cache for dynamically synced words
 const dynamicVocabCache: Record<string, GameWord[]> = {};
@@ -397,7 +404,7 @@ export async function syncRemoteVocabulary(levelId: string): Promise<GameWord[]>
   const normalized = (levelId || 'hsk1').toLowerCase().trim();
 
   try {
-    const url = `${PROXY_WORKER_BASE}/api/ktn/vocab?level=${encodeURIComponent(normalized)}`;
+    const url = `${getVocabApiBase()}/api/ktn/vocab?level=${encodeURIComponent(normalized)}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4000);
 

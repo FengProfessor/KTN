@@ -167,7 +167,6 @@ export const NotificationCenter: React.FC = () => {
         }
       };
     }
-    const expectedDefaultKey = urlBase64ToUint8Array(DEFAULT_VAPID_PUBLIC_KEY);
     navigator.serviceWorker
       .getRegistration('/')
       .then((reg) => reg?.pushManager?.getSubscription())
@@ -177,7 +176,19 @@ export const NotificationCenter: React.FC = () => {
         const endpoint = String(subJson?.endpoint || '').trim();
         const p256dh = String(subJson?.keys?.p256dh || '').trim();
         const auth = String(subJson?.keys?.auth || '').trim();
-        const keyMatches = hasMatchingApplicationServerKey(sub, expectedDefaultKey);
+        let expectedKeyBytes = urlBase64ToUint8Array(DEFAULT_VAPID_PUBLIC_KEY);
+        if (sub && endpoint && !isDemoMode) {
+          try {
+            const keyRes = await ktnApi.getVapidPublicKey();
+            if (cancelled) return;
+            if (keyRes?.publicKey && keyRes.publicKey.length >= 40) {
+              expectedKeyBytes = urlBase64ToUint8Array(keyRes.publicKey);
+            }
+          } catch {
+            // Fall back to DEFAULT_VAPID_PUBLIC_KEY when offline
+          }
+        }
+        const keyMatches = hasMatchingApplicationServerKey(sub, expectedKeyBytes);
         const hasRealSub = Boolean(
           endpoint &&
             !endpoint.includes('push.khongtunhi.com/v2/') &&

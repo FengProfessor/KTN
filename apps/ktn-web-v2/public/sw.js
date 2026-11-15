@@ -351,10 +351,6 @@ self.addEventListener('notificationclick', (event) => {
         if ('focus' in portalClient) return portalClient.focus();
         return;
       }
-      const anyClient = windowClients[0];
-      if (anyClient && typeof anyClient.navigate === 'function') {
-        return anyClient.navigate(targetUrl).then((c) => (c && 'focus' in c ? c.focus() : null));
-      }
       if (self.clients.openWindow) {
         return self.clients.openWindow(targetUrl);
       }

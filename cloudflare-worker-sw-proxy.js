@@ -713,10 +713,6 @@ self.addEventListener('notificationclick', (event) => {
         if ('focus' in portalClient) return portalClient.focus();
         return;
       }
-      const anyClient = windowClients[0];
-      if (anyClient && typeof anyClient.navigate === 'function') {
-        return anyClient.navigate(targetUrl).then((c) => (c && 'focus' in c ? c.focus() : null));
-      }
       if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
     })
   );
@@ -16869,11 +16865,14 @@ export default {
           ).catch(() => null);
         }
 
-        // Thu hồi các lớp cũ từng gắn với tEmail nhưng không còn nằm trong assignedClasses (hoặc khi giáo viên bị khóa active=false)
+        // Thu hồi các lớp cũ từng gắn với tEmail hoặc tCode nhưng không còn nằm trong assignedClasses (hoặc khi giáo viên bị khóa active=false)
         if (hasExplicitAssignedClasses || !isActive) {
+          const prevClassesFilter = tCode
+            ? `or=(teacher_email.eq.${encodeURIComponent(tEmail)},teacher_code.ilike.${encodeURIComponent(tCode)})`
+            : `teacher_email=eq.${encodeURIComponent(tEmail)}`;
           const prevClassesRes = await supabaseRequest(
             env,
-            `ktn_classes?teacher_email=eq.${encodeURIComponent(tEmail)}&select=id`
+            `ktn_classes?${prevClassesFilter}&select=id,active`
           );
           if (prevClassesRes.ok && Array.isArray(prevClassesRes.data)) {
             const nextSet = isActive ? new Set(assignedClasses) : new Set();
@@ -16888,6 +16887,20 @@ export default {
                     updated_at: new Date().toISOString()
                   }
                 });
+                if (tEmail) {
+                  await emitTargetedLifecycleNotification(env, {
+                    eventId: `CLASS_TEACHER_REMOVED_${prevClsId}_${fnv1aHash36(tEmail)}_${Date.now().toString(36)}`,
+                    type: 'class_teacher_changed',
+                    recipientEmail: tEmail,
+                    senderEmail: session.email,
+                    classCode: prevClsId,
+                    roomId: `class:${prevClsId}`,
+                    title: `Bạn đã được gỡ phân công lớp ${prevClsId}`,
+                    body: `Admin đã cập nhật phân công giảng dạy cho lớp ${prevClsId}.`,
+                    actionUrl: '/custom-page/so-lien-lac-test#/teacher/classes',
+                    meta: { roleInEvent: 'previous_teacher', previousTeacherEmail: tEmail }
+                  });
+                }
               }
             }
           }
@@ -16899,11 +16912,15 @@ export default {
             const clsLookup = await supabaseRequest(env, `ktn_classes?id=eq.${encodeURIComponent(clsId)}&select=*&limit=1`);
             const oldClsRow = (clsLookup.ok && Array.isArray(clsLookup.data) && clsLookup.data[0]) || null;
             const oldOwnerEmail = normalizeEmail(oldClsRow?.teacher_email || '');
+            const oldOwnerCode = String(oldClsRow?.teacher_code || '').trim();
             let oldOwnerRow = null;
-            if (oldOwnerEmail && oldOwnerEmail !== tEmail) {
-              const oldOwnerRes = await supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(oldOwnerEmail)}&limit=1`);
+            if ((oldOwnerEmail && oldOwnerEmail !== tEmail) || (!oldOwnerEmail && oldOwnerCode && oldOwnerCode.toUpperCase() !== tCode.toUpperCase())) {
+              const oldOwnerQuery = oldOwnerEmail
+                ? `ktn_teachers?email=eq.${encodeURIComponent(oldOwnerEmail)}&limit=1`
+                : `ktn_teachers?code=ilike.${encodeURIComponent(oldOwnerCode)}&limit=1`;
+              const oldOwnerRes = await supabaseRequest(env, oldOwnerQuery);
               oldOwnerRow = (oldOwnerRes.ok && Array.isArray(oldOwnerRes.data) && oldOwnerRes.data[0]) || null;
-              if (oldOwnerRow) {
+              if (oldOwnerRow && normalizeEmail(oldOwnerRow.email || '') !== tEmail) {
                 const oldOwnerMeta = extractTeacherMetaFromRow(oldOwnerRow);
                 const nextOldOwnerClasses = oldOwnerMeta.assignedClasses.filter(c => c && c !== clsId);
                 const oldOwnerUserAliases = Array.isArray(oldOwnerRow.aliases)
@@ -23156,6 +23173,12 @@ export default {
         }
         const roomInParam = Array.from(roomQuerySet).map(k => encodeURIComponent(k)).join(',');
 
+        const needStuHomeworks = userPrefs.homework !== false || userPrefs.grades !== false;
+        const needStuSessions = Boolean(rawClassCode) && userPrefs.homework !== false;
+        const needStuSchedule = Boolean(rawClassCode) && userPrefs.schedule !== false;
+        const hwSelectParam = isSummaryOnly
+          ? '&select=id,student_email,student_name,class_code,course_id,lesson_num,lesson_title,status,score,graded_at,submitted_at,updated_at'
+          : '';
         const [
           clsSingleRes,
           hwRes,
@@ -23171,11 +23194,13 @@ export default {
                 `ktn_classes?id=eq.${encodeURIComponent(rawClassCode)}&select=id,active,teacher_email,teacher_code&limit=1`
               ).catch(() => ({ ok: false, data: [] }))
             : Promise.resolve({ ok: true, data: [] }),
-          supabaseRequest(
-            env,
-            `ktn_homeworks?student_email=eq.${encodeURIComponent(session.email)}&order=updated_at.desc&limit=20`
-          ),
-          rawClassCode
+          needStuHomeworks
+            ? supabaseRequest(
+                env,
+                `ktn_homeworks?student_email=eq.${encodeURIComponent(session.email)}&order=updated_at.desc&limit=20${hwSelectParam}`
+              )
+            : Promise.resolve({ ok: true, data: [] }),
+          needStuSessions
             ? supabaseRequest(
                 env,
                 `ktn_class_sessions?class_code=eq.${encodeURIComponent(rawClassCode)}&order=updated_at.desc&limit=5`
@@ -23185,7 +23210,7 @@ export default {
             env,
             `ktn_messages?room_id=in.(${roomInParam})&sender_email=neq.${encodeURIComponent(myEmail)}&order=created_at.desc&limit=10`
           ),
-          rawClassCode
+          needStuSchedule
             ? supabaseRequest(
                 env,
                 'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20'
@@ -23452,9 +23477,36 @@ export default {
           const clean = String(c || '').trim().toUpperCase();
           if (clean) scopedClassesForScheduleEvents.add(clean);
         });
-        if (isTeacherActive && assignedClasses.length > 0) {
-          const classListParam = assignedClasses.map(c => encodeURIComponent(c)).join(',');
-          const hwRes = await supabaseRequest(env, `ktn_homeworks?class_code=in.(${classListParam})&status=eq.pending&order=submitted_at.desc&limit=15`);
+        const teacherClassListParam = assignedClasses.map(c => encodeURIComponent(c)).join(',');
+        const roomKeys = isTeacherActive
+          ? [
+              ...assignedClasses.flatMap(c => [c, `class:${c}`]),
+              ...assignedCourseIds.map(cid => `course:${String(cid || '').trim().toLowerCase()}`)
+            ].filter(Boolean)
+          : [];
+        const roomListParam = roomKeys.map(c => encodeURIComponent(c)).join(',');
+        const needTeacherHws = isTeacherActive && assignedClasses.length > 0 && (userPrefs.homework !== false || userPrefs.grades !== false);
+        const teacherHwSelectParam = isSummaryOnly
+          ? '&select=id,student_email,student_name,class_code,course_id,lesson_num,lesson_title,status,submitted_at,updated_at'
+          : '';
+        const needTeacherMsgs = isTeacherActive && userPrefs.messages !== false;
+
+        const [hwRes, groupMsgRes, classStudentsRes, coursePrivMsgRes] = await Promise.all([
+          needTeacherHws
+            ? supabaseRequest(env, `ktn_homeworks?class_code=in.(${teacherClassListParam})&status=eq.pending&order=submitted_at.desc&limit=15${teacherHwSelectParam}`)
+            : Promise.resolve({ ok: true, data: [] }),
+          needTeacherMsgs && roomListParam
+            ? supabaseRequest(env, `ktn_messages?room_id=in.(${roomListParam})&order=created_at.desc&limit=15`)
+            : Promise.resolve({ ok: true, data: [] }),
+          needTeacherMsgs && assignedClasses.length > 0
+            ? supabaseRequest(env, `ktn_students?class_code=in.(${teacherClassListParam})&limit=500`).catch(() => ({ ok: false, data: [] }))
+            : Promise.resolve({ ok: true, data: [] }),
+          needTeacherMsgs
+            ? supabaseRequest(env, 'ktn_messages?room_id=like.student:*&sender_role=eq.student&order=created_at.desc&limit=50')
+            : Promise.resolve({ ok: true, data: [] })
+        ]);
+
+        if (needTeacherHws) {
           const pendingHws = Array.isArray(hwRes.data) ? hwRes.data : [];
           for (const hw of pendingHws) {
             items.push({
@@ -23469,28 +23521,58 @@ export default {
             });
           }
         }
-        const roomKeys = isTeacherActive
-          ? [
-              ...assignedClasses.flatMap(c => [c, `class:${c}`]),
-              ...assignedCourseIds.map(cid => `course:${String(cid || '').trim().toLowerCase()}`)
-            ].filter(Boolean)
-          : [];
-        const roomListParam = roomKeys.map(c => encodeURIComponent(c)).join(',');
-        const [groupMsgRes, privMsgRes] = isTeacherActive
-          ? await Promise.all([
-              roomListParam
-                ? supabaseRequest(env, `ktn_messages?room_id=in.(${roomListParam})&order=created_at.desc&limit=15`)
-                : Promise.resolve({ ok: true, data: [] }),
-              supabaseRequest(env, 'ktn_messages?room_id=like.student:*&sender_role=eq.student&order=created_at.desc&limit=15')
-            ])
-          : [{ ok: true, data: [] }, { ok: true, data: [] }];
+
+        const classStudentByEmail = new Map();
+        const classStudentRoomKeys = [];
+        if (classStudentsRes.ok && Array.isArray(classStudentsRes.data)) {
+          for (const s of classStudentsRes.data) {
+            const em = normalizeEmail(s?.email || '');
+            const accStatus = String(s?.account_status || s?.status || '').trim().toLowerCase();
+            if (!em || ['deleted', 'archived', 'suspended', 'locked'].includes(accStatus)) continue;
+            if (!classStudentByEmail.has(em)) {
+              classStudentByEmail.set(em, s);
+              classStudentRoomKeys.push(`student:${em}`);
+            }
+          }
+        }
+
+        let classPrivMsgs = [];
+        if (needTeacherMsgs && classStudentRoomKeys.length > 0) {
+          const roomChunks = [];
+          for (let i = 0; i < classStudentRoomKeys.length; i += 40) {
+            roomChunks.push(classStudentRoomKeys.slice(i, i + 40));
+          }
+          const chunkResults = await Promise.all(
+            roomChunks.slice(0, 10).map((chunk) =>
+              supabaseRequest(
+                env,
+                `ktn_messages?room_id=in.(${chunk.map(r => encodeURIComponent(r)).join(',')})&sender_role=eq.student&order=created_at.desc&limit=15`
+              ).catch(() => ({ ok: true, data: [] }))
+            )
+          );
+          for (const cr of chunkResults) {
+            if (cr.ok && Array.isArray(cr.data)) {
+              classPrivMsgs.push(...cr.data);
+            }
+          }
+        }
+
         const assignedClassesSet = new Set(
           assignedClasses.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
         );
         const rawGroupMsgs = (Array.isArray(groupMsgRes.data) ? groupMsgRes.data : []).filter(
           (m) => m && normalizeEmail(m.sender_email) !== myEmail && (m.sender_role === 'student' || m.sender_role === 'admin')
         );
-        const rawPrivMsgs = Array.isArray(privMsgRes.data) ? privMsgRes.data : [];
+        const rawPrivMsgs = [];
+        const seenPrivMsgIds = new Set();
+        for (const m of [...classPrivMsgs, ...(Array.isArray(coursePrivMsgRes.data) ? coursePrivMsgRes.data : [])]) {
+          if (!m) continue;
+          const mid = String(m.id || `${m.room_id || ''}:${m.created_at || ''}`);
+          if (seenPrivMsgIds.has(mid)) continue;
+          seenPrivMsgIds.add(mid);
+          rawPrivMsgs.push(m);
+        }
+        rawPrivMsgs.sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
         const privStudentEmails = Array.from(new Set(
           rawPrivMsgs
             .map(m => {
@@ -23501,17 +23583,29 @@ export default {
         ));
         const allowedPrivStudents = new Set();
         if (isTeacherActive && privStudentEmails.length > 0) {
-          const stuClsRes = await supabaseRequest(
-            env,
-            `ktn_students?email=in.(${privStudentEmails.map(e => encodeURIComponent(e)).join(',')})&select=*`
-          );
-          if (stuClsRes.ok && Array.isArray(stuClsRes.data)) {
-            for (const s of stuClsRes.data) {
-              const em = normalizeEmail(s?.email || '');
-              if (!em) continue;
-              const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, s, { assignedClasses });
-              if (isAllowed) {
-                allowedPrivStudents.add(em);
+          const missingStudentEmails = [];
+          for (const em of privStudentEmails) {
+            const cachedStu = classStudentByEmail.get(em);
+            if (cachedStu) {
+              const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, cachedStu, { assignedClasses });
+              if (isAllowed) allowedPrivStudents.add(em);
+            } else {
+              missingStudentEmails.push(em);
+            }
+          }
+          if (missingStudentEmails.length > 0) {
+            const stuClsRes = await supabaseRequest(
+              env,
+              `ktn_students?email=in.(${missingStudentEmails.map(e => encodeURIComponent(e)).join(',')})&select=*`
+            );
+            if (stuClsRes.ok && Array.isArray(stuClsRes.data)) {
+              for (const s of stuClsRes.data) {
+                const em = normalizeEmail(s?.email || '');
+                if (!em) continue;
+                const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, s, { assignedClasses });
+                if (isAllowed) {
+                  allowedPrivStudents.add(em);
+                }
               }
             }
           }
@@ -23552,12 +23646,18 @@ export default {
           });
         }
       } else if (session.role === 'admin') {
+        const admOrdUrl = isSummaryOnly
+          ? 'ktn_orders?order=created_at.desc&limit=10&select=order_id,student_name,student_email,course_name,approval_status,created_at'
+          : 'ktn_orders?order=created_at.desc&limit=10';
+        const admHwUrl = isSummaryOnly
+          ? 'ktn_homeworks?order=updated_at.desc&limit=5&select=id,student_email,student_name,class_code,lesson_num,lesson_title,status,graded_at,submitted_at,updated_at'
+          : 'ktn_homeworks?order=updated_at.desc&limit=5';
         const [userAlertsRes, nonStuClsRes, schedEvtWaveRes, ordRes, hwRes, msgRes] = await Promise.all([
           supabaseRequest(env, userCombinedAlertsUrl).catch(() => ({ ok: false, data: [] })),
           supabaseRequest(env, 'ktn_classes?select=id,active,teacher_email,teacher_code').catch(() => ({ ok: false, data: [] })),
           supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20').catch(() => ({ ok: false, data: [] })),
-          supabaseRequest(env, 'ktn_orders?order=created_at.desc&limit=10'),
-          supabaseRequest(env, 'ktn_homeworks?order=updated_at.desc&limit=5'),
+          supabaseRequest(env, admOrdUrl),
+          supabaseRequest(env, admHwUrl),
           supabaseRequest(env, 'ktn_messages?order=created_at.desc&limit=5')
         ]);
         const parsedAlerts = parseUserCombinedAlerts(userAlertsRes);
@@ -23654,7 +23754,7 @@ export default {
             forumAns = await loadAllForumAnswers(env, relevantQIds).catch(() => []);
           }
         }
-      } else {
+      } else if (session.role === 'admin' || teacherSessionActive) {
         const [loadedQs, loadedReqs] = await Promise.all([
           loadAllForumQuestions(env).catch(() => []),
           loadAllCourseGrantRequests(env).catch(() => [])
@@ -26289,6 +26389,10 @@ export default {
         status: 200,
         headers: outHeaders
       });
+    }
+
+    if (path === '/api/ktn/vocab' && (request.method === 'GET' || request.method === 'HEAD')) {
+      return jsonResponse([], 200, { 'Cache-Control': 'public, max-age=300' });
     }
 
     if (path.startsWith('/assets/') && (request.method === 'GET' || request.method === 'HEAD')) {

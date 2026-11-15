@@ -33,11 +33,43 @@ export default {
           '"Segoe UI"',
           'Roboto',
           'sans-serif'
+        ],
+        display: [
+          '"Be Vietnam Pro"',
+          '"Plus Jakarta Sans"',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          'sans-serif'
+        ],
+        hanzi: [
+          '"Noto Serif SC"',
+          '"Kaiti SC"',
+          '"STKaiti"',
+          '"KaiTi"',
+          '"Songti SC"',
+          '"SimSun"',
+          'serif'
         ]
       },
       boxShadow: {
+        '2xs': "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
+        'xs': "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
         card: "0 1px 3px 0 rgba(24, 24, 27, 0.06), 0 1px 2px -1px rgba(24, 24, 27, 0.04)",
         float: "0 10px 25px -5px rgba(24, 24, 27, 0.08), 0 8px 10px -6px rgba(24, 24, 27, 0.04)"
+      },
+      borderWidth: {
+        '3': '3px',
+      },
+      borderRadius: {
+        'xs': '2px',
+      },
+      scale: {
+        '98': '0.98',
+      },
+      backdropBlur: {
+        'xs': '2px',
       }
     }
   },

@@ -12,7 +12,8 @@ import {
 import { ChatAttachment } from '../types/chat.types';
 import { resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
-import { truncateFileName } from '../services/chatApi';
+import { useI18n } from '@/i18n';
+import { translateAttachmentFallbackName, truncateFileName } from '../services/chatApi';
 
 interface AttachmentPreviewProps {
   attachment: ChatAttachment | null | undefined;
@@ -21,6 +22,7 @@ interface AttachmentPreviewProps {
 }
 
 export const ChatImageLightbox: React.FC = () => {
+  const { tr } = useI18n();
   const activeAttachment = useUiStore((s) => s.activeLightboxAttachment);
   const setActiveAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
   const [zoomLevel, setZoomLevel] = useState<number>(1);
@@ -87,7 +89,7 @@ export const ChatImageLightbox: React.FC = () => {
       data-testid="chat-image-lightbox"
       role="dialog"
       aria-modal="true"
-      aria-label="Xem ảnh lớn"
+      aria-label={tr('Xem ảnh lớn', 'View full image')}
       className="fixed inset-0 z-[99999] flex flex-col bg-black/90 backdrop-blur-sm"
       onClick={() => setActiveAttachment(null)}
     >
@@ -98,10 +100,13 @@ export const ChatImageLightbox: React.FC = () => {
       >
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs sm:text-sm font-bold text-white">
-            Xem ảnh
+            {tr('Xem ảnh', 'Image preview')}
           </p>
           <p className="hidden sm:block text-[11px] text-stone-400">
-            Bấm vào ảnh hoặc dùng nút +/- để phóng to • Nhấn ESC để đóng
+            {tr(
+              'Bấm vào ảnh hoặc dùng nút +/- để phóng to • Nhấn ESC để đóng',
+              'Click image or use +/- to zoom • Press ESC to close'
+            )}
           </p>
         </div>
 
@@ -111,10 +116,10 @@ export const ChatImageLightbox: React.FC = () => {
             data-testid="lightbox-zoom-out-btn"
             onClick={() => setZoomLevel((z) => Math.max(0.75, Number((z - 0.25).toFixed(2))))}
             className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
-            title="Thu nhỏ"
+            title={tr('Thu nhỏ', 'Zoom out')}
           >
             <ZoomOut className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Thu nhỏ</span>
+            <span className="hidden sm:inline">{tr('Thu nhỏ', 'Zoom out')}</span>
           </button>
 
           <button
@@ -122,7 +127,7 @@ export const ChatImageLightbox: React.FC = () => {
             data-testid="lightbox-zoom-reset-btn"
             onClick={() => setZoomLevel(1)}
             className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 font-mono text-xs font-bold text-amber-300 hover:bg-white/20"
-            title="Đặt lại 100%"
+            title={tr('Đặt lại 100%', 'Reset to 100%')}
           >
             <RotateCcw className="h-3 w-3" />
             {Math.round(zoomLevel * 100)}%
@@ -133,10 +138,10 @@ export const ChatImageLightbox: React.FC = () => {
             data-testid="lightbox-zoom-in-btn"
             onClick={() => setZoomLevel((z) => Math.min(3, Number((z + 0.5).toFixed(2))))}
             className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
-            title="Phóng to"
+            title={tr('Phóng to', 'Zoom in')}
           >
             <ZoomIn className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Phóng to</span>
+            <span className="hidden sm:inline">{tr('Phóng to', 'Zoom in')}</span>
           </button>
 
           <a
@@ -149,7 +154,7 @@ export const ChatImageLightbox: React.FC = () => {
             className="inline-flex items-center gap-1 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
           >
             <Download className="h-3.5 w-3.5" />
-            <span>Tải xuống</span>
+            <span>{tr('Tải xuống', 'Download')}</span>
           </a>
 
           <button
@@ -157,7 +162,7 @@ export const ChatImageLightbox: React.FC = () => {
             data-testid="lightbox-close-btn"
             onClick={() => setActiveAttachment(null)}
             className="inline-flex items-center justify-center rounded-lg bg-white/15 p-1.5 text-white hover:bg-white/25"
-            aria-label="Đóng xem ảnh"
+            aria-label={tr('Đóng xem ảnh', 'Close image preview')}
           >
             <X className="h-5 w-5" />
           </button>
@@ -176,7 +181,7 @@ export const ChatImageLightbox: React.FC = () => {
           <img
             data-testid="lightbox-image"
             src={resolvedUrl}
-            alt="Ảnh phóng to"
+            alt={tr('Ảnh phóng to', 'Zoomed image')}
             onClick={() => setZoomLevel((z) => (z < 1.8 ? 2 : 1))}
             onError={(e) => {
               const target = e.currentTarget;
@@ -204,6 +209,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   isOwn,
   hasCaption = true,
 }) => {
+  const { lang, tr } = useI18n();
   const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
 
   if (!attachment || !attachment.url) return null;
@@ -236,7 +242,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     });
   };
 
-  const shortFileName = truncateFileName(attachment.name, 26);
+  const shortFileName = truncateFileName(attachment.name, 26, lang);
 
   if (isImage) {
     return (
@@ -244,7 +250,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
         type="button"
         data-testid="chat-image-attachment"
         onClick={handleOpenLightbox}
-        aria-label="Xem ảnh lớn"
+        aria-label={tr('Xem ảnh lớn', 'View full image')}
         className={`${
           hasCaption ? 'mt-1.5 ' : ''
         }group relative block w-full min-w-[110px] max-h-64 sm:max-h-72 max-w-[230px] sm:max-w-[270px] cursor-zoom-in overflow-hidden rounded-xl border border-black/10 bg-stone-100 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700`}
@@ -252,7 +258,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
         <img
           data-testid="chat-image-thumbnail"
           src={resolvedUrl}
-          alt="Hình ảnh"
+          alt={tr('Hình ảnh', 'Image')}
           loading="lazy"
           onError={(e) => {
             const target = e.currentTarget;
@@ -286,7 +292,10 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
         />
         <div className="flex min-w-0 items-center justify-between gap-2 px-1 text-[11px] text-stone-600">
           <span
-            title={attachment.name || 'Video đính kèm'}
+            title={
+              translateAttachmentFallbackName(attachment.name, lang) ||
+              tr('Video đính kèm', 'Attached video')
+            }
             className="min-w-0 flex-1 truncate font-semibold text-stone-800"
           >
             {shortFileName}
@@ -300,7 +309,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             className="inline-flex shrink-0 items-center gap-1 font-semibold text-red-800 hover:underline"
           >
             <Download className="h-3.5 w-3.5" />
-            Tải về
+            {tr('Tải về', 'Download')}
           </a>
         </div>
       </div>
@@ -320,7 +329,10 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
         <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-red-900">
           <Volume2 className="h-3.5 w-3.5 shrink-0 text-red-700" />
           <span
-            title={attachment.name || 'Bản thu âm'}
+            title={
+              translateAttachmentFallbackName(attachment.name, lang) ||
+              tr('Bản thu âm', 'Voice recording')
+            }
             className="min-w-0 flex-1 truncate"
           >
             {shortFileName}
@@ -340,7 +352,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
               className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-red-800 hover:underline"
             >
               <Download className="h-3 w-3" />
-              Tải về
+              {tr('Tải về', 'Download')}
             </a>
           )}
         </div>
@@ -362,7 +374,10 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
       target="_blank"
       rel="noreferrer"
       download={attachment.name}
-      title={attachment.name || 'Tài liệu đính kèm'}
+      title={
+        translateAttachmentFallbackName(attachment.name, lang) ||
+        tr('Tài liệu đính kèm', 'Attached document')
+      }
       className={`mt-1.5 flex min-w-0 max-w-[240px] sm:max-w-xs items-center gap-2.5 rounded-xl border p-2.5 transition-colors ${
         isOwn
           ? 'border-red-300/60 bg-white/90 hover:bg-white'
@@ -377,7 +392,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           {shortFileName}
         </p>
         <p className="truncate text-[11px] text-stone-500">
-          {attachment.sizeLabel || 'Tài liệu học tập'}
+          {attachment.sizeLabel || tr('Tài liệu học tập', 'Study document')}
         </p>
       </div>
       <Download className="h-4 w-4 shrink-0 text-stone-500" />

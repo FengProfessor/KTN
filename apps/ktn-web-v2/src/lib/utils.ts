@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { trStatic, type AppLanguage } from '@/i18n';
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
@@ -18,16 +19,16 @@ export function formatTimeVi(isoOrMs?: string | number | null): string {
 export const formatChatTimestamp = formatTimeVi;
 
 export function formatDayDividerVi(isoOrMs?: string | number | null): string {
-  if (!isoOrMs) return 'Hôm nay';
+  if (!isoOrMs) return trStatic('Hôm nay', 'Today');
   const ts = typeof isoOrMs === 'number' ? isoOrMs : Date.parse(isoOrMs);
-  if (!Number.isFinite(ts)) return 'Hôm nay';
+  if (!Number.isFinite(ts)) return trStatic('Hôm nay', 'Today');
   const d = new Date(ts);
   const now = new Date();
   const isToday =
     d.getDate() === now.getDate() &&
     d.getMonth() === now.getMonth() &&
     d.getFullYear() === now.getFullYear();
-  if (isToday) return 'Hôm nay';
+  if (isToday) return trStatic('Hôm nay', 'Today');
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
@@ -35,7 +36,7 @@ export function formatDayDividerVi(isoOrMs?: string | number | null): string {
     d.getDate() === yesterday.getDate() &&
     d.getMonth() === yesterday.getMonth() &&
     d.getFullYear() === yesterday.getFullYear();
-  if (isYesterday) return 'Hôm qua';
+  if (isYesterday) return trStatic('Hôm qua', 'Yesterday');
 
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -45,15 +46,15 @@ export function formatDayDividerVi(isoOrMs?: string | number | null): string {
 export const formatDateDivider = formatDayDividerVi;
 
 export function formatRelativeTimeVi(isoOrMs?: string | number | null): string {
-  if (!isoOrMs) return 'Vừa xong';
+  if (!isoOrMs) return trStatic('Vừa xong', 'Just now');
   const ts = typeof isoOrMs === 'number' ? isoOrMs : Date.parse(isoOrMs);
-  if (!Number.isFinite(ts)) return 'Vừa xong';
+  if (!Number.isFinite(ts)) return trStatic('Vừa xong', 'Just now');
   const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (diffSec < 60) return 'Vừa xong';
+  if (diffSec < 60) return trStatic('Vừa xong', 'Just now');
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} phút trước`;
+  if (diffMin < 60) return trStatic(`${diffMin} phút trước`, `${diffMin}m ago`);
   const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours} giờ trước`;
+  if (diffHours < 24) return trStatic(`${diffHours} giờ trước`, `${diffHours}h ago`);
   return formatDayDividerVi(ts);
 }
 
@@ -91,10 +92,20 @@ export function inspectDlpClient(text: string): DlpCheckResult {
   if (!s) return { blocked: false, reasons: [] };
   const reasons: string[] = [];
   if (/(?<!\d)(?:\+?84|0)(?:\s*[.-]?\s*\d){8,9}(?!\d)/.test(s)) {
-    reasons.push('Vì an toàn học đường (DLP), không chia sẻ số điện thoại cá nhân trong nhóm lớp.');
+    reasons.push(
+      trStatic(
+        'Vì an toàn học đường (DLP), không chia sẻ số điện thoại cá nhân trong nhóm lớp.',
+        'For school safety (DLP), do not share personal phone numbers in class chats.'
+      )
+    );
   }
   if (/(?:zalo\.me|facebook\.com|fb\.com|m\.me|t\.me)\//i.test(s)) {
-    reasons.push('Vì an toàn học đường (DLP), không gửi liên kết mạng xã hội ngoài luồng.');
+    reasons.push(
+      trStatic(
+        'Vì an toàn học đường (DLP), không gửi liên kết mạng xã hội ngoài luồng.',
+        'For school safety (DLP), external social media links are not allowed.'
+      )
+    );
   }
   return {
     blocked: reasons.length > 0,
@@ -978,6 +989,30 @@ export type CourseDurationPresetOptionId =
 
 export type CourseDurationUnitOption = 'd' | 'w' | 'm' | 'unlimited';
 
+export function getCourseDurationUnitOptions(
+  lang?: AppLanguage
+): Array<{ id: CourseDurationUnitOption; label: string }> {
+  return [
+    { id: 'd', label: trStatic('Ngày', 'Days', lang) },
+    { id: 'w', label: trStatic('Tuần', 'Weeks', lang) },
+    { id: 'm', label: trStatic('Tháng', 'Months', lang) },
+    { id: 'unlimited', label: trStatic('Vĩnh viễn', 'Unlimited', lang) },
+  ];
+}
+
+export function getCourseDurationPresetOptions(
+  lang?: AppLanguage
+): Array<{ id: CourseDurationPresetOptionId; label: string }> {
+  return [
+    { id: '1w', label: trStatic('1 tuần', '1 week', lang) },
+    { id: '2w', label: trStatic('2 tuần', '2 weeks', lang) },
+    { id: '1m', label: trStatic('1 tháng', '1 month', lang) },
+    { id: '2m', label: trStatic('2 tháng', '2 months', lang) },
+    { id: '3m', label: trStatic('3 tháng', '3 months', lang) },
+    { id: 'unlimited', label: trStatic('Vĩnh viễn', 'Unlimited', lang) },
+  ];
+}
+
 export const COURSE_DURATION_UNIT_OPTIONS: Array<{
   id: CourseDurationUnitOption;
   label: string;
@@ -1027,12 +1062,31 @@ export function buildCourseDurationPreset(
   return `${clamped}${unit}`;
 }
 
-export function formatCourseDurationPresetLabel(preset?: string | null): string {
+export function formatCourseDurationPresetLabel(
+  preset?: string | null,
+  lang?: AppLanguage
+): string {
   const parsed = parseCourseDurationPreset(preset);
-  if (parsed.unit === 'unlimited') return 'Vĩnh viễn';
-  if (parsed.unit === 'd') return `${parsed.value} ngày`;
-  if (parsed.unit === 'w') return `${parsed.value} tuần`;
-  return `${parsed.value} tháng`;
+  if (parsed.unit === 'unlimited') return trStatic('Vĩnh viễn', 'Unlimited', lang);
+  if (parsed.unit === 'd') {
+    return trStatic(
+      `${parsed.value} ngày`,
+      `${parsed.value} ${parsed.value === 1 ? 'day' : 'days'}`,
+      lang
+    );
+  }
+  if (parsed.unit === 'w') {
+    return trStatic(
+      `${parsed.value} tuần`,
+      `${parsed.value} ${parsed.value === 1 ? 'week' : 'weeks'}`,
+      lang
+    );
+  }
+  return trStatic(
+    `${parsed.value} tháng`,
+    `${parsed.value} ${parsed.value === 1 ? 'month' : 'months'}`,
+    lang
+  );
 }
 
 export function getHoChiMinhCalendarDateString(nowMs: number = Date.now()): string {
@@ -1101,7 +1155,7 @@ export function toIzTeachExpiresAtIso(limitTime?: string | null): string | null 
 
 export interface CourseExpirationDisplayInfo {
   statusKey: 'unlimited' | 'active' | 'expiring_soon' | 'expired' | 'sync_error';
-  adminStatusLabel: 'Vĩnh viễn' | 'Còn hạn' | 'Sắp hết hạn' | 'Đã hết hạn' | 'Đồng bộ lỗi';
+  adminStatusLabel: string;
   adminCompactText: string;
   studentCardText: string;
   isUnlimited: boolean;
@@ -1121,7 +1175,8 @@ export function computeCourseExpirationInfo(
     isExpired?: boolean;
     syncStatus?: string | null;
   } | null,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  lang?: AppLanguage
 ): CourseExpirationDisplayInfo {
   const rawSync = String(course?.syncStatus || 'synced').trim().toLowerCase();
   const isSyncError =
@@ -1130,14 +1185,19 @@ export function computeCourseExpirationInfo(
   const rawLimit = course?.expiresAt || course?.limitTime || null;
   const expiresAtIso = toIzTeachExpiresAtIso(rawLimit);
   const limitDateYmd = extractCalendarDateFromLimitTime(rawLimit);
+  const syncErrLabel = trStatic('Đồng bộ lỗi', 'Sync error', lang);
+  const expiredLabel = trStatic('Đã hết hạn', 'Expired', lang);
+  const unlimitedLabel = trStatic('Vĩnh viễn', 'Unlimited', lang);
+  const activeLabel = trStatic('Còn hạn', 'Active', lang);
+  const expiringSoonLabel = trStatic('Sắp hết hạn', 'Expiring soon', lang);
 
   if (!expiresAtIso) {
     if (course?.isExpired === true) {
       return {
         statusKey: isSyncError ? 'sync_error' : 'expired',
-        adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Đã hết hạn',
-        adminCompactText: isSyncError ? 'Đồng bộ lỗi' : 'Đã hết hạn',
-        studentCardText: 'Đã hết hạn · Gia hạn',
+        adminStatusLabel: isSyncError ? syncErrLabel : expiredLabel,
+        adminCompactText: isSyncError ? syncErrLabel : expiredLabel,
+        studentCardText: trStatic('Đã hết hạn · Gia hạn', 'Expired · Renew', lang),
         isUnlimited: false,
         isExpiringSoon: false,
         isExpired: true,
@@ -1150,9 +1210,9 @@ export function computeCourseExpirationInfo(
     }
     return {
       statusKey: isSyncError ? 'sync_error' : 'unlimited',
-      adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Vĩnh viễn',
-      adminCompactText: isSyncError ? 'Đồng bộ lỗi' : 'Vĩnh viễn',
-      studentCardText: 'Không giới hạn thời gian',
+      adminStatusLabel: isSyncError ? syncErrLabel : unlimitedLabel,
+      adminCompactText: isSyncError ? syncErrLabel : unlimitedLabel,
+      studentCardText: trStatic('Không giới hạn thời gian', 'Unlimited access', lang),
       isUnlimited: true,
       isExpiringSoon: false,
       isExpired: false,
@@ -1170,9 +1230,9 @@ export function computeCourseExpirationInfo(
   if (remainingMs <= 0) {
     return {
       statusKey: isSyncError ? 'sync_error' : 'expired',
-      adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Đã hết hạn',
-      adminCompactText: isSyncError ? 'Đồng bộ lỗi' : 'Đã hết hạn',
-      studentCardText: 'Đã hết hạn · Gia hạn',
+      adminStatusLabel: isSyncError ? syncErrLabel : expiredLabel,
+      adminCompactText: isSyncError ? syncErrLabel : expiredLabel,
+      studentCardText: trStatic('Đã hết hạn · Gia hạn', 'Expired · Renew', lang),
       isUnlimited: false,
       isExpiringSoon: false,
       isExpired: true,
@@ -1186,6 +1246,8 @@ export function computeCourseExpirationInfo(
 
   const sevenDaysMs = 7 * 86400 * 1000;
   const remainingDays = Math.max(1, Math.ceil(remainingMs / 86400000));
+  const daysUnitVi = `${remainingDays} ngày`;
+  const daysUnitEn = `${remainingDays} ${remainingDays === 1 ? 'day' : 'days'}`;
 
   if (remainingMs <= sevenDaysMs) {
     const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
@@ -1197,9 +1259,15 @@ export function computeCourseExpirationInfo(
     const ddStr = String(days).padStart(2, '0');
     return {
       statusKey: isSyncError ? 'sync_error' : 'expiring_soon',
-      adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Sắp hết hạn',
-      adminCompactText: isSyncError ? `Còn ${remainingDays} ngày · Đồng bộ lỗi` : `Còn ${remainingDays} ngày`,
-      studentCardText: `Sắp hết hạn · ${ddStr} ngày ${hhmmss}`,
+      adminStatusLabel: isSyncError ? syncErrLabel : expiringSoonLabel,
+      adminCompactText: isSyncError
+        ? trStatic(`Còn ${daysUnitVi} · Đồng bộ lỗi`, `${daysUnitEn} left · Sync error`, lang)
+        : trStatic(`Còn ${daysUnitVi}`, `${daysUnitEn} left`, lang),
+      studentCardText: trStatic(
+        `Sắp hết hạn · ${ddStr} ngày ${hhmmss}`,
+        `Expiring soon · ${ddStr}d ${hhmmss}`,
+        lang
+      ),
       isUnlimited: false,
       isExpiringSoon: true,
       isExpired: false,
@@ -1213,9 +1281,15 @@ export function computeCourseExpirationInfo(
 
   return {
     statusKey: isSyncError ? 'sync_error' : 'active',
-    adminStatusLabel: isSyncError ? 'Đồng bộ lỗi' : 'Còn hạn',
-    adminCompactText: isSyncError ? `Còn ${remainingDays} ngày · Đồng bộ lỗi` : `Còn ${remainingDays} ngày`,
-    studentCardText: `Thời hạn học: còn ${remainingDays} ngày`,
+    adminStatusLabel: isSyncError ? syncErrLabel : activeLabel,
+    adminCompactText: isSyncError
+      ? trStatic(`Còn ${daysUnitVi} · Đồng bộ lỗi`, `${daysUnitEn} left · Sync error`, lang)
+      : trStatic(`Còn ${daysUnitVi}`, `${daysUnitEn} left`, lang),
+    studentCardText: trStatic(
+      `Thời hạn học: còn ${daysUnitVi}`,
+      `Access: ${daysUnitEn} left`,
+      lang
+    ),
     isUnlimited: false,
     isExpiringSoon: false,
     isExpired: false,

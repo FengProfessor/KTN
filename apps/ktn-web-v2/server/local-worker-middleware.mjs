@@ -316,7 +316,34 @@ export function createLocalWorkerHarness() {
           updated_at: new Date(Date.now() - 3600 * 1000).toISOString()
         }
       ],
-      ktn_class_sessions: [],
+      ktn_class_sessions: [
+        {
+          id: 'YCT2-04-B1',
+          class_code: 'YCT2-04',
+          session_num: 1,
+          session_title: 'Buổi 1: Từ vựng Gia đình & Hỏi thăm sức khỏe',
+          exercises: [
+            {
+              id: 'YCT2-04-B1-E1',
+              num: 1,
+              title: 'Bài 1: Thu âm đọc 5 câu hội thoại hỏi thăm sức khỏe (Trang 12)',
+              prompt: 'Con bấm Thu âm đọc rõ từng câu hội thoại trong sách giáo khoa trang 12 rồi bấm Nộp bài cho cô nhé.',
+              type: 'audio',
+              status: 'published'
+            },
+            {
+              id: 'YCT2-04-B1-E2',
+              num: 2,
+              title: 'Bài 2: Chụp ảnh vở viết chữ Hán bài 1 (你, 好, 我, 叫)',
+              prompt: 'Con viết mỗi chữ 1 dòng vào vở ô mễ, sau đó chụp ảnh đính kèm gửi cô chấm nét chữ nhé.',
+              type: 'photo',
+              status: 'published'
+            }
+          ],
+          updated_by: 'linh.lam@khongtunhi.com',
+          updated_at: new Date(Date.now() - 86400 * 1000).toISOString()
+        }
+      ],
       ktn_messages: [
         {
           id: 'MSG-SEED-YCT2-001',
@@ -1465,6 +1492,17 @@ export function createLocalWorkerHarness() {
               c => !String(c?.id || '').startsWith('qa-scroll-course-')
             );
           }
+          const nganUid = ngan?.cognito_user_id || 'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68';
+          if (Array.isArray(state.izteach?.permissionsByUid?.[nganUid])) {
+            state.izteach.permissionsByUid[nganUid] = state.izteach.permissionsByUid[nganUid].filter(
+              cid => !String(cid || '').startsWith('qa-scroll-course-')
+            );
+          }
+          if (Array.isArray(state.izteach?.permissionRecordsByUid?.[nganUid])) {
+            state.izteach.permissionRecordsByUid[nganUid] = state.izteach.permissionRecordsByUid[nganUid].filter(
+              r => !(r.onlineCourses || []).some(cid => String(cid || '').startsWith('qa-scroll-course-'))
+            );
+          }
           state.tables.ktn_messages = state.tables.ktn_messages.filter(
             m => !String(m.id || '').startsWith('MSG-QA-SCROLL-')
           );
@@ -1531,6 +1569,14 @@ export function createLocalWorkerHarness() {
               title: `Nhóm Học Tập Bổ Trợ HSK-YCT #${num}`,
               shortTitle: `Nhóm Bổ Trợ #${num}`
             });
+            const nganUid = String(ngan.cognito_user_id || 'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68');
+            state.izteach.permissionsByUid[nganUid] ||= [];
+            if (!state.izteach.permissionsByUid[nganUid].includes(cId)) {
+              state.izteach.permissionsByUid[nganUid].push(cId);
+            }
+            if (state.izteach.permissionRecordsByUid) {
+              delete state.izteach.permissionRecordsByUid[nganUid];
+            }
           }
           if (i <= 8) {
             state.tables.ktn_messages.push({

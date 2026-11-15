@@ -850,9 +850,8 @@
             </nav>
 
             <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                <!-- Zalo icon header -->
-                <a href="https://zalo.me/0988974685" target="_blank" class="hidden xl:flex w-8 h-8 rounded-full items-center justify-center hover:scale-105 transition-transform relative shadow-sm border border-blue-200 shrink-0" title="Chat Zalo cùng ThS. Ngọc Huyền">
-                    <img src="assets/icon_zalo.svg" width="32" height="32" loading="lazy" decoding="async" class="w-full h-full object-cover rounded-full" alt="Zalo">
+                <a href="/tu-van" class="hidden xl:flex w-8 h-8 rounded-full items-center justify-center hover:scale-105 transition-transform relative shadow-sm border border-red-200 text-primary shrink-0" title="Tư vấn trực tuyến" aria-label="Tư vấn trực tuyến">
+                    <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
                     <span class="absolute top-0 right-0 w-2 h-2 bg-green-500 border border-white rounded-full"></span>
                 </a>
                 <!-- Phone icon header -->
@@ -906,9 +905,9 @@
                     <i class="fa-solid fa-phone text-xs" style="animation: phoneRing 2s infinite"></i>
                     <span class="whitespace-nowrap">Gọi Hotline</span>
                 </a>
-                <a href="https://zalo.me/0988974685" target="_blank" class="flex items-center justify-center gap-2 bg-blue-50 text-[#0068FF] py-2.5 min-h-[40px] rounded-xl border border-blue-200 font-bold text-xs shadow-sm hover:bg-blue-100 transition whitespace-nowrap">
-                    <img src="assets/icon_zalo.svg" width="16" height="16" loading="lazy" decoding="async" class="w-4 h-4 rounded-full" alt="Zalo">
-                    <span class="whitespace-nowrap">Chat Zalo</span>
+                <a href="/tu-van" class="flex items-center justify-center gap-2 bg-red-50 text-primary py-2.5 min-h-[40px] rounded-xl border border-red-200 font-bold text-xs shadow-sm hover:bg-red-100 transition whitespace-nowrap">
+                    <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
+                    <span class="whitespace-nowrap">Tư vấn trực tuyến</span>
                 </a>
             </div>
             <a href="#dang-ky" @click="mobileMenu = false" class="w-full relative overflow-hidden bg-gradient-to-r from-primary via-red-600 to-rose-700 text-white text-center py-3 min-h-[44px] flex items-center justify-center rounded-xl font-black text-xs shadow-md mt-1 border border-amber-300/40 whitespace-nowrap">
@@ -3650,7 +3649,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
 
             <div class="guide-cta">
                 <div><h3>Ba mẹ chưa biết nên bắt đầu từ đâu?</h3><p>Chia sẻ độ tuổi và mục tiêu của con để được tư vấn lộ trình phù hợp.</p></div>
-                <a class="guide-cta-button" href="#dang-ky">Tư vấn lộ trình cho con <span aria-hidden="true">→</span></a>
+                <a class="guide-cta-button" href="/tu-van">Tư vấn lộ trình cho con <span aria-hidden="true">→</span></a>
             </div>
         </div>
     </section>
@@ -3804,7 +3803,7 @@ if (!window.ktnSwitchFromVideoToRegister) {
         const inside = entries.some(function (entry) { return entry.isIntersecting; });
         document.body.classList.toggle('ktn-library-in-view', inside);
         const proof = document.querySelector('#ktn-sofl-root [x-data="liveSocialProof()"]');
-        const contact = document.querySelector('#ktn-sofl-root a[aria-label="Chat Zalo"]');
+        const contact = document.querySelector('#ktn-sofl-root [data-ktn-consult-float]');
         if (proof) proof.classList.toggle('ktn-library-proof-suppressed', inside);
         if (contact?.parentElement?.parentElement) contact.parentElement.parentElement.classList.toggle('ktn-library-contact-suppressed', inside);
       }, { threshold: 0.12 });
@@ -3844,9 +3843,9 @@ if (!window.ktnSwitchFromVideoToRegister) {
                         <strong x-text="phone"></strong> <span class="whitespace-nowrap">trong 1 phút.</span>
                     </p>
                     <div class="mt-4 pt-3 border-t border-emerald-200/80 flex flex-col sm:flex-row items-center justify-center gap-2.5">
-                        <a href="https://zalo.me/0988974685" target="_blank" class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-[#0068FF] hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition whitespace-nowrap">
+                        <a href="/tu-van" class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-red-800 hover:bg-red-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition whitespace-nowrap">
                             <i class="fa-solid fa-comment-dots"></i>
-                            <span>Chat Zalo Nhận Lịch Học Ngay</span>
+                            <span>Tư vấn lịch học</span>
                         </a>
                         <button type="button" @click="formSubmitted = false" class="w-full sm:w-auto inline-flex items-center justify-center gap-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition whitespace-nowrap">
                             <i class="fa-solid fa-rotate-left text-[10px]"></i>
@@ -4550,11 +4549,11 @@ if (!window.ktnSwitchFromVideoToRegister) {
             <!-- Tooltip: Only on desktop -->
             <div class="hidden sm:flex absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-xl text-xs font-bold text-gray-800 opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 transform translate-x-3 group-hover:translate-x-0 whitespace-nowrap border border-blue-100 items-center gap-2 z-50">
                 <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                <span>Chat Zalo cùng ThS. Ngọc Huyền</span>
+                <span>Tư vấn trực tuyến</span>
             </div>
             <!-- Icon Button -->
-            <a href="https://zalo.me/0988974685" target="_blank" class="relative w-10 h-10 sm:w-12 sm:h-12 rounded-2xl overflow-hidden shadow-lg shadow-blue-500/25 hover:scale-110 active:scale-95 transition-all p-0.5 bg-gradient-to-br from-sky-400 to-[#0068FF] flex items-center justify-center border-2 border-white cursor-pointer shrink-0" aria-label="Chat Zalo">
-                <img src="assets/icon_zalo.svg" width="44" height="44" loading="lazy" decoding="async" class="w-full h-full object-cover rounded-xl" alt="Zalo Official">
+            <a href="/tu-van" data-ktn-consult-float class="relative w-10 h-10 sm:w-12 sm:h-12 rounded-2xl overflow-hidden shadow-lg shadow-red-700/25 hover:scale-110 active:scale-95 transition-all bg-red-800 text-white flex items-center justify-center border-2 border-white cursor-pointer shrink-0" aria-label="Tư vấn trực tuyến">
+                <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
                 <span class="absolute top-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full shadow-sm"></span>
             </a>
         </div>

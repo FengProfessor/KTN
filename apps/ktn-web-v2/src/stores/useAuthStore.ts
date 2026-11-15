@@ -17,6 +17,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<KtnUserSession>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<KtnUserSession | null>;
+  refreshPermissions: () => Promise<KtnUserSession | null>;
   setDemoUser: (user: KtnUserSession) => void;
   syncModeUser: (isDemoMode: boolean) => void;
 }
@@ -199,6 +200,41 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const verified = await ktnApi.verifySession();
         if (epochAtStart !== authEpoch || get().isLoading) {
           set({ isRestoring: false });
+          return get().user;
+        }
+        set({
+          user: verified,
+          authUser: verified,
+          isRestoring: false
+        });
+        return verified;
+      } finally {
+        if (restoreInFlight === currentPromise) {
+          restoreInFlight = null;
+        }
+      }
+    })();
+    restoreInFlight = currentPromise;
+    return currentPromise;
+  },
+
+  async refreshPermissions() {
+    if (get().isLoading) {
+      return get().user;
+    }
+    if (restoreInFlight) {
+      return restoreInFlight;
+    }
+    const existing = getStoredSession();
+    if (!existing) {
+      return null;
+    }
+    const epochAtStart = authEpoch;
+    let currentPromise: Promise<KtnUserSession | null> | null = null;
+    currentPromise = (async () => {
+      try {
+        const verified = await ktnApi.verifySession();
+        if (epochAtStart !== authEpoch || get().isLoading) {
           return get().user;
         }
         set({

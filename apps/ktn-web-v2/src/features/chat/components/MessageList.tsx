@@ -1,12 +1,14 @@
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import { ArrowDown, MessageSquarePlus, History, Loader2 } from 'lucide-react';
-import { ChatMessage } from '../types/chat.types';
+import { ChatMessage, ChatRoom } from '../types/chat.types';
 import { MessageBubble } from './MessageBubble';
 import { formatDateDivider } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 import { shouldGroupWithPreviousMessage } from '../services/chatApi';
 
 interface MessageListProps {
   roomId?: string | null;
+  room?: ChatRoom | null;
   messages: ChatMessage[];
   currentUserEmail: string;
   currentUserName?: string;
@@ -34,6 +36,7 @@ interface PrependScrollAnchor {
 
 export const MessageList: React.FC<MessageListProps> = ({
   roomId = null,
+  room = null,
   messages,
   currentUserEmail,
   currentUserName,
@@ -49,6 +52,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   onRetryMessage,
   onQuickGreeting,
 }) => {
+  const { tr } = useI18n();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
   const rafIdRef = useRef<number | null>(null);
@@ -377,6 +381,8 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   // Empty state — fixes BUG CHAT-02: NO fake teacher message
   if (filteredMessages.length === 0) {
+    const isSupportCenterRoom =
+      room?.recipientTargetType === 'support_center' || room?.hasAssignedTeacher === false;
     return (
       <div
         data-testid="chat-empty-state"
@@ -387,22 +393,60 @@ export const MessageList: React.FC<MessageListProps> = ({
         </div>
         <h3 className="mt-4 font-display text-base font-bold text-stone-900">
           {searchQuery.trim()
-            ? 'Không tìm thấy tin nhắn phù hợp'
-            : 'Chưa có tin nhắn trong lớp. Hãy gửi lời chào đầu tiên!'}
+            ? tr('Không tìm thấy tin nhắn phù hợp', 'No matching messages found')
+            : isSupportCenterRoom
+            ? tr(
+                'Kết nối trực tiếp với Học vụ Khổng Tử Nhí',
+                'Direct support with KTN Academic Office'
+              )
+            : tr(
+                'Chưa có tin nhắn trong lớp. Hãy gửi lời chào đầu tiên!',
+                'No messages in this class yet. Say hello!'
+              )}
         </h3>
         <p className="mt-1.5 max-w-md text-xs leading-relaxed text-stone-600">
           {searchQuery.trim()
-            ? `Không có kết quả nào khớp với từ khóa "${searchQuery}".`
-            : 'Mọi trao đổi với Lão sư chủ nhiệm, bài thu âm phát âm và thông báo lớp học sẽ được lưu trữ an toàn tại đây.'}
+            ? tr(
+                `Không có kết quả nào khớp với từ khóa "${searchQuery}".`,
+                `No results matching "${searchQuery}".`
+              )
+            : isSupportCenterRoom
+            ? tr(
+                'Mọi trao đổi với bộ phận Học vụ Khổng Tử Nhí về lớp học, lịch học và hỗ trợ tài khoản sẽ được lưu trữ an toàn tại đây.',
+                'All discussions with KTN Academic Office regarding classes, schedules, and account support are safely stored here.'
+              )
+            : tr(
+                'Mọi trao đổi với Lão sư chủ nhiệm, bài thu âm phát âm và thông báo lớp học sẽ được lưu trữ an toàn tại đây.',
+                'All discussions with your class teacher, pronunciation recordings, and class announcements are safely stored here.'
+              )}
         </p>
 
         {!searchQuery.trim() && onQuickGreeting && (
           <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {[
-              'Con chào Lão sư ạ! 👋',
-              'Lão sư ơi hôm nay bài tập về nhà là gì ạ?',
-              'Bố/mẹ xin phép trao đổi cùng cô giáo ạ.',
-            ].map((greeting) => (
+            {(isSupportCenterRoom
+              ? [
+                  tr('Em chào Học vụ Khổng Tử Nhí ạ! 👋', 'Hello KTN Academic Office! 👋'),
+                  tr(
+                    'Em/Phụ huynh cần hỗ trợ kiểm tra lịch học và phân lớp ạ.',
+                    'Student/Parent needs support checking schedule and class assignment.'
+                  ),
+                  tr(
+                    'Em xin hỏi thông tin hỗ trợ tài khoản học tập ạ.',
+                    'I would like to ask about learning account support.'
+                  ),
+                ]
+              : [
+                  tr('Con chào Lão sư ạ! 👋', 'Hello Teacher! 👋'),
+                  tr(
+                    'Lão sư ơi hôm nay bài tập về nhà là gì ạ?',
+                    'Teacher, what is the homework for today?'
+                  ),
+                  tr(
+                    'Bố/mẹ xin phép trao đổi cùng cô giáo ạ.',
+                    'Parent would like to discuss with the teacher.'
+                  ),
+                ]
+            ).map((greeting) => (
               <button
                 key={greeting}
                 type="button"
@@ -443,7 +487,11 @@ export const MessageList: React.FC<MessageListProps> = ({
               ) : (
                 <History className="h-3.5 w-3.5 text-red-800" />
               )}
-              <span>{isLoadingOlder ? 'Đang tải tin nhắn cũ...' : 'Xem các tin nhắn trước đó'}</span>
+              <span>
+                {isLoadingOlder
+                  ? tr('Đang tải tin nhắn cũ...', 'Loading older messages...')
+                  : tr('Xem các tin nhắn trước đó', 'View earlier messages')}
+              </span>
             </button>
           </div>
         )}
@@ -495,7 +543,9 @@ export const MessageList: React.FC<MessageListProps> = ({
         >
           <ArrowDown className="h-3.5 w-3.5" />
           <span>
-            {unreadBelowCount > 0 ? `${unreadBelowCount} tin nhắn mới` : 'Về tin mới nhất'}
+            {unreadBelowCount > 0
+              ? tr(`${unreadBelowCount} tin nhắn mới`, `${unreadBelowCount} new messages`)
+              : tr('Về tin mới nhất', 'Jump to latest')}
           </span>
         </button>
       )}

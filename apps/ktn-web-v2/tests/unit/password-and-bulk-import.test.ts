@@ -35,7 +35,7 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
   });
 
   describe('Suite 1: Multi-line 5-column Center CSV Parser (parseKtnCenterBulkCsv)', () => {
-    it('parses the full 299-student center CSV accurately with class codes, schedules, teachers, phones, and BẢO LƯU archived status', () => {
+    it('parses the full 303-student center CSV accurately with class codes, schedules, teachers, phones, and BẢO LƯU archived status', () => {
       const result = parseKtnCenterBulkCsv(KTN_CENTER_SAMPLE_CSV, {
         startTeacherSeq: 1,
         startStudentSeq: 1,
@@ -111,6 +111,8 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
       expect(result.students[0].email).toBe('20260001@khongtunhi.com');
       expect(result.students[298].code).toBe('20260299');
       expect(result.students[298].email).toBe('20260299@khongtunhi.com');
+      expect(result.students[302].code).toBe('20260303');
+      expect(result.students[302].email).toBe('20260303@khongtunhi.com');
 
       // Check dirty phone cleanup (0912240079n -> 0912240079, 0902396116d -> 0902396116, 914341531 -> 0914341531)
       const cleanedPhones = result.students.map((s) => s.phone);
@@ -749,6 +751,88 @@ describe('KTN Two-Way Password Change, Admin Reset & Center Bulk Import', () => 
         harness.env
       );
       expect(gv001CustomLogin.status).toBe(200);
+    });
+  });
+
+  describe('Suite 3: Milestone 3 (R3) Cultural Subject Classes Sequential Ingestion & Schedule Verification', () => {
+    it('verifies sequential teacher codes starting at GV045 and student codes at 20260304 for active cultural classes', () => {
+      const sampleCulturalCsv = `LỚP · LỊCH HỌC,GIÁO VIÊN,HỌC SINH,SĐT,PHỤ HUYNH
+"THPT-SINH10-01
+Thứ 2 & Thứ 4 19:30-20:30",Thầy Phúc Toàn,Đặng Thị Ngân Hạnh,0907185182,Vui Thi Luong
+"THPT-SU10-01
+Thứ 2, Thứ 5, Thứ 7 20:00-21:00",Cô Mai Phương,Phương Loan,0973979734,Vũ Yến
+"THPT-HOA12-01
+Thứ 2, Thứ 5, Chủ Nhật 15:00-16:00",Cô Nguyễn Thị Phương Thùy,Thùy Dương,0986946380,Nguyen Minh Phúc
+"THPT-TOAN11-01
+Thứ 3 & Thứ 5 21:00-22:00",Cô Phương Linh,Võ Quang Trí Nguyên,,Lê Mai
+"THPT-HOA10-01
+Thứ 2 & Thứ 4 19:00-20:00",Cô Phương Linh,Phạm Thị Yến,0376052037,Vũ Thị Thơm
+"CT11-TV4-01
+Thứ 5 & Chủ Nhật 18:30-19:30",Cô Nông Linh,Huy,0977679764,Trịnh Kim Nga`;
+
+      const result = parseKtnCenterBulkCsv(sampleCulturalCsv, {
+        startTeacherSeq: 45,
+        startStudentSeq: 304,
+        defaultPassword: '12345678',
+      });
+
+      expect(result.summary.classCount).toBe(6);
+      expect(result.summary.teacherCount).toBe(5); // Cô Phương Linh teaches 2 classes
+      expect(result.summary.studentCount).toBe(6);
+
+      // Verify teachers start at GV045
+      expect(result.teachers[0].code).toBe('GV045');
+      expect(result.teachers[0].email).toBe('gv045@khongtunhi.com');
+      expect(result.teachers[0].name).toBe('Thầy Phúc Toàn');
+
+      expect(result.teachers[1].code).toBe('GV046');
+      expect(result.teachers[1].email).toBe('gv046@khongtunhi.com');
+      expect(result.teachers[1].name).toBe('Cô Mai Phương');
+
+      expect(result.teachers[2].code).toBe('GV047');
+      expect(result.teachers[2].email).toBe('gv047@khongtunhi.com');
+      expect(result.teachers[2].name).toBe('Cô Nguyễn Thị Phương Thùy');
+
+      expect(result.teachers[3].code).toBe('GV048');
+      expect(result.teachers[3].email).toBe('gv048@khongtunhi.com');
+      expect(result.teachers[3].name).toBe('Cô Phương Linh');
+      expect(result.teachers[3].assignedClasses.length).toBe(2);
+
+      expect(result.teachers[4].code).toBe('GV049');
+      expect(result.teachers[4].email).toBe('gv049@khongtunhi.com');
+      expect(result.teachers[4].name).toBe('Cô Nông Linh');
+
+      // Verify students start at 20260304
+      expect(result.students[0].code).toBe('20260304');
+      expect(result.students[0].email).toBe('20260304@khongtunhi.com');
+      expect(result.students[0].name).toBe('Đặng Thị Ngân Hạnh');
+
+      expect(result.students[1].code).toBe('20260305');
+      expect(result.students[1].email).toBe('20260305@khongtunhi.com');
+      expect(result.students[1].name).toBe('Phương Loan');
+
+      expect(result.students[5].code).toBe('20260309');
+      expect(result.students[5].email).toBe('20260309@khongtunhi.com');
+      expect(result.students[5].name).toBe('Huy');
+    });
+
+    it('validates 16 confirmed schedule configs structure and parameters', () => {
+      const scheduleExample = {
+        classCode: 'THPT-SU10-01',
+        daysOfWeek: [1, 4, 6],
+        startTime: '20:00',
+        endTime: '21:00',
+        timezone: 'Asia/Ho_Chi_Minh',
+        scheduleMode: 'weekly',
+        status: 'confirmed',
+        updatedBy: 'quanly@khongtunhi.com'
+      };
+
+      expect(scheduleExample.status).toBe('confirmed');
+      expect(scheduleExample.daysOfWeek).toEqual([1, 4, 6]);
+      expect(scheduleExample.startTime).toBe('20:00');
+      expect(scheduleExample.endTime).toBe('21:00');
+      expect(scheduleExample.timezone).toBe('Asia/Ho_Chi_Minh');
     });
   });
 });

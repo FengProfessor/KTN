@@ -8,6 +8,13 @@ import type {
   PinnedAnnouncement
 } from '@/features/chat/types/chat.types';
 import type { KtnStudentProfile } from '@/types/ktn.types';
+import {
+  getCurrentLang,
+  trStatic,
+  translateCourseTitle,
+  translateScheduleText,
+  type AppLanguage,
+} from '@/i18n';
 
 import { formatDateDivider, formatFileSize } from '@/lib/utils';
 
@@ -19,6 +26,10 @@ const PLACEHOLDER_ROOM_MESSAGES = new Set([
   'nhấn để mở phòng trao đổi lớp học',
   'chưa có tin nhắn mới',
   'bắt đầu cuộc trò chuyện 1-1',
+  'no messages yet. send the first greeting!',
+  'no new messages',
+  'no messages yet',
+  'start a 1-1 conversation',
 ]);
 
 export function normalizeVietnameseSearchText(input?: string | null): string {
@@ -85,8 +96,83 @@ export function sortChatRoomsLatestFirst(rooms: ChatRoom[]): ChatRoom[] {
     const typeRank = (t?: string) => (t === 'class' ? 0 : t === 'course' ? 1 : 2);
     const rankDiff = typeRank(a.type) - typeRank(b.type);
     if (rankDiff !== 0) return rankDiff;
-    return String(a.roomId || '').localeCompare(String(b.roomId || ''), 'vi');
+    return String(a.roomId || '').localeCompare(
+      String(b.roomId || ''),
+      getCurrentLang() === 'en' ? 'en' : 'vi'
+    );
   });
+}
+
+export function translateTeacherDisplayName(
+  name?: string | null,
+  langOverride?: AppLanguage
+): string {
+  const raw = String(name || '').trim();
+  const lang = langOverride ?? getCurrentLang();
+  if (lang !== 'en' || !raw) return raw;
+  if (raw === 'Ban Giảng Huấn KTN') return 'KTN Academic Team';
+  if (raw === 'Học vụ Khổng Tử Nhí') return 'KTN Academic Office';
+  if (raw === 'Trung tâm Khổng Tử Nhí') return 'KTN Center';
+  if (raw === 'Chưa phân công giáo viên') return 'No teacher assigned yet';
+  return translateScheduleText(raw, 'en')
+    .replace(/^Cô\s+/i, 'Ms. ')
+    .replace(/^Thầy\s+/i, 'Mr. ');
+}
+
+export function translateChatRoomLabel(
+  label?: string | null,
+  _roomType?: ChatRoom['type'],
+  langOverride?: AppLanguage
+): string {
+  const raw = String(label || '').trim();
+  const lang = langOverride ?? getCurrentLang();
+  if (lang !== 'en' || !raw) return raw;
+
+  if (raw === 'Lão sư Chủ nhiệm & Học vụ KTN (1-1)') {
+    return 'Homeroom Teacher & KTN Academic Support (1-1)';
+  }
+  if (raw === '1-1 Giáo viên') return '1-1 Teacher';
+  if (raw === 'Nhắn riêng Cô') return 'Private chat with Teacher';
+  if (raw === '🏢 Học vụ Khổng Tử Nhí') return '🏢 KTN Academic Office';
+  if (raw === 'Học vụ Khổng Tử Nhí') return 'KTN Academic Office';
+  if (raw === 'Học vụ KTN (Trung tâm)') return 'KTN Academic Office (Center)';
+  if (raw === 'Học vụ KTN') return 'KTN Academic Office';
+  if (raw === 'Trung tâm') return 'KTN Center';
+
+  const courseTranslated = translateCourseTitle(raw, 'en');
+  if (courseTranslated !== raw) return courseTranslated;
+
+  let out = raw
+    .replace(/Nhóm\s+Lớp\s+/gi, 'Class Group ')
+    .replace(/\(Trao\s+đổi\s+1-1\)/gi, '(1-1 Direct)')
+    .replace(/^Học\s+viên\s*\(/i, 'Student (')
+    .replace(/^Phòng\s+/i, 'Room ')
+    .replace(/^Cô\s+/i, 'Ms. ')
+    .replace(/^Thầy\s+/i, 'Mr. ');
+
+  out = translateScheduleText(out, 'en');
+  return out;
+}
+
+export function translateAttachmentFallbackName(
+  name?: string | null,
+  langOverride?: AppLanguage
+): string {
+  const raw = String(name || '').trim();
+  const lang = langOverride ?? getCurrentLang();
+  if (lang !== 'en' || !raw) return raw;
+  const map: Record<string, string> = {
+    'Tệp đính kèm': 'Attachment',
+    'Hình ảnh lớp học': 'Class image',
+    'Video lớp học': 'Class video',
+    'Video đính kèm': 'Attached video',
+    'Tin nhắn thoại': 'Voice message',
+    'Bản thu âm': 'Voice recording',
+    'Tài liệu PDF': 'PDF Document',
+    'Tài liệu học tập': 'Study document',
+    'Tài liệu đính kèm': 'Attached document',
+  };
+  return map[raw] || raw;
 }
 
 export function isImageAttachmentPlaceholder(
@@ -95,8 +181,8 @@ export function isImageAttachmentPlaceholder(
 ): boolean {
   const trimmed = String(content || '').trim();
   if (
-    /^\[Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?(?:\]|$)/i.test(trimmed) ||
-    /^\[(?:Ảnh|Hình ảnh)(?: đính kèm)?(?::\s*[^\r\n]*)?(?:\]|$)/i.test(trimmed)
+    /^\[(?:Đã (?:gửi|đính kèm)|Sent|Attached) (?:ảnh|hình ảnh|an image|image)(?::\s*[^\r\n]*)?(?:\]|$)/i.test(trimmed) ||
+    /^\[(?:Ảnh|Hình ảnh|Image)(?: đính kèm| attached)?(?::\s*[^\r\n]*)?(?:\]|$)/i.test(trimmed)
   ) {
     return true;
   }
@@ -110,29 +196,42 @@ export function isImageAttachmentPlaceholder(
 
 export function formatQuotedReplyText(
   content?: string | null,
-  attachment?: ChatAttachment | null
+  attachment?: ChatAttachment | null,
+  langOverride?: AppLanguage
 ): string {
+  const lang = langOverride ?? getCurrentLang();
   const trimmed = String(content || '').trim();
-  if (isImageAttachmentPlaceholder(trimmed, attachment)) {
-    return '📷 Hình ảnh';
+  if (
+    isImageAttachmentPlaceholder(trimmed, attachment) ||
+    trimmed === '📷 Hình ảnh' ||
+    trimmed === '📷 Image'
+  ) {
+    return trStatic('📷 Hình ảnh', '📷 Image', lang);
   }
-  const fileMatch = trimmed.match(/^\[Đã (?:đính kèm|gửi) (?:tệp|file):\s*([^\r\n\]]+)(?:\]|$)/i);
+  if (trimmed === '🎤 Tin nhắn thoại' || trimmed === '🎤 Voice message') {
+    return trStatic('🎤 Tin nhắn thoại', '🎤 Voice message', lang);
+  }
+  const fileMatch = trimmed.match(
+    /^\[(?:Đã (?:đính kèm|gửi) (?:tệp|file)|(?:Attached|Sent) file):\s*([^\r\n\]]+)(?:\]|$)/i
+  );
   if (fileMatch) {
     return `📎 ${fileMatch[1].trim()}`;
   }
-  const videoMatch = trimmed.match(/^\[Đã gửi video:\s*([^\r\n\]]+)(?:\]|$)/i);
+  const videoMatch = trimmed.match(/^\[(?:Đã gửi|Sent) video:\s*([^\r\n\]]+)(?:\]|$)/i);
   if (videoMatch) {
     return `🎬 ${videoMatch[1].trim()}`;
   }
   if (!trimmed && attachment) {
     if (attachment.kind === 'pdf' || attachment.kind === 'file') {
-      return `📎 ${attachment.name || 'Tài liệu đính kèm'}`;
+      const attName = translateAttachmentFallbackName(attachment.name, lang);
+      return `📎 ${attName || trStatic('Tài liệu đính kèm', 'Attached document', lang)}`;
     }
     if (attachment.kind === 'video') {
-      return `🎬 ${attachment.name || 'Video'}`;
+      const attName = translateAttachmentFallbackName(attachment.name, lang);
+      return `🎬 ${attName || 'Video'}`;
     }
     if (attachment.kind === 'audio') {
-      return '🎤 Tin nhắn thoại';
+      return trStatic('🎤 Tin nhắn thoại', '🎤 Voice message', lang);
     }
   }
   return trimmed;
@@ -146,13 +245,13 @@ export function isRedundantAttachmentPlaceholder(
   if (!hasAttachment) return false;
   const trimmed = String(content || '').trim();
   if (!trimmed) return true;
-  if (/^\[Đã gửi (?:ảnh|hình ảnh|video|tệp|file|âm thanh)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
+  if (/^\[(?:Đã gửi|Sent) (?:ảnh|hình ảnh|video|tệp|file|âm thanh|image|audio)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
     return true;
   }
-  if (/^\[Đã đính kèm (?:tệp|file|ảnh|hình ảnh)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
+  if (/^\[(?:Đã đính kèm|Attached) (?:tệp|file|ảnh|hình ảnh|image)(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
     return true;
   }
-  if (/^\[(?:Ảnh|Hình ảnh|Video|Tệp|File|Âm thanh)(?: đính kèm)?(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
+  if (/^\[(?:Ảnh|Hình ảnh|Video|Tệp|File|Âm thanh|Image|Audio)(?: đính kèm| attached)?(?::\s*[^\r\n]+)?\]$/i.test(trimmed)) {
     return true;
   }
   if (attachmentName && trimmed.toLowerCase() === String(attachmentName).trim().toLowerCase()) {
@@ -172,9 +271,13 @@ export function getDisplayMessageCaption(
   return rawContent;
 }
 
-export function truncateFileName(name?: string | null, maxLength = 28): string {
+export function truncateFileName(
+  name?: string | null,
+  maxLength = 28,
+  langOverride?: AppLanguage
+): string {
   const clean = String(name || '').trim();
-  if (!clean) return 'Tệp đính kèm';
+  if (!clean) return trStatic('Tệp đính kèm', 'Attachment', langOverride);
   if (clean.length <= maxLength) return clean;
   const dotIdx = clean.lastIndexOf('.');
   if (dotIdx > 0 && clean.length - dotIdx <= 8) {
@@ -188,23 +291,31 @@ export function truncateFileName(name?: string | null, maxLength = 28): string {
   return `${clean.slice(0, Math.max(8, maxLength - 1))}…`;
 }
 
-export function formatRoomPreviewText(room: ChatRoom): string {
+export function formatRoomPreviewText(
+  room: ChatRoom,
+  langOverride?: AppLanguage
+): string {
+  const lang = langOverride ?? getCurrentLang();
   if (!hasRoomRealMessages(room)) {
-    return room.type === 'student' ? 'Bắt đầu cuộc trò chuyện 1-1' : 'Chưa có tin nhắn';
+    return room.type === 'student'
+      ? trStatic('Bắt đầu cuộc trò chuyện 1-1', 'Start a 1-1 conversation', lang)
+      : trStatic('Chưa có tin nhắn', 'No messages yet', lang);
   }
+  const imageLabel = trStatic('📷 Hình ảnh', '📷 Image', lang);
   const raw = String(room.lastMessage || '').trim();
   let preview = raw
-    .replace(/^\[Trả lời (?:[^\]:]+:\s*"[^\r\n]*"|[^\]]+)\]\s*/i, '↩ ')
-    .replace(/\[Đã gửi (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?(?:\]|$)/i, '📷 Hình ảnh')
-    .replace(/\[Đã đính kèm (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?(?:\]|$)/i, '📷 Hình ảnh')
-    .replace(/\[(?:Ảnh|Hình ảnh)(?: đính kèm)?(?:\]|$)/i, '📷 Hình ảnh')
-    .replace(/\[Đã gửi video:\s*([^\r\n\]]+)(?:\]|$)/i, (_m, fn) => `🎬 Video (${truncateFileName(fn, 18)})`)
-    .replace(/\[Đã đính kèm (?:tệp|file):\s*([^\r\n\]]+)(?:\]|$)/i, (_m, fn) => `📎 ${truncateFileName(fn, 20)}`)
+    .replace(/^\[(?:Trả lời|Reply to) (?:[^\]:]+:\s*"[^\r\n]*"|[^\]]+)\]\s*/i, '↩ ')
+    .replace(/\[(?:Đã gửi|Sent) (?:ảnh|hình ảnh|an image|image)(?::\s*[^\r\n]*)?(?:\]|$)/i, imageLabel)
+    .replace(/\[(?:Đã đính kèm|Attached) (?:ảnh|hình ảnh|an image|image)(?::\s*[^\r\n]*)?(?:\]|$)/i, imageLabel)
+    .replace(/\[(?:Ảnh|Hình ảnh|Image)(?: đính kèm| attached)?(?:\]|$)/i, imageLabel)
+    .replace(/📷\s*(?:Hình ảnh|Image)/g, imageLabel)
+    .replace(/\[(?:Đã gửi|Sent) video:\s*([^\r\n\]]+)(?:\]|$)/i, (_m, fn) => `🎬 Video (${truncateFileName(fn, 18, lang)})`)
+    .replace(/\[(?:Đã đính kèm|Attached) (?:tệp|file):\s*([^\r\n\]]+)(?:\]|$)/i, (_m, fn) => `📎 ${truncateFileName(fn, 20, lang)}`)
     .replace(/\s+/g, ' ')
     .trim();
 
   if (!preview || preview === '↩') {
-    preview = preview === '↩' ? '↩ 📷 Hình ảnh' : '📷 Hình ảnh';
+    preview = preview === '↩' ? `↩ ${imageLabel}` : imageLabel;
   }
 
   if (room.type !== 'student' && room.lastSenderName) {
@@ -270,7 +381,12 @@ async function ensureRemoteAttachment(att: ChatAttachment): Promise<ChatAttachme
   }
 
   if (!blob || blob.size <= 0) {
-    throw new Error('Không thể đọc dữ liệu tệp đính kèm. Vui lòng chọn lại tệp.');
+    throw new Error(
+      trStatic(
+        'Không thể đọc dữ liệu tệp đính kèm. Vui lòng chọn lại tệp.',
+        'Unable to read attachment data. Please select the file again.'
+      )
+    );
   }
 
   const uploaded = await ktnApi.uploadChatFile(
@@ -288,7 +404,12 @@ async function ensureRemoteAttachment(att: ChatAttachment): Promise<ChatAttachme
   );
 
   if (!uploaded?.fileUrl || !/^https?:\/\//i.test(uploaded.fileUrl)) {
-    throw new Error('Không nhận được URL lưu trữ hợp lệ sau khi tải tệp lên S3.');
+    throw new Error(
+      trStatic(
+        'Không nhận được URL lưu trữ hợp lệ sau khi tải tệp lên S3.',
+        'Did not receive a valid storage URL after uploading the file to S3.'
+      )
+    );
   }
 
   return {
@@ -304,7 +425,7 @@ export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment |
   if (!rawUrl || !rawUrl.trim()) return null;
   const s = rawUrl.trim();
   let kind: AttachmentKind = 'file';
-  let name = 'Tệp đính kèm';
+  let name = trStatic('Tệp đính kèm', 'Attachment');
   let sizeLabel = '';
   let sizeBytes: number | undefined;
   let mimeType: string | undefined;
@@ -326,16 +447,16 @@ export function parseAttachmentFromUrl(rawUrl?: string | null): ChatAttachment |
       const rawFileName = s.split('#')[0].split('?')[0].split('/').pop() || '';
       name = rawFileName && /\.(png|jpg|jpeg|webp|gif|svg|bmp|heic)$/i.test(rawFileName)
         ? rawFileName.replace(/^\d{10,15}-/, '')
-        : 'Hình ảnh lớp học';
+        : trStatic('Hình ảnh lớp học', 'Class image');
     } else if (/\.(mp4|mov|m4v)(\?|$)/i.test(s)) {
       kind = 'video';
-      name = 'Video lớp học';
+      name = trStatic('Video lớp học', 'Class video');
     } else if (/^data:audio\/|\.(wav|mp3|m4a|webm|ogg)(\?|$)/i.test(s)) {
       kind = 'audio';
-      name = 'Tin nhắn thoại';
+      name = trStatic('Tin nhắn thoại', 'Voice message');
     } else if (/\.pdf(\?|$)/i.test(s)) {
       kind = 'pdf';
-      name = s.split('/').pop()?.split('?')[0] || 'Tài liệu PDF';
+      name = s.split('/').pop()?.split('?')[0] || trStatic('Tài liệu PDF', 'PDF Document');
     }
   } catch {
     // Fallback
@@ -376,7 +497,7 @@ export function normalizeServerMessage(raw: Record<string, unknown>): ChatMessag
   let replyTo: ChatMessage['replyTo'] = null;
   let cleanContent = rawContent;
 
-  const replyMatch = rawContent.match(/^\[Trả lời ([^\]:]+): "([^\r\n]*)"\](?:\r?\n|$)([\s\S]*)$/);
+  const replyMatch = rawContent.match(/^\[(?:Trả lời|Reply to) ([^\]:]+): "([^\r\n]*)"\](?:\r?\n|$)([\s\S]*)$/);
   if (replyMatch) {
     replyTo = {
       id: 'quoted',
@@ -400,7 +521,7 @@ export function normalizeServerMessage(raw: Record<string, unknown>): ChatMessag
     room_id: String(raw.room_id || raw.class_code || ''),
     class_code: typeof raw.class_code === 'string' ? raw.class_code : undefined,
     sender_email: String(raw.sender_email || ''),
-    sender_name: String(raw.sender_name || 'Thành viên KTN'),
+    sender_name: String(raw.sender_name || trStatic('Thành viên KTN', 'KTN Member')),
     sender_role: (raw.sender_role as ChatMessage['sender_role']) || 'student',
     content: cleanContent,
     attachment_url: attUrl,
@@ -555,7 +676,12 @@ export const chatApi = {
     });
 
     if (!res.persisted || !res.message || !res.message.id) {
-      throw new Error('Máy chủ chưa xác nhận lưu tin nhắn.');
+      throw new Error(
+        trStatic(
+          'Máy chủ chưa xác nhận lưu tin nhắn.',
+          'Server has not confirmed saving the message.'
+        )
+      );
     }
 
     const msg = normalizeServerMessage(res.message);

@@ -1,5 +1,6 @@
-// Khổng Tử Nhí — Unified Service Worker (Apple APNs & Google FCM Web Push + PWA Shell)
-const SHELL_CACHE_NAME = 'ktn-sll-shell-v2';
+// Khổng Tử Nhí — Unified Service Worker (Apple APNs, Google FCM, Windows/macOS Desktop PWA & Web Push)
+const KTN_SW_CACHE_PREFIX = 'ktn-pwa-v3';
+const KTN_SW_ICON_192 = '/icons/icon-192.png';
 const CDN_LOGO = 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/sofl-remake/logo.png';
 const VAPID_PUBLIC_KEY = 'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
 const RECENT_PUSH_EVENT_IDS = new Map();
@@ -58,46 +59,60 @@ self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
+self.addEventListener('fetch', () => {});
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    self.clients.claim().then(() => {
-      if (!self.registration || !self.registration.pushManager) return;
-      const expectedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-      return self.registration.pushManager.getSubscription().then((sub) => {
-        if (!sub) return;
-        let previousEndpoint = '';
-        let subPromise = Promise.resolve(sub);
-        if (!hasMatchingApplicationServerKey(sub, expectedKey)) {
-          previousEndpoint = sub.endpoint || '';
-          subPromise = sub.unsubscribe().catch(() => false).then(() =>
-            self.registration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: expectedKey
-            })
-          );
-        }
-        return subPromise.then((activeSub) => {
-          if (!activeSub) return;
-          return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-            if (windowClients && windowClients.length > 0) {
-              windowClients.forEach((client) => {
-                client.postMessage({
-                  type: 'KTN_PUSH_SUBSCRIPTION_CHANGED',
-                  subscription: activeSub.toJSON(),
-                  previousEndpoint: previousEndpoint || undefined
+    Promise.resolve()
+      .then(() => {
+        if (typeof caches === 'undefined' || !caches.keys) return;
+        return caches.keys().then((keys) =>
+          Promise.all(
+            keys
+              .filter((k) => k && k !== KTN_SW_CACHE_PREFIX && /^ktn-/i.test(k))
+              .map((k) => caches.delete(k).catch(() => false))
+          )
+        );
+      })
+      .then(() => self.clients.claim())
+      .then(() => {
+        if (!self.registration || !self.registration.pushManager) return;
+        const expectedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+        return self.registration.pushManager.getSubscription().then((sub) => {
+          if (!sub) return;
+          let previousEndpoint = '';
+          let subPromise = Promise.resolve(sub);
+          if (!hasMatchingApplicationServerKey(sub, expectedKey)) {
+            previousEndpoint = sub.endpoint || '';
+            subPromise = sub.unsubscribe().catch(() => false).then(() =>
+              self.registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: expectedKey
+              })
+            );
+          }
+          return subPromise.then((activeSub) => {
+            if (!activeSub) return;
+            return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+              if (windowClients && windowClients.length > 0) {
+                windowClients.forEach((client) => {
+                  client.postMessage({
+                    type: 'KTN_PUSH_SUBSCRIPTION_CHANGED',
+                    subscription: activeSub.toJSON(),
+                    previousEndpoint: previousEndpoint || undefined
+                  });
                 });
-              });
-              return;
-            }
-            return syncSubscriptionToBackend(activeSub, previousEndpoint);
+                return;
+              }
+              return syncSubscriptionToBackend(activeSub, previousEndpoint);
+            });
           });
-        });
-      }).catch(() => null);
-    })
+        }).catch(() => null);
+      })
   );
 });
 
-// 1. Nhận Web Push từ Apple APNs / Google FCM ngay cả khi đã vuốt đóng hẳn ứng dụng / khóa màn hình
+// 1. Nhận Web Push từ Apple APNs / Google FCM ngay cả khi đã đóng hẳn ứng dụng / khóa màn hình
 self.addEventListener('push', (event) => {
   let payload = {};
   try {
@@ -124,11 +139,12 @@ self.addEventListener('push', (event) => {
   const eventType = String(notif.eventType || notif.type || (notif.data && notif.data.type) || 'notification');
   const options = {
     body: notif.body || 'Chạm để mở ứng dụng xem chi tiết.',
-    icon: notif.icon || CDN_LOGO,
-    badge: notif.badge || CDN_LOGO,
+    icon: notif.icon || KTN_SW_ICON_192 || CDN_LOGO,
+    badge: notif.badge || KTN_SW_ICON_192 || CDN_LOGO,
     tag: eventId,
     renotify: true,
     requireInteraction: false,
+    timestamp: Number(notif.timestamp) || Date.now(),
     data: {
       url: targetUrl,
       action_url: targetUrl,
@@ -142,7 +158,8 @@ self.addEventListener('push', (event) => {
       homeworkId: notif.homeworkId || (notif.data && notif.data.homeworkId) || '',
       courseId: notif.courseId || (notif.data && notif.data.courseId) || '',
       lessonNum: notif.lessonNum || (notif.data && notif.data.lessonNum) || null,
-      sessionNum: notif.sessionNum || (notif.data && notif.data.sessionNum) || null
+      sessionNum: notif.sessionNum || (notif.data && notif.data.sessionNum) || null,
+      messageId: notif.messageId || ''
     },
     vibrate: [200, 100, 200]
   };
@@ -179,7 +196,7 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// 2. Tự động gia hạn Push Subscription vĩnh viễn nếu Apple/Google xoay vòng token (Cài 1 lần - Vĩnh viễn)
+// 2. Tự động gia hạn Push Subscription vĩnh viễn nếu Apple/Google xoay vòng token
 self.addEventListener('pushsubscriptionchange', (event) => {
   const prevEndpoint = (event && event.oldSubscription && event.oldSubscription.endpoint) ? event.oldSubscription.endpoint : '';
   event.waitUntil(
@@ -212,14 +229,16 @@ self.addEventListener('message', (event) => {
     }
     const eventId = rawId || ('ktn-local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));
     const title = data.title || 'Học Viện Khổng Tử Nhí';
+    const targetUrl = (data.data && (data.data.action_url || data.data.url)) || data.url || '/custom-page/so-lien-lac-test#/notifications';
     const options = {
       body: data.body || '',
-      icon: data.icon || CDN_LOGO,
-      badge: CDN_LOGO,
+      icon: data.icon || KTN_SW_ICON_192 || CDN_LOGO,
+      badge: KTN_SW_ICON_192 || CDN_LOGO,
       tag: eventId,
       renotify: true,
       data: {
-        url: (data.data && data.data.action_url) || data.url || '/custom-page/so-lien-lac-test#/notifications',
+        url: targetUrl,
+        action_url: targetUrl,
         id: eventId,
         eventId: eventId
       },
@@ -307,7 +326,7 @@ function resolveSwColdOpenUrl(data) {
   return '/custom-page/so-lien-lac-test#' + route;
 }
 
-// 4. Khi người dùng chạm vào thông báo ngoài Màn hình khóa iPhone / Android
+// 4. Khi người dùng chạm vào thông báo ngoài Màn hình khóa iPhone / Android / Desktop
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};
@@ -315,11 +334,15 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (const client of windowClients) {
-        if ('focus' in client) {
-          client.postMessage({ type: 'KTN_NOTIFICATION_CLICKED', data });
-          return client.focus();
-        }
+      const portalClient = windowClients.find((c) => c && typeof c.url === 'string' && c.url.includes('/custom-page/so-lien-lac'));
+      if (portalClient) {
+        portalClient.postMessage({ type: 'KTN_NOTIFICATION_CLICKED', targetUrl, data });
+        if ('focus' in portalClient) return portalClient.focus();
+        return;
+      }
+      const anyClient = windowClients[0];
+      if (anyClient && typeof anyClient.navigate === 'function') {
+        return anyClient.navigate(targetUrl).then((c) => (c && 'focus' in c ? c.focus() : null));
       }
       if (self.clients.openWindow) {
         return self.clients.openWindow(targetUrl);

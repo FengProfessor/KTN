@@ -1,5 +1,6 @@
 // Shared 5-column multi-line CSV/TSV parser for Khổng Tử Nhí Bulk Import
 // Columns: LỚP · LỊCH HỌC | GIÁO VIÊN | HỌC SINH | SĐT | PHỤ HUYNH
+import { getCurrentLang, trStatic, type AppLanguage } from '@/i18n';
 
 export interface BulkImportParsedClass {
   code: string;
@@ -60,12 +61,37 @@ export interface BulkImportParseResult {
   };
 }
 
+export function stripFormulaWrapper(val: string): string {
+  let s = String(val || '').trim();
+  if (s.startsWith('=')) {
+    s = s.slice(1).trim();
+    if (s.startsWith('"') && s.endsWith('"') && s.length >= 2) {
+      s = s.slice(1, -1);
+    }
+  }
+  return s.trim();
+}
+
 export function tokenizeMultilineCsv(rawText: string): string[][] {
-  const text = String(rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const firstQuoteIdx = text.indexOf('"');
-  const sampleSlice = firstQuoteIdx >= 0 ? text.slice(0, firstQuoteIdx) : text.slice(0, 600);
-  const tabCount = (sampleSlice.match(/\t/g) || []).length;
-  const commaCount = (sampleSlice.match(/,/g) || []).length;
+  const text = String(rawText || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+
+  // Delimiter detection: sample initial characters and count tabs vs commas outside quotes
+  let inQ = false;
+  let tabCount = 0;
+  let commaCount = 0;
+  const sampleLimit = Math.min(text.length, 1200);
+  for (let i = 0; i < sampleLimit; i += 1) {
+    const c = text[i];
+    if (c === '"') {
+      inQ = !inQ;
+    } else if (!inQ) {
+      if (c === '\t') tabCount += 1;
+      else if (c === ',') commaCount += 1;
+    }
+  }
   const delimiter = tabCount > commaCount ? '\t' : ',';
 
   const rows: string[][] = [];
@@ -115,7 +141,10 @@ function stripViAccents(str: string): string {
     .replace(/Đ/g, 'D');
 }
 
-export function deriveCanonicalClassCode(rawClassCell: string): {
+export function deriveCanonicalClassCode(
+  rawClassCell: string,
+  lang: AppLanguage = getCurrentLang()
+): {
   code: string;
   title: string;
   schedule: string;
@@ -128,7 +157,9 @@ export function deriveCanonicalClassCode(rawClassCell: string): {
   if (lines.length === 0) return null;
 
   const titleLine = lines[0];
-  const scheduleLine = lines.slice(1).join(' · ').trim() || 'Đang cập nhật lịch học';
+  const scheduleLine =
+    lines.slice(1).join(' · ').trim() ||
+    trStatic('Đang cập nhật lịch học', 'Schedule pending', lang);
   const upperNoAccent = stripViAccents(titleLine).toUpperCase().replace(/\s+/g, ' ').trim();
 
   const isArchived = upperNoAccent.includes('BAO LUU');
@@ -242,7 +273,10 @@ for (const def of KTN_CANONICAL_TEACHER_DEFINITIONS) {
   }
 }
 
-export function normalizeBulkTeacherIdentity(rawTeacherCell: string): {
+export function normalizeBulkTeacherIdentity(
+  rawTeacherCell: string,
+  lang: AppLanguage = getCurrentLang()
+): {
   key: string;
   displayName: string;
   cleanName: string;
@@ -259,10 +293,11 @@ export function normalizeBulkTeacherIdentity(rawTeacherCell: string): {
     noAccent === 'trong' ||
     noAccent === 'n/a'
   ) {
+    const unassignedLabel = trStatic('Chưa phân công', 'Unassigned', lang);
     return {
       key: '__unassigned__',
-      displayName: 'Chưa phân công',
-      cleanName: 'Chưa phân công',
+      displayName: unassignedLabel,
+      cleanName: unassignedLabel,
       preferredCode: '',
       preferredEmail: '',
       isUnassigned: true
@@ -283,10 +318,11 @@ export function normalizeBulkTeacherIdentity(rawTeacherCell: string): {
     .replace(/\b(gv\d+|giao vien|co|thay)\b/g, '')
     .replace(/[^a-z0-9]+/g, '');
   if (!rawKey) {
+    const unassignedLabel = trStatic('Chưa phân công', 'Unassigned', lang);
     return {
       key: '__unassigned__',
-      displayName: 'Chưa phân công',
-      cleanName: 'Chưa phân công',
+      displayName: unassignedLabel,
+      cleanName: unassignedLabel,
       preferredCode: '',
       preferredEmail: '',
       isUnassigned: true
@@ -317,13 +353,23 @@ export function normalizeBulkTeacherIdentity(rawTeacherCell: string): {
   };
 }
 
-export function cleanBulkPhoneValue(rawPhone: string): { phone: string; warning: string | null } {
-  const raw = String(rawPhone || '').trim();
+export function cleanBulkPhoneValue(
+  rawPhone: string,
+  lang: AppLanguage = getCurrentLang()
+): { phone: string; warning: string | null } {
+  const raw = stripFormulaWrapper(String(rawPhone || '')).trim();
   if (!raw) return { phone: '', warning: null };
   const hadTrailingLetters = /[a-zA-Z]/.test(raw);
   let digits = raw.replace(/\D+/g, '');
   if (!digits) {
-    return { phone: '', warning: `SĐT không hợp lệ ("${raw}") đã được làm trống.` };
+    return {
+      phone: '',
+      warning: trStatic(
+        `SĐT không hợp lệ ("${raw}") đã được làm trống.`,
+        `Invalid phone ("${raw}") was cleared.`,
+        lang
+      )
+    };
   }
   if (digits.startsWith('84') && digits.length >= 11) {
     digits = `0${digits.slice(2)}`;
@@ -332,7 +378,11 @@ export function cleanBulkPhoneValue(rawPhone: string): { phone: string; warning:
   }
   const warning =
     hadTrailingLetters || digits !== raw.replace(/\s+/g, '')
-      ? `Đã làm sạch SĐT "${raw}" -> "${digits}".`
+      ? trStatic(
+          `Đã làm sạch SĐT "${raw}" -> "${digits}".`,
+          `Cleaned phone "${raw}" -> "${digits}".`,
+          lang
+        )
       : null;
   return { phone: digits, warning };
 }
@@ -345,8 +395,10 @@ export function parseKtnCenterBulkCsv(
     existingTeachers?: Array<{ code?: string; email?: string; name?: string }>;
     existingStudents?: Array<{ code?: string; email?: string; name?: string; phone?: string; class_code?: string; classCode?: string }>;
     defaultPassword?: string;
+    lang?: AppLanguage;
   } = {}
 ): BulkImportParseResult {
+  const lang = options.lang ?? getCurrentLang();
   const existingTeacherByKey = new Map<string, { code: string; email: string; seqNum: number }>();
   const existingCodeOrEmailSet = new Set<string>();
   let maxTeacherSeq = Math.max(44, Number(options.startTeacherSeq ? options.startTeacherSeq - 1 : 44));
@@ -372,7 +424,7 @@ export function parseKtnCenterBulkCsv(
         }
       }
       if (!options.startTeacherSeq && t?.name && (codeStr || emailStr)) {
-        const ident = normalizeBulkTeacherIdentity(String(t.name));
+        const ident = normalizeBulkTeacherIdentity(String(t.name), lang);
         if (!ident.isUnassigned) {
           if (ident.preferredCode && ident.preferredEmail) {
             existingTeacherByKey.set(ident.key, {
@@ -441,7 +493,7 @@ export function parseKtnCenterBulkCsv(
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, ' ')
           .trim();
-        const cleanPhone = cleanBulkPhoneValue(String(s?.phone || '')).phone;
+        const cleanPhone = cleanBulkPhoneValue(String(s?.phone || ''), lang).phone;
         if (resolvedCode && resolvedEmail && normName) {
           existingStudentCandidates.push({
             code: resolvedCode,
@@ -481,41 +533,54 @@ export function parseKtnCenterBulkCsv(
     schedule: string;
     isArchived: boolean;
   } | null = null;
-  let currentTeacher = normalizeBulkTeacherIdentity('');
+  let currentTeacher = normalizeBulkTeacherIdentity('', lang);
 
   for (let idx = 0; idx < rows.length; idx += 1) {
     const row = rows[idx];
-    const col0 = String(row[0] || '').trim();
-    const col1 = String(row[1] || '').trim();
-    const col2 = String(row[2] || '').trim();
-    const col3 = String(row[3] || '').trim();
-    const col4 = String(row[4] || '').trim();
+    const col0 = stripFormulaWrapper(String(row[0] || '')).trim();
+    const col1 = stripFormulaWrapper(String(row[1] || '')).trim();
+    const col2 = stripFormulaWrapper(String(row[2] || '')).trim();
+    const col3 = stripFormulaWrapper(String(row[3] || '')).trim();
+    const col4 = stripFormulaWrapper(String(row[4] || '')).trim();
 
     if (!col0 && !col1 && !col2 && !col3 && !col4) continue;
 
     const headerProbe = stripViAccents(`${col0}|${col1}|${col2}`).toUpperCase();
-    if (
-      (headerProbe.includes('LOP') && headerProbe.includes('LICH HOC')) ||
-      (headerProbe.includes('GIAO VIEN') && headerProbe.includes('HOC SINH'))
-    ) {
+    const isHeaderRow =
+      ((headerProbe.includes('LOP') || headerProbe.includes('KHOA HOC')) &&
+        (headerProbe.includes('LICH') ||
+          headerProbe.includes('GIAO VIEN') ||
+          headerProbe.includes('GIANG VIEN') ||
+          headerProbe.includes('HOC SINH') ||
+          headerProbe.includes('HOC VIEN'))) ||
+      ((headerProbe.includes('GIAO VIEN') || headerProbe.includes('GIANG VIEN')) &&
+        (headerProbe.includes('HOC SINH') || headerProbe.includes('HOC VIEN')));
+
+    if (isHeaderRow) {
       continue;
     }
 
     if (col0) {
-      const parsedCls = deriveCanonicalClassCode(col0);
+      const parsedCls = deriveCanonicalClassCode(col0, lang);
       if (parsedCls) {
         currentClass = parsedCls;
       }
     }
 
     if (col1) {
-      currentTeacher = normalizeBulkTeacherIdentity(col1);
+      currentTeacher = normalizeBulkTeacherIdentity(col1, lang);
     } else if (col0 && !col1) {
-      currentTeacher = normalizeBulkTeacherIdentity('');
+      currentTeacher = normalizeBulkTeacherIdentity('', lang);
     }
 
     if (!currentClass) {
-      warnings.push(`Dòng ${idx + 1}: Bỏ qua vì chưa xác định được Lớp học.`);
+      warnings.push(
+        trStatic(
+          `Dòng ${idx + 1}: Bỏ qua vì chưa xác định được Lớp học.`,
+          `Row ${idx + 1}: Skipped because class could not be identified.`,
+          lang
+        )
+      );
       continue;
     }
 
@@ -572,25 +637,50 @@ export function parseKtnCenterBulkCsv(
       if (!rawPhone) {
         rawPhone = studentName;
       }
-      const fallbackParent = parentName || 'Chưa rõ';
-      warnings.push(
-        `Dòng ${idx + 1} (${currentClass.code}): Cột Học sinh chứa SĐT "${studentName}" -> chuyển sang SĐT và đặt tên tạm "Học viên (PH ${fallbackParent})".`
+      const fallbackParent = parentName || trStatic('Chưa rõ', 'Unknown', lang);
+      const tempStudentName = trStatic(
+        `Học viên (PH ${fallbackParent})`,
+        `Student (Parent ${fallbackParent})`,
+        lang
       );
-      studentName = `Học viên (PH ${fallbackParent})`;
+      warnings.push(
+        trStatic(
+          `Dòng ${idx + 1} (${currentClass.code}): Cột Học sinh chứa SĐT "${studentName}" -> chuyển sang SĐT và đặt tên tạm "${tempStudentName}".`,
+          `Row ${idx + 1} (${currentClass.code}): Student column contains phone "${studentName}" -> moved to phone and set temp name "${tempStudentName}".`,
+          lang
+        )
+      );
+      studentName = tempStudentName;
     }
 
     if (!studentName) {
       if (parentName || rawPhone) {
-        studentName = `Học viên (PH ${parentName || rawPhone})`;
-        warnings.push(`Dòng ${idx + 1} (${currentClass.code}): Thiếu tên học sinh -> đặt tên tạm "${studentName}".`);
+        studentName = trStatic(
+          `Học viên (PH ${parentName || rawPhone})`,
+          `Student (Parent ${parentName || rawPhone})`,
+          lang
+        );
+        warnings.push(
+          trStatic(
+            `Dòng ${idx + 1} (${currentClass.code}): Thiếu tên học sinh -> đặt tên tạm "${studentName}".`,
+            `Row ${idx + 1} (${currentClass.code}): Missing student name -> set temp name "${studentName}".`,
+            lang
+          )
+        );
       } else {
         continue;
       }
     }
 
-    const cleanedPhone = cleanBulkPhoneValue(rawPhone);
+    const cleanedPhone = cleanBulkPhoneValue(rawPhone, lang);
     if (cleanedPhone.warning) {
-      warnings.push(`Dòng ${idx + 1} (${currentClass.code} - ${studentName}): ${cleanedPhone.warning}`);
+      warnings.push(
+        trStatic(
+          `Dòng ${idx + 1} (${currentClass.code} - ${studentName}): ${cleanedPhone.warning}`,
+          `Row ${idx + 1} (${currentClass.code} - ${studentName}): ${cleanedPhone.warning}`,
+          lang
+        )
+      );
     }
 
     const clsEntry = classesMap.get(currentClass.code)!;
@@ -693,7 +783,7 @@ export function parseKtnCenterBulkCsv(
       schedule: stu.schedule,
       teacherCode: tEntry?.code || '',
       teacherEmail: tEntry?.email || '',
-      teacherName: tEntry?.name || stu.teacherDisplayName || 'Chưa phân công',
+      teacherName: tEntry?.name || stu.teacherDisplayName || trStatic('Chưa phân công', 'Unassigned', lang),
       status: stu.isArchived ? 'archived' : 'active',
       defaultPassword,
       rowIndex: stu.rowIndex

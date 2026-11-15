@@ -62,6 +62,8 @@ export interface ChatRoom {
   studentEmail?: string;
   studentName?: string;
   teacherName?: string;
+  hasAssignedTeacher?: boolean;
+  recipientTargetType?: 'teacher' | 'support_center';
   label: string;
   shortLabel?: string;
   lastMessage?: string;

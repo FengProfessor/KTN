@@ -10,6 +10,7 @@ import { LoginPage } from '@/features/auth/components/LoginPage';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
 import { resolveNotificationLink } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 import type { UserRole } from '@/types/ktn.types';
 
 const LearningPage = lazy(() =>
@@ -24,6 +25,25 @@ const AdminWorkspace = lazy(() =>
 const FlashcardsPage = lazy(() =>
   import('@/features/flashcards/components/FlashcardsPage').then((m) => ({ default: m.FlashcardsPage }))
 );
+const GamesPage = lazy(() =>
+  import('@/features/games/components/GamesPage').then((m) => ({ default: m.GamesPage }))
+);
+
+function AdminConsultations() {
+  const { tr } = useI18n();
+  return (
+    <section className="p-3 sm:p-5">
+      <iframe
+        title={tr('Hộp thư tư vấn KTN', 'KTN Consultation Inbox')}
+        src="/tu-van/nhan-vien"
+        className="min-h-[76vh] w-full rounded-xl border border-stone-200"
+      />
+      <a href="/tu-van/nhan-vien" className="mt-2 inline-block text-sm font-semibold text-red-800">
+        {tr('Mở hộp thư toàn màn hình', 'Open inbox in full screen')}
+      </a>
+    </section>
+  );
+}
 
 const RouteLoadingFallback: React.FC = () => (
   <div className="flex min-h-[200px] items-center justify-center p-6">
@@ -62,6 +82,7 @@ const RequireRole: React.FC<{
   allowAssignedCourseTeacher?: boolean;
   children: React.ReactNode;
 }> = ({ allowed, allowAssignedCourseTeacher = false, children }) => {
+  const { tr } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -104,10 +125,13 @@ const RequireRole: React.FC<{
           <ShieldAlert className="h-5 w-5" />
         </div>
         <h2 className="text-sm font-bold text-slate-900">
-          Không có quyền truy cập khu vực này
+          {tr('Không có quyền truy cập khu vực này', 'You do not have access to this section')}
         </h2>
         <p className="mt-1 text-xs text-slate-600">
-          Khu vực này dành cho vai trò ({allowed.join(', ')}).
+          {tr(
+            `Khu vực này dành cho vai trò (${allowed.join(', ')}).`,
+            `This area is restricted to roles: ${allowed.join(', ')}.`
+          )}
         </p>
         <div className="mt-3 flex justify-center">
           <button
@@ -116,7 +140,7 @@ const RequireRole: React.FC<{
             className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Về Trang chủ
+            {tr('Về Trang chủ', 'Back to Home')}
           </button>
         </div>
       </div>
@@ -208,6 +232,14 @@ export const AppRouter: React.FC = () => {
             }
           />
           <Route
+            path="games"
+            element={
+              <RequireRole allowed={['student', 'teacher', 'admin']}>
+                <GamesPage />
+              </RequireRole>
+            }
+          />
+          <Route
             path="classrooms"
             element={
               <RequireRole allowed={['student', 'teacher', 'admin']}>
@@ -238,6 +270,14 @@ export const AppRouter: React.FC = () => {
             element={
               <RequireRole allowed={['admin']}>
                 <AdminWorkspace />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="admin/consultations"
+            element={
+              <RequireRole allowed={['admin']}>
+                <AdminConsultations />
               </RequireRole>
             }
           />

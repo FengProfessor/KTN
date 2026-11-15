@@ -6,11 +6,13 @@ import { useUiStore } from '@/stores/useUiStore';
 import { StudentHome } from '@/features/dashboard/components/StudentHome';
 import { TeacherHome } from '@/features/teacher/components/TeacherHome';
 import { AdminHome } from '@/features/admin/components/AdminHome';
+import { useI18n } from '@/i18n';
 
 export const RoleHome: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const isRestoring = useAuthStore((s) => s.isRestoring);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
+  const { tr } = useI18n();
 
   if (isRestoring && !isDemoMode) {
     return (
@@ -20,7 +22,7 @@ export const RoleHome: React.FC = () => {
       >
         <Loader2 className="h-6 w-6 animate-spin text-red-800" />
         <p className="mt-2 text-xs font-semibold text-stone-600">
-          Đang khôi phục phiên làm việc...
+          {tr('Đang khôi phục phiên làm việc...', 'Restoring session...')}
         </p>
       </div>
     );

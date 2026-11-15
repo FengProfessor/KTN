@@ -30,6 +30,7 @@ import {
 import { ktnApi, resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
 import { formatChatTimestamp, formatFileSize } from '@/lib/utils';
 import { useUiStore } from '@/stores/useUiStore';
+import { useI18n, trStatic, type AppLanguage } from '@/i18n';
 
 interface HomeworkPanelProps {
   courseId: string;
@@ -51,13 +52,15 @@ interface HomeworkPanelProps {
   }) => Promise<void>;
 }
 
-const ALLOWED_TYPE_LABELS: Record<string, string> = {
-  audio: '🎤 Thu âm giọng đọc',
-  image: '📷 Ảnh chụp vở viết / SBT',
-  pdf: '📄 Tệp PDF',
-  video: '🎬 Video ngắn',
-  text: '✍️ Trả lời bằng chữ',
-};
+function getAllowedTypeLabels(lang: AppLanguage): Record<string, string> {
+  return {
+    audio: trStatic('🎤 Thu âm giọng đọc', '🎤 Voice Recording', lang),
+    image: trStatic('📷 Ảnh chụp vở viết / SBT', '📷 Notebook / Workbook Photo', lang),
+    pdf: trStatic('📄 Tệp PDF', '📄 PDF File', lang),
+    video: trStatic('🎬 Video ngắn', '🎬 Short Video', lang),
+    text: trStatic('✍️ Trả lời bằng chữ', '✍️ Text Answer', lang),
+  };
+}
 
 export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
   courseId,
@@ -72,6 +75,8 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
   onHomeworkConfigSaved,
   onSubmitHomework,
 }) => {
+  const { lang, tr } = useI18n();
+  const allowedTypeLabels = getAllowedTypeLabels(lang);
   const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const [note, setNote] = useState(existingSubmission?.student_note || '');
@@ -126,13 +131,19 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     homeworkAssignment || {
       assigned: true,
       mandatory: true,
-      title: `Bài tập ${lessonTitle}`,
-      instructions: `Hoàn thành bài luyện tập của ${lessonTitle}: thu âm đọc bài khóa hoặc chụp ảnh vở viết / sách bài tập gửi giáo viên nhận xét.`,
+      title: tr(`Bài tập ${lessonTitle}`, `Homework: ${lessonTitle}`),
+      instructions: tr(
+        `Hoàn thành bài luyện tập của ${lessonTitle}: thu âm đọc bài khóa hoặc chụp ảnh vở viết / sách bài tập gửi giáo viên nhận xét.`,
+        `Complete the practice for ${lessonTitle}: record yourself reading the lesson or upload photos of your notebook/workbook for teacher review.`
+      ),
       relatedPages: null,
       allowedTypes: ['audio', 'image', 'pdf', 'text'],
       maxFiles: 3,
       deadline: null,
-      completionCriteria: 'Nộp tệp thu âm rõ tiếng hoặc ảnh bài viết rõ nét.',
+      completionCriteria: tr(
+        'Nộp tệp thu âm rõ tiếng hoặc ảnh bài viết rõ nét.',
+        'Submit a clear audio recording or sharp photos of your work.'
+      ),
     };
 
   const isAssigned = effectiveAssignment.assigned !== false;
@@ -142,7 +153,9 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
   const openConfigEditor = () => {
     setCfgAssigned(effectiveAssignment.assigned !== false);
     setCfgMandatory(effectiveAssignment.mandatory !== false);
-    setCfgTitle(effectiveAssignment.title || `Bài tập ${lessonTitle}`);
+    setCfgTitle(
+      effectiveAssignment.title || tr(`Bài tập ${lessonTitle}`, `Homework: ${lessonTitle}`)
+    );
     setCfgInstructions(effectiveAssignment.instructions || '');
     setCfgRelatedPages(effectiveAssignment.relatedPages || '');
     setCfgAllowedTypes(
@@ -168,7 +181,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
         unitId: unitId || null,
         assigned: cfgAssigned,
         mandatory: cfgAssigned ? cfgMandatory : false,
-        title: cfgTitle.trim() || `Bài tập ${lessonTitle}`,
+        title: cfgTitle.trim() || tr(`Bài tập ${lessonTitle}`, `Homework: ${lessonTitle}`),
         instructions: cfgInstructions.trim(),
         relatedPages: cfgRelatedPages.trim() || null,
         allowedTypes: cfgAllowedTypes.length > 0 ? cfgAllowedTypes : ['audio', 'image', 'pdf', 'text'],
@@ -186,7 +199,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
         const fallbackCfg: KtnHomeworkAssignment = {
           assigned: cfgAssigned,
           mandatory: cfgAssigned ? cfgMandatory : false,
-          title: cfgTitle.trim() || `Bài tập ${lessonTitle}`,
+          title: cfgTitle.trim() || tr(`Bài tập ${lessonTitle}`, `Homework: ${lessonTitle}`),
           instructions: cfgInstructions.trim(),
           relatedPages: cfgRelatedPages.trim() || null,
           allowedTypes: cfgAllowedTypes.length > 0 ? cfgAllowedTypes : ['audio', 'image', 'pdf', 'text'],
@@ -201,7 +214,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
         setConfigError(
           err instanceof Error
             ? err.message
-            : 'Không thể lưu cấu hình bài tập. Vui lòng kiểm tra quyền truy cập của tài khoản.'
+            : tr(
+                'Không thể lưu cấu hình bài tập. Vui lòng kiểm tra quyền truy cập của tài khoản.',
+                'Unable to save homework settings. Please verify your account permissions.'
+              )
         );
       }
     } finally {
@@ -229,12 +245,22 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size <= 0) {
-      setSubmitError('Tệp vừa chọn bị rỗng (0 byte). Vui lòng chọn tệp hợp lệ.');
+      setSubmitError(
+        tr(
+          'Tệp vừa chọn bị rỗng (0 byte). Vui lòng chọn tệp hợp lệ.',
+          'The selected file is empty (0 bytes). Please choose a valid file.'
+        )
+      );
       e.target.value = '';
       return;
     }
     if (file.size > 50 * 1024 * 1024) {
-      setSubmitError('Tệp vượt quá giới hạn 50MB. Vui lòng chọn tệp nhỏ hơn.');
+      setSubmitError(
+        tr(
+          'Tệp vượt quá giới hạn 50MB. Vui lòng chọn tệp nhỏ hơn.',
+          'File exceeds the 50MB limit. Please choose a smaller file.'
+        )
+      );
       e.target.value = '';
       return;
     }
@@ -261,7 +287,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     // Block submission if student is actively recording (even if note is non-empty!)
     if (showRecorder && (isRecorderActive || !fileToUpload)) {
       setSubmitError(
-        'Em đang mở khung thu âm. Vui lòng bấm "Dừng thu" để hoàn tất bản thu trước khi bấm Nộp bài tập.'
+        tr(
+          'Em đang mở khung thu âm. Vui lòng bấm "Dừng thu" để hoàn tất bản thu trước khi bấm Nộp bài tập.',
+          'The recorder is open. Please click "Stop Recording" to finalize your audio before submitting.'
+        )
       );
       return;
     }
@@ -286,14 +315,20 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           setSubmitError(
             err instanceof Error
               ? err.message
-              : 'Chưa nộp được câu trả lời. Vui lòng kiểm tra kết nối và thử lại.'
+              : tr(
+                  'Chưa nộp được câu trả lời. Vui lòng kiểm tra kết nối và thử lại.',
+                  'Unable to submit your answer. Please check your connection and try again.'
+                )
           );
         }
         return;
       }
 
       setSubmitError(
-        'Vui lòng thu âm giọng đọc hoặc chọn tệp bài làm thật (ảnh vở viết, âm thanh, PDF) trước khi nhấn Nộp bài.'
+        tr(
+          'Vui lòng thu âm giọng đọc hoặc chọn tệp bài làm thật (ảnh vở viết, âm thanh, PDF) trước khi nhấn Nộp bài.',
+          'Please record your reading or select an actual file (notebook photo, audio, PDF) before submitting.'
+        )
       );
       return;
     }
@@ -302,7 +337,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
       await onSubmitHomework({
         file: fileToUpload,
         fileName: fileNameToUpload,
-        note: note.trim() || `Nộp bài tập ${lessonTitle}`,
+        note: note.trim() || tr(`Nộp bài tập ${lessonTitle}`, `Homework submission: ${lessonTitle}`),
         submissionMode: 'file',
       });
       setSelectedFile(null);
@@ -314,7 +349,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
       setSubmitError(
         err instanceof Error
           ? err.message
-          : 'Chưa nộp được bài tập do lỗi kết nối. Tệp/bản thu âm của em vẫn được giữ nguyên trên máy để thử lại.'
+          : tr(
+              'Chưa nộp được bài tập do lỗi kết nối. Tệp/bản thu âm của em vẫn được giữ nguyên trên máy để thử lại.',
+              'Could not submit homework due to a connection error. Your file/recording is preserved locally so you can retry.'
+            )
       );
     }
   };
@@ -327,7 +365,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-900"
         >
           <Award className="h-4 w-4 text-emerald-700" />
-          Đã chấm điểm: {existingSubmission?.score ?? 10}/10
+          {tr('Đã chấm điểm:', 'Graded:')} {existingSubmission?.score ?? 10}/10
         </span>
       );
     }
@@ -338,7 +376,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-900"
         >
           <AlertCircle className="h-4 w-4 text-red-700" />
-          Cần bổ sung theo nhận xét giáo viên
+          {tr('Cần bổ sung theo nhận xét giáo viên', 'Revision requested')}
         </span>
       );
     }
@@ -349,7 +387,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-900"
         >
           <Clock className="h-4 w-4 text-blue-700" />
-          Đã nộp • Chờ giáo viên chấm
+          {tr('Đã nộp • Chờ giáo viên chấm', 'Submitted • Pending review')}
         </span>
       );
     }
@@ -359,7 +397,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           data-testid="homework-status-optional"
           className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-700"
         >
-          Tự luyện tập (Không bắt buộc nộp)
+          {tr('Tự luyện tập (Không bắt buộc nộp)', 'Self-practice (Optional)')}
         </span>
       );
     }
@@ -369,7 +407,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
         className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900"
       >
         <Sparkles className="h-4 w-4 text-amber-700" />
-        Chưa nộp bài tập
+        {tr('Chưa nộp bài tập', 'Not submitted')}
       </span>
     );
   };
@@ -403,11 +441,11 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10.5px] font-bold uppercase tracking-wider text-red-800">
-              Bài tập • {classCode || 'Khóa học Video'}
+              {tr('Bài tập', 'Homework')} • {classCode || tr('Khóa học Video', 'Video Course')}
             </span>
             {isAssigned && effectiveAssignment.mandatory !== false && (
               <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
-                Bắt buộc
+                {tr('Bắt buộc', 'Required')}
               </span>
             )}
           </div>
@@ -426,7 +464,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100"
             >
               <Settings2 className="h-3.5 w-3.5" />
-              <span>Cấu hình bài tập</span>
+              <span>{tr('Cấu hình bài tập', 'Homework Settings')}</span>
             </button>
           )}
         </div>
@@ -441,7 +479,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
         >
           <div className="flex items-center justify-between border-b border-amber-200 pb-2">
             <span className="font-bold text-amber-950">
-              Thiết lập yêu cầu bài tập cho bài học này
+              {tr(
+                'Thiết lập yêu cầu bài tập cho bài học này',
+                'Configure homework requirements for this lesson'
+              )}
             </span>
             <button
               type="button"
@@ -460,7 +501,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 onChange={(e) => setCfgAssigned(e.target.checked)}
                 className="rounded border-stone-300 text-red-800"
               />
-              Có giao bài tập cần nộp
+              {tr('Có giao bài tập cần nộp', 'Require homework submission')}
             </label>
 
             {cfgAssigned && (
@@ -471,13 +512,15 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                   onChange={(e) => setCfgMandatory(e.target.checked)}
                   className="rounded border-stone-300 text-red-800"
                 />
-                Bài tập bắt buộc
+                {tr('Bài tập bắt buộc', 'Mandatory homework')}
               </label>
             )}
           </div>
 
           <div>
-            <label className="block font-bold text-stone-800">Tên bài tập:</label>
+            <label className="block font-bold text-stone-800">
+              {tr('Tên bài tập:', 'Homework title:')}
+            </label>
             <input
               type="text"
               data-testid="homework-config-title-input"
@@ -489,7 +532,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
 
           <div>
             <label className="block font-bold text-stone-800">
-              Hướng dẫn / Yêu cầu cụ thể:
+              {tr('Hướng dẫn / Yêu cầu cụ thể:', 'Instructions / Specific requirements:')}
             </label>
             <textarea
               rows={3}
@@ -502,17 +545,21 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div>
-              <label className="block font-bold text-stone-800">Trang SGK/SBT liên quan:</label>
+              <label className="block font-bold text-stone-800">
+                {tr('Trang SGK/SBT liên quan:', 'Textbook/Workbook pages:')}
+              </label>
               <input
                 type="text"
                 value={cfgRelatedPages}
                 onChange={(e) => setCfgRelatedPages(e.target.value)}
-                placeholder="VD: SGK trang 17 • SBT trang 11"
+                placeholder={tr('VD: SGK trang 17 • SBT trang 11', 'e.g. TB p.17 • WB p.11')}
                 className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs"
               />
             </div>
             <div>
-              <label className="block font-bold text-stone-800">Số file tối đa:</label>
+              <label className="block font-bold text-stone-800">
+                {tr('Số file tối đa:', 'Max files:')}
+              </label>
               <input
                 type="number"
                 min={1}
@@ -523,19 +570,23 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               />
             </div>
             <div>
-              <label className="block font-bold text-stone-800">Hạn nộp (tùy chọn):</label>
+              <label className="block font-bold text-stone-800">
+                {tr('Hạn nộp (tùy chọn):', 'Deadline (optional):')}
+              </label>
               <input
                 type="text"
                 value={cfgDeadline}
                 onChange={(e) => setCfgDeadline(e.target.value)}
-                placeholder="VD: Trước buổi học tiếp theo"
+                placeholder={tr('VD: Trước buổi học tiếp theo', 'e.g. Before next class')}
                 className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs"
               />
             </div>
           </div>
 
           <div>
-            <span className="block font-bold text-stone-800">Hình thức nộp được phép:</span>
+            <span className="block font-bold text-stone-800">
+              {tr('Hình thức nộp được phép:', 'Allowed submission formats:')}
+            </span>
             <div className="mt-1 flex flex-wrap gap-2">
               {(['audio', 'image', 'pdf', 'video', 'text'] as const).map((t) => (
                 <label
@@ -553,7 +604,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                       }
                     }}
                   />
-                  <span>{ALLOWED_TYPE_LABELS[t]}</span>
+                  <span>{allowedTypeLabels[t]}</span>
                 </label>
               ))}
             </div>
@@ -575,7 +626,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               onClick={() => setIsEditingConfig(false)}
               className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 font-semibold text-stone-700"
             >
-              Hủy
+              {tr('Hủy', 'Cancel')}
             </button>
             <button
               type="submit"
@@ -583,7 +634,9 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               disabled={isSavingConfig}
               className="rounded-lg bg-red-800 px-3.5 py-1.5 font-bold text-white hover:bg-red-900"
             >
-              {isSavingConfig ? 'Đang lưu...' : 'Lưu yêu cầu bài tập'}
+              {isSavingConfig
+                ? tr('Đang lưu...', 'Saving...')
+                : tr('Lưu yêu cầu bài tập', 'Save Homework Settings')}
             </button>
           </div>
         </form>
@@ -595,7 +648,9 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           data-testid="homework-requirements-card"
           className="mt-3 rounded-xl border border-stone-200 bg-stone-50/80 p-3 text-xs"
         >
-          <p className="font-bold text-stone-900">Yêu cầu bài tập cần hoàn thành:</p>
+          <p className="font-bold text-stone-900">
+            {tr('Yêu cầu bài tập cần hoàn thành:', 'Homework instructions:')}
+          </p>
           <p
             data-testid="homework-instructions-text"
             className="mt-1 whitespace-pre-line leading-relaxed text-stone-700"
@@ -611,12 +666,15 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               </span>
             )}
             <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 font-medium text-stone-700 border border-stone-200">
-              Tối đa {effectiveAssignment.maxFiles || 3} tệp
+              {tr(
+                `Tối đa ${effectiveAssignment.maxFiles || 3} tệp`,
+                `Max ${effectiveAssignment.maxFiles || 3} files`
+              )}
             </span>
             {effectiveAssignment.deadline && (
               <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 font-semibold text-amber-900 border border-amber-200">
                 <Calendar className="h-3 w-3 text-amber-700" />
-                Hạn nộp: {effectiveAssignment.deadline}
+                {tr('Hạn nộp:', 'Due:')} {effectiveAssignment.deadline}
               </span>
             )}
           </div>
@@ -624,13 +682,15 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           {Array.isArray(effectiveAssignment.allowedTypes) &&
             effectiveAssignment.allowedTypes.length > 0 && (
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-stone-500">Cần nộp:</span>
+                <span className="text-[11px] font-semibold text-stone-500">
+                  {tr('Cần nộp:', 'Accepted:')}
+                </span>
                 {effectiveAssignment.allowedTypes.map((typeKey) => (
                   <span
                     key={typeKey}
                     className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-900 border border-red-200/70"
                   >
-                    {ALLOWED_TYPE_LABELS[typeKey] || typeKey}
+                    {allowedTypeLabels[typeKey] || typeKey}
                   </span>
                 ))}
               </div>
@@ -640,7 +700,8 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
             <p className="mt-2 flex items-start gap-1.5 text-[11px] text-stone-600">
               <CheckSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
               <span>
-                <strong>Tiêu chí hoàn thành:</strong> {effectiveAssignment.completionCriteria}
+                <strong>{tr('Tiêu chí hoàn thành:', 'Completion criteria:')}</strong>{' '}
+                {effectiveAssignment.completionCriteria}
               </span>
             </p>
           )}
@@ -651,11 +712,14 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3.5 text-xs"
         >
           <p className="font-bold text-stone-900">
-            Chưa có bài tập cần nộp cho bài này.
+            {tr('Chưa có bài tập cần nộp cho bài này.', 'No homework required for this lesson.')}
           </p>
           <p className="mt-1 leading-relaxed text-stone-600">
             {effectiveAssignment.instructions ||
-              'Mục này là video hướng dẫn / chữa bài tập. Học viên tự đối chiếu đáp án và ôn luyện theo tài liệu đính kèm, không bắt buộc nộp bài.'}
+              tr(
+                'Mục này là video hướng dẫn / chữa bài tập. Học viên tự đối chiếu đáp án và ôn luyện theo tài liệu đính kèm, không bắt buộc nộp bài.',
+                'This video is a guided walkthrough / exercise review. Check your answers and practice with attached materials — no submission required.'
+              )}
           </p>
           {!voluntaryOpen && !existingSubmission && (
             <button
@@ -665,7 +729,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-100"
             >
               <Mic className="h-3.5 w-3.5 text-red-800" />
-              Gửi bản thu âm / ảnh luyện tập thêm cho giáo viên (Tự chọn)
+              {tr(
+                'Gửi bản thu âm / ảnh luyện tập thêm cho giáo viên (Tự chọn)',
+                'Send extra practice audio / photo to teacher (Optional)'
+              )}
             </button>
           )}
         </div>
@@ -680,7 +747,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-800">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <span>Đã nộp: {formatChatTimestamp(existingSubmission.submitted_at)}</span>
+              <span>{tr('Đã nộp:', 'Submitted:')} {formatChatTimestamp(existingSubmission.submitted_at)}</span>
             </div>
             {submittedFileUrl && (
               <a
@@ -690,7 +757,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 rel="noreferrer"
                 className="text-xs font-bold text-red-800 underline hover:text-red-950"
               >
-                Xem / Tải bài làm ({existingSubmission.attachments?.[0]?.title || 'Tệp đã nộp'})
+                {tr('Xem / Tải bài làm', 'View / Download')} ({existingSubmission.attachments?.[0]?.title || tr('Tệp đã nộp', 'Submitted file')})
               </a>
             )}
           </div>
@@ -712,10 +779,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               <img
                 data-testid="homework-submitted-image-preview"
                 src={submittedFileUrl}
-                alt="Ảnh bài tập đã nộp"
+                alt={tr('Ảnh bài tập đã nộp', 'Submitted homework image')}
                 onClick={() =>
                   setActiveLightboxAttachment({
-                    name: existingSubmission.attachments?.[0]?.title || 'Ảnh bài tập đã nộp',
+                    name: existingSubmission.attachments?.[0]?.title || tr('Ảnh bài tập đã nộp', 'Submitted homework image'),
                     url: submittedFileUrl,
                     kind: 'image',
                   })
@@ -727,7 +794,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 data-testid="homework-submitted-image-zoom-btn"
                 onClick={() =>
                   setActiveLightboxAttachment({
-                    name: existingSubmission.attachments?.[0]?.title || 'Ảnh bài tập đã nộp',
+                    name: existingSubmission.attachments?.[0]?.title || tr('Ảnh bài tập đã nộp', 'Submitted homework image'),
                     url: submittedFileUrl,
                     kind: 'image',
                   })
@@ -735,14 +802,14 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-100"
               >
                 <ZoomIn className="h-3.5 w-3.5 text-red-800" />
-                Phóng to ảnh
+                {tr('Phóng to ảnh', 'Zoom image')}
               </button>
             </div>
           )}
 
           {existingSubmission.student_note && (
             <p className="mt-2 rounded-lg border border-stone-200/80 bg-white p-2 text-xs text-stone-700">
-              <strong>Ghi chú của học viên:</strong> {existingSubmission.student_note}
+              <strong>{tr('Ghi chú của học viên:', 'Student note:')}</strong> {existingSubmission.student_note}
             </p>
           )}
 
@@ -760,14 +827,14 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
             >
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-stone-800">
-                  Nhận xét của giáo viên
+                  {tr('Nhận xét của giáo viên', 'Teacher Feedback')}
                 </span>
                 {existingSubmission.score !== null && existingSubmission.score !== undefined && (
                   <span
                     data-testid="homework-score-badge"
                     className="rounded-lg bg-emerald-700 px-2.5 py-0.5 font-display text-xs font-bold text-white shadow-2xs"
                   >
-                    Điểm: {existingSubmission.score} / 10
+                    {tr('Điểm:', 'Score:')} {existingSubmission.score} / 10
                   </span>
                 )}
               </div>
@@ -775,7 +842,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 data-testid="homework-feedback-text"
                 className="mt-1 text-xs leading-relaxed font-medium text-stone-800"
               >
-                {existingSubmission.teacher_feedback || 'Giáo viên đã chấm bài.'}
+                {existingSubmission.teacher_feedback || tr('Giáo viên đã chấm bài.', 'Graded by teacher.')}
               </p>
             </div>
           )}
@@ -789,7 +856,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-100"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Nộp bổ sung / Nộp lại
+                {tr('Nộp bổ sung / Nộp lại', 'Add / Resubmit')}
               </button>
             </div>
           )}
@@ -814,7 +881,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
           <div className="space-y-2">
             {showRecorder ? (
               <VoiceRecorder
-                submitLabel="Dùng bản thu này"
+                submitLabel={tr('Dùng bản thu này', 'Use This Recording')}
                 onRecordingStateChange={(active) => setIsRecorderActive(active)}
                 onClearRecording={() => setSelectedFile(null)}
                 onCancel={() => {
@@ -844,7 +911,11 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                   className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-900 transition-colors hover:bg-red-100"
                 >
                   <Mic className="h-4 w-4 shrink-0 text-red-700" />
-                  <span>{selectedFile ? 'Thu âm lại' : 'Thu âm giọng đọc'}</span>
+                  <span>
+                    {selectedFile
+                      ? tr('Thu âm lại', 'Re-record')
+                      : tr('Thu âm giọng đọc', 'Record Voice')}
+                  </span>
                 </button>
 
                 <input
@@ -863,7 +934,11 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                   className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-50"
                 >
                   <Upload className="h-4 w-4 shrink-0 text-stone-600" />
-                  <span>{selectedFile ? 'Đổi tệp / ảnh khác' : 'Chọn ảnh / PDF / audio'}</span>
+                  <span>
+                    {selectedFile
+                      ? tr('Đổi tệp / ảnh khác', 'Change File / Image')
+                      : tr('Chọn ảnh / PDF / audio', 'Choose Image / PDF / Audio')}
+                  </span>
                 </button>
               </div>
             )}
@@ -898,7 +973,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                   <div className="min-w-0">
                     <p className="truncate text-xs font-bold text-stone-900">{selectedFile.name}</p>
                     <p className="text-[11px] text-stone-600">
-                      {formatFileSize(selectedFile.size)} • {selectedFile.mimeType} • Sẵn sàng nộp
+                      {formatFileSize(selectedFile.size)} • {selectedFile.mimeType} • {tr('Sẵn sàng nộp', 'Ready to submit')}
                     </p>
                   </div>
                 </div>
@@ -919,7 +994,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                     className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-100"
                   >
                     <Trash2 className="h-3 w-3 text-red-700" />
-                    Xóa tệp
+                    {tr('Xóa tệp', 'Remove')}
                   </button>
                 </div>
               </div>
@@ -933,8 +1008,8 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               className="block text-xs font-bold text-stone-800"
             >
               {allowsTextOnly
-                ? 'Câu trả lời hoặc ghi chú gửi giáo viên:'
-                : 'Ghi chú kèm theo bài nộp (tùy chọn):'}
+                ? tr('Câu trả lời hoặc ghi chú gửi giáo viên:', 'Answer or note for your teacher:')
+                : tr('Ghi chú kèm theo bài nộp (tùy chọn):', 'Note with submission (optional):')}
             </label>
             <textarea
               id="homework-student-note"
@@ -942,7 +1017,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Ghi chú bài thu âm, trang vở viết hoặc câu hỏi cần Lão sư giải đáp..."
+              placeholder={tr(
+                'Ghi chú bài thu âm, trang vở viết hoặc câu hỏi cần Lão sư giải đáp...',
+                'Note on your recording, workbook pages, or questions for your teacher...'
+              )}
               className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 focus:border-red-800 focus:bg-white focus:outline-none"
             />
           </div>
@@ -958,7 +1036,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 }}
                 className="min-h-[40px] rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100"
               >
-                Hủy
+                {tr('Hủy', 'Cancel')}
               </button>
             )}
             <button
@@ -970,12 +1048,12 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Đang tải tệp & lưu bài nộp...</span>
+                  <span>{tr('Đang tải tệp & lưu bài nộp...', 'Uploading & saving...')}</span>
                 </>
               ) : (
                 <>
                   <Send className="h-3.5 w-3.5" />
-                  <span>Nộp bài tập</span>
+                  <span>{tr('Nộp bài tập', 'Submit Homework')}</span>
                 </>
               )}
             </button>

@@ -2,98 +2,178 @@
   "schemaVersion": "3.0",
   "app": "ktn-web-v2",
   "releaseTag": "v3.0.0",
-  "gitCommit": "bb57d6d",
-  "generatedAt": "2026-11-12T12:04:11.530Z",
+  "gitCommit": "940f5a0",
+  "generatedAt": "2026-11-15T18:52:44.988Z",
   "mode": "live",
   "vendorId": "3529cd2b-7af6-4fda-887c-392a79393d6a",
   "customPageId": "6adff7ba36309b0002b6e659",
   "customPageSlug": "so-lien-lac-test",
-  "s3Prefix": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d",
+  "s3Prefix": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0",
   "cloudfrontOrigin": "https://d21acfi38wn3iy.cloudfront.net",
-  "totalAssets": 11,
-  "totalBytes": 1657152,
+  "totalAssets": 19,
+  "totalBytes": 2525528,
   "allChunksUnder500KiB": true,
   "hlsPreloadedOnInitialShell": false,
   "assets": [
     {
-      "fileName": "assets/AdminWorkspace-C02Eefxf.js",
-      "bytes": 288229,
-      "sizeKiB": 281.47,
+      "fileName": "assets/admin-drawers-BIbUbKGz.js",
+      "bytes": 138862,
+      "sizeKiB": 135.61,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "92f9fc4603e7ede640bc39ca9cfa2f18045fd858a278a58eda4099e12c39fd48",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/AdminWorkspace-C02Eefxf.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/AdminWorkspace-C02Eefxf.js"
+      "sha256": "4848a3e4f1fbf69f0aa9097efd6437c22fbfdb9f341d7a71d0fc50eaf07dedd8",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/admin-drawers-BIbUbKGz.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/admin-drawers-BIbUbKGz.js"
     },
     {
-      "fileName": "assets/ClassScheduleModal-NV7674qm.js",
-      "bytes": 31790,
-      "sizeKiB": 31.04,
+      "fileName": "assets/AdminWorkspace-B2dUQ8oU.js",
+      "bytes": 181882,
+      "sizeKiB": 177.62,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "99beba5a7ea18fcff505d26e2dc579f9be29a9b304b5c93c3be6e7284f175314",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/ClassScheduleModal-NV7674qm.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/ClassScheduleModal-NV7674qm.js"
+      "sha256": "c6958c6bced2da6402d10f41ad7d998f0d66b7f7f528d3cee04815a9736d2477",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/AdminWorkspace-B2dUQ8oU.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/AdminWorkspace-B2dUQ8oU.js"
     },
     {
-      "fileName": "assets/FlashcardsPage-CI_moPH_.js",
-      "bytes": 1954,
-      "sizeKiB": 1.91,
+      "fileName": "assets/chat-ui-DLOPiOQI.js",
+      "bytes": 213267,
+      "sizeKiB": 208.27,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "a9b96c052cface170503931563a199971ed920148872531a59712df006994d46",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/FlashcardsPage-CI_moPH_.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/FlashcardsPage-CI_moPH_.js"
+      "sha256": "1269990bfb7e872fbf559814438114bd45f96e286614e48d41ac8178303f54f6",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/chat-ui-DLOPiOQI.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/chat-ui-DLOPiOQI.js"
     },
     {
-      "fileName": "assets/index-DGTWvymK.css",
-      "bytes": 57958,
-      "sizeKiB": 56.6,
+      "fileName": "assets/ClassScheduleModal-CsYUC3ET.js",
+      "bytes": 35061,
+      "sizeKiB": 34.24,
+      "withinBudget": true,
+      "mimeType": "application/javascript; charset=utf-8",
+      "sha256": "1d5eb5a0843a829967f514468c62df81ad98dbb65d22e8f4dc74daa061137741",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/ClassScheduleModal-CsYUC3ET.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/ClassScheduleModal-CsYUC3ET.js"
+    },
+    {
+      "fileName": "assets/FlashcardsPage-Cokis2AM.js",
+      "bytes": 2281,
+      "sizeKiB": 2.23,
+      "withinBudget": true,
+      "mimeType": "application/javascript; charset=utf-8",
+      "sha256": "1fa52e8718009537630e2173e1631a67e2e0f552ada69885844e3d8273592fcb",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/FlashcardsPage-Cokis2AM.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/FlashcardsPage-Cokis2AM.js"
+    },
+    {
+      "fileName": "assets/games-art-hub-6P8-PZYf.js",
+      "bytes": 112918,
+      "sizeKiB": 110.27,
+      "withinBudget": true,
+      "mimeType": "application/javascript; charset=utf-8",
+      "sha256": "01225a6122369d85cc3439cf31aa0856933b55b5a82f97cc5323f4e937341d72",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-art-hub-6P8-PZYf.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-art-hub-6P8-PZYf.js"
+    },
+    {
+      "fileName": "assets/games-art-stage-ZTBBoIA7.js",
+      "bytes": 123980,
+      "sizeKiB": 121.07,
+      "withinBudget": true,
+      "mimeType": "application/javascript; charset=utf-8",
+      "sha256": "eddba54d64c635b3f99f4926298dd731f8b8bf217d899cf9aa084292ad6a3348",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-art-stage-ZTBBoIA7.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-art-stage-ZTBBoIA7.js"
+    },
+    {
+      "fileName": "assets/games-art-zombie-BVMTX9hr.js",
+      "bytes": 82813,
+      "sizeKiB": 80.87,
+      "withinBudget": true,
+      "mimeType": "application/javascript; charset=utf-8",
+      "sha256": "a8286613dcde689506eb689730b163e64995375ab3306ba35131588bbb6d733d",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-art-zombie-BVMTX9hr.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-art-zombie-BVMTX9hr.js"
+    },
+    {
+      "fileName": "assets/games-ui-Bd8Wy3n3.js",
+      "bytes": 106615,
+      "sizeKiB": 104.12,
+      "withinBudget": true,
+      "mimeType": "application/javascript; charset=utf-8",
+      "sha256": "be65db0b63851a4be9e704be62781ebbc28e0df527f403cfd7a5775dcf0ac65d",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-ui-Bd8Wy3n3.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-ui-Bd8Wy3n3.js"
+    },
+    {
+      "fileName": "assets/games-vocab-CqPmlF6l.js",
+      "bytes": 219715,
+      "sizeKiB": 214.57,
+      "withinBudget": true,
+      "mimeType": "application/javascript; charset=utf-8",
+      "sha256": "61de817b5514340abc672af6eb754aeac7d1c593437f2ce7c18a51e73e8f1c48",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-vocab-CqPmlF6l.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-vocab-CqPmlF6l.js"
+    },
+    {
+      "fileName": "assets/games-vocab-en-C_SELSGV.js",
+      "bytes": 45790,
+      "sizeKiB": 44.72,
+      "withinBudget": true,
+      "mimeType": "application/javascript; charset=utf-8",
+      "sha256": "bb86cd48372ae4b08827a94e6cecea6cd092433da73210d9d8f2b279f4519043",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-vocab-en-C_SELSGV.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/games-vocab-en-C_SELSGV.js"
+    },
+    {
+      "fileName": "assets/index-DMnp8ixW.css",
+      "bytes": 105701,
+      "sizeKiB": 103.22,
       "withinBudget": true,
       "mimeType": "text/css; charset=utf-8",
-      "sha256": "b0598960175dd80cad83154f04970216781049d38b4f9141c726ab0905a19dc8",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/index-DGTWvymK.css",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/index-DGTWvymK.css"
+      "sha256": "a930da3c5ab3de47c26ba9a0c46b5125999e0acf2a877c8b001367daff8ff93b",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/index-DMnp8ixW.css",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/index-DMnp8ixW.css"
     },
     {
-      "fileName": "assets/index-DnPRePS2.js",
-      "bytes": 398603,
-      "sizeKiB": 389.26,
+      "fileName": "assets/index-Dx9CZlvU.js",
+      "bytes": 237961,
+      "sizeKiB": 232.38,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "1c29af274f031a5b52d35033bbe8642c8ae1c34bc890982041cf49ea9ca97bf0",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/index-DnPRePS2.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/index-DnPRePS2.js"
+      "sha256": "5eb52ef887f9f529ccecdc290657abf7d43e7f252ecc38f0755e3000e093fd45",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/index-Dx9CZlvU.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/index-Dx9CZlvU.js"
     },
     {
-      "fileName": "assets/LearningPage-6Er3GNP4.js",
-      "bytes": 115495,
-      "sizeKiB": 112.79,
+      "fileName": "assets/LearningPage-CdbErTyQ.js",
+      "bytes": 126755,
+      "sizeKiB": 123.78,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "4fd45cb6a6a5f931a30154b9d5cc99f8c73d540bbbb0babadd0dcc9c14a6255e",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/LearningPage-6Er3GNP4.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/LearningPage-6Er3GNP4.js"
+      "sha256": "ed021411cdddcfac291ec412ed77e064a09f531bff0471a5cbdf22badb4d11f6",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/LearningPage-CdbErTyQ.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/LearningPage-CdbErTyQ.js"
     },
     {
-      "fileName": "assets/TeacherForumInbox-BpNnbYcY.js",
-      "bytes": 37000,
-      "sizeKiB": 36.13,
+      "fileName": "assets/TeacherForumInbox-Br2jS__K.js",
+      "bytes": 40449,
+      "sizeKiB": 39.5,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "6980bb5bbb36d79efa6d914c6ff0aedf9607efde101bc48aedaed5540b81bb8a",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/TeacherForumInbox-BpNnbYcY.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/TeacherForumInbox-BpNnbYcY.js"
+      "sha256": "f8e621f84f08837508e2d6e328c6b0f3c4911b3d6356390d7fa6eef8deed6e32",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/TeacherForumInbox-Br2jS__K.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/TeacherForumInbox-Br2jS__K.js"
     },
     {
-      "fileName": "assets/TeacherWorkspace-Cnw-ebak.js",
-      "bytes": 68118,
-      "sizeKiB": 66.52,
+      "fileName": "assets/TeacherWorkspace-BFS3-zc0.js",
+      "bytes": 88518,
+      "sizeKiB": 86.44,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "30679ccbe1f75c98d2e06c81c66de2750b34e97b13910664246d17695f82aab5",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/TeacherWorkspace-Cnw-ebak.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/TeacherWorkspace-Cnw-ebak.js"
+      "sha256": "73497b2a7c387b34763ef8f1a68837243b4ca50da78eb99cf8100e9b926c6e91",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/TeacherWorkspace-BFS3-zc0.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/TeacherWorkspace-BFS3-zc0.js"
     },
     {
       "fileName": "assets/vendor-hls-Dy2NRv67.js",
@@ -102,32 +182,32 @@
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
       "sha256": "0fd24ea438c5fd2dc27e348328a90523b4417fa3a2f14e046c7a099e72b8f11b",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/vendor-hls-Dy2NRv67.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/vendor-hls-Dy2NRv67.js"
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/vendor-hls-Dy2NRv67.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/vendor-hls-Dy2NRv67.js"
     },
     {
-      "fileName": "assets/vendor-icons-D3uaBYIK.js",
-      "bytes": 39006,
-      "sizeKiB": 38.09,
+      "fileName": "assets/vendor-icons-BXbHN89o.js",
+      "bytes": 43961,
+      "sizeKiB": 42.93,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "9f6f5c742dcaca7c1d841d9eacd0510d4b1ead3ae6c1cc108b56cc71b558c555",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/vendor-icons-D3uaBYIK.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/vendor-icons-D3uaBYIK.js"
+      "sha256": "a78b0497eb4252b29864277521f07fdd3ba209da1b8cca40e784bdb5336136ac",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/vendor-icons-BXbHN89o.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/vendor-icons-BXbHN89o.js"
     },
     {
-      "fileName": "assets/vendor-react-v2jZePGR.js",
+      "fileName": "assets/vendor-react-CDyLnaSK.js",
       "bytes": 243720,
       "sizeKiB": 238.01,
       "withinBudget": true,
       "mimeType": "application/javascript; charset=utf-8",
-      "sha256": "63b960d7bcbd0bbd3bef21e9776a7116733fdcea91a4d6d7d49cdbd324250f90",
-      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/vendor-react-v2jZePGR.js",
-      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-bb57d6d/assets/vendor-react-v2jZePGR.js"
+      "sha256": "76d248e452bdfc209c7a6c6d158f6d39d764fcbdf03c55be8a52144e5e47d86f",
+      "s3Key": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/vendor-react-CDyLnaSK.js",
+      "cdnUrl": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-940f5a0/assets/vendor-react-CDyLnaSK.js"
     }
   ],
   "rollbackCommand": "node deploy_ktn_react_v2_izteach.cjs --rollback reports/ktn-three-way-reliability/v3-release-manifest.json",
-  "cdnVerifiedCount": 11,
+  "cdnVerifiedCount": 19,
   "customPageUpdated": true,
-  "customPageVerifiedAt": "2026-11-12T12:04:18.278Z"
+  "customPageVerifiedAt": "2026-11-15T18:52:59.233Z"
 }

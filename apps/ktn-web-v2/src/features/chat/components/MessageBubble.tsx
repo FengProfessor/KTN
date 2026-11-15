@@ -13,6 +13,7 @@ import {
 import { ChatMessage } from '../types/chat.types';
 import { AttachmentPreview } from './AttachmentPreview';
 import { formatChatTimestamp, getInitials } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 import { formatQuotedReplyText, getDisplayMessageCaption } from '../services/chatApi';
 
 const QUICK_EMOJIS = ['👍', '❤️', '👏', '🎉'];
@@ -40,6 +41,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   onPinMessage,
   onRetry,
 }) => {
+  const { lang, tr } = useI18n();
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const isOwn =
@@ -53,7 +55,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const reactions = Array.isArray(message.reactions) ? message.reactions : [];
   const displayCaption = getDisplayMessageCaption(message);
   const quotedReplyText = message.replyTo?.content
-    ? formatQuotedReplyText(message.replyTo.content)
+    ? formatQuotedReplyText(message.replyTo.content, undefined, lang)
     : '';
   const isImageAttachment =
     message.attachment?.kind === 'image' ||
@@ -69,14 +71,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       return (
         <span className="inline-flex items-center gap-0.5 rounded bg-red-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
           <ShieldCheck className="h-2.5 w-2.5" />
-          Giáo viên
+          {tr('Giáo viên', 'Teacher')}
         </span>
       );
     }
     if (message.sender_role === 'admin') {
       return (
         <span className="inline-flex items-center gap-0.5 rounded bg-amber-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
-          Học vụ KTN
+          {tr('Học vụ KTN', 'KTN Academic')}
         </span>
       );
     }
@@ -93,7 +95,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700"
         >
           <Clock className="h-3 w-3 animate-spin" />
-          Đang gửi...
+          {tr('Đang gửi...', 'Sending...')}
         </span>
       );
     }
@@ -107,7 +109,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         >
           <span className="inline-flex items-center gap-1 font-semibold">
             <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-600" />
-            Chưa gửi được. Tin nhắn vẫn đang được giữ trên thiết bị.
+            {tr(
+              'Chưa gửi được. Tin nhắn vẫn đang được giữ trên thiết bị.',
+              'Failed to send. The message is saved on this device.'
+            )}
           </span>
           {onRetry && (
             <button
@@ -117,7 +122,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               className="inline-flex items-center gap-1 rounded bg-red-700 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-red-800"
             >
               <RotateCcw className="h-3 w-3" />
-              Thử lại
+              {tr('Thử lại', 'Retry')}
             </button>
           )}
         </div>
@@ -131,7 +136,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           className="inline-flex items-center gap-0.5 text-[11px] font-medium text-emerald-700"
         >
           <CheckCheck className="h-3.5 w-3.5" />
-          Đã xem
+          {tr('Đã xem', 'Seen')}
         </span>
       );
     }
@@ -143,7 +148,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           className="inline-flex items-center gap-0.5 text-[11px] text-stone-500"
         >
           <CheckCheck className="h-3.5 w-3.5" />
-          Đã nhận
+          {tr('Đã nhận', 'Delivered')}
         </span>
       );
     }
@@ -154,7 +159,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         className="inline-flex items-center gap-0.5 text-[11px] text-stone-500"
       >
         <Check className="h-3 w-3" />
-        Đã gửi
+        {tr('Đã gửi', 'Sent')}
       </span>
     );
   };
@@ -197,7 +202,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             className="mb-1 flex flex-wrap items-center gap-1.5 px-1"
           >
             <span className="text-xs font-semibold text-stone-700">
-              {isOwn ? 'Bạn' : message.sender_name}
+              {isOwn
+                ? tr('Bạn', 'You')
+                : message.sender_name === 'Thành viên KTN'
+                ? tr('Thành viên KTN', 'KTN Member')
+                : message.sender_name}
             </span>
             {renderRoleBadge()}
           </div>
@@ -219,7 +228,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           {message.replyTo && quotedReplyText && (
             <div className="mb-2 rounded-lg border-l-4 border-red-700 bg-stone-900/5 px-2.5 py-1.5 text-xs">
               <p className="font-bold text-red-900">
-                Trả lời {message.replyTo.senderName || 'tin nhắn'}
+                {tr('Trả lời', 'Reply to')} {message.replyTo.senderName || tr('tin nhắn', 'message')}
               </p>
               <p className="line-clamp-2 text-stone-600">{quotedReplyText}</p>
             </div>
@@ -292,10 +301,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 type="button"
                 onClick={() => setShowEmojiPicker((prev) => !prev)}
                 className="inline-flex items-center gap-1 rounded-md border border-stone-200/80 bg-white px-2 py-0.5 text-[11px] font-medium text-stone-600 shadow-sm hover:bg-stone-50 hover:text-stone-900"
-                title="Thả biểu tượng cảm xúc"
+                title={tr('Thả biểu tượng cảm xúc', 'Add reaction')}
               >
                 <SmilePlus className="h-3 w-3" />
-                <span>Cảm xúc</span>
+                <span>{tr('Cảm xúc', 'React')}</span>
               </button>
 
               {showEmojiPicker && (
@@ -321,10 +330,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               type="button"
               onClick={() => onReply(message)}
               className="inline-flex items-center gap-1 rounded-md border border-stone-200/80 bg-white px-2 py-0.5 text-[11px] font-medium text-stone-600 shadow-sm hover:bg-stone-50 hover:text-stone-900"
-              title="Trả lời tin nhắn này"
+              title={tr('Trả lời tin nhắn này', 'Reply to this message')}
             >
               <Reply className="h-3 w-3" />
-              <span>Trả lời</span>
+              <span>{tr('Trả lời', 'Reply')}</span>
             </button>
 
             {canManagePin && (
@@ -332,10 +341,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 type="button"
                 onClick={() => onPinMessage(message)}
                 className="inline-flex items-center gap-1 rounded-md border border-stone-200/80 bg-white px-2 py-0.5 text-[11px] font-medium text-stone-600 shadow-sm hover:bg-amber-50 hover:text-amber-900"
-                title="Ghim làm thông báo lớp"
+                title={tr('Ghim làm thông báo lớp', 'Pin as class announcement')}
               >
                 <Pin className="h-3 w-3" />
-                <span>Ghim thông báo</span>
+                <span>{tr('Ghim thông báo', 'Pin announcement')}</span>
               </button>
             )}
           </div>

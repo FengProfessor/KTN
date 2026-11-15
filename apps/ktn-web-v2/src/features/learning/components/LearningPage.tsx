@@ -39,6 +39,12 @@ import {
   formatVnd,
 } from '@/lib/utils';
 import {
+  useI18n,
+  trStatic,
+  translateCourseTitle,
+  type AppLanguage,
+} from '@/i18n';
+import {
   KtnCourse,
   KtnHomework,
   KtnLessonUnit,
@@ -59,20 +65,76 @@ function formatMaterialBytes(bytes?: number | null): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-export const STUDENT_TRACKER_STAGES: Array<{
+export function getStudentTrackerStages(
+  lang: AppLanguage
+): Array<{
   id: StudentOrderTrackerStage;
   label: string;
-}> = [
-  { id: 'received', label: 'Đã tiếp nhận' },
-  { id: 'contacted', label: 'Đã liên hệ' },
-  { id: 'awaiting_payment', label: 'Chờ thanh toán' },
-  { id: 'payment_verified', label: 'Đã xác minh thanh toán' },
-  { id: 'activating', label: 'Đang kích hoạt' },
-  { id: 'unlocked', label: 'Đã mở khóa' },
-  { id: 'needs_support', label: 'Cần hỗ trợ' },
-];
+}> {
+  return [
+    { id: 'received', label: trStatic('Đã tiếp nhận', 'Received', lang) },
+    { id: 'contacted', label: trStatic('Đã liên hệ', 'Contacted', lang) },
+    {
+      id: 'awaiting_payment',
+      label: trStatic('Chờ thanh toán', 'Awaiting payment', lang),
+    },
+    {
+      id: 'payment_verified',
+      label: trStatic('Đã xác minh thanh toán', 'Payment verified', lang),
+    },
+    { id: 'activating', label: trStatic('Đang kích hoạt', 'Activating', lang) },
+    { id: 'unlocked', label: trStatic('Đã mở khóa', 'Unlocked', lang) },
+    { id: 'needs_support', label: trStatic('Cần hỗ trợ', 'Needs support', lang) },
+  ];
+}
+
+function translateMaterialActionLabel(
+  actionLabel: string | null | undefined,
+  page: number | string | null | undefined,
+  fallbackNoPage: string,
+  lang: AppLanguage
+): string {
+  if (lang !== 'en') {
+    return actionLabel || (page ? `Mở xem (Trang ${page})` : fallbackNoPage);
+  }
+  if (!actionLabel) {
+    return page ? `Open (Page ${page})` : fallbackNoPage;
+  }
+  const trimmed = actionLabel.trim();
+  const pageMatch = trimmed.match(/^Mở xem \(Trang (.+)\)$/i);
+  if (pageMatch) return `Open (Page ${pageMatch[1]})`;
+  if (/^Mở xem tài liệu$/i.test(trimmed)) return 'Open material';
+  if (/^Xem tài liệu$/i.test(trimmed)) return 'View material';
+  return trimmed
+    .replace(/^Mở xem\b/i, 'Open')
+    .replace(/\bTrang\b/gi, 'Page');
+}
+
+function translateOrderTrackerLabel(
+  ord: KtnOrder,
+  currentStage: StudentOrderTrackerStage,
+  lang: AppLanguage
+): string {
+  if (lang !== 'en') {
+    return ord.student_tracker_label || 'Đang xử lý';
+  }
+  const raw = (ord.student_tracker_label || '').trim();
+  if (raw === 'Chờ thanh toán (Đã báo chuyển khoản)') {
+    return 'Awaiting payment (Transfer reported)';
+  }
+  const stages = getStudentTrackerStages('en');
+  const stageMatch = stages.find((s) => s.id === currentStage);
+  if (!raw || raw === 'Đang xử lý') {
+    return stageMatch?.label || 'Processing';
+  }
+  const viStages = getStudentTrackerStages('vi');
+  const viIdx = viStages.findIndex((s) => s.label === raw);
+  if (viIdx >= 0) return stages[viIdx].label;
+  return stageMatch?.label || raw;
+}
 
 export const LearningPage: React.FC = () => {
+  const { lang, isEn, tr } = useI18n();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -329,11 +391,11 @@ export const LearningPage: React.FC = () => {
         : {
             id: selectedCourseId,
             code: 'HSK',
-            title: 'Khóa học tiếng Trung Khổng Tử Nhí',
-            shortTitle: 'Khóa học',
+            title: tr('Khóa học tiếng Trung Khổng Tử Nhí', 'Khong Tu Nhi Chinese Course'),
+            shortTitle: tr('Khóa học', 'Course'),
           })
     );
-  }, [coursesList, selectedCourseId, isDemoMode]);
+  }, [coursesList, selectedCourseId, isDemoMode, tr]);
 
   const [nowMs, setNowMs] = useState<number>(() => getServerNowMs());
   const activeCourseEntitlement = useMemo(
@@ -341,18 +403,18 @@ export const LearningPage: React.FC = () => {
     [entitledCourseMap, activeCourse.id]
   );
   const activeCourseExpInfo = useMemo(
-    () => computeCourseExpirationInfo(activeCourseEntitlement, nowMs),
-    [activeCourseEntitlement, nowMs]
+    () => computeCourseExpirationInfo(activeCourseEntitlement, nowMs, lang),
+    [activeCourseEntitlement, nowMs, lang]
   );
 
   const hasAnyExpiringSoonCourse = useMemo(() => {
     if (activeCourseExpInfo.statusKey === 'expiring_soon') return true;
     for (const ent of entitledCourseMap.values()) {
-      const info = computeCourseExpirationInfo(ent, nowMs);
+      const info = computeCourseExpirationInfo(ent, nowMs, lang);
       if (info.statusKey === 'expiring_soon') return true;
     }
     return false;
-  }, [activeCourseExpInfo.statusKey, entitledCourseMap, nowMs]);
+  }, [activeCourseExpInfo.statusKey, entitledCourseMap, nowMs, lang]);
 
   useEffect(() => {
     setNowMs(getServerNowMs());
@@ -408,12 +470,15 @@ export const LearningPage: React.FC = () => {
   // Create In-App Student Order Mutation (Phase 4.4)
   const createStudentOrderMutation = useMutation({
     mutationFn: async () => {
-      if (!registerModalCourse) throw new Error('Chưa chọn khóa học');
+      if (!registerModalCourse) throw new Error(tr('Chưa chọn khóa học', 'No course selected'));
       setRegError(null);
       const cleanPhone = regParentPhone.replace(/[^\d]/g, '');
       if (!VALID_VN_PHONE_REGEX.test(cleanPhone)) {
         throw new Error(
-          'Số điện thoại / Zalo phụ huynh không hợp lệ (vui lòng nhập đủ 10 số bắt đầu bằng 0).'
+          tr(
+            'Số điện thoại / Zalo phụ huynh không hợp lệ (vui lòng nhập đủ 10 số bắt đầu bằng 0).',
+            'Invalid parent phone / Zalo number (please enter 10 digits starting with 0).'
+          )
         );
       }
 
@@ -421,7 +486,7 @@ export const LearningPage: React.FC = () => {
         await new Promise((r) => setTimeout(r, 300));
         const demoOrder: KtnOrder = {
           order_id: `ORD-DEMO-${Date.now().toString().slice(-5)}`,
-          student_name: regStudentName || user?.name || 'Học viên KTN',
+          student_name: regStudentName || user?.name || tr('Học viên KTN', 'KTN Student'),
           parent_name: regParentName.trim(),
           student_email: user?.email || 'hoangngan@khongtunhi.com',
           phone: cleanPhone,
@@ -435,9 +500,9 @@ export const LearningPage: React.FC = () => {
           contact_status: 'not_called',
           approval_status: 'pending',
           source: 'authenticated_student',
-          source_label: 'Học viên đang đăng nhập',
+          source_label: tr('Học viên đang đăng nhập', 'Logged-in student'),
           student_tracker_stage: 'received',
-          student_tracker_label: 'Đã tiếp nhận',
+          student_tracker_label: tr('Đã tiếp nhận', 'Received'),
           created_at: new Date().toISOString(),
         };
         return {
@@ -446,14 +511,14 @@ export const LearningPage: React.FC = () => {
           order: demoOrder,
           paymentInfo: {
             bankId: 'MB',
-            bankName: 'MB Bank (Ngân hàng Quân Đội)',
+            bankName: tr('MB Bank (Ngân hàng Quân Đội)', 'MB Bank'),
             accountNumber: '8838683868',
             accountName: 'HOC VIEN KHONG TU NHI',
             amount: demoOrder.amount,
             transferContent: demoOrder.order_id,
             qrUrl: `https://img.vietqr.io/image/MB-8838683868-compact2.png?amount=${demoOrder.amount}&addInfo=${demoOrder.order_id}`,
           },
-          message: 'Đơn của em đang chờ xác nhận.',
+          message: tr('Đơn của em đang chờ xác nhận.', 'Your order is pending confirmation.'),
         };
       }
 
@@ -478,8 +543,11 @@ export const LearningPage: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ['ktn-student-me'] });
       }
       addToast({
-        title: 'Đơn của em đang chờ xác nhận.',
-        description: `Mã đơn ${res.orderId} đã được ghi nhận thành công.`,
+        title: tr('Đơn của em đang chờ xác nhận.', 'Your order is pending confirmation.'),
+        description: tr(
+          `Mã đơn ${res.orderId} đã được ghi nhận thành công.`,
+          `Order ID ${res.orderId} has been recorded.`
+        ),
         variant: 'success',
       });
     },
@@ -500,11 +568,16 @@ export const LearningPage: React.FC = () => {
                 ...activeCreatedOrder.order,
                 payment_detailed_status: 'customer_reported' as const,
                 student_tracker_stage: 'awaiting_payment' as const,
-                student_tracker_label: 'Chờ thanh toán (Đã báo chuyển khoản)',
+                student_tracker_label: tr(
+                  'Chờ thanh toán (Đã báo chuyển khoản)',
+                  'Awaiting payment (Transfer reported)'
+                ),
               }
             : ({} as KtnOrder),
-          message:
+          message: tr(
             'Đã ghi nhận thông báo chuyển khoản. Học vụ sẽ kiểm tra giao dịch và xác nhận sớm nhất!',
+            'Transfer report recorded. Academic staff will verify and confirm shortly!'
+          ),
         };
       }
       return ktnApi.reportOrderPayment(params);
@@ -522,14 +595,14 @@ export const LearningPage: React.FC = () => {
       }
       queryClient.invalidateQueries({ queryKey: ['ktn-student-my-orders'] });
       addToast({
-        title: 'Đã gửi thông báo chuyển khoản!',
+        title: tr('Đã gửi thông báo chuyển khoản!', 'Transfer report sent!'),
         description: res.message,
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Không thể gửi báo cáo chuyển khoản',
+        title: tr('Không thể gửi báo cáo chuyển khoản', 'Unable to send transfer report'),
         description: err.message,
         variant: 'error',
       });
@@ -544,6 +617,7 @@ export const LearningPage: React.FC = () => {
       user?.email,
       isDemoMode,
       videoDemoScenario,
+      isDemoMode || videoDemoScenario !== 'live_real' ? lang : 'live',
     ],
     queryFn: async () => {
       if (isDemoMode || videoDemoScenario !== 'live_real') {
@@ -552,14 +626,17 @@ export const LearningPage: React.FC = () => {
         }
         if (videoDemoScenario === 'unentitled') {
           throw new KtnApiError({
-            message: 'Tài khoản chưa được mở khóa khóa học này.',
+            message: tr(
+              'Tài khoản chưa được mở khóa khóa học này.',
+              'Your account does not have access to this course yet.'
+            ),
             status: 403,
             code: 'COURSE_NOT_ENTITLED',
           });
         }
         if (videoDemoScenario === 'error') {
           throw new KtnApiError({
-            message: 'Không tải được video bài giảng.',
+            message: tr('Không tải được video bài giảng.', 'Unable to load lesson video.'),
             status: 502,
             code: 'STREAM_ERROR',
           });
@@ -669,7 +746,10 @@ export const LearningPage: React.FC = () => {
         status: 'pending' as const,
         score: null,
         teacher_feedback: '',
-        student_note: 'Con vừa nộp bản thu âm đọc từ mới bài này ạ!',
+        student_note: tr(
+          'Con vừa nộp bản thu âm đọc từ mới bài này ạ!',
+          'I just submitted my vocabulary audio recording for this lesson!'
+        ),
       };
     }
     const list = homeworksQuery.data || [];
@@ -681,7 +761,7 @@ export const LearningPage: React.FC = () => {
           Number(h.lesson_num) === targetLessonNum
       ) || null
     );
-  }, [homeworksQuery.data, activeCourse.id, activeLesson, isDemoMode, videoDemoScenario]);
+  }, [homeworksQuery.data, activeCourse.id, activeLesson, isDemoMode, videoDemoScenario, tr]);
 
   // 4. Submit Homework Mutation (Presigned S3 Upload + POST /api/ktn/homeworks, or Text Answer)
   const submitHomeworkMutation = useMutation({
@@ -692,7 +772,7 @@ export const LearningPage: React.FC = () => {
       submissionMode?: 'file' | 'text';
       textAnswer?: string;
     }) => {
-      if (!activeLesson) throw new Error('Chưa chọn bài học');
+      if (!activeLesson) throw new Error(tr('Chưa chọn bài học', 'No lesson selected'));
       const targetLessonNum = Number(activeLesson.lessonNumber || activeLesson.num);
 
       if (isDemoMode) {
@@ -744,7 +824,9 @@ export const LearningPage: React.FC = () => {
         submissionMode: 'file',
         attachments: [
           {
-            title: params.fileName || `Bài nộp Bài ${targetLessonNum}`,
+            title:
+              params.fileName ||
+              tr(`Bài nộp Bài ${targetLessonNum}`, `Lesson ${targetLessonNum} submission`),
             fileUrl: uploaded.fileUrl,
             mediaType: uploaded.fileType,
             size: uploaded.size,
@@ -755,10 +837,16 @@ export const LearningPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-homeworks'] });
       addToast({
-        title: 'Đã nộp bài tập thành công!',
+        title: tr('Đã nộp bài tập thành công!', 'Homework submitted successfully!'),
         description: user?.classCode
-          ? `Bài làm của em đã được lưu và gửi tới giáo viên phụ trách lớp ${user.classCode}.`
-          : 'Bài làm của em đã được lưu vào hệ thống và đang chờ chấm điểm.',
+          ? tr(
+              `Bài làm của em đã được lưu và gửi tới giáo viên phụ trách lớp ${user.classCode}.`,
+              `Your work has been saved and sent to the teacher of class ${user.classCode}.`
+            )
+          : tr(
+              'Bài làm của em đã được lưu vào hệ thống và đang chờ chấm điểm.',
+              'Your work has been saved and is awaiting grading.'
+            ),
         variant: 'success',
       });
     },
@@ -786,6 +874,7 @@ export const LearningPage: React.FC = () => {
       if (
         err?.code === 'COURSE_EXPIRED' ||
         String(err?.message || '').includes('COURSE_EXPIRED') ||
+        // Preserve raw Vietnamese backend API error substring matching
         String(err?.message || '').includes('hết thời hạn truy cập') ||
         String(err?.message || '').includes('Thời hạn truy cập khóa học đã kết thúc')
       ) {
@@ -795,6 +884,7 @@ export const LearningPage: React.FC = () => {
         err?.status === 403 ||
         err?.code === 'COURSE_NOT_ENTITLED' ||
         String(err?.message || '').includes('COURSE_NOT_ENTITLED') ||
+        // Preserve raw Vietnamese backend API error substring matching
         String(err?.message || '').includes('chưa được cấp quyền') ||
         String(err?.message || '').includes('chưa được mở khóa')
       ) {
@@ -845,8 +935,8 @@ export const LearningPage: React.FC = () => {
     toggleLessonCompleted(activeCourse.id, activeLessonNumber);
     addToast({
       title: !isCurrentLessonCompleted
-        ? 'Tuyệt vời! Đã hoàn thành bài học 🎉'
-        : 'Đã bỏ đánh dấu hoàn thành bài học',
+        ? tr('Tuyệt vời! Đã hoàn thành bài học 🎉', 'Great! Lesson marked complete 🎉')
+        : tr('Đã bỏ đánh dấu hoàn thành bài học', 'Unmarked lesson completion'),
       variant: 'success',
     });
   };
@@ -903,19 +993,19 @@ export const LearningPage: React.FC = () => {
       {isDemoMode && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-2 text-xs">
           <span className="font-semibold text-amber-950">
-            Trạng thái kiểm thử Phòng học (Demo):
+            {tr('Trạng thái kiểm thử Phòng học (Demo):', 'Classroom Demo State:')}
           </span>
           <div className="flex flex-wrap items-center gap-1">
             {(
               [
-                { id: 'live_real', label: 'Sẵn sàng phát' },
-                { id: 'playing', label: 'Đang phát' },
-                { id: 'paused', label: 'Tạm dừng' },
-                { id: 'loading', label: 'Đang tải (Loading)' },
-                { id: 'error', label: 'Lỗi Stream + Thử lại' },
-                { id: 'unentitled', label: 'Chưa mở khóa (403 Guard)' },
-                { id: 'homework_pending', label: 'Có bài tập cần nộp' },
-                { id: 'homework_submitted', label: 'Đã nộp bài tập' },
+                { id: 'live_real', label: tr('Sẵn sàng phát', 'Ready') },
+                { id: 'playing', label: tr('Đang phát', 'Playing') },
+                { id: 'paused', label: tr('Tạm dừng', 'Paused') },
+                { id: 'loading', label: tr('Đang tải (Loading)', 'Loading') },
+                { id: 'error', label: tr('Lỗi Stream + Thử lại', 'Stream Error + Retry') },
+                { id: 'unentitled', label: tr('Chưa mở khóa (403 Guard)', 'Locked (403 Guard)') },
+                { id: 'homework_pending', label: tr('Có bài tập cần nộp', 'Homework Pending') },
+                { id: 'homework_submitted', label: tr('Đã nộp bài tập', 'Homework Submitted') },
               ] as const
             ).map((st) => (
               <button
@@ -943,7 +1033,9 @@ export const LearningPage: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
-            <span>Chưa tải được danh sách khóa học.</span>
+            <span>
+              {tr('Chưa tải được danh sách khóa học.', 'Unable to load course list.')}
+            </span>
           </div>
           <button
             type="button"
@@ -954,7 +1046,7 @@ export const LearningPage: React.FC = () => {
             className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
           >
             <RotateCcw className="h-3 w-3" />
-            Thử lại
+            {tr('Thử lại', 'Retry')}
           </button>
         </div>
       )}
@@ -969,13 +1061,16 @@ export const LearningPage: React.FC = () => {
             data-testid="learning-active-course-title"
             className="font-display text-sm font-bold leading-snug text-stone-900 sm:text-base"
           >
-            {activeCourse.title}
+            {translateCourseTitle(activeCourse.title, lang)}
           </h1>
           <span
             data-testid="learning-course-progress-pill"
             className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-200"
           >
-            Tiến độ: {completedCount}/{totalCurriculumCount} bài
+            {tr(
+              `Tiến độ: ${completedCount}/${totalCurriculumCount} bài`,
+              `Progress: ${completedCount}/${totalCurriculumCount} lessons`
+            )}
           </span>
           {user?.role === 'student' && isCourseEntitled(activeCourse.id) && (
             activeCourseExpInfo.isExpired || playerStatusOverride === 'expired' ? (
@@ -989,7 +1084,7 @@ export const LearningPage: React.FC = () => {
                 <span>
                   {activeCourseExpInfo.isExpired
                     ? activeCourseExpInfo.studentCardText
-                    : 'Đã hết hạn · Gia hạn'}
+                    : tr('Đã hết hạn · Gia hạn', 'Expired · Renew')}
                 </span>
               </button>
             ) : (
@@ -1040,10 +1135,10 @@ export const LearningPage: React.FC = () => {
                       : 'border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
                   }`}
                 >
-                  <span>{course.displayLabel}</span>
+                  <span>{translateCourseTitle(course.displayLabel || course.title, lang)}</span>
                   {!isEntitled && (
                     <span className="rounded bg-stone-200 px-1 py-0.2 text-[10px] text-stone-600">
-                      Chưa mở
+                      {tr('Chưa mở', 'Locked')}
                     </span>
                   )}
                 </button>
@@ -1069,10 +1164,16 @@ export const LearningPage: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center rounded-lg bg-red-800 px-2.5 py-0.5 text-[11px] font-bold text-white">
                     {activeLesson.unitType === 'workbook'
-                      ? activeLesson.partNumber || 'Sách bài tập'
+                      ? activeLesson.partNumber || tr('Sách bài tập', 'Workbook')
                       : activeLesson.partNumber && String(activeLesson.partNumber).includes('.')
-                      ? `Bài ${activeLessonNumber} · Phần ${activeLesson.partNumber}`
-                      : `Bài ${activeLessonNumber}/${totalCurriculumCount}`}
+                      ? tr(
+                          `Bài ${activeLessonNumber} · Phần ${activeLesson.partNumber}`,
+                          `Lesson ${activeLessonNumber} · Part ${activeLesson.partNumber}`
+                        )
+                      : tr(
+                          `Bài ${activeLessonNumber}/${totalCurriculumCount}`,
+                          `Lesson ${activeLessonNumber}/${totalCurriculumCount}`
+                        )}
                   </span>
                   {activeLesson.rawTitle && (
                     <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-semibold text-stone-600">
@@ -1090,7 +1191,7 @@ export const LearningPage: React.FC = () => {
                 {isCurrentLessonCompleted && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Đã hoàn thành
+                    {tr('Đã hoàn thành', 'Completed')}
                   </span>
                 )}
               </div>
@@ -1131,7 +1232,9 @@ export const LearningPage: React.FC = () => {
                   data-testid="active-lesson-grammar-summary"
                   className="mt-1.5 text-xs leading-relaxed text-stone-600"
                 >
-                  <strong className="font-semibold text-stone-800">Trọng tâm bài học:</strong>{' '}
+                  <strong className="font-semibold text-stone-800">
+                    {tr('Trọng tâm bài học:', 'Lesson Focus:')}
+                  </strong>{' '}
                   {activeLesson.grammar}
                 </p>
               )}
@@ -1139,8 +1242,10 @@ export const LearningPage: React.FC = () => {
           )}
 
           <HlsVideoPlayer
-            lessonTitle={activeLesson?.title || 'Bài giảng tiếng Trung KTN'}
-            courseName={activeCourse.title}
+            lessonTitle={
+              activeLesson?.title || tr('Bài giảng tiếng Trung KTN', 'KTN Chinese Lesson')
+            }
+            courseName={translateCourseTitle(activeCourse.title, lang)}
             streamUrl={
               playerStatusOverride === 'expired' || playerStatusOverride === 'unentitled'
                 ? null
@@ -1188,7 +1293,10 @@ export const LearningPage: React.FC = () => {
               >
                 <span className="inline-flex items-center gap-1 text-xs font-bold text-stone-700">
                   <Layers className="h-3.5 w-3.5 text-red-800" />
-                  Các phần của Bài {activeLessonGroup.lessonNum}:
+                  {tr(
+                    `Các phần của Bài ${activeLessonGroup.lessonNum}:`,
+                    `Parts of Lesson ${activeLessonGroup.lessonNum}:`
+                  )}
                 </span>
                 {activeLessonGroup.subUnits.map((sub, sIdx) => {
                   const subUid = sub.unitId || sub._id || sub.id;
@@ -1209,7 +1317,7 @@ export const LearningPage: React.FC = () => {
                       }`}
                     >
                       <PlayCircle className="h-3.5 w-3.5" />
-                      <span>Phần {partCode}</span>
+                      <span>{tr(`Phần ${partCode}`, `Part ${partCode}`)}</span>
                       {sub.duration && (
                         <span
                           className={`text-[10px] ${
@@ -1232,10 +1340,16 @@ export const LearningPage: React.FC = () => {
             >
               <div>
                 <p className="font-bold text-amber-900">
-                  Tiến độ học ({completedCount}/{totalCurriculumCount} bài) và bài tập đã nộp ({activeCourseSubmittedHomeworks.length} bài) được bảo lưu nguyên vẹn.
+                  {tr(
+                    `Tiến độ học (${completedCount}/${totalCurriculumCount} bài) và bài tập đã nộp (${activeCourseSubmittedHomeworks.length} bài) được bảo lưu nguyên vẹn.`,
+                    `Your progress (${completedCount}/${totalCurriculumCount} lessons) and submitted homework (${activeCourseSubmittedHomeworks.length}) are safely preserved.`
+                  )}
                 </p>
                 <p className="mt-0.5 text-[11px] text-amber-800">
-                  Sau khi gia hạn khóa học, em sẽ tiếp tục học từ bài đang dở mà không cần tạo tài khoản mới.
+                  {tr(
+                    'Sau khi gia hạn khóa học, em sẽ tiếp tục học từ bài đang dở mà không cần tạo tài khoản mới.',
+                    'After renewing, you can resume right where you left off without creating a new account.'
+                  )}
                 </p>
               </div>
               <button
@@ -1244,7 +1358,7 @@ export const LearningPage: React.FC = () => {
                 onClick={() => openRegistrationModal(activeCourse)}
                 className="rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
               >
-                Đã hết hạn · Gia hạn
+                {tr('Đã hết hạn · Gia hạn', 'Expired · Renew')}
               </button>
             </div>
           )}
@@ -1258,8 +1372,11 @@ export const LearningPage: React.FC = () => {
                 <div className="min-w-0">
                   <p className="text-[11px] font-bold uppercase text-red-800">
                     {activeLesson.unitType === 'workbook'
-                      ? activeLesson.partNumber || 'Sách bài tập'
-                      : `Bài ${activeLessonNumber}/${totalCurriculumCount}`}
+                      ? activeLesson.partNumber || tr('Sách bài tập', 'Workbook')
+                      : tr(
+                          `Bài ${activeLessonNumber}/${totalCurriculumCount}`,
+                          `Lesson ${activeLessonNumber}/${totalCurriculumCount}`
+                        )}
                   </p>
                   <p className="truncate text-xs font-semibold text-stone-900">
                     {activeLesson.title}
@@ -1273,8 +1390,14 @@ export const LearningPage: React.FC = () => {
                 >
                   <ListVideo className="h-3.5 w-3.5 text-red-800" />
                   <span>
-                    Chọn bài ({totalCurriculumCount}
-                    {workbookUnits.length > 0 ? `+${workbookUnits.length} SBT` : ''})
+                    {tr(
+                      `Chọn bài (${totalCurriculumCount}${
+                        workbookUnits.length > 0 ? `+${workbookUnits.length} SBT` : ''
+                      })`,
+                      `Lessons (${totalCurriculumCount}${
+                        workbookUnits.length > 0 ? `+${workbookUnits.length} WB` : ''
+                      })`
+                    )}
                   </span>
                 </button>
               </div>
@@ -1347,7 +1470,7 @@ export const LearningPage: React.FC = () => {
                                         : 'border border-stone-200 bg-white text-stone-700'
                                     }`}
                                   >
-                                    Phần {pCode} ({sub.duration || '12:00'})
+                                    {tr(`Phần ${pCode}`, `Part ${pCode}`)} ({sub.duration || '12:00'})
                                   </button>
                                 );
                               })}
@@ -1360,7 +1483,7 @@ export const LearningPage: React.FC = () => {
                     {workbookUnits.length > 0 && (
                       <div className="pt-2">
                         <p className="px-2 pb-1 text-[11px] font-bold uppercase text-stone-500">
-                          Chữa Sách bài tập (SBT)
+                          {tr('Chữa Sách bài tập (SBT)', 'Workbook Review (WB)')}
                         </p>
                         {workbookUnits.map((wb) => {
                           const wbUid = wb.unitId || wb._id || wb.id;
@@ -1417,7 +1540,7 @@ export const LearningPage: React.FC = () => {
                       }`}
                     >
                       <BookOpen className="h-3.5 w-3.5" />
-                      <span>Nội dung</span>
+                      <span>{tr('Nội dung', 'Overview')}</span>
                     </button>
 
                     <button
@@ -1440,7 +1563,7 @@ export const LearningPage: React.FC = () => {
                     >
                       <Headphones className="h-3.5 w-3.5" />
                       <span>
-                        Học liệu (
+                        {tr('Học liệu', 'Materials')} (
                         {(activeLesson.materials?.length || 0) +
                           (activeLesson.audioTracks?.length || 0)}
                         )
@@ -1466,18 +1589,19 @@ export const LearningPage: React.FC = () => {
                       }`}
                     >
                       <FileCheck2 className="h-3.5 w-3.5" />
-                      <span>Bài tập</span>
+                      <span>{tr('Bài tập', 'Homework')}</span>
                       {currentLessonHomework?.status === 'graded' ? (
                         <span className="rounded-full bg-emerald-600 px-1.5 py-0.2 text-[10px] text-white">
-                          {currentLessonHomework.score}đ
+                          {currentLessonHomework.score}
+                          {tr('đ', ' pts')}
                         </span>
                       ) : currentLessonHomework ? (
                         <span className="rounded-full bg-blue-600 px-1.5 py-0.2 text-[10px] text-white">
-                          Đã nộp
+                          {tr('Đã nộp', 'Submitted')}
                         </span>
                       ) : activeLesson.homeworkAssignment?.assigned !== false ? (
                         <span className="rounded-full bg-amber-500/90 px-1.5 py-0.2 text-[10px] text-white">
-                          Cần làm
+                          {tr('Cần làm', 'To do')}
                         </span>
                       ) : null}
                     </button>
@@ -1501,7 +1625,7 @@ export const LearningPage: React.FC = () => {
                       }`}
                     >
                       <MessageSquare className="h-3.5 w-3.5" />
-                      <span>Hỏi đáp</span>
+                      <span>{tr('Hỏi đáp', 'Q&A')}</span>
                     </button>
                   </div>
 
@@ -1512,7 +1636,9 @@ export const LearningPage: React.FC = () => {
                       className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-100"
                     >
                       <MessageSquare className="h-3.5 w-3.5 text-red-800" />
-                      <span>Nhóm lớp {user.classCode}</span>
+                      <span>
+                        {tr(`Nhóm lớp ${user.classCode}`, `Class ${user.classCode}`)}
+                      </span>
                     </button>
                   ) : (
                     <button
@@ -1529,7 +1655,7 @@ export const LearningPage: React.FC = () => {
                       className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
                     >
                       <MessageSquare className="h-3.5 w-3.5" />
-                      <span>Hỏi GV bài này</span>
+                      <span>{tr('Hỏi GV bài này', 'Ask Teacher')}</span>
                     </button>
                   )}
                 </div>
@@ -1539,11 +1665,14 @@ export const LearningPage: React.FC = () => {
                   <div data-testid="lesson-overview-panel" className="mt-3 space-y-3">
                     <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3">
                       <p className="text-xs font-bold text-stone-900">
-                        Chủ đề & Ngữ pháp trọng tâm:
+                        {tr('Chủ đề & Ngữ pháp trọng tâm:', 'Topic & Key Grammar:')}
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-stone-700">
                         {activeLesson.grammar ||
-                          'Xem video bài giảng, luyện nghe phát âm chuẩn và thực hành bài tập theo hướng dẫn.'}
+                          tr(
+                            'Xem video bài giảng, luyện nghe phát âm chuẩn và thực hành bài tập theo hướng dẫn.',
+                            'Watch the lesson video, practice pronunciation, and complete exercises as guided.'
+                          )}
                       </p>
                     </div>
 
@@ -1553,7 +1682,7 @@ export const LearningPage: React.FC = () => {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <h3 className="text-xs font-bold uppercase tracking-wide text-stone-600">
-                            Học liệu của bài này
+                            {tr('Học liệu của bài này', 'Lesson Materials')}
                           </h3>
                           <button
                             type="button"
@@ -1568,7 +1697,10 @@ export const LearningPage: React.FC = () => {
                             }}
                             className="text-xs font-bold text-red-800 hover:underline"
                           >
-                            Xem tất cả học liệu & MP3 →
+                            {tr(
+                              'Xem tất cả học liệu & MP3 →',
+                              'View all materials & MP3 →'
+                            )}
                           </button>
                         </div>
 
@@ -1585,14 +1717,21 @@ export const LearningPage: React.FC = () => {
                               <div>
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-red-800">
                                   <FileText className="h-3 w-3" />
-                                  {mat.page ? `Trang ${mat.page}` : 'Tài liệu PDF'}
+                                  {mat.page
+                                    ? tr(`Trang ${mat.page}`, `Page ${mat.page}`)
+                                    : tr('Tài liệu PDF', 'PDF Material')}
                                 </span>
                                 <p className="mt-0.5 line-clamp-1 text-xs font-bold text-stone-900">
                                   {mat.title}
                                 </p>
                               </div>
                               <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-800">
-                                {mat.actionLabel || 'Mở xem tài liệu'}
+                                {translateMaterialActionLabel(
+                                  mat.actionLabel,
+                                  undefined,
+                                  tr('Mở xem tài liệu', 'Open material'),
+                                  lang
+                                )}
                                 <ExternalLink className="h-3 w-3" />
                               </span>
                             </a>
@@ -1604,7 +1743,10 @@ export const LearningPage: React.FC = () => {
                         data-testid="overview-no-materials-notice"
                         className="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-3 py-2.5 text-xs text-stone-500"
                       >
-                        Bài này chưa có tài liệu đính kèm.
+                        {tr(
+                          'Bài này chưa có tài liệu đính kèm.',
+                          'No attached materials for this lesson yet.'
+                        )}
                       </div>
                     )}
                   </div>
@@ -1622,10 +1764,13 @@ export const LearningPage: React.FC = () => {
                           data-testid="lesson-materials-heading"
                           className="font-display text-sm font-bold text-stone-900"
                         >
-                          Học liệu của bài này
+                          {tr('Học liệu của bài này', 'Lesson Materials')}
                         </h3>
                         <p className="text-xs text-stone-500">
-                          Sách giáo khoa, sách bài tập, vở tập viết và các tệp nghe MP3 đúng theo{' '}
+                          {tr(
+                            'Sách giáo khoa, sách bài tập, vở tập viết và các tệp nghe MP3 đúng theo',
+                            'Textbooks, workbooks, writing sheets, and MP3 tracks for'
+                          )}{' '}
                           {activeLesson.title}
                         </p>
                       </div>
@@ -1637,7 +1782,10 @@ export const LearningPage: React.FC = () => {
                         data-testid="empty-lesson-materials"
                         className="rounded-xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-center text-xs font-semibold text-stone-600"
                       >
-                        Bài này chưa có tài liệu đính kèm.
+                        {tr(
+                          'Bài này chưa có tài liệu đính kèm.',
+                          'No attached materials for this lesson yet.'
+                        )}
                       </div>
                     ) : (
                       <>
@@ -1645,7 +1793,10 @@ export const LearningPage: React.FC = () => {
                         {activeLesson.materials && activeLesson.materials.length > 0 && (
                           <div className="space-y-2">
                             <h4 className="text-xs font-bold uppercase tracking-wide text-stone-600">
-                              Sách & Tài liệu học tập ({activeLesson.materials.length})
+                              {tr(
+                                `Sách & Tài liệu học tập (${activeLesson.materials.length})`,
+                                `Books & Study Materials (${activeLesson.materials.length})`
+                              )}
                             </h4>
                             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                               {activeLesson.materials.map((mat) => {
@@ -1669,11 +1820,11 @@ export const LearningPage: React.FC = () => {
                                         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500">
                                           {mat.page && (
                                             <span className="rounded bg-amber-100 px-1.5 py-0.5 font-bold text-amber-900">
-                                              Trang {mat.page}
+                                              {tr(`Trang ${mat.page}`, `Page ${mat.page}`)}
                                             </span>
                                           )}
                                           {sizeStr && <span>• {sizeStr}</span>}
-                                          <span>• PDF chuẩn</span>
+                                          <span>• {tr('PDF chuẩn', 'Standard PDF')}</span>
                                         </div>
                                       </div>
                                     </div>
@@ -1688,10 +1839,12 @@ export const LearningPage: React.FC = () => {
                                       >
                                         <ExternalLink className="h-3.5 w-3.5" />
                                         <span>
-                                          {mat.actionLabel ||
-                                            (mat.page
-                                              ? `Mở xem (Trang ${mat.page})`
-                                              : 'Xem tài liệu')}
+                                          {translateMaterialActionLabel(
+                                            mat.actionLabel,
+                                            mat.page,
+                                            tr('Xem tài liệu', 'View material'),
+                                            lang
+                                          )}
                                         </span>
                                       </a>
                                       <a
@@ -1703,7 +1856,7 @@ export const LearningPage: React.FC = () => {
                                         className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-100"
                                       >
                                         <Download className="h-3.5 w-3.5" />
-                                        <span>Tải về</span>
+                                        <span>{tr('Tải về', 'Download')}</span>
                                       </a>
                                     </div>
                                   </div>
@@ -1717,7 +1870,10 @@ export const LearningPage: React.FC = () => {
                         {activeLesson.audioTracks && activeLesson.audioTracks.length > 0 && (
                           <div className="space-y-2">
                             <h4 className="text-xs font-bold uppercase tracking-wide text-stone-600">
-                              File nghe MP3 của bài này ({activeLesson.audioTracks.length})
+                              {tr(
+                                `File nghe MP3 của bài này (${activeLesson.audioTracks.length})`,
+                                `Lesson MP3 Audio (${activeLesson.audioTracks.length})`
+                              )}
                             </h4>
                             <div className="space-y-2">
                               {activeLesson.audioTracks.map((audio, idx) => (
@@ -1736,8 +1892,14 @@ export const LearningPage: React.FC = () => {
                                       </p>
                                       <span className="text-[10px] font-semibold uppercase text-stone-500">
                                         {audio.category === 'sbt' || audio.category === 'mp3_sbt'
-                                          ? 'MP3 Luyện nghe Sách bài tập'
-                                          : 'MP3 Bài khóa & Từ mới SGK'}
+                                          ? tr(
+                                              'MP3 Luyện nghe Sách bài tập',
+                                              'Workbook Listening MP3'
+                                            )
+                                          : tr(
+                                              'MP3 Bài khóa & Từ mới SGK',
+                                              'Textbook Dialogue & Vocab MP3'
+                                            )}
                                       </span>
                                     </div>
                                   </div>
@@ -1802,7 +1964,7 @@ export const LearningPage: React.FC = () => {
                   <div className="mt-3">
                     <LessonForumPanel
                       courseId={activeCourse.id}
-                      courseTitle={activeCourse.title}
+                      courseTitle={translateCourseTitle(activeCourse.title, lang)}
                       unitId={String(
                         activeLesson.unitId ||
                           activeLesson._id ||
@@ -1832,11 +1994,20 @@ export const LearningPage: React.FC = () => {
             <div className="border-b border-stone-200 bg-stone-50/80 p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-display text-sm font-bold text-stone-900">
-                  Chương trình học ({totalCurriculumCount} bài
-                  {workbookUnits.length > 0 ? ` · ${workbookUnits.length} SBT` : ''})
+                  {tr(
+                    `Chương trình học (${totalCurriculumCount} bài${
+                      workbookUnits.length > 0 ? ` · ${workbookUnits.length} SBT` : ''
+                    })`,
+                    `Curriculum (${totalCurriculumCount} lessons${
+                      workbookUnits.length > 0 ? ` · ${workbookUnits.length} WB` : ''
+                    })`
+                  )}
                 </h2>
                 <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                  Hoàn thành {completedCount}/{totalCurriculumCount}
+                  {tr(
+                    `Hoàn thành ${completedCount}/${totalCurriculumCount}`,
+                    `Done ${completedCount}/${totalCurriculumCount}`
+                  )}
                 </span>
               </div>
 
@@ -1911,7 +2082,10 @@ export const LearningPage: React.FC = () => {
                           <span>{grp.duration}</span>
                           {grp.subUnits.length > 1 && (
                             <span className="rounded bg-stone-200/80 px-1.5 py-0.2 text-[10px] font-bold text-stone-700">
-                              {grp.subUnits.length} phần
+                              {tr(
+                                `${grp.subUnits.length} phần`,
+                                `${grp.subUnits.length} parts`
+                              )}
                             </span>
                           )}
                           {grp.primaryUnit.audioTracks &&
@@ -1920,7 +2094,7 @@ export const LearningPage: React.FC = () => {
                             )}
                           {isDone && (
                             <span className="font-semibold text-emerald-700">
-                              • Đã học
+                              {tr('• Đã học', '• Done')}
                             </span>
                           )}
                         </div>
@@ -1958,7 +2132,7 @@ export const LearningPage: React.FC = () => {
                               }`}
                             >
                               <PlayCircle className="h-3 w-3" />
-                              <span>Phần {partCode}</span>
+                              <span>{tr(`Phần ${partCode}`, `Part ${partCode}`)}</span>
                               {sub.duration && (
                                 <span
                                   className={`text-[10px] ${
@@ -1984,7 +2158,10 @@ export const LearningPage: React.FC = () => {
                   className="mt-3 border-t border-stone-200 pt-3"
                 >
                   <p className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wider text-stone-500">
-                    Chữa Sách Bài Tập ({workbookUnits.length} phần)
+                    {tr(
+                      `Chữa Sách Bài Tập (${workbookUnits.length} phần)`,
+                      `Workbook Review (${workbookUnits.length} parts)`
+                    )}
                   </p>
                   <div className="space-y-1.5">
                     {workbookUnits.map((wb) => {
@@ -2012,7 +2189,7 @@ export const LearningPage: React.FC = () => {
                                 : 'bg-amber-100 text-amber-900'
                             }`}
                           >
-                            SBT
+                            {tr('SBT', 'WB')}
                           </div>
                           <div className="min-w-0 flex-1">
                             <p
@@ -2050,15 +2227,24 @@ export const LearningPage: React.FC = () => {
             <div>
               <h2 className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wide text-amber-950 sm:text-sm">
                 <Clock className="h-4 w-4 text-red-800" />
-                Đơn đăng ký khóa học của em ({myOrdersList.length})
+                {tr(
+                  `Đơn đăng ký khóa học của em (${myOrdersList.length})`,
+                  `My Course Orders (${myOrdersList.length})`
+                )}
               </h2>
               <p
                 data-testid="student-order-waiting-banner-text"
                 className="mt-0.5 text-xs font-semibold text-stone-700"
               >
                 {myOrdersList.some((o) => o.approval_status === 'pending')
-                  ? 'Đơn của em đang chờ xác nhận.'
-                  : 'Tất cả đơn đăng ký của em đã được xử lý.'}
+                  ? tr(
+                      'Đơn của em đang chờ xác nhận.',
+                      'Your order is pending confirmation.'
+                    )
+                  : tr(
+                      'Tất cả đơn đăng ký của em đã được xử lý.',
+                      'All your registration orders have been processed.'
+                    )}
               </p>
             </div>
           </div>
@@ -2080,7 +2266,11 @@ export const LearningPage: React.FC = () => {
                       <span className="font-mono font-extrabold text-red-900">
                         {ord.order_id}
                       </span>{' '}
-                      · <strong className="text-stone-900">{ord.course_name}</strong> ·{' '}
+                      ·{' '}
+                      <strong className="text-stone-900">
+                        {translateCourseTitle(ord.course_name, lang)}
+                      </strong>{' '}
+                      ·{' '}
                       <span className="font-extrabold text-red-800">
                         {formatVnd(ord.amount)}
                       </span>
@@ -2090,7 +2280,7 @@ export const LearningPage: React.FC = () => {
                         data-testid={`student-my-order-stage-${ord.order_id}`}
                         className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-950"
                       >
-                        {ord.student_tracker_label || 'Đang xử lý'}
+                        {translateOrderTrackerLabel(ord, currentStage, lang)}
                       </span>
                       {ord.approval_status === 'pending' && (
                         <button
@@ -2108,7 +2298,7 @@ export const LearningPage: React.FC = () => {
                           }}
                           className="rounded-lg bg-red-800 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-red-900"
                         >
-                          Xem TT chuyển khoản
+                          {tr('Xem TT chuyển khoản', 'View bank details')}
                         </button>
                       )}
                     </div>
@@ -2116,7 +2306,7 @@ export const LearningPage: React.FC = () => {
 
                   {/* 7-Stage Status Strip */}
                   <div className="mt-2 flex flex-wrap items-center gap-1">
-                    {STUDENT_TRACKER_STAGES.map((st) => {
+                    {getStudentTrackerStages(lang).map((st) => {
                       const isCurrent = st.id === currentStage;
                       return (
                         <span
@@ -2149,16 +2339,22 @@ export const LearningPage: React.FC = () => {
           <div className="flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wide text-stone-900 sm:text-sm">
               <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-              Khóa của em ({myEntitledCourses.length})
+              {tr(
+                `Khóa của em (${myEntitledCourses.length})`,
+                `My Courses (${myEntitledCourses.length})`
+              )}
             </h2>
             <span className="text-[11px] font-medium text-stone-500">
-              Ưu tiên học tập hàng ngày
+              {tr('Ưu tiên học tập hàng ngày', 'Daily study priority')}
             </span>
           </div>
 
           {myEntitledCourses.length === 0 ? (
             <p className="mt-2 rounded-xl bg-stone-50 p-3 text-xs text-stone-600">
-              Tài khoản của em hiện chưa có khóa học video nào được kích hoạt. Em có thể xem học thử và đăng ký khóa học ở mục Khám phá thêm bên dưới.
+              {tr(
+                'Tài khoản của em hiện chưa có khóa học video nào được kích hoạt. Em có thể xem học thử và đăng ký khóa học ở mục Khám phá thêm bên dưới.',
+                'Your account does not have any activated video courses yet. You can watch a free preview and enroll below.'
+              )}
             </p>
           ) : (
             <div className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -2166,7 +2362,8 @@ export const LearningPage: React.FC = () => {
                 const isSelected = activeCourse.id === course.id;
                 const courseExp = computeCourseExpirationInfo(
                   getCourseEntitlement(course.id),
-                  nowMs
+                  nowMs,
+                  lang
                 );
                 return (
                   <div
@@ -2189,8 +2386,10 @@ export const LearningPage: React.FC = () => {
                               : 'bg-emerald-100 text-emerald-900'
                           }`}
                         >
-                          {courseExp.isExpired ? 'Đã hết hạn' : 'Đã mở khóa'} ·{' '}
-                          {course.lessonsCount || 15} bài
+                          {courseExp.isExpired
+                            ? tr('Đã hết hạn', 'Expired')
+                            : tr('Đã mở khóa', 'Unlocked')}{' '}
+                          · {course.lessonsCount || 15} {tr('bài', 'lessons')}
                         </span>
                         <span
                           data-testid={`my-course-expiration-badge-${course.id}`}
@@ -2206,7 +2405,7 @@ export const LearningPage: React.FC = () => {
                         </span>
                       </div>
                       <p className="mt-1 truncate text-xs font-bold text-stone-900">
-                        {course.title}
+                        {translateCourseTitle(course.title, lang)}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
@@ -2217,7 +2416,7 @@ export const LearningPage: React.FC = () => {
                           onClick={() => openRegistrationModal(course)}
                           className="shrink-0 rounded-lg bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                         >
-                          Gia hạn
+                          {tr('Gia hạn', 'Renew')}
                         </button>
                       ) : (
                         <button
@@ -2229,7 +2428,7 @@ export const LearningPage: React.FC = () => {
                           }}
                           className="shrink-0 rounded-lg bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                         >
-                          {isSelected ? 'Đang học' : 'Vào học'}
+                          {isSelected ? tr('Đang học', 'Studying') : tr('Vào học', 'Start')}
                         </button>
                       )}
                     </div>
@@ -2249,10 +2448,16 @@ export const LearningPage: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wide text-stone-900 sm:text-sm">
                 <Sparkles className="h-4 w-4 text-amber-600" />
-                Khám phá thêm khóa học ({exploreUnentitledCourses.length})
+                {tr(
+                  `Khám phá thêm khóa học (${exploreUnentitledCourses.length})`,
+                  `Explore More Courses (${exploreUnentitledCourses.length})`
+                )}
               </h2>
               <span className="text-[11px] text-stone-500">
-                Học thử miễn phí & đăng ký mở khóa trực tiếp
+                {tr(
+                  'Học thử miễn phí & đăng ký mở khóa trực tiếp',
+                  'Free preview & direct enrollment'
+                )}
               </span>
             </div>
 
@@ -2269,14 +2474,17 @@ export const LearningPage: React.FC = () => {
                       {course.thumb ? (
                         <img
                           src={course.thumb}
-                          alt={course.title}
+                          alt={translateCourseTitle(course.title, lang)}
                           loading="lazy"
                           className="h-full w-full object-cover opacity-90"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center px-3 text-center">
                           <span className="font-display text-xs font-extrabold text-amber-200">
-                            {course.badge || course.shortTitle || course.title}
+                            {course.badge ||
+                              (course.shortTitle
+                                ? translateCourseTitle(course.shortTitle, lang)
+                                : translateCourseTitle(course.title, lang))}
                           </span>
                         </div>
                       )}
@@ -2285,10 +2493,10 @@ export const LearningPage: React.FC = () => {
                         className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-stone-950/85 px-2 py-0.5 text-[10px] font-bold text-amber-300"
                       >
                         <Lock className="h-2.5 w-2.5" />
-                        Chưa mở
+                        {tr('Chưa mở', 'Locked')}
                       </span>
                       <span className="absolute bottom-2 left-2 rounded-md bg-white/95 px-2 py-0.5 text-[10px] font-extrabold text-stone-900">
-                        {course.lessonsCount || 15} bài học
+                        {course.lessonsCount || 15} {tr('bài học', 'lessons')}
                       </span>
                     </div>
 
@@ -2296,7 +2504,7 @@ export const LearningPage: React.FC = () => {
                       data-testid={`explore-course-title-${course.id}`}
                       className="font-display text-xs font-bold text-stone-900 sm:text-sm"
                     >
-                      {course.title}
+                      {translateCourseTitle(course.title, lang)}
                     </h3>
 
                     <p
@@ -2304,14 +2512,17 @@ export const LearningPage: React.FC = () => {
                       className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-stone-600"
                     >
                       {course.description ||
-                        'Giáo trình chuẩn quốc tế kèm bài giảng video tương tác và luyện phát âm cùng giáo viên Khổng Tử Nhí.'}
+                        tr(
+                          'Giáo trình chuẩn quốc tế kèm bài giảng video tương tác và luyện phát âm cùng giáo viên Khổng Tử Nhí.',
+                          'International-standard curriculum with interactive video lessons and pronunciation practice with KTN teachers.'
+                        )}
                     </p>
                   </div>
 
                   <div className="mt-3 border-t border-stone-200/80 pt-2.5">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-[11px] font-semibold text-stone-500">
-                        Học phí trọn khóa:
+                        {tr('Học phí trọn khóa:', 'Full course fee:')}
                       </span>
                       <span
                         data-testid={`explore-course-price-${course.id}`}
@@ -2329,7 +2540,7 @@ export const LearningPage: React.FC = () => {
                         className="inline-flex min-h-[36px] items-center justify-center gap-1 rounded-xl border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-100"
                       >
                         <PlayCircle className="h-3.5 w-3.5 text-red-800" />
-                        <span>Xem học thử</span>
+                        <span>{tr('Xem học thử', 'Free Preview')}</span>
                       </button>
 
                       <button
@@ -2339,7 +2550,7 @@ export const LearningPage: React.FC = () => {
                         className="inline-flex min-h-[36px] items-center justify-center gap-1 rounded-xl bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
-                        <span>Đăng ký khóa học</span>
+                        <span>{tr('Đăng ký khóa học', 'Enroll Now')}</span>
                       </button>
                     </div>
                   </div>
@@ -2365,26 +2576,29 @@ export const LearningPage: React.FC = () => {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                    Học thử miễn phí
+                    {tr('Học thử miễn phí', 'Free Preview')}
                   </span>
                   {demoModalCourse.demoVideoUrl && (
                     <span
                       data-testid="course-demo-duration-badge"
                       className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-700"
                     >
-                      Thời lượng học thử: {demoModalCourse.demoDurationSeconds || 90} giây
+                      {tr(
+                        `Thời lượng học thử: ${demoModalCourse.demoDurationSeconds || 90} giây`,
+                        `Preview limit: ${demoModalCourse.demoDurationSeconds || 90}s`
+                      )}
                     </span>
                   )}
                 </div>
                 <h3 className="mt-0.5 truncate font-display text-sm font-bold text-stone-900">
-                  {demoModalCourse.title}
+                  {translateCourseTitle(demoModalCourse.title, lang)}
                 </h3>
               </div>
               <button
                 type="button"
                 data-testid="close-demo-modal-btn"
                 onClick={() => setDemoModalCourse(null)}
-                aria-label="Đóng học thử"
+                aria-label={tr('Đóng học thử', 'Close preview')}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-100"
               >
                 <X className="h-4 w-4" />
@@ -2396,9 +2610,10 @@ export const LearningPage: React.FC = () => {
                 <div className="relative">
                   <HlsVideoPlayer
                     lessonTitle={
-                      demoModalCourse.lessonSample || 'Bài 1: Bài giảng học thử'
+                      demoModalCourse.lessonSample ||
+                      tr('Bài 1: Bài giảng học thử', 'Lesson 1: Preview Lesson')
                     }
-                    courseName={demoModalCourse.title}
+                    courseName={translateCourseTitle(demoModalCourse.title, lang)}
                     streamUrl={demoModalCourse.demoVideoUrl}
                     isCompleted={false}
                     onMarkCompleted={() => {}}
@@ -2414,10 +2629,16 @@ export const LearningPage: React.FC = () => {
                     >
                       <Sparkles className="h-8 w-8 text-amber-400" />
                       <h4 className="mt-2 font-display text-base font-bold">
-                        Đã hết thời lượng xem học thử ({demoModalCourse.demoDurationSeconds || 90} giây)
+                        {tr(
+                          `Đã hết thời lượng xem học thử (${demoModalCourse.demoDurationSeconds || 90} giây)`,
+                          `Free preview ended (${demoModalCourse.demoDurationSeconds || 90}s limit)`
+                        )}
                       </h4>
                       <p className="mt-1 max-w-md text-xs text-stone-300">
-                        Đăng ký mở khóa trọn bộ {demoModalCourse.lessonsCount || 15} bài giảng video, file nghe MP3 và được giáo viên chấm chữa bài tập từng buổi!
+                        {tr(
+                          `Đăng ký mở khóa trọn bộ ${demoModalCourse.lessonsCount || 15} bài giảng video, file nghe MP3 và được giáo viên chấm chữa bài tập từng buổi!`,
+                          `Enroll to unlock all ${demoModalCourse.lessonsCount || 15} video lessons, MP3 audio tracks, and teacher homework grading!`
+                        )}
                       </p>
                       <button
                         type="button"
@@ -2430,7 +2651,12 @@ export const LearningPage: React.FC = () => {
                         className="mt-4 inline-flex min-h-[38px] items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-extrabold text-stone-950 hover:bg-amber-400"
                       >
                         <Sparkles className="h-4 w-4" />
-                        <span>Đăng ký khóa học ngay ({formatVnd(demoModalCourse.price || 890000)})</span>
+                        <span>
+                          {tr(
+                            `Đăng ký khóa học ngay (${formatVnd(demoModalCourse.price || 890000)})`,
+                            `Enroll Now (${formatVnd(demoModalCourse.price || 890000)})`
+                          )}
+                        </span>
                       </button>
                     </div>
                   )}
@@ -2442,17 +2668,22 @@ export const LearningPage: React.FC = () => {
                 >
                   <AlertCircle className="mx-auto h-8 w-8 text-amber-700" />
                   <h4 className="mt-2 font-display text-sm font-bold text-stone-900">
-                    Chưa có bài học thử
+                    {tr('Chưa có bài học thử', 'Preview not available')}
                   </h4>
                   <p className="mt-1 text-xs text-stone-600">
-                    Khóa học này hiện chưa có video học thử công khai. Em có thể đăng ký khóa học để Học vụ tư vấn lộ trình chi tiết.
+                    {tr(
+                      'Khóa học này hiện chưa có video học thử công khai. Em có thể đăng ký khóa học để Học vụ tư vấn lộ trình chi tiết.',
+                      'No public preview video is available for this course yet. Enroll below for detailed guidance from our academic team.'
+                    )}
                   </p>
                 </div>
               )}
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-3">
                 <div className="text-xs">
-                  <span className="text-stone-500">Học phí trọn khóa: </span>
+                  <span className="text-stone-500">
+                    {tr('Học phí trọn khóa: ', 'Full course fee: ')}
+                  </span>
                   <strong className="font-display text-sm font-extrabold text-red-800">
                     {formatVnd(demoModalCourse.price || 890000)}
                   </strong>
@@ -2463,7 +2694,7 @@ export const LearningPage: React.FC = () => {
                     onClick={() => setDemoModalCourse(null)}
                     className="min-h-[36px] rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold text-stone-700"
                   >
-                    Đóng
+                    {tr('Đóng', 'Close')}
                   </button>
                   <button
                     type="button"
@@ -2476,7 +2707,7 @@ export const LearningPage: React.FC = () => {
                     className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-red-800 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
-                    <span>Đăng ký khóa học</span>
+                    <span>{tr('Đăng ký khóa học', 'Enroll Now')}</span>
                   </button>
                 </div>
               </div>
@@ -2499,17 +2730,20 @@ export const LearningPage: React.FC = () => {
             <div className="flex items-center justify-between gap-2 border-b border-stone-200 px-4 py-3">
               <div>
                 <span className="rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-900">
-                  Đăng ký mở khóa học phần
+                  {tr('Đăng ký mở khóa học phần', 'Course Unlock Registration')}
                 </span>
                 <h3 className="mt-0.5 font-display text-sm font-bold text-stone-900">
-                  {registerModalCourse.title}
+                  {translateCourseTitle(registerModalCourse.title, lang)}
                 </h3>
               </div>
               <button
                 type="button"
                 data-testid="close-registration-modal-btn"
                 onClick={() => setRegisterModalCourse(null)}
-                aria-label="Đóng cửa sổ đăng ký khóa học"
+                aria-label={tr(
+                  'Đóng cửa sổ đăng ký khóa học',
+                  'Close course registration modal'
+                )}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-100"
               >
                 <X className="h-4 w-4" />
@@ -2538,10 +2772,14 @@ export const LearningPage: React.FC = () => {
                 <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 p-3">
                   <div>
                     <p className="font-bold text-stone-900">
-                      {registerModalCourse.title}
+                      {translateCourseTitle(registerModalCourse.title, lang)}
                     </p>
                     <p className="text-[11px] text-stone-500">
-                      {registerModalCourse.lessonsCount || 15} bài giảng · Cấp quyền trên tài khoản đang đăng nhập
+                      {registerModalCourse.lessonsCount || 15}{' '}
+                      {tr(
+                        'bài giảng · Cấp quyền trên tài khoản đang đăng nhập',
+                        'lessons · Granted to the logged-in account'
+                      )}
                     </p>
                   </div>
                   <span
@@ -2555,7 +2793,10 @@ export const LearningPage: React.FC = () => {
                 <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Email tài khoản học viên (Chỉ đọc)
+                      {tr(
+                        'Email tài khoản học viên (Chỉ đọc)',
+                        'Student Account Email (Read-only)'
+                      )}
                     </label>
                     <input
                       type="email"
@@ -2567,7 +2808,7 @@ export const LearningPage: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Họ tên học viên
+                      {tr('Họ tên học viên', 'Student Full Name')}
                     </label>
                     <input
                       type="text"
@@ -2587,7 +2828,10 @@ export const LearningPage: React.FC = () => {
                 <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Số điện thoại / Zalo phụ huynh *
+                      {tr(
+                        'Số điện thoại / Zalo phụ huynh *',
+                        'Parent Phone / Zalo *'
+                      )}
                     </label>
                     <input
                       type="tel"
@@ -2595,20 +2839,26 @@ export const LearningPage: React.FC = () => {
                       data-testid="reg-parent-phone-input"
                       value={regParentPhone}
                       onChange={(e) => setRegParentPhone(e.target.value)}
-                      placeholder="VD: 0912345678"
+                      placeholder={tr('VD: 0912345678', 'e.g. 0912345678')}
                       className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-1.5 font-mono text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Tên phụ huynh / Người liên hệ
+                      {tr(
+                        'Tên phụ huynh / Người liên hệ',
+                        'Parent / Contact Name'
+                      )}
                     </label>
                     <input
                       type="text"
                       data-testid="reg-parent-name-input"
                       value={regParentName}
                       onChange={(e) => setRegParentName(e.target.value)}
-                      placeholder="VD: Chị Hương (Mẹ bé)"
+                      placeholder={tr(
+                        'VD: Chị Hương (Mẹ bé)',
+                        'e.g. Ms. Huong (Parent)'
+                      )}
                       className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-stone-900 focus:border-red-800 focus:outline-none"
                     />
                   </div>
@@ -2616,14 +2866,20 @@ export const LearningPage: React.FC = () => {
 
                 <div>
                   <label className="block text-[11px] font-bold text-stone-700">
-                    Ghi chú cho Học vụ (tùy chọn)
+                    {tr(
+                      'Ghi chú cho Học vụ (tùy chọn)',
+                      'Note for Academic Staff (optional)'
+                    )}
                   </label>
                   <input
                     type="text"
                     data-testid="reg-note-input"
                     value={regNote}
                     onChange={(e) => setRegNote(e.target.value)}
-                    placeholder="VD: Nhờ cô tư vấn thêm lịch học tối..."
+                    placeholder={tr(
+                      'VD: Nhờ cô tư vấn thêm lịch học tối...',
+                      'e.g. Please advise evening class schedule...'
+                    )}
                     className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                   />
                 </div>
@@ -2637,7 +2893,10 @@ export const LearningPage: React.FC = () => {
                     className="mt-0.5 rounded border-stone-300 text-red-800"
                   />
                   <span>
-                    Đồng thời cập nhật số điện thoại liên hệ này vào hồ sơ học viên của em (nếu không chọn, hồ sơ gốc giữ nguyên số cũ).
+                    {tr(
+                      'Đồng thời cập nhật số điện thoại liên hệ này vào hồ sơ học viên của em (nếu không chọn, hồ sơ gốc giữ nguyên số cũ).',
+                      'Also update this contact phone number in my student profile (if unchecked, keep existing profile number).'
+                    )}
                   </span>
                 </label>
 
@@ -2647,7 +2906,7 @@ export const LearningPage: React.FC = () => {
                     onClick={() => setRegisterModalCourse(null)}
                     className="min-h-[38px] rounded-xl border border-stone-300 px-3.5 py-1.5 text-xs font-bold text-stone-700"
                   >
-                    Hủy
+                    {tr('Hủy', 'Cancel')}
                   </button>
                   <button
                     type="submit"
@@ -2660,7 +2919,9 @@ export const LearningPage: React.FC = () => {
                     ) : (
                       <CreditCard className="h-4 w-4" />
                     )}
-                    <span>Tạo đơn đăng ký khóa học</span>
+                    <span>
+                      {tr('Tạo đơn đăng ký khóa học', 'Create Enrollment Order')}
+                    </span>
                   </button>
                 </div>
               </form>
@@ -2676,17 +2937,24 @@ export const LearningPage: React.FC = () => {
                     className="flex items-center gap-1.5 font-display text-sm font-extrabold text-emerald-900"
                   >
                     <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                    Đơn của em đang chờ xác nhận.
+                    {tr(
+                      'Đơn của em đang chờ xác nhận.',
+                      'Your order is pending confirmation.'
+                    )}
                   </p>
                   <p className="mt-1 text-[11px]">
-                    Mã đơn:{' '}
+                    {tr('Mã đơn:', 'Order ID:')}{' '}
                     <strong
                       data-testid="student-created-order-id"
                       className="font-mono text-red-900"
                     >
                       {activeCreatedOrder.order.order_id}
                     </strong>{' '}
-                    · Tài khoản nhận khóa học:{' '}
+                    ·{' '}
+                    {tr(
+                      'Tài khoản nhận khóa học:',
+                      'Course access account:'
+                    )}{' '}
                     <strong>{activeCreatedOrder.order.student_email}</strong>
                   </p>
                 </div>
@@ -2694,13 +2962,13 @@ export const LearningPage: React.FC = () => {
                 {/* 7-Stage Progress Tracker */}
                 <div className="space-y-1.5 rounded-xl border border-stone-200 bg-stone-50 p-3">
                   <p className="text-[11px] font-bold text-stone-700">
-                    Trạng thái xử lý đơn hàng:
+                    {tr('Trạng thái xử lý đơn hàng:', 'Order processing status:')}
                   </p>
                   <div
                     data-testid="student-order-7stage-list"
                     className="flex flex-wrap gap-1.5"
                   >
-                    {STUDENT_TRACKER_STAGES.map((st) => {
+                    {getStudentTrackerStages(lang).map((st) => {
                       const currentStage =
                         activeCreatedOrder.order.student_tracker_stage || 'received';
                       const isCurrent = st.id === currentStage;
@@ -2728,42 +2996,51 @@ export const LearningPage: React.FC = () => {
                     className="rounded-xl border border-stone-200 bg-white p-3"
                   >
                     <p className="font-bold text-stone-900">
-                      Thông tin chuyển khoản học phí qua VietQR:
+                      {tr(
+                        'Thông tin chuyển khoản học phí qua VietQR:',
+                        'Tuition Transfer Info via VietQR:'
+                      )}
                     </p>
                     <div className="mt-2 flex flex-col items-center gap-3 sm:flex-row">
                       <img
                         src={activeCreatedOrder.paymentInfo.qrUrl}
-                        alt="VietQR Học viện Khổng Tử Nhí"
+                        alt={tr(
+                          'VietQR Học viện Khổng Tử Nhí',
+                          'Khong Tu Nhi Academy VietQR'
+                        )}
                         className="h-36 w-36 shrink-0 rounded-xl border border-stone-200 object-contain p-1"
                       />
                       <div className="w-full space-y-1 text-[11px] text-stone-700">
                         <p>
-                          Ngân hàng:{' '}
+                          {tr('Ngân hàng:', 'Bank:')}{' '}
                           <strong className="text-stone-900">
-                            {activeCreatedOrder.paymentInfo.bankName}
+                            {isEn &&
+                            activeCreatedOrder.paymentInfo.bankName.includes('Ngân hàng Quân Đội')
+                              ? 'MB Bank'
+                              : activeCreatedOrder.paymentInfo.bankName}
                           </strong>
                         </p>
                         <p>
-                          Số tài khoản:{' '}
+                          {tr('Số tài khoản:', 'Account number:')}{' '}
                           <strong className="font-mono text-stone-900">
                             {activeCreatedOrder.paymentInfo.accountNumber}
                           </strong>
                         </p>
                         <p>
-                          Chủ tài khoản:{' '}
+                          {tr('Chủ tài khoản:', 'Account holder:')}{' '}
                           <strong className="text-stone-900">
                             {activeCreatedOrder.paymentInfo.accountName}
                           </strong>
                         </p>
                         <p>
-                          Số tiền:{' '}
+                          {tr('Số tiền:', 'Amount:')}{' '}
                           <strong className="font-display text-xs font-extrabold text-red-800">
                             {formatVnd(activeCreatedOrder.paymentInfo.amount)}
                           </strong>
                         </p>
                         <div className="flex items-center justify-between rounded-lg bg-amber-50 px-2.5 py-1.5">
                           <span>
-                            Nội dung CK:{' '}
+                            {tr('Nội dung CK:', 'Transfer note:')}{' '}
                             <strong className="font-mono text-red-900">
                               {activeCreatedOrder.paymentInfo.transferContent}
                             </strong>
@@ -2777,14 +3054,17 @@ export const LearningPage: React.FC = () => {
                                 )
                                 .catch(() => {});
                               addToast({
-                                title: 'Đã sao chép nội dung chuyển khoản!',
+                                title: tr(
+                                  'Đã sao chép nội dung chuyển khoản!',
+                                  'Transfer note copied!'
+                                ),
                                 variant: 'success',
                               });
                             }}
                             className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-[10px] font-bold text-red-800 shadow-2xs"
                           >
                             <Copy className="h-3 w-3" />
-                            Sao chép
+                            {tr('Sao chép', 'Copy')}
                           </button>
                         </div>
                       </div>
@@ -2797,7 +3077,10 @@ export const LearningPage: React.FC = () => {
                         data-testid="student-report-tx-input"
                         value={reportTxRefInput}
                         onChange={(e) => setReportTxRefInput(e.target.value)}
-                        placeholder="Mã giao dịch ngân hàng (nếu có)..."
+                        placeholder={tr(
+                          'Mã giao dịch ngân hàng (nếu có)...',
+                          'Bank transaction ref (optional)...'
+                        )}
                         className="flex-1 rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 font-mono text-xs"
                       />
                       <button
@@ -2821,8 +3104,14 @@ export const LearningPage: React.FC = () => {
                         <span>
                           {activeCreatedOrder.order.payment_detailed_status ===
                           'customer_reported'
-                            ? 'Đã báo chuyển khoản (Chờ Học vụ đối soát)'
-                            : 'Em / Phụ huynh đã chuyển khoản'}
+                            ? tr(
+                                'Đã báo chuyển khoản (Chờ Học vụ đối soát)',
+                                'Transfer reported (Awaiting review)'
+                              )
+                            : tr(
+                                'Em / Phụ huynh đã chuyển khoản',
+                                'I / Parent have transferred'
+                              )}
                         </span>
                       </button>
                     </div>
@@ -2836,7 +3125,7 @@ export const LearningPage: React.FC = () => {
                     onClick={() => setRegisterModalCourse(null)}
                     className="min-h-[36px] rounded-xl bg-stone-800 px-4 py-1.5 text-xs font-bold text-white"
                   >
-                    Đóng
+                    {tr('Đóng', 'Close')}
                   </button>
                 </div>
               </div>

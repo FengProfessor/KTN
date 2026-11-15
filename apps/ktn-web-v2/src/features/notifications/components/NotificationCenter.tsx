@@ -27,6 +27,12 @@ import {
   isTeacherUnassignedNotification,
   resolveNotificationLink,
 } from '@/lib/utils';
+import {
+  AppLanguage,
+  trStatic,
+  translateNotificationItem,
+  useI18n,
+} from '@/i18n';
 
 const DEFAULT_VAPID_PUBLIC_KEY =
   'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
@@ -60,7 +66,64 @@ function hasMatchingApplicationServerKey(
   }
 }
 
+function translateNotificationDisplayItem(
+  item: KtnNotification,
+  lang: AppLanguage
+): KtnNotification {
+  if (lang !== 'en') return item;
+  const base = translateNotificationItem(item, lang);
+  let title = String(base.title || '');
+  let body = String(base.body || '');
+  let actionLabel = base.actionLabel ? String(base.actionLabel) : base.actionLabel;
+
+  title = title
+    .replace(/^Bạn được phân công lớp mới(?:\s*(?::|-)\s*(.+))?$/i, (_, rest) =>
+      rest ? `Assigned to a new class: ${rest}` : 'Assigned to a new class'
+    )
+    .replace(/^Bạn đã được thêm vào lớp\s+(.+)$/i, 'You were added to class $1')
+    .replace(/^Thay đổi giáo viên chủ nhiệm(?:\s*(?::|-)\s*(.+))?$/i, (_, rest) =>
+      rest ? `Homeroom teacher changed: ${rest}` : 'Homeroom teacher changed'
+    )
+    .replace(/^Thay đổi phân công(?:\s*(?::|-)\s*(.+))?$/i, (_, rest) =>
+      rest ? `Class assignment updated: ${rest}` : 'Class assignment updated'
+    )
+    .replace(/^Lịch học lớp\s+(.+?)\s+đã cập nhật$/i, 'Schedule for class $1 updated')
+    .replace(/^Sắp đến giờ học(?:\s+lớp\s+(.+))?$/i, (_, cls) =>
+      cls ? `Upcoming class: ${cls}` : 'Upcoming class reminder'
+    )
+    .replace(/^Tin nhắn mới trong\s+(?:Nhóm\s+)?lớp\s+(.+)$/i, 'New message in class $1')
+    .replace(/^Bài tập mới(?:\s+lớp\s+(.+))?$/i, (_, cls) =>
+      cls ? `New homework for class ${cls}` : 'New homework'
+    )
+    .replace(/^Lớp\s+(.+?)\s+sắp bắt đầu$/i, 'Class $1 is starting soon');
+
+  body = body
+    .replace(/\[Đã gửi video:\s*([^\]]+)\]/gi, '[Sent video: $1]')
+    .replace(/\bLớp\s+([A-Z0-9_-]+)/g, 'Class $1')
+    .replace(/\bGiáo viên chủ nhiệm\b/gi, 'Homeroom teacher')
+    .replace(/\bGiáo viên\b/gi, 'Teacher')
+    .replace(/\bHọc viên\b/gi, 'Student')
+    .replace(/\bChủ đề:/gi, 'Topic:')
+    .replace(/\bHạn nộp:/gi, 'Due:');
+
+  if (actionLabel) {
+    actionLabel = actionLabel
+      .replace(/^Mở lớp$/i, 'Open class')
+      .replace(/^Mở nhóm chat$/i, 'Open chat')
+      .replace(/^Làm bài tập$/i, 'Do homework')
+      .replace(/^Mở$/i, 'Open');
+  }
+
+  return {
+    ...base,
+    title,
+    body,
+    actionLabel,
+  };
+}
+
 export const NotificationCenter: React.FC = () => {
+  const { lang, tr } = useI18n();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
@@ -190,12 +253,12 @@ export const NotificationCenter: React.FC = () => {
           settings: demoSettings,
         };
       }
-      return ktnApi.getNotifications();
+      return ktnApi.getNotifications({ limit: 50, offset: 0 });
     },
     enabled: Boolean(user) || isDemoMode,
-    staleTime: 2000,
-    refetchInterval: isDemoMode ? false : 4000,
-    refetchIntervalInBackground: true,
+    staleTime: 10000,
+    refetchInterval: isDemoMode ? false : 30000,
+    refetchIntervalInBackground: false,
   });
 
   const notifSettingsQuery = useQuery<UserNotificationSettings>({
@@ -235,8 +298,11 @@ export const NotificationCenter: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-notification-settings'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
       addToast({
-        title: 'Đã lưu tùy chọn thông báo',
-        description: 'Cài đặt thông báo của bạn đã được cập nhật.',
+        title: trStatic('Đã lưu tùy chọn thông báo', 'Notification preferences saved'),
+        description: trStatic(
+          'Cài đặt thông báo của bạn đã được cập nhật.',
+          'Your notification settings have been updated.'
+        ),
         variant: 'success',
       });
     },
@@ -257,6 +323,7 @@ export const NotificationCenter: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications-summary'] });
     },
   });
 
@@ -340,8 +407,14 @@ export const NotificationCenter: React.FC = () => {
     if (isDemoMode) {
       setPushEnabled(true);
       addToast({
-        title: 'Đã bật thông báo đẩy (Chế độ Demo)',
-        description: 'Trên môi trường thật sẽ yêu cầu PushSubscription và VAPID key từ trình duyệt.',
+        title: trStatic(
+          'Đã bật thông báo đẩy (Chế độ Demo)',
+          'Push notifications enabled (Demo Mode)'
+        ),
+        description: trStatic(
+          'Trên môi trường thật sẽ yêu cầu PushSubscription và VAPID key từ trình duyệt.',
+          'In production, this will request a browser PushSubscription and VAPID key.'
+        ),
         variant: 'success',
       });
       return;
@@ -364,9 +437,14 @@ export const NotificationCenter: React.FC = () => {
       if (isIOS && !isStandalone) {
         setPushEnabled(false);
         addToast({
-          title: 'iPhone/iPad cần Thêm vào Màn hình chính',
-          description:
+          title: trStatic(
+            'iPhone/iPad cần Thêm vào Màn hình chính',
+            'iPhone/iPad requires Add to Home Screen'
+          ),
+          description: trStatic(
             'iOS chỉ hỗ trợ Web Push khi ứng dụng được Thêm vào Màn hình chính (Add to Home Screen). Bạn vẫn nhận thông báo trực tiếp trong Sổ liên lạc.',
+            'iOS only supports Web Push when added to your Home Screen. You will still receive notifications directly in the app.'
+          ),
           variant: 'warning',
         });
         return;
@@ -380,9 +458,14 @@ export const NotificationCenter: React.FC = () => {
       ) {
         setPushEnabled(false);
         addToast({
-          title: 'Trình duyệt chưa hỗ trợ Web Push',
-          description:
+          title: trStatic(
+            'Trình duyệt chưa hỗ trợ Web Push',
+            'Browser does not support Web Push'
+          ),
+          description: trStatic(
             'Trình duyệt hiện tại không hỗ trợ PushManager/Service Worker. Bạn vẫn nhận thông báo trực tiếp trong trung tâm KTN.',
+            'Your current browser does not support PushManager/Service Worker. You will still receive in-app notifications.'
+          ),
           variant: 'warning',
         });
         return;
@@ -395,9 +478,14 @@ export const NotificationCenter: React.FC = () => {
       if (perm !== 'granted') {
         setPushEnabled(false);
         addToast({
-          title: 'Quyền thông báo đang tắt trên trình duyệt',
-          description:
+          title: trStatic(
+            'Quyền thông báo đang tắt trên trình duyệt',
+            'Notification permission is disabled in browser'
+          ),
+          description: trStatic(
             'Vui lòng cho phép quyền thông báo trên trình duyệt để nhận thông báo đẩy. Bạn vẫn nhận thông báo trong trung tâm KTN.',
+            'Please allow notification permission in your browser to receive push alerts. You will still receive in-app notifications.'
+          ),
           variant: 'warning',
         });
         return;
@@ -406,7 +494,12 @@ export const NotificationCenter: React.FC = () => {
       await navigator.serviceWorker.register('/sw.js', { scope: '/' });
       const readyReg = await navigator.serviceWorker.ready;
       if (!readyReg || !readyReg.pushManager) {
-        throw new Error('Service Worker PushManager chưa sẵn sàng trên trình duyệt này.');
+        throw new Error(
+          trStatic(
+            'Service Worker PushManager chưa sẵn sàng trên trình duyệt này.',
+            'Service Worker PushManager is not ready on this browser.'
+          )
+        );
       }
 
       let vapidPublicKey = DEFAULT_VAPID_PUBLIC_KEY;
@@ -471,7 +564,12 @@ export const NotificationCenter: React.FC = () => {
       const auth = String(subJson.keys?.auth || '').trim();
 
       if (!endpoint || !p256dh || !auth) {
-        throw new Error('Trình duyệt không trả về khóa mã hóa PushSubscription hợp lệ (p256dh/auth).');
+        throw new Error(
+          trStatic(
+            'Trình duyệt không trả về khóa mã hóa PushSubscription hợp lệ (p256dh/auth).',
+            'Browser did not return valid PushSubscription encryption keys (p256dh/auth).'
+          )
+        );
       }
 
       const saveRes = await ktnApi.subscribePush(
@@ -485,7 +583,12 @@ export const NotificationCenter: React.FC = () => {
       );
 
       if (!saveRes.ok) {
-        throw new Error('Máy chủ chưa xác nhận lưu đăng ký thông báo đẩy.');
+        throw new Error(
+          trStatic(
+            'Máy chủ chưa xác nhận lưu đăng ký thông báo đẩy.',
+            'Server did not confirm saving the push subscription.'
+          )
+        );
       }
 
       try {
@@ -500,8 +603,11 @@ export const NotificationCenter: React.FC = () => {
       }
       setPushEnabled(true);
       addToast({
-        title: 'Đã bật thông báo đẩy KTN',
-        description: 'Thiết bị sẽ nhận thông báo đẩy từ máy chủ ngay khi Giáo viên chấm bài hoặc nhắn tin.',
+        title: trStatic('Đã bật thông báo đẩy KTN', 'KTN push notifications enabled'),
+        description: trStatic(
+          'Thiết bị sẽ nhận thông báo đẩy từ máy chủ ngay khi Giáo viên chấm bài hoặc nhắn tin.',
+          'This device will receive push alerts when a teacher grades work or sends a message.'
+        ),
         variant: 'success',
       });
     } catch (err) {
@@ -512,11 +618,14 @@ export const NotificationCenter: React.FC = () => {
         // ignore
       }
       addToast({
-        title: 'Chưa thể bật thông báo đẩy',
+        title: trStatic('Chưa thể bật thông báo đẩy', 'Could not enable push notifications'),
         description:
           err instanceof Error
             ? err.message
-            : 'Đăng ký PushManager không thành công. Bạn vẫn nhận thông báo trong ứng dụng.',
+            : trStatic(
+                'Đăng ký PushManager không thành công. Bạn vẫn nhận thông báo trong ứng dụng.',
+                'PushManager registration failed. You will still receive in-app notifications.'
+              ),
         variant: 'error',
       });
     } finally {
@@ -584,14 +693,14 @@ export const NotificationCenter: React.FC = () => {
       {isDemoMode && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50/90 px-3 py-1.5 text-xs">
           <span className="font-semibold text-amber-950">
-            Trạng thái Thông báo (Demo):
+            {tr('Trạng thái Thông báo (Demo):', 'Notification State (Demo):')}
           </span>
           <div className="flex items-center gap-1">
             {(
               [
-                { id: 'unread', label: 'Chưa đọc' },
-                { id: 'all_read', label: 'Đã đọc hết' },
-                { id: 'empty', label: 'Trống' },
+                { id: 'unread', label: tr('Chưa đọc', 'Unread') },
+                { id: 'all_read', label: tr('Đã đọc hết', 'All read') },
+                { id: 'empty', label: tr('Trống', 'Empty') },
               ] as const
             ).map((st) => (
               <button
@@ -621,7 +730,9 @@ export const NotificationCenter: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
-            <span>Chưa tải được danh sách thông báo.</span>
+            <span>
+              {tr('Chưa tải được danh sách thông báo.', 'Could not load notifications.')}
+            </span>
           </div>
           <button
             type="button"
@@ -629,7 +740,7 @@ export const NotificationCenter: React.FC = () => {
             className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
           >
             <RotateCcw className="h-3 w-3" />
-            Thử lại
+            {tr('Thử lại', 'Retry')}
           </button>
         </div>
       )}
@@ -640,12 +751,12 @@ export const NotificationCenter: React.FC = () => {
           <div className="flex items-center gap-1 overflow-x-auto">
             {(
               [
-                { id: 'all', label: `Tất cả (${notifications.length})` },
-                { id: 'unread', label: `Chưa đọc (${unreadCount})` },
-                { id: 'schedule', label: 'Lịch học' },
-                { id: 'homework', label: 'Bài tập' },
-                { id: 'chat', label: 'Tin nhắn' },
-                { id: 'important', label: 'Quan trọng' },
+                { id: 'all', label: tr(`Tất cả (${notifications.length})`, `All (${notifications.length})`) },
+                { id: 'unread', label: tr(`Chưa đọc (${unreadCount})`, `Unread (${unreadCount})`) },
+                { id: 'schedule', label: tr('Lịch học', 'Schedule') },
+                { id: 'homework', label: tr('Bài tập', 'Homework') },
+                { id: 'chat', label: tr('Tin nhắn', 'Messages') },
+                { id: 'important', label: tr('Quan trọng', 'Important') },
               ] as const
             ).map((tab) => (
               <button
@@ -670,7 +781,7 @@ export const NotificationCenter: React.FC = () => {
                 data-testid="notifications-unread-count-pill"
                 className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white"
               >
-                {unreadCount} mới
+                {tr(`${unreadCount} mới`, `${unreadCount} new`)}
               </span>
             )}
 
@@ -685,7 +796,7 @@ export const NotificationCenter: React.FC = () => {
               }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span>Cài đặt thông báo</span>
+              <span>{tr('Cài đặt thông báo', 'Notification settings')}</span>
             </button>
 
             <button
@@ -696,7 +807,7 @@ export const NotificationCenter: React.FC = () => {
               className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white shadow-2xs hover:bg-red-900 disabled:opacity-40"
             >
               <CheckCheck className="h-3.5 w-3.5" />
-              <span>Đánh dấu tất cả đã đọc</span>
+              <span>{tr('Đánh dấu tất cả đã đọc', 'Mark all as read')}</span>
             </button>
           </div>
         </div>
@@ -709,10 +820,10 @@ export const NotificationCenter: React.FC = () => {
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-display text-xs font-bold text-stone-900 sm:text-sm">
-                Cài đặt thông báo
+                {tr('Cài đặt thông báo', 'Notification settings')}
               </p>
               <span className="text-[11px] font-medium text-stone-500">
-                Đồng bộ theo tài khoản & thiết bị
+                {tr('Đồng bộ theo tài khoản & thiết bị', 'Synced across account & devices')}
               </span>
             </div>
 
@@ -728,12 +839,12 @@ export const NotificationCenter: React.FC = () => {
                 typeof Notification !== 'undefined' &&
                 Notification.permission === 'denied';
               const statusLabel = pushEnabled
-                ? 'Đã bật'
+                ? tr('Đã bật', 'Enabled')
                 : !isPushSupported
-                ? 'Thiết bị không hỗ trợ'
+                ? tr('Thiết bị không hỗ trợ', 'Unsupported device')
                 : isDenied
-                ? 'Bị chặn'
-                : 'Chưa bật';
+                ? tr('Bị chặn', 'Blocked')
+                : tr('Chưa bật', 'Not enabled');
 
               return (
                 <div
@@ -743,7 +854,10 @@ export const NotificationCenter: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-xs font-bold text-stone-900">
-                        Trạng thái thông báo trên thiết bị hiện tại:
+                        {tr(
+                          'Trạng thái thông báo trên thiết bị hiện tại:',
+                          'Notification status on this device:'
+                        )}
                       </p>
                       <span
                         data-testid="device-push-status-badge"
@@ -762,8 +876,10 @@ export const NotificationCenter: React.FC = () => {
                       data-testid="iphone-pwa-push-guide"
                       className="mt-1 text-[11px] leading-relaxed text-stone-600"
                     >
-                      Trên iPhone/iPad: Nhấn nút Chia sẻ (Share) trên Safari → Thêm vào Màn hình chính
-                      (Add to Home Screen), sau đó mở ứng dụng từ màn hình chính để bật thông báo.
+                      {tr(
+                        'Trên iPhone/iPad: Nhấn nút Chia sẻ (Share) trên Safari → Thêm vào Màn hình chính (Add to Home Screen), sau đó mở ứng dụng từ màn hình chính để bật thông báo.',
+                        'On iPhone/iPad: Tap Share in Safari → Add to Home Screen, then open the app from your Home Screen to enable notifications.'
+                      )}
                     </p>
                   </div>
 
@@ -781,8 +897,14 @@ export const NotificationCenter: React.FC = () => {
                     <BellRing className="h-3.5 w-3.5" />
                     <span>
                       {pushEnabled
-                        ? 'Đang nhận thông báo trên thiết bị này'
-                        : 'Bật thông báo trên thiết bị này'}
+                        ? tr(
+                            'Đang nhận thông báo trên thiết bị này',
+                            'Receiving notifications on this device'
+                          )
+                        : tr(
+                            'Bật thông báo trên thiết bị này',
+                            'Enable notifications on this device'
+                          )}
                     </span>
                   </button>
                 </div>
@@ -792,8 +914,10 @@ export const NotificationCenter: React.FC = () => {
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
                 <div>
-                  <p className="font-bold text-stone-900">Tin nhắn</p>
-                  <p className="text-[11px] text-stone-500">Tin nhắn riêng & nhóm lớp</p>
+                  <p className="font-bold text-stone-900">{tr('Tin nhắn', 'Messages')}</p>
+                  <p className="text-[11px] text-stone-500">
+                    {tr('Tin nhắn riêng & nhóm lớp', 'Direct & class group messages')}
+                  </p>
                 </div>
                 <input
                   type="checkbox"
@@ -806,8 +930,10 @@ export const NotificationCenter: React.FC = () => {
 
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
                 <div>
-                  <p className="font-bold text-stone-900">Bài tập</p>
-                  <p className="text-[11px] text-stone-500">Bài tập mới được giao</p>
+                  <p className="font-bold text-stone-900">{tr('Bài tập', 'Homework')}</p>
+                  <p className="text-[11px] text-stone-500">
+                    {tr('Bài tập mới được giao', 'New homework assignments')}
+                  </p>
                 </div>
                 <input
                   type="checkbox"
@@ -820,8 +946,10 @@ export const NotificationCenter: React.FC = () => {
 
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
                 <div>
-                  <p className="font-bold text-stone-900">Điểm số</p>
-                  <p className="text-[11px] text-stone-500">Kết quả giáo viên chấm bài</p>
+                  <p className="font-bold text-stone-900">{tr('Điểm số', 'Grades')}</p>
+                  <p className="text-[11px] text-stone-500">
+                    {tr('Kết quả giáo viên chấm bài', 'Teacher grading results')}
+                  </p>
                 </div>
                 <input
                   type="checkbox"
@@ -836,8 +964,10 @@ export const NotificationCenter: React.FC = () => {
 
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">
                 <div>
-                  <p className="font-bold text-stone-900">Lịch học</p>
-                  <p className="text-[11px] text-stone-500">Nhắc trước giờ học & đổi lịch</p>
+                  <p className="font-bold text-stone-900">{tr('Lịch học', 'Schedule')}</p>
+                  <p className="text-[11px] text-stone-500">
+                    {tr('Nhắc trước giờ học & đổi lịch', 'Class reminders & schedule changes')}
+                  </p>
                 </div>
                 <input
                   type="checkbox"
@@ -850,8 +980,15 @@ export const NotificationCenter: React.FC = () => {
 
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs sm:col-span-2">
                 <div>
-                  <p className="font-bold text-stone-900">Nhắc thêm trước 10 phút</p>
-                  <p className="text-[11px] text-stone-500">Tùy chọn nhắc thêm sát giờ vào lớp</p>
+                  <p className="font-bold text-stone-900">
+                    {tr('Nhắc thêm trước 10 phút', 'Extra 10-minute reminder')}
+                  </p>
+                  <p className="text-[11px] text-stone-500">
+                    {tr(
+                      'Tùy chọn nhắc thêm sát giờ vào lớp',
+                      'Optional reminder shortly before class starts'
+                    )}
+                  </p>
                 </div>
                 <input
                   type="checkbox"
@@ -871,14 +1008,19 @@ export const NotificationCenter: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 shrink-0 text-amber-800" />
                   <div>
-                    <p className="font-bold text-amber-950">Thông báo quan trọng từ Quản lý</p>
+                    <p className="font-bold text-amber-950">
+                      {tr('Thông báo quan trọng từ Quản lý', 'Important announcements from Admin')}
+                    </p>
                     <p className="text-[11px] text-amber-800">
-                      Luôn được bật để đảm bảo không bỏ lỡ thông báo học vụ quan trọng.
+                      {tr(
+                        'Luôn được bật để đảm bảo không bỏ lỡ thông báo học vụ quan trọng.',
+                        'Always enabled so you never miss critical academic notices.'
+                      )}
                     </p>
                   </div>
                 </div>
                 <span className="shrink-0 rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-950">
-                  Luôn bật
+                  {tr('Luôn bật', 'Always on')}
                 </span>
               </div>
             </div>
@@ -894,14 +1036,19 @@ export const NotificationCenter: React.FC = () => {
             >
               <Bell className="h-8 w-8 text-stone-300" />
               <h3 className="mt-2 font-display text-sm font-bold text-stone-800">
-                Chưa có thông báo mới
+                {tr('Chưa có thông báo mới', 'No new notifications')}
               </h3>
               <p className="mt-0.5 text-xs text-stone-500">
-                Nhắc lịch học, điểm bài tập hoặc tin nhắn lớp mới sẽ hiển thị tại đây.
+                {tr(
+                  'Nhắc lịch học, điểm bài tập hoặc tin nhắn lớp mới sẽ hiển thị tại đây.',
+                  'Class reminders, homework grades, and new class messages will appear here.'
+                )}
               </p>
             </div>
           ) : (
-            filteredList.map((item) => (
+            filteredList.map((item) => {
+              const displayItem = translateNotificationDisplayItem(item, lang);
+              return (
               <div
                 key={item.id}
                 data-testid={`notification-item-${item.id}`}
@@ -927,16 +1074,16 @@ export const NotificationCenter: React.FC = () => {
                             : 'font-semibold text-stone-800'
                         }`}
                       >
-                        {item.title}
+                        {displayItem.title}
                       </h3>
                       {!item.read && (
                         <span className="rounded-full bg-red-600 px-1.5 py-0.2 text-[9.5px] font-bold text-white">
-                          MỚI
+                          {tr('MỚI', 'NEW')}
                         </span>
                       )}
                       {item.coalescedCount && item.coalescedCount > 1 && (
                         <span className="rounded-full bg-stone-200 px-1.5 py-0.2 text-[9.5px] font-bold text-stone-700">
-                          {item.coalescedCount} tin nhắn
+                          {tr(`${item.coalescedCount} tin nhắn`, `${item.coalescedCount} messages`)}
                         </span>
                       )}
                       <span className="text-[11px] text-stone-400">
@@ -945,9 +1092,9 @@ export const NotificationCenter: React.FC = () => {
                     </div>
 
                     <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-stone-600">
-                      {String(item.body || '').replace(
-                        /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm)\]/gi,
-                        '📷 Hình ảnh'
+                      {String(displayItem.body || '').replace(
+                        /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm|(?:Sent|Attached) image(?::\s*[^\r\n]*)?|Image attached)\]/gi,
+                        tr('📷 Hình ảnh', '📷 Image')
                       )}
                     </p>
                   </div>
@@ -962,7 +1109,7 @@ export const NotificationCenter: React.FC = () => {
                       className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100"
                     >
                       <Check className="h-3.5 w-3.5 text-emerald-700" />
-                      <span>Đã đọc</span>
+                      <span>{tr('Đã đọc', 'Mark read')}</span>
                     </button>
                   )}
 
@@ -985,7 +1132,7 @@ export const NotificationCenter: React.FC = () => {
                         className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-800 hover:bg-red-100"
                       >
                         <MessageSquare className="h-3 w-3" />
-                        <span>Nhóm lớp</span>
+                        <span>{tr('Nhóm lớp', 'Class chat')}</span>
                       </button>
                     )}
 
@@ -1009,24 +1156,25 @@ export const NotificationCenter: React.FC = () => {
                       className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-900"
                     >
                       <span>
-                        {item.actionLabel ||
+                        {displayItem.actionLabel ||
                           (item.type === 'class_created' ||
                           item.type === 'class_joined' ||
                           item.type === 'class_teacher_changed'
-                            ? 'Mở lớp'
+                            ? tr('Mở lớp', 'Open class')
                             : item.type === 'chat_group_message' ||
                               item.type === 'chat_message'
-                            ? 'Mở nhóm chat'
+                            ? tr('Mở nhóm chat', 'Open chat')
                             : item.type === 'homework_assigned'
-                            ? 'Làm bài tập'
-                            : 'Mở')}
+                            ? tr('Làm bài tập', 'Do homework')
+                            : tr('Mở', 'Open'))}
                       </span>
                       <ExternalLink className="h-3 w-3" />
                     </button>
                   )}
                 </div>
               </div>
-            ))
+            );
+            })
           )}
         </div>
       </div>

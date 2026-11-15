@@ -4,8 +4,10 @@ import { FlaskConical, Wifi, WifiOff, ChevronDown, ChevronUp } from 'lucide-reac
 import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { cn } from '@/lib/utils';
+import { translateRoleLabel, useI18n } from '@/i18n';
 
 export const DemoControlBar: React.FC = () => {
+  const { lang, tr } = useI18n();
   const queryClient = useQueryClient();
   const {
     isDemoMode,
@@ -53,7 +55,7 @@ export const DemoControlBar: React.FC = () => {
             <span>DEMO</span>
           </span>
           <span className="font-semibold text-amber-900">
-            Vai trò: <strong>{user?.role || 'student'}</strong>
+            {tr('Vai trò:', 'Role:')} <strong>{translateRoleLabel(user?.role || 'student', lang)}</strong>
           </span>
         </div>
 
@@ -64,7 +66,7 @@ export const DemoControlBar: React.FC = () => {
             onClick={() => setExpanded((prev) => !prev)}
             className="inline-flex items-center gap-1 rounded bg-amber-200/70 px-2 py-0.5 font-bold text-amber-950 hover:bg-amber-200"
           >
-            <span>Đổi vai trò Demo</span>
+            <span>{tr('Đổi vai trò Demo', 'Switch Demo Role')}</span>
             {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </button>
 
@@ -74,7 +76,7 @@ export const DemoControlBar: React.FC = () => {
             onClick={handleExitDemoMode}
             className="rounded px-2 py-0.5 font-semibold text-amber-900 underline hover:text-red-800"
           >
-            Thoát Demo
+            {tr('Thoát Demo', 'Exit Demo')}
           </button>
         </div>
       </div>
@@ -92,7 +94,7 @@ export const DemoControlBar: React.FC = () => {
                 : 'bg-white text-stone-800 border border-amber-300'
             )}
           >
-            Học sinh
+            {tr('Học sinh', 'Student')}
           </button>
           <button
             type="button"
@@ -105,7 +107,7 @@ export const DemoControlBar: React.FC = () => {
                 : 'bg-white text-stone-800 border border-amber-300'
             )}
           >
-            Giáo viên
+            {tr('Giáo viên', 'Teacher')}
           </button>
           <button
             type="button"
@@ -118,7 +120,7 @@ export const DemoControlBar: React.FC = () => {
                 : 'bg-white text-stone-800 border border-amber-300'
             )}
           >
-            Quản lý
+            {tr('Quản lý', 'Admin')}
           </button>
 
           <button
@@ -134,11 +136,11 @@ export const DemoControlBar: React.FC = () => {
           >
             {isOfflineSimulated ? (
               <>
-                <WifiOff className="h-3 w-3" /> Mất mạng
+                <WifiOff className="h-3 w-3" /> {tr('Mất mạng', 'Offline')}
               </>
             ) : (
               <>
-                <Wifi className="h-3 w-3" /> Mạng ổn định
+                <Wifi className="h-3 w-3" /> {tr('Mạng ổn định', 'Online')}
               </>
             )}
           </button>

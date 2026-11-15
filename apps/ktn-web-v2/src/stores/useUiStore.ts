@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import type { ChatAttachment, ChatDemoScenario, ChatMessage, ChatReaction } from '@/features/chat/types/chat.types';
+import {
+  type AppLanguage,
+  persistLanguage,
+  readInitialLanguage,
+} from '@/i18n/langStorage';
 
 export type VideoDemoScenario =
   | 'live_real'
@@ -118,10 +123,24 @@ interface UiState {
   addToast: (toast: Omit<ToastItem, 'id'>) => void;
   dismissToast: (id: string) => void;
 
+  lang: AppLanguage;
+  setLang: (lang: AppLanguage) => void;
+  toggleLang: () => void;
+
   resetSessionUiState: () => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
+  lang: readInitialLanguage(),
+  setLang: (next) => {
+    persistLanguage(next);
+    set({ lang: next });
+  },
+  toggleLang: () => {
+    const next: AppLanguage = get().lang === 'vi' ? 'en' : 'vi';
+    persistLanguage(next);
+    set({ lang: next });
+  },
   isDemoMode:
     isDemoAllowedInEnv() &&
     typeof window !== 'undefined' &&
@@ -338,7 +357,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       failedMessagesByRoom: {},
       reactionsByMessageId: {},
       completedLessons: {},
-      isOfflineSimulated: false
+      isOfflineSimulated: false,
+      lang: readInitialLanguage()
     });
   }
 }));

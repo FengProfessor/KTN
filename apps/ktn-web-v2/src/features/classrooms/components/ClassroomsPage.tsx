@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  KtnApiError,
   ktnApi,
   resolveUploadedMediaUrl,
   formatBytes,
@@ -36,8 +37,10 @@ import {
   DEMO_HOMEWORKS,
 } from '@/lib/demoData';
 import { KtnClassItem, KtnClassSession, KtnHomework } from '@/types/ktn.types';
+import { useI18n, translateScheduleText, translateDayLabel } from '@/i18n';
 
 export const ClassroomsPage: React.FC = () => {
+  const { lang, isEn, tr } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -84,7 +87,7 @@ export const ClassroomsPage: React.FC = () => {
     queryKey: ['ktn-classes', user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) return DEMO_CLASSES;
-      return ktnApi.getClasses();
+      return ktnApi.getClasses({ lite: true });
     },
     enabled: Boolean(user) || isDemoMode,
   });
@@ -116,6 +119,22 @@ export const ClassroomsPage: React.FC = () => {
         (isDemoMode ? 'YCT2-04' : '')
       : studentOwnClassCode;
 
+  const getErrStatus = (err: unknown): number => {
+    if (err instanceof KtnApiError) return err.status;
+    if (err && typeof err === 'object' && 'status' in err) {
+      const s = Number((err as { status?: unknown }).status);
+      return Number.isFinite(s) ? s : 0;
+    }
+    return 0;
+  };
+  const getErrCode = (err: unknown): string => {
+    if (err instanceof KtnApiError) return String(err.code || '');
+    if (err && typeof err === 'object' && 'code' in err) {
+      return String((err as { code?: unknown }).code || '');
+    }
+    return '';
+  };
+
   const sessionsQuery = useQuery<KtnClassSession[]>({
     queryKey: ['ktn-class-sessions', activeClassCode, user?.email, isDemoMode],
     queryFn: async () => {
@@ -124,6 +143,10 @@ export const ClassroomsPage: React.FC = () => {
       return ktnApi.getClassSessions(activeClassCode);
     },
     enabled: Boolean(activeClassCode) && (Boolean(user) || isDemoMode),
+    retry: (failureCount, err) => {
+      const status = getErrStatus(err);
+      return status !== 401 && status !== 403 && status !== 404 && failureCount < 2;
+    },
   });
 
   const homeworksQuery = useQuery<KtnHomework[]>({
@@ -150,7 +173,38 @@ export const ClassroomsPage: React.FC = () => {
       return ktnApi.getAttendance({ classCode: activeClassCode });
     },
     enabled: Boolean(activeClassCode) && (Boolean(user) || isDemoMode),
+    retry: (failureCount, err) => {
+      const status = getErrStatus(err);
+      return status !== 401 && status !== 403 && status !== 404 && failureCount < 2;
+    },
   });
+
+  useEffect(() => {
+    const err = sessionsQuery.error || attendanceQuery.error;
+    const status = getErrStatus(err);
+    const code = getErrCode(err);
+    if (
+      err &&
+      (status === 403 ||
+        code === 'STUDENT_CLASS_SCOPE_FORBIDDEN' ||
+        code === 'TEACHER_CLASS_SCOPE_FORBIDDEN' ||
+        code === 'CLASS_ARCHIVED_OR_INACTIVE')
+    ) {
+      void useAuthStore.getState().refreshPermissions?.().catch(() => null);
+      queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-homeworks'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+      if (activeClassCode) {
+        queryClient.removeQueries({ queryKey: ['ktn-class-sessions', activeClassCode] });
+        queryClient.removeQueries({ queryKey: ['ktn-student-attendance', activeClassCode] });
+      }
+      if (urlClassParam) {
+        navigate('/classrooms', { replace: true });
+      }
+    }
+  }, [sessionsQuery.error, attendanceQuery.error, activeClassCode, urlClassParam, navigate, queryClient]);
 
   // Default to the nearest session with unsubmitted homework or exercises/content when no deep-link is in the URL
   useEffect(() => {
@@ -201,7 +255,7 @@ export const ClassroomsPage: React.FC = () => {
           homework: {
             id: 'HW-LIVE-DEMO-' + Date.now(),
             student_email: user?.email || 'demo@khongtunhi.com',
-            student_name: user?.name || 'Học viên Demo',
+            student_name: user?.name || tr('Học viên Demo', 'Demo Student'),
             class_code: activeClassCode,
             course_id: liveCourseId,
             lesson_num: payload.lessonNum,
@@ -254,8 +308,11 @@ export const ClassroomsPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-homeworks'] });
       addToast({
-        title: 'Đã nộp bài tập lớp trực tiếp',
-        description: `Bài làm đã gửi tới Giáo viên lớp ${activeClassCode}.`,
+        title: tr('Đã nộp bài tập lớp trực tiếp', 'Live class homework submitted'),
+        description: tr(
+          `Bài làm đã gửi tới Giáo viên lớp ${activeClassCode}.`,
+          `Your work was sent to the teacher of class ${activeClassCode}.`
+        ),
         variant: 'success',
       });
     },
@@ -287,7 +344,10 @@ export const ClassroomsPage: React.FC = () => {
         >
           <AlertCircle className="h-4 w-4 shrink-0 text-amber-800" />
           <span>
-            Bạn không có quyền truy cập tài liệu của lớp {urlClassParam}. Hệ thống đang hiển thị lớp {studentOwnClassCode} của bạn.
+            {tr(
+              `Bạn không có quyền truy cập tài liệu của lớp ${urlClassParam}. Hệ thống đang hiển thị lớp ${studentOwnClassCode} của bạn.`,
+              `You don't have access to materials for class ${urlClassParam}. Showing your enrolled class ${studentOwnClassCode}.`
+            )}
           </span>
         </div>
       )}
@@ -298,7 +358,7 @@ export const ClassroomsPage: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
-            <span>Chưa tải được dữ liệu lớp học.</span>
+            <span>{tr('Chưa tải được dữ liệu lớp học.', 'Could not load class data.')}</span>
           </div>
           <button
             type="button"
@@ -310,7 +370,7 @@ export const ClassroomsPage: React.FC = () => {
             className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
           >
             <RotateCcw className="h-3 w-3" />
-            Thử lại
+            {tr('Thử lại', 'Retry')}
           </button>
         </div>
       )}
@@ -326,10 +386,10 @@ export const ClassroomsPage: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-900">
                   <Users className="h-3.5 w-3.5 text-red-800" />
-                  LỚP TRỰC TIẾP
+                  {tr('LỚP TRỰC TIẾP', 'LIVE CLASS')}
                 </span>
                 <span className="rounded-lg bg-stone-100 px-2 py-0.5 font-mono text-xs font-bold text-stone-700">
-                  Mã lớp: {assignedClass.id}
+                  {tr('Mã lớp:', 'Class Code:')} {assignedClass.id}
                 </span>
               </div>
 
@@ -341,9 +401,11 @@ export const ClassroomsPage: React.FC = () => {
                 <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2 sm:p-2.5">
                   <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-red-800" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10.5px] text-stone-500">Giáo viên phụ trách</p>
+                    <p className="text-[10.5px] text-stone-500">
+                      {tr('Giáo viên phụ trách', 'Assigned Teacher')}
+                    </p>
                     <p className="break-words text-xs font-bold text-stone-900">
-                      {assignedClass.teacher_name || 'Chưa phân công giáo viên'}
+                      {assignedClass.teacher_name || tr('Chưa phân công giáo viên', 'No teacher assigned yet')}
                     </p>
                   </div>
                 </div>
@@ -351,15 +413,17 @@ export const ClassroomsPage: React.FC = () => {
                 <div className="flex items-start gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2 sm:p-2.5">
                   <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10.5px] text-stone-500">Lịch học chính thức</p>
+                    <p className="text-[10.5px] text-stone-500">
+                      {tr('Lịch học chính thức', 'Official Schedule')}
+                    </p>
                     <p
                       data-testid="student-classroom-schedule-text"
                       className="break-words text-xs font-bold text-stone-900"
                     >
                       {assignedClass.scheduleStatus === 'confirmed' &&
                       assignedClass.officialScheduleText
-                        ? assignedClass.officialScheduleText
-                        : 'Chưa có lịch học chính thức'}
+                        ? translateScheduleText(assignedClass.officialScheduleText, lang)
+                        : tr('Chưa có lịch học chính thức', 'No official schedule yet')}
                     </p>
                   </div>
                 </div>
@@ -372,7 +436,8 @@ export const ClassroomsPage: React.FC = () => {
                 >
                   <div>
                     <p className="font-bold text-emerald-950">
-                      Buổi học tiếp theo: {assignedClass.nextSession.dayLabel},{' '}
+                      {tr('Buổi học tiếp theo:', 'Next session:')}{' '}
+                      {translateDayLabel(assignedClass.nextSession.dayLabel, lang)},{' '}
                       {assignedClass.nextSession.sessionDate} ({assignedClass.nextSession.startTime}–
                       {assignedClass.nextSession.endTime})
                     </p>
@@ -391,7 +456,7 @@ export const ClassroomsPage: React.FC = () => {
                         data-testid="student-classroom-join-meeting-btn"
                         className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-900"
                       >
-                        Vào phòng học →
+                        {tr('Vào phòng học →', 'Join Room →')}
                       </a>
                     )}
                 </div>
@@ -406,7 +471,7 @@ export const ClassroomsPage: React.FC = () => {
                 className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
               >
                 <MessageSquare className="h-3.5 w-3.5" />
-                Chat lớp {assignedClass.id}
+                {tr(`Chat lớp ${assignedClass.id}`, `Class ${assignedClass.id} Chat`)}
               </button>
 
               {attendanceQuery.data?.summary && (
@@ -415,8 +480,10 @@ export const ClassroomsPage: React.FC = () => {
                   className="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-900"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
-                  Chuyên cần: {attendanceQuery.data.summary.present + attendanceQuery.data.summary.late}/
-                  {Math.max(1, attendanceQuery.data.summary.total)} buổi
+                  {tr('Chuyên cần:', 'Attendance:')}{' '}
+                  {attendanceQuery.data.summary.present + attendanceQuery.data.summary.late}/
+                  {Math.max(1, attendanceQuery.data.summary.total)}{' '}
+                  {tr('buổi', 'sessions')}
                 </span>
               )}
             </div>
@@ -428,7 +495,10 @@ export const ClassroomsPage: React.FC = () => {
             className="flex flex-col items-start justify-center py-3"
           >
             <p className="font-display text-sm font-bold text-stone-900 sm:text-base">
-              Em chưa được xếp vào lớp học trực tiếp.
+              {tr(
+                'Em chưa được xếp vào lớp học trực tiếp.',
+                'You are not assigned to a live class yet.'
+              )}
             </p>
             <button
               type="button"
@@ -437,7 +507,7 @@ export const ClassroomsPage: React.FC = () => {
               className="mt-3 inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900"
             >
               <MessageSquare className="h-3.5 w-3.5" />
-              Liên hệ Học vụ
+              {tr('Liên hệ Học vụ', 'Contact Academic Office')}
             </button>
           </div>
         )}
@@ -449,11 +519,12 @@ export const ClassroomsPage: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
             <div>
               <h2 className="font-display text-sm font-bold text-stone-900 sm:text-base">
-                Buổi học & Bài tập lớp {assignedClass.id}
+                {tr(`Buổi học & Bài tập lớp ${assignedClass.id}`, `Sessions & Homework — Class ${assignedClass.id}`)}
               </h2>
               {activeSession && (
                 <p className="text-[11px] font-medium text-stone-500 lg:hidden">
-                  Đang xem: Buổi {activeSession.sessionNum || activeSession.session_num} —{' '}
+                  {tr('Đang xem: Buổi', 'Viewing: Session')}{' '}
+                  {activeSession.sessionNum || activeSession.session_num} —{' '}
                   {activeSession.title || activeSession.session_title}
                 </p>
               )}
@@ -461,7 +532,7 @@ export const ClassroomsPage: React.FC = () => {
 
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-[11px] font-bold text-stone-700">
-                {sessions.length} buổi
+                {sessions.length} {tr('buổi', 'sessions')}
               </span>
               {sessions.length > 1 && (
                 <button
@@ -470,7 +541,11 @@ export const ClassroomsPage: React.FC = () => {
                   onClick={() => setMobileSessionsExpanded((prev) => !prev)}
                   className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-xs font-bold text-stone-700 lg:hidden"
                 >
-                  <span>{mobileSessionsExpanded ? 'Thu gọn buổi' : 'Chọn buổi học'}</span>
+                  <span>
+                    {mobileSessionsExpanded
+                      ? tr('Thu gọn buổi', 'Hide sessions')
+                      : tr('Chọn buổi học', 'Select session')}
+                  </span>
                   {mobileSessionsExpanded ? (
                     <ChevronUp className="h-3.5 w-3.5" />
                   ) : (
@@ -493,7 +568,7 @@ export const ClassroomsPage: React.FC = () => {
             >
               {sessions.length === 0 ? (
                 <p className="rounded-xl bg-stone-50 p-3 text-xs text-stone-500">
-                  Chưa có buổi học nào được cập nhật.
+                  {tr('Chưa có buổi học nào được cập nhật.', 'No sessions updated yet.')}
                 </p>
               ) : (
                 sessions.map((session) => {
@@ -527,7 +602,7 @@ export const ClassroomsPage: React.FC = () => {
                             : 'bg-stone-100 text-stone-700'
                         }`}
                       >
-                        B{sNum}
+                        {isEn ? `S${sNum}` : `B${sNum}`}
                       </div>
                       <div
                         className={`min-w-0 flex-1 ${
@@ -538,7 +613,7 @@ export const ClassroomsPage: React.FC = () => {
                           {session.title || session.session_title}
                         </p>
                         <p className="text-[11px] text-stone-500">
-                          {session.exercises?.length || 0} bài tập
+                          {session.exercises?.length || 0} {tr('bài tập', 'exercises')}
                         </p>
                       </div>
                     </button>
@@ -556,10 +631,11 @@ export const ClassroomsPage: React.FC = () => {
                       data-testid="active-session-badge"
                       className="rounded-md bg-red-800 px-2 py-0.5 text-[10.5px] font-bold text-white"
                     >
-                      BUỔI {activeSession.sessionNum || activeSession.session_num}
+                      {tr('BUỔI', 'SESSION')} {activeSession.sessionNum || activeSession.session_num}
                     </span>
                     <span className="text-xs font-semibold text-stone-600">
-                      GV: {assignedClass.teacher_name || 'Chưa phân công giáo viên'}
+                      {tr('GV:', 'Teacher:')}{' '}
+                      {assignedClass.teacher_name || tr('Chưa phân công giáo viên', 'No teacher assigned yet')}
                     </span>
                   </div>
 
@@ -576,7 +652,7 @@ export const ClassroomsPage: React.FC = () => {
                   <div className="mt-3 space-y-2.5">
                     <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-700">
                       <FileCheck2 className="h-3.5 w-3.5 text-red-800" />
-                      Bài tập được giao (
+                      {tr('Bài tập được giao', 'Assigned Exercises')} (
                       {
                         (activeSession.exercises || []).filter(
                           (ex) => user?.role !== 'student' || ex.status !== 'draft'
@@ -629,7 +705,7 @@ export const ClassroomsPage: React.FC = () => {
                                     </p>
                                     {ex.dueDate && (
                                       <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700">
-                                        Hạn nộp: {ex.dueDate}
+                                        {tr('Hạn nộp:', 'Due:')} {ex.dueDate}
                                       </span>
                                     )}
                                     {matchedHw?.status === 'graded' ? (
@@ -638,7 +714,7 @@ export const ClassroomsPage: React.FC = () => {
                                         className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800"
                                       >
                                         <CheckCircle2 className="h-3 w-3" />
-                                        Đã chấm: {matchedHw.score}/10
+                                        {tr('Đã chấm:', 'Graded:')} {matchedHw.score}/10
                                       </span>
                                     ) : matchedHw ? (
                                       <span
@@ -646,7 +722,7 @@ export const ClassroomsPage: React.FC = () => {
                                         className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800"
                                       >
                                         <Clock className="h-3 w-3" />
-                                        Đã nộp (Lớp {assignedClass.id})
+                                        {tr(`Đã nộp (Lớp ${assignedClass.id})`, `Submitted (Class ${assignedClass.id})`)}
                                       </span>
                                     ) : (
                                       <span
@@ -654,7 +730,7 @@ export const ClassroomsPage: React.FC = () => {
                                         className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900"
                                       >
                                         <Sparkles className="h-3 w-3" />
-                                        Cần hoàn thành
+                                        {tr('Cần hoàn thành', 'To Do')}
                                       </span>
                                     )}
                                   </div>
@@ -676,10 +752,10 @@ export const ClassroomsPage: React.FC = () => {
                                   <BookOpen className="h-3.5 w-3.5" />
                                   <span>
                                     {isDrawerOpen
-                                      ? 'Đóng'
+                                      ? tr('Đóng', 'Close')
                                       : matchedHw
-                                        ? 'Xem bài nộp'
-                                        : 'Nộp bài'}
+                                        ? tr('Xem bài nộp', 'View Work')
+                                        : tr('Nộp bài', 'Submit')}
                                   </span>
                                 </button>
                               </div>
@@ -693,8 +769,10 @@ export const ClassroomsPage: React.FC = () => {
                                   <p className="flex items-center gap-1.5 text-[11px] font-bold text-stone-800">
                                     <Paperclip className="h-3.5 w-3.5 text-red-800" />
                                     <span>
-                                      Tài liệu đề bài từ giáo viên ({teacherAttachments.length}{' '}
-                                      tệp)
+                                      {tr(
+                                        `Tài liệu đề bài từ giáo viên (${teacherAttachments.length} tệp)`,
+                                        `Teacher exercise files (${teacherAttachments.length})`
+                                      )}
                                     </span>
                                   </p>
                                   <div className="space-y-2">
@@ -752,7 +830,9 @@ export const ClassroomsPage: React.FC = () => {
                                                 >
                                                   <ZoomIn className="h-3.5 w-3.5" />
                                                   <span>
-                                                    {isPdf ? 'Xem PDF' : 'Xem ảnh'}
+                                                    {isPdf
+                                                      ? tr('Xem PDF', 'View PDF')
+                                                      : tr('Xem ảnh', 'View Image')}
                                                   </span>
                                                 </button>
                                               )}
@@ -766,7 +846,7 @@ export const ClassroomsPage: React.FC = () => {
                                                   className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-900 hover:bg-red-100"
                                                 >
                                                   <Download className="h-3.5 w-3.5" />
-                                                  <span>Tải về</span>
+                                                  <span>{tr('Tải về', 'Download')}</span>
                                                 </a>
                                               )}
                                             </div>
@@ -802,7 +882,10 @@ export const ClassroomsPage: React.FC = () => {
                                 key={`${liveCourseId}:${liveLessonNum}`}
                                 courseId={liveCourseId}
                                 lessonNum={liveLessonNum}
-                                lessonTitle={`Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`}
+                                lessonTitle={tr(
+                                  `Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`,
+                                  `Class ${assignedClass.id} · Session ${sNum} · ${ex.title}`
+                                )}
                                 classCode={assignedClass.id}
                                 homeworkAssignment={{
                                   assigned: true,
@@ -811,7 +894,10 @@ export const ClassroomsPage: React.FC = () => {
                                   instructions:
                                     ex.prompt ||
                                     ex.instruction ||
-                                    'Hoàn thành bài luyện tập của buổi học.',
+                                    tr(
+                                      'Hoàn thành bài luyện tập của buổi học.',
+                                      'Complete the practice exercise for this session.'
+                                    ),
                                   allowedTypes:
                                     ex.submissionType === 'audio'
                                       ? ['audio', 'text']
@@ -834,7 +920,10 @@ export const ClassroomsPage: React.FC = () => {
                                 }) => {
                                   await submitLiveClassHwMutation.mutateAsync({
                                     lessonNum: liveLessonNum,
-                                    lessonTitle: `Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`,
+                                    lessonTitle: tr(
+                                      `Lớp ${assignedClass.id} · Buổi ${sNum} · ${ex.title}`,
+                                      `Class ${assignedClass.id} · Session ${sNum} · ${ex.title}`
+                                    ),
                                     studentNote: note,
                                     file,
                                     fileName,
@@ -873,7 +962,7 @@ export const ClassroomsPage: React.FC = () => {
               </div>
               <button
                 type="button"
-                aria-label="Đóng xem trước tài liệu"
+                aria-label={tr('Đóng xem trước tài liệu', 'Close attachment preview')}
                 onClick={() => setPreviewAttachment(null)}
                 className="rounded-lg p-1 text-stone-500 hover:bg-stone-100"
               >

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { MessageSquareOff, Search, X, Loader2, UserPlus } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { ConversationHeader } from './ConversationHeader';
@@ -13,9 +14,10 @@ import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { ChatMessage, ChatRoom, SendMessageInput } from '../types/chat.types';
 import { getInitials } from '@/lib/utils';
-import { getStoredSession } from '@/services/api/ktnApiClient';
+import { getStoredSession, KtnApiError } from '@/services/api/ktnApiClient';
 import { chatApi, formatQuotedReplyText, normalizeVietnameseSearchText } from '../services/chatApi';
 import type { KtnStudentProfile } from '@/types/ktn.types';
+import { useI18n } from '@/i18n';
 
 const DEMO_FALLBACK_STUDENTS: KtnStudentProfile[] = [
   {
@@ -39,6 +41,7 @@ const DEMO_FALLBACK_STUDENTS: KtnStudentProfile[] = [
 ];
 
 export const ChatLayout: React.FC = () => {
+  const { lang, tr } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
@@ -63,7 +66,63 @@ export const ChatLayout: React.FC = () => {
   const [studentResults, setStudentResults] = useState<KtnStudentProfile[]>([]);
   const [isSearchingStudents, setIsSearchingStudents] = useState(false);
 
-  const { data: serverRooms = [], isLoading: isRoomsLoading } = useChatRooms();
+  const { data: serverRooms = [], isLoading: isRoomsLoading } = useChatRooms({
+    refetchInterval: isDemoMode ? false : 3500,
+  });
+  const queryClient = useQueryClient();
+  const addToast = useUiStore((s) => s.addToast);
+
+  const resolveStudentDirectTarget = useCallback(() => {
+    const cachedPrivateMeta = queryClient.getQueryData<ChatRoom | null>([
+      'chat-private-room-meta',
+      user?.email,
+    ]);
+    if (cachedPrivateMeta && typeof cachedPrivateMeta.hasAssignedTeacher === 'boolean') {
+      const hasTeacher = cachedPrivateMeta.hasAssignedTeacher;
+      return {
+        hasAssignedTeacher: hasTeacher,
+        recipientTargetType:
+          cachedPrivateMeta.recipientTargetType ||
+          (hasTeacher ? ('teacher' as const) : ('support_center' as const)),
+        label: hasTeacher
+          ? cachedPrivateMeta.label ||
+            tr('Lão sư Chủ nhiệm & Học vụ KTN (1-1)', 'Homeroom Teacher & KTN Academic Support (1-1)')
+          : cachedPrivateMeta.label ||
+            tr('🏢 Học vụ Khổng Tử Nhí', '🏢 KTN Academic Office'),
+        shortLabel: hasTeacher
+          ? cachedPrivateMeta.shortLabel || tr('1-1 Giáo viên', '1-1 Teacher')
+          : cachedPrivateMeta.shortLabel || tr('Học vụ KTN', 'Academic Office'),
+        teacherName: hasTeacher
+          ? cachedPrivateMeta.teacherName
+          : tr('Học vụ Khổng Tử Nhí', 'KTN Academic Office'),
+      };
+    }
+
+    const activeClassRoom = serverRooms.find((r) => r.type === 'class');
+    const teacherRaw = String(activeClassRoom?.teacherName || '').trim();
+    const hasTeacher =
+      Boolean(activeClassRoom) &&
+      Boolean(teacherRaw) &&
+      teacherRaw !== 'Chưa phân công giáo viên' &&
+      teacherRaw !== 'No teacher assigned yet';
+
+    if (hasTeacher) {
+      return {
+        hasAssignedTeacher: true,
+        recipientTargetType: 'teacher' as const,
+        label: tr('Lão sư Chủ nhiệm & Học vụ KTN (1-1)', 'Homeroom Teacher & KTN Academic Support (1-1)'),
+        shortLabel: tr('1-1 Giáo viên', '1-1 Teacher'),
+        teacherName: teacherRaw,
+      };
+    }
+    return {
+      hasAssignedTeacher: false,
+      recipientTargetType: 'support_center' as const,
+      label: tr('🏢 Học vụ Khổng Tử Nhí', '🏢 KTN Academic Office'),
+      shortLabel: tr('Học vụ KTN', 'Academic Office'),
+      teacherName: tr('Học vụ Khổng Tử Nhí', 'KTN Academic Office'),
+    };
+  }, [queryClient, serverRooms, tr, user?.email]);
 
   // Merge ephemeral 1-1 room only if it is not yet in serverRooms
   const rooms = useMemo(() => {
@@ -126,15 +185,19 @@ export const ChatLayout: React.FC = () => {
           user?.role === 'student' &&
           String(user?.email || '').trim().toLowerCase() === targetStudentEmail;
         if (targetStudentEmail && (isOwnStudentRoom || user?.role === 'admin')) {
+          const directTarget = resolveStudentDirectTarget();
           const draftRoom: ChatRoom = {
             roomId: `student:${targetStudentEmail}`,
             type: 'student',
             studentEmail: targetStudentEmail,
             studentName: isOwnStudentRoom ? user?.name || targetStudentEmail : targetStudentEmail,
+            hasAssignedTeacher: isOwnStudentRoom ? directTarget.hasAssignedTeacher : undefined,
+            recipientTargetType: isOwnStudentRoom ? directTarget.recipientTargetType : undefined,
+            teacherName: isOwnStudentRoom ? directTarget.teacherName : undefined,
             label: isOwnStudentRoom
-              ? 'Lão sư Chủ nhiệm & Học vụ KTN (1-1)'
+              ? directTarget.label
               : `1-1: ${targetStudentEmail}`,
-            shortLabel: isOwnStudentRoom ? '1-1 Giáo viên' : targetStudentEmail,
+            shortLabel: isOwnStudentRoom ? directTarget.shortLabel : targetStudentEmail,
             lastMessage: '',
             hasMessages: false,
             isEphemeral: true,
@@ -170,6 +233,7 @@ export const ChatLayout: React.FC = () => {
     user?.role,
     user?.email,
     user?.name,
+    tr,
   ]);
 
   const activeRoom = useMemo(() => {
@@ -198,11 +262,49 @@ export const ChatLayout: React.FC = () => {
     messages,
     pinnedMessage,
     isLoading: isMessagesLoading,
+    isError: isMessagesError,
+    error: messagesError,
     hasMoreOlder,
     isLoadingOlder,
     loadOlderMessages,
     markRoomRead,
   } = useRoomMessages(resolvedRoomId);
+
+  const isRoomForbidden =
+    isMessagesError &&
+    messagesError instanceof KtnApiError &&
+    messagesError.status === 403;
+
+  useEffect(() => {
+    if (!isRoomForbidden || !resolvedRoomId) return;
+    setEphemeralRoom(null);
+    setActiveRoomId('');
+    setMobileChatConversationOpen(false);
+    addToast({
+      title: tr('Phòng chat đã đóng quyền truy cập', 'Chat room access revoked'),
+      description:
+        messagesError instanceof Error
+          ? messagesError.message
+          : tr(
+              'Bạn không còn thuộc phòng hoặc lớp học này. Đã làm mới danh sách phòng hợp lệ.',
+              'You no longer have access to this class or conversation. Room list refreshed.'
+            ),
+      variant: 'error',
+    });
+    if (roomParam) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [
+    isRoomForbidden,
+    resolvedRoomId,
+    messagesError,
+    roomParam,
+    setActiveRoomId,
+    setMobileChatConversationOpen,
+    setSearchParams,
+    addToast,
+    tr,
+  ]);
 
   const { sendMessage, isSending, retryFailedMessage, toggleReaction, pinAnnouncement } =
     useSendMessage(broadcastChatEvent);
@@ -256,14 +358,18 @@ export const ChatLayout: React.FC = () => {
         handleSelectRoom(existing.roomId);
         return;
       }
+      const directTarget = resolveStudentDirectTarget();
       const draftRoom: ChatRoom = {
         roomId: targetRoomId,
         type: 'student',
         classCode: user?.classCode || undefined,
         studentEmail,
         studentName: user?.name || studentEmail,
-        label: 'Lão sư Chủ nhiệm & Học vụ KTN (1-1)',
-        shortLabel: '1-1 Giáo viên',
+        hasAssignedTeacher: directTarget.hasAssignedTeacher,
+        recipientTargetType: directTarget.recipientTargetType,
+        teacherName: directTarget.teacherName,
+        label: directTarget.label,
+        shortLabel: directTarget.shortLabel,
         lastMessage: '',
         hasMessages: false,
         isEphemeral: true,
@@ -289,6 +395,7 @@ export const ChatLayout: React.FC = () => {
     setActiveRoomId,
     setMobileChatConversationOpen,
     setSearchParams,
+    tr,
   ]);
 
   // Search students for "Nhắn mới" modal (Teacher / Admin)
@@ -426,17 +533,17 @@ export const ChatLayout: React.FC = () => {
       {isDemoMode && (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50/90 px-3.5 py-1.5 text-xs">
           <span className="font-semibold text-amber-950">
-            Trạng thái kiểm thử Phòng Chat (Demo):
+            {tr('Trạng thái kiểm thử Phòng Chat (Demo):', 'Chat Room Test State (Demo):')}
           </span>
           <div className="flex flex-wrap items-center gap-1">
             {(
               [
-                { id: 'demo_rich', label: 'Đầy đủ tin nhắn' },
-                { id: 'demo_empty', label: 'Lớp mới (Trống)' },
-                { id: 'demo_unread', label: 'Có tin chưa đọc' },
-                { id: 'demo_sending', label: 'Đang gửi...' },
-                { id: 'demo_failed', label: 'Gửi lỗi + Thử lại' },
-                { id: 'live_real', label: 'Dữ liệu thật' },
+                { id: 'demo_rich', label: tr('Đầy đủ tin nhắn', 'Rich messages') },
+                { id: 'demo_empty', label: tr('Lớp mới (Trống)', 'New class (Empty)') },
+                { id: 'demo_unread', label: tr('Có tin chưa đọc', 'Has unread') },
+                { id: 'demo_sending', label: tr('Đang gửi...', 'Sending...') },
+                { id: 'demo_failed', label: tr('Gửi lỗi + Thử lại', 'Failed + Retry') },
+                { id: 'live_real', label: tr('Dữ liệu thật', 'Live data') },
               ] as const
             ).map((st) => (
               <button
@@ -530,6 +637,7 @@ export const ChatLayout: React.FC = () => {
 
               <MessageList
                 roomId={activeRoom.roomId}
+                room={activeRoom}
                 messages={messages}
                 currentUserEmail={
                   user?.email || (isDemoMode ? 'hoangngan@khongtunhi.com' : '')
@@ -549,9 +657,9 @@ export const ChatLayout: React.FC = () => {
                   pinAnnouncement({
                     roomId: activeRoom.roomId,
                     content:
-                      formatQuotedReplyText(msg.content, msg.attachment) ||
+                      formatQuotedReplyText(msg.content, msg.attachment, lang) ||
                       msg.content ||
-                      '📷 Hình ảnh',
+                      tr('📷 Hình ảnh', '📷 Image'),
                     messageId: msg.id,
                   })
                 }
@@ -583,14 +691,36 @@ export const ChatLayout: React.FC = () => {
               <MessageSquareOff className="h-10 w-10 text-stone-400" />
               <h3 className="mt-3 font-display text-base font-bold text-stone-800">
                 {roomParam && !isRoomsLoading
-                  ? `Nhóm lớp "${roomParam.replace(/^class:/i, '')}" không còn hoạt động hoặc bạn không có quyền truy cập`
-                  : 'Chưa chọn phòng trao đổi lớp học'}
+                  ? tr(
+                      `Nhóm lớp "${roomParam.replace(/^class:/i, '')}" không còn hoạt động hoặc bạn không có quyền truy cập`,
+                      `Class group "${roomParam.replace(/^class:/i, '')}" is no longer active or you do not have access`
+                    )
+                  : tr('Chưa chọn phòng trao đổi lớp học', 'No class conversation selected')}
               </h3>
               <p className="mt-1 max-w-sm text-xs text-stone-500">
                 {roomParam && !isRoomsLoading
-                  ? 'Lớp học có thể đã được lưu trữ hoặc tài khoản hiện tại không thuộc danh sách thành viên lớp.'
-                  : 'Vui lòng chọn một lớp học hoặc kênh hỗ trợ ở danh sách bên trái để bắt đầu nhắn tin.'}
+                  ? tr(
+                      'Lớp học có thể đã được lưu trữ hoặc tài khoản hiện tại không thuộc danh sách thành viên lớp.',
+                      'The class may have been archived or your current account is not on the class roster.'
+                    )
+                  : tr(
+                      'Vui lòng chọn một lớp học hoặc kênh hỗ trợ ở danh sách bên trái để bắt đầu nhắn tin.',
+                      'Please select a class or support channel from the list on the left to start messaging.'
+                    )}
               </p>
+              {roomParam && !isRoomsLoading && (
+                <button
+                  type="button"
+                  data-testid="chat-room-return-valid-btn"
+                  onClick={() => {
+                    setSearchParams({}, { replace: true });
+                    setMobileChatConversationOpen(false);
+                  }}
+                  className="mt-4 inline-flex min-h-[36px] items-center rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900"
+                >
+                  {tr('Quay về danh sách phòng hợp lệ', 'Return to valid conversations')}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -602,7 +732,7 @@ export const ChatLayout: React.FC = () => {
           data-testid="chat-new-message-modal"
           role="dialog"
           aria-modal="true"
-          aria-label="Bắt đầu tin nhắn 1-1 mới"
+          aria-label={tr('Bắt đầu tin nhắn 1-1 mới', 'Start a new 1-1 message')}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
           onClick={() => setNewMsgModalOpen(false)}
         >
@@ -614,15 +744,15 @@ export const ChatLayout: React.FC = () => {
               <div className="flex items-center gap-2">
                 <UserPlus className="h-4 w-4 text-red-800" />
                 <h2 className="font-display text-sm font-bold text-stone-900">
-                  Nhắn mới 1-1 với học viên
+                  {tr('Nhắn mới 1-1 với học viên', 'New 1-1 message with student')}
                 </h2>
               </div>
               <button
                 type="button"
                 data-testid="chat-new-message-close-btn"
                 onClick={() => setNewMsgModalOpen(false)}
-                aria-label="Đóng cửa sổ nhắn mới"
-                title="Đóng cửa sổ nhắn mới"
+                aria-label={tr('Đóng cửa sổ nhắn mới', 'Close new message dialog')}
+                title={tr('Đóng cửa sổ nhắn mới', 'Close new message dialog')}
                 className="rounded-lg p-1 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
               >
                 <X className="h-4 w-4" />
@@ -637,13 +767,19 @@ export const ChatLayout: React.FC = () => {
                   data-testid="chat-new-message-search-input"
                   value={studentQuery}
                   onChange={(e) => setStudentQuery(e.target.value)}
-                  placeholder="Nhập tên, mã HV hoặc email học viên (hỗ trợ không dấu)..."
+                  placeholder={tr(
+                    'Nhập tên, mã HV hoặc email học viên (hỗ trợ không dấu)...',
+                    'Enter student name, ID, or email...'
+                  )}
                   className="w-full bg-transparent text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none"
                   autoFocus
                 />
               </div>
               <p className="mt-1.5 text-[11px] text-stone-500">
-                Hội thoại 1-1 chỉ xuất hiện trong danh sách Gần đây sau khi gửi tin nhắn đầu tiên.
+                {tr(
+                  'Hội thoại 1-1 chỉ xuất hiện trong danh sách Gần đây sau khi gửi tin nhắn đầu tiên.',
+                  '1-1 conversations only appear in Recent after sending the first message.'
+                )}
               </p>
             </div>
 
@@ -651,11 +787,14 @@ export const ChatLayout: React.FC = () => {
               {isSearchingStudents ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-xs text-stone-500">
                   <Loader2 className="h-4 w-4 animate-spin text-red-800" />
-                  <span>Đang tìm học viên...</span>
+                  <span>{tr('Đang tìm học viên...', 'Searching students...')}</span>
                 </div>
               ) : studentResults.length === 0 ? (
                 <div className="py-8 text-center text-xs text-stone-500">
-                  Không tìm thấy học viên hợp lệ trong phạm vi lớp phụ trách.
+                  {tr(
+                    'Không tìm thấy học viên hợp lệ trong phạm vi lớp phụ trách.',
+                    'No eligible students found within your assigned classes.'
+                  )}
                 </div>
               ) : (
                 studentResults.map((st) => (
@@ -675,7 +814,7 @@ export const ChatLayout: React.FC = () => {
                       </p>
                       <p className="truncate text-[11px] text-stone-500">
                         {st.email}
-                        {st.class_code ? ` • Lớp ${st.class_code}` : ''}
+                        {st.class_code ? ` • ${tr('Lớp', 'Class')} ${st.class_code}` : ''}
                       </p>
                     </div>
                   </button>

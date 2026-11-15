@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { roleNavigation, NavBadgeKey } from './navigationConfig';
+import { getRoleNavigation, NavBadgeKey } from './navigationConfig';
+import { useI18n } from '@/i18n';
 import type { UserRole } from '@/types/ktn.types';
 
 interface RoleBottomNavigationProps {
@@ -13,13 +14,14 @@ export const RoleBottomNavigation: React.FC<RoleBottomNavigationProps> = ({
   badges,
 }) => {
   const location = useLocation();
-  const items = roleNavigation[role]?.mobile || roleNavigation.student.mobile;
+  const { lang, tr } = useI18n();
+  const items = getRoleNavigation(role, lang).mobile;
 
   return (
     <nav
       data-testid="mobile-bottom-nav"
       data-role-nav={role}
-      aria-label="Điều hướng di động"
+      aria-label={tr('Điều hướng di động', 'Mobile navigation')}
       className="safe-bottom fixed bottom-0 left-0 right-0 z-30 flex h-14 items-center justify-around border-t border-stone-200 bg-white/95 px-1 backdrop-blur-md lg:hidden"
     >
       {items.map((item) => {

@@ -14,6 +14,7 @@ import {
   LucideIcon,
 } from 'lucide-react';
 import type { UserRole } from '@/types/ktn.types';
+import { type AppLanguage, trStatic } from '@/i18n';
 
 export type NavBadgeKey = 'chat' | 'notifications' | 'grading' | 'orders';
 
@@ -269,7 +270,7 @@ export const roleNavigation: Record<UserRole, RoleNavigationDef> = {
         icon: MoreHorizontal,
         testId: 'nav-admin-more',
         mobileTestId: 'mobile-nav-more',
-        matchPrefix: ['/admin/more', '/admin/teachers'],
+        matchPrefix: ['/admin/more', '/admin/teachers', '/admin/consultations'],
       },
     ],
     desktop: [
@@ -310,6 +311,13 @@ export const roleNavigation: Record<UserRole, RoleNavigationDef> = {
         matchPrefix: ['/admin/orders'],
       },
       {
+        to: '/admin/consultations',
+        label: 'Tư vấn',
+        icon: MessageSquare,
+        testId: 'nav-admin-consultations',
+        matchPrefix: ['/admin/consultations'],
+      },
+      {
         to: '/admin/more',
         label: 'Đồng bộ',
         icon: ShieldCheck,
@@ -335,3 +343,322 @@ export const roleNavigation: Record<UserRole, RoleNavigationDef> = {
     ],
   },
 };
+
+export function getRoleNavigation(
+  role: UserRole,
+  lang: AppLanguage = 'vi'
+): RoleNavigationDef {
+  if (lang !== 'en') {
+    return roleNavigation[role] || roleNavigation.student;
+  }
+
+  const map: Record<UserRole, RoleNavigationDef> = {
+    student: {
+      home: '/',
+      roleBadgeLabel: trStatic('Học viên', 'Student', lang),
+      mobile: [
+        {
+          to: '/',
+          label: 'Home',
+          icon: Home,
+          testId: 'nav-dashboard',
+          mobileTestId: 'mobile-nav-home',
+          end: true,
+        },
+        {
+          to: '/learning',
+          label: 'Learn',
+          icon: PlayCircle,
+          testId: 'nav-learning',
+          mobileTestId: 'mobile-nav-learning',
+          matchPrefix: ['/learning'],
+        },
+        {
+          to: '/classrooms',
+          label: 'Class',
+          icon: Users,
+          testId: 'nav-classrooms',
+          mobileTestId: 'mobile-nav-classrooms',
+          matchPrefix: ['/classrooms'],
+        },
+        {
+          to: '/chat',
+          label: 'Chat',
+          icon: MessageSquare,
+          testId: 'nav-chat',
+          mobileTestId: 'mobile-nav-chat',
+          badgeKey: 'chat',
+          matchPrefix: ['/chat'],
+        },
+        {
+          to: '/notifications',
+          label: 'Alerts',
+          icon: Bell,
+          testId: 'nav-notifications',
+          mobileTestId: 'mobile-nav-notifications',
+          badgeKey: 'notifications',
+          matchPrefix: ['/notifications'],
+        },
+      ],
+      desktop: [
+        {
+          to: '/',
+          label: 'Home',
+          icon: Home,
+          testId: 'nav-dashboard',
+          end: true,
+        },
+        {
+          to: '/learning',
+          label: 'Lessons',
+          icon: PlayCircle,
+          testId: 'nav-learning',
+          matchPrefix: ['/learning'],
+        },
+        {
+          to: '/classrooms',
+          label: 'Classrooms',
+          icon: Users,
+          testId: 'nav-classrooms',
+          matchPrefix: ['/classrooms'],
+        },
+        {
+          to: '/chat',
+          label: 'Messages',
+          icon: MessageSquare,
+          testId: 'nav-chat',
+          badgeKey: 'chat',
+          matchPrefix: ['/chat'],
+        },
+        {
+          to: '/notifications',
+          label: 'Notifications',
+          icon: Bell,
+          testId: 'nav-notifications',
+          badgeKey: 'notifications',
+          matchPrefix: ['/notifications'],
+        },
+      ],
+    },
+    teacher: {
+      home: '/',
+      roleBadgeLabel: 'Teacher',
+      mobile: [
+        {
+          to: '/',
+          label: 'Overview',
+          icon: LayoutDashboard,
+          testId: 'nav-dashboard',
+          mobileTestId: 'mobile-nav-home',
+          end: true,
+        },
+        {
+          to: '/teacher/classes',
+          label: 'Classes',
+          icon: Users,
+          testId: 'nav-teacher-classes',
+          mobileTestId: 'mobile-nav-classes',
+          matchPrefix: ['/teacher/classes'],
+        },
+        {
+          to: '/teacher/grading',
+          label: 'Grading',
+          icon: FileCheck2,
+          testId: 'nav-teacher',
+          mobileTestId: 'mobile-nav-grading',
+          badgeKey: 'grading',
+          matchPrefix: ['/teacher/grading', '/teacher/assign'],
+        },
+        {
+          to: '/chat',
+          label: 'Chat',
+          icon: MessageSquare,
+          testId: 'nav-chat',
+          mobileTestId: 'mobile-nav-chat',
+          badgeKey: 'chat',
+          matchPrefix: ['/chat'],
+        },
+        {
+          to: '/notifications',
+          label: 'Alerts',
+          icon: Bell,
+          testId: 'nav-notifications',
+          mobileTestId: 'mobile-nav-notifications',
+          badgeKey: 'notifications',
+          matchPrefix: ['/notifications'],
+        },
+      ],
+      desktop: [
+        {
+          to: '/',
+          label: 'Overview',
+          icon: LayoutDashboard,
+          testId: 'nav-dashboard',
+          end: true,
+        },
+        {
+          to: '/teacher/classes',
+          label: 'My Classes',
+          icon: Users,
+          testId: 'nav-teacher-classes',
+          matchPrefix: ['/teacher/classes'],
+        },
+        {
+          to: '/teacher/grading',
+          label: 'Grading',
+          icon: FileCheck2,
+          testId: 'nav-teacher',
+          badgeKey: 'grading',
+          matchPrefix: ['/teacher/grading'],
+        },
+        {
+          to: '/teacher/assign',
+          label: 'Assign',
+          icon: CalendarPlus,
+          testId: 'nav-teacher-assign',
+          matchPrefix: ['/teacher/assign'],
+        },
+        {
+          to: '/teacher/forum',
+          label: 'Q&A Inbox',
+          icon: MessageSquare,
+          testId: 'nav-teacher-forum',
+          matchPrefix: ['/teacher/forum'],
+        },
+        {
+          to: '/chat',
+          label: 'Messages',
+          icon: MessageSquare,
+          testId: 'nav-chat',
+          badgeKey: 'chat',
+          matchPrefix: ['/chat'],
+        },
+        {
+          to: '/notifications',
+          label: 'Notifications',
+          icon: Bell,
+          testId: 'nav-notifications',
+          badgeKey: 'notifications',
+          matchPrefix: ['/notifications'],
+        },
+      ],
+    },
+    admin: {
+      home: '/',
+      roleBadgeLabel: 'Admin',
+      mobile: [
+        {
+          to: '/',
+          label: 'Overview',
+          icon: LayoutDashboard,
+          testId: 'nav-dashboard',
+          mobileTestId: 'mobile-nav-home',
+          end: true,
+        },
+        {
+          to: '/admin/students',
+          label: 'Students',
+          icon: Users,
+          testId: 'nav-admin-students',
+          mobileTestId: 'mobile-nav-students',
+          matchPrefix: ['/admin/students'],
+        },
+        {
+          to: '/admin/classes',
+          label: 'Classes',
+          icon: GraduationCap,
+          testId: 'nav-admin-classes',
+          mobileTestId: 'mobile-nav-classes',
+          matchPrefix: ['/admin/classes'],
+        },
+        {
+          to: '/admin/orders',
+          label: 'Orders',
+          icon: ClipboardList,
+          testId: 'nav-admin',
+          mobileTestId: 'mobile-nav-orders',
+          badgeKey: 'orders',
+          matchPrefix: ['/admin/orders'],
+        },
+        {
+          to: '/admin/more',
+          label: 'More',
+          icon: MoreHorizontal,
+          testId: 'nav-admin-more',
+          mobileTestId: 'mobile-nav-more',
+          matchPrefix: ['/admin/more', '/admin/teachers', '/admin/consultations'],
+        },
+      ],
+      desktop: [
+        {
+          to: '/',
+          label: 'Overview',
+          icon: LayoutDashboard,
+          testId: 'nav-dashboard',
+          end: true,
+        },
+        {
+          to: '/admin/students',
+          label: 'Students',
+          icon: Users,
+          testId: 'nav-admin-students',
+          matchPrefix: ['/admin/students'],
+        },
+        {
+          to: '/admin/classes',
+          label: 'Classes',
+          icon: GraduationCap,
+          testId: 'nav-admin-classes',
+          matchPrefix: ['/admin/classes'],
+        },
+        {
+          to: '/admin/teachers',
+          label: 'Teachers',
+          icon: Users,
+          testId: 'nav-admin-teachers',
+          matchPrefix: ['/admin/teachers'],
+        },
+        {
+          to: '/admin/orders',
+          label: 'Orders',
+          icon: ClipboardList,
+          testId: 'nav-admin',
+          badgeKey: 'orders',
+          matchPrefix: ['/admin/orders'],
+        },
+        {
+          to: '/admin/consultations',
+          label: 'Consults',
+          icon: MessageSquare,
+          testId: 'nav-admin-consultations',
+          matchPrefix: ['/admin/consultations'],
+        },
+        {
+          to: '/admin/more',
+          label: 'Sync & Audit',
+          icon: ShieldCheck,
+          testId: 'nav-admin-more',
+          matchPrefix: ['/admin/more'],
+        },
+        {
+          to: '/chat',
+          label: 'Messages',
+          icon: MessageSquare,
+          testId: 'nav-chat',
+          badgeKey: 'chat',
+          matchPrefix: ['/chat'],
+        },
+        {
+          to: '/notifications',
+          label: 'Notifications',
+          icon: Bell,
+          testId: 'nav-notifications',
+          badgeKey: 'notifications',
+          matchPrefix: ['/notifications'],
+        },
+      ],
+    },
+  };
+
+  return map[role] || map.student;
+}

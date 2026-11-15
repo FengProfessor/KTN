@@ -16,7 +16,7 @@ import {
   Gamepad2,
   ArrowRight,
 } from 'lucide-react';
-import { ktnApi, getServerNowMs } from '@/services/api/ktnApiClient';
+import { KtnApiError, ktnApi, getServerNowMs } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import {
@@ -48,6 +48,13 @@ import {
   CompactListItem,
   MobileTaskList,
 } from '@/components/shared/CompactUi';
+import {
+  useI18n,
+  translateDayLabel,
+  translateScheduleText,
+  translateCourseTitle,
+  translateNotificationItem,
+} from '@/i18n';
 
 export const StudentHome: React.FC = () => {
   const navigate = useNavigate();
@@ -55,6 +62,7 @@ export const StudentHome: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const completedLessons = useUiStore((s) => s.completedLessons);
+  const { lang, isEn, tr } = useI18n();
 
   const effectiveClassCode = isDemoMode
     ? user?.classCode || DEMO_CLASSES[0].id
@@ -95,7 +103,7 @@ export const StudentHome: React.FC = () => {
     queryKey: ['ktn-classes', user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) return DEMO_CLASSES;
-      return ktnApi.getClasses();
+      return ktnApi.getClasses({ lite: true });
     },
     enabled: Boolean(effectiveClassCode) && (Boolean(user) || isDemoMode),
   });
@@ -165,8 +173,8 @@ export const StudentHome: React.FC = () => {
 
   const [nowMs, setNowMs] = useState<number>(() => getServerNowMs());
   const primaryCourseExpInfo = useMemo(
-    () => computeCourseExpirationInfo(primaryCourseEntitlement, nowMs),
-    [primaryCourseEntitlement, nowMs]
+    () => computeCourseExpirationInfo(primaryCourseEntitlement, nowMs, lang),
+    [primaryCourseEntitlement, nowMs, lang]
   );
 
   useEffect(() => {
@@ -231,7 +239,29 @@ export const StudentHome: React.FC = () => {
       return ktnApi.getClassSessions(effectiveClassCode);
     },
     enabled: Boolean(effectiveClassCode) && (Boolean(user) || isDemoMode),
+    retry: (failureCount, err) =>
+      !(err instanceof KtnApiError && (err.status === 401 || err.status === 403 || err.status === 404)) &&
+      failureCount < 2,
   });
+
+  useEffect(() => {
+    const err = classSessionsQuery.error;
+    if (
+      err instanceof KtnApiError &&
+      (err.status === 403 ||
+        err.code === 'STUDENT_CLASS_SCOPE_FORBIDDEN' ||
+        err.code === 'CLASS_ARCHIVED_OR_INACTIVE')
+    ) {
+      void useAuthStore.getState().refreshPermissions?.().catch(() => null);
+      queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+      if (effectiveClassCode) {
+        queryClient.removeQueries({ queryKey: ['ktn-class-sessions', effectiveClassCode] });
+      }
+    }
+  }, [classSessionsQuery.error, effectiveClassCode, queryClient]);
 
   const notificationsQuery = useQuery<{
     notifications: KtnNotification[];
@@ -282,20 +312,25 @@ export const StudentHome: React.FC = () => {
   const officialScheduleLine = useMemo(() => {
     if (!effectiveClassCode) return '';
     if (isDemoMode) {
-      return assignedClass?.officialScheduleText || 'Thứ 3 & Thứ 6 — 19:30–20:30';
+      return translateScheduleText(
+        assignedClass?.officialScheduleText || 'Thứ 3 & Thứ 6 — 19:30–20:30',
+        lang
+      );
     }
     if (
       assignedClass?.scheduleStatus === 'confirmed' &&
       assignedClass?.officialScheduleText
     ) {
-      return assignedClass.officialScheduleText;
+      return translateScheduleText(assignedClass.officialScheduleText, lang);
     }
-    return 'Chưa có lịch học chính thức';
+    return tr('Chưa có lịch học chính thức', 'Official schedule pending');
   }, [
     effectiveClassCode,
     isDemoMode,
     assignedClass?.scheduleStatus,
     assignedClass?.officialScheduleText,
+    lang,
+    tr,
   ]);
 
   const priorityHomeworks = useMemo(() => {
@@ -315,6 +350,7 @@ export const StudentHome: React.FC = () => {
         for (let idx = 0; idx < exercises.length; idx++) {
           if (items.length >= 2) break;
           const ex = exercises[idx];
+          if (String(ex?.status || '').trim().toLowerCase() === 'draft') continue;
           const exNum = Number(ex.num || idx + 1);
           const liveLessonNum = sNum * 100 + exNum;
           const alreadySubmitted = homeworks.some((h) => {
@@ -333,11 +369,19 @@ export const StudentHome: React.FC = () => {
               class_code: effectiveClassCode,
               course_id: liveCourseId,
               lesson_num: liveLessonNum,
-              lesson_title: `Lớp ${effectiveClassCode} · Buổi ${sNum} · ${ex.title}`,
+              lesson_title: isEn
+                ? `Class ${effectiveClassCode} · Session ${sNum} · ${ex.title}`
+                : `Lớp ${effectiveClassCode} · Buổi ${sNum} · ${ex.title}`,
               file_url: '',
               file_type: ex.type || 'audio',
               attachments: [],
-              student_note: ex.prompt || ex.instruction || `Bài tập lớp ${effectiveClassCode} cần hoàn thành`,
+              student_note:
+                ex.prompt ||
+                ex.instruction ||
+                tr(
+                  `Bài tập lớp ${effectiveClassCode} cần hoàn thành`,
+                  `Class ${effectiveClassCode} homework to complete`
+                ),
               status: 'pending',
               score: null,
               teacher_feedback: null,
@@ -350,7 +394,15 @@ export const StudentHome: React.FC = () => {
     }
 
     return items.slice(0, 2);
-  }, [homeworks, effectiveClassCode, classSessionsQuery.data, user?.email, user?.name]);
+  }, [
+    homeworks,
+    effectiveClassCode,
+    classSessionsQuery.data,
+    user?.email,
+    user?.name,
+    isEn,
+    tr,
+  ]);
 
   const dedupedNotifications = useMemo(() => {
     const shownHwLessons = new Set(priorityHomeworks.map((hw) => Number(hw.lesson_num)));
@@ -382,7 +434,7 @@ export const StudentHome: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
-            <span>Chưa tải được dữ liệu mới nhất.</span>
+            <span>{tr('Chưa tải được dữ liệu mới nhất.', 'Unable to load the latest data.')}</span>
           </div>
           <button
             type="button"
@@ -393,7 +445,7 @@ export const StudentHome: React.FC = () => {
             className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs"
           >
             <RotateCcw className="h-3 w-3" />
-            Thử lại
+            {tr('Thử lại', 'Retry')}
           </button>
         </div>
       )}
@@ -412,7 +464,7 @@ export const StudentHome: React.FC = () => {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="rounded-md bg-red-800 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                    Lớp học tiếp theo
+                    {tr('Lớp học tiếp theo', 'Next Class')}
                   </span>
                   <span className="font-mono text-xs font-bold text-stone-700">
                     {effectiveClassCode}
@@ -420,11 +472,17 @@ export const StudentHome: React.FC = () => {
                 </div>
 
                 <h2 className="mt-0.5 truncate font-display text-sm font-bold text-stone-900">
-                  {assignedClass?.name || `Lớp trực tiếp ${effectiveClassCode}`}
+                  {assignedClass?.name
+                    ? translateScheduleText(assignedClass.name, lang)
+                    : tr(`Lớp trực tiếp ${effectiveClassCode}`, `Live Class ${effectiveClassCode}`)}
                 </h2>
 
                 <p className="mt-0.5 text-[11px] font-medium text-stone-600">
-                  GV: {assignedClass?.teacher_name || 'Chưa phân công giáo viên'}
+                  {tr('GV:', 'Teacher:')}{' '}
+                  {assignedClass?.teacher_name &&
+                  assignedClass.teacher_name !== 'Chưa phân công giáo viên'
+                    ? assignedClass.teacher_name
+                    : tr('Chưa phân công giáo viên', 'No teacher assigned yet')}
                 </p>
 
                 <p
@@ -434,8 +492,9 @@ export const StudentHome: React.FC = () => {
                   <Clock className="h-3.5 w-3.5 shrink-0 text-red-700" />
                   {assignedClass?.nextSession ? (
                     <span>
-                      {assignedClass.nextSession.dayLabel}, {assignedClass.nextSession.sessionDate}{' '}
-                      · {assignedClass.nextSession.startTime}–{assignedClass.nextSession.endTime}
+                      {translateDayLabel(assignedClass.nextSession.dayLabel, lang)},{' '}
+                      {assignedClass.nextSession.sessionDate} · {assignedClass.nextSession.startTime}–
+                      {assignedClass.nextSession.endTime}
                     </span>
                   ) : (
                     <span>{officialScheduleLine}</span>
@@ -452,7 +511,7 @@ export const StudentHome: React.FC = () => {
               }
               className="inline-flex min-h-[38px] shrink-0 items-center gap-1 rounded-xl bg-red-800 px-3 py-2 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
             >
-              <span>Xem lớp</span>
+              <span>{tr('Xem lớp', 'View class')}</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </section>
@@ -470,7 +529,7 @@ export const StudentHome: React.FC = () => {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="truncate text-[10.5px] font-bold uppercase tracking-wide text-red-900">
-                    {primaryCourse.shortTitle || primaryCourse.title}
+                    {translateCourseTitle(primaryCourse.shortTitle || primaryCourse.title, lang)}
                   </span>
                   {progressPercent !== undefined && (
                     <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
@@ -491,11 +550,16 @@ export const StudentHome: React.FC = () => {
                   </span>
                 </div>
                 <p className="truncate font-display text-xs font-bold text-stone-900 sm:text-sm">
-                  {nextLesson?.title || primaryCourse.title}
+                  {nextLesson?.title
+                    ? translateCourseTitle(nextLesson.title, lang)
+                    : translateCourseTitle(primaryCourse.title, lang)}
                 </p>
                 {courseUnits.length > 0 && (
                   <p className="text-[11px] text-stone-500">
-                    Đã học {completedInCourse}/{courseUnits.length} bài
+                    {tr(
+                      `Đã học ${completedInCourse}/${courseUnits.length} bài`,
+                      `Completed ${completedInCourse}/${courseUnits.length} lessons`
+                    )}
                   </p>
                 )}
               </div>
@@ -520,7 +584,7 @@ export const StudentHome: React.FC = () => {
               }`}
             >
               <PlayCircle className="h-3.5 w-3.5 shrink-0" />
-              <span>{primaryCourseExpInfo.isExpired ? 'Gia hạn' : 'Học tiếp'}</span>
+              <span>{primaryCourseExpInfo.isExpired ? tr('Gia hạn', 'Renew') : tr('Học tiếp', 'Continue')}</span>
             </button>
           </section>
         ) : null}
@@ -530,7 +594,7 @@ export const StudentHome: React.FC = () => {
       {priorityHomeworks.length > 0 && (
         <section data-testid="student-priority-homework-section" className="space-y-1.5">
           <SectionHeading
-            title="Bài tập & Điểm mới"
+            title={tr('Bài tập & Điểm mới', 'Homework & Recent Grades')}
             count={priorityHomeworks.length}
           />
           <MobileTaskList testId="student-priority-homework-list">
@@ -539,8 +603,13 @@ export const StudentHome: React.FC = () => {
               const isLiveClassHw = String(hw.course_id || '')
                 .toUpperCase()
                 .startsWith('CLASS_');
-              const displayTitle =
-                /^(bài|lớp|buổi)\b/i.test(rawTitle) || hw.lesson_num > 100
+              const displayTitle = isEn
+                ? /^(bài|lớp|buổi)\b/i.test(rawTitle) || hw.lesson_num > 100
+                  ? rawTitle
+                    ? translateScheduleText(rawTitle, 'en')
+                    : `Lesson ${hw.lesson_num}`
+                  : `Lesson ${hw.lesson_num}: ${rawTitle ? translateScheduleText(rawTitle, 'en') : 'Audio Practice'}`
+                : /^(bài|lớp|buổi)\b/i.test(rawTitle) || hw.lesson_num > 100
                   ? rawTitle || `Bài ${hw.lesson_num}`
                   : `Bài ${hw.lesson_num}: ${rawTitle || 'Bài thu âm'}`;
               return (
@@ -557,13 +626,16 @@ export const StudentHome: React.FC = () => {
                     hw.teacher_feedback ||
                     hw.student_note ||
                     (isLiveClassHw
-                      ? `Bài tập lớp ${String(hw.course_id).slice(6) || hw.class_code || ''}`
-                      : 'Đang chờ giáo viên chấm')
+                      ? tr(
+                          `Bài tập lớp ${String(hw.course_id).slice(6) || hw.class_code || ''}`,
+                          `Class ${String(hw.course_id).slice(6) || hw.class_code || ''} homework`
+                        )
+                      : tr('Đang chờ giáo viên chấm', 'Waiting for teacher grading'))
                   }
                   badge={
                     String(hw.id || '').startsWith('UNSUB-') ? (
                       <span className="rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
-                        Chưa nộp
+                        {tr('Chưa nộp', 'Not submitted')}
                       </span>
                     ) : hw.status === 'graded' ? (
                       <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -572,7 +644,7 @@ export const StudentHome: React.FC = () => {
                       </span>
                     ) : (
                       <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                        Chờ chấm
+                        {tr('Chờ chấm', 'Pending')}
                       </span>
                     )
                   }
@@ -590,7 +662,7 @@ export const StudentHome: React.FC = () => {
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-1.5 font-display text-[13px] font-bold text-stone-900 sm:text-sm">
             <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-            <span>Flashcard & Tiện ích</span>
+            <span>{tr('Flashcard & Tiện ích', 'Flashcards & Utilities')}</span>
           </h2>
         </div>
 
@@ -606,16 +678,16 @@ export const StudentHome: React.FC = () => {
                   <BookOpenCheck className="h-4 w-4" />
                 </div>
                 <span className="hidden rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-900 sm:inline-block">
-                  汉字卡片 · Từ vựng
+                  {tr('汉字卡片 · Từ vựng', '汉字卡片 · Vocab')}
                 </span>
               </div>
 
               <div className="min-w-0 flex-1 sm:mt-2">
                 <h3 className="font-display text-xs font-bold text-stone-900 sm:text-sm">
-                  Flashcard — Học từ vựng
+                  {tr('Flashcard — Học từ vựng', 'Flashcards — Vocabulary')}
                 </h3>
                 <p className="mt-0.5 text-[11px] leading-snug text-stone-600">
-                  Lật thẻ, nghe phát âm, luyện viết chữ Hán
+                  {tr('Lật thẻ, nghe phát âm, luyện viết chữ Hán', 'Flip cards, listen to audio & practice Hanzi')}
                 </p>
               </div>
             </div>
@@ -633,7 +705,7 @@ export const StudentHome: React.FC = () => {
                   }}
                   className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900 sm:w-full"
                 >
-                  <span>Học ngay</span>
+                  <span>{tr('Học ngay', 'Study Now')}</span>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </a>
               ) : (
@@ -641,12 +713,15 @@ export const StudentHome: React.FC = () => {
                   type="button"
                   disabled
                   data-testid="flashcard-cta-btn"
-                  title="Hệ thống Flashcard đang được kết nối trực tiếp vào Sổ liên lạc"
+                  title={tr(
+                    'Hệ thống Flashcard đang được kết nối trực tiếp vào Sổ liên lạc',
+                    'Flashcards system is being integrated directly into the Student Portal'
+                  )}
                   className="inline-flex min-h-[34px] cursor-not-allowed items-center justify-between gap-1.5 rounded-xl border border-amber-300/80 bg-amber-100/60 px-2.5 py-1.5 text-[11px] font-bold text-amber-900 sm:w-full"
                 >
-                  <span>Học ngay</span>
+                  <span>{tr('Học ngay', 'Study Now')}</span>
                   <span className="rounded bg-white/90 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-800">
-                    Đang tích hợp
+                    {tr('Đang tích hợp', 'Integrating')}
                   </span>
                 </button>
               )}
@@ -668,42 +743,58 @@ export const StudentHome: React.FC = () => {
                     data-testid="short-video-coming-soon-badge"
                     className="rounded-full bg-red-100 px-2 py-0.5 text-[9.5px] font-extrabold text-red-900"
                   >
-                    Sắp ra mắt
+                    {tr('Sắp ra mắt', 'Coming Soon')}
                   </span>
                 </div>
 
                 <h3 className="mt-1.5 font-display text-xs font-bold text-stone-900">
-                  Video ngắn tiếng Trung
+                  {tr('Video ngắn tiếng Trung', 'Chinese Short Videos')}
                 </h3>
                 <p className="mt-0.5 text-[11px] leading-snug text-stone-500">
-                  Xem video ngắn, học tiếng Trung mỗi ngày
+                  {tr('Xem video ngắn, học tiếng Trung mỗi ngày', 'Watch short clips, learn Chinese daily')}
                 </p>
               </div>
             </div>
 
             <div
               data-testid="discovery-card-games"
-              className="flex flex-col justify-between rounded-2xl border border-stone-200 bg-white p-2.5 shadow-2xs sm:p-3"
+              onClick={() => navigate('/games')}
+              className="group flex cursor-pointer flex-col justify-between rounded-2xl border border-stone-200 bg-white p-2.5 shadow-2xs transition-all hover:border-amber-400 hover:shadow-xs active:scale-98 sm:p-3"
             >
               <div>
                 <div className="flex items-center justify-between gap-1.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 group-hover:bg-emerald-200">
                     <Gamepad2 className="h-3.5 w-3.5" />
                   </div>
                   <span
                     data-testid="games-coming-soon-badge"
-                    className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9.5px] font-extrabold text-emerald-900"
+                    className="rounded-full bg-emerald-600 px-2 py-0.5 text-[9.5px] font-extrabold text-white shadow-2xs"
                   >
-                    Sắp ra mắt
+                    {tr('Chơi ngay', 'Play Now')}
                   </span>
                 </div>
 
-                <h3 className="mt-1.5 font-display text-xs font-bold text-stone-900">
-                  Trò chơi tiếng Trung
+                <h3 className="mt-1.5 font-display text-xs font-bold text-stone-900 group-hover:text-red-900">
+                  {tr('Trò chơi tiếng Trung', 'Chinese Games')}
                 </h3>
                 <p className="mt-0.5 text-[11px] leading-snug text-stone-500">
-                  Vừa chơi vừa nhớ từ vựng
+                  {tr('Vừa chơi vừa nhớ từ vựng', 'Play & memorize vocabulary')}
                 </p>
+              </div>
+
+              <div className="mt-2 pt-1 border-t border-stone-100">
+                <button
+                  type="button"
+                  data-testid="student-card-games-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/games');
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg bg-emerald-50 px-2 py-1 text-[10.5px] font-bold text-emerald-900 transition-colors hover:bg-emerald-100"
+                >
+                  <span>{tr('4 trò chơi', '4 games')}</span>
+                  <span aria-hidden="true">→</span>
+                </button>
               </div>
             </div>
           </div>
@@ -714,33 +805,36 @@ export const StudentHome: React.FC = () => {
       {dedupedNotifications.length > 0 && (
         <section data-testid="student-recent-activity-section" className="space-y-1.5">
           <SectionHeading
-            title="Hoạt động gần đây"
+            title={tr('Hoạt động gần đây', 'Recent Activity')}
             count={dedupedNotifications.length}
-            actionLabel="Xem tất cả →"
+            actionLabel={tr('Xem tất cả →', 'View all →')}
             onAction={() => navigate('/notifications')}
           />
           <MobileTaskList testId="student-recent-feed">
-            {dedupedNotifications.map((notif) => (
-              <CompactListItem
-                key={notif.id}
-                testId={`dashboard-notif-item-${notif.id}`}
-                unread={!notif.read}
-                icon={
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-800">
-                    <Bell className="h-4 w-4" />
-                  </div>
-                }
-                title={notif.title}
-                subtitle={notif.body}
-                meta={formatRelativeTime(notif.createdAt)}
-                onClick={() => {
-                  if (!notif.read) {
-                    markReadMutation.mutate(notif.id);
+            {dedupedNotifications.map((notif) => {
+              const localizedNotif = translateNotificationItem(notif, lang);
+              return (
+                <CompactListItem
+                  key={notif.id}
+                  testId={`dashboard-notif-item-${notif.id}`}
+                  unread={!notif.read}
+                  icon={
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-800">
+                      <Bell className="h-4 w-4" />
+                    </div>
                   }
-                  navigate(resolveNotificationLink(notif));
-                }}
-              />
-            ))}
+                  title={localizedNotif.title}
+                  subtitle={localizedNotif.body}
+                  meta={formatRelativeTime(notif.createdAt)}
+                  onClick={() => {
+                    if (!notif.read) {
+                      markReadMutation.mutate(notif.id);
+                    }
+                    navigate(resolveNotificationLink(notif));
+                  }}
+                />
+              );
+            })}
           </MobileTaskList>
         </section>
       )}

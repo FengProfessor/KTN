@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Send, Trash2, RotateCcw } from 'lucide-react';
+import { useI18n } from '@/i18n';
 
 interface VoiceRecorderProps {
   onSendVoice: (blob: Blob, durationSec: number, previewUrl: string) => void;
@@ -59,8 +60,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   onRecordingStateChange,
   onClearRecording,
   onCancel,
-  submitLabel = 'Gửi thu âm',
+  submitLabel,
 }) => {
+  const { tr } = useI18n();
+  const resolvedSubmitLabel = submitLabel || tr('Gửi thu âm', 'Send recording');
   const [isRecording, setIsRecording] = useState(false);
   const [durationSec, setDurationSec] = useState(0);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
@@ -318,11 +321,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         <div>
           <p className="text-xs font-bold text-red-950">
             {isRecording
-              ? 'Đang thu âm luyện phát âm...'
-              : 'Đã thu âm xong (bản thu đã sẵn sàng nộp)'}
+              ? tr('Đang thu âm luyện phát âm...', 'Recording pronunciation practice...')
+              : tr(
+                  'Đã thu âm xong (bản thu đã sẵn sàng nộp)',
+                  'Recording complete (ready to submit)'
+                )}
           </p>
           <p className="font-mono text-[11px] font-semibold text-red-700">
-            Thời lượng: {formatTimer(Math.max(1, durationSec))}
+            {tr('Thời lượng:', 'Duration:')} {formatTimer(Math.max(1, durationSec))}
           </p>
         </div>
       </div>
@@ -345,7 +351,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
             className="inline-flex items-center gap-1.5 rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-stone-800"
           >
             <Square className="h-3.5 w-3.5 fill-white" />
-            Dừng thu
+            {tr('Dừng thu', 'Stop')}
           </button>
         ) : (
           <>
@@ -361,7 +367,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
               className="inline-flex items-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-900"
             >
               <Send className="h-3.5 w-3.5" />
-              {submitLabel}
+              {resolvedSubmitLabel}
             </button>
             <button
               type="button"
@@ -370,7 +376,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
               className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
             >
               <RotateCcw className="h-3.5 w-3.5 text-stone-500" />
-              Thu lại
+              {tr('Thu lại', 'Re-record')}
             </button>
           </>
         )}
@@ -382,7 +388,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
           className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
         >
           <Trash2 className="h-3.5 w-3.5 text-stone-500" />
-          Hủy
+          {tr('Hủy', 'Cancel')}
         </button>
       </div>
     </div>

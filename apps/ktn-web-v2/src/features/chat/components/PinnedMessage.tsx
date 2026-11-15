@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pin, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { PinnedAnnouncement } from '../types/chat.types';
 import { formatChatTimestamp } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 
 interface PinnedMessageProps {
   pinnedMessage: PinnedAnnouncement | null;
@@ -13,6 +14,7 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
   pinnedMessage,
   onJumpToMessage,
 }) => {
+  const { tr } = useI18n();
   const [expanded, setExpanded] = useState(false);
 
   if (!pinnedMessage || !pinnedMessage.content) return null;
@@ -45,7 +47,7 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
             >
               <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-600/15 px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider text-amber-900">
                 <Sparkles className="h-2.5 w-2.5" />
-                Ghim
+                {tr('Ghim', 'Pinned')}
               </span>
               {pinnedMessage.pinnedBy && (
                 <span className="hidden shrink-0 text-[10.5px] font-medium text-amber-800/80 sm:inline">
@@ -59,8 +61,8 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
                 }`}
               >
                 {String(pinnedMessage.content || '').replace(
-                  /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm)\]/gi,
-                  '📷 Hình ảnh'
+                  /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm|(?:Sent|Attached) image(?::\s*[^\r\n]*)?|Image attached)\]/gi,
+                  tr('📷 Hình ảnh', '📷 Image')
                 )}
               </p>
             </div>
@@ -72,8 +74,8 @@ export const PinnedMessage: React.FC<PinnedMessageProps> = ({
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
             className="rounded-md p-1 text-amber-800 hover:bg-amber-200/50"
-            title={expanded ? 'Thu gọn thông báo' : 'Xem toàn bộ thông báo'}
-            aria-label={expanded ? 'Thu gọn thông báo' : 'Xem toàn bộ thông báo'}
+            title={expanded ? tr('Thu gọn thông báo', 'Collapse announcement') : tr('Xem toàn bộ thông báo', 'Expand announcement')}
+            aria-label={expanded ? tr('Thu gọn thông báo', 'Collapse announcement') : tr('Xem toàn bộ thông báo', 'Expand announcement')}
           >
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>

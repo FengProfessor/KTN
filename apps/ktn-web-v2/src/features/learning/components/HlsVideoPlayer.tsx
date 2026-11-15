@@ -12,6 +12,7 @@ import {
   Sparkles,
   MessageSquare,
 } from 'lucide-react';
+import { useI18n, translateCourseTitle } from '@/i18n';
 
 export type VideoPlayerStatus =
   | 'loading'
@@ -57,6 +58,8 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   onAskAtTimestamp,
   seekToTimestampSeconds,
 }) => {
+  const { lang, tr } = useI18n();
+  const displayCourseName = translateCourseTitle(courseName, lang);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
 
@@ -232,14 +235,20 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               <Lock className="h-7 w-7" />
             </div>
             <span className="mt-3 rounded-full bg-amber-500/20 px-3 py-0.5 text-[11px] font-bold uppercase tracking-wider text-amber-300">
-              Khóa học có bản quyền
+              {tr('Khóa học có bản quyền', 'Licensed Course')}
             </span>
             <h3 className="mt-2 font-display text-base font-bold sm:text-lg">
-              Tài khoản chưa mở khóa học phần {courseName}
+              {tr(
+                `Tài khoản chưa mở khóa học phần ${displayCourseName}`,
+                `Course ${displayCourseName} is not unlocked yet`
+              )}
             </h3>
             <p className="mt-1.5 max-w-md text-xs leading-relaxed text-stone-300">
               {unentitledReason ||
-                'Bạn có thể xem bài giảng học thử miễn phí hoặc đăng ký mở khóa học phần ngay tại đây.'}
+                tr(
+                  'Bạn có thể xem bài giảng học thử miễn phí hoặc đăng ký mở khóa học phần ngay tại đây.',
+                  'You can watch the free trial lessons or enroll to unlock the full course right here.'
+                )}
             </p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
               {onWatchDemoCourse && (
@@ -250,7 +259,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                   className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-stone-500 bg-stone-900/90 px-4 py-2 text-xs font-bold text-white shadow-md transition-colors hover:bg-stone-800"
                 >
                   <Play className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                  <span>Xem học thử</span>
+                  <span>{tr('Xem học thử', 'Watch Free Trial')}</span>
                 </button>
               )}
               {onRequestUnlockCourse && (
@@ -261,7 +270,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                   className="inline-flex min-h-[38px] items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 shadow-md transition-transform hover:scale-105 hover:bg-amber-400"
                 >
                   <Sparkles className="h-4 w-4" />
-                  <span>Đăng ký khóa học</span>
+                  <span>{tr('Đăng ký khóa học', 'Enroll Course')}</span>
                 </button>
               )}
             </div>
@@ -278,14 +287,20 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               <Lock className="h-7 w-7" />
             </div>
             <span className="mt-3 rounded-full bg-red-500/20 px-3 py-0.5 text-[11px] font-bold uppercase tracking-wider text-red-300">
-              Đã hết hạn · Gia hạn
+              {tr('Đã hết hạn · Gia hạn', 'Expired · Renew')}
             </span>
             <h3 className="mt-2 font-display text-base font-bold sm:text-lg">
-              Thời hạn truy cập khóa {courseName} đã kết thúc
+              {tr(
+                `Thời hạn truy cập khóa ${displayCourseName} đã kết thúc`,
+                `Access period for ${displayCourseName} has ended`
+              )}
             </h3>
             <p className="mt-1.5 max-w-md text-xs leading-relaxed text-stone-300">
               {unentitledReason ||
-                'Thời hạn truy cập khóa học đã kết thúc. Vui lòng gia hạn khóa học để tiếp tục xem bài giảng đầy đủ. Tiến độ học và bài tập đã nộp được giữ nguyên.'}
+                tr(
+                  'Thời hạn truy cập khóa học đã kết thúc. Vui lòng gia hạn khóa học để tiếp tục xem bài giảng đầy đủ. Tiến độ học và bài tập đã nộp được giữ nguyên.',
+                  'Your course access period has expired. Please renew your course to continue watching full lessons. Your progress and submitted homework are preserved.'
+                )}
             </p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
               {onWatchDemoCourse && (
@@ -296,7 +311,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                   className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-stone-500 bg-stone-900/90 px-4 py-2 text-xs font-bold text-white shadow-md transition-colors hover:bg-stone-800"
                 >
                   <Play className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                  <span>Xem học thử</span>
+                  <span>{tr('Xem học thử', 'Watch Free Trial')}</span>
                 </button>
               )}
               {onRequestUnlockCourse && (
@@ -307,7 +322,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                   className="inline-flex min-h-[38px] items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 shadow-md transition-transform hover:scale-105 hover:bg-amber-400"
                 >
                   <Sparkles className="h-4 w-4" />
-                  <span>Gia hạn khóa học</span>
+                  <span>{tr('Gia hạn khóa học', 'Renew Course')}</span>
                 </button>
               )}
             </div>
@@ -324,10 +339,13 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               <AlertTriangle className="h-7 w-7" />
             </div>
             <h3 className="mt-3 font-display text-base font-bold">
-              Không tải được video bài giảng
+              {tr('Không tải được video bài giảng', 'Unable to load lesson video')}
             </h3>
             <p className="mt-1 max-w-md text-xs text-stone-400">
-              Đường truyền mạng đang gián đoạn hoặc phiên xem video đã hết hạn. Hãy nhấn thử lại để phát tiếp.
+              {tr(
+                'Đường truyền mạng đang gián đoạn hoặc phiên xem video đã hết hạn. Hãy nhấn thử lại để phát tiếp.',
+                'Your network connection was interrupted or the video session expired. Click retry to continue watching.'
+              )}
             </p>
             <button
               type="button"
@@ -336,7 +354,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               className="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-red-600"
             >
               <RotateCcw className="h-4 w-4" />
-              Thử tải lại video
+              {tr('Thử tải lại video', 'Retry Video')}
             </button>
           </div>
         )}
@@ -349,7 +367,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
           >
             <Loader2 className="h-9 w-9 animate-spin text-amber-400" />
             <p className="mt-3 text-xs font-semibold text-stone-200">
-              Đang tải bài giảng...
+              {tr('Đang tải bài giảng...', 'Loading lesson...')}
             </p>
             <p className="mt-1 text-[11px] text-stone-400">{lessonTitle}</p>
           </div>
@@ -389,7 +407,10 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             }
             if (!isCompleted) onMarkCompleted();
           }}
-          poster="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='%23450a0a'/><stop offset='55%' stop-color='%237f1d1d'/><stop offset='100%' stop-color='%231c1917'/></linearGradient></defs><rect width='1280' height='720' fill='url(%23g)'/><circle cx='640' cy='320' r='68' fill='%23f59e0b' fill-opacity='0.2' stroke='%23fbbf24' stroke-width='3'/><polygon points='622,290 622,350 675,320' fill='%23fef3c7'/><text x='640' y='445' text-anchor='middle' fill='%23fef3c7' font-family='sans-serif' font-size='28' font-weight='bold'>HỌC VIỆN KHỔNG TỬ NHÍ — PHÒNG HỌC TRỰC TUYẾN</text></svg>"
+          poster={`data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='%23450a0a'/><stop offset='55%' stop-color='%237f1d1d'/><stop offset='100%' stop-color='%231c1917'/></linearGradient></defs><rect width='1280' height='720' fill='url(%23g)'/><circle cx='640' cy='320' r='68' fill='%23f59e0b' fill-opacity='0.2' stroke='%23fbbf24' stroke-width='3'/><polygon points='622,290 622,350 675,320' fill='%23fef3c7'/><text x='640' y='445' text-anchor='middle' fill='%23fef3c7' font-family='sans-serif' font-size='28' font-weight='bold'>${tr(
+            'HỌC VIỆN KHỔNG TỬ NHÍ — PHÒNG HỌC TRỰC TUYẾN',
+            'KHONG TU NHI ACADEMY — ONLINE CLASSROOM'
+          )}</text></svg>`}
           className="h-full w-full object-contain"
         />
       </div>
@@ -411,12 +432,12 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             {effectiveStatus === 'playing' ? (
               <>
                 <Pause className="h-3.5 w-3.5" />
-                <span>Tạm dừng</span>
+                <span>{tr('Tạm dừng', 'Pause')}</span>
               </>
             ) : (
               <>
                 <Play className="h-3.5 w-3.5 fill-white" />
-                <span>Phát</span>
+                <span>{tr('Phát', 'Play')}</span>
               </>
             )}
           </button>
@@ -425,18 +446,18 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             <Volume2 className="h-3 w-3 text-amber-400" />
             <strong className="text-amber-300">
               {effectiveStatus === 'playing'
-                ? 'Đang phát'
+                ? tr('Đang phát', 'Playing')
                 : effectiveStatus === 'paused'
-                ? 'Tạm dừng'
+                ? tr('Tạm dừng', 'Paused')
                 : effectiveStatus === 'loading'
-                ? 'Đang tải...'
+                ? tr('Đang tải...', 'Loading...')
                 : effectiveStatus === 'expired'
-                ? 'Đã hết hạn'
+                ? tr('Đã hết hạn', 'Expired')
                 : effectiveStatus === 'unentitled'
-                ? 'Chưa mở khóa'
+                ? tr('Chưa mở khóa', 'Locked')
                 : effectiveStatus === 'error'
-                ? 'Lỗi luồng phát'
-                : 'Sẵn sàng'}
+                ? tr('Lỗi luồng phát', 'Stream error')
+                : tr('Sẵn sàng', 'Ready')}
             </strong>
           </span>
 
@@ -485,7 +506,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                 className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-amber-500/50 bg-amber-500/20 px-2.5 py-1 text-xs font-bold text-amber-200 transition-colors hover:bg-amber-500/30"
               >
                 <MessageSquare className="h-3.5 w-3.5 text-amber-300" />
-                <span>Hỏi về đoạn này</span>
+                <span>{tr('Hỏi về đoạn này', 'Ask at this time')}</span>
               </button>
             )}
 
@@ -503,7 +524,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             }`}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>{isCompleted ? 'Đã hoàn thành' : 'Hoàn thành'}</span>
+            <span>{isCompleted ? tr('Đã hoàn thành', 'Completed') : tr('Hoàn thành', 'Complete')}</span>
           </button>
         </div>
       </div>

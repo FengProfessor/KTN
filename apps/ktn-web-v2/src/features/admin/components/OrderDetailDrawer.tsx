@@ -22,14 +22,21 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {
-  COURSE_DURATION_PRESET_OPTIONS,
-  COURSE_DURATION_UNIT_OPTIONS,
   buildCourseDurationPreset,
   formatCourseDurationPresetLabel,
   formatVnd,
+  getCourseDurationPresetOptions,
+  getCourseDurationUnitOptions,
   parseCourseDurationPreset,
   type CourseDurationUnitOption,
 } from '@/lib/utils';
+import {
+  translateCourseTitle,
+  translateScheduleText,
+  trStatic,
+  useI18n,
+  type AppLanguage,
+} from '@/i18n';
 import type {
   CourseDurationPreset,
   KtnClassItem,
@@ -176,6 +183,114 @@ export const ACCOUNT_STATUS_META: Record<
   },
 };
 
+export function getContactStatusMeta(
+  lang: AppLanguage
+): Record<OrderContactStatus, { label: string; badgeClass: string }> {
+  if (lang !== 'en') return CONTACT_STATUS_META;
+  return {
+    not_called: {
+      label: trStatic('Chưa gọi', 'Not called', lang),
+      badgeClass: CONTACT_STATUS_META.not_called.badgeClass,
+    },
+    called: {
+      label: trStatic('Đã gọi tư vấn', 'Called', lang),
+      badgeClass: CONTACT_STATUS_META.called.badgeClass,
+    },
+    no_answer: {
+      label: trStatic('Không nghe máy', 'No answer', lang),
+      badgeClass: CONTACT_STATUS_META.no_answer.badgeClass,
+    },
+    callback: {
+      label: trStatic('Hẹn gọi lại', 'Callback scheduled', lang),
+      badgeClass: CONTACT_STATUS_META.callback.badgeClass,
+    },
+    callback_scheduled: {
+      label: trStatic('Hẹn gọi lại', 'Callback scheduled', lang),
+      badgeClass: CONTACT_STATUS_META.callback_scheduled.badgeClass,
+    },
+  };
+}
+
+export function getPaymentStatusMeta(
+  lang: AppLanguage
+): Record<OrderPaymentDetailedStatus, { label: string; badgeClass: string }> {
+  if (lang !== 'en') return PAYMENT_STATUS_META;
+  return {
+    unpaid: {
+      label: 'Unpaid',
+      badgeClass: PAYMENT_STATUS_META.unpaid.badgeClass,
+    },
+    customer_reported: {
+      label: 'Transfer reported',
+      badgeClass: PAYMENT_STATUS_META.customer_reported.badgeClass,
+    },
+    checking_tx: {
+      label: 'Verifying tx',
+      badgeClass: PAYMENT_STATUS_META.checking_tx.badgeClass,
+    },
+    verifying_tx: {
+      label: 'Verifying tx',
+      badgeClass: PAYMENT_STATUS_META.verifying_tx.badgeClass,
+    },
+    verified_paid: {
+      label: 'Payment verified',
+      badgeClass: PAYMENT_STATUS_META.verified_paid.badgeClass,
+    },
+    refunded: {
+      label: 'Refunded',
+      badgeClass: PAYMENT_STATUS_META.refunded.badgeClass,
+    },
+    mismatch: {
+      label: 'Amount mismatch',
+      badgeClass: PAYMENT_STATUS_META.mismatch.badgeClass,
+    },
+    amount_mismatch: {
+      label: 'Amount mismatch',
+      badgeClass: PAYMENT_STATUS_META.amount_mismatch.badgeClass,
+    },
+  };
+}
+
+export function getAccountStatusMeta(
+  lang: AppLanguage
+): Record<OrderAccountDetailedStatus, { label: string; badgeClass: string }> {
+  if (lang !== 'en') return ACCOUNT_STATUS_META;
+  return {
+    no_account: {
+      label: 'No account',
+      badgeClass: ACCOUNT_STATUS_META.no_account.badgeClass,
+    },
+    existing_account: {
+      label: 'Existing account',
+      badgeClass: ACCOUNT_STATUS_META.existing_account.badgeClass,
+    },
+    pending_account_creation: {
+      label: 'Pending account',
+      badgeClass: ACCOUNT_STATUS_META.pending_account_creation.badgeClass,
+    },
+    pending_creation: {
+      label: 'Pending account',
+      badgeClass: ACCOUNT_STATUS_META.pending_creation.badgeClass,
+    },
+    activated: {
+      label: 'Activated',
+      badgeClass: ACCOUNT_STATUS_META.activated.badgeClass,
+    },
+    sync_error: {
+      label: 'Sync error',
+      badgeClass: ACCOUNT_STATUS_META.sync_error.badgeClass,
+    },
+    awaiting_password_or_handoff: {
+      label: 'Awaiting password / handoff',
+      badgeClass: ACCOUNT_STATUS_META.awaiting_password_or_handoff.badgeClass,
+    },
+    credentials_handed_off: {
+      label: 'Credentials handed off',
+      badgeClass: ACCOUNT_STATUS_META.credentials_handed_off.badgeClass,
+    },
+  };
+}
+
 export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
   order,
   open,
@@ -190,6 +305,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
   onApproveOrder,
   onOpenStudentProfile,
 }) => {
+  const { lang, tr } = useI18n();
   const [trackedOrderId, setTrackedOrderId] = useState<string | null>(
     () => order?.order_id || null
   );
@@ -314,11 +430,14 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     order?.account_detailed_status ||
     (order?.approval_status === 'approved' ? 'activated' : 'no_account');
 
-  const contactMeta = CONTACT_STATUS_META[contactStatus] || CONTACT_STATUS_META.not_called;
+  const contactMetaMap = getContactStatusMeta(lang);
+  const paymentMetaMap = getPaymentStatusMeta(lang);
+  const accountMetaMap = getAccountStatusMeta(lang);
+  const contactMeta = contactMetaMap[contactStatus] || contactMetaMap.not_called;
   const paymentMeta =
-    PAYMENT_STATUS_META[paymentDetailedStatus] || PAYMENT_STATUS_META.unpaid;
+    paymentMetaMap[paymentDetailedStatus] || paymentMetaMap.unpaid;
   const accountMeta =
-    ACCOUNT_STATUS_META[accountDetailedStatus] || ACCOUNT_STATUS_META.no_account;
+    accountMetaMap[accountDetailedStatus] || accountMetaMap.no_account;
 
   const isSameTrackedOrder = currentOrderId === trackedOrderId;
   const effectiveEmail = (
@@ -341,24 +460,34 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
   // Compute live activation readiness and block reasons
   const activationCheck = useMemo(() => {
     if (!order) {
-      return { canActivate: false, reasons: ['Chưa chọn đơn hàng.'] };
+      return { canActivate: false, reasons: [tr('Chưa chọn đơn hàng.', 'No order selected.')] };
     }
     if (
       order.approval_status === 'approved' &&
       accountDetailedStatus !== 'sync_error' &&
       order.provisioning_status !== 'partial_failure'
     ) {
-      return { canActivate: false, reasons: ['Đơn hàng này đã được kích hoạt.'] };
+      return {
+        canActivate: false,
+        reasons: [tr('Đơn hàng này đã được kích hoạt.', 'This order is already activated.')],
+      };
     }
     const reasons: string[] = [];
     if (order.approval_status === 'cancelled' || paymentDetailedStatus === 'refunded') {
-      reasons.push('Đơn hàng đã hủy hoặc đã hoàn tiền.');
+      reasons.push(
+        tr('Đơn hàng đã hủy hoặc đã hoàn tiền.', 'Order has been cancelled or refunded.')
+      );
     }
     if (order.course_valid === false) {
-      reasons.push('Mã khóa học không hợp lệ.');
+      reasons.push(tr('Mã khóa học không hợp lệ.', 'Invalid course code.'));
     }
     if (order.amount_valid === false) {
-      reasons.push('Số tiền đơn hàng không khớp bảng giá khóa học.');
+      reasons.push(
+        tr(
+          'Số tiền đơn hàng không khớp bảng giá khóa học.',
+          'Order amount does not match course price.'
+        )
+      );
     }
     if (
       order.payment_status !== 'paid' ||
@@ -366,12 +495,23 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     ) {
       reasons.push(
         paymentDetailedStatus === 'customer_reported'
-          ? 'Khách mới báo đã chuyển khoản — Học vụ cần kiểm tra sao kê và xác nhận "Đã xác minh tiền thực nhận" trước khi kích hoạt.'
-          : 'Chưa xác minh tiền thực nhận (Trạng thái thanh toán chưa phải "Đã xác minh tiền thực nhận").'
+          ? tr(
+              'Khách mới báo đã chuyển khoản — Học vụ cần kiểm tra sao kê và xác nhận "Đã xác minh tiền thực nhận" trước khi kích hoạt.',
+              'Customer reported transfer — Admin must check bank statement and mark "Payment verified" before activation.'
+            )
+          : tr(
+              'Chưa xác minh tiền thực nhận (Trạng thái thanh toán chưa phải "Đã xác minh tiền thực nhận").',
+              'Payment not verified yet (Payment status is not "Payment verified").'
+            )
       );
     }
     if (!hasValidEmail) {
-      reasons.push('Chưa có email đăng nhập hợp lệ cho học viên.');
+      reasons.push(
+        tr(
+          'Chưa có email đăng nhập hợp lệ cho học viên.',
+          'Missing a valid login email for the student.'
+        )
+      );
     }
     const consultationHandled =
       order.source === 'authenticated_student' ||
@@ -379,7 +519,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
       Boolean((order.consultation_note || '').trim());
     if (!consultationHandled) {
       reasons.push(
-        'Chưa cập nhật trạng thái chăm sóc (vui lòng gọi phụ huynh và đánh dấu "Đã gọi" hoặc ghi chú tư vấn trước khi kích hoạt).'
+        tr(
+          'Chưa cập nhật trạng thái chăm sóc (vui lòng gọi phụ huynh và đánh dấu "Đã gọi" hoặc ghi chú tư vấn trước khi kích hoạt).',
+          'Contact status not updated (please call parent and mark "Called" or add a note before activation).'
+        )
       );
     }
     return {
@@ -392,14 +535,15 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     paymentDetailedStatus,
     hasValidEmail,
     contactStatus,
+    tr,
   ]);
 
   if (!open || !order) return null;
 
-  const parentDisplay =
-    order.parent_name && order.parent_name.trim()
-      ? order.parent_name.trim()
-      : 'Chưa cung cấp';
+  const hasParentName = Boolean(order.parent_name && order.parent_name.trim());
+  const parentDisplay = hasParentName
+    ? order.parent_name!.trim()
+    : tr('Chưa cung cấp', 'Not provided');
 
   const canOpenStudentDrawer =
     hasValidEmail &&
@@ -469,7 +613,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Chi tiết đơn hàng ${order.order_id}`}
+        aria-label={tr(`Chi tiết đơn hàng ${order.order_id}`, `Order details ${order.order_id}`)}
         data-testid="order-detail-drawer"
         onClick={(e) => e.stopPropagation()}
         className="flex h-full w-full flex-col bg-stone-50 shadow-2xl sm:max-w-2xl"
@@ -482,7 +626,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               data-testid="order-drawer-back-btn"
               onClick={onClose}
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100 sm:hidden"
-              aria-label="Quay lại danh sách đơn hàng"
+              aria-label={tr('Quay lại danh sách đơn hàng', 'Back to order list')}
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
@@ -495,10 +639,13 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   {order.order_id}
                 </span>
                 <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-700">
-                  {order.source_label ||
-                    (order.source === 'authenticated_student'
-                      ? 'Học viên đang đăng nhập'
-                      : 'Website')}
+                  {order.source_label
+                    ? order.source_label === 'Học viên đang đăng nhập'
+                      ? tr('Học viên đang đăng nhập', 'Logged-in student')
+                      : order.source_label
+                    : order.source === 'authenticated_student'
+                      ? tr('Học viên đang đăng nhập', 'Logged-in student')
+                      : 'Website'}
                 </span>
                 <span
                   data-testid="order-drawer-payment-badge"
@@ -508,7 +655,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 </span>
               </div>
               <p className="mt-0.5 truncate text-xs font-bold text-stone-900">
-                {order.student_name} · {order.course_name}
+                {order.student_name} · {translateCourseTitle(order.course_name, lang)}
               </p>
             </div>
           </div>
@@ -517,7 +664,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             type="button"
             data-testid="order-drawer-close-btn"
             onClick={onClose}
-            aria-label="Đóng chi tiết đơn hàng"
+            aria-label={tr('Đóng chi tiết đơn hàng', 'Close order details')}
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-100"
           >
             <X className="h-4 w-4" />
@@ -541,7 +688,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 onClick={onClearError}
                 className="rounded px-1.5 py-0.5 text-[11px] font-bold text-red-800 hover:bg-red-100"
               >
-                Đóng
+                {tr('Đóng', 'Close')}
               </button>
             </div>
           )}
@@ -554,7 +701,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             <div className="flex items-center justify-between border-b border-stone-100 pb-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wide text-stone-800">
                 <User className="h-4 w-4 text-red-800" />
-                1. Thông tin khách hàng & khóa học
+                {tr('1. Thông tin khách hàng & khóa học', '1. Customer & Course Info')}
               </h3>
               {order.approval_status !== 'approved' && (
                 <button
@@ -563,7 +710,9 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   onClick={() => setIsEditingCustomerInfo((prev) => !prev)}
                   className="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-100"
                 >
-                  {isEditingCustomerInfo ? 'Thu gọn' : 'Bổ sung / Sửa TT'}
+                  {isEditingCustomerInfo
+                    ? tr('Thu gọn', 'Collapse')
+                    : tr('Bổ sung / Sửa TT', 'Edit Info')}
                 </button>
               )}
             </div>
@@ -571,7 +720,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             <div className="mt-2.5 grid grid-cols-1 gap-2.5 text-xs sm:grid-cols-2">
               <div className="rounded-xl bg-stone-50 p-2.5">
                 <span className="text-[11px] font-semibold text-stone-500">
-                  Tên học viên
+                  {tr('Tên học viên', 'Student name')}
                 </span>
                 <p
                   data-testid="order-detail-student-name"
@@ -583,14 +732,12 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
               <div className="rounded-xl bg-stone-50 p-2.5">
                 <span className="text-[11px] font-semibold text-stone-500">
-                  Tên phụ huynh
+                  {tr('Tên phụ huynh', 'Parent name')}
                 </span>
                 <p
                   data-testid="order-detail-parent-name"
                   className={`mt-0.5 font-bold ${
-                    parentDisplay === 'Chưa cung cấp'
-                      ? 'italic text-stone-400'
-                      : 'text-stone-900'
+                    !hasParentName ? 'italic text-stone-400' : 'text-stone-900'
                   }`}
                 >
                   {parentDisplay}
@@ -599,19 +746,19 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
               <div className="rounded-xl bg-stone-50 p-2.5">
                 <span className="text-[11px] font-semibold text-stone-500">
-                  SĐT phụ huynh (ưu tiên liên hệ)
+                  {tr('SĐT phụ huynh (ưu tiên liên hệ)', 'Parent phone (primary contact)')}
                 </span>
                 <p
                   data-testid="order-detail-phone"
                   className="mt-0.5 font-mono font-bold text-red-900"
                 >
-                  {contactPhone || 'Chưa cung cấp'}
+                  {contactPhone || tr('Chưa cung cấp', 'Not provided')}
                 </p>
               </div>
 
               <div className="rounded-xl bg-stone-50 p-2.5">
                 <span className="text-[11px] font-semibold text-stone-500">
-                  Email đăng nhập / nhận tài khoản
+                  {tr('Email đăng nhập / nhận tài khoản', 'Login / account email')}
                 </span>
                 <p
                   data-testid="order-detail-email"
@@ -619,7 +766,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     order.student_email ? 'text-stone-900' : 'text-amber-800'
                   }`}
                 >
-                  {order.student_email || 'Chưa có email (cần bổ sung trước khi kích hoạt)'}
+                  {order.student_email ||
+                    tr(
+                      'Chưa có email (cần bổ sung trước khi kích hoạt)',
+                      'No email yet (required before activation)'
+                    )}
                 </p>
               </div>
 
@@ -627,18 +778,18 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <span className="text-[11px] font-semibold text-stone-500">
-                      Khóa học đăng ký
+                      {tr('Khóa học đăng ký', 'Enrolled course')}
                     </span>
                     <p
                       data-testid="order-detail-course-name"
                       className="mt-0.5 font-bold text-stone-900"
                     >
-                      {order.course_name}
+                      {translateCourseTitle(order.course_name, lang)}
                     </p>
                   </div>
                   <div className="text-right">
                     <span className="text-[11px] font-semibold text-stone-500">
-                      Học phí đơn / Giá chuẩn
+                      {tr('Học phí đơn / Giá chuẩn', 'Order amount / Standard price')}
                     </span>
                     <p
                       data-testid="order-detail-amount"
@@ -650,22 +801,27 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 </div>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-stone-200/80 pt-2 text-[11px] text-stone-600">
                   <span>
-                    Phương thức: <strong>{order.payment_method || 'VietQR'}</strong>
+                    {tr('Phương thức:', 'Method:')} <strong>{order.payment_method || 'VietQR'}</strong>
                   </span>
                   <span>
-                    Nguồn đơn:{' '}
+                    {tr('Nguồn đơn:', 'Source:')}{' '}
                     <strong data-testid="order-detail-source">
-                      {order.source_label ||
-                        (order.source === 'authenticated_student'
-                          ? 'Học viên đang đăng nhập'
-                          : 'Website')}
+                      {order.source_label
+                        ? order.source_label === 'Học viên đang đăng nhập'
+                          ? tr('Học viên đang đăng nhập', 'Logged-in student')
+                          : order.source_label
+                        : order.source === 'authenticated_student'
+                          ? tr('Học viên đang đăng nhập', 'Logged-in student')
+                          : 'Website'}
                     </strong>
                   </span>
                   <span>
-                    Ngày tạo:{' '}
+                    {tr('Ngày tạo:', 'Created:')}{' '}
                     <strong>
                       {order.created_at
-                        ? new Date(order.created_at).toLocaleString('vi-VN')
+                        ? new Date(order.created_at).toLocaleString(
+                            lang === 'en' ? 'en-US' : 'vi-VN'
+                          )
                         : '—'}
                     </strong>
                   </span>
@@ -674,13 +830,13 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
               <div className="rounded-xl bg-amber-50/70 p-2.5 sm:col-span-2">
                 <span className="text-[11px] font-semibold text-amber-900">
-                  Ghi chú của khách hàng / phụ huynh:
+                  {tr('Ghi chú của khách hàng / phụ huynh:', 'Customer / Parent note:')}
                 </span>
                 <p
                   data-testid="order-detail-customer-note"
                   className="mt-0.5 text-xs text-stone-800"
                 >
-                  {order.customer_note ? order.customer_note : 'Không có ghi chú.'}
+                  {order.customer_note ? order.customer_note : tr('Không có ghi chú.', 'No notes.')}
                 </p>
               </div>
             </div>
@@ -692,12 +848,15 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 className="mt-3 space-y-2.5 rounded-xl border border-red-200 bg-red-50/40 p-3"
               >
                 <p className="text-[11px] font-bold text-red-900">
-                  Cập nhật thông tin phụ huynh & Email cấp tài khoản học viên:
+                  {tr(
+                    'Cập nhật thông tin phụ huynh & Email cấp tài khoản học viên:',
+                    'Update parent info & student login email:'
+                  )}
                 </p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Email đăng nhập *
+                      {tr('Email đăng nhập *', 'Login email *')}
                     </label>
                     <input
                       type="email"
@@ -706,7 +865,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                       disabled={order.source === 'authenticated_student'}
                       value={editEmail}
                       onChange={(e) => setEditEmail(e.target.value)}
-                      placeholder="phuhuynh@gmail.com"
+                      placeholder={tr('phuhuynh@gmail.com', 'parent@example.com')}
                       className={`mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
                         order.source === 'authenticated_student'
                           ? 'cursor-not-allowed border-stone-200 bg-stone-100 text-stone-600'
@@ -716,20 +875,20 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Tên phụ huynh
+                      {tr('Tên phụ huynh', 'Parent name')}
                     </label>
                     <input
                       type="text"
                       data-testid="order-edit-parent-input"
                       value={editParentName}
                       onChange={(e) => setEditParentName(e.target.value)}
-                      placeholder="VD: Chị Lan (Mẹ bé)"
+                      placeholder={tr('VD: Chị Lan (Mẹ bé)', 'e.g. Ms. Lan (Mother)')}
                       className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-900"
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      SĐT liên hệ
+                      {tr('SĐT liên hệ', 'Contact phone')}
                     </label>
                     <input
                       type="tel"
@@ -750,7 +909,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-red-800 px-3 py-1 text-xs font-bold text-white hover:bg-red-900 disabled:opacity-50"
                   >
                     {isUpdatingOrder && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Lưu thông tin khách
+                    {tr('Lưu thông tin khách', 'Save customer info')}
                   </button>
                 </div>
               </div>
@@ -765,7 +924,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wide text-stone-800">
                 <Phone className="h-4 w-4 text-red-800" />
-                2. Liên hệ phụ huynh & Chăm sóc tư vấn
+                {tr('2. Liên hệ phụ huynh & Chăm sóc tư vấn', '2. Parent Contact & Consultation')}
               </h3>
               <span
                 data-testid="order-drawer-contact-badge"
@@ -784,7 +943,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-emerald-800"
                 >
                   <Phone className="h-3.5 w-3.5" />
-                  <span>Gọi điện ({contactPhone})</span>
+                  <span>{tr(`Gọi điện (${contactPhone})`, `Call (${contactPhone})`)}</span>
                 </a>
               )}
 
@@ -797,15 +956,15 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-900 hover:bg-sky-100"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
-                  <span>Nhắn Zalo phụ huynh</span>
+                  <span>{tr('Nhắn Zalo phụ huynh', 'Message via Zalo')}</span>
                 </a>
               )}
 
               {(
                 [
-                  { id: 'called', label: 'Đã gọi' },
-                  { id: 'no_answer', label: 'Không nghe máy' },
-                  { id: 'callback_scheduled', label: 'Hẹn gọi lại' },
+                  { id: 'called', label: tr('Đã gọi', 'Called') },
+                  { id: 'no_answer', label: tr('Không nghe máy', 'No answer') },
+                  { id: 'callback_scheduled', label: tr('Hẹn gọi lại', 'Callback') },
                 ] as const
               ).map((btn) => (
                 <button
@@ -828,23 +987,27 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             {/* Consultation Note */}
             <div className="mt-3 space-y-2">
               <label className="block text-[11px] font-bold text-stone-700">
-                Ghi chú tư vấn của Học vụ:
+                {tr('Ghi chú tư vấn của Học vụ:', 'Academic advisor consultation note:')}
               </label>
               <textarea
                 rows={2}
                 data-testid="order-consultation-note-input"
                 value={consultationNote}
                 onChange={(e) => setConsultationNote(e.target.value)}
-                placeholder="Ghi kết quả cuộc gọi, khung giờ phụ huynh muốn học, hoặc thông tin xuất hóa đơn..."
+                placeholder={tr(
+                  'Ghi kết quả cuộc gọi, khung giờ phụ huynh muốn học, hoặc thông tin xuất hóa đơn...',
+                  'Record call result, preferred class hours, or invoice details...'
+                )}
                 className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
               />
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] text-stone-500">
                   {order.contact_updated_at
-                    ? `Cập nhật lần cuối: ${new Date(
-                        order.contact_updated_at
-                      ).toLocaleString('vi-VN')} (${order.contact_updated_by || 'Học vụ'})`
-                    : 'Chưa có lịch sử cuộc gọi.'}
+                    ? tr(
+                        `Cập nhật lần cuối: ${new Date(order.contact_updated_at).toLocaleString('vi-VN')} (${order.contact_updated_by || 'Học vụ'})`,
+                        `Last updated: ${new Date(order.contact_updated_at).toLocaleString('en-US')} (${order.contact_updated_by || 'Academic Admin'})`
+                      )
+                    : tr('Chưa có lịch sử cuộc gọi.', 'No call history yet.')}
                 </span>
                 <button
                   type="button"
@@ -853,7 +1016,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   onClick={handleSaveConsultationNote}
                   className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-stone-300 bg-white px-3 py-1 text-xs font-bold text-stone-800 hover:bg-stone-100"
                 >
-                  Lưu ghi chú tư vấn
+                  {tr('Lưu ghi chú tư vấn', 'Save note')}
                 </button>
               </div>
             </div>
@@ -867,7 +1030,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wide text-stone-800">
                 <CreditCard className="h-4 w-4 text-red-800" />
-                3. Xác minh thanh toán & Đối chiếu giao dịch
+                {tr(
+                  '3. Xác minh thanh toán & Đối chiếu giao dịch',
+                  '3. Payment Verification & Reconciliation'
+                )}
               </h3>
               <span
                 data-testid="order-payment-detailed-status"
@@ -885,22 +1051,28 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               >
                 <p className="flex items-center gap-1.5 font-bold text-emerald-900">
                   <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                  Bằng chứng thanh toán tự động (Webhook ngân hàng đã đối khớp)
+                  {tr(
+                    'Bằng chứng thanh toán tự động (Webhook ngân hàng đã đối khớp)',
+                    'Automatic payment proof (Bank webhook matched)'
+                  )}
                 </p>
                 <div className="mt-1 grid grid-cols-1 gap-1 text-[11px] sm:grid-cols-3">
                   <span>
-                    Mã GD: <strong className="font-mono">{order.payment_tx_ref || 'AUTO'}</strong>
+                    {tr('Mã GD:', 'Tx ID:')}{' '}
+                    <strong className="font-mono">{order.payment_tx_ref || 'AUTO'}</strong>
                   </span>
                   <span>
-                    Số tiền nhận:{' '}
+                    {tr('Số tiền nhận:', 'Received:')}{' '}
                     <strong>{formatVnd(order.payment_received_amount ?? order.amount)}</strong>
                   </span>
                   <span>
-                    Thời điểm:{' '}
+                    {tr('Thời điểm:', 'Verified at:')}{' '}
                     <strong>
                       {order.payment_verified_at
-                        ? new Date(order.payment_verified_at).toLocaleString('vi-VN')
-                        : 'Tự động'}
+                        ? new Date(order.payment_verified_at).toLocaleString(
+                            lang === 'en' ? 'en-US' : 'vi-VN'
+                          )
+                        : tr('Tự động', 'Auto')}
                     </strong>
                   </span>
                 </div>
@@ -914,24 +1086,31 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               >
                 <p className="flex items-center gap-1.5 font-bold text-emerald-900">
                   <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-                  Đã xác minh tiền thực nhận (Đối soát thủ công)
+                  {tr(
+                    'Đã xác minh tiền thực nhận (Đối soát thủ công)',
+                    'Payment verified (Manual reconciliation)'
+                  )}
                 </p>
                 <div className="mt-1 grid grid-cols-1 gap-1 text-[11px] sm:grid-cols-3">
                   <span>
-                    Người xác nhận:{' '}
-                    <strong>{order.payment_verified_by || 'Quản trị viên'}</strong>
-                  </span>
-                  <span>
-                    Mã tham chiếu GD:{' '}
-                    <strong className="font-mono">
-                      {order.payment_tx_ref || 'Đã đối chiếu sao kê'}
+                    {tr('Người xác nhận:', 'Verified by:')}{' '}
+                    <strong>
+                      {order.payment_verified_by || tr('Quản trị viên', 'Admin')}
                     </strong>
                   </span>
                   <span>
-                    Thời điểm:{' '}
+                    {tr('Mã tham chiếu GD:', 'Tx reference:')}{' '}
+                    <strong className="font-mono">
+                      {order.payment_tx_ref || tr('Đã đối chiếu sao kê', 'Statement matched')}
+                    </strong>
+                  </span>
+                  <span>
+                    {tr('Thời điểm:', 'Verified at:')}{' '}
                     <strong>
                       {order.payment_verified_at
-                        ? new Date(order.payment_verified_at).toLocaleString('vi-VN')
+                        ? new Date(order.payment_verified_at).toLocaleString(
+                            lang === 'en' ? 'en-US' : 'vi-VN'
+                          )
                         : '—'}
                     </strong>
                   </span>
@@ -946,10 +1125,16 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               >
                 <p className="flex items-center gap-1.5 font-bold text-amber-900">
                   <AlertTriangle className="h-4 w-4 text-amber-700" />
-                  Khách báo đã chuyển khoản — Chưa coi là đã nhận tiền!
+                  {tr(
+                    'Khách báo đã chuyển khoản — Chưa coi là đã nhận tiền!',
+                    'Customer reported transfer — Not yet verified!'
+                  )}
                 </p>
                 <p className="mt-0.5 text-[11px]">
-                  Vui lòng kiểm tra biến động số dư / sao kê ngân hàng, nhập Mã giao dịch (Transaction ID) và số tiền thực nhận bên dưới trước khi bấm xác minh.
+                  {tr(
+                    'Vui lòng kiểm tra biến động số dư / sao kê ngân hàng, nhập Mã giao dịch (Transaction ID) và số tiền thực nhận bên dưới trước khi bấm xác minh.',
+                    'Please check your bank statement, enter the Transaction ID and actual amount received below before confirming.'
+                  )}
                 </p>
               </div>
             )}
@@ -958,7 +1143,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <div>
                 <label className="block text-[11px] font-bold text-stone-700">
-                  Số tiền thực nhận (VNĐ) — Chuẩn: {formatVnd(order.server_course_price ?? order.amount)}
+                  {tr('Số tiền thực nhận (VNĐ) — Chuẩn:', 'Actual amount received (VND) — Expected:')}{' '}
+                  {formatVnd(order.server_course_price ?? order.amount)}
                 </label>
                 <input
                   type="number"
@@ -970,14 +1156,20 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-stone-700">
-                  Mã giao dịch / Tham chiếu NH (Transaction ID)
+                  {tr(
+                    'Mã giao dịch / Tham chiếu NH (Transaction ID)',
+                    'Bank Transaction / Reference ID'
+                  )}
                 </label>
                 <input
                   type="text"
                   data-testid="order-payment-tx-ref-input"
                   value={txRefInput}
                   onChange={(e) => setTxRefInput(e.target.value)}
-                  placeholder="VD: FT26312998811 / VietQR MB..."
+                  placeholder={tr(
+                    'VD: FT26312998811 / VietQR MB...',
+                    'e.g. FT26312998811 / VietQR MB...'
+                  )}
                   className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 font-mono text-xs font-bold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
                 />
               </div>
@@ -996,7 +1188,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     : 'border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
                 }`}
               >
-                ✓ Đã xác minh tiền thực nhận
+                {tr('✓ Đã xác minh tiền thực nhận', '✓ Payment verified')}
               </button>
 
               <button
@@ -1010,7 +1202,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     : 'border border-stone-300 bg-stone-50 text-stone-700 hover:bg-stone-100'
                 }`}
               >
-                Chờ kiểm tra GD
+                {tr('Chờ kiểm tra GD', 'Verifying tx')}
               </button>
 
               <button
@@ -1024,7 +1216,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     : 'border border-stone-300 bg-stone-50 text-stone-700 hover:bg-stone-100'
                 }`}
               >
-                Khách báo đã CK
+                {tr('Khách báo đã CK', 'Transfer reported')}
               </button>
 
               <button
@@ -1038,7 +1230,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     : 'border border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
                 }`}
               >
-                Thanh toán sai/thiếu
+                {tr('Thanh toán sai/thiếu', 'Amount mismatch')}
               </button>
 
               <button
@@ -1052,7 +1244,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     : 'border border-stone-300 bg-stone-50 text-stone-700 hover:bg-stone-100'
                 }`}
               >
-                Chưa thanh toán
+                {tr('Chưa thanh toán', 'Unpaid')}
               </button>
 
               <button
@@ -1066,7 +1258,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     : 'border border-purple-200 bg-purple-50 text-purple-900 hover:bg-purple-100'
                 }`}
               >
-                Hoàn tiền / Hủy
+                {tr('Hoàn tiền / Hủy', 'Refund / Cancel')}
               </button>
             </div>
           </section>
@@ -1079,7 +1271,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wide text-stone-800">
                 <ShieldCheck className="h-4 w-4 text-red-800" />
-                4. Trạng thái tài khoản & Cấp quyền khóa học
+                {tr(
+                  '4. Trạng thái tài khoản & Cấp quyền khóa học',
+                  '4. Account Status & Course Provisioning'
+                )}
               </h3>
               <span
                 data-testid="order-account-detailed-status"
@@ -1097,11 +1292,20 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 >
                   <div>
                     <p className="font-bold text-sky-950">
-                      Tài khoản học viên đã tồn tại ({order.existing_student.code || effectiveEmail})
+                      {tr('Tài khoản học viên đã tồn tại', 'Existing student account')} (
+                      {order.existing_student.code || effectiveEmail})
                     </p>
                     <p className="mt-0.5 text-[11px] text-sky-900">
-                      Khi kích hoạt đơn, hệ thống sẽ <strong>cộng thêm quyền khóa mới</strong> và{' '}
-                      <strong>giữ nguyên mật khẩu hiện tại</strong> cùng các khóa học đã mở ({order.existing_student.online_courses_count || 0} khóa). Không tạo tài khoản thứ hai.
+                      {tr('Khi kích hoạt đơn, hệ thống sẽ ', 'When activated, the system will ')}
+                      <strong>{tr('cộng thêm quyền khóa mới', 'grant the new course')}</strong>
+                      {tr(' và ', ' and ')}
+                      <strong>
+                        {tr('giữ nguyên mật khẩu hiện tại', 'keep the existing password')}
+                      </strong>
+                      {tr(
+                        ` cùng các khóa học đã mở (${order.existing_student.online_courses_count || 0} khóa). Không tạo tài khoản thứ hai.`,
+                        ` and active courses (${order.existing_student.online_courses_count || 0} courses). No duplicate account is created.`
+                      )}
                     </p>
                   </div>
                   {canOpenStudentDrawer && (
@@ -1112,7 +1316,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                       className="inline-flex min-h-[34px] shrink-0 items-center gap-1.5 rounded-xl bg-sky-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-900"
                     >
                       <Users className="h-3.5 w-3.5" />
-                      <span>Mở hồ sơ học viên</span>
+                      <span>{tr('Mở hồ sơ học viên', 'Open student profile')}</span>
                     </button>
                   )}
                 </div>
@@ -1121,10 +1325,13 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               {!order.existing_student && order.approval_status !== 'approved' && (
                 <div className="rounded-xl border border-stone-200 bg-stone-50 p-2.5">
                   <p className="font-bold text-stone-900">
-                    Học viên mới (Chưa có tài khoản trên hệ thống)
+                    {tr('Học viên mới (Chưa có tài khoản trên hệ thống)', 'New student (No account yet)')}
                   </p>
                   <p className="mt-0.5 text-[11px] text-stone-600">
-                    Sau khi bấm &ldquo;Xác nhận & Kích hoạt khóa học&rdquo;, hệ thống sẽ tạo tài khoản học viên trên Cognito + izTeach + Supabase và cấp mật khẩu khởi tạo an toàn dùng 1 lần để Học vụ bàn giao cho phụ huynh.
+                    {tr(
+                      'Sau khi bấm “Xác nhận & Kích hoạt khóa học”, hệ thống sẽ tạo tài khoản học viên trên Cognito + izTeach + Supabase và cấp mật khẩu khởi tạo an toàn dùng 1 lần để Học vụ bàn giao cho phụ huynh.',
+                      'After clicking "Confirm & Activate Course", the system creates an account across Cognito + izTeach + Supabase with a one-time initial password for parent handoff.'
+                    )}
                   </p>
                 </div>
               )}
@@ -1152,52 +1359,59 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     >
                       {order.provisioning_status === 'partial_failure' ||
                       accountDetailedStatus === 'sync_error'
-                        ? 'Cần hoàn tất đồng bộ thời hạn'
-                        : 'Đã cấp thành công'}
+                        ? tr('Cần hoàn tất đồng bộ thời hạn', 'Duration sync required')
+                        : tr('Đã cấp thành công', 'Provisioned successfully')}
                     </span>
                     <span className="text-[11px] font-bold text-stone-700">
-                      Thời hạn học:{' '}
+                      {tr('Thời hạn học:', 'Access duration:')}{' '}
                       {formatCourseDurationPresetLabel(
-                        order.duration_preset || order.durationPreset || 'unlimited'
+                        order.duration_preset || order.durationPreset || 'unlimited',
+                        lang
                       )}
                       {order.limit_time || order.limitTime
-                        ? ` (Hạn: ${String(order.limit_time || order.limitTime).slice(0, 10)})`
+                        ? tr(
+                            ` (Hạn: ${String(order.limit_time || order.limitTime).slice(0, 10)})`,
+                            ` (Expires: ${String(order.limit_time || order.limitTime).slice(0, 10)})`
+                          )
                         : ''}
                     </span>
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div className="rounded-lg bg-white p-2 border border-emerald-200">
                       <span className="text-[10px] font-bold uppercase text-stone-500">
-                        1. Tài khoản
+                        {tr('1. Tài khoản', '1. Account')}
                       </span>
                       <p className="mt-0.5 font-bold text-emerald-900">
                         {order.account_created
-                          ? 'Tài khoản đã tạo mới'
-                          : 'Tài khoản đã tồn tại (Giữ mật khẩu cũ)'}
+                          ? tr('Tài khoản đã tạo mới', 'New account created')
+                          : tr('Tài khoản đã tồn tại (Giữ mật khẩu cũ)', 'Existing account (Password kept)')}
                       </p>
                     </div>
                     <div className="rounded-lg bg-white p-2 border border-emerald-200">
                       <span className="text-[10px] font-bold uppercase text-stone-500">
-                        2. Bàn giao đăng nhập
+                        {tr('2. Bàn giao đăng nhập', '2. Login Handoff')}
                       </span>
                       <p
                         data-testid="order-handoff-stage-text"
                         className="mt-0.5 font-bold text-amber-900"
                       >
                         {order.credential_handed_off || !order.account_created
-                          ? 'Đã bàn giao thông tin đăng nhập'
-                          : 'Đang chờ học viên thiết lập mật khẩu / chờ bàn giao'}
+                          ? tr('Đã bàn giao thông tin đăng nhập', 'Credentials handed off')
+                          : tr(
+                              'Đang chờ học viên thiết lập mật khẩu / chờ bàn giao',
+                              'Awaiting password setup / handoff'
+                            )}
                       </p>
                     </div>
                     <div className="rounded-lg bg-white p-2 border border-emerald-200">
                       <span className="text-[10px] font-bold uppercase text-stone-500">
-                        3. Trạng thái học tập
+                        {tr('3. Trạng thái học tập', '3. Learning Status')}
                       </span>
                       <p className="mt-0.5 font-bold text-emerald-900">
                         {order.provisioning_status === 'partial_failure' ||
                         accountDetailedStatus === 'sync_error'
-                          ? 'Cần hoàn tất đồng bộ thời hạn'
-                          : 'Học viên có thể đăng nhập'}
+                          ? tr('Cần hoàn tất đồng bộ thời hạn', 'Duration sync required')
+                          : tr('Học viên có thể đăng nhập', 'Student can sign in')}
                       </p>
                     </div>
                   </div>
@@ -1209,7 +1423,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     >
                       <p className="flex items-center gap-1.5 font-bold text-stone-900">
                         <KeyRound className="h-4 w-4 text-red-800" />
-                        Mật khẩu khởi tạo dùng 1 lần (chỉ hiển thị trong phiên này, không lưu vào bảng đơn):
+                        {tr(
+                          'Mật khẩu khởi tạo dùng 1 lần (chỉ hiển thị trong phiên này, không lưu vào bảng đơn):',
+                          'One-time initial password (shown only in this session, not stored in orders):'
+                        )}
                       </p>
                       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                         <code
@@ -1223,14 +1440,17 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                           onClick={() => {
                             navigator.clipboard
                               ?.writeText(
-                                `Email đăng nhập: ${effectiveEmail}\nMật khẩu khởi tạo: ${ephemeralPassword}`
+                                tr(
+                                  `Email đăng nhập: ${effectiveEmail}\nMật khẩu khởi tạo: ${ephemeralPassword}`,
+                                  `Login email: ${effectiveEmail}\nInitial password: ${ephemeralPassword}`
+                                )
                               )
                               .catch(() => {});
                           }}
                           className="inline-flex items-center gap-1 rounded-lg bg-stone-800 px-2.5 py-1 text-xs font-bold text-white"
                         >
                           <Copy className="h-3.5 w-3.5" />
-                          Sao chép gửi PH
+                          {tr('Sao chép gửi PH', 'Copy for parent')}
                         </button>
                       </div>
                     </div>
@@ -1246,12 +1466,20 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                         className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>Xác nhận đã bàn giao thông tin đăng nhập cho phụ huynh</span>
+                        <span>
+                          {tr(
+                            'Xác nhận đã bàn giao thông tin đăng nhập cho phụ huynh',
+                            'Confirm credentials handed off to parent'
+                          )}
+                        </span>
                       </button>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800">
                         <CheckCircle2 className="h-4 w-4" />
-                        Đã hoàn tất bàn giao thông tin đăng nhập
+                        {tr(
+                          'Đã hoàn tất bàn giao thông tin đăng nhập',
+                          'Credential handoff completed'
+                        )}
                       </span>
                     )}
 
@@ -1263,7 +1491,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                         className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-100"
                       >
                         <Users className="h-3.5 w-3.5 text-red-800" />
-                        <span>Mở hồ sơ học viên</span>
+                        <span>{tr('Mở hồ sơ học viên', 'Open student profile')}</span>
                       </button>
                     )}
                   </div>
@@ -1284,16 +1512,16 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-bold text-stone-800">
-                            Thời hạn học:
+                            {tr('Thời hạn học:', 'Access duration:')}
                           </span>
                           <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-extrabold text-red-900">
-                            {formatCourseDurationPresetLabel(selectedDurationPreset)}
+                            {formatCourseDurationPresetLabel(selectedDurationPreset, lang)}
                           </span>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[10px] font-semibold text-stone-600">
-                              Số lượng (1–365)
+                              {tr('Số lượng (1–365)', 'Amount (1–365)')}
                             </label>
                             <input
                               type="number"
@@ -1316,7 +1544,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                           </div>
                           <div>
                             <label className="block text-[10px] font-semibold text-stone-600">
-                              Đơn vị (Ngày / Tuần / Tháng)
+                              {tr('Đơn vị (Ngày / Tuần / Tháng)', 'Unit (Days / Weeks / Months)')}
                             </label>
                             <select
                               data-testid="order-duration-unit-select"
@@ -1329,7 +1557,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                               }}
                               className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800"
                             >
-                              {COURSE_DURATION_UNIT_OPTIONS.map((u) => (
+                              {getCourseDurationUnitOptions(lang).map((u) => (
                                 <option key={u.id} value={u.id}>
                                   {u.label}
                                 </option>
@@ -1338,7 +1566,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-0.5">
-                          {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                          {getCourseDurationPresetOptions(lang).map((opt) => (
                             <button
                               key={opt.id}
                               type="button"
@@ -1360,7 +1588,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Xếp lớp trực tiếp kèm theo khi kích hoạt (tùy chọn):
+                      {tr(
+                        'Xếp lớp trực tiếp kèm theo khi kích hoạt (tùy chọn):',
+                        'Assign live class on activation (optional):'
+                      )}
                     </label>
                     <select
                       data-testid="order-class-select"
@@ -1368,12 +1599,17 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                       onChange={(e) => setSelectedClassCode(e.target.value)}
                       className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-bold text-stone-800"
                     >
-                      <option value="">— Không đổi / Chưa xếp lớp trực tiếp —</option>
+                      <option value="">
+                        {tr(
+                          '— Không đổi / Chưa xếp lớp trực tiếp —',
+                          '— Unchanged / No live class assigned —'
+                        )}
+                      </option>
                       {classesList
                         .filter((cls) => cls.active !== false)
                         .map((cls) => (
                           <option key={cls.id} value={cls.id}>
-                            {cls.id} · {cls.name}
+                            {cls.id} · {translateScheduleText(cls.name, lang)}
                           </option>
                         ))}
                     </select>
@@ -1393,7 +1629,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             >
               <h3 className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-wide text-red-900">
                 <Sparkles className="h-4 w-4 text-red-800" />
-                5. Xác nhận & Kích hoạt khóa học
+                {tr('5. Xác nhận & Kích hoạt khóa học', '5. Confirm & Activate Course')}
               </h3>
 
               {!activationCheck.canActivate && (
@@ -1402,7 +1638,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   className="mt-2.5 rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-950"
                 >
                   <p className="font-bold text-amber-900">
-                    Chưa đủ điều kiện kích hoạt khóa học (nút kích hoạt đang khóa):
+                    {tr(
+                      'Chưa đủ điều kiện kích hoạt khóa học (nút kích hoạt đang khóa):',
+                      'Not ready for activation (activation button is locked):'
+                    )}
                   </p>
                   <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px]">
                     {activationCheck.reasons.map((r, i) => (
@@ -1414,7 +1653,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
               {activationCheck.canActivate && (
                 <p className="mt-2 text-xs text-emerald-800 font-semibold">
-                  ✓ Đơn hàng đã đủ toàn bộ điều kiện (đã tư vấn, đã xác minh tiền thực nhận, email và khóa học hợp lệ).
+                  {tr(
+                    '✓ Đơn hàng đã đủ toàn bộ điều kiện (đã tư vấn, đã xác minh tiền thực nhận, email và khóa học hợp lệ).',
+                    '✓ All conditions met (consulted, payment verified, valid email and course).'
+                  )}
                 </p>
               )}
 
@@ -1434,8 +1676,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   <span>
                     {order.provisioning_status === 'partial_failure' ||
                     accountDetailedStatus === 'sync_error'
-                      ? 'Đồng bộ lại quyền & thời hạn'
-                      : 'Xác nhận & Kích hoạt khóa học'}
+                      ? tr('Đồng bộ lại quyền & thời hạn', 'Re-sync access & duration')
+                      : tr('Xác nhận & Kích hoạt khóa học', 'Confirm & Activate Course')}
                   </span>
                 </button>
               </div>
@@ -1457,7 +1699,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
               <div className="flex items-center gap-2 text-emerald-800">
                 <ShieldCheck className="h-5 w-5" />
                 <h4 className="font-display text-sm font-extrabold">
-                  Xác nhận kích hoạt khóa học cuối cùng
+                  {tr('Xác nhận kích hoạt khóa học cuối cùng', 'Final Course Activation Confirmation')}
                 </h4>
               </div>
 
@@ -1465,17 +1707,24 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 data-testid="order-confirm-activation-summary"
                 className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-stone-900"
               >
-                Học viên <strong>{order.student_name}</strong> sẽ được cấp khóa{' '}
-                <strong>{order.course_name}</strong> trên email{' '}
-                <strong>{effectiveEmail}</strong> · Thời hạn học:{' '}
+                {tr('Học viên ', 'Student ')}
+                <strong>{order.student_name}</strong>
+                {tr(' sẽ được cấp khóa ', ' will be granted ')}
+                <strong>{translateCourseTitle(order.course_name, lang)}</strong>
+                {tr(' trên email ', ' on email ')}
+                <strong>{effectiveEmail}</strong>
+                {tr(' · Thời hạn học: ', ' · Access duration: ')}
                 <strong>
-                  {formatCourseDurationPresetLabel(selectedDurationPreset)}
+                  {formatCourseDurationPresetLabel(selectedDurationPreset, lang)}
                 </strong>
                 .
               </p>
 
               <p className="text-[11px] text-stone-600">
-                Hệ thống sẽ đồng bộ quyền khóa học và thời hạn trên izTeach + Supabase. Nếu email đã có tài khoản, mật khẩu cũ và các khóa hiện có được giữ nguyên.
+                {tr(
+                  'Hệ thống sẽ đồng bộ quyền khóa học và thời hạn trên izTeach + Supabase. Nếu email đã có tài khoản, mật khẩu cũ và các khóa hiện có được giữ nguyên.',
+                  'The system will sync course access and expiration on izTeach + Supabase. Existing accounts keep their current password and courses.'
+                )}
               </p>
 
               <div className="flex justify-end gap-2 pt-1">
@@ -1485,7 +1734,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   onClick={() => setShowConfirmApproveModal(false)}
                   className="min-h-[36px] rounded-xl border border-stone-300 px-3.5 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-100"
                 >
-                  Quay lại
+                  {tr('Quay lại', 'Back')}
                 </button>
                 <button
                   type="button"
@@ -1503,7 +1752,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-800 disabled:opacity-50"
                 >
                   {isApprovingOrder && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  <span>Đồng ý kích hoạt ngay</span>
+                  <span>{tr('Đồng ý kích hoạt ngay', 'Confirm & Activate Now')}</span>
                 </button>
               </div>
             </div>

@@ -21,6 +21,7 @@ import { detectDlpViolation, formatFileSize } from '@/lib/utils';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { getStoredSession } from '@/services/api/ktnApiClient';
+import { trStatic, useI18n } from '@/i18n';
 import { formatQuotedReplyText, truncateFileName } from '../services/chatApi';
 
 const COMPOSER_EMOJIS = ['👋', '👍', '❤️', '🎉', '🙏', '🌟', '🐼', '📚'];
@@ -42,6 +43,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   onClearReply,
   onSend,
 }) => {
+  const { lang, tr } = useI18n();
   const draft = useUiStore((s) => s.draftByRoom[roomId] ?? s.getRoomDraft(roomId));
   const setRoomDraft = useUiStore((s) => s.setRoomDraft);
   const addToast = useUiStore((s) => s.addToast);
@@ -71,7 +73,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     const onProgress = (e: Event) => {
       const detail = (e as CustomEvent<{ fileName: string; percent: number }>).detail;
       if (detail && typeof detail.percent === 'number') {
-        setUploadProgress({ fileName: detail.fileName || 'Tệp đính kèm', percent: detail.percent });
+        setUploadProgress({
+          fileName: detail.fileName || trStatic('Tệp đính kèm', 'Attachment'),
+          percent: detail.percent,
+        });
       }
     };
     window.addEventListener('ktn:chat-upload-progress', onProgress);
@@ -92,8 +97,11 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
     if (file.size > 100 * 1024 * 1024) {
       addToast({
-        title: 'Tệp quá lớn',
-        description: 'Vui lòng chọn ảnh, âm thanh, video hoặc tài liệu nhỏ hơn 100MB.',
+        title: tr('Tệp quá lớn', 'File too large'),
+        description: tr(
+          'Vui lòng chọn ảnh, âm thanh, video hoặc tài liệu nhỏ hơn 100MB.',
+          'Please select an image, audio, video, or document smaller than 100MB.'
+        ),
         variant: 'error',
       });
       e.target.value = '';
@@ -138,8 +146,13 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
     if (dlpCheck.blocked) {
       addToast({
-        title: 'Bảo vệ an toàn lớp học (DLP)',
-        description: dlpCheck.reason || 'Không được gửi số điện thoại hoặc liên kết ngoài.',
+        title: tr('Bảo vệ an toàn lớp học (DLP)', 'Class Safety Guard (DLP)'),
+        description:
+          dlpCheck.reason ||
+          tr(
+            'Không được gửi số điện thoại hoặc liên kết ngoài.',
+            'Sending phone numbers or external links is not allowed.'
+          ),
         variant: 'warning',
       });
       return;
@@ -152,12 +165,16 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
       (stagedAttachment?.kind === 'image'
         ? ''
         : stagedAttachment?.kind === 'video'
-        ? `[Đã gửi video: ${stagedAttachment.name}]`
-        : `[Đã đính kèm tệp: ${stagedAttachment?.name}]`);
+        ? tr(`[Đã gửi video: ${stagedAttachment.name}]`, `[Sent video: ${stagedAttachment.name}]`)
+        : tr(
+            `[Đã đính kèm tệp: ${stagedAttachment?.name}]`,
+            `[Attached file: ${stagedAttachment?.name}]`
+          ));
 
     const attachmentToSend = stagedAttachment || null;
     const replyQuoteText = replyingTo
-      ? formatQuotedReplyText(replyingTo.content, replyingTo.attachment) || 'Tệp đính kèm'
+      ? formatQuotedReplyText(replyingTo.content, replyingTo.attachment, lang) ||
+        tr('Tệp đính kèm', 'Attachment')
       : '';
     const replyData = replyingTo
       ? {
@@ -209,7 +226,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           <span className="flex min-w-0 flex-1 items-center gap-1.5 font-semibold">
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-red-700" />
             <span className="min-w-0 flex-1 truncate">
-              Đang tải lên S3: {truncateFileName(uploadProgress.fileName, 26)}
+              {tr('Đang tải lên S3:', 'Uploading to S3:')}{' '}
+              {truncateFileName(uploadProgress.fileName, 26, lang)}
             </span>
           </span>
           <span className="shrink-0 font-bold text-red-800">{uploadProgress.percent}%</span>
@@ -234,17 +252,18 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1 font-bold text-red-900">
               <Reply className="h-3 w-3" />
-              Đang trả lời {replyingTo.sender_name}
+              {tr('Đang trả lời', 'Replying to')} {replyingTo.sender_name}
             </p>
             <p className="truncate text-stone-600">
-              {formatQuotedReplyText(replyingTo.content, replyingTo.attachment) || 'Tệp đính kèm'}
+              {formatQuotedReplyText(replyingTo.content, replyingTo.attachment, lang) ||
+                tr('Tệp đính kèm', 'Attachment')}
             </p>
           </div>
           <button
             type="button"
             onClick={onClearReply}
             className="rounded-lg p-1 text-stone-500 hover:bg-stone-200 hover:text-stone-800"
-            aria-label="Hủy trả lời"
+            aria-label={tr('Hủy trả lời', 'Cancel reply')}
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -275,10 +294,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 title={stagedAttachment.name}
                 className="truncate text-xs font-semibold text-stone-900"
               >
-                {truncateFileName(stagedAttachment.name, 28)}
+                {truncateFileName(stagedAttachment.name, 28, lang)}
               </p>
               <p className="truncate text-[11px] text-stone-500">
-                {stagedAttachment.sizeLabel} • Sẵn sàng gửi
+                {stagedAttachment.sizeLabel} • {tr('Sẵn sàng gửi', 'Ready to send')}
               </p>
             </div>
           </div>
@@ -286,7 +305,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             type="button"
             onClick={() => setStagedAttachment(null)}
             className="shrink-0 rounded-lg p-1 text-stone-500 hover:bg-stone-200"
-            aria-label="Xóa tệp đính kèm"
+            aria-label={tr('Xóa tệp đính kèm', 'Remove attachment')}
           >
             <X className="h-4 w-4" />
           </button>
@@ -302,7 +321,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             try {
               const cleanMime = normalizeAudioMimeType(blob.type);
               const ext = getAudioExtensionFromMime(cleanMime);
-              const fileName = `Thu-am-${classCode || 'KTN'}-${Date.now()}.${ext}`;
+              const fileName = `${tr('Thu-am', 'Voice')}-${classCode || 'KTN'}-${Date.now()}.${ext}`;
               const persistentUrl = await new Promise<string>((resolve) => {
                 const reader = new FileReader();
                 reader.onloadend = () => resolve(String(reader.result || previewUrl));
@@ -313,7 +332,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               await onSend({
                 roomId,
                 classCode,
-                content: `🎤 Bản thu âm luyện nói tiếng Trung (${durationSec} giây)`,
+                content: tr(
+                  `🎤 Bản thu âm luyện nói tiếng Trung (${durationSec} giây)`,
+                  `🎤 Chinese speaking practice recording (${durationSec}s)`
+                ),
                 attachment: {
                   kind: 'audio',
                   name: fileName,
@@ -364,8 +386,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-stone-600 transition-colors hover:bg-stone-100 hover:text-red-800"
-                title="Đính kèm ảnh hoặc bài tập PDF"
-                aria-label="Đính kèm ảnh hoặc bài tập PDF"
+                title={tr('Đính kèm ảnh hoặc bài tập PDF', 'Attach image or PDF homework')}
+                aria-label={tr('Đính kèm ảnh hoặc bài tập PDF', 'Attach image or PDF homework')}
               >
                 <ImageIcon className="h-4 w-4" />
               </button>
@@ -374,8 +396,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="hidden sm:inline-flex h-9 w-9 items-center justify-center rounded-xl text-stone-600 transition-colors hover:bg-stone-100 hover:text-red-800"
-                title="Đính kèm tệp tài liệu"
-                aria-label="Đính kèm tệp tài liệu"
+                title={tr('Đính kèm tệp tài liệu', 'Attach document')}
+                aria-label={tr('Đính kèm tệp tài liệu', 'Attach document')}
               >
                 <Paperclip className="h-4 w-4" />
               </button>
@@ -385,8 +407,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 data-testid="open-voice-recorder-btn"
                 onClick={() => setShowVoiceRecorder(true)}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-stone-600 transition-colors hover:bg-red-50 hover:text-red-800"
-                title="Ghi âm giọng nói tiếng Trung"
-                aria-label="Ghi âm giọng nói tiếng Trung"
+                title={tr('Ghi âm giọng nói tiếng Trung', 'Record Chinese voice message')}
+                aria-label={tr('Ghi âm giọng nói tiếng Trung', 'Record Chinese voice message')}
               >
                 <Mic className="h-4 w-4" />
               </button>
@@ -399,8 +421,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                     ? 'bg-amber-100 text-amber-800'
                     : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
                 }`}
-                title="Chèn biểu tượng cảm xúc"
-                aria-label="Chèn biểu tượng cảm xúc"
+                title={tr('Chèn biểu tượng cảm xúc', 'Insert emoji')}
+                aria-label={tr('Chèn biểu tượng cảm xúc', 'Insert emoji')}
               >
                 <Smile className="h-4 w-4" />
               </button>
@@ -413,7 +435,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                 value={draft}
                 onChange={(e) => handleDraftChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={`Nhắn tới ${classCode || roomId}...`}
+                placeholder={tr(
+                  `Nhắn tới ${classCode || roomId}...`,
+                  `Message ${classCode || roomId}...`
+                )}
                 className="max-h-24 min-h-[38px] w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 focus:border-red-800 focus:bg-white focus:outline-none"
               />
             </div>
@@ -429,7 +454,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               ) : (
                 <Send className="h-3.5 w-3.5" />
               )}
-              <span className="hidden sm:inline">Gửi</span>
+              <span className="hidden sm:inline">{tr('Gửi', 'Send')}</span>
             </button>
           </form>
         </>

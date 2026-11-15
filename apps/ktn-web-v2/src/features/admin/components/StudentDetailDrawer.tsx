@@ -26,16 +26,17 @@ import {
   KeyRound,
 } from 'lucide-react';
 import {
-  COURSE_DURATION_PRESET_OPTIONS,
-  COURSE_DURATION_UNIT_OPTIONS,
   buildCourseDurationPreset,
   computeCourseExpirationInfo,
   disambiguateCatalogCourses,
   formatCourseDurationPresetLabel,
+  getCourseDurationPresetOptions,
+  getCourseDurationUnitOptions,
   parseCourseDurationPreset,
   resolveStudentOnlineCourses,
   type CourseDurationUnitOption,
 } from '@/lib/utils';
+import { translateCourseTitle, useI18n } from '@/i18n';
 import { getServerNowMs, ktnApi } from '@/services/api/ktnApiClient';
 import type {
   CourseDurationMode,
@@ -126,6 +127,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   hasExistingOrders = false,
   onCopyEmail,
 }) => {
+  const { lang, tr } = useI18n();
+  const durationUnitOptions = useMemo(() => getCourseDurationUnitOptions(lang), [lang]);
+  const durationPresetOptions = useMemo(() => getCourseDurationPresetOptions(lang), [lang]);
+
   // Section A: Profile edit state
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
@@ -294,11 +299,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     if (!student) {
       return {
         effectiveAccountStatus: 'pending_activation',
-        accountLabel: 'Chờ kích hoạt',
+        accountLabel: tr('Chờ kích hoạt', 'Pending activation'),
         accountTone: 'amber' as const,
-        coursesLabel: 'Đã đồng bộ',
+        coursesLabel: tr('Đã đồng bộ', 'Synced'),
         coursesTone: 'emerald' as const,
-        classLabel: 'Chưa xếp lớp',
+        classLabel: tr('Chưa xếp lớp', 'Unassigned'),
         classTone: 'stone' as const,
         needsAttention: false,
       };
@@ -332,57 +337,69 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
       rawAcc === 'pending_activation';
 
     // 1. Account login status
-    let accountLabel = 'Hoạt động';
+    let accountLabel = tr('Hoạt động', 'Active');
     let accountTone: 'emerald' | 'amber' | 'red' = 'emerald';
     if (rawAcc === 'deleted') {
-      accountLabel = 'Đã xóa';
+      accountLabel = tr('Đã xóa', 'Deleted');
       accountTone = 'red';
     } else if (rawAcc === 'suspended' || rawAcc === 'locked') {
-      accountLabel = 'Tạm khóa';
+      accountLabel = tr('Tạm khóa', 'Suspended');
       accountTone = 'amber';
     } else if (rawAcc === 'archived') {
-      accountLabel = 'Đã lưu trữ';
+      accountLabel = tr('Đã lưu trữ', 'Archived');
       accountTone = 'amber';
     } else if (rawAcc === 'error' || rawAcc === 'sync_error') {
-      accountLabel = 'Lỗi tài khoản';
+      accountLabel = tr('Lỗi tài khoản', 'Account error');
       accountTone = 'red';
     } else if (
       rawAcc === 'pending_activation' ||
       (!hasCognito && rawAcc !== 'ready_to_login' && rawAcc !== 'active')
     ) {
-      accountLabel = 'Chờ kích hoạt';
+      accountLabel = tr('Chờ kích hoạt', 'Pending activation');
       accountTone = 'amber';
     }
 
     // 2. Course entitlements sync status
     let coursesLabel =
       entitledCourses.length > 0
-        ? `Đã đồng bộ (${entitledCourses.length} khóa)`
-        : 'Đã đồng bộ (0 khóa)';
+        ? tr(
+            `Đã đồng bộ (${entitledCourses.length} khóa)`,
+            `Synced (${entitledCourses.length} courses)`
+          )
+        : tr('Đã đồng bộ (0 khóa)', 'Synced (0 courses)');
     let coursesTone: 'emerald' | 'amber' | 'red' = 'emerald';
     if (hasSyncErr) {
-      coursesLabel = 'Lỗi đồng bộ';
+      coursesLabel = tr('Lỗi đồng bộ', 'Sync error');
       coursesTone = 'red';
     } else if (isPendingSync && entitledCourses.length > 0) {
-      coursesLabel = 'Chờ đồng bộ';
+      coursesLabel = tr('Chờ đồng bộ', 'Pending sync');
       coursesTone = 'amber';
     }
 
     // 3. Live class sync status
-    let classLabel = 'Chưa xếp lớp';
+    let classLabel = tr('Chưa xếp lớp', 'Unassigned');
     let classTone: 'emerald' | 'amber' | 'red' | 'stone' = 'stone';
     if (currentClassCode) {
       if (isLegacyUnknownClassCode) {
-        classLabel = `Lỗi (Cần kiểm tra mã lớp ${currentClassCode})`;
+        classLabel = tr(
+          `Lỗi (Cần kiểm tra mã lớp ${currentClassCode})`,
+          `Error (Check class ${currentClassCode})`
+        );
         classTone = 'red';
       } else if (hasSyncErr) {
-        classLabel = 'Lỗi đồng bộ';
+        classLabel = tr('Lỗi đồng bộ', 'Sync error');
         classTone = 'red';
       } else if (isPendingSync) {
-        classLabel = `Chờ đồng bộ (${currentClassCode})`;
+        classLabel = tr(
+          `Chờ đồng bộ (${currentClassCode})`,
+          `Pending sync (${currentClassCode})`
+        );
         classTone = 'amber';
       } else {
-        classLabel = `Đã lưu (${currentClassCode})`;
+        classLabel = tr(
+          `Đã lưu (${currentClassCode})`,
+          `Saved (${currentClassCode})`
+        );
         classTone = 'emerald';
       }
     }
@@ -409,6 +426,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     entitledCourses.length,
     currentClassCode,
     isLegacyUnknownClassCode,
+    tr,
   ]);
 
   if (!open || !student) return null;
@@ -608,7 +626,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               className="inline-flex min-h-[34px] items-center gap-1 rounded-xl border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-800 hover:bg-stone-100 sm:hidden"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              <span>Quay lại</span>
+              <span>{tr('Quay lại', 'Back')}</span>
             </button>
 
             <div className="min-w-0">
@@ -639,7 +657,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
           <button
             type="button"
             data-testid="drawer-close-btn"
-            aria-label="Đóng hồ sơ học viên"
+            aria-label={tr('Đóng hồ sơ học viên', 'Close student drawer')}
             onClick={onClose}
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-stone-100"
           >
@@ -660,14 +678,17 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
                 <div>
                   <p className="font-bold text-red-900">
-                    Thao tác chưa hoàn tất — Dữ liệu chưa bị ghi đè
+                    {tr(
+                      'Thao tác chưa hoàn tất — Dữ liệu chưa bị ghi đè',
+                      'Action incomplete — Data was not overwritten'
+                    )}
                   </p>
                   <p className="mt-0.5 text-red-800">{actionError}</p>
                 </div>
               </div>
               <button
                 type="button"
-                aria-label="Đóng thông báo lỗi"
+                aria-label={tr('Đóng thông báo lỗi', 'Dismiss error')}
                 onClick={onClearError}
                 className="rounded-lg p-1 text-red-800 hover:bg-red-100"
               >
@@ -686,7 +707,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
             <div className="flex items-center justify-between gap-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-stone-700">
                 <User className="h-3.5 w-3.5 text-red-800" />
-                <span>A. Thông tin học viên</span>
+                <span>{tr('A. Thông tin học viên', 'A. Student Profile')}</span>
               </h3>
               <button
                 type="button"
@@ -700,7 +721,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 className="inline-flex min-h-[28px] items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-100"
               >
                 <Edit3 className="h-3 w-3" />
-                <span>{isEditingProfile ? 'Đóng sửa' : 'Sửa hồ sơ'}</span>
+                <span>
+                  {isEditingProfile ? tr('Đóng sửa', 'Cancel edit') : tr('Sửa hồ sơ', 'Edit profile')}
+                </span>
               </button>
             </div>
 
@@ -709,7 +732,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               <div className="min-w-0">
                 <p className="flex items-center gap-1 text-[10px] font-bold uppercase text-stone-500">
                   <Mail className="h-3 w-3 text-red-800" />
-                  <span>Email đăng nhập (Định danh tài khoản)</span>
+                  <span>
+                    {tr('Email đăng nhập (Định danh tài khoản)', 'Login Email (Account ID)')}
+                  </span>
                 </p>
                 <p
                   data-testid="drawer-identity-email"
@@ -720,12 +745,12 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               </div>
               <button
                 type="button"
-                aria-label="Sao chép email học viên"
+                aria-label={tr('Sao chép email học viên', 'Copy student email')}
                 onClick={() => onCopyEmail?.(student.email)}
                 className="inline-flex min-h-[28px] shrink-0 items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-100"
               >
                 <Copy className="h-3 w-3" />
-                <span>Sao chép</span>
+                <span>{tr('Sao chép', 'Copy')}</span>
               </button>
             </div>
 
@@ -733,7 +758,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               <div className="mt-2.5 grid grid-cols-2 gap-2.5 text-xs">
                 <div className="rounded-lg bg-stone-50/70 p-2">
                   <span className="block text-[10px] font-semibold text-stone-500">
-                    Họ và tên
+                    {tr('Họ và tên', 'Full name')}
                   </span>
                   <span
                     data-testid="drawer-info-name"
@@ -744,7 +769,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 </div>
                 <div className="rounded-lg bg-stone-50/70 p-2">
                   <span className="block text-[10px] font-semibold text-stone-500">
-                    Mã học viên
+                    {tr('Mã học viên', 'Student code')}
                   </span>
                   <span
                     data-testid="drawer-info-code"
@@ -755,25 +780,25 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 </div>
                 <div className="rounded-lg bg-stone-50/70 p-2">
                   <span className="block text-[10px] font-semibold text-stone-500">
-                    Số điện thoại
+                    {tr('Số điện thoại', 'Phone')}
                   </span>
                   <span
                     data-testid="drawer-info-phone"
                     className="inline-flex items-center gap-1 font-semibold text-stone-800"
                   >
                     <Phone className="h-3 w-3 text-stone-400" />
-                    {student.phone || 'Chưa cập nhật'}
+                    {student.phone || tr('Chưa cập nhật', 'Not updated')}
                   </span>
                 </div>
                 <div className="rounded-lg bg-stone-50/70 p-2">
                   <span className="block text-[10px] font-semibold text-stone-500">
-                    Phụ huynh
+                    {tr('Phụ huynh', 'Parent')}
                   </span>
                   <span
                     data-testid="drawer-info-parent"
                     className="font-semibold text-stone-800"
                   >
-                    {student.parent_name || 'Chưa cập nhật'}
+                    {student.parent_name || tr('Chưa cập nhật', 'Not updated')}
                   </span>
                 </div>
               </div>
@@ -785,7 +810,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               >
                 <div>
                   <label className="block text-[11px] font-bold text-stone-600">
-                    Email đăng nhập (Cố định theo Cognito/izTeach)
+                    {tr(
+                      'Email đăng nhập (Cố định theo Cognito/izTeach)',
+                      'Login Email (Fixed by Cognito/izTeach)'
+                    )}
                   </label>
                   <input
                     type="email"
@@ -799,7 +827,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Họ tên học viên *
+                      {tr('Họ tên học viên *', 'Student name *')}
                     </label>
                     <input
                       type="text"
@@ -812,7 +840,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Số điện thoại
+                      {tr('Số điện thoại', 'Phone')}
                     </label>
                     <input
                       type="tel"
@@ -825,14 +853,14 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-stone-700">
-                      Phụ huynh
+                      {tr('Phụ huynh', 'Parent')}
                     </label>
                     <input
                       type="text"
                       data-testid="drawer-profile-parent-input"
                       value={editParent}
                       onChange={(e) => setEditParent(e.target.value)}
-                      placeholder="Tên phụ huynh"
+                      placeholder={tr('Tên phụ huynh', 'Parent name')}
                       className="mt-1 w-full rounded-lg border border-stone-300 px-2.5 py-1.5 text-xs font-semibold"
                     />
                   </div>
@@ -843,7 +871,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     onClick={() => setIsEditingProfile(false)}
                     className="min-h-[32px] rounded-lg border border-stone-300 px-3 py-1 text-xs font-bold text-stone-700"
                   >
-                    Hủy
+                    {tr('Hủy', 'Cancel')}
                   </button>
                   <button
                     type="submit"
@@ -852,7 +880,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-red-800 px-3 py-1 text-xs font-bold text-white hover:bg-red-900 disabled:opacity-50"
                   >
                     {isUpdatingProfile && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    <span>Lưu thông tin</span>
+                    <span>{tr('Lưu thông tin', 'Save profile')}</span>
                   </button>
                 </div>
               </form>
@@ -869,7 +897,12 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
             <div className="flex items-center justify-between gap-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-stone-700">
                 <BookOpen className="h-3.5 w-3.5 text-emerald-700" />
-                <span>B. Khóa học đã được cấp ({entitledCourses.length})</span>
+                <span>
+                  {tr(
+                    `B. Khóa học đã được cấp (${entitledCourses.length})`,
+                    `B. Granted Courses (${entitledCourses.length})`
+                  )}
+                </span>
               </h3>
               <button
                 type="button"
@@ -885,7 +918,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 className="inline-flex min-h-[26px] items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-bold text-stone-600 hover:bg-stone-100"
               >
                 <Layers className="h-3 w-3" />
-                <span>{showReplaceAllMode ? 'Đóng chế độ thay thế' : 'Thay thế toàn bộ'}</span>
+                <span>
+                  {showReplaceAllMode
+                    ? tr('Đóng chế độ thay thế', 'Close replace mode')
+                    : tr('Thay thế toàn bộ', 'Replace all')}
+                </span>
               </button>
             </div>
 
@@ -899,11 +936,14 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   data-testid="drawer-no-courses-badge"
                   className="rounded-lg border border-dashed border-stone-200 bg-stone-50 px-3 py-2.5 text-xs font-medium text-stone-500"
                 >
-                  Học viên chưa được cấp khóa học trực tuyến nào.
+                  {tr(
+                    'Học viên chưa được cấp khóa học trực tuyến nào.',
+                    'No online courses have been granted yet.'
+                  )}
                 </div>
               ) : (
                 entitledCourses.map((course) => {
-                  const expInfo = computeCourseExpirationInfo(course, getServerNowMs());
+                  const expInfo = computeCourseExpirationInfo(course, getServerNowMs(), lang);
                   const hasExistingLimit = Boolean(course.limitTime || course.expiresAt);
                   const isRenewPanelOpen = activeRenewCourseId === course.id;
                   const statusToneClass =
@@ -939,7 +979,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                               data-testid={`drawer-granted-course-summary-${course.id}`}
                               className="truncate text-xs font-bold text-stone-900"
                             >
-                              {course.displayLabel || course.fullDisplayLabel} · {expInfo.adminCompactText}
+                              {translateCourseTitle(
+                                course.displayLabel || course.fullDisplayLabel,
+                                lang
+                              )}{' '}
+                              · {expInfo.adminCompactText}
                             </p>
                             <span
                               data-testid={`drawer-granted-course-status-${course.id}`}
@@ -950,7 +994,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                           </div>
                           <p className="mt-0.5 font-mono text-[10px] text-stone-500">
                             ID: {course.id}
-                            {expInfo.limitDateYmd ? ` · Hạn: ${expInfo.limitDateYmd}` : ''}
+                            {expInfo.limitDateYmd
+                              ? ` · ${tr('Hạn:', 'Expires:')} ${expInfo.limitDateYmd}`
+                              : ''}
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
@@ -974,7 +1020,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                               }}
                               className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-900 hover:bg-amber-50 disabled:opacity-50"
                             >
-                              <span>Gia hạn</span>
+                              <span>{tr('Gia hạn', 'Renew')}</span>
                             </button>
                           )}
                           <button
@@ -985,7 +1031,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                             className="inline-flex min-h-[30px] shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 hover:bg-red-50 disabled:opacity-50"
                           >
                             <Trash2 className="h-3 w-3" />
-                            <span>Thu hồi</span>
+                            <span>{tr('Thu hồi', 'Revoke')}</span>
                           </button>
                         </div>
                       </div>
@@ -1001,16 +1047,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[11px] font-bold text-stone-700">
-                                    Thời hạn học:
+                                    {tr('Thời hạn học:', 'Access duration:')}
                                   </span>
                                   <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-extrabold text-red-900">
-                                    {formatCourseDurationPresetLabel(renewPreset)}
+                                    {formatCourseDurationPresetLabel(renewPreset, lang)}
                                   </span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                   <div>
                                     <label className="block text-[10px] font-semibold text-stone-600">
-                                      Số lượng (1–365)
+                                      {tr('Số lượng (1–365)', 'Quantity (1–365)')}
                                     </label>
                                     <input
                                       type="number"
@@ -1033,7 +1079,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                                   </div>
                                   <div>
                                     <label className="block text-[10px] font-semibold text-stone-600">
-                                      Đơn vị (Ngày / Tuần / Tháng)
+                                      {tr('Đơn vị (Ngày / Tuần / Tháng)', 'Unit (Day / Week / Month)')}
                                     </label>
                                     <select
                                       data-testid={`drawer-renew-unit-select-${course.id}`}
@@ -1046,7 +1092,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                                       }}
                                       className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800"
                                     >
-                                      {COURSE_DURATION_UNIT_OPTIONS.map((u) => (
+                                      {durationUnitOptions.map((u) => (
                                         <option key={u.id} value={u.id}>
                                           {u.label}
                                         </option>
@@ -1055,7 +1101,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                                   </div>
                                 </div>
                                 <div className="flex flex-wrap gap-1 pt-0.5">
-                                  {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                                  {durationPresetOptions.map((opt) => (
                                     <button
                                       key={opt.id}
                                       type="button"
@@ -1090,7 +1136,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                                     : 'border-stone-200 bg-white text-stone-600'
                                 }`}
                               >
-                                Gia hạn thêm từ hạn hiện tại
+                                {tr('Gia hạn thêm từ hạn hiện tại', 'Extend from current expiry')}
                               </button>
                               <button
                                 type="button"
@@ -1102,7 +1148,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                                     : 'border-stone-200 bg-white text-stone-600'
                                 }`}
                               >
-                                Đặt lại hạn từ hôm nay
+                                {tr('Đặt lại hạn từ hôm nay', 'Reset from today')}
                               </button>
                             </div>
                           )}
@@ -1113,7 +1159,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                               onClick={() => setActiveRenewCourseId(null)}
                               className="rounded-lg border border-stone-200 px-2.5 py-1 text-[11px] font-bold text-stone-600"
                             >
-                              Đóng
+                              {tr('Đóng', 'Close')}
                             </button>
                             <button
                               type="button"
@@ -1125,7 +1171,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                               {isSettingCourseDuration && (
                                 <Loader2 className="h-3 w-3 animate-spin" />
                               )}
-                              <span>Lưu thời hạn</span>
+                              <span>{tr('Lưu thời hạn', 'Save duration')}</span>
                             </button>
                           </div>
                         </div>
@@ -1143,22 +1189,29 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 className="mt-3 rounded-xl border-2 border-red-300 bg-red-50/90 p-3 text-xs text-red-950"
               >
                 <p className="font-bold text-red-900">
-                  Xác nhận thu hồi khóa học:{' '}
-                  <span className="underline">{coursePendingRevokeObj.fullDisplayLabel}</span>?
+                  {tr('Xác nhận thu hồi khóa học:', 'Confirm revoke course:')}{' '}
+                  <span className="underline">
+                    {translateCourseTitle(coursePendingRevokeObj.fullDisplayLabel, lang)}
+                  </span>
+                  ?
                 </p>
                 <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-[11px] text-red-900">
                   <li>
-                    Chỉ thu hồi mã khóa học{' '}
+                    {tr('Chỉ thu hồi mã khóa học', 'Only revokes course ID')}{' '}
                     <code className="font-mono font-bold">{coursePendingRevokeObj.id}</code>.
                   </li>
                   <li>
-                    Lớp học trực tiếp (
-                    <strong>{currentClassCode || 'Chưa xếp lớp'}</strong>) sẽ{' '}
-                    <strong>không thay đổi</strong>.
+                    {tr('Lớp học trực tiếp (', 'Live class (')}
+                    <strong>{currentClassCode || tr('Chưa xếp lớp', 'Unassigned')}</strong>
+                    {tr(') sẽ', ') will' )}{' '}
+                    <strong>{tr('không thay đổi', 'remain unchanged')}</strong>.
                   </li>
                   <li>
-                    Các khóa học khác ({Math.max(0, entitledCourses.length - 1)} khóa) được{' '}
-                    <strong>giữ nguyên</strong>.
+                    {tr(
+                      `Các khóa học khác (${Math.max(0, entitledCourses.length - 1)} khóa) được`,
+                      `Other courses (${Math.max(0, entitledCourses.length - 1)}) will be`
+                    )}{' '}
+                    <strong>{tr('giữ nguyên', 'preserved')}</strong>.
                   </li>
                 </ul>
                 <div className="mt-2.5 flex justify-end gap-2">
@@ -1169,7 +1222,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     onClick={() => setCoursePendingRevokeId(null)}
                     className="min-h-[32px] rounded-lg border border-stone-300 bg-white px-3 py-1 text-xs font-bold text-stone-700"
                   >
-                    Hủy
+                    {tr('Hủy', 'Cancel')}
                   </button>
                   <button
                     type="button"
@@ -1183,7 +1236,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     ) : (
                       <Trash2 className="h-3.5 w-3.5" />
                     )}
-                    <span>Xác nhận thu hồi</span>
+                    <span>{tr('Xác nhận thu hồi', 'Confirm revoke')}</span>
                   </button>
                 </div>
               </div>
@@ -1196,7 +1249,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               className="mt-3.5 space-y-2.5 border-t border-stone-100 pt-3"
             >
               <label className="block text-xs font-bold text-stone-800">
-                Cấp thêm khóa học mới (Không ảnh hưởng lớp học hoặc khóa đã có):
+                {tr(
+                  'Cấp thêm khóa học mới (Không ảnh hưởng lớp học hoặc khóa đã có):',
+                  'Grant additional course(s) (Does not affect class or existing courses):'
+                )}
               </label>
 
               {catalogError ? (
@@ -1206,14 +1262,17 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900"
                 >
                   <span>
-                    Không tải được danh mục khóa học từ izTeach. Hệ thống không dùng khóa demo trong chế độ thật.
+                    {tr(
+                      'Không tải được danh mục khóa học từ izTeach. Hệ thống không dùng khóa demo trong chế độ thật.',
+                      'Unable to load izTeach course catalog. Demo courses are disabled in live mode.'
+                    )}
                   </span>
                   <button
                     type="button"
                     onClick={onRetryCatalog}
                     className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-red-800"
                   >
-                    Thử lại
+                    {tr('Thử lại', 'Retry')}
                   </button>
                 </div>
               ) : (
@@ -1221,14 +1280,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   {/* Neutral Course Select Dropdown */}
                   <div>
                     <select
-                      aria-label="Chọn khóa học cần cấp"
+                      aria-label={tr('Chọn khóa học cần cấp', 'Select course to grant')}
                       data-testid="drawer-course-select"
                       value={courseDropdownId}
                       disabled={catalogLoading}
                       onChange={(e) => handleDropdownCourseChange(e.target.value)}
                       className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
                     >
-                      <option value="">— Chưa chọn khóa học —</option>
+                      <option value="">
+                        {tr('— Chưa chọn khóa học —', '— Select course —')}
+                      </option>
                       {disambiguatedCatalog.map((course) => {
                         const alreadyHas = entitledIdSet.has(course.id);
                         return (
@@ -1237,8 +1298,8 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                             value={course.id}
                             disabled={alreadyHas}
                           >
-                            {course.fullDisplayLabel} ({course.code})
-                            {alreadyHas ? ' — Đã cấp' : ''}
+                            {translateCourseTitle(course.fullDisplayLabel, lang)} ({course.code})
+                            {alreadyHas ? tr(' — Đã cấp', ' — Granted') : ''}
                           </option>
                         );
                       })}
@@ -1254,7 +1315,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                         data-testid="drawer-course-search-input"
                         value={courseSearchQuery}
                         onChange={(e) => setCourseSearchQuery(e.target.value)}
-                        placeholder="Tìm khóa học trong catalog (tên, mã HSK/YCT, ID)..."
+                        placeholder={tr(
+                          'Tìm khóa học trong catalog (tên, mã HSK/YCT, ID)...',
+                          'Search catalog (name, HSK/YCT code, ID)...'
+                        )}
                         className="w-full rounded-lg border border-stone-200 bg-stone-50 py-1.5 pl-8 pr-2.5 text-xs font-medium text-stone-800 focus:border-red-800 focus:bg-white focus:outline-none"
                       />
                     </div>
@@ -1262,7 +1326,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50/70 p-2">
                       {filteredCatalog.length === 0 ? (
                         <span className="text-[11px] text-stone-500">
-                          Không tìm thấy khóa học phù hợp trong catalog.
+                          {tr(
+                            'Không tìm thấy khóa học phù hợp trong catalog.',
+                            'No matching courses found in catalog.'
+                          )}
                         </span>
                       ) : (
                         filteredCatalog.map((course) => {
@@ -1283,8 +1350,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                                   : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
                               }`}
                             >
-                              <span>{course.displayLabel}</span>
-                              {alreadyHas && <span className="text-[9px]">(Đã có)</span>}
+                              <span>{translateCourseTitle(course.displayLabel, lang)}</span>
+                              {alreadyHas && (
+                                <span className="text-[9px]">{tr('(Đã có)', '(Owned)')}</span>
+                              )}
                             </button>
                           );
                         })
@@ -1302,16 +1371,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-bold text-stone-800">
-                            Thời hạn học:
+                            {tr('Thời hạn học:', 'Access duration:')}
                           </span>
                           <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-extrabold text-red-900">
-                            {formatCourseDurationPresetLabel(grantDurationPreset)}
+                            {formatCourseDurationPresetLabel(grantDurationPreset, lang)}
                           </span>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[10px] font-semibold text-stone-600">
-                              Số lượng (1–365)
+                              {tr('Số lượng (1–365)', 'Quantity (1–365)')}
                             </label>
                             <input
                               type="number"
@@ -1334,7 +1403,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                           </div>
                           <div>
                             <label className="block text-[10px] font-semibold text-stone-600">
-                              Đơn vị (Ngày / Tuần / Tháng)
+                              {tr('Đơn vị (Ngày / Tuần / Tháng)', 'Unit (Day / Week / Month)')}
                             </label>
                             <select
                               data-testid="drawer-grant-duration-unit-select"
@@ -1347,7 +1416,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                               }}
                               className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800"
                             >
-                              {COURSE_DURATION_UNIT_OPTIONS.map((u) => (
+                              {durationUnitOptions.map((u) => (
                                 <option key={u.id} value={u.id}>
                                   {u.label}
                                 </option>
@@ -1356,7 +1425,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-1.5 pt-0.5">
-                          {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                          {durationPresetOptions.map((opt) => (
                             <button
                               key={opt.id}
                               type="button"
@@ -1383,20 +1452,28 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       className="rounded-xl border border-amber-200 bg-amber-50/70 p-2.5 text-xs text-amber-950"
                     >
                       <p className="font-bold text-amber-900">
-                        Xem trước thay đổi (Cấp thêm {selectedCoursesPreview.length} khóa học ·{' '}
-                        {formatCourseDurationPresetLabel(grantDurationPreset)}
+                        {tr(
+                          `Xem trước thay đổi (Cấp thêm ${selectedCoursesPreview.length} khóa học`,
+                          `Preview changes (Grant +${selectedCoursesPreview.length} courses`
+                        )}{' '}
+                        · {formatCourseDurationPresetLabel(grantDurationPreset, lang)}
                         ):
                       </p>
                       <ul className="mt-1 space-y-0.5 text-[11px]">
                         {selectedCoursesPreview.map((c) => (
                           <li key={c.id} className="font-semibold text-emerald-900">
-                            + Thêm: {c.fullDisplayLabel} (
+                            + {tr('Thêm:', 'Add:')} {translateCourseTitle(c.fullDisplayLabel, lang)} (
                             <code className="font-mono text-[10px]">{c.id}</code>)
                           </li>
                         ))}
                         <li className="text-stone-600">
-                          • Giữ nguyên {entitledCourses.length} khóa học hiện có & Lớp trực tiếp:{' '}
-                          <strong>{currentClassCode || 'Chưa xếp lớp'}</strong> (không đổi)
+                          •{' '}
+                          {tr(
+                            `Giữ nguyên ${entitledCourses.length} khóa học hiện có & Lớp trực tiếp:`,
+                            `Keep ${entitledCourses.length} existing course(s) & Live Class:`
+                          )}{' '}
+                          <strong>{currentClassCode || tr('Chưa xếp lớp', 'Unassigned')}</strong>{' '}
+                          {tr('(không đổi)', '(unchanged)')}
                         </li>
                       </ul>
                     </div>
@@ -1412,7 +1489,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                         }}
                         className="min-h-[34px] rounded-xl border border-stone-200 px-2.5 py-1 text-xs font-bold text-stone-600"
                       >
-                        Bỏ chọn
+                        {tr('Bỏ chọn', 'Clear')}
                       </button>
                     )}
                     <button
@@ -1428,8 +1505,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       )}
                       <span>
                         {selectedGrantCourseIds.length > 0
-                          ? `Cấp ${selectedGrantCourseIds.length} khóa đã chọn`
-                          : 'Cấp khóa học'}
+                          ? tr(
+                              `Cấp ${selectedGrantCourseIds.length} khóa đã chọn`,
+                              `Grant ${selectedGrantCourseIds.length} selected`
+                            )
+                          : tr('Cấp khóa học', 'Grant course')}
                       </span>
                     </button>
                   </div>
@@ -1446,11 +1526,17 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <p className="font-bold text-amber-950">
-                    Chế độ Thay thế toàn bộ khóa học (Ghi đè danh sách khóa):
+                    {tr(
+                      'Chế độ Thay thế toàn bộ khóa học (Ghi đè danh sách khóa):',
+                      'Replace All Courses Mode (Overwrites course list):'
+                    )}
                   </p>
                 </div>
                 <p className="text-[11px] text-amber-900">
-                  Chọn chính xác các khóa học muốn giữ lại cho học viên. Những khóa bỏ chọn sẽ bị thu hồi. Lớp trực tiếp ({currentClassCode || 'Chưa xếp lớp'}) không bị ảnh hưởng.
+                  {tr(
+                    `Chọn chính xác các khóa học muốn giữ lại cho học viên. Những khóa bỏ chọn sẽ bị thu hồi. Lớp trực tiếp (${currentClassCode || 'Chưa xếp lớp'}) không bị ảnh hưởng.`,
+                    `Select exact courses to keep. Deselected ones will be revoked. Live class (${currentClassCode || 'Unassigned'}) is unaffected.`
+                  )}
                 </p>
                 <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-amber-200 bg-white p-2">
                   {disambiguatedCatalog.map((course) => {
@@ -1474,7 +1560,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                             : 'border border-stone-200 bg-stone-50 text-stone-700'
                         }`}
                       >
-                        {course.displayLabel}
+                        {translateCourseTitle(course.displayLabel, lang)}
                       </button>
                     );
                   })}
@@ -1482,8 +1568,14 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
 
                 <div className="rounded-lg bg-white p-2 text-[11px] text-stone-700">
                   <p>
-                    • Sẽ thêm mới: <strong>{replaceAddedCourses.length} khóa</strong> · Sẽ thu hồi:{' '}
-                    <strong className="text-red-700">{replaceRemovedCourses.length} khóa</strong>
+                    • {tr('Sẽ thêm mới:', 'Will add:')}{' '}
+                    <strong>
+                      {replaceAddedCourses.length} {tr('khóa', 'courses')}
+                    </strong>{' '}
+                    · {tr('Sẽ thu hồi:', 'Will revoke:')}{' '}
+                    <strong className="text-red-700">
+                      {replaceRemovedCourses.length} {tr('khóa', 'courses')}
+                    </strong>
                   </p>
                 </div>
 
@@ -1495,7 +1587,12 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     onChange={(e) => setReplaceConfirmedCheck(e.target.checked)}
                     className="rounded border-amber-400"
                   />
-                  <span>Tôi xác nhận thay thế toàn bộ danh sách khóa học theo lựa chọn trên</span>
+                  <span>
+                    {tr(
+                      'Tôi xác nhận thay thế toàn bộ danh sách khóa học theo lựa chọn trên',
+                      'I confirm replacing the entire course list with this selection'
+                    )}
+                  </span>
                 </label>
 
                 <div className="flex justify-end gap-2">
@@ -1504,7 +1601,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     onClick={() => setShowReplaceAllMode(false)}
                     className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-700"
                   >
-                    Đóng
+                    {tr('Đóng', 'Close')}
                   </button>
                   <button
                     type="submit"
@@ -1513,7 +1610,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-amber-800 px-3 py-1 text-xs font-bold text-white hover:bg-amber-900 disabled:opacity-40"
                   >
                     {isReplacingCourses && <Loader2 className="h-3 w-3 animate-spin" />}
-                    <span>Xác nhận thay thế toàn bộ</span>
+                    <span>{tr('Xác nhận thay thế toàn bộ', 'Confirm replace all')}</span>
                   </button>
                 </div>
               </form>
@@ -1530,7 +1627,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
             <div className="flex items-center justify-between gap-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-stone-700">
                 <GraduationCap className="h-3.5 w-3.5 text-red-800" />
-                <span>C. Lớp học trực tiếp</span>
+                <span>{tr('C. Lớp học trực tiếp', 'C. Live Class')}</span>
               </h3>
               {currentClassCode && !showUnassignConfirm && (
                 <button
@@ -1540,7 +1637,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   onClick={() => setShowUnassignConfirm(true)}
                   className="rounded-lg border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-bold text-stone-600 hover:bg-red-50 hover:text-red-800"
                 >
-                  Bỏ xếp lớp
+                  {tr('Bỏ xếp lớp', 'Unassign class')}
                 </button>
               )}
             </div>
@@ -1550,7 +1647,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="block text-[10px] font-semibold uppercase text-stone-500">
-                    Lớp hiện tại
+                    {tr('Lớp hiện tại', 'Current class')}
                   </span>
                   {currentClassCode ? (
                     <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
@@ -1562,7 +1659,8 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       </span>
                       {matchedClassItem && (
                         <span className="text-xs font-semibold text-stone-800">
-                          {matchedClassItem.name} · GV: {matchedClassItem.teacher_name}
+                          {translateCourseTitle(matchedClassItem.name, lang)} ·{' '}
+                          {tr('GV:', 'Teacher:')} {matchedClassItem.teacher_name}
                         </span>
                       )}
                     </div>
@@ -1571,7 +1669,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       data-testid="drawer-current-class-badge"
                       className="mt-0.5 inline-block text-xs font-bold text-stone-500"
                     >
-                      Chưa xếp lớp
+                      {tr('Chưa xếp lớp', 'Unassigned')}
                     </span>
                   )}
                 </div>
@@ -1587,10 +1685,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
                   <div>
                     <p className="font-bold text-amber-900">
-                      Cần kiểm tra mã lớp ({currentClassCode})
+                      {tr(
+                        `Cần kiểm tra mã lớp (${currentClassCode})`,
+                        `Check class code (${currentClassCode})`
+                      )}
                     </p>
                     <p className="text-amber-800">
-                      Mã lớp hiện tại không nằm trong danh mục lớp đang hoạt động. Hệ thống giữ nguyên dữ liệu cũ và không tự xóa.
+                      {tr(
+                        'Mã lớp hiện tại không nằm trong danh mục lớp đang hoạt động. Hệ thống giữ nguyên dữ liệu cũ và không tự xóa.',
+                        'Current class code is not in active classes. Legacy data is preserved and never auto-deleted.'
+                      )}
                     </p>
                   </div>
                 </div>
@@ -1604,11 +1708,15 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 className="mt-2.5 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950"
               >
                 <p className="font-bold">
-                  Xác nhận bỏ xếp lớp <strong>{currentClassCode}</strong> cho học viên{' '}
+                  {tr('Xác nhận bỏ xếp lớp', 'Confirm removing class')}{' '}
+                  <strong>{currentClassCode}</strong> {tr('cho học viên', 'for student')}{' '}
                   <strong>{student.name}</strong>?
                 </p>
                 <p className="mt-1 text-[11px] text-amber-900">
-                  Danh sách khóa học trực tuyến ({entitledCourses.length} khóa) vẫn được giữ nguyên.
+                  {tr(
+                    `Danh sách khóa học trực tuyến (${entitledCourses.length} khóa) vẫn được giữ nguyên.`,
+                    `Online course entitlements (${entitledCourses.length} courses) remain unchanged.`
+                  )}
                 </p>
                 <div className="mt-2 flex justify-end gap-2">
                   <button
@@ -1616,7 +1724,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     onClick={() => setShowUnassignConfirm(false)}
                     className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-700"
                   >
-                    Hủy
+                    {tr('Hủy', 'Cancel')}
                   </button>
                   <button
                     type="button"
@@ -1626,7 +1734,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     className="inline-flex min-h-[30px] items-center gap-1 rounded-lg bg-red-800 px-3 py-1 text-xs font-bold text-white"
                   >
                     {isAssigningClass && <Loader2 className="h-3 w-3 animate-spin" />}
-                    <span>Xác nhận bỏ xếp lớp</span>
+                    <span>{tr('Xác nhận bỏ xếp lớp', 'Confirm unassign')}</span>
                   </button>
                 </div>
               </div>
@@ -1639,18 +1747,22 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               className="mt-3 space-y-2 border-t border-stone-100 pt-2.5"
             >
               <label className="block text-xs font-bold text-stone-800">
-                {currentClassCode ? 'Chuyển sang lớp khác:' : 'Xếp vào lớp học trực tiếp:'}
+                {currentClassCode
+                  ? tr('Chuyển sang lớp khác:', 'Transfer to another class:')
+                  : tr('Xếp vào lớp học trực tiếp:', 'Assign to live class:')}
               </label>
 
               <div className="flex flex-col gap-2 sm:flex-row">
                 <select
-                  aria-label="Chọn lớp học trực tiếp"
+                  aria-label={tr('Chọn lớp học trực tiếp', 'Select live class')}
                   data-testid="drawer-class-select"
                   value={selectedClassCode}
                   onChange={(e) => setSelectedClassCode(e.target.value)}
                   className="flex-1 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
                 >
-                  <option value="">— Chưa xếp lớp —</option>
+                  <option value="">
+                    {tr('— Chưa xếp lớp —', '— Unassigned —')}
+                  </option>
                   {classesList
                     .filter((cls) => cls.active !== false)
                     .map((cls) => (
@@ -1659,9 +1771,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                         value={cls.id}
                         disabled={cls.id.toUpperCase() === currentClassCode.toUpperCase()}
                       >
-                        {cls.id} · {cls.name}
+                        {cls.id} · {translateCourseTitle(cls.name, lang)}
                         {cls.id.toUpperCase() === currentClassCode.toUpperCase()
-                          ? ' (Lớp hiện tại)'
+                          ? tr(' (Lớp hiện tại)', ' (Current class)')
                           : ''}
                       </option>
                     ))}
@@ -1682,7 +1794,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   ) : (
                     <GraduationCap className="h-3.5 w-3.5" />
                   )}
-                  <span>{currentClassCode ? 'Chuyển lớp' : 'Xếp lớp'}</span>
+                  <span>
+                    {currentClassCode
+                      ? tr('Chuyển lớp', 'Transfer')
+                      : tr('Xếp lớp', 'Assign')}
+                  </span>
                 </button>
               </div>
 
@@ -1692,9 +1808,14 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     data-testid="drawer-class-change-preview"
                     className="rounded-lg bg-stone-100 px-2.5 py-1.5 text-[11px] font-medium text-stone-700"
                   >
-                    Xác nhận chuyển lớp:{' '}
-                    <strong>{currentClassCode || 'Chưa xếp lớp'}</strong> →{' '}
-                    <strong className="text-red-900">{selectedClassCode}</strong>. Quyền khóa học video ({entitledCourses.length} khóa) <strong>không thay đổi</strong>.
+                    {tr('Xác nhận chuyển lớp:', 'Confirm class transfer:')}{' '}
+                    <strong>{currentClassCode || tr('Chưa xếp lớp', 'Unassigned')}</strong> →{' '}
+                    <strong className="text-red-900">{selectedClassCode}</strong>.{' '}
+                    {tr(
+                      `Quyền khóa học video (${entitledCourses.length} khóa)`,
+                      `Video course entitlements (${entitledCourses.length} courses)`
+                    )}{' '}
+                    <strong>{tr('không thay đổi', 'remain unchanged')}</strong>.
                   </p>
                 )}
             </form>
@@ -1710,7 +1831,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
             <div className="flex items-center justify-between gap-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-stone-700">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" />
-                <span>D. Trạng thái tài khoản & đồng bộ</span>
+                <span>
+                  {tr('D. Trạng thái tài khoản & đồng bộ', 'D. Account & Sync Status')}
+                </span>
               </h3>
               <button
                 type="button"
@@ -1726,7 +1849,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 <RefreshCw
                   className={`h-3 w-3 ${isResyncing ? 'animate-spin' : ''}`}
                 />
-                <span>Đồng bộ lại</span>
+                <span>{tr('Đồng bộ lại', 'Re-sync')}</span>
               </button>
             </div>
 
@@ -1734,7 +1857,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               {/* 1. Account Login Status */}
               <div className="rounded-lg border border-stone-200/80 bg-stone-50/70 p-2.5">
                 <span className="block text-[10px] font-semibold text-stone-500">
-                  Tài khoản đăng nhập
+                  {tr('Tài khoản đăng nhập', 'Login Account')}
                 </span>
                 <span
                   data-testid="drawer-status-account"
@@ -1758,7 +1881,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               {/* 2. Course Entitlements Sync Status */}
               <div className="rounded-lg border border-stone-200/80 bg-stone-50/70 p-2.5">
                 <span className="block text-[10px] font-semibold text-stone-500">
-                  Quyền khóa học
+                  {tr('Quyền khóa học', 'Course Access')}
                 </span>
                 <span
                   data-testid="drawer-status-courses"
@@ -1782,7 +1905,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               {/* 3. Live Class Sync Status */}
               <div className="rounded-lg border border-stone-200/80 bg-stone-50/70 p-2.5">
                 <span className="block text-[10px] font-semibold text-stone-500">
-                  Lớp học trực tiếp
+                  {tr('Lớp học trực tiếp', 'Live Class')}
                 </span>
                 <span
                   data-testid="drawer-status-class"
@@ -1812,7 +1935,8 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 data-testid="drawer-sync-error-detail"
                 className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] text-red-900"
               >
-                Chi tiết lỗi đồng bộ gần nhất: <strong>{student.last_sync_error}</strong>
+                {tr('Chi tiết lỗi đồng bộ gần nhất:', 'Latest sync error detail:')}{' '}
+                <strong>{student.last_sync_error}</strong>
               </p>
             )}
           </section>
@@ -1827,14 +1951,24 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
             <div className="flex items-center justify-between gap-2">
               <h3 className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-stone-700">
                 <KeyRound className="h-3.5 w-3.5 text-red-800" />
-                <span>Đặt lại mật khẩu học viên</span>
+                <span>{tr('Đặt lại mật khẩu học viên', 'Reset Student Password')}</span>
               </h3>
               <span className="rounded-md bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-900">
-                Mặc định: 12345678
+                {tr('Mặc định: 12345678', 'Default: 12345678')}
               </span>
             </div>
             <p className="mt-1 text-[11px] text-stone-600">
-              Cấp lại mật khẩu đăng nhập cho học viên <strong className="font-mono">{student.code || student.email}</strong> (1 chạm về <code className="font-mono font-bold">12345678</code> hoặc nhập mật khẩu tùy chọn tối thiểu 6 ký tự).
+              {tr(
+                'Cấp lại mật khẩu đăng nhập cho học viên',
+                'Reset login password for student'
+              )}{' '}
+              <strong className="font-mono">{student.code || student.email}</strong>{' '}
+              {tr('(1 chạm về', '(1-click reset to')}{' '}
+              <code className="font-mono font-bold">12345678</code>{' '}
+              {tr(
+                'hoặc nhập mật khẩu tùy chọn tối thiểu 6 ký tự).',
+                'or enter a custom password of at least 6 chars).'
+              )}
             </p>
             <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
@@ -1848,7 +1982,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               <button
                 type="button"
                 data-testid="drawer-reset-password-btn"
-                disabled={isResettingPassword || (resetPasswordInput.trim().length > 0 && resetPasswordInput.trim().length < 6)}
+                disabled={
+                  isResettingPassword ||
+                  (resetPasswordInput.trim().length > 0 && resetPasswordInput.trim().length < 6)
+                }
                 onClick={async () => {
                   const targetPwd = resetPasswordInput.trim() || '12345678';
                   setIsResettingPassword(true);
@@ -1863,7 +2000,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       ok: true,
                       message:
                         res.message ||
-                        `Đã đặt lại mật khẩu cho ${student.code || student.email} thành "${targetPwd}".`,
+                        tr(
+                          `Đã đặt lại mật khẩu cho ${student.code || student.email} thành "${targetPwd}".`,
+                          `Password reset for ${student.code || student.email} to "${targetPwd}".`
+                        ),
                     });
                   } catch (err: unknown) {
                     setResetPasswordFeedback({
@@ -1871,7 +2011,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       message:
                         err instanceof Error
                           ? err.message
-                          : 'Không thể đặt lại mật khẩu học viên.',
+                          : tr(
+                              'Không thể đặt lại mật khẩu học viên.',
+                              'Unable to reset student password.'
+                            ),
                     });
                   } finally {
                     setIsResettingPassword(false);
@@ -1886,8 +2029,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 )}
                 <span>
                   {resetPasswordInput.trim() && resetPasswordInput.trim() !== '12345678'
-                    ? `Đặt lại mật khẩu (${resetPasswordInput.trim()})`
-                    : 'Đặt lại mật khẩu (12345678)'}
+                    ? tr(
+                        `Đặt lại mật khẩu (${resetPasswordInput.trim()})`,
+                        `Reset password (${resetPasswordInput.trim()})`
+                      )
+                    : tr('Đặt lại mật khẩu (12345678)', 'Reset password (12345678)')}
                 </span>
               </button>
             </div>
@@ -1916,15 +2062,27 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <h3 className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wide text-stone-700">
                   <Lock className="h-3.5 w-3.5 text-red-800" />
-                  <span>E. Quản lý tài khoản</span>
+                  <span>{tr('E. Quản lý tài khoản', 'E. Account Lifecycle')}</span>
                 </h3>
                 <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-600">
-                  Vòng đời học viên
+                  {tr('Vòng đời học viên', 'Student lifecycle')}
                 </span>
               </div>
 
               <p className="mt-1.5 text-[11px] text-stone-600">
-                Quản lý trạng thái đăng nhập, lưu trữ hồ sơ nghỉ học hoặc xóa có điều kiện. Hệ thống <strong>bảo toàn tuyệt đối dữ liệu đơn hàng (<code className="font-mono">ktn_orders</code>), thanh toán và lịch sử học tập</strong> theo chính sách lưu trữ.
+                {tr(
+                  'Quản lý trạng thái đăng nhập, lưu trữ hồ sơ nghỉ học hoặc xóa có điều kiện. Hệ thống',
+                  'Manage login status, archive inactive profiles, or conditional delete. The system'
+                )}{' '}
+                <strong>
+                  {tr('bảo toàn tuyệt đối dữ liệu đơn hàng (', 'strictly preserves orders (')}
+                  <code className="font-mono">ktn_orders</code>
+                  {tr(
+                    '), thanh toán và lịch sử học tập',
+                    '), payment records, and learning history'
+                  )}
+                </strong>{' '}
+                {tr('theo chính sách lưu trữ.', 'per retention policy.')}
               </p>
 
               {/* Multi-System Sync Status (Supabase / Cognito / izTeach) */}
@@ -1953,8 +2111,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     className="mt-0.5 block font-bold text-stone-800"
                   >
                     {student.cognito_user_id
-                      ? `Đã liên kết (${student.cognito_user_id.slice(0, 8)}…) · Chưa hỗ trợ xóa cứng tự động`
-                      : 'Chưa liên kết Cognito UUID'}
+                      ? tr(
+                          `Đã liên kết (${student.cognito_user_id.slice(0, 8)}…) · Chưa hỗ trợ xóa cứng tự động`,
+                          `Linked (${student.cognito_user_id.slice(0, 8)}…) · No auto hard-delete`
+                        )
+                      : tr('Chưa liên kết Cognito UUID', 'Cognito UUID not linked')}
                   </span>
                 </div>
 
@@ -1967,8 +2128,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     className="mt-0.5 block font-bold text-stone-800"
                   >
                     {student.izteach_student_id || entitledCourses.length > 0
-                      ? `Có dữ liệu (${entitledCourses.length} khóa) · Chỉ chặn đồng bộ ngược, chưa xóa cứng upstream`
-                      : 'Chưa phát sinh khóa học izTeach'}
+                      ? tr(
+                          `Có dữ liệu (${entitledCourses.length} khóa) · Chỉ chặn đồng bộ ngược, chưa xóa cứng upstream`,
+                          `Has data (${entitledCourses.length} courses) · Reverse sync blocked only, no upstream hard-delete`
+                        )
+                      : tr('Chưa phát sinh khóa học izTeach', 'No izTeach courses yet')}
                   </span>
                 </div>
               </div>
@@ -1988,23 +2152,53 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   <p className="font-bold">
                     {lastLifecycleFeedback.action === 'delete' &&
                     !lastLifecycleFeedback.upstreamVerified
-                      ? 'Cảnh báo: Mới xử lý cục bộ trên Supabase — Chưa xác minh xóa tài khoản gốc trên Cognito/izTeach'
-                      : 'Đã cập nhật trạng thái vòng đời học viên'}
+                      ? tr(
+                          'Cảnh báo: Mới xử lý cục bộ trên Supabase — Chưa xác minh xóa tài khoản gốc trên Cognito/izTeach',
+                          'Warning: Processed locally on Supabase — Upstream deletion on Cognito/izTeach not verified'
+                        )
+                      : tr(
+                          'Đã cập nhật trạng thái vòng đời học viên',
+                          'Student lifecycle status updated'
+                        )}
                   </p>
                   <p className="mt-1 text-[11px]">{lastLifecycleFeedback.summaryText}</p>
                   {lastLifecycleFeedback.action === 'delete' && (
                     <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-[11px]">
                       <li>
-                        <strong>Supabase:</strong> Đã chuyển trạng thái <code className="font-mono">deleted</code> & chặn đồng bộ ngược (<code className="font-mono">reverseSyncBlocked: {lastLifecycleFeedback.reverseSyncBlocked ? 'true' : 'false'}</code>).
+                        <strong>Supabase:</strong>{' '}
+                        {tr('Đã chuyển trạng thái', 'Marked')}{' '}
+                        <code className="font-mono">deleted</code>{' '}
+                        {tr('& chặn đồng bộ ngược', '& reverse sync blocked')} (
+                        <code className="font-mono">
+                          reverseSyncBlocked: {lastLifecycleFeedback.reverseSyncBlocked ? 'true' : 'false'}
+                        </code>
+                        ).
                       </li>
                       <li>
                         <strong>Cognito & izTeach:</strong>{' '}
                         {lastLifecycleFeedback.upstreamVerified
-                          ? 'Đã xác minh vô hiệu hóa/xóa trên Cognito và izTeach.'
-                          : 'Chưa xác minh xóa/vô hiệu hóa tài khoản gốc trên Cognito/izTeach (hệ thống không báo xóa thành công toàn cục khi upstream chưa xác nhận).'}
+                          ? tr(
+                              'Đã xác minh vô hiệu hóa/xóa trên Cognito và izTeach.',
+                              'Verified disabled/deleted on Cognito and izTeach.'
+                            )
+                          : tr(
+                              'Chưa xác minh xóa/vô hiệu hóa tài khoản gốc trên Cognito/izTeach (hệ thống không báo xóa thành công toàn cục khi upstream chưa xác nhận).',
+                              'Root account deletion/disablement on Cognito/izTeach unverified (global deletion is not claimed until confirmed upstream).'
+                            )}
                       </li>
                       <li>
-                        <strong>Chính sách lưu trữ:</strong> Dữ liệu đơn hàng (<code className="font-mono">ktn_orders</code>), thanh toán và lịch sử học tập được giữ nguyên (<code className="font-mono">preservedOrders: {lastLifecycleFeedback.preservedOrders ? 'true' : 'false'}</code>).
+                        <strong>{tr('Chính sách lưu trữ:', 'Retention Policy:')}</strong>{' '}
+                        {tr('Dữ liệu đơn hàng (', 'Orders (')}
+                        <code className="font-mono">ktn_orders</code>
+                        {tr(
+                          '), thanh toán và lịch sử học tập được giữ nguyên',
+                          '), payments, and learning history preserved'
+                        )}{' '}
+                        (
+                        <code className="font-mono">
+                          preservedOrders: {lastLifecycleFeedback.preservedOrders ? 'true' : 'false'}
+                        </code>
+                        ).
                       </li>
                     </ul>
                   )}
@@ -2018,12 +2212,14 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   disabled={isManagingLifecycle}
                   onClick={() => {
                     setPendingLifecycleAction('suspend');
-                    setLifecycleReason('Tạm khóa tài khoản học viên');
+                    setLifecycleReason(
+                      tr('Tạm khóa tài khoản học viên', 'Suspend student account')
+                    );
                   }}
                   className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100 disabled:opacity-50"
                 >
                   <Lock className="h-3.5 w-3.5" />
-                  <span>Tạm khóa tài khoản</span>
+                  <span>{tr('Tạm khóa tài khoản', 'Suspend')}</span>
                 </button>
 
                 <button
@@ -2032,12 +2228,17 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   disabled={isManagingLifecycle}
                   onClick={() => {
                     setPendingLifecycleAction('archive');
-                    setLifecycleReason('Học viên đã hoàn thành khóa học / lưu trữ hồ sơ');
+                    setLifecycleReason(
+                      tr(
+                        'Học viên đã hoàn thành khóa học / lưu trữ hồ sơ',
+                        'Student completed course / archive profile'
+                      )
+                    );
                   }}
                   className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl border border-stone-300 bg-stone-100 px-2.5 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-200 disabled:opacity-50"
                 >
                   <Archive className="h-3.5 w-3.5" />
-                  <span>Lưu trữ học viên</span>
+                  <span>{tr('Lưu trữ học viên', 'Archive')}</span>
                 </button>
 
                 <button
@@ -2046,12 +2247,14 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   disabled={isManagingLifecycle}
                   onClick={() => {
                     setPendingLifecycleAction('restore');
-                    setLifecycleReason('Khôi phục hoạt động tài khoản học viên');
+                    setLifecycleReason(
+                      tr('Khôi phục hoạt động tài khoản học viên', 'Restore student account')
+                    );
                   }}
                   className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
-                  <span>Khôi phục</span>
+                  <span>{tr('Khôi phục', 'Restore')}</span>
                 </button>
 
                 <button
@@ -2066,7 +2269,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-xl border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100 disabled:opacity-50"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  <span>Xóa vĩnh viễn có điều kiện</span>
+                  <span>{tr('Xóa vĩnh viễn có điều kiện', 'Conditional Delete')}</span>
                 </button>
               </div>
 
@@ -2081,13 +2284,25 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                 >
                   <p className="font-bold">
                     {pendingLifecycleAction === 'suspend' &&
-                      `Xác nhận TẠM KHÓA tài khoản ${student.name} (${student.email})`}
+                      tr(
+                        `Xác nhận TẠM KHÓA tài khoản ${student.name} (${student.email})`,
+                        `Confirm SUSPEND account ${student.name} (${student.email})`
+                      )}
                     {pendingLifecycleAction === 'archive' &&
-                      `Xác nhận LƯU TRỮ học viên ${student.name} (${student.email})`}
+                      tr(
+                        `Xác nhận LƯU TRỮ học viên ${student.name} (${student.email})`,
+                        `Confirm ARCHIVE student ${student.name} (${student.email})`
+                      )}
                     {pendingLifecycleAction === 'restore' &&
-                      `Xác nhận KHÔI PHỤC tài khoản ${student.name} (${student.email})`}
+                      tr(
+                        `Xác nhận KHÔI PHỤC tài khoản ${student.name} (${student.email})`,
+                        `Confirm RESTORE account ${student.name} (${student.email})`
+                      )}
                     {pendingLifecycleAction === 'delete' &&
-                      `CẢNH BÁO P0: Xóa có điều kiện học viên ${student.name} (${student.email}) — Chưa xóa cứng Cognito/izTeach`}
+                      tr(
+                        `CẢNH BÁO P0: Xóa có điều kiện học viên ${student.name} (${student.email}) — Chưa xóa cứng Cognito/izTeach`,
+                        `P0 WARNING: Conditional delete ${student.name} (${student.email}) — Cognito/izTeach not hard-deleted`
+                      )}
                   </p>
 
                   {pendingLifecycleAction === 'delete' && (
@@ -2096,21 +2311,64 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       className="space-y-1.5 rounded-lg border border-red-200 bg-white/95 p-2.5 text-[11px] text-red-900"
                     >
                       <p className="font-bold text-red-950">
-                        Trạng thái đồng bộ xóa đa hệ thống & Chính sách lưu trữ bắt buộc:
+                        {tr(
+                          'Trạng thái đồng bộ xóa đa hệ thống & Chính sách lưu trữ bắt buộc:',
+                          'Multi-system delete status & mandatory retention policy:'
+                        )}
                       </p>
                       <p>
-                        • <strong>Supabase (<code className="font-mono">ktn_students</code>):</strong> Gỡ bản ghi khỏi danh sách hoạt động và bật cờ chặn đồng bộ ngược (<code className="font-mono">reverseSyncBlocked</code>) để izTeach không tự tạo lại hồ sơ.
+                        • <strong>Supabase (<code className="font-mono">ktn_students</code>):</strong>{' '}
+                        {tr(
+                          'Gỡ bản ghi khỏi danh sách hoạt động và bật cờ chặn đồng bộ ngược (',
+                          'Removes record from active list and enables reverse-sync block ('
+                        )}
+                        <code className="font-mono">reverseSyncBlocked</code>
+                        {tr(
+                          ') để izTeach không tự tạo lại hồ sơ.',
+                          ') so izTeach does not recreate the profile.'
+                        )}
                       </p>
                       <p>
-                        • <strong>Cognito & izTeach Upstream (Chưa nghiệm thu xóa cứng):</strong> Worker hiện <strong>chưa chứng minh xóa/vô hiệu hóa hoàn toàn tài khoản gốc trên Cognito/izTeach</strong>. Hệ thống sẽ ghi nhận trạng thái xóa cục bộ có kiểm soát và không báo cáo gây hiểu lầm là đã xóa sạch trên mọi hệ thống.
+                        •{' '}
+                        <strong>
+                          {tr(
+                            'Cognito & izTeach Upstream (Chưa nghiệm thu xóa cứng):',
+                            'Cognito & izTeach Upstream (Hard-delete unverified):'
+                          )}
+                        </strong>{' '}
+                        {tr('Worker hiện', 'Worker has')}{' '}
+                        <strong>
+                          {tr(
+                            'chưa chứng minh xóa/vô hiệu hóa hoàn toàn tài khoản gốc trên Cognito/izTeach',
+                            'not verified full deletion/disablement on Cognito/izTeach'
+                          )}
+                        </strong>
+                        {tr(
+                          '. Hệ thống sẽ ghi nhận trạng thái xóa cục bộ có kiểm soát và không báo cáo gây hiểu lầm là đã xóa sạch trên mọi hệ thống.',
+                          '. The system records a controlled local deletion without claiming full cross-system wipe.'
+                        )}
                       </p>
                       <p>
-                        • <strong>Bảo toàn dữ liệu tài chính & học tập:</strong> Tài khoản đã có đơn hàng (<code className="font-mono">ktn_orders</code>), lịch sử thanh toán hoặc lịch sử nộp bài/học tập <strong>không được xóa trắng trái chính sách lưu trữ</strong>.
+                        • <strong>{tr('Bảo toàn dữ liệu tài chính & học tập:', 'Financial & learning data retention:')}</strong>{' '}
+                        {tr('Tài khoản đã có đơn hàng (', 'Accounts with orders (')}
+                        <code className="font-mono">ktn_orders</code>
+                        {tr(
+                          '), lịch sử thanh toán hoặc lịch sử nộp bài/học tập',
+                          '), payments, or learning/submission history'
+                        )}{' '}
+                        <strong>
+                          {tr(
+                            'không được xóa trắng trái chính sách lưu trữ',
+                            'cannot be wiped against retention policy'
+                          )}
+                        </strong>
+                        .
                         {(hasExistingOrders || entitledCourses.length > 0 || Boolean(currentClassCode)) && (
                           <span className="mt-1 block rounded bg-amber-100 px-2 py-1 font-bold text-amber-950">
-                            Lưu ý: Học viên này đang có dữ liệu liên kết ({entitledCourses.length} khóa học
-                            {currentClassCode ? `, lớp ${currentClassCode}` : ''}
-                            {hasExistingOrders ? ', có đơn hàng thanh toán' : ''}). Khuyến nghị dùng Tạm khóa hoặc Lưu trữ; không xóa thật trong giai đoạn Pilot.
+                            {tr(
+                              `Lưu ý: Học viên này đang có dữ liệu liên kết (${entitledCourses.length} khóa học${currentClassCode ? `, lớp ${currentClassCode}` : ''}${hasExistingOrders ? ', có đơn hàng thanh toán' : ''}). Khuyến nghị dùng Tạm khóa hoặc Lưu trữ; không xóa thật trong giai đoạn Pilot.`,
+                              `Note: Student has linked data (${entitledCourses.length} courses${currentClassCode ? `, class ${currentClassCode}` : ''}${hasExistingOrders ? ', payment orders' : ''}). Suspend or Archive recommended; avoid real deletion during Pilot.`
+                            )}
                           </span>
                         )}
                       </p>
@@ -2119,14 +2377,21 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
 
                   <div>
                     <label className="block text-[11px] font-bold">
-                      Lý do thực hiện {pendingLifecycleAction === 'delete' ? '* (tối thiểu 3 ký tự)' : ''}:
+                      {tr('Lý do thực hiện', 'Reason')}{' '}
+                      {pendingLifecycleAction === 'delete'
+                        ? tr('* (tối thiểu 3 ký tự)', '* (min 3 chars)')
+                        : ''}
+                      :
                     </label>
                     <input
                       type="text"
                       data-testid="drawer-lifecycle-reason-input"
                       value={lifecycleReason}
                       onChange={(e) => setLifecycleReason(e.target.value)}
-                      placeholder="Nhập lý do (lưu vào nhật ký kiểm toán Quản lý)..."
+                      placeholder={tr(
+                        'Nhập lý do (lưu vào nhật ký kiểm toán Quản lý)...',
+                        'Enter reason (recorded in Admin audit log)...'
+                      )}
                       className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs text-stone-900"
                     />
                   </div>
@@ -2141,7 +2406,10 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                         className="mt-0.5 rounded border-red-400"
                       />
                       <span>
-                        Tôi hiểu rõ thao tác này chỉ xóa/ẩn hồ sơ hoạt động trên Supabase (chưa xóa cứng Cognito/izTeach) và giữ nguyên toàn bộ đơn hàng, thanh toán, lịch sử học tập của {student.email}.
+                        {tr(
+                          `Tôi hiểu rõ thao tác này chỉ xóa/ẩn hồ sơ hoạt động trên Supabase (chưa xóa cứng Cognito/izTeach) và giữ nguyên toàn bộ đơn hàng, thanh toán, lịch sử học tập của ${student.email}.`,
+                          `I understand this only hides/deletes the active profile on Supabase (not Cognito/izTeach) and preserves all orders, payments, and learning history of ${student.email}.`
+                        )}
                       </span>
                     </label>
                   )}
@@ -2156,7 +2424,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       }}
                       className="rounded-lg border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700"
                     >
-                      Hủy
+                      {tr('Hủy', 'Cancel')}
                     </button>
                     <button
                       type="button"
@@ -2209,10 +2477,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                             reverseSyncBlocked,
                             summaryText:
                               actionToRun === 'delete' && !upstreamVerified
-                                ? `Đã gỡ ${student.email} khỏi danh sách hoạt động Supabase và chặn đồng bộ ngược. Chưa xác minh xóa tài khoản gốc trên Cognito/izTeach; dữ liệu đơn hàng & lịch sử học tập vẫn được bảo toàn.`
+                                ? tr(
+                                    `Đã gỡ ${student.email} khỏi danh sách hoạt động Supabase và chặn đồng bộ ngược. Chưa xác minh xóa tài khoản gốc trên Cognito/izTeach; dữ liệu đơn hàng & lịch sử học tập vẫn được bảo toàn.`,
+                                    `Removed ${student.email} from active Supabase list and blocked reverse sync. Root Cognito/izTeach deletion unverified; orders & learning history preserved.`
+                                  )
                                 : typeof res?.message === 'string' && res.message
                                 ? res.message
-                                : `Đã cập nhật trạng thái (${actionToRun}) cho học viên ${student.email}.`,
+                                : tr(
+                                    `Đã cập nhật trạng thái (${actionToRun}) cho học viên ${student.email}.`,
+                                    `Updated status (${actionToRun}) for student ${student.email}.`
+                                  ),
                           });
 
                           setPendingLifecycleAction(null);
@@ -2235,8 +2509,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       )}
                       <span>
                         {pendingLifecycleAction === 'delete'
-                          ? 'Xác nhận xóa có điều kiện (Supabase)'
-                          : 'Xác nhận thực hiện'}
+                          ? tr(
+                              'Xác nhận xóa có điều kiện (Supabase)',
+                              'Confirm conditional delete (Supabase)'
+                            )
+                          : tr('Xác nhận thực hiện', 'Confirm action')}
                       </span>
                     </button>
                   </div>

@@ -3993,11 +3993,30 @@ async function runSuite() {
       timeout: 8000,
     });
     await uTeacherPage.click('[data-testid="teacher-tab-sessions"]');
-    await uTeacherPage.waitForSelector('[data-testid="teacher-session-num-input"]', {
+    await uTeacherPage.waitForSelector('[data-testid="teacher-session-select"]', {
       timeout: 8000,
     });
+    const u3InitialClass = await uTeacherPage.inputValue('[data-testid="teacher-exercise-class-select"]');
+    const u3InitialSession = await uTeacherPage.inputValue('[data-testid="teacher-session-select"]');
     await uTeacherPage.selectOption('[data-testid="teacher-exercise-class-select"]', 'YCT2-04');
-    await uTeacherPage.fill('[data-testid="teacher-session-num-input"]', '2');
+    await uTeacherPage.waitForSelector('[data-testid="teacher-assignments-status-summary"]', {
+      timeout: 5000,
+    });
+    await uTeacherPage
+      .waitForSelector('[data-testid="teacher-saved-session-card-2"]', { timeout: 3000 })
+      .catch(() => null);
+    const u3AfterClassSession = await uTeacherPage.inputValue('[data-testid="teacher-session-select"]');
+    const hasSession2Opt = await uTeacherPage.evaluate(() => {
+      const sel = document.querySelector('[data-testid="teacher-session-select"]');
+      return Boolean(sel && Array.from(sel.options).some((o) => o.value === '2'));
+    });
+    if (hasSession2Opt) {
+      await uTeacherPage.selectOption('[data-testid="teacher-session-select"]', '2');
+    } else {
+      await uTeacherPage.selectOption('[data-testid="teacher-session-select"]', '__new__');
+      await uTeacherPage.waitForSelector('[data-testid="teacher-session-num-input"]', { timeout: 5000 });
+      await uTeacherPage.fill('[data-testid="teacher-session-num-input"]', '2');
+    }
     await uTeacherPage.waitForTimeout(250);
 
     // Ensure "Tạo bài mới" mode so existing Exercise 1 of Session 2 is NOT overwritten
@@ -4145,9 +4164,14 @@ async function runSuite() {
     recordTest(
       'TEST U',
       'U3',
-      'Teacher uploads PDF exercise attachment without overwriting existing exercises, confirms edits, and Student previews/downloads the PDF and submits homework on ClassroomsPage',
+      'Teacher uploads PDF exercise attachment without overwriting existing exercises, confirms edits, keeps class/session unselected on open, hides internal IDs & prefix duplicates, and Student previews/downloads the PDF and submits homework on ClassroomsPage',
       Boolean(
-        savedSession2CardTextAfterAdd?.includes('2 bài tập') &&
+        u3InitialClass === '' &&
+          u3InitialSession === '' &&
+          u3AfterClassSession === '' &&
+          savedSession2CardTextAfterAdd?.includes('2 bài tập') &&
+          !savedSession2CardTextAfterAdd?.includes('Bài 2: Bài 2:') &&
+          !/\(ex[_-]/i.test(String(savedSession2CardTextAfterAdd || '')) &&
           savedSession2CardTextAfterAdd?.includes('1 tệp đính kèm') &&
           studentAttBlockText?.includes('phieu-bai-tap-yct2-buoi2.pdf') &&
           previewModalOpen &&
@@ -4159,6 +4183,135 @@ async function runSuite() {
         previewModalOpen,
         hwStatus202: hwStatus202?.trim(),
       })
+    );
+
+    // =========================================================================
+    // TEST V — MASTER REFACTOR: DESKTOP PWA, CLEAN HOMEWORK UX & SUPPORT CHAT
+    // =========================================================================
+    // V1: Desktop PWA assets served same-origin + Install modal works cleanly
+    const manifestHttp = await fetch(`${baseUrl}/manifest.json`);
+    const manifestJson = await manifestHttp.json();
+    const swHttp = await fetch(`${baseUrl}/sw.js`);
+    const swScriptText = await swHttp.text();
+    const iconChecks = [];
+    for (const iconPath of [
+      '/icons/icon-192.png',
+      '/icons/icon-512.png',
+      '/icons/icon-maskable-512.png',
+      '/icons/apple-touch-icon-180.png',
+    ]) {
+      const iRes = await fetch(`${baseUrl}${iconPath}`);
+      const buf = new Uint8Array(await iRes.arrayBuffer());
+      const isPng =
+        iRes.status === 200 &&
+        buf.length > 100 &&
+        buf[0] === 0x89 &&
+        buf[1] === 0x50 &&
+        buf[2] === 0x4e &&
+        buf[3] === 0x47;
+      iconChecks.push({ iconPath, status: iRes.status, bytes: buf.length, isPng });
+    }
+
+    const pwaCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const pwaPage = await pwaCtx.newPage();
+    await pwaPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await pwaPage.click('[data-testid="quick-login-hoangngan@khongtunhi.com"]');
+    await pwaPage.waitForSelector('[data-testid="header-pwa-install-btn"]', { timeout: 8000 });
+    await pwaPage.click('[data-testid="header-pwa-install-btn"]');
+    await pwaPage.waitForSelector('[data-testid="pwa-install-guide-modal"]', { timeout: 5000 });
+    const pwaModalText = await pwaPage.textContent('[data-testid="pwa-install-guide-modal"]');
+    await pwaCtx.close();
+
+    recordTest(
+      'TEST V',
+      'V1',
+      'Desktop PWA manifest, genuine PNG icons, SW v3, and AppShell install guide modal render cleanly',
+      Boolean(
+        manifestHttp.status === 200 &&
+          manifestJson?.start_url === '/custom-page/so-lien-lac-test' &&
+          manifestJson?.display === 'standalone' &&
+          swHttp.status === 200 &&
+          swScriptText.includes('ktn-pwa-v3') &&
+          iconChecks.every((c) => c.isPng) &&
+          pwaModalText &&
+          (pwaModalText.includes('Windows') || pwaModalText.includes('Edge')) &&
+          pwaModalText.includes('macOS')
+      ),
+      JSON.stringify({ startUrl: manifestJson?.start_url, iconsOk: iconChecks.length })
+    );
+
+    // V2: TeacherWorkspace clean inputs & 390px mobile zero overflow
+    const vTeacherCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const vTeacherPage = await vTeacherCtx.newPage();
+    await vTeacherPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await vTeacherPage.click('[data-testid="quick-login-linh.lam@khongtunhi.com"]');
+    await vTeacherPage.waitForSelector('[data-testid="teacher-home-page"]', { timeout: 8000 });
+    await vTeacherPage.goto(`${baseUrl}/teacher?tab=sessions`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await vTeacherPage.waitForSelector('[data-testid="teacher-exercise-class-select"]', {
+      timeout: 8000,
+    });
+    const vInitialClassVal = await vTeacherPage.inputValue('[data-testid="teacher-exercise-class-select"]');
+    const vInitialSessionSelectVal = await vTeacherPage.inputValue('[data-testid="teacher-session-select"]');
+    await vTeacherPage.selectOption('[data-testid="teacher-exercise-class-select"]', 'YCT2-04');
+    await vTeacherPage.selectOption('[data-testid="teacher-session-select"]', '__new__');
+    await vTeacherPage.waitForSelector('[data-testid="teacher-session-num-input"]', { timeout: 5000 });
+    const vSessionNumVal = await vTeacherPage.inputValue('[data-testid="teacher-session-num-input"]');
+    await vTeacherPage.click('[data-testid="teacher-exercise-mode-create"]');
+    const vTitleVal = await vTeacherPage.inputValue('[data-testid="teacher-exercise-title-input"]');
+    const vPromptVal = await vTeacherPage.inputValue('[data-testid="teacher-exercise-prompt-input"]');
+    const vMobileOverflow = await vTeacherPage.evaluate(
+      () => Math.max(0, document.documentElement.scrollWidth - window.innerWidth)
+    );
+    await vTeacherCtx.close();
+
+    recordTest(
+      'TEST V',
+      'V2',
+      'TeacherWorkspace starts clean with zero prefilled sample data (class/session/title/prompt empty) and zero overflow at 390x844',
+      Boolean(
+        vInitialClassVal === '' &&
+          vInitialSessionSelectVal === '' &&
+          vSessionNumVal === '' &&
+          vTitleVal === '' &&
+          vPromptVal === '' &&
+          vMobileOverflow <= 2
+      ),
+      JSON.stringify({ vInitialClassVal, vInitialSessionSelectVal, vSessionNumVal, vTitleVal, vPromptVal, vMobileOverflow })
+    );
+
+    // V3: Unassigned student direct chat routes to Học vụ Khổng Tử Nhí (never Nhắn riêng Cô)
+    const vUnassignedCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const vUnassignedPage = await vUnassignedCtx.newPage();
+    await vUnassignedPage.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    await vUnassignedPage.click('[data-testid="quick-login-taphong2002vip@gmail.com"]');
+    await vUnassignedPage.waitForSelector('[data-testid="student-dashboard-page"]', {
+      timeout: 8000,
+    });
+    await vUnassignedPage.goto(`${baseUrl}/chat?room=student:taphong2002vip@gmail.com`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await vUnassignedPage.waitForSelector('[data-testid="active-chat-room-title"]', {
+      timeout: 8000,
+    });
+    const supportChatHeader = await vUnassignedPage.textContent(
+      '[data-testid="active-chat-room-title"]'
+    );
+    const supportChatBody = await vUnassignedPage.textContent('body');
+    await vUnassignedCtx.close();
+
+    recordTest(
+      'TEST V',
+      'V3',
+      'Unassigned student 1-1 chat header & copy target Học vụ Khổng Tử Nhí (zero Cô giáo fallback)',
+      Boolean(
+        supportChatHeader &&
+          supportChatHeader.includes('Học vụ Khổng Tử Nhí') &&
+          !supportChatHeader.includes('Nhắn riêng Cô') &&
+          !String(supportChatBody || '').includes('Lão sư Chủ nhiệm')
+      ),
+      `header="${supportChatHeader?.trim()}"`
     );
   } finally {
     await browser.close();

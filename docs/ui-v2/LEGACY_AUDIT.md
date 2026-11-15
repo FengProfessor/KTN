@@ -96,3 +96,31 @@
 3. **Chế độ Kép (Dual Mode — Phân tách minh bạch)**:
    - **Chế độ Dữ liệu thật (Real API Mode)**: Kết nối trực tiếp `/api/ktn/*` (xác thực thật, phân quyền thật, gửi/nhận tin nhắn liên tài khoản thật, mở khóa học & nộp/chấm bài thật).
    - **Chế độ Demo Tương tác (`DEMO MODE`)**: Gắn nhãn `CHẾ ĐỘ DEMO — DỮ LIỆU MÔ PHỎNG` rõ ràng trên thanh trạng thái, cho phép kiểm tra trực quan mọi trạng thái biên (Empty, Sending, Failed, Unread, Image/PDF/Voice, Video Loading/Playing/Paused/Error/Unentitled, Homework Pending/Submitted/Graded) mà tuyệt đối không ghi dữ liệu giả vào lớp thật hay báo thành công giả.
+
+
+---
+
+## 5. BẢNG KIỂM TOÁN LOGIC CŨ & KẾ HOẠCH XỬ LÝ (LEGACY AUDIT MATRIX — SCOPE A6)
+
+| Hạng mục / Nguồn dữ liệu cũ | Vị trí hiện tại | Quyết định | Lý do & Cơ chế thay thế |
+|---|---|---|---|
+| **Fallback lớp mặc định (`'YCT2-04'` / `classes[0]`) trong Live** | `TeacherWorkspace.tsx` (`selectedClassId`), `useAuthStore.ts`, `ktnApiClient.ts` | **REMOVE** *(chỉ giữ trong `isDemoMode`)* | Ngăn giáo viên/học viên bị trỏ nhầm vào lớp không có quyền. Tab Giao bài mở mặc định chưa chọn lớp (`""`) và chưa chọn buổi (`""`). |
+| **Gán mặc định giáo viên `"Cô Lâm Mỹ Linh"` / `"Nhắn riêng Cô"`** | `StudentHome.tsx`, `ChatLayout.tsx`, `cloudflare-worker-sw-proxy.js` (`GET /api/ktn/messages/rooms`) | **REMOVE** | Khi học viên chưa có lớp hoặc lớp chưa có giáo viên hợp lệ, đích 1-1 mặc định chuyển về **Học vụ Khổng Tử Nhí / Trung tâm** (`recipientTargetType: 'support_center'`). |
+| **Suy diễn giáo viên hiện tại từ tác giả tin cuối trong phòng** | `cloudflare-worker-sw-proxy.js` (`student:<email>`) | **REMOVE** | Giữ nguyên tác giả lịch sử trên từng tin nhắn (`sender_name`, `sender_email`), nhưng tiêu đề/quyền nhận phòng luôn lấy từ phân công lớp hiện tại trên Supabase (`ktn_classes` + `ktn_teachers`). |
+| **Chấm điểm / Giao bài mẫu tự điền (`9.5`, `Đã nộp`, `Buổi 1`, prompt mẫu)** | `TeacherWorkspace.tsx`, `ClassroomsPage.tsx` | **REMOVE** | Form giao bài và chấm điểm luôn khởi tạo trống; cho phép yêu cầu làm lại (`revision_requested`) không bắt buộc nhập điểm; tiêu đề hiển thị sạch, ẩn hoàn toàn internal ID (`ex_...`) và lọc trùng `Bài N:`. |
+| **Nhân bản thông báo mẫu / fallback `localStorage` thành dữ liệu thật** | `NotificationCenter.tsx`, `useNotifications.ts`, `StudentHome.tsx` | **REMOVE** | Chỉ dùng nguồn thật từ `GET /api/ktn/notifications` & `/summary`; các thông báo lớp cũ tự bị loại tại backend lẫn React Query cache khi đổi lớp/gỡ GV. |
+| **Phòng riêng `student:<email>` dùng chung cho cả GV cũ & Trung tâm** | `cloudflare-worker-sw-proxy.js` (`resolveRoomAccess`, `GET /api/ktn/messages/rooms`) | **MIGRATE** | Giữ lại phòng `student:<email>` để bảo toàn lịch sử chat mà không gộp sai nhiều giáo viên. Trạng thái hiện tại dựa trên `recipientTargetType` (`assigned_teacher` vs `support_center`); khi chưa có GV chỉ Admin/Trung tâm được đọc-ghi và nhận push, GV bị gỡ lập tức bị chặn `403`. |
+| **Claim cũ trong session/JWT (`classCode`, `assignedClasses`) & `ktn_teachers.assigned_classes`** | `cloudflare-worker-sw-proxy.js` (`extractSessionFromRequest` → DB re-check) | **REPLACE** | Mọi endpoint (`/classes`, `/students`, `/homeworks`, `/messages`, `/notifications`, `/class-sessions`, push cron) đối chiếu trực tiếp trạng thái hiện tại trên Supabase (`ktn_students`, `ktn_classes`, `ktn_teachers`); session cũ không còn nâng quyền được. |
+| **Poll `GET /api/ktn/notifications` full mỗi 10–15s trên thanh AppShell** | `AppShell.tsx`, `useNotifications.ts`, `TeacherForumInbox.tsx` | **REPLACE** | AppShell poll nhẹ `/api/ktn/notifications/summary` mỗi 30s (`TeacherForumInbox` tăng lên 20s + `staleTime: 10s`), Worker gộp truy vấn `ktn_dlp_alerts` + scope `classes`/`messages` theo role & cursor. |
+| **Dữ liệu Demo (`DEMO_*` trong `src/mocks/demoData.ts`)** | `StudentHome.tsx`, `TeacherWorkspace.tsx`, `ChatLayout.tsx` | **KEEP (DEMO ONLY)** | Chỉ kích hoạt khi người dùng bật `DEMO MODE` rõ ràng; gắn banner phân biệt và chặn mọi thao tác ghi xuống API thật. |
+| **Trang V1 `index.html`, `sll-hocsinh.html`, `so-lien-lac` (`696f7bb3d8cb3100021fd870`)** | Gốc repo & izTeach Custom Page V1 | **KEEP (ISOLATED)** | Giữ nguyên theo chính sách Strangler Fig và lệnh đóng băng V1; mọi triển khai bản V2 chỉ nhắm tới `/custom-page/so-lien-lac-test` (`6adff7ba36309b0002b6e659`). |
+
+---
+
+## 6. MA TRẬN KIỂM THỬ NGHIỆM THU (`N01–N20`, `H01–H15`, `P01–P12`)
+
+| Bộ kịch bản | Phạm vi kiểm thử | Tự động hóa xác minh | Ghi chú trạng thái |
+|---|---|---|---|
+| **N01–N20 (+N21–N33)** | Chuyển lớp học viên, gỡ giáo viên, Học vụ Trung tâm khi chưa có GV, lọc notification/unread badge, thu hồi phiên 403, pre-dispatch push check, logout/rebind push, PWA assets | `tests/ktn_lifecycle_n01_n20_acceptance.cjs` (N01–N25) & `tests/ktn_class_notification_matrix_n01_n33.cjs` (N01–N33) | Tự động hóa 100% |
+| **H01–H15** | Giao bài tập sạch không tự điền, dropdown chọn buổi + tạo buổi mới + gợi ý buổi kế, upload tệp đa định dạng + Retry lỗi, Draft vs Published, xóa prefix `Bài N:` trùng & ẩn ID thô, sửa không ghi đè + optimistic lock 409, chấm điểm trống + `revision_requested`, responsive 390px | `apps/ktn-web-v2/tests/unit/ktn-master-refactor.test.tsx`, `teacher-notify-and-retry-guard.test.tsx`, `apps/ktn-web-v2/tests/e2e/verify-ui-v2.mjs` (`U3`, `V2`) | Tự động hóa toàn bộ flow web |
+| **P01–P12** | `/manifest.json`, `/sw.js` (`ktn-pwa-v3`), icon PNG thật (192/512/maskable/apple-touch), `usePwaInstall` (`beforeinstallprompt` + `appinstalled` + hướng dẫn Windows/macOS), VAPID subscribe/unsubscribe/logout cleanup, `push` payload & deep-link click | `ktn_lifecycle_n01_n20_acceptance.cjs` (`N17–N20`, `N24`), `ktn-master-refactor.test.tsx` (`P01, P10–P12`), `verify-ui-v2.mjs` (`V1`) | OS-level system toast Windows Action Center / macOS Notification Center **chưa thể tự động hóa trong Linux/headless runner (Manual QA required)** |

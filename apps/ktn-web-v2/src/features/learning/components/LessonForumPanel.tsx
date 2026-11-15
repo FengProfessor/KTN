@@ -26,6 +26,7 @@ import { ktnApi, KtnApiError, resolveUploadedMediaUrl } from '@/services/api/ktn
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { formatRelativeTimeVi } from '@/lib/utils';
+import { useI18n, translateRoleLabel } from '@/i18n';
 import {
   detectAttachmentKind,
   normalizeForumAttachmentRecord,
@@ -90,6 +91,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
   onSeekVideoTimestamp,
   onSeekToTimestamp,
 }) => {
+  const { lang, tr } = useI18n();
   const queryClient = useQueryClient();
   const storeUser = useAuthStore((s) => s.user);
   const user = storeUser || _currentUser || null;
@@ -149,7 +151,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
     string | null
   >(null);
 
-  // Auto-open ask form when user clicks "Hỏi về đoạn này" on the video player
+  // Auto-open ask form when user clicks "Ask at this time" / "Hỏi về đoạn này" on the video player
   useEffect(() => {
     if (
       initialTimestampSeconds !== null &&
@@ -161,15 +163,23 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       setShowAskForm(true);
       setTimestampInput(formatted);
       setQuestionTitle((prev) =>
-        prev.trim() ? prev : `Thắc mắc tại đoạn ${formatted} — Bài ${lessonNumber}`
+        prev.trim()
+          ? prev
+          : tr(
+              `Thắc mắc tại đoạn ${formatted} — Bài ${lessonNumber}`,
+              `Question at ${formatted} — Lesson ${lessonNumber}`
+            )
       );
       setQuestionContent((prev) =>
         prev.trim()
           ? prev
-          : `Em chưa hiểu rõ nội dung ở đoạn ${formatted} của video bài học. Nhờ thầy cô giải thích giúp em ạ!`
+          : tr(
+              `Em chưa hiểu rõ nội dung ở đoạn ${formatted} của video bài học. Nhờ thầy cô giải thích giúp em ạ!`,
+              `I didn't quite understand the part at ${formatted} in this lesson video. Could a teacher please explain it?`
+            )
       );
     }
-  }, [initialTimestampSeconds, lessonNumber]);
+  }, [initialTimestampSeconds, lessonNumber, tr]);
 
   useEffect(() => {
     if (highlightQuestionId) {
@@ -177,7 +187,15 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
     }
   }, [highlightQuestionId]);
 
-  const forumQueryKey = ['ktn-lesson-forum', courseId, unitId, statusFilter, searchQuery, isDemoMode];
+  const forumQueryKey = [
+    'ktn-lesson-forum',
+    courseId,
+    unitId,
+    statusFilter,
+    searchQuery,
+    isDemoMode,
+    isDemoMode ? lang : 'live',
+  ];
 
   const questionsQuery = useQuery({
     queryKey: forumQueryKey,
@@ -196,10 +214,15 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
               lesson_number: lessonNumber,
               lesson_title_snapshot: lessonTitle,
               student_id: 'KTN-STU-01',
-              student_name: 'Bé Hoàng Ngân',
-              title: `Cách phát âm thanh điệu trong Bài ${lessonNumber}`,
-              content:
+              student_name: tr('Bé Hoàng Ngân', 'Hoang Ngan'),
+              title: tr(
+                `Cách phát âm thanh điệu trong Bài ${lessonNumber}`,
+                `Tone pronunciation in Lesson ${lessonNumber}`
+              ),
+              content: tr(
                 'Cô ơi, ở đoạn 02:15 khi hai thanh 3 đi liền nhau thì mình biến điệu như thế nào cho tự nhiên ạ?',
+                'Teacher, at 02:15 when two 3rd tones appear together, how should we apply tone sandhi naturally?'
+              ),
               video_timestamp_seconds: 135,
               video_timestamp_label: '02:15',
               attachments: [],
@@ -214,11 +237,13 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                 {
                   id: 'demo-fa-1',
                   question_id: `demo-fq-${unitId}`,
-                  author_name: 'Cô Lâm Linh',
+                  author_name: tr('Cô Lâm Linh', 'Ms. Lam Linh'),
                   author_role: 'teacher',
-                  teacher_title: 'Giáo viên',
-                  content:
+                  teacher_title: tr('Giáo viên', 'Teacher'),
+                  content: tr(
                     'Chào Ngân nhé! Khi hai âm tiết mang thanh 3 đứng liền nhau (ví dụ: 你好 nǐ hǎo), âm tiết thứ nhất sẽ đọc thành thanh 2 (ní hǎo) để câu nói mượt mà hơn nhé.',
+                    'Hi Ngan! When two 3rd-tone syllables appear next to each other (e.g., 你好 nǐ hǎo), the first syllable changes to a 2nd tone (ní hǎo) so it flows naturally.'
+                  ),
                   attachments: [],
                   video_url: null,
                   video_verified: false,
@@ -333,9 +358,12 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       addToast({
         title:
           mediaCategory === 'video'
-            ? 'Video vượt quá giới hạn 100MB'
-            : 'Tệp đính kèm vượt quá 20MB',
-        description: 'Vui lòng chọn tệp nhẹ hơn để tải lên nhanh hơn.',
+            ? tr('Video vượt quá giới hạn 100MB', 'Video exceeds 100MB limit')
+            : tr('Tệp đính kèm vượt quá 20MB', 'Attachment exceeds 20MB limit'),
+        description: tr(
+          'Vui lòng chọn tệp nhẹ hơn để tải lên nhanh hơn.',
+          'Please choose a smaller file for faster upload.'
+        ),
         variant: 'error',
       });
       return;
@@ -374,14 +402,14 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         ]);
       }
       addToast({
-        title: 'Đã đính kèm tệp vào câu hỏi',
+        title: tr('Đã đính kèm tệp vào câu hỏi', 'File attached to question'),
         description: file.name,
         variant: 'success',
       });
     } catch (err) {
       addToast({
-        title: 'Chưa tải được tệp đính kèm',
-        description: err instanceof Error ? err.message : 'Vui lòng thử lại.',
+        title: tr('Chưa tải được tệp đính kèm', 'Failed to upload attachment'),
+        description: err instanceof Error ? err.message : tr('Vui lòng thử lại.', 'Please try again.'),
         variant: 'error',
       });
     } finally {
@@ -394,7 +422,12 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       const cleanTitle = questionTitle.trim();
       const cleanContent = questionContent.trim();
       if (cleanTitle.length < 3 || cleanContent.length < 5) {
-        throw new Error('Vui lòng nhập tiêu đề ngắn và nội dung câu hỏi chi tiết (tối thiểu 5 ký tự).');
+        throw new Error(
+          tr(
+            'Vui lòng nhập tiêu đề ngắn và nội dung câu hỏi chi tiết (tối thiểu 5 ký tự).',
+            'Please enter a short title and detailed question (min 5 characters).'
+          )
+        );
       }
       const parsedSec = parseTimestampToSeconds(timestampInput);
       const normalizedAttachments = questionAttachments.map((att, idx) =>
@@ -422,7 +455,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
           lesson_number: lessonNumber,
           lesson_title_snapshot: lessonTitle,
           student_id: user?.id || 'KTN-STU-DEMO',
-          student_name: user?.name || 'Học viên',
+          student_name: user?.name || tr('Học viên', 'Student'),
           student_email: user?.email || 'student@khongtunhi.com',
           title: cleanTitle,
           content: cleanContent,
@@ -490,15 +523,18 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       setExpandedQuestionId(normalizedCreated.id);
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
       addToast({
-        title: 'Đã gửi câu hỏi thành công!',
-        description: 'Tất cả giáo viên đang hoạt động đã nhận được thông báo để hỗ trợ em.',
+        title: tr('Đã gửi câu hỏi thành công!', 'Question posted!'),
+        description: tr(
+          'Tất cả giáo viên đang hoạt động đã nhận được thông báo để hỗ trợ em.',
+          'Active teachers have been notified to help answer your question.'
+        ),
         variant: 'success',
       });
     },
     onError: (err) => {
       addToast({
-        title: 'Không thể gửi câu hỏi',
-        description: err instanceof Error ? err.message : 'Vui lòng thử lại.',
+        title: tr('Không thể gửi câu hỏi', 'Could not post question'),
+        description: err instanceof Error ? err.message : tr('Vui lòng thử lại.', 'Please try again.'),
         variant: 'error',
       });
     },
@@ -514,8 +550,11 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
 
     if (file.size > 100 * 1024 * 1024) {
       addToast({
-        title: 'Video vượt quá dung lượng cho phép',
-        description: 'Vui lòng chọn video hướng dẫn tối đa 100MB (MP4/MOV/WebM).',
+        title: tr('Video vượt quá dung lượng cho phép', 'Video exceeds size limit'),
+        description: tr(
+          'Vui lòng chọn video hướng dẫn tối đa 100MB (MP4/MOV/WebM).',
+          'Please choose a guidance video up to 100MB (MP4/MOV/WebM).'
+        ),
         variant: 'error',
       });
       return;
@@ -552,14 +591,20 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         }));
       }
       addToast({
-        title: 'Đã tải lên video hướng dẫn!',
-        description: `${file.name} đã sẵn sàng đính kèm (+5 điểm đóng góp khi gửi câu trả lời).`,
+        title: tr('Đã tải lên video hướng dẫn!', 'Guidance video uploaded!'),
+        description: tr(
+          `${file.name} đã sẵn sàng đính kèm (+5 điểm đóng góp khi gửi câu trả lời).`,
+          `${file.name} is ready to attach (+5 contribution points upon submitting answer).`
+        ),
         variant: 'success',
       });
     } catch (err) {
       addToast({
-        title: 'Tải video hướng dẫn thất bại',
-        description: err instanceof Error ? err.message : 'Vui lòng kiểm tra mạng và thử lại.',
+        title: tr('Tải video hướng dẫn thất bại', 'Guidance video upload failed'),
+        description:
+          err instanceof Error
+            ? err.message
+            : tr('Vui lòng kiểm tra mạng và thử lại.', 'Please check your connection and try again.'),
         variant: 'error',
       });
     } finally {
@@ -581,9 +626,12 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       addToast({
         title:
           mediaCategory === 'video'
-            ? 'Video vượt quá giới hạn 100MB'
-            : 'Tệp đính kèm vượt quá 20MB',
-        description: 'Vui lòng chọn tệp nhẹ hơn để tải lên nhanh hơn.',
+            ? tr('Video vượt quá giới hạn 100MB', 'Video exceeds 100MB limit')
+            : tr('Tệp đính kèm vượt quá 20MB', 'Attachment exceeds 20MB limit'),
+        description: tr(
+          'Vui lòng chọn tệp nhẹ hơn để tải lên nhanh hơn.',
+          'Please choose a smaller file for faster upload.'
+        ),
         variant: 'error',
       });
       return;
@@ -629,8 +677,8 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       }
     } catch (err) {
       addToast({
-        title: 'Chưa tải được tệp minh họa',
-        description: err instanceof Error ? err.message : 'Vui lòng thử lại.',
+        title: tr('Chưa tải được tệp minh họa', 'Failed to upload attachment'),
+        description: err instanceof Error ? err.message : tr('Vui lòng thử lại.', 'Please try again.'),
         variant: 'error',
       });
     } finally {
@@ -646,12 +694,19 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         normalizeForumAttachmentRecord(att, idx)
       );
       if (text.length < 2 && !vid && atts.length === 0) {
-        throw new Error('Vui lòng nhập nội dung giải đáp hoặc đính kèm video/tệp hướng dẫn.');
+        throw new Error(
+          tr(
+            'Vui lòng nhập nội dung giải đáp hoặc đính kèm video/tệp hướng dẫn.',
+            'Please enter an explanation or attach a guidance video/file.'
+          )
+        );
       }
 
       const finalContent =
         text ||
-        (vid ? `Video hướng dẫn chi tiết (${vid.fileName})` : 'Hình ảnh/âm thanh/video hướng dẫn');
+        (vid
+          ? tr(`Video hướng dẫn chi tiết (${vid.fileName})`, `Detailed guidance video (${vid.fileName})`)
+          : tr('Hình ảnh/âm thanh/video hướng dẫn', 'Guidance image/audio/video'));
       const sig = `${questionId}|${finalContent}|${vid?.url || ''}|${atts.length}`;
       if (
         !answerRequestRef.current[questionId] ||
@@ -674,9 +729,11 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
           answer: normalizeForumAnswerRecord({
             id: `demo-fa-${Date.now()}`,
             question_id: questionId,
-            author_name: user?.name || (isTeacherOrAdmin ? 'Giáo viên KTN' : 'Học viên'),
+            author_name:
+              user?.name ||
+              (isTeacherOrAdmin ? tr('Giáo viên KTN', 'KTN Teacher') : tr('Học viên', 'Student')),
             author_role: (user?.role as any) || 'teacher',
-            teacher_title: isTeacherOrAdmin ? 'Giáo viên hướng dẫn' : undefined,
+            teacher_title: isTeacherOrAdmin ? tr('Giáo viên hướng dẫn', 'Instructor') : undefined,
             content: finalContent,
             attachments: atts,
             video_url: vid?.url || null,
@@ -712,14 +769,16 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         res?.answer || {
           id: `ans-${Date.now()}`,
           question_id: questionId,
-          author_name: user?.name || (isTeacherOrAdmin ? 'Giáo viên KTN' : 'Học viên'),
+          author_name:
+            user?.name ||
+            (isTeacherOrAdmin ? tr('Giáo viên KTN', 'KTN Teacher') : tr('Học viên', 'Student')),
           author_role: user?.role || 'teacher',
-          teacher_title: isTeacherOrAdmin ? 'Giáo viên hướng dẫn' : undefined,
+          teacher_title: isTeacherOrAdmin ? tr('Giáo viên hướng dẫn', 'Instructor') : undefined,
           content:
             text ||
             (vid
-              ? `Video hướng dẫn chi tiết (${vid.fileName})`
-              : 'Hình ảnh/âm thanh/video hướng dẫn'),
+              ? tr(`Video hướng dẫn chi tiết (${vid.fileName})`, `Detailed guidance video (${vid.fileName})`)
+              : tr('Hình ảnh/âm thanh/video hướng dẫn', 'Guidance image/audio/video')),
           attachments: atts,
           video_url: vid?.url || null,
           video_verified: Boolean(vid?.url),
@@ -758,19 +817,28 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       addToast({
         title:
           points > 0
-            ? `Đã gửi giải đáp (+${points} điểm đóng góp)!`
-            : 'Đã gửi phản hồi thành công!',
+            ? tr(
+                `Đã gửi giải đáp (+${points} điểm đóng góp)!`,
+                `Answer posted (+${points} contribution pts)!`
+              )
+            : tr('Đã gửi phản hồi thành công!', 'Reply posted!'),
         description:
           points > 0
-            ? 'Điểm đóng góp được ghi nhận đánh giá chuyên môn (không tự quy đổi thành lương).'
-            : 'Phản hồi đã được hiển thị trong bài học.',
+            ? tr(
+                'Điểm đóng góp được ghi nhận đánh giá chuyên môn (không tự quy đổi thành lương).',
+                'Contribution points recognize academic support (not automatically converted to salary).'
+              )
+            : tr('Phản hồi đã được hiển thị trong bài học.', 'Your reply is now visible in this lesson.'),
         variant: 'success',
       });
     },
     onError: (err) => {
       addToast({
-        title: 'Không thể gửi câu trả lời',
-        description: err instanceof KtnApiError ? err.message : (err as Error)?.message || 'Vui lòng thử lại.',
+        title: tr('Không thể gửi câu trả lời', 'Could not post reply'),
+        description:
+          err instanceof KtnApiError
+            ? err.message
+            : (err as Error)?.message || tr('Vui lòng thử lại.', 'Please try again.'),
         variant: 'error',
       });
     },
@@ -783,7 +851,8 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
           ok: true,
           questionId,
           claimedByEmail: action === 'claim' ? user?.email || 'teacher@khongtunhi.com' : null,
-          claimedByName: action === 'claim' ? user?.name || 'Giáo viên KTN' : null,
+          claimedByName:
+            action === 'claim' ? user?.name || tr('Giáo viên KTN', 'KTN Teacher') : null,
         };
       }
       return ktnApi.claimForumQuestion(questionId, action);
@@ -810,7 +879,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
               ? rawQ?.claimedByTeacherName ||
                 res?.claimedByName ||
                 user?.name ||
-                'Giáo viên KTN'
+                tr('Giáo viên KTN', 'KTN Teacher')
               : null,
         },
       }));
@@ -877,17 +946,26 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       queryClient.invalidateQueries({ queryKey: ['ktn-forum-leaderboard'] });
       addToast({
         title: vars.markAccepted
-          ? 'Đã đánh dấu "Câu trả lời giúp em hiểu bài" 🎉'
+          ? tr(
+              'Đã đánh dấu "Câu trả lời giúp em hiểu bài" 🎉',
+              'Marked as "Helpful Accepted Answer" 🎉'
+            )
           : res.alreadyVoted
-          ? 'Em đã đánh giá hữu ích cho câu trả lời này rồi'
-          : 'Đã cảm ơn thầy/cô (+điểm đóng góp)!',
+          ? tr(
+              'Em đã đánh giá hữu ích cho câu trả lời này rồi',
+              'You already marked this answer as helpful'
+            )
+          : tr(
+              'Đã cảm ơn thầy/cô (+điểm đóng góp)!',
+              'Thanked teacher (+contribution point)!'
+            ),
         variant: 'success',
       });
     },
     onError: (err) => {
       addToast({
-        title: 'Không thể thực hiện đánh giá',
-        description: err instanceof Error ? err.message : 'Vui lòng thử lại.',
+        title: tr('Không thể thực hiện đánh giá', 'Unable to submit vote'),
+        description: err instanceof Error ? err.message : tr('Vui lòng thử lại.', 'Please try again.'),
         variant: 'error',
       });
     },
@@ -931,10 +1009,13 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
       addToast({
         title: nextFollowing
-          ? 'Đang theo dõi câu hỏi này'
-          : 'Đã tắt thông báo cho câu hỏi này',
+          ? tr('Đang theo dõi câu hỏi này', 'Following this question')
+          : tr('Đã tắt thông báo cho câu hỏi này', 'Unfollowed this question'),
         description: nextFollowing
-          ? 'Khi giáo viên trả lời, hệ thống sẽ gửi thông báo trực tiếp cho em.'
+          ? tr(
+              'Khi giáo viên trả lời, hệ thống sẽ gửi thông báo trực tiếp cho em.',
+              'You will be notified directly when a teacher replies.'
+            )
           : undefined,
         variant: 'success',
       });
@@ -968,7 +1049,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       }
       queryClient.invalidateQueries({ queryKey: ['ktn-lesson-forum'] });
       addToast({
-        title: 'Đã cập nhật trạng thái câu hỏi',
+        title: tr('Đã cập nhật trạng thái câu hỏi', 'Question status updated'),
         variant: 'success',
       });
     },
@@ -981,21 +1062,27 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         <div>
           <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-red-900">
             <MessageSquare className="h-3.5 w-3.5 text-red-800" />
-            <span>Diễn đàn hỏi đáp theo bài học</span>
+            <span>{tr('Diễn đàn hỏi đáp theo bài học', 'Lesson Q&A Forum')}</span>
             <span>•</span>
             <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-900">
-              Bài {lessonNumber}: {lessonTitle}
+              {tr(`Bài ${lessonNumber}: ${lessonTitle}`, `Lesson ${lessonNumber}: ${lessonTitle}`)}
             </span>
           </div>
           <p className="mt-0.5 text-xs text-stone-600">
-            Đặt câu hỏi đúng nội dung bài này để đội ngũ giáo viên giải đáp kèm lời giải hoặc video hướng dẫn.
+            {tr(
+              'Đặt câu hỏi đúng nội dung bài này để đội ngũ giáo viên giải đáp kèm lời giải hoặc video hướng dẫn.',
+              'Ask questions specific to this lesson so teachers can respond with explanations or video guides.'
+            )}
           </p>
           {isTeacherOrAdmin && (
             <p
               data-testid="forum-points-policy-notice"
               className="mt-1 text-[11px] font-semibold text-amber-900"
             >
-              Chính sách điểm đóng góp (+5đ trả lời đầu tiên, +5đ video hướng dẫn, +10đ được chấp nhận): dùng để ghi nhận đánh giá chuyên môn, không tự quy đổi thành lương.
+              {tr(
+                'Chính sách điểm đóng góp (+5đ trả lời đầu tiên, +5đ video hướng dẫn, +10đ được chấp nhận): dùng để ghi nhận đánh giá chuyên môn, không tự quy đổi thành lương.',
+                'Contribution points policy (+5 first reply, +5 guidance video, +10 accepted): recognizes teaching quality only, not automatically converted into salary.'
+              )}
             </p>
           )}
         </div>
@@ -1007,7 +1094,11 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
           className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs transition-colors hover:bg-red-900"
         >
           {showAskForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-          <span>{showAskForm ? 'Đóng khung hỏi' : 'Đặt câu hỏi mới'}</span>
+          <span>
+            {showAskForm
+              ? tr('Đóng khung hỏi', 'Close Form')
+              : tr('Đặt câu hỏi mới', 'Ask Question')}
+          </span>
         </button>
       </div>
 
@@ -1019,12 +1110,15 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="font-display text-xs font-bold uppercase tracking-wide text-red-950">
-              Đặt câu hỏi mới cho Bài {lessonNumber} ({lessonTitle})
+              {tr(
+                `Đặt câu hỏi mới cho Bài ${lessonNumber} (${lessonTitle})`,
+                `New Question for Lesson ${lessonNumber} (${lessonTitle})`
+              )}
             </h4>
             {timestampInput && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-900 ring-1 ring-amber-300">
                 <Clock className="h-3 w-3" />
-                Đoạn video: {timestampInput}
+                {tr('Đoạn video:', 'Timestamp:')} {timestampInput}
                 <button
                   type="button"
                   onClick={() => {
@@ -1042,27 +1136,30 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
             <div className="sm:col-span-2">
               <label className="mb-1 block text-[11px] font-bold text-stone-700">
-                Tiêu đề ngắn gọn *
+                {tr('Tiêu đề ngắn gọn *', 'Short Title *')}
               </label>
               <input
                 type="text"
                 data-testid="forum-question-title-input"
                 value={questionTitle}
                 onChange={(e) => setQuestionTitle(e.target.value)}
-                placeholder={`Ví dụ: Thắc mắc cách dùng lượng từ ở Bài ${lessonNumber}...`}
+                placeholder={tr(
+                  `Ví dụ: Thắc mắc cách dùng lượng từ ở Bài ${lessonNumber}...`,
+                  `e.g., Question about measure words in Lesson ${lessonNumber}...`
+                )}
                 className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-hidden"
               />
             </div>
             <div>
               <label className="mb-1 block text-[11px] font-bold text-stone-700">
-                Mốc thời gian video (tùy chọn)
+                {tr('Mốc thời gian video (tùy chọn)', 'Video timestamp (optional)')}
               </label>
               <input
                 type="text"
                 data-testid="forum-question-timestamp-input"
                 value={timestampInput}
                 onChange={(e) => setTimestampInput(e.target.value)}
-                placeholder="Ví dụ: 03:25"
+                placeholder={tr('Ví dụ: 03:25', 'e.g., 03:25')}
                 className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 font-mono text-xs text-stone-900 focus:border-red-800 focus:outline-hidden"
               />
             </div>
@@ -1070,14 +1167,17 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
 
           <div>
             <label className="mb-1 block text-[11px] font-bold text-stone-700">
-              Nội dung câu hỏi chi tiết *
+              {tr('Nội dung câu hỏi chi tiết *', 'Question Details *')}
             </label>
             <textarea
               rows={3}
               data-testid="forum-question-content-input"
               value={questionContent}
               onChange={(e) => setQuestionContent(e.target.value)}
-              placeholder="Mô tả rõ phần từ vựng, ngữ pháp, phát âm hoặc bài tập em chưa hiểu..."
+              placeholder={tr(
+                'Mô tả rõ phần từ vựng, ngữ pháp, phát âm hoặc bài tập em chưa hiểu...',
+                'Describe the vocabulary, grammar, pronunciation, or exercise part you need help with...'
+              )}
               className="w-full rounded-xl border border-stone-300 bg-white p-3 text-xs text-stone-900 focus:border-red-800 focus:outline-hidden"
             />
           </div>
@@ -1120,7 +1220,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                 ) : (
                   <Paperclip className="h-3.5 w-3.5 text-red-800" />
                 )}
-                <span>Đính kèm ảnh chụp / âm thanh / video</span>
+                <span>{tr('Đính kèm ảnh chụp / âm thanh / video', 'Attach image / audio / video')}</span>
                 <input
                   type="file"
                   accept="image/*,audio/*,video/*,.pdf"
@@ -1144,7 +1244,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
               ) : (
                 <Send className="h-3.5 w-3.5" />
               )}
-              <span>Gửi câu hỏi</span>
+              <span>{tr('Gửi câu hỏi', 'Post Question')}</span>
             </button>
           </div>
         </div>
@@ -1159,7 +1259,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
             data-testid="forum-search-input"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm câu hỏi trong bài học này..."
+            placeholder={tr('Tìm câu hỏi trong bài học này...', 'Search questions in this lesson...')}
             className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2 pr-3 pl-8 text-xs text-stone-900 focus:border-red-800 focus:bg-white focus:outline-hidden"
           />
         </div>
@@ -1167,9 +1267,9 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         <div className="flex items-center gap-1">
           {(
             [
-              { id: 'all', label: 'Tất cả' },
-              { id: 'unanswered', label: 'Chưa có trả lời' },
-              { id: 'answered', label: 'Đã giải đáp' },
+              { id: 'all', label: tr('Tất cả', 'All') },
+              { id: 'unanswered', label: tr('Chưa có trả lời', 'Unanswered') },
+              { id: 'answered', label: tr('Đã giải đáp', 'Answered') },
             ] as const
           ).map((f) => (
             <button
@@ -1193,7 +1293,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       {questionsQuery.isLoading ? (
         <div className="flex items-center justify-center rounded-xl border border-stone-200 bg-stone-50 py-8 text-xs text-stone-600">
           <Loader2 className="mr-2 h-4 w-4 animate-spin text-red-800" />
-          Đang tải câu hỏi của bài học...
+          {tr('Đang tải câu hỏi của bài học...', 'Loading lesson questions...')}
         </div>
       ) : questions.length === 0 ? (
         <div
@@ -1202,10 +1302,16 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
         >
           <MessageSquare className="mx-auto h-7 w-7 text-stone-400" />
           <p className="mt-2 text-xs font-bold text-stone-800">
-            Chưa có câu hỏi nào cho Bài {lessonNumber} ({lessonTitle})
+            {tr(
+              `Chưa có câu hỏi nào cho Bài ${lessonNumber} (${lessonTitle})`,
+              `No questions yet for Lesson ${lessonNumber} (${lessonTitle})`
+            )}
           </p>
           <p className="mt-1 text-xs text-stone-500">
-            Nếu em có chỗ nào chưa hiểu trong video hoặc bài tập, hãy bấm &ldquo;Đặt câu hỏi mới&rdquo; hoặc &ldquo;Hỏi về đoạn này&rdquo; trên thanh video nhé!
+            {tr(
+              'Nếu em có chỗ nào chưa hiểu trong video hoặc bài tập, hãy bấm "Đặt câu hỏi mới" hoặc "Hỏi về đoạn này" trên thanh video nhé!',
+              'If anything is unclear in the video or exercises, click "Ask Question" or "Ask at this time" on the video bar!'
+            )}
           </p>
         </div>
       ) : (
@@ -1233,15 +1339,15 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                       {hasAccepted || q.status === 'resolved' ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
                           <CheckCircle2 className="h-3 w-3" />
-                          Đã giải đáp rõ ràng
+                          {tr('Đã giải đáp rõ ràng', 'Resolved')}
                         </span>
                       ) : answers.length > 0 ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
-                          Đã có {answers.length} phản hồi
+                          {tr(`Đã có ${answers.length} phản hồi`, `${answers.length} replies`)}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
-                          Chờ giáo viên giải đáp
+                          {tr('Chờ giáo viên giải đáp', 'Awaiting teacher')}
                         </span>
                       )}
 
@@ -1249,7 +1355,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                         data-testid={`forum-question-lesson-badge-${q.id}`}
                         className="inline-flex items-center rounded-md bg-stone-100 px-2 py-0.5 text-[10.5px] font-semibold text-stone-700"
                       >
-                        Bài {q.lesson_number || lessonNumber}:{' '}
+                        {tr('Bài', 'Lesson')} {q.lesson_number || lessonNumber}:{' '}
                         {q.lesson_title_snapshot || lessonTitle}
                       </span>
 
@@ -1264,11 +1370,14 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                               )
                             }
                             className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 font-mono text-[11px] font-bold text-red-900 ring-1 ring-red-200 hover:bg-red-100"
-                            title="Bấm để tua video bài giảng tới đúng đoạn này"
+                            title={tr(
+                              'Bấm để tua video bài giảng tới đúng đoạn này',
+                              'Click to seek lesson video to this timestamp'
+                            )}
                           >
                             <Play className="h-2.5 w-2.5 fill-red-800 text-red-800" />
                             <span>
-                              Đoạn{' '}
+                              {tr('Đoạn', 'At')}{' '}
                               {q.video_timestamp_label ||
                                 formatSecondsToTimestamp(q.video_timestamp_seconds)}
                             </span>
@@ -1282,7 +1391,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                             className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[10.5px] font-semibold text-purple-800"
                           >
                             <UserCheck className="h-3 w-3" />
-                            {q.claimed_by_name} đang hỗ trợ
+                            {q.claimed_by_name} {tr('đang hỗ trợ', 'is assisting')}
                           </span>
                         )}
                     </div>
@@ -1362,7 +1471,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2.5 text-[11px] text-stone-500">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-stone-700">
-                        Học viên: {q.student_name}
+                        {tr('Học viên:', 'Student:')} {q.student_name}
                       </span>
                       {isTeacherOrAdmin && q.student_email && (
                         <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] text-stone-600">
@@ -1371,7 +1480,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                       )}
                       {isTeacherOrAdmin && q.class_code && (
                         <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                          Lớp {q.class_code}
+                          {tr('Lớp', 'Class')} {q.class_code}
                         </span>
                       )}
                     </div>
@@ -1395,12 +1504,14 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                         {q.isFollowing ? (
                           <>
                             <Bell className="h-3 w-3 text-amber-700" />
-                            <span>Đang theo dõi ({q.followCount || 1})</span>
+                            <span>
+                              {tr('Đang theo dõi', 'Following')} ({q.followCount || 1})
+                            </span>
                           </>
                         ) : (
                           <>
                             <BellOff className="h-3 w-3" />
-                            <span>Theo dõi câu hỏi</span>
+                            <span>{tr('Theo dõi câu hỏi', 'Follow')}</span>
                           </>
                         )}
                       </button>
@@ -1417,7 +1528,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                             className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-bold text-purple-900 hover:bg-purple-100"
                           >
                             <UserCheck className="h-3 w-3" />
-                            <span>Nhận trả lời câu này</span>
+                            <span>{tr('Nhận trả lời câu này', 'Claim')}</span>
                           </button>
                         ) : (
                           <button
@@ -1428,7 +1539,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                             }
                             className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 hover:bg-stone-50"
                           >
-                            <span>Nhường lại</span>
+                            <span>{tr('Nhường lại', 'Release')}</span>
                           </button>
                         ))}
 
@@ -1446,7 +1557,9 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                         >
                           <CheckCircle2 className="h-3 w-3 text-emerald-700" />
                           <span>
-                            {q.status === 'resolved' ? 'Mở lại câu hỏi' : 'Đánh dấu đã giải quyết'}
+                            {q.status === 'resolved'
+                              ? tr('Mở lại câu hỏi', 'Reopen')
+                              : tr('Đánh dấu đã giải quyết', 'Mark Resolved')}
                           </span>
                         </button>
                       )}
@@ -1461,10 +1574,10 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                         <MessageSquare className="h-3 w-3" />
                         <span>
                           {answers.length > 0
-                            ? `${answers.length} câu trả lời`
+                            ? tr(`${answers.length} câu trả lời`, `${answers.length} answers`)
                             : isTeacherOrAdmin
-                            ? 'Trả lời học viên'
-                            : 'Xem / Phản hồi'}
+                            ? tr('Trả lời học viên', 'Reply to Student')
+                            : tr('Xem / Phản hồi', 'View / Reply')}
                         </span>
                       </button>
                     </div>
@@ -1500,19 +1613,21 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                                   {isTeacherAnswer && (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-red-800 px-2 py-0.5 text-[10px] font-bold text-white">
                                       <Award className="h-2.5 w-2.5 text-amber-300" />
-                                      {ans.teacher_title || 'Giáo viên hướng dẫn'}
+                                      {ans.teacher_title
+                                        ? translateRoleLabel(ans.teacher_title, lang)
+                                        : tr('Giáo viên hướng dẫn', 'Instructor')}
                                     </span>
                                   )}
                                   {ans.is_accepted && (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-700 px-2 py-0.5 text-[10px] font-bold text-white">
                                       <CheckCircle2 className="h-2.5 w-2.5" />
-                                      Câu trả lời giúp hiểu bài
+                                      {tr('Câu trả lời giúp hiểu bài', 'Accepted Answer')}
                                     </span>
                                   )}
                                   {ans.video_url && (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                                       <Video className="h-2.5 w-2.5" />
-                                      Có video hướng dẫn
+                                      {tr('Có video hướng dẫn', 'Includes guidance video')}
                                     </span>
                                   )}
                                 </div>
@@ -1616,7 +1731,9 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                                     }`}
                                   >
                                     <ThumbsUp className="h-3 w-3" />
-                                    <span>Hữu ích ({ans.helpful_count || 0})</span>
+                                    <span>
+                                      {tr('Hữu ích', 'Helpful')} ({ans.helpful_count || 0})
+                                    </span>
                                   </button>
 
                                   {(q.isOwnQuestion || user?.role === 'admin') &&
@@ -1636,7 +1753,9 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                                         className="inline-flex min-h-[30px] items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-800"
                                       >
                                         <Sparkles className="h-3 w-3" />
-                                        <span>Câu trả lời giúp em hiểu bài</span>
+                                        <span>
+                                          {tr('Câu trả lời giúp em hiểu bài', 'Mark as Helpful Answer')}
+                                        </span>
                                       </button>
                                     )}
                                 </div>
@@ -1654,7 +1773,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                                     className="inline-flex items-center gap-1 text-[10.5px] text-stone-400 hover:text-red-700"
                                   >
                                     <ShieldAlert className="h-3 w-3" />
-                                    <span>Ẩn</span>
+                                    <span>{tr('Ẩn', 'Hide')}</span>
                                   </button>
                                 )}
                               </div>
@@ -1669,8 +1788,14 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-1">
                         <span className="text-[11px] font-bold text-stone-800">
                           {isTeacherOrAdmin
-                            ? 'Gửi lời giải / Video hướng dẫn cho học viên (+5 điểm trả lời, +5 điểm video hướng dẫn)'
-                            : 'Gửi phản hồi bổ sung cho câu hỏi này'}
+                            ? tr(
+                                'Gửi lời giải / Video hướng dẫn cho học viên (+5 điểm trả lời, +5 điểm video hướng dẫn)',
+                                'Post explanation / Guidance video (+5 reply pts, +5 guidance video pts)'
+                              )
+                            : tr(
+                                'Gửi phản hồi bổ sung cho câu hỏi này',
+                                'Add a follow-up reply to this question'
+                              )}
                         </span>
                       </div>
 
@@ -1686,8 +1811,11 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                         }
                         placeholder={
                           isTeacherOrAdmin
-                            ? 'Nhập lời giải chi tiết cho học viên (tối thiểu 15 ký tự để tính điểm đóng góp)...'
-                            : 'Nhập phản hồi của em...'
+                            ? tr(
+                                'Nhập lời giải chi tiết cho học viên (tối thiểu 15 ký tự để tính điểm đóng góp)...',
+                                'Enter a detailed explanation for the student (min 15 chars for contribution points)...'
+                              )
+                            : tr('Nhập phản hồi của em...', 'Write your reply...')
                         }
                         className="w-full rounded-xl border border-stone-300 bg-stone-50/60 p-2.5 text-xs text-stone-900 focus:border-red-800 focus:bg-white focus:outline-hidden"
                       />
@@ -1698,7 +1826,10 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                           <div className="flex items-center justify-between text-[11px] font-bold text-amber-900">
                             <span className="inline-flex items-center gap-1.5">
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              Đang tải video hướng dẫn lên đám mây...
+                              {tr(
+                                'Đang tải video hướng dẫn lên đám mây...',
+                                'Uploading guidance video...'
+                              )}
                             </span>
                             <span>{uploadPct}%</span>
                           </div>
@@ -1717,7 +1848,10 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                           <div className="flex items-center justify-between">
                             <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-900">
                               <Video className="h-3.5 w-3.5 text-emerald-700" />
-                              Video hướng dẫn đã tải lên: {stagedVideo.fileName} (+5 điểm)
+                              {tr(
+                                `Video hướng dẫn đã tải lên: ${stagedVideo.fileName} (+5 điểm)`,
+                                `Guidance video uploaded: ${stagedVideo.fileName} (+5 pts)`
+                              )}
                             </span>
                             <button
                               type="button"
@@ -1726,7 +1860,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                               }
                               className="text-xs font-bold text-red-700 hover:underline"
                             >
-                              Gỡ video
+                              {tr('Gỡ video', 'Remove video')}
                             </button>
                           </div>
                           <video
@@ -1771,7 +1905,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                           {isTeacherOrAdmin && (
                             <label className="inline-flex min-h-[34px] cursor-pointer items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-950 hover:bg-amber-100">
                               <Video className="h-3.5 w-3.5 text-red-800" />
-                              <span>Tải video hướng dẫn (+5đ)</span>
+                              <span>{tr('Tải video hướng dẫn (+5đ)', 'Guidance Video (+5pt)')}</span>
                               <input
                                 type="file"
                                 accept="video/mp4,video/quicktime,video/webm,video/*"
@@ -1789,7 +1923,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                             ) : (
                               <Paperclip className="h-3.5 w-3.5 text-stone-600" />
                             )}
-                            <span>Ảnh / Âm thanh / Video</span>
+                            <span>{tr('Ảnh / Âm thanh / Video', 'Image / Audio / Video')}</span>
                             <input
                               type="file"
                               accept="image/*,audio/*,video/*,.pdf"
@@ -1816,7 +1950,11 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
                           ) : (
                             <Send className="h-3.5 w-3.5" />
                           )}
-                          <span>{isTeacherOrAdmin ? 'Gửi lời giải' : 'Gửi phản hồi'}</span>
+                          <span>
+                            {isTeacherOrAdmin
+                              ? tr('Gửi lời giải', 'Post Answer')
+                              : tr('Gửi phản hồi', 'Post Reply')}
+                          </span>
                         </button>
                       </div>
                     </div>

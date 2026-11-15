@@ -15,6 +15,8 @@ import {
 } from '@/lib/demoData';
 import { ChatMessage, ChatRoom, PinnedAnnouncement } from '../types/chat.types';
 import type { KtnClassItem } from '@/types/ktn.types';
+import { KtnApiError } from '@/services/api/ktnApiClient';
+import { trStatic, translateScheduleText, useI18n } from '@/i18n';
 
 function reconcileRoomsWithActiveClasses(
   rooms: ChatRoom[],
@@ -59,8 +61,11 @@ function reconcileRoomsWithActiveClasses(
           roomId: `class:${rawCode}`,
           classCode: rawCode,
           className: matchedCls.name,
-          label: `Nhóm Lớp ${rawCode} — ${matchedCls.name}`,
-          shortLabel: `Lớp ${rawCode}`,
+          label: trStatic(
+            `Nhóm Lớp ${rawCode} — ${matchedCls.name}`,
+            `Class Group ${rawCode} — ${translateScheduleText(matchedCls.name, 'en')}`
+          ),
+          shortLabel: trStatic(`Lớp ${rawCode}`, `Class ${rawCode}`),
           teacherName: matchedCls.teacher_name || r.teacherName,
           hasMessages: hasRoomRealMessages(r),
         };
@@ -94,8 +99,11 @@ function reconcileRoomsWithActiveClasses(
         roomId: `class:${code}`,
         classCode: code,
         className: c.name,
-        label: `Nhóm Lớp ${code} — ${c.name}`,
-        shortLabel: `Lớp ${code}`,
+        label: trStatic(
+          `Nhóm Lớp ${code} — ${c.name}`,
+          `Class Group ${code} — ${translateScheduleText(c.name, 'en')}`
+        ),
+        shortLabel: trStatic(`Lớp ${code}`, `Class ${code}`),
         teacherName: c.teacher_name,
         type: 'class',
         unreadCount: 0,
@@ -110,12 +118,18 @@ function reconcileRoomsWithActiveClasses(
   return sortChatRoomsLatestFirst([...filteredRooms, ...extraClassRooms]);
 }
 
-export function useChatRooms() {
+export function useChatRooms(options?: { refetchInterval?: number | false }) {
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
   const effectiveScenario = isDemoMode ? chatDemoScenario : 'live_real';
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
+
+  const effectiveInterval = isDemoMode
+    ? false
+    : options?.refetchInterval !== undefined
+    ? options.refetchInterval
+    : 30000;
 
   const query = useQuery<ChatRoom[]>({
     queryKey: ['chat-rooms', user?.email, isDemoMode, effectiveScenario],
@@ -160,6 +174,10 @@ export function useChatRooms() {
         );
       }
       const res = await chatApi.getRooms();
+      queryClient.setQueryData<ChatRoom | null>(
+        ['chat-private-room-meta', user?.email],
+        res.privateRoom || null
+      );
       const groupRooms =
         user?.role === 'admin' && Array.isArray(activeClasses)
           ? reconcileRoomsWithActiveClasses(res.groupRooms || [], activeClasses, true)
@@ -195,9 +213,9 @@ export function useChatRooms() {
       return sortChatRoomsLatestFirst(all);
     },
     enabled: Boolean(user) || isDemoMode,
-    refetchInterval: isDemoMode ? false : 3500,
+    refetchInterval: effectiveInterval,
     refetchIntervalInBackground: false,
-    staleTime: 1000,
+    staleTime: effectiveInterval === false || Number(effectiveInterval) >= 15000 ? 8000 : 1000,
   });
 
   return query;
@@ -236,6 +254,7 @@ function buildMessagesSignature(list: ChatMessage[]): string {
 const MAX_RETAINED_SERVER_MESSAGES = 1000;
 
 export function useRoomMessages(roomId: string | null) {
+  const { lang } = useI18n();
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const chatDemoScenario = useUiStore((s) => s.chatDemoScenario);
   const effectiveScenario = isDemoMode ? chatDemoScenario : 'live_real';
@@ -323,7 +342,30 @@ export function useRoomMessages(roomId: string | null) {
     refetchInterval: isDemoMode ? false : 3000,
     refetchIntervalInBackground: false,
     staleTime: 1000,
+    retry: (failureCount, err) =>
+      !(err instanceof KtnApiError && (err.status === 401 || err.status === 403 || err.status === 404)) &&
+      failureCount < 2,
   });
+
+  useEffect(() => {
+    const err = query.error;
+    if (
+      err instanceof KtnApiError &&
+      err.status === 403 &&
+      roomId
+    ) {
+      if (roomScopeKey) {
+        delete retainedServerByScopeRef.current[roomScopeKey];
+        delete initialPaginationByScopeRef.current[roomScopeKey];
+      }
+      void useAuthStore.getState().refreshPermissions?.().catch(() => null);
+      queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.removeQueries({ queryKey: ['chat-messages', roomId] });
+    }
+  }, [query.error, roomId, roomScopeKey, queryClient]);
 
   if (roomScopeKey && query.data?.pagination) {
     const existingInit = initialPaginationByScopeRef.current[roomScopeKey];
@@ -376,10 +418,13 @@ export function useRoomMessages(roomId: string | null) {
             room_id: targetRoomId,
             class_code: 'YCT2-04',
             sender_email: 'linh.lam@khongtunhi.com',
-            sender_name: 'Cô Lâm Mỹ Linh',
+            sender_name: trStatic('Cô Lâm Mỹ Linh', 'Ms. Lam My Linh'),
             sender_role: 'teacher',
-            content: 'Chào mừng ba mẹ và các con đến với học kỳ mới lớp YCT2-04! 🎉',
-            reactions: [{ emoji: '❤️', count: 3, users: ['PH Hoàng Ngân'] }],
+            content: trStatic(
+              'Chào mừng ba mẹ và các con đến với học kỳ mới lớp YCT2-04! 🎉',
+              'Welcome parents and students to the new semester of class YCT2-04! 🎉'
+            ),
+            reactions: [{ emoji: '❤️', count: 3, users: [trStatic('PH Hoàng Ngân', 'Parent of Hoang Ngan')] }],
             created_at: '2026-03-01T08:00:00.000Z',
             status: 'seen',
           },
@@ -466,9 +511,13 @@ export function useRoomMessages(roomId: string | null) {
           room_id: roomId,
           class_code: 'YCT2-04',
           sender_email: user?.email || 'hoangngan@khongtunhi.com',
-          sender_name: user?.name || 'Bé Nguyễn Hoàng Ngân',
+          sender_name: user?.name || trStatic('Bé Nguyễn Hoàng Ngân', 'Nguyen Hoang Ngan', lang),
           sender_role: user?.role || 'student',
-          content: 'Con đang gửi thêm bản ghi âm lần 2 cho cô Linh ạ...',
+          content: trStatic(
+            'Con đang gửi thêm bản ghi âm lần 2 cho cô Linh ạ...',
+            'I am sending my 2nd voice recording to Ms. Linh...',
+            lang
+          ),
           created_at: new Date().toISOString(),
           status: 'sending',
         },
@@ -481,12 +530,20 @@ export function useRoomMessages(roomId: string | null) {
           room_id: roomId,
           class_code: 'YCT2-04',
           sender_email: user?.email || 'hoangngan@khongtunhi.com',
-          sender_name: user?.name || 'Bé Nguyễn Hoàng Ngân',
+          sender_name: user?.name || trStatic('Bé Nguyễn Hoàng Ngân', 'Nguyen Hoang Ngan', lang),
           sender_role: user?.role || 'student',
-          content: 'Cô Linh ơi mạng nhà con đang hơi chập chờn ạ!',
+          content: trStatic(
+            'Cô Linh ơi mạng nhà con đang hơi chập chờn ạ!',
+            'Ms. Linh, my home internet connection is a bit unstable!',
+            lang
+          ),
           created_at: new Date().toISOString(),
           status: 'failed',
-          errorMessage: 'Mất kết nối máy chủ. Tin nhắn vẫn được lưu trên thiết bị.',
+          errorMessage: trStatic(
+            'Mất kết nối máy chủ. Tin nhắn vẫn được lưu trên thiết bị.',
+            'Lost connection to server. Message is still saved on this device.',
+            lang
+          ),
         },
       ];
     }
@@ -550,6 +607,7 @@ export function useRoomMessages(roomId: string | null) {
     isDemoMode,
     effectiveScenario,
     user,
+    lang,
   ]);
 
   useEffect(() => {
@@ -591,11 +649,11 @@ export function useRoomMessages(roomId: string | null) {
             hasMessages: true,
             isEphemeral: false,
             lastMessage: latestMsg.replyTo
-              ? `[Trả lời ${latestMsg.replyTo.senderName || 'tin nhắn'}: "${latestMsg.replyTo.content || ''}"]${
+              ? `[Trả lời ${latestMsg.replyTo.senderName || trStatic('tin nhắn', 'message', lang)}: "${latestMsg.replyTo.content || ''}"]${
                   latestMsg.content ? `\n${latestMsg.content}` : ''
                 }`
               : latestMsg.content ||
-                (latestMsg.attachment?.kind === 'image' ? '📷 Hình ảnh' : r.lastMessage),
+                (latestMsg.attachment?.kind === 'image' ? trStatic('📷 Hình ảnh', '📷 Image', lang) : r.lastMessage),
             lastSenderName: latestMsg.sender_name || r.lastSenderName,
             lastSenderRole: latestMsg.sender_role || r.lastSenderRole,
             lastMessageId: latestMsg.id || r.lastMessageId,

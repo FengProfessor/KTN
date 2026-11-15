@@ -27,6 +27,8 @@ import {
   Plus,
   Save,
   AlertTriangle,
+  Upload,
+  RefreshCw,
 } from 'lucide-react';
 import {
   KtnApiError,
@@ -43,6 +45,11 @@ import { DEMO_CLASSES, DEMO_CLASS_SESSIONS, DEMO_COURSES, DEMO_HOMEWORKS } from 
 import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
 import { TeacherForumInbox } from './TeacherForumInbox';
 import {
+  translateCourseTitle,
+  translateScheduleText,
+  useI18n,
+} from '@/i18n';
+import {
   KtnClassItem,
   KtnClassSession,
   KtnCourse,
@@ -57,9 +64,36 @@ export interface TeacherAttachmentUploadItem extends KtnExerciseAttachment {
   progress?: number;
   error?: string;
   controller?: AbortController;
+  rawFile?: File;
 }
 
 const MAX_EXERCISE_ATTACHMENTS = 5;
+
+function formatExerciseDisplayTitle(
+  ex: Pick<KtnSessionExercise, 'num' | 'title'>,
+  fallbackIndex: number,
+  tr: (vi: string, en: string) => string
+): string {
+  const num = Number(ex.num || fallbackIndex + 1) || fallbackIndex + 1;
+  const raw = String(ex.title || '').trim();
+  const cleaned = raw
+    .replace(/^(?:(?:Bài|Ex\.?|Exercise)\s*\d+\s*[:.\-–]\s*)+/i, '')
+    .trim();
+  if (!cleaned) {
+    return raw || `${tr('Bài', 'Ex.')} ${num}`;
+  }
+  return `${tr('Bài', 'Ex.')} ${num}: ${cleaned}`;
+}
+
+function formatSessionShortDate(raw?: string | null): string {
+  if (!raw) return '';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
 
 export interface CreatedStudentSummary {
   name: string;
@@ -75,17 +109,19 @@ export interface CreatedStudentSummary {
 }
 
 export const TeacherWorkspace: React.FC = () => {
+  const { lang, tr } = useI18n();
   const navigate = useNavigate();
   const { section } = useParams<{ section?: string }>();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const refreshPermissions = useAuthStore((s) => s.refreshPermissions);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
   const addToast = useUiStore((s) => s.addToast);
   const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
 
   const [selectedClassId, setSelectedClassId] = useState<string>(
-    () => searchParams.get('class') || searchParams.get('classCode') || user?.classCode || ''
+    () => (searchParams.get('class') || searchParams.get('classCode') || '').trim()
   );
   const [hasManualClassSelection, setHasManualClassSelection] = useState<boolean>(() =>
     Boolean(searchParams.get('class') || searchParams.get('classCode'))
@@ -129,20 +165,31 @@ export const TeacherWorkspace: React.FC = () => {
   const [activeHomeworkId, setActiveHomeworkId] = useState<string | null>(() =>
     searchParams.get('hwId')
   );
-  const [scoreInput, setScoreInput] = useState<string>('9.5');
+  const [scoreInput, setScoreInput] = useState<string>('');
   const [feedbackInput, setFeedbackInput] = useState<string>('');
   const [gradeStatusInput, setGradeStatusInput] = useState<'graded' | 'revision_requested'>('graded');
 
-  const [sessionNum, setSessionNum] = useState<number>(2);
-  const [sessionTitle, setSessionTitle] = useState<string>('Buổi 2: Gia đình của em có mấy người?');
+  const [sessionNum, setSessionNum] = useState<number | null>(() => {
+    const raw = Number(searchParams.get('session'));
+    return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : null;
+  });
+  const [sessionSelectMode, setSessionSelectMode] = useState<'none' | 'existing' | 'create_new'>(
+    () => {
+      const raw = Number(searchParams.get('session'));
+      return Number.isFinite(raw) && raw >= 1 ? 'existing' : 'none';
+    }
+  );
+  const [customSessionNumInput, setCustomSessionNumInput] = useState<string>(() => {
+    const raw = Number(searchParams.get('session'));
+    return Number.isFinite(raw) && raw >= 1 ? String(Math.floor(raw)) : '';
+  });
+  const [sessionTitle, setSessionTitle] = useState<string>('');
+  const [sessionTitleDirty, setSessionTitleDirty] = useState<boolean>(false);
   const [exerciseMode, setExerciseMode] = useState<'create' | 'edit'>('create');
   const [editingExerciseId, setEditingExerciseId] = useState<string>('');
-  const [exerciseTitle, setExerciseTitle] = useState<string>(
-    'Bài tập thu âm: Giới thiệu gia đình của con (45 giây)'
-  );
-  const [exercisePrompt, setExercisePrompt] = useState<string>(
-    'Con hãy cầm bức ảnh gia đình và giới thiệu bằng tiếng Trung gửi vào mục Bài tập nhé!'
-  );
+  const [notifyStudentsOnUpdate, setNotifyStudentsOnUpdate] = useState<boolean>(false);
+  const [exerciseTitle, setExerciseTitle] = useState<string>('');
+  const [exercisePrompt, setExercisePrompt] = useState<string>('');
   const [exerciseSubmissionType, setExerciseSubmissionType] = useState<
     'mixed' | 'file' | 'audio' | 'text'
   >('mixed');
@@ -150,6 +197,7 @@ export const TeacherWorkspace: React.FC = () => {
   const [exerciseAttachments, setExerciseAttachments] = useState<
     TeacherAttachmentUploadItem[]
   >([]);
+  const [isDraggingFiles, setIsDraggingFiles] = useState<boolean>(false);
   const [exerciseAttachmentError, setExerciseAttachmentError] = useState<string | null>(
     null
   );
@@ -220,7 +268,7 @@ export const TeacherWorkspace: React.FC = () => {
     const raw = (isDemoMode ? DEMO_CLASSES : classesQuery.data || []).filter(
       (c) => (c as KtnClassItem & { active?: boolean }).active !== false
     );
-    if (user?.role === 'admin') return raw;
+    if (isDemoMode || user?.role === 'admin') return raw;
     const assignedSet = new Set(
       (user?.assignedClasses || [])
         .map((c) => String(c || '').trim().toUpperCase())
@@ -283,47 +331,72 @@ export const TeacherWorkspace: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (!selectedClassId && classesList.length > 0) {
-      const preferred =
-        (user?.classCode && classesList.find((c) => c.id === user.classCode)?.id) ||
-        classesList[0].id;
-      setSelectedClassId(preferred);
-    } else if (
+    if (
       selectedClassId &&
       classesList.length > 0 &&
       !classesList.some((c) => c.id.toUpperCase() === selectedClassId.toUpperCase())
     ) {
-      setSelectedClassId(classesList[0].id);
+      setSelectedClassId('');
     } else if (selectedClassId && !classesQuery.isLoading && classesList.length === 0) {
       setSelectedClassId('');
     }
-  }, [selectedClassId, classesList, classesQuery.isLoading, user?.classCode]);
+  }, [selectedClassId, classesList, classesQuery.isLoading]);
 
   const effectiveClassId = useMemo(() => {
     if (classesList.length === 0) {
       return classesQuery.isLoading ? selectedClassId : '';
     }
-    const matched = classesList.find(
-      (c) => c.id.toUpperCase() === String(selectedClassId || '').toUpperCase()
-    );
-    return matched ? matched.id : classesList[0].id;
-  }, [classesList, classesQuery.isLoading, selectedClassId]);
+    if (selectedClassId) {
+      const matched = classesList.find(
+        (c) => c.id.toUpperCase() === selectedClassId.toUpperCase()
+      );
+      return matched ? matched.id : '';
+    }
+    if (activeSubTab === 'students' && !hasManualClassSelection) {
+      return (
+        (user?.classCode &&
+          classesList.find((c) => c.id.toUpperCase() === user.classCode!.toUpperCase())?.id) ||
+        classesList[0].id
+      );
+    }
+    return '';
+  }, [
+    classesList,
+    classesQuery.isLoading,
+    selectedClassId,
+    activeSubTab,
+    hasManualClassSelection,
+    user?.classCode,
+  ]);
 
   const prevEffectiveClassIdRef = useRef<string>(effectiveClassId);
   useEffect(() => {
     const prev = prevEffectiveClassIdRef.current;
-    if (prev && effectiveClassId && prev.toUpperCase() !== effectiveClassId.toUpperCase()) {
+    if (prev.toUpperCase() !== effectiveClassId.toUpperCase()) {
+      const urlSessionRaw = Number(searchParams.get('session'));
+      const hasUrlSession =
+        Boolean(searchParams.get('class') || searchParams.get('classCode')) &&
+        Number.isFinite(urlSessionRaw) &&
+        urlSessionRaw >= 1;
+      setSessionNum(hasUrlSession ? Math.floor(urlSessionRaw) : null);
+      setSessionSelectMode(hasUrlSession ? 'existing' : 'none');
+      setCustomSessionNumInput(hasUrlSession ? String(Math.floor(urlSessionRaw)) : '');
+      setSessionTitle('');
+      setSessionTitleDirty(false);
       setExerciseMode('create');
       setEditingExerciseId('');
+      setNotifyStudentsOnUpdate(false);
+      setExerciseTitle('');
+      setExercisePrompt('');
+      setExerciseSubmissionType('mixed');
+      setExerciseDueDate('');
       setExerciseAttachments([]);
       setExerciseAttachmentError(null);
       setConfirmOverwriteOpen(false);
       setPreviewingExerciseAttachment(null);
     }
-    if (effectiveClassId) {
-      prevEffectiveClassIdRef.current = effectiveClassId;
-    }
-  }, [effectiveClassId]);
+    prevEffectiveClassIdRef.current = effectiveClassId;
+  }, [effectiveClassId, searchParams]);
 
   const homeworkClassFilter =
     user?.role === 'teacher' && !hasManualClassSelection
@@ -338,7 +411,8 @@ export const TeacherWorkspace: React.FC = () => {
       return ktnApi.getHomeworks(homeworkClassFilter);
     },
     enabled: Boolean(user) || isDemoMode,
-    refetchInterval: isDemoMode ? false : 3500,
+    refetchInterval: isDemoMode || activeSubTab !== 'grading' ? false : 15000,
+    refetchIntervalInBackground: false,
   });
 
   // 3. Fetch Sessions for Class
@@ -351,6 +425,18 @@ export const TeacherWorkspace: React.FC = () => {
     },
     enabled: Boolean(effectiveClassId) && (Boolean(user) || isDemoMode),
   });
+
+  // Sync saved session title ONLY when user has explicitly chosen an existing session (e.g. via ?session= URL param)
+  useEffect(() => {
+    if (sessionSelectMode !== 'existing' || !sessionNum || sessionTitleDirty) return;
+    const matched = (sessionsQuery.data || []).find(
+      (s) => Number(s.sessionNum ?? s.session_num) === sessionNum
+    );
+    if (matched) {
+      const realTitle = String(matched.title || matched.session_title || '').trim();
+      setSessionTitle(realTitle);
+    }
+  }, [sessionSelectMode, sessionNum, sessionTitleDirty, sessionsQuery.data]);
 
   // 4. Fetch Students in Class
   const studentsQuery = useQuery<KtnStudentRecord[]>({
@@ -380,6 +466,58 @@ export const TeacherWorkspace: React.FC = () => {
     },
     enabled: Boolean(user) || isDemoMode,
   });
+
+  const handleRevokedClassAccess = async (err: unknown, classCode?: string) => {
+    const isForbidden =
+      err instanceof KtnApiError &&
+      (err.status === 403 ||
+        err.code === 'TEACHER_CLASS_SCOPE_FORBIDDEN' ||
+        err.code === 'CLASS_ARCHIVED_OR_INACTIVE');
+    if (!isForbidden) return false;
+    await refreshPermissions?.().catch(() => null);
+    queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+    queryClient.invalidateQueries({ queryKey: ['ktn-homeworks'] });
+    queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+    if (classCode) {
+      queryClient.removeQueries({ queryKey: ['ktn-class-sessions', classCode] });
+      queryClient.removeQueries({ queryKey: ['ktn-class-students', classCode] });
+      setLocalSavedSessions((prev) => {
+        const next = { ...prev };
+        delete next[classCode];
+        return next;
+      });
+    }
+    setHasManualClassSelection(false);
+    addToast({
+      title: tr('Quyền truy cập lớp đã thay đổi', 'Class access updated'),
+      description:
+        err instanceof Error
+          ? err.message
+          : tr(
+              'Lớp này đã được gỡ phân công hoặc lưu trữ. Hệ thống đã cập nhật lại danh sách lớp.',
+              'This class was unassigned or archived. Your class list has been refreshed.'
+            ),
+      variant: 'error',
+    });
+    return true;
+  };
+
+  useEffect(() => {
+    const errs = [sessionsQuery.error, studentsQuery.error, homeworksQuery.error].filter(Boolean);
+    for (const err of errs) {
+      if (
+        err instanceof KtnApiError &&
+        (err.status === 403 ||
+          err.code === 'TEACHER_CLASS_SCOPE_FORBIDDEN' ||
+          err.code === 'CLASS_ARCHIVED_OR_INACTIVE')
+      ) {
+        void handleRevokedClassAccess(err, effectiveClassId || undefined);
+        break;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsQuery.error, studentsQuery.error, homeworksQuery.error, effectiveClassId]);
 
   // 5. Grade Homework Mutation
   const gradeMutation = useMutation({
@@ -412,10 +550,13 @@ export const TeacherWorkspace: React.FC = () => {
       addToast({
         title:
           vars.status === 'revision_requested'
-            ? 'Đã gửi yêu cầu nộp lại bài'
-            : `Đã chấm ${vars.score}/10 điểm!`,
+            ? tr('Đã gửi yêu cầu nộp lại bài', 'Revision requested')
+            : tr(`Đã chấm ${vars.score}/10 điểm!`, `Graded ${vars.score}/10 pts!`),
         variant: 'success',
       });
+    },
+    onError: (err: unknown) => {
+      void handleRevokedClassAccess(err, effectiveClassId || undefined);
     },
   });
 
@@ -426,30 +567,83 @@ export const TeacherWorkspace: React.FC = () => {
       setExerciseAttachmentError(null);
 
       if (!effectiveClassId) {
-        throw new Error('Vui lòng chọn lớp học trước khi giao bài tập.');
+        throw new Error(
+          tr(
+            'Vui lòng chọn lớp học trước khi giao bài tập.',
+            'Please select a class before assigning homework.'
+          )
+        );
       }
       if (
         user?.role !== 'admin' &&
         !classesList.some((c) => c.id.toUpperCase() === effectiveClassId.toUpperCase())
       ) {
         throw new Error(
-          `Giáo viên không có quyền giao bài tập cho lớp ${effectiveClassId} không thuộc phạm vi phụ trách.`
+          tr(
+            `Giáo viên không có quyền giao bài tập cho lớp ${effectiveClassId} không thuộc phạm vi phụ trách.`,
+            `You are not authorized to assign homework to class ${effectiveClassId}.`
+          )
         );
       }
 
       if (exerciseAttachments.some((a) => a.uploading)) {
         throw new Error(
-          'Vui lòng chờ quá trình tải tài liệu đính kèm hoàn tất trước khi lưu hoặc giao bài.'
+          tr(
+            'Vui lòng chờ quá trình tải tài liệu đính kèm hoàn tất trước khi lưu hoặc giao bài.',
+            'Please wait for attachments to finish uploading before saving or publishing.'
+          )
+        );
+      }
+
+      if (exerciseAttachments.some((a) => Boolean(a.error))) {
+        throw new Error(
+          tr(
+            'Có tệp đính kèm tải lên bị lỗi. Vui lòng bấm "Thử lại" hoặc "Xóa" tệp lỗi trước khi lưu.',
+            'Some attachments failed to upload. Please click Retry or Remove before saving.'
+          )
         );
       }
 
       const cleanTitle = exerciseTitle.trim();
       const cleanPrompt = exercisePrompt.trim();
-      if (!cleanTitle || !cleanPrompt) {
-        throw new Error('Vui lòng nhập đầy đủ Tên bài tập và Hướng dẫn làm bài.');
+      const readyAttachments: KtnExerciseAttachment[] = exerciseAttachments
+        .filter((a) => !a.uploading && !a.error && a.url)
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          url: a.url,
+          mimeType: a.mimeType,
+          sizeBytes: a.sizeBytes,
+        }));
+
+      if (!cleanTitle) {
+        throw new Error(
+          tr(
+            'Vui lòng nhập Tên bài tập.',
+            'Please enter an Exercise Title.'
+          )
+        );
       }
 
-      const numSession = Math.max(1, Number(sessionNum) || 1);
+      if (!cleanPrompt && readyAttachments.length === 0) {
+        throw new Error(
+          tr(
+            'Vui lòng nhập Hướng dẫn làm bài hoặc đính kèm ít nhất 1 tệp tài liệu.',
+            'Please enter Instructions or attach at least 1 file.'
+          )
+        );
+      }
+
+      if (!sessionNum || !Number.isFinite(sessionNum) || sessionNum < 1) {
+        throw new Error(
+          tr(
+            'Vui lòng chọn buổi học hoặc nhập số buổi mới.',
+            'Please select a session or enter a new session number.'
+          )
+        );
+      }
+
+      const numSession = Math.max(1, Math.floor(Number(sessionNum)));
       const remoteSessions = sessionsQuery.data || [];
       const localSessions = localSavedSessions[effectiveClassId] || [];
       const sessionMap = new Map<number, KtnClassSession>();
@@ -460,16 +654,6 @@ export const TeacherWorkspace: React.FC = () => {
       const existingExercises: KtnSessionExercise[] = Array.isArray(existingSession?.exercises)
         ? existingSession!.exercises.map((ex) => ({ ...ex }))
         : [];
-
-      const readyAttachments: KtnExerciseAttachment[] = exerciseAttachments
-        .filter((a) => !a.uploading && !a.error && a.url)
-        .map((a) => ({
-          id: a.id,
-          name: a.name,
-          url: a.url,
-          mimeType: a.mimeType,
-          sizeBytes: a.sizeBytes,
-        }));
 
       let updatedExercises: KtnSessionExercise[];
       let targetExercise: KtnSessionExercise;
@@ -531,17 +715,31 @@ export const TeacherWorkspace: React.FC = () => {
         Boolean(prevExInSession) &&
         prevExInSession?.status !== 'draft';
 
+      const existingSessionTitle = String(
+        existingSession?.title || existingSession?.session_title || ''
+      ).trim();
+      const resolvedSessionTitle =
+        existingSession && !sessionTitleDirty && existingSessionTitle
+          ? existingSessionTitle
+          : sessionTitle.trim() ||
+            existingSessionTitle ||
+            tr(`Buổi ${numSession}`, `Session ${numSession}`);
+
       const payload = {
         classCode: effectiveClassId,
         sessionNum: numSession,
-        title: sessionTitle.trim() || existingSession?.title || `Buổi ${numSession}`,
+        title: resolvedSessionTitle,
         mode: saveMode,
         exercise: targetExercise,
         preserveExistingExercises: true,
         preserveDefaultExercises: true,
         status: submitStatus,
         suppressDuplicateNotification:
-          submitStatus === 'draft' || wasAlreadyPublished,
+          submitStatus === 'draft' || (wasAlreadyPublished && !notifyStudentsOnUpdate),
+        ...(wasAlreadyPublished && notifyStudentsOnUpdate ? { forceNotify: true } : {}),
+        ...(existingSession?.updatedAt
+          ? { expectedUpdatedAt: existingSession.updatedAt }
+          : {}),
         exercises: updatedExercises,
       };
 
@@ -611,22 +809,58 @@ export const TeacherWorkspace: React.FC = () => {
         setEditingExerciseId(targetExercise.id);
       }
       setConfirmOverwriteOpen(false);
+      setNotifyStudentsOnUpdate(false);
       queryClient.invalidateQueries({ queryKey: ['ktn-class-sessions', effectiveClassId] });
       addToast({
         title:
           submitStatus === 'draft'
-            ? 'Đã lưu nháp bài tập buổi học!'
+            ? tr('Đã lưu nháp bài tập buổi học!', 'Saved session exercise draft!')
             : saveMode === 'update_exercise'
-              ? 'Đã cập nhật bài tập hiện có (bảo toàn các bài khác)!'
-              : 'Đã giao bài tập cho lớp!',
+              ? tr(
+                  'Đã cập nhật bài tập hiện có (bảo toàn các bài khác)!',
+                  'Updated existing exercise (other exercises preserved)!'
+                )
+              : tr('Đã giao bài tập cho lớp!', 'Assigned homework to class!'),
         variant: 'success',
       });
     },
     onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : 'Không thể lưu bài tập buổi học.';
+      if (err instanceof KtnApiError && err.status === 409) {
+        setLocalSavedSessions((prev) => {
+          const next = { ...prev };
+          delete next[effectiveClassId];
+          return next;
+        });
+        setConfirmOverwriteOpen(false);
+        queryClient.invalidateQueries({ queryKey: ['ktn-class-sessions', effectiveClassId] });
+        const conflictMsg = tr(
+          'Buổi học vừa được cập nhật ở tab hoặc thiết bị khác. Hệ thống đã tải lại dữ liệu mới nhất — vui lòng kiểm tra lại trước khi lưu để tránh ghi đè.',
+          'This session was updated in another tab or device. Latest exercises were reloaded — please review before saving again.'
+        );
+        setExerciseAttachmentError(conflictMsg);
+        addToast({
+          title: tr('Xung đột cập nhật (409)', 'Session update conflict (409)'),
+          description: conflictMsg,
+          variant: 'error',
+        });
+        return;
+      }
+      if (
+        err instanceof KtnApiError &&
+        (err.status === 403 ||
+          err.code === 'TEACHER_CLASS_SCOPE_FORBIDDEN' ||
+          err.code === 'CLASS_ARCHIVED_OR_INACTIVE')
+      ) {
+        setConfirmOverwriteOpen(false);
+        void handleRevokedClassAccess(err, effectiveClassId || undefined);
+      }
+      const msg =
+        err instanceof Error
+          ? err.message
+          : tr('Không thể lưu bài tập buổi học.', 'Unable to save session exercise.');
       setExerciseAttachmentError(msg);
       addToast({
-        title: 'Không thể lưu bài tập',
+        title: tr('Không thể lưu bài tập', 'Unable to save exercise'),
         description: msg,
         variant: 'error',
       });
@@ -708,7 +942,10 @@ export const TeacherWorkspace: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-attendance', effectiveClassId] });
       addToast({
-        title: `Đã lưu điểm danh Buổi ${attendanceSessionNum} lớp ${effectiveClassId}!`,
+        title: tr(
+          `Đã lưu điểm danh Buổi ${attendanceSessionNum} lớp ${effectiveClassId}!`,
+          `Saved Session ${attendanceSessionNum} attendance for ${effectiveClassId}!`
+        ),
         variant: 'success',
       });
     },
@@ -738,26 +975,46 @@ export const TeacherWorkspace: React.FC = () => {
     mutationFn: async () => {
       setCreateStudentError(null);
       if (classesList.length === 0) {
-        throw new Error('Bạn chưa được phân công lớp. Vui lòng liên hệ Quản lý.');
+        throw new Error(
+          tr(
+            'Bạn chưa được phân công lớp. Vui lòng liên hệ Quản lý.',
+            'You are not assigned to any class. Please contact Admin.'
+          )
+        );
       }
       const chosenClass = (newStuClassCode || effectiveClassId || classesList[0]?.id || '').trim();
       if (!chosenClass) {
-        throw new Error('Vui lòng chọn lớp học trực tiếp được phân công.');
+        throw new Error(
+          tr(
+            'Vui lòng chọn lớp học trực tiếp được phân công.',
+            'Please select an assigned live class.'
+          )
+        );
       }
       if (
         user?.role !== 'admin' &&
         !classesList.some((c) => c.id.toUpperCase() === chosenClass.toUpperCase())
       ) {
         throw new Error(
-          `Bạn chỉ được phép tạo và xếp học viên vào lớp mình đang phụ trách (${classesList
-            .map((c) => c.id)
-            .join(', ')}).`
+          tr(
+            `Bạn chỉ được phép tạo và xếp học viên vào lớp mình đang phụ trách (${classesList
+              .map((c) => c.id)
+              .join(', ')}).`,
+            `You may only create and enroll students in your assigned classes (${classesList
+              .map((c) => c.id)
+              .join(', ')}).`
+          )
         );
       }
       const cleanName = newStuName.trim();
       const cleanEmail = newStuEmail.trim().toLowerCase();
       if (!cleanName || !cleanEmail || !cleanEmail.includes('@')) {
-        throw new Error('Vui lòng nhập đầy đủ họ tên và email hợp lệ của học viên.');
+        throw new Error(
+          tr(
+            'Vui lòng nhập đầy đủ họ tên và email hợp lệ của học viên.',
+            'Please enter the student name and a valid email.'
+          )
+        );
       }
       const cleanPhone = newStuPhone.trim();
       const cleanParentName = newStuParentName.trim();
@@ -780,9 +1037,14 @@ export const TeacherWorkspace: React.FC = () => {
         );
         if (existingInDemo) {
           throw new Error(
-            `Học viên ${existingInDemo.name || cleanEmail} đã tồn tại trên hệ thống (lớp ${
-              existingInDemo.class_code || chosenClass
-            }). Không tạo trùng tài khoản.`
+            tr(
+              `Học viên ${existingInDemo.name || cleanEmail} đã tồn tại trên hệ thống (lớp ${
+                existingInDemo.class_code || chosenClass
+              }). Không tạo trùng tài khoản.`,
+              `Student ${existingInDemo.name || cleanEmail} already exists (class ${
+                existingInDemo.class_code || chosenClass
+              }). Duplicate account prevented.`
+            )
           );
         }
         await new Promise((r) => setTimeout(r, 400));
@@ -805,7 +1067,7 @@ export const TeacherWorkspace: React.FC = () => {
           } as KtnStudentRecord & { parent_phone?: string },
           initialPassword: 'Ktn@123456',
           classCode: chosenClass,
-          message: 'Đã tạo học viên mới.',
+          message: tr('Đã tạo học viên mới.', 'Created new student.'),
         };
       }
 
@@ -931,9 +1193,14 @@ export const TeacherWorkspace: React.FC = () => {
       setNewStuParentPhone('');
       setNewStuNotes('');
       addToast({
-        title: `Đã tạo học viên ${enrichedStudent.name} vào lớp ${resolvedClassCode}`,
-        description:
+        title: tr(
+          `Đã tạo học viên ${enrichedStudent.name} vào lớp ${resolvedClassCode}`,
+          `Created student ${enrichedStudent.name} in class ${resolvedClassCode}`
+        ),
+        description: tr(
           'Tài khoản đã được tạo và xếp vào nhóm chat lớp trực tiếp (chưa cấp khóa học video).',
+          'Account created and added to direct class chat (no video course granted yet).'
+        ),
         variant: 'success',
       });
     },
@@ -943,7 +1210,7 @@ export const TeacherWorkspace: React.FC = () => {
           ? err.message
           : err instanceof Error
           ? err.message
-          : 'Không thể tạo học viên mới.';
+          : tr('Không thể tạo học viên mới.', 'Unable to create new student.');
       setCreateStudentError(msg);
     },
   });
@@ -952,10 +1219,10 @@ export const TeacherWorkspace: React.FC = () => {
     mutationFn: async () => {
       setCourseRequestError(null);
       if (!reqStudentEmail.trim()) {
-        throw new Error('Vui lòng chọn học viên trong lớp phụ trách.');
+        throw new Error(tr('Vui lòng chọn học viên trong lớp phụ trách.', 'Please select a student in your assigned class.'));
       }
       if (!reqCourseId.trim()) {
-        throw new Error('Vui lòng chọn khóa học video đề xuất mở.');
+        throw new Error(tr('Vui lòng chọn khóa học video đề xuất mở.', 'Please select a video course to request.'));
       }
       const cleanStuEmail = reqStudentEmail.trim().toLowerCase();
       const cleanCourseId = reqCourseId.trim();
@@ -974,7 +1241,10 @@ export const TeacherWorkspace: React.FC = () => {
         );
       if (!stObj || !isAssignedClass) {
         throw new Error(
-          'Chỉ được đề nghị cấp khóa học cho học viên thuộc lớp trực tiếp bạn phụ trách.'
+          tr(
+            'Chỉ được đề nghị cấp khóa học cho học viên thuộc lớp trực tiếp bạn phụ trách.',
+            'Course grants can only be requested for students in classes directly assigned to you.'
+          )
         );
       }
       const courseObj = (coursesQuery.data || DEMO_COURSES).find(
@@ -983,7 +1253,10 @@ export const TeacherWorkspace: React.FC = () => {
       const cleanReason =
         reqReason.trim().length >= 3
           ? reqReason.trim()
-          : 'Giáo viên phụ trách đề xuất mở khóa video bổ trợ';
+          : tr(
+              'Giáo viên phụ trách đề xuất mở khóa video bổ trợ',
+              'Homeroom teacher recommends unlocking supplementary video course'
+            );
       const reqSig = `${cleanStuEmail}|${cleanCourseId}`;
       if (!courseGrantRequestRef.current || courseGrantRequestRef.current.signature !== reqSig) {
         courseGrantRequestRef.current = {
@@ -1029,8 +1302,11 @@ export const TeacherWorkspace: React.FC = () => {
       setCourseRequestModalOpen(false);
       setReqReason('');
       addToast({
-        title: 'Đã gửi đề nghị mở khóa học online!',
-        description: 'Quản lý sẽ xem xét và phê duyệt cấp khóa học cho học viên.',
+        title: tr('Đã gửi đề nghị mở khóa học online!', 'Online course access request submitted!'),
+        description: tr(
+          'Quản lý sẽ xem xét và phê duyệt cấp khóa học cho học viên.',
+          'Admin will review and approve granting this course to the student.'
+        ),
         variant: 'success',
       });
     },
@@ -1040,7 +1316,7 @@ export const TeacherWorkspace: React.FC = () => {
           ? err.message
           : err instanceof Error
           ? err.message
-          : 'Không thể gửi đề nghị mở khóa học.';
+          : tr('Không thể gửi đề nghị mở khóa học.', 'Unable to submit course access request.');
       setCourseRequestError(msg);
     },
   });
@@ -1055,7 +1331,7 @@ export const TeacherWorkspace: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-course-grant-requests'] });
       addToast({
-        title: 'Đã hủy đề nghị mở khóa học',
+        title: tr('Đã hủy đề nghị mở khóa học', 'Cancelled course access request'),
         variant: 'success',
       });
     },
@@ -1076,11 +1352,8 @@ export const TeacherWorkspace: React.FC = () => {
 
   const openGradingForm = (hw: KtnHomework) => {
     setActiveHomeworkId(String(hw.id));
-    setScoreInput(hw.score !== null && hw.score !== undefined ? String(hw.score) : '9.5');
-    setFeedbackInput(
-      hw.teacher_feedback ||
-        'Con phát âm to rõ, thanh điệu chuẩn. Tiếp tục phát huy ở bài sau nhé! 🌟'
-    );
+    setScoreInput(hw.score !== null && hw.score !== undefined ? String(hw.score) : '');
+    setFeedbackInput(hw.teacher_feedback || '');
     setGradeStatusInput(hw.status === 'revision_requested' ? 'revision_requested' : 'graded');
   };
 
@@ -1103,7 +1376,8 @@ export const TeacherWorkspace: React.FC = () => {
   }, [sessionsQuery.data, localSavedSessions, effectiveClassId]);
 
   const currentSessionObj = useMemo(() => {
-    const num = Math.max(1, Number(sessionNum) || 1);
+    if (!sessionNum || sessionNum < 1) return null;
+    const num = Math.floor(sessionNum);
     return (
       sessionsList.find((s) => Number(s.sessionNum ?? s.session_num) === num) || null
     );
@@ -1114,9 +1388,47 @@ export const TeacherWorkspace: React.FC = () => {
     [currentSessionObj]
   );
 
+  const suggestedNextSessionNum = useMemo(() => {
+    if (sessionsList.length === 0) return 1;
+    const maxNum = sessionsList.reduce(
+      (max, s) => Math.max(max, Number(s.sessionNum ?? s.session_num) || 0),
+      0
+    );
+    return maxNum + 1;
+  }, [sessionsList]);
+
+  const sessionsSummaryStats = useMemo(() => {
+    let publishedCount = 0;
+    let draftCount = 0;
+    for (const s of sessionsList) {
+      const exs = Array.isArray(s.exercises) ? s.exercises : [];
+      for (const ex of exs) {
+        if (ex?.status === 'draft') draftCount += 1;
+        else publishedCount += 1;
+      }
+    }
+    return {
+      sessionsCount: sessionsList.length,
+      publishedCount,
+      draftCount,
+      totalExercisesCount: publishedCount + draftCount,
+    };
+  }, [sessionsList]);
+
+  const editingExerciseDisplayLabel = useMemo(() => {
+    if (!editingExerciseId) return '';
+    const idx = existingSessionExercises.findIndex((ex) => ex.id === editingExerciseId);
+    const found = idx >= 0 ? existingSessionExercises[idx] : undefined;
+    if (found) {
+      return formatExerciseDisplayTitle(found, idx, tr);
+    }
+    return exerciseTitle.trim() || tr('bài tập đang chọn', 'selected exercise');
+  }, [editingExerciseId, existingSessionExercises, exerciseTitle, tr]);
+
   const loadExistingExerciseIntoForm = (ex: KtnSessionExercise) => {
     setExerciseMode('edit');
     setEditingExerciseId(ex.id);
+    setNotifyStudentsOnUpdate(false);
     setExerciseTitle(ex.title || '');
     setExercisePrompt(ex.prompt || ex.instruction || '');
     const subType = (ex.submissionType || ex.type || 'mixed') as
@@ -1146,12 +1458,25 @@ export const TeacherWorkspace: React.FC = () => {
     if (files.length === 0) return;
     setExerciseAttachmentError(null);
 
+    if (user?.role !== 'admin' && classesQuery.isLoading && classesList.length === 0) {
+      setExerciseAttachmentError(
+        tr(
+          'Đang đồng bộ danh sách lớp phụ trách, vui lòng thử lại sau giây lát.',
+          'Syncing your assigned classes, please try again in a moment.'
+        )
+      );
+      return;
+    }
+
     if (
       user?.role !== 'admin' &&
       !classesList.some((c) => c.id.toUpperCase() === effectiveClassId.toUpperCase())
     ) {
       setExerciseAttachmentError(
-        `Giáo viên không có quyền tải tài liệu giao bài cho lớp ${effectiveClassId || 'này'} không thuộc phạm vi phụ trách.`
+        tr(
+          `Giáo viên không có quyền tải tài liệu giao bài cho lớp ${effectiveClassId || 'này'} không thuộc phạm vi phụ trách.`,
+          `You do not have permission to upload assignment files for class ${effectiveClassId || 'this class'}, which is not assigned to you.`
+        )
       );
       return;
     }
@@ -1159,7 +1484,10 @@ export const TeacherWorkspace: React.FC = () => {
     const currentActiveCount = exerciseAttachments.filter((a) => !a.error).length;
     if (currentActiveCount + files.length > MAX_EXERCISE_ATTACHMENTS) {
       setExerciseAttachmentError(
-        `Chỉ được đính kèm tối đa ${MAX_EXERCISE_ATTACHMENTS} tệp cho mỗi bài tập (hiện đã có ${currentActiveCount} tệp).`
+        tr(
+          `Chỉ được đính kèm tối đa ${MAX_EXERCISE_ATTACHMENTS} tệp cho mỗi bài tập (hiện đã có ${currentActiveCount} tệp).`,
+          `Up to ${MAX_EXERCISE_ATTACHMENTS} files can be attached per exercise (currently ${currentActiveCount} attached).`
+        )
       );
       return;
     }
@@ -1176,6 +1504,7 @@ export const TeacherWorkspace: React.FC = () => {
         uploading: true,
         progress: 5,
         controller,
+        rawFile: file,
       };
       setExerciseAttachments((prev) => [...prev, pendingItem]);
 
@@ -1215,10 +1544,129 @@ export const TeacherWorkspace: React.FC = () => {
         const errMsg =
           err instanceof Error
             ? err.message
-            : `Không thể tải tệp "${file.name}". Vui lòng thử lại.`;
+            : tr(
+                `Không thể tải tệp "${file.name}". Vui lòng thử lại.`,
+                `Could not upload "${file.name}". Please try again.`
+              );
         setExerciseAttachmentError(errMsg);
-        setExerciseAttachments((prev) => prev.filter((item) => item.id !== tempId));
+        const isClientValidationRejection =
+          err instanceof KtnApiError &&
+          (err.code === 'FILE_TOO_LARGE' ||
+            err.code === 'UNSUPPORTED_FILE_TYPE' ||
+            err.code === 'DANGEROUS_FILE_TYPE' ||
+            err.code === 'FORBIDDEN_CLASS' ||
+            err.code === 'MISSING_CLASS_CODE');
+        const isTextValidationRejection =
+          errMsg.includes('50MB') ||
+          errMsg.includes('không được hỗ trợ') ||
+          errMsg.includes('not supported');
+        if (isClientValidationRejection || isTextValidationRejection) {
+          setExerciseAttachments((prev) => prev.filter((item) => item.id !== tempId));
+        } else {
+          setExerciseAttachments((prev) =>
+            prev.map((item) =>
+              item.id === tempId
+                ? {
+                    ...item,
+                    uploading: false,
+                    progress: 0,
+                    error: errMsg,
+                    controller: undefined,
+                    rawFile: file,
+                  }
+                : item
+            )
+          );
+        }
       }
+    }
+  };
+
+  const retryExerciseAttachmentUpload = async (failedItem: TeacherAttachmentUploadItem) => {
+    if (!failedItem.rawFile) return;
+    if (
+      user?.role !== 'admin' &&
+      !classesList.some((c) => c.id.toUpperCase() === effectiveClassId.toUpperCase())
+    ) {
+      setExerciseAttachmentError(
+        tr(
+          `Giáo viên không có quyền tải tài liệu giao bài cho lớp ${effectiveClassId || 'này'} không thuộc phạm vi phụ trách.`,
+          `You do not have permission to upload assignment files for class ${effectiveClassId || 'this class'}, which is not assigned to you.`
+        )
+      );
+      return;
+    }
+    const validOtherCount = exerciseAttachments.filter(
+      (a) => a.id !== failedItem.id && !a.error
+    ).length;
+    if (validOtherCount >= MAX_EXERCISE_ATTACHMENTS) {
+      setExerciseAttachmentError(
+        tr(
+          `Chỉ được đính kèm tối đa ${MAX_EXERCISE_ATTACHMENTS} tệp cho mỗi bài tập.`,
+          `Up to ${MAX_EXERCISE_ATTACHMENTS} files can be attached per exercise.`
+        )
+      );
+      return;
+    }
+    setExerciseAttachmentError(null);
+    const controller = new AbortController();
+    const targetId = failedItem.id;
+    const file = failedItem.rawFile;
+    setExerciseAttachments((prev) =>
+      prev.map((item) =>
+        item.id === targetId
+          ? { ...item, uploading: true, progress: 5, error: undefined, controller }
+          : item
+      )
+    );
+    try {
+      const uploaded = await ktnApi.uploadHomeworkAttachment({
+        file,
+        fileName: file.name,
+        classCode: effectiveClassId,
+        sessionNum: Math.max(1, Number(sessionNum) || 1),
+        allowedClassCodes: classesList.map((c) => c.id),
+        isDemoMode,
+        signal: controller.signal,
+        onProgress: (pct) => {
+          setExerciseAttachments((prev) =>
+            prev.map((item) =>
+              item.id === targetId ? { ...item, progress: pct } : item
+            )
+          );
+        },
+      });
+      setExerciseAttachments((prev) =>
+        prev.map((item) =>
+          item.id === targetId
+            ? {
+                ...uploaded,
+                uploading: false,
+                progress: 100,
+              }
+            : item
+        )
+      );
+    } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+        setExerciseAttachments((prev) => prev.filter((item) => item.id !== targetId));
+        return;
+      }
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : tr(
+              `Không thể tải lại tệp "${file.name}". Vui lòng thử lại.`,
+              `Could not retry upload for "${file.name}". Please try again.`
+            );
+      setExerciseAttachmentError(errMsg);
+      setExerciseAttachments((prev) =>
+        prev.map((item) =>
+          item.id === targetId
+            ? { ...item, uploading: false, progress: 0, error: errMsg, controller: undefined }
+            : item
+        )
+      );
     }
   };
 
@@ -1239,7 +1687,10 @@ export const TeacherWorkspace: React.FC = () => {
     setExerciseAttachmentError(null);
     if (exerciseAttachments.some((a) => a.uploading)) {
       setExerciseAttachmentError(
-        'Vui lòng chờ tải xong toàn bộ tài liệu đính kèm trước khi hoàn tất giao bài.'
+        tr(
+          'Vui lòng chờ tải xong toàn bộ tài liệu đính kèm trước khi hoàn tất giao bài.',
+          'Please wait for all attachment uploads to finish before assigning.'
+        )
       );
       return;
     }
@@ -1277,7 +1728,7 @@ export const TeacherWorkspace: React.FC = () => {
     return Array.from(merged.values());
   }, [studentsQuery.data, localCreatedStudents, effectiveClassId]);
   const selectedClassItem = useMemo(
-    () => classesList.find((c) => c.id === effectiveClassId) || classesList[0] || null,
+    () => (effectiveClassId ? classesList.find((c) => c.id === effectiveClassId) || null : null),
     [classesList, effectiveClassId]
   );
   const hasApiError =
@@ -1286,35 +1737,40 @@ export const TeacherWorkspace: React.FC = () => {
   return (
     <div data-testid="teacher-workspace-page" className="space-y-3 sm:space-y-4">
       {/* Compact Class Selector & Schedule Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 shadow-2xs">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 shadow-2xs sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           {classesList.length > 0 ? (
             <select
-              aria-label="Chọn lớp phụ trách"
+              aria-label={tr('Chọn lớp phụ trách', 'Select assigned class')}
               data-testid="teacher-class-select"
               value={effectiveClassId}
               onChange={(e) => {
                 setSelectedClassId(e.target.value);
                 setHasManualClassSelection(true);
               }}
-              className="min-h-[36px] min-w-0 flex-1 rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none sm:max-w-xs"
+              className="min-h-[38px] w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none sm:w-auto sm:min-w-[210px] sm:max-w-xs"
             >
+              <option value="">
+                {activeSubTab === 'grading'
+                  ? tr('-- Tất cả lớp được phân công --', '-- All assigned classes --')
+                  : tr('-- Chọn lớp học --', '-- Select class --')}
+              </option>
               {classesList.map((cls) => (
                 <option key={cls.id} value={cls.id}>
-                  {cls.id} · {cls.name}
+                  {cls.id} · {translateCourseTitle(cls.name, lang)}
                 </option>
               ))}
             </select>
           ) : (
             <span className="text-xs font-semibold text-stone-600">
-              Chưa có lớp được phân công
+              {tr('Chưa có lớp được phân công', 'No assigned classes yet')}
             </span>
           )}
 
           {selectedClassItem && (
             <span
               data-testid="teacher-class-schedule-badge"
-              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${
+              className={`inline-flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold leading-snug sm:w-auto ${
                 selectedClassItem.scheduleStatus === 'confirmed' &&
                 selectedClassItem.officialScheduleText
                   ? 'bg-emerald-50 text-emerald-900'
@@ -1325,26 +1781,26 @@ export const TeacherWorkspace: React.FC = () => {
               <span>
                 {selectedClassItem.scheduleStatus === 'confirmed' &&
                 selectedClassItem.officialScheduleText
-                  ? `Lớp ${selectedClassItem.id} — ${selectedClassItem.officialScheduleText}`
-                  : 'Chưa có lịch học chính thức'}
+                  ? `${tr('Lớp', 'Class')} ${selectedClassItem.id} — ${translateScheduleText(selectedClassItem.officialScheduleText, lang)}`
+                  : tr('Chưa có lịch học chính thức', 'Official schedule not set')}
               </span>
             </span>
           )}
         </div>
 
         {effectiveClassId && (
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
             <button
               type="button"
               data-testid="teacher-edit-schedule-btn"
               onClick={() => setScheduleModalOpen(true)}
-              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
+              className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
             >
-              <Calendar className="h-3.5 w-3.5" />
+              <Calendar className="h-3.5 w-3.5 shrink-0" />
               <span>
                 {selectedClassItem?.scheduleStatus === 'confirmed'
-                  ? 'Chỉnh lịch'
-                  : 'Cài lịch học'}
+                  ? tr('Chỉnh lịch', 'Edit schedule')
+                  : tr('Cài lịch học', 'Set schedule')}
               </span>
             </button>
 
@@ -1352,10 +1808,10 @@ export const TeacherWorkspace: React.FC = () => {
               type="button"
               data-testid="teacher-open-class-chat-btn"
               onClick={() => navigate(`/chat?room=${encodeURIComponent(`class:${effectiveClassId}`)}`)}
-              className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
+              className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
             >
-              <MessageSquare className="h-3.5 w-3.5" />
-              <span>Nhóm {effectiveClassId}</span>
+              <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+              <span>{tr('Nhóm', 'Group')} {effectiveClassId}</span>
             </button>
           </div>
         )}
@@ -1376,9 +1832,14 @@ export const TeacherWorkspace: React.FC = () => {
             }
             await queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
             addToast({
-              title: `Đã cập nhật lịch học lớp ${schedulePayload.classCode}`,
-              description:
+              title: tr(
+                `Đã cập nhật lịch học lớp ${schedulePayload.classCode}`,
+                `Updated schedule for class ${schedulePayload.classCode}`
+              ),
+              description: tr(
                 'Lịch học chính thức của lớp phụ trách đã được ghi nhận và đồng bộ nhắc giờ.',
+                'The official schedule for your class has been saved and synced for reminders.'
+              ),
               variant: 'success',
             });
             setScheduleModalOpen(false);
@@ -1395,7 +1856,7 @@ export const TeacherWorkspace: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
-            <span>Chưa tải được dữ liệu lớp học.</span>
+            <span>{tr('Chưa tải được dữ liệu lớp học.', 'Could not load class data.')}</span>
           </div>
           <button
             type="button"
@@ -1406,7 +1867,7 @@ export const TeacherWorkspace: React.FC = () => {
             className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
           >
             <RotateCcw className="h-3 w-3" />
-            Thử lại
+            {tr('Thử lại', 'Retry')}
           </button>
         </div>
       )}
@@ -1424,7 +1885,7 @@ export const TeacherWorkspace: React.FC = () => {
           }`}
         >
           <FileCheck2 className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Chấm bài ({homeworks.length})</span>
+          <span className="truncate">{tr('Chấm bài', 'Grading')} ({homeworks.length})</span>
           {pendingCount > 0 && (
             <span className="rounded-full bg-amber-400 px-1.5 py-0.2 text-[10px] font-extrabold text-stone-950">
               {pendingCount}
@@ -1443,7 +1904,7 @@ export const TeacherWorkspace: React.FC = () => {
           }`}
         >
           <CalendarPlus className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Giao bài</span>
+          <span className="truncate">{tr('Giao bài', 'Assign')}</span>
         </button>
 
         <button
@@ -1457,7 +1918,7 @@ export const TeacherWorkspace: React.FC = () => {
           }`}
         >
           <Users className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Học viên ({studentsList.length})</span>
+          <span className="truncate">{tr('Học viên', 'Students')} ({studentsList.length})</span>
         </button>
 
         <button
@@ -1471,7 +1932,7 @@ export const TeacherWorkspace: React.FC = () => {
           }`}
         >
           <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Hỏi đáp bài học</span>
+          <span className="truncate">{tr('Hỏi đáp bài học', 'Q&A Inbox')}</span>
         </button>
       </div>
 
@@ -1480,15 +1941,15 @@ export const TeacherWorkspace: React.FC = () => {
         <div className="rounded-xl border border-stone-200 bg-white p-3.5 sm:p-4 shadow-2xs">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2.5">
             <h2 className="font-display text-sm font-bold text-stone-900">
-              Bài nộp · Lớp {effectiveClassId || 'Tất cả'}
+              {tr('Bài nộp', 'Submissions')} · {tr('Lớp', 'Class')} {effectiveClassId || tr('Tất cả', 'All')}
             </h2>
 
-            <div className="flex items-center gap-1 rounded-xl bg-stone-100 p-1">
+            <div className="flex flex-wrap items-center gap-1 rounded-xl bg-stone-100 p-1">
               {(
                 [
-                  { id: 'all', label: `Tất cả (${homeworks.length})` },
-                  { id: 'pending', label: `Chờ chấm (${pendingCount})` },
-                  { id: 'graded', label: 'Đã chấm' },
+                  { id: 'all', label: `${tr('Tất cả', 'All')} (${homeworks.length})` },
+                  { id: 'pending', label: `${tr('Chờ chấm', 'Pending')} (${pendingCount})` },
+                  { id: 'graded', label: tr('Đã chấm', 'Graded') },
                 ] as const
               ).map((f) => (
                 <button
@@ -1510,7 +1971,7 @@ export const TeacherWorkspace: React.FC = () => {
           <div className="mt-3 space-y-2.5">
             {filteredHomeworks.length === 0 ? (
               <p className="py-6 text-center text-xs text-stone-500">
-                Chưa có bài nộp trong mục này.
+                {tr('Chưa có bài nộp trong mục này.', 'No submissions in this category yet.')}
               </p>
             ) : (
               filteredHomeworks.map((hw) => {
@@ -1526,8 +1987,8 @@ export const TeacherWorkspace: React.FC = () => {
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="rounded bg-red-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
                             {hw.lesson_num > 100
-                              ? `Buổi ${Math.floor(hw.lesson_num / 100)} · Bài ${hw.lesson_num % 100}`
-                              : `Bài ${hw.lesson_num}`}
+                              ? `${tr('Buổi', 'Session')} ${Math.floor(hw.lesson_num / 100)} · ${tr('Bài', 'Ex.')} ${hw.lesson_num % 100}`
+                              : `${tr('Bài', 'Lesson')} ${hw.lesson_num}`}
                           </span>
                           <span className="truncate font-display text-xs font-bold text-stone-900 sm:text-sm">
                             {hw.student_name || hw.student_email}
@@ -1559,13 +2020,13 @@ export const TeacherWorkspace: React.FC = () => {
                                 <>
                                   <img
                                     src={resolvedHwUrl}
-                                    alt={`Bài làm ${hw.student_name || hw.student_email}`}
+                                    alt={`${tr('Bài làm', 'Submission')} ${hw.student_name || hw.student_email}`}
                                     data-testid={`teacher-homework-image-${hw.id}`}
                                     onClick={() =>
                                       setActiveLightboxAttachment({
                                         name:
                                           hw.attachments?.[0]?.title ||
-                                          `Bài làm Bài ${hw.lesson_num} - ${hw.student_name || hw.student_email}`,
+                                          `${tr('Bài làm Bài', 'Submission Ex.')} ${hw.lesson_num} - ${hw.student_name || hw.student_email}`,
                                         url: resolvedHwUrl,
                                         kind: 'image',
                                       })
@@ -1579,7 +2040,7 @@ export const TeacherWorkspace: React.FC = () => {
                                       setActiveLightboxAttachment({
                                         name:
                                           hw.attachments?.[0]?.title ||
-                                          `Bài làm Bài ${hw.lesson_num} - ${hw.student_name || hw.student_email}`,
+                                          `${tr('Bài làm Bài', 'Submission Ex.')} ${hw.lesson_num} - ${hw.student_name || hw.student_email}`,
                                         url: resolvedHwUrl,
                                         kind: 'image',
                                       })
@@ -1587,7 +2048,7 @@ export const TeacherWorkspace: React.FC = () => {
                                     className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-100"
                                   >
                                     <ZoomIn className="h-3 w-3 text-red-800" />
-                                    <span>Phóng to</span>
+                                    <span>{tr('Phóng to', 'Zoom')}</span>
                                   </button>
                                 </>
                               )}
@@ -1608,7 +2069,7 @@ export const TeacherWorkspace: React.FC = () => {
                                 className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-800 hover:bg-red-50"
                               >
                                 <ExternalLink className="h-3 w-3" />
-                                <span>Tệp bài làm</span>
+                                <span>{tr('Tệp bài làm', 'Submission file')}</span>
                               </a>
                             </div>
                           );
@@ -1624,12 +2085,12 @@ export const TeacherWorkspace: React.FC = () => {
                         ) : hw.status === 'revision_requested' ? (
                           <span className="inline-flex items-center gap-1 rounded-lg bg-red-100 px-2.5 py-1 text-xs font-bold text-red-900">
                             <RotateCcw className="h-3 w-3" />
-                            Nộp lại
+                            {tr('Nộp lại', 'Resubmit')}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900">
                             <Clock className="h-3 w-3" />
-                            Chờ chấm
+                            {tr('Chờ chấm', 'Pending')}
                           </span>
                         )}
 
@@ -1641,7 +2102,11 @@ export const TeacherWorkspace: React.FC = () => {
                           }
                           className="min-h-[36px] rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                         >
-                          {isEditing ? 'Đóng' : hw.status === 'graded' ? 'Sửa điểm' : 'Chấm bài'}
+                          {isEditing
+                            ? tr('Đóng', 'Close')
+                            : hw.status === 'graded'
+                            ? tr('Sửa điểm', 'Edit grade')
+                            : tr('Chấm bài', 'Grade')}
                         </button>
                       </div>
                     </div>
@@ -1652,9 +2117,32 @@ export const TeacherWorkspace: React.FC = () => {
                         data-testid="teacher-grading-form"
                         onSubmit={(e) => {
                           e.preventDefault();
+                          const trimmedScore = scoreInput.trim();
+                          const parsedScore = trimmedScore === '' ? NaN : Number(trimmedScore);
+                          if (gradeStatusInput === 'graded') {
+                            if (
+                              trimmedScore === '' ||
+                              !Number.isFinite(parsedScore) ||
+                              parsedScore < 0 ||
+                              parsedScore > 10
+                            ) {
+                              addToast({
+                                title: tr('Chưa nhập điểm hợp lệ', 'Valid score required'),
+                                description: tr(
+                                  'Vui lòng nhập điểm từ 0 đến 10 trước khi lưu điểm.',
+                                  'Please enter a score between 0 and 10 before saving.'
+                                ),
+                                variant: 'error',
+                              });
+                              return;
+                            }
+                          }
+                          const rawScore = Number.isFinite(parsedScore)
+                            ? parsedScore
+                            : Number(hw.score ?? 0);
                           const numericScore = Math.min(
                             10,
-                            Math.max(0, Math.round(Number(scoreInput) * 2) / 2)
+                            Math.max(0, Math.round(rawScore * 2) / 2)
                           );
                           gradeMutation.mutate({
                             id: String(hw.id),
@@ -1669,7 +2157,7 @@ export const TeacherWorkspace: React.FC = () => {
                         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                           <div>
                             <label className="block text-xs font-bold text-stone-800">
-                              Điểm (0 – 10):
+                              {tr('Điểm (0 – 10):', 'Score (0 – 10):')}
                             </label>
                             <input
                               type="number"
@@ -1677,6 +2165,7 @@ export const TeacherWorkspace: React.FC = () => {
                               min="0"
                               max="10"
                               data-testid="teacher-score-input"
+                              placeholder="0 – 10"
                               value={scoreInput}
                               onChange={(e) => setScoreInput(e.target.value)}
                               className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-sm font-bold text-stone-900 focus:border-red-800 focus:outline-none"
@@ -1685,7 +2174,7 @@ export const TeacherWorkspace: React.FC = () => {
 
                           <div>
                             <label className="block text-xs font-bold text-stone-800">
-                              Đánh giá:
+                              {tr('Đánh giá:', 'Assessment:')}
                             </label>
                             <select
                               data-testid="teacher-status-select"
@@ -1697,19 +2186,23 @@ export const TeacherWorkspace: React.FC = () => {
                               }
                               className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
                             >
-                              <option value="graded">Đạt • Công bố điểm</option>
-                              <option value="revision_requested">Cần sửa • Nộp lại</option>
+                              <option value="graded">{tr('Đạt • Công bố điểm', 'Pass • Publish grade')}</option>
+                              <option value="revision_requested">{tr('Cần sửa • Nộp lại', 'Needs revision • Resubmit')}</option>
                             </select>
                           </div>
                         </div>
 
                         <div>
                           <label className="block text-xs font-bold text-stone-800">
-                            Nhận xét:
+                            {tr('Nhận xét:', 'Feedback:')}
                           </label>
                           <textarea
                             rows={2}
                             data-testid="teacher-feedback-input"
+                            placeholder={tr(
+                              'Nhập nhận xét chi tiết cho học viên...',
+                              'Write personalized feedback for the student...'
+                            )}
                             value={feedbackInput}
                             onChange={(e) => setFeedbackInput(e.target.value)}
                             className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
@@ -1722,7 +2215,7 @@ export const TeacherWorkspace: React.FC = () => {
                             onClick={() => setActiveHomeworkId(null)}
                             className="min-h-[36px] rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700"
                           >
-                            Hủy
+                            {tr('Hủy', 'Cancel')}
                           </button>
                           <button
                             type="submit"
@@ -1735,7 +2228,7 @@ export const TeacherWorkspace: React.FC = () => {
                             ) : (
                               <Award className="h-4 w-4" />
                             )}
-                            <span>Lưu điểm</span>
+                            <span>{tr('Lưu điểm', 'Save grade')}</span>
                           </button>
                         </div>
                       </form>
@@ -1756,23 +2249,44 @@ export const TeacherWorkspace: React.FC = () => {
               e.preventDefault();
               handleTriggerSessionSubmit('published');
             }}
-            className="space-y-3 rounded-xl border border-stone-200 bg-white p-4 shadow-2xs lg:col-span-7"
+            className="min-w-0 space-y-3 rounded-xl border border-stone-200 bg-white p-3.5 sm:p-4 shadow-2xs lg:col-span-7"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-display text-sm font-bold text-stone-900">
-                Giao bài tập buổi học ({effectiveClassId})
-              </h2>
-              <div className="inline-flex rounded-xl border border-stone-200 bg-stone-50 p-0.5 text-xs">
+              <div className="min-w-0">
+                <h2 className="font-display text-sm font-bold text-stone-900">
+                  {tr('Giao bài tập buổi học', 'Assign session homework')}
+                  {effectiveClassId ? ` (${effectiveClassId})` : ''}
+                </h2>
+                {effectiveClassId && (
+                  <div
+                    data-testid="teacher-assignments-status-summary"
+                    className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]"
+                  >
+                    <span className="rounded-md bg-stone-100 px-2 py-0.5 font-semibold text-stone-700">
+                      {sessionsSummaryStats.sessionsCount} {tr('buổi đã tạo', 'sessions')}
+                    </span>
+                    <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800">
+                      {sessionsSummaryStats.publishedCount} {tr('đang giao', 'published')}
+                    </span>
+                    <span className="rounded-md bg-amber-50 px-2 py-0.5 font-semibold text-amber-900">
+                      {sessionsSummaryStats.draftCount} {tr('bản nháp', 'drafts')}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="inline-flex max-w-full flex-wrap rounded-xl border border-stone-200 bg-stone-50 p-0.5 text-xs">
                 <button
                   type="button"
                   data-testid="teacher-exercise-mode-create"
                   onClick={() => {
-                    if (exerciseMode === 'edit') {
-                      setExerciseAttachments([]);
-                      setExerciseDueDate('');
-                    }
                     setExerciseMode('create');
                     setEditingExerciseId('');
+                    setNotifyStudentsOnUpdate(false);
+                    setExerciseTitle('');
+                    setExercisePrompt('');
+                    setExerciseSubmissionType('mixed');
+                    setExerciseDueDate('');
+                    setExerciseAttachments([]);
                     setExerciseAttachmentError(null);
                   }}
                   className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-bold transition-colors ${
@@ -1782,7 +2296,7 @@ export const TeacherWorkspace: React.FC = () => {
                   }`}
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  <span>Tạo bài mới</span>
+                  <span>{tr('Tạo bài mới', 'New exercise')}</span>
                 </button>
                 <button
                   type="button"
@@ -1804,7 +2318,7 @@ export const TeacherWorkspace: React.FC = () => {
                   }`}
                 >
                   <Edit3 className="h-3.5 w-3.5" />
-                  <span>Sửa bài hiện có ({existingSessionExercises.length})</span>
+                  <span>{tr('Sửa bài hiện có', 'Edit existing')} ({existingSessionExercises.length})</span>
                 </button>
               </div>
             </div>
@@ -1816,15 +2330,28 @@ export const TeacherWorkspace: React.FC = () => {
               >
                 {exerciseMode === 'create' ? (
                   <p>
-                    <strong>Bảo toàn bài cũ:</strong> Buổi {sessionNum} hiện đã có{' '}
-                    <strong>{existingSessionExercises.length} bài tập</strong>. Chế độ{' '}
-                    <strong>&ldquo;Tạo bài mới&rdquo;</strong> sẽ tự động nối thêm bài số{' '}
-                    {existingSessionExercises.length + 1} mà không ghi đè các bài đã giao.
+                    {lang === 'en' ? (
+                      <>
+                        <strong>Keep existing exercises:</strong> Session {sessionNum} already has{' '}
+                        <strong>{existingSessionExercises.length} exercise(s)</strong>.{' '}
+                        <strong>&ldquo;New exercise&rdquo;</strong> mode automatically appends exercise #{existingSessionExercises.length + 1} without overwriting existing ones.
+                      </>
+                    ) : (
+                      <>
+                        <strong>Bảo toàn bài cũ:</strong> Buổi {sessionNum} hiện đã có{' '}
+                        <strong>{existingSessionExercises.length} bài tập</strong>. Chế độ{' '}
+                        <strong>&ldquo;Tạo bài mới&rdquo;</strong> sẽ tự động nối thêm bài số{' '}
+                        {existingSessionExercises.length + 1} mà không ghi đè các bài đã giao.
+                      </>
+                    )}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
                     <label className="block font-bold text-emerald-950">
-                      Chọn bài tập hiện có trong Buổi {sessionNum} để chỉnh sửa:
+                      {tr(
+                        `Chọn bài tập hiện có trong Buổi ${sessionNum} để chỉnh sửa:`,
+                        `Select an existing exercise in Session ${sessionNum} to edit:`
+                      )}
                     </label>
                     <select
                       data-testid="teacher-existing-exercise-select"
@@ -1841,7 +2368,7 @@ export const TeacherWorkspace: React.FC = () => {
                     >
                       {existingSessionExercises.map((ex, idx) => (
                         <option key={ex.id || idx} value={ex.id}>
-                          Bài {ex.num || idx + 1}: {ex.title} ({ex.id})
+                          {formatExerciseDisplayTitle(ex, idx, tr)}
                         </option>
                       ))}
                     </select>
@@ -1852,56 +2379,191 @@ export const TeacherWorkspace: React.FC = () => {
 
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
               <div>
-                <label className="block text-xs font-bold text-stone-700">Lớp học:</label>
+                <label className="block text-xs font-bold text-stone-700">
+                  {tr('Lớp học:', 'Class:')}
+                </label>
                 <select
-                  aria-label="Chọn lớp giao bài"
+                  aria-label={tr('Chọn lớp giao bài', 'Select class for assignment')}
                   data-testid="teacher-exercise-class-select"
                   value={effectiveClassId}
                   onChange={(e) => {
                     setSelectedClassId(e.target.value);
                     setHasManualClassSelection(true);
                   }}
-                  className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
+                  className="mt-1 min-h-[38px] w-full rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none"
                 >
+                  <option value="">{tr('-- Chọn lớp học --', '-- Select class --')}</option>
                   {classesList.map((cls) => (
                     <option key={cls.id} value={cls.id}>
-                      {cls.id} · {cls.name}
+                      {cls.id} · {translateCourseTitle(cls.name, lang)}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-stone-700">Buổi số:</label>
-                <input
-                  type="number"
-                  min={1}
-                  data-testid="teacher-session-num-input"
-                  value={sessionNum}
+                <label className="block text-xs font-bold text-stone-700">
+                  {tr('Buổi học:', 'Session:')}
+                </label>
+                <select
+                  aria-label={tr('Chọn buổi học', 'Select session')}
+                  data-testid="teacher-session-select"
+                  disabled={!effectiveClassId}
+                  value={
+                    sessionSelectMode === 'create_new'
+                      ? '__new__'
+                      : sessionNum !== null
+                      ? String(sessionNum)
+                      : ''
+                  }
                   onChange={(e) => {
-                    const nextNum = Math.max(1, Number(e.target.value) || 1);
+                    const val = e.target.value;
+                    setExerciseMode('create');
+                    setEditingExerciseId('');
+                    setNotifyStudentsOnUpdate(false);
+                    if (!val) {
+                      setSessionSelectMode('none');
+                      setSessionNum(null);
+                      setCustomSessionNumInput('');
+                      setSessionTitle('');
+                      setSessionTitleDirty(false);
+                      return;
+                    }
+                    if (val === '__new__') {
+                      setSessionSelectMode('create_new');
+                      setSessionNum(null);
+                      setCustomSessionNumInput('');
+                      setSessionTitle('');
+                      setSessionTitleDirty(false);
+                      return;
+                    }
+                    const nextNum = Math.max(1, Number(val) || 1);
+                    setSessionSelectMode('existing');
                     setSessionNum(nextNum);
+                    setCustomSessionNumInput(String(nextNum));
                     const matched = sessionsList.find(
                       (s) => Number(s.sessionNum ?? s.session_num) === nextNum
                     );
-                    if (matched) {
-                      setSessionTitle(matched.title || matched.session_title);
-                    } else {
-                      setSessionTitle(`Buổi ${nextNum}: Nội dung bài học`);
-                    }
-                    setExerciseMode('create');
-                    setEditingExerciseId('');
+                    setSessionTitle(
+                      String(matched?.title || matched?.session_title || '').trim()
+                    );
+                    setSessionTitleDirty(false);
                   }}
-                  className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold"
-                />
+                  className="mt-1 min-h-[38px] w-full rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-900 focus:border-red-800 focus:outline-none disabled:bg-stone-100 disabled:text-stone-400"
+                >
+                  <option value="">
+                    {effectiveClassId
+                      ? tr('-- Chọn buổi học --', '-- Select session --')
+                      : tr('-- Chọn lớp học trước --', '-- Select class first --')}
+                  </option>
+                  {sessionsList.map((s) => {
+                    const sNum = Number(s.sessionNum ?? s.session_num);
+                    const realTitle = String(s.title || s.session_title || '').trim();
+                    const datePart = formatSessionShortDate(s.updatedAt);
+                    const exCount = Array.isArray(s.exercises) ? s.exercises.length : 0;
+                    const hasPrefix = /^(?:Buổi|Session)\s*\d+\b/i.test(realTitle);
+                    const baseLabel = realTitle
+                      ? hasPrefix
+                        ? realTitle
+                        : `${tr('Buổi', 'Session')} ${sNum} — ${realTitle}`
+                      : `${tr('Buổi', 'Session')} ${sNum}`;
+                    return (
+                      <option key={s.id || sNum} value={String(sNum)}>
+                        {baseLabel}
+                        {datePart ? ` · ${datePart}` : ''} ({exCount} {tr('bài', 'ex.')})
+                      </option>
+                    );
+                  })}
+                  {effectiveClassId && (
+                    <option value="__new__">
+                      {tr('+ Tạo buổi học mới...', '+ Create new session...')}
+                    </option>
+                  )}
+                </select>
+
+                {effectiveClassId && sessionSelectMode === 'create_new' && (
+                  <div className="mt-1.5 space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={1}
+                        aria-label={tr('Số buổi mới', 'New session number')}
+                        data-testid="teacher-session-num-input"
+                        value={customSessionNumInput}
+                        placeholder={tr(
+                          `Nhập số buổi (VD: ${suggestedNextSessionNum})`,
+                          `Session # (e.g. ${suggestedNextSessionNum})`
+                        )}
+                        onChange={(e) => {
+                          const rawVal = e.target.value;
+                          setCustomSessionNumInput(rawVal);
+                          const parsed = Number(rawVal);
+                          if (!rawVal.trim() || !Number.isFinite(parsed) || parsed < 1) {
+                            setSessionNum(null);
+                            return;
+                          }
+                          const nextNum = Math.floor(parsed);
+                          setSessionNum(nextNum);
+                          const matched = sessionsList.find(
+                            (s) => Number(s.sessionNum ?? s.session_num) === nextNum
+                          );
+                          if (matched) {
+                            setSessionTitle(
+                              String(matched.title || matched.session_title || '').trim()
+                            );
+                            setSessionTitleDirty(false);
+                          } else if (!sessionTitleDirty) {
+                            setSessionTitle('');
+                          }
+                        }}
+                        className="min-h-[34px] min-w-0 flex-1 rounded-xl border border-stone-300 px-3 py-1 text-xs font-bold focus:border-red-800 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        data-testid="teacher-suggest-next-session-btn"
+                        onClick={() => {
+                          setSessionNum(suggestedNextSessionNum);
+                          setCustomSessionNumInput(String(suggestedNextSessionNum));
+                          setSessionTitle('');
+                          setSessionTitleDirty(false);
+                        }}
+                        className="shrink-0 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-800 hover:bg-red-100"
+                      >
+                        {tr(`Buổi ${suggestedNextSessionNum}`, `Session ${suggestedNextSessionNum}`)}
+                      </button>
+                    </div>
+                    {sessionNum !== null &&
+                      sessionsList.some(
+                        (s) => Number(s.sessionNum ?? s.session_num) === sessionNum
+                      ) && (
+                        <p className="text-[11px] font-medium text-amber-800">
+                          {tr(
+                            `Buổi ${sessionNum} đã có sẵn — bài tập mới sẽ được thêm nối tiếp vào buổi này.`,
+                            `Session ${sessionNum} already exists — new exercise will be appended safely.`
+                          )}
+                        </p>
+                      )}
+                  </div>
+                )}
               </div>
               <div>
-                <label className="block text-xs font-bold text-stone-700">Tiêu đề buổi:</label>
+                <label className="block text-xs font-bold text-stone-700">
+                  {tr('Tiêu đề buổi:', 'Session title:')}
+                </label>
                 <input
                   type="text"
                   data-testid="teacher-session-title-input"
                   value={sessionTitle}
-                  onChange={(e) => setSessionTitle(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs"
+                  disabled={!effectiveClassId || sessionSelectMode === 'none'}
+                  placeholder={
+                    !effectiveClassId || sessionSelectMode === 'none'
+                      ? tr('Chọn buổi học trước', 'Select a session first')
+                      : tr('Nhập chủ đề buổi học (tùy chọn)', 'Enter session topic (optional)')
+                  }
+                  onChange={(e) => {
+                    setSessionTitle(e.target.value);
+                    setSessionTitleDirty(true);
+                  }}
+                  className="mt-1 min-h-[38px] w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs disabled:bg-stone-100 disabled:text-stone-400"
                 />
               </div>
             </div>
@@ -1910,40 +2572,43 @@ export const TeacherWorkspace: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-bold text-amber-950">
                   {exerciseMode === 'edit'
-                    ? `Đang chỉnh sửa bài tập (${editingExerciseId})`
-                    : 'Bài tập về nhà:'}
+                    ? tr(
+                        `Đang chỉnh sửa: ${editingExerciseDisplayLabel}`,
+                        `Editing: ${editingExerciseDisplayLabel}`
+                      )
+                    : tr('Bài tập về nhà:', 'Homework assignment:')}
                 </p>
                 {exerciseMode === 'edit' && (
                   <span className="rounded bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-950">
-                    Giữ nguyên ID & các bài tập khác trong buổi
+                    {tr('Bảo toàn các bài tập khác trong buổi', 'Preserves other exercises in session')}
                   </span>
                 )}
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-stone-700">
-                  Tên bài tập:
+                  {tr('Tên bài tập *:', 'Exercise title *:')}
                 </label>
                 <input
                   type="text"
                   data-testid="teacher-exercise-title-input"
                   value={exerciseTitle}
                   onChange={(e) => setExerciseTitle(e.target.value)}
-                  placeholder="Tiêu đề bài tập..."
+                  placeholder={tr('VD: Thu âm từ vựng hoặc làm phiếu bài tập...', 'e.g. Record vocabulary or complete worksheet...')}
                   className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs"
                 />
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-stone-700">
-                  Hướng dẫn làm bài:
+                  {tr('Hướng dẫn làm bài (không bắt buộc nếu đã đính kèm tệp):', 'Instructions (optional if files attached):')}
                 </label>
                 <textarea
                   rows={2}
                   data-testid="teacher-exercise-prompt-input"
                   value={exercisePrompt}
                   onChange={(e) => setExercisePrompt(e.target.value)}
-                  placeholder="Hướng dẫn ngắn..."
+                  placeholder={tr('Nhập yêu cầu, gợi ý hoặc ghi chú nộp bài...', 'Enter instructions or submission notes...')}
                   className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs"
                 />
               </div>
@@ -1951,7 +2616,7 @@ export const TeacherWorkspace: React.FC = () => {
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <div>
                   <label className="block text-[11px] font-bold text-stone-700">
-                    Loại bài cần nộp:
+                    {tr('Loại bài cần nộp:', 'Submission type:')}
                   </label>
                   <select
                     data-testid="teacher-exercise-submission-type-select"
@@ -1963,16 +2628,16 @@ export const TeacherWorkspace: React.FC = () => {
                     }
                     className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-900"
                   >
-                    <option value="mixed">Tổng hợp (Thu âm / Ảnh / Tệp / Văn bản)</option>
-                    <option value="audio">Thu âm giọng đọc (Audio)</option>
-                    <option value="file">Nộp tệp / Ảnh vở viết (PDF, Word, Ảnh)</option>
-                    <option value="text">Trả lời văn bản trực tiếp</option>
+                    <option value="mixed">{tr('Tổng hợp (Thu âm / Ảnh / Tệp / Văn bản)', 'Mixed (Audio / Image / File / Text)')}</option>
+                    <option value="audio">{tr('Thu âm giọng đọc (Audio)', 'Voice recording (Audio)')}</option>
+                    <option value="file">{tr('Nộp tệp / Ảnh vở viết (PDF, Word, Ảnh)', 'File / Workbook photo (PDF, Word, Image)')}</option>
+                    <option value="text">{tr('Trả lời văn bản trực tiếp', 'Direct text answer')}</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-stone-700">
-                    Hạn nộp (tùy chọn):
+                    {tr('Hạn nộp (tùy chọn):', 'Due date (optional):')}
                   </label>
                   <input
                     type="date"
@@ -1985,24 +2650,51 @@ export const TeacherWorkspace: React.FC = () => {
               </div>
 
               {/* File Attachments Upload Section (C2) */}
-              <div className="space-y-2 rounded-xl border border-stone-200 bg-white p-2.5">
+              <div
+                data-testid="teacher-exercise-dropzone"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFiles(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFiles(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFiles(false);
+                  if (e.dataTransfer?.files?.length) {
+                    void handleExerciseFilesSelected(e.dataTransfer.files);
+                  }
+                }}
+                className={`space-y-2 rounded-xl border p-2.5 transition-colors ${
+                  isDraggingFiles
+                    ? 'border-dashed border-red-700 bg-red-50/70'
+                    : 'border-stone-200 bg-white'
+                }`}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
-                      <Paperclip className="h-3.5 w-3.5 text-red-800" />
+                      <Upload className="h-3.5 w-3.5 text-red-800" />
                       <span>
-                        Tài liệu đính kèm ({exerciseAttachments.length}/{MAX_EXERCISE_ATTACHMENTS})
+                        {tr('Tài liệu đính kèm', 'Attachments')} ({exerciseAttachments.length}/{MAX_EXERCISE_ATTACHMENTS})
                       </span>
                     </p>
                     <p className="text-[10px] text-stone-500">
-                      Hỗ trợ PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4 (tối đa{' '}
-                      {Math.round(MAX_HOMEWORK_ATTACHMENT_BYTES / (1024 * 1024))}MB/tệp).
+                      {tr(
+                        `Kéo thả tệp vào đây hoặc bấm đính kèm · PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4 (tối đa ${Math.round(MAX_HOMEWORK_ATTACHMENT_BYTES / (1024 * 1024))}MB/tệp).`,
+                        `Drag & drop or browse · PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4 (max ${Math.round(MAX_HOMEWORK_ATTACHMENT_BYTES / (1024 * 1024))}MB/file).`
+                      )}
                     </p>
                   </div>
 
                   <label className="inline-flex min-h-[32px] cursor-pointer items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-900 hover:bg-red-100">
                     <Paperclip className="h-3.5 w-3.5" />
-                    <span>+ Đính kèm tệp</span>
+                    <span>{tr('+ Đính kèm tệp', '+ Attach files')}</span>
                     <input
                       ref={exerciseFileInputRef}
                       type="file"
@@ -2070,28 +2762,47 @@ export const TeacherWorkspace: React.FC = () => {
                               <div className="truncate font-bold text-stone-900">
                                 {att.name}
                               </div>
-                              <div className="flex items-center gap-2 text-[10px] text-stone-500">
-                                <span>{formatBytes(att.sizeBytes || 0)}</span>
-                                {att.uploading ? (
-                                  <span
-                                    data-testid={`teacher-attachment-progress-${att.id}`}
-                                    className="font-bold text-amber-800"
-                                  >
-                                    Đang tải {att.progress ?? 0}%...
-                                  </span>
-                                ) : (
-                                  <span className="font-semibold text-emerald-700">
-                                    Đã tải xong
-                                  </span>
-                                )}
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-stone-500">
+                                  <span>{formatBytes(att.sizeBytes || 0)}</span>
+                                  {att.uploading ? (
+                                    <span
+                                      data-testid={`teacher-attachment-progress-${att.id}`}
+                                      className="font-bold text-amber-800"
+                                    >
+                                      {tr(`Đang tải ${att.progress ?? 0}%...`, `Uploading ${att.progress ?? 0}%...`)}
+                                    </span>
+                                  ) : att.error ? (
+                                    <span
+                                      data-testid={`teacher-attachment-item-error-${att.id}`}
+                                      className="font-semibold text-red-700"
+                                    >
+                                      {att.error}
+                                    </span>
+                                  ) : (
+                                    <span className="font-semibold text-emerald-700">
+                                      {tr('Đã tải xong', 'Uploaded')}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            {!att.uploading &&
-                              resolvedUrl &&
-                              (isImage || isPdf || isAudio || isVideo) && (
+                            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                              {att.error && att.rawFile && (
+                                <button
+                                  type="button"
+                                  data-testid={`teacher-retry-attachment-${att.id}`}
+                                  onClick={() => void retryExerciseAttachmentUpload(att)}
+                                  className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-900 hover:bg-amber-100"
+                                >
+                                  <RefreshCw className="h-3 w-3" />
+                                  <span>{tr('Thử lại', 'Retry')}</span>
+                                </button>
+                              )}
+                              {!att.uploading &&
+                                !att.error &&
+                                resolvedUrl &&
+                                (isImage || isPdf || isAudio || isVideo) && (
                                 <button
                                   type="button"
                                   data-testid={`teacher-preview-attachment-${att.id}`}
@@ -2099,7 +2810,7 @@ export const TeacherWorkspace: React.FC = () => {
                                   className="inline-flex items-center gap-1 rounded border border-stone-300 bg-white px-2 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-100"
                                 >
                                   <ZoomIn className="h-3 w-3" />
-                                  <span>Xem trước</span>
+                                  <span>{tr('Xem trước', 'Preview')}</span>
                                 </button>
                               )}
                             <button
@@ -2109,7 +2820,7 @@ export const TeacherWorkspace: React.FC = () => {
                               className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-800 hover:bg-red-100"
                             >
                               <Trash2 className="h-3 w-3" />
-                              <span>{att.uploading ? 'Hủy tải' : 'Xóa'}</span>
+                              <span>{att.uploading ? tr('Hủy tải', 'Cancel') : tr('Xóa', 'Remove')}</span>
                             </button>
                           </div>
                         </div>
@@ -2119,6 +2830,26 @@ export const TeacherWorkspace: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {exerciseMode === 'edit' &&
+              Boolean(editingExerciseId) &&
+              existingSessionExercises.find((ex) => ex.id === editingExerciseId)?.status !== 'draft' && (
+                <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs font-medium text-amber-950">
+                  <input
+                    type="checkbox"
+                    data-testid="teacher-notify-on-update-checkbox"
+                    checked={notifyStudentsOnUpdate}
+                    onChange={(e) => setNotifyStudentsOnUpdate(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-stone-300 text-red-800 focus:ring-red-700"
+                  />
+                  <span>
+                    {tr(
+                      'Gửi thông báo cập nhật bài tập tới học viên trong lớp (mặc định tắt để tránh gửi trùng)',
+                      'Notify class students about this exercise update (off by default to prevent duplicate alerts)'
+                    )}
+                  </span>
+                </label>
+              )}
 
             <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
               <button
@@ -2132,7 +2863,7 @@ export const TeacherWorkspace: React.FC = () => {
                 className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-800 hover:bg-stone-50 disabled:opacity-50"
               >
                 <Save className="h-3.5 w-3.5" />
-                <span>Lưu nháp</span>
+                <span>{tr('Lưu nháp', 'Save draft')}</span>
               </button>
 
               <button
@@ -2146,18 +2877,34 @@ export const TeacherWorkspace: React.FC = () => {
               >
                 <Send className="h-3.5 w-3.5" />
                 <span>
-                  {exerciseMode === 'edit' ? 'Cập nhật & Giao bài' : 'Giao bài'}
+                  {exerciseMode === 'edit'
+                    ? tr('Cập nhật & Giao bài', 'Update & Assign')
+                    : tr('Giao bài', 'Assign')}
                 </span>
               </button>
             </div>
           </form>
 
-          <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-2xs lg:col-span-5">
+          <div className="min-w-0 rounded-xl border border-stone-200 bg-white p-3.5 sm:p-4 shadow-2xs lg:col-span-5">
             <h3 className="font-display text-sm font-bold text-stone-900">
-              Buổi học đã lưu ({sessionsList.length})
+              {tr('Buổi học đã lưu', 'Saved sessions')} ({sessionsList.length})
             </h3>
             <div className="mt-2.5 space-y-2.5">
-              {sessionsList.map((s) => {
+              {!effectiveClassId ? (
+                <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 text-center text-xs text-stone-500">
+                  {tr(
+                    'Vui lòng chọn lớp học ở biểu mẫu bên cạnh để xem các buổi học đã lưu.',
+                    'Please select a class in the form beside this panel to view saved sessions.'
+                  )}
+                </p>
+              ) : sessionsList.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 text-center text-xs text-stone-500">
+                  {tr(
+                    'Lớp chưa có buổi học hoặc bài tập nào. Hãy tạo bài tập đầu tiên bên cạnh.',
+                    'No saved sessions or exercises for this class yet. Create the first one using the form.'
+                  )}
+                </p>
+              ) : sessionsList.map((s) => {
                 const sNum = Number(s.sessionNum ?? s.session_num);
                 const exList = Array.isArray(s.exercises) ? s.exercises : [];
                 return (
@@ -2171,7 +2918,7 @@ export const TeacherWorkspace: React.FC = () => {
                         {s.title || s.session_title}
                       </p>
                       <span className="rounded bg-stone-200/80 px-2 py-0.5 text-[10px] font-bold text-stone-800">
-                        {exList.length} bài tập
+                        {exList.length} {tr('bài tập', 'exercises')}
                       </span>
                     </div>
 
@@ -2186,17 +2933,21 @@ export const TeacherWorkspace: React.FC = () => {
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="font-bold text-stone-900">
-                                  Bài {ex.num || idx + 1}: {ex.title}
+                                  {formatExerciseDisplayTitle(ex, idx, tr)}
                                 </span>
-                                {ex.status === 'draft' && (
+                                {ex.status === 'draft' ? (
                                   <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                                    Nháp
+                                    {tr('Nháp', 'Draft')}
+                                  </span>
+                                ) : (
+                                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                                    {tr('Đang giao', 'Published')}
                                   </span>
                                 )}
                                 {Array.isArray(ex.attachments) &&
                                   ex.attachments.length > 0 && (
                                     <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
-                                      {ex.attachments.length} tệp đính kèm
+                                      {ex.attachments.length} {tr('tệp đính kèm', 'attachment(s)')}
                                     </span>
                                   )}
                               </div>
@@ -2208,13 +2959,16 @@ export const TeacherWorkspace: React.FC = () => {
                               type="button"
                               data-testid={`teacher-edit-saved-exercise-btn-${ex.id}`}
                               onClick={() => {
+                                setSessionSelectMode('existing');
                                 setSessionNum(sNum);
-                                setSessionTitle(s.title || s.session_title);
+                                setCustomSessionNumInput(String(sNum));
+                                setSessionTitle(String(s.title || s.session_title || '').trim());
+                                setSessionTitleDirty(false);
                                 loadExistingExerciseIntoForm(ex);
                               }}
                               className="shrink-0 rounded-lg border border-stone-200 bg-stone-50 px-2 py-1 text-[10px] font-bold text-red-800 hover:bg-red-50"
                             >
-                              Sửa bài này
+                              {tr('Sửa bài này', 'Edit')}
                             </button>
                           </div>
                         ))}
@@ -2235,10 +2989,23 @@ export const TeacherWorkspace: React.FC = () => {
               <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl">
                 <h3 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
                   <AlertTriangle className="h-4 w-4 text-amber-700" />
-                  <span>Xác nhận cập nhật bài tập đã giao ({editingExerciseId})</span>
+                  <span>
+                    {tr(
+                      `Xác nhận cập nhật: ${editingExerciseDisplayLabel}`,
+                      `Confirm updating: ${editingExerciseDisplayLabel}`
+                    )}
+                  </span>
                 </h3>
                 <p className="mt-2 text-xs leading-relaxed text-stone-600">
-                  Bạn đang sửa bài tập đã giao trong <strong>Buổi {sessionNum}</strong>. Hệ thống sẽ giữ nguyên mã bài tập (<code>{editingExerciseId}</code>), bảo toàn các bài tập khác cùng buổi và không gửi thông báo giao bài trùng lặp.
+                  {lang === 'en' ? (
+                    <>
+                      You are editing an already-assigned exercise (<strong>{editingExerciseDisplayLabel}</strong>) in <strong>Session {sessionNum}</strong>. Other exercises in this session will be preserved without sending duplicate assignment alerts.
+                    </>
+                  ) : (
+                    <>
+                      Bạn đang sửa bài tập đã giao (<strong>{editingExerciseDisplayLabel}</strong>) trong <strong>Buổi {sessionNum}</strong>. Hệ thống sẽ bảo toàn các bài tập khác cùng buổi và không gửi thông báo giao bài trùng lặp.
+                    </>
+                  )}
                 </p>
                 <div className="mt-4 flex items-center justify-end gap-2">
                   <button
@@ -2247,7 +3014,7 @@ export const TeacherWorkspace: React.FC = () => {
                     onClick={() => setConfirmOverwriteOpen(false)}
                     className="rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50"
                   >
-                    Hủy
+                    {tr('Hủy', 'Cancel')}
                   </button>
                   <button
                     type="button"
@@ -2257,7 +3024,7 @@ export const TeacherWorkspace: React.FC = () => {
                     }
                     className="rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
                   >
-                    Xác nhận cập nhật
+                    {tr('Xác nhận cập nhật', 'Confirm update')}
                   </button>
                 </div>
               </div>
@@ -2282,7 +3049,7 @@ export const TeacherWorkspace: React.FC = () => {
                   </div>
                   <button
                     type="button"
-                    aria-label="Đóng xem trước tài liệu"
+                    aria-label={tr('Đóng xem trước tài liệu', 'Close file preview')}
                     onClick={() => setPreviewingExerciseAttachment(null)}
                     className="rounded-lg p-1 text-stone-500 hover:bg-stone-100"
                   >
@@ -2317,7 +3084,10 @@ export const TeacherWorkspace: React.FC = () => {
                     />
                   ) : (
                     <p className="py-6 text-center text-xs text-stone-600">
-                      Tệp tài liệu văn phòng ({previewingExerciseAttachment.name}).
+                      {tr(
+                        `Tệp tài liệu văn phòng (${previewingExerciseAttachment.name}).`,
+                        `Office document (${previewingExerciseAttachment.name}).`
+                      )}
                     </p>
                   )}
                 </div>
@@ -2334,10 +3104,13 @@ export const TeacherWorkspace: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-3">
               <div>
                 <h2 className="font-display text-sm font-bold text-stone-900">
-                  Học viên & Điểm danh lớp {effectiveClassId} ({studentsList.length})
+                  {tr('Học viên & Điểm danh lớp', 'Students & Attendance for class')} {effectiveClassId} ({studentsList.length})
                 </h2>
                 <p className="mt-0.5 text-[11px] text-stone-500">
-                  Giáo viên được tạo học viên mới trong lớp mình phụ trách. Khóa học video cần gửi đề nghị để Quản lý phê duyệt.
+                  {tr(
+                    'Giáo viên được tạo học viên mới trong lớp mình phụ trách. Khóa học video cần gửi đề nghị để Quản lý phê duyệt.',
+                    'Teachers can create new students in assigned classes. Video course access requires submitting a request for Admin approval.'
+                  )}
                 </p>
               </div>
 
@@ -2354,7 +3127,7 @@ export const TeacherWorkspace: React.FC = () => {
                   className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
                 >
                   <UserPlus className="h-3.5 w-3.5" />
-                  <span>+ Tạo học viên</span>
+                  <span>{tr('+ Tạo học viên', '+ Add student')}</span>
                 </button>
 
                 <button
@@ -2373,15 +3146,15 @@ export const TeacherWorkspace: React.FC = () => {
                   className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
                 >
                   <BookOpen className="h-3.5 w-3.5 text-amber-800" />
-                  <span>Đề nghị mở khóa học online</span>
+                  <span>{tr('Đề nghị mở khóa học online', 'Request online course')}</span>
                 </button>
 
                 <div className="flex items-center gap-1.5 border-l border-stone-200 pl-2">
-                  <label className="text-xs font-bold text-stone-600">Buổi:</label>
+                  <label className="text-xs font-bold text-stone-600">{tr('Buổi:', 'Session:')}</label>
                   <input
                     type="number"
                     min={1}
-                    aria-label="Buổi điểm danh"
+                    aria-label={tr('Buổi điểm danh', 'Attendance session')}
                     data-testid="teacher-attendance-session-input"
                     value={attendanceSessionNum}
                     onChange={(e) =>
@@ -2397,7 +3170,7 @@ export const TeacherWorkspace: React.FC = () => {
                     className="inline-flex min-h-[34px] items-center gap-1 rounded-xl bg-emerald-700 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    <span>Lưu điểm danh</span>
+                    <span>{tr('Lưu điểm danh', 'Save attendance')}</span>
                   </button>
                 </div>
               </div>
@@ -2406,7 +3179,10 @@ export const TeacherWorkspace: React.FC = () => {
             <div className="mt-2.5 divide-y divide-stone-100">
               {studentsList.length === 0 ? (
                 <p className="py-6 text-center text-xs text-stone-500">
-                  Lớp {effectiveClassId || 'này'} chưa có học viên. Bấm &ldquo;+ Tạo học viên&rdquo; để thêm học viên mới.
+                  {tr(
+                    `Lớp ${effectiveClassId || 'này'} chưa có học viên. Bấm "+ Tạo học viên" để thêm học viên mới.`,
+                    `Class ${effectiveClassId || 'this class'} has no students yet. Click "+ Add student" to add one.`
+                  )}
                 </p>
               ) : (
                 studentsList.map((st) => {
@@ -2434,28 +3210,28 @@ export const TeacherWorkspace: React.FC = () => {
                           </span>
                           {st.has_online_courses ? (
                             <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                              Có khóa video ({st.online_courses?.length || 1})
+                              {tr('Có khóa video', 'Has video course')} ({st.online_courses?.length || 1})
                             </span>
                           ) : (
                             <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-500">
-                              Chỉ học lớp trực tiếp
+                              {tr('Chỉ học lớp trực tiếp', 'Offline class only')}
                             </span>
                           )}
                         </div>
                         <p className="truncate text-[11px] text-stone-500">
                           {st.email}
-                          {st.phone && st.phone !== displayParentPhone ? ` · SĐT: ${st.phone}` : ''}
-                          {displayParentName ? ` · PH: ${displayParentName}` : ''}
+                          {st.phone && st.phone !== displayParentPhone ? ` · ${tr('SĐT', 'Phone')}: ${st.phone}` : ''}
+                          {displayParentName ? ` · ${tr('PH', 'Parent')}: ${displayParentName}` : ''}
                           {displayParentPhone
                             ? displayParentName
                               ? ` (${displayParentPhone})`
-                              : ` · SĐT PH: ${displayParentPhone}`
+                              : ` · ${tr('SĐT PH', 'Parent phone')}: ${displayParentPhone}`
                             : ''}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <select
-                          aria-label={`Điểm danh ${st.name}`}
+                          aria-label={`${tr('Điểm danh', 'Attendance for')} ${st.name}`}
                           data-testid={`teacher-attendance-select-${st.email}`}
                           value={attStatus}
                           onChange={(e) =>
@@ -2470,10 +3246,10 @@ export const TeacherWorkspace: React.FC = () => {
                           }
                           className="min-h-[34px] rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1 text-xs font-bold text-stone-800"
                         >
-                          <option value="present">Có mặt</option>
-                          <option value="late">Đi muộn</option>
-                          <option value="absent_excused">Vắng có phép</option>
-                          <option value="absent_unexcused">Vắng không phép</option>
+                          <option value="present">{tr('Có mặt', 'Present')}</option>
+                          <option value="late">{tr('Đi muộn', 'Late')}</option>
+                          <option value="absent_excused">{tr('Vắng có phép', 'Excused')}</option>
+                          <option value="absent_unexcused">{tr('Vắng không phép', 'Unexcused')}</option>
                         </select>
 
                         <button
@@ -2489,7 +3265,7 @@ export const TeacherWorkspace: React.FC = () => {
                           }}
                           className="min-h-[34px] rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-100"
                         >
-                          Đề nghị cấp khóa
+                          {tr('Đề nghị cấp khóa', 'Request course')}
                         </button>
 
                         <button
@@ -2497,7 +3273,7 @@ export const TeacherWorkspace: React.FC = () => {
                           onClick={() => navigate(`/chat?room=student:${st.email}`)}
                           className="min-h-[34px] rounded-xl border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-900 hover:bg-red-100"
                         >
-                          Nhắn tin
+                          {tr('Nhắn tin', 'Message')}
                         </button>
                       </div>
                     </div>
@@ -2514,17 +3290,17 @@ export const TeacherWorkspace: React.FC = () => {
           >
             <div className="flex items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
               <h3 className="font-display text-sm font-bold text-stone-900">
-                Đề nghị mở khóa học online đã gửi (
+                {tr('Đề nghị mở khóa học online đã gửi', 'Submitted online course requests')} (
                 {(courseGrantRequestsQuery.data || []).length})
               </h3>
               <span className="text-[11px] font-semibold text-stone-500">
-                Quản lý phê duyệt để kích hoạt trên hệ thống video
+                {tr('Quản lý phê duyệt để kích hoạt trên hệ thống video', 'Admin approval activates access in the video portal')}
               </span>
             </div>
 
             {(courseGrantRequestsQuery.data || []).length === 0 ? (
               <p className="py-5 text-center text-xs text-stone-500">
-                Chưa có đề nghị mở khóa học online nào.
+                {tr('Chưa có đề nghị mở khóa học online nào.', 'No online course access requests yet.')}
               </p>
             ) : (
               <div className="mt-2.5 divide-y divide-stone-100">
@@ -2540,47 +3316,50 @@ export const TeacherWorkspace: React.FC = () => {
                           {req.student_name || req.student_email}
                         </span>
                         <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-700">
-                          Lớp {req.class_code}
+                          {tr('Lớp', 'Class')} {req.class_code}
                         </span>
                         <span className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-900">
-                          {(req as Record<string, any>).requested_course_title ||
-                            (req as Record<string, any>).course_title ||
-                            (req as Record<string, any>).requested_course_id ||
-                            (req as Record<string, any>).course_id}
+                          {translateCourseTitle(
+                            (req as Record<string, any>).requested_course_title ||
+                              (req as Record<string, any>).course_title ||
+                              (req as Record<string, any>).requested_course_id ||
+                              (req as Record<string, any>).course_id,
+                            lang
+                          )}
                         </span>
                       </div>
                       {req.reason && (
                         <p className="mt-0.5 text-[11px] text-stone-600">
-                          Lý do: {req.reason}
+                          {tr('Lý do:', 'Reason:')} {req.reason}
                         </p>
                       )}
                       {req.review_note && (
                         <p className="mt-0.5 text-[11px] font-semibold text-stone-700">
-                          Phản hồi Quản lý: {req.review_note}
+                          {tr('Phản hồi Quản lý:', 'Admin note:')} {req.review_note}
                         </p>
                       )}
                       <p className="mt-0.5 text-[10px] text-stone-400">
-                        Gửi {formatRelativeTime(req.created_at)}
+                        {tr('Gửi', 'Sent')} {formatRelativeTime(req.created_at)}
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2">
                       {req.status === 'approved' ? (
                         <span className="rounded-lg bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-900">
-                          Đã duyệt ✓
+                          {tr('Đã duyệt ✓', 'Approved ✓')}
                         </span>
                       ) : req.status === 'rejected' ? (
                         <span className="rounded-lg bg-red-100 px-2.5 py-1 text-[11px] font-bold text-red-900">
-                          Từ chối
+                          {tr('Từ chối', 'Rejected')}
                         </span>
                       ) : req.status === 'cancelled' ? (
                         <span className="rounded-lg bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">
-                          Đã hủy
+                          {tr('Đã hủy', 'Cancelled')}
                         </span>
                       ) : (
                         <>
                           <span className="rounded-lg bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-900">
-                            Chờ Quản lý duyệt
+                            {tr('Chờ Quản lý duyệt', 'Pending approval')}
                           </span>
                           <button
                             type="button"
@@ -2589,7 +3368,7 @@ export const TeacherWorkspace: React.FC = () => {
                             onClick={() => cancelCourseRequestMutation.mutate(req.id)}
                             className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-100"
                           >
-                            Hủy yêu cầu
+                            {tr('Hủy yêu cầu', 'Cancel request')}
                           </button>
                         </>
                       )}
@@ -2615,10 +3394,10 @@ export const TeacherWorkspace: React.FC = () => {
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div>
                 <h3 className="font-display text-base font-bold text-stone-900">
-                  Tạo học viên mới (Lớp phụ trách)
+                  {tr('Tạo học viên mới (Lớp phụ trách)', 'Create new student (Assigned class)')}
                 </h3>
                 <p className="text-[11px] text-stone-500">
-                  Chỉ xếp vào lớp bạn phụ trách · Không tự động mở khóa học video
+                  {tr('Chỉ xếp vào lớp bạn phụ trách · Không tự động mở khóa học video', 'Assigned classes only · Does not auto-unlock video courses')}
                 </p>
               </div>
               <button
@@ -2635,7 +3414,7 @@ export const TeacherWorkspace: React.FC = () => {
                 data-testid="teacher-no-assigned-classes-warning"
                 className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs font-semibold text-amber-950"
               >
-                Bạn chưa được phân công lớp. Vui lòng liên hệ Quản lý.
+                {tr('Bạn chưa được phân công lớp. Vui lòng liên hệ Quản lý.', 'You have not been assigned any class yet. Please contact Admin.')}
               </div>
             ) : createdStudentResult ? (
               <div
@@ -2644,46 +3423,49 @@ export const TeacherWorkspace: React.FC = () => {
               >
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-950">
                   <p className="font-bold">
-                    ✓ Đã tạo tài khoản học viên và xếp vào lớp {createdStudentResult.classCode}
+                    {tr(
+                      `✓ Đã tạo tài khoản học viên và xếp vào lớp ${createdStudentResult.classCode}`,
+                      `✓ Student account created and added to class ${createdStudentResult.classCode}`
+                    )}
                   </p>
                   <div className="mt-2 space-y-1 rounded-lg bg-white p-2.5 text-stone-800">
                     <p>
-                      Họ tên: <strong>{createdStudentResult.name}</strong>
+                      {tr('Họ tên:', 'Full name:')} <strong>{createdStudentResult.name}</strong>
                     </p>
                     <p>
-                      Mã HV: <strong>{createdStudentResult.code}</strong>
+                      {tr('Mã HV:', 'Student ID:')} <strong>{createdStudentResult.code}</strong>
                     </p>
                     <p data-testid="teacher-created-student-email-display">
-                      Email đăng nhập: <strong>{createdStudentResult.email}</strong>
+                      {tr('Email đăng nhập:', 'Login email:')} <strong>{createdStudentResult.email}</strong>
                     </p>
                     <p data-testid="teacher-created-student-password-display">
-                      Mật khẩu khởi tạo:{' '}
+                      {tr('Mật khẩu khởi tạo:', 'Initial password:')}{' '}
                       <strong className="text-red-800">
                         {createdStudentResult.initialPassword}
                       </strong>
                     </p>
                     {createdStudentResult.phone && (
                       <p data-testid="teacher-created-student-phone-display">
-                        SĐT học viên: <strong>{createdStudentResult.phone}</strong>
+                        {tr('SĐT học viên:', 'Student phone:')} <strong>{createdStudentResult.phone}</strong>
                       </p>
                     )}
                     {createdStudentResult.parentName && (
                       <p data-testid="teacher-created-student-parent-name-display">
-                        Phụ huynh: <strong>{createdStudentResult.parentName}</strong>
+                        {tr('Phụ huynh:', 'Parent:')} <strong>{createdStudentResult.parentName}</strong>
                       </p>
                     )}
                     {createdStudentResult.parentPhone && (
                       <p data-testid="teacher-created-student-parent-phone-display">
-                        SĐT phụ huynh: <strong>{createdStudentResult.parentPhone}</strong>
+                        {tr('SĐT phụ huynh:', 'Parent phone:')} <strong>{createdStudentResult.parentPhone}</strong>
                       </p>
                     )}
                     {createdStudentResult.note && (
                       <p data-testid="teacher-created-student-note-display">
-                        Ghi chú: <strong>{createdStudentResult.note}</strong>
+                        {tr('Ghi chú:', 'Notes:')} <strong>{createdStudentResult.note}</strong>
                       </p>
                     )}
                     <p>
-                      Khóa học video: <strong>Chưa cấp (0 khóa)</strong>
+                      {tr('Khóa học video:', 'Video courses:')} <strong>{tr('Chưa cấp (0 khóa)', 'Not granted (0 courses)')}</strong>
                     </p>
                   </div>
                 </div>
@@ -2706,22 +3488,25 @@ export const TeacherWorkspace: React.FC = () => {
                     className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
                   >
                     <BookOpen className="h-3.5 w-3.5 text-amber-800" />
-                    <span>Đề nghị mở khóa học online</span>
+                    <span>{tr('Đề nghị mở khóa học online', 'Request online course')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      const text = `Thông tin đăng nhập Sổ Liên Lạc Khổng Tử Nhí:\n- Học viên: ${createdStudentResult.name} (${createdStudentResult.code})\n- Lớp: ${createdStudentResult.classCode}\n- Email: ${createdStudentResult.email}\n- Mật khẩu: ${createdStudentResult.initialPassword}`;
+                      const text = tr(
+                        `Thông tin đăng nhập Sổ Liên Lạc Khổng Tử Nhí:\n- Học viên: ${createdStudentResult.name} (${createdStudentResult.code})\n- Lớp: ${createdStudentResult.classCode}\n- Email: ${createdStudentResult.email}\n- Mật khẩu: ${createdStudentResult.initialPassword}`,
+                        `Little Confucius Portal Login Credentials:\n- Student: ${createdStudentResult.name} (${createdStudentResult.code})\n- Class: ${createdStudentResult.classCode}\n- Email: ${createdStudentResult.email}\n- Password: ${createdStudentResult.initialPassword}`
+                      );
                       navigator.clipboard?.writeText(text);
                       addToast({
-                        title: 'Đã sao chép thông tin đăng nhập!',
+                        title: tr('Đã sao chép thông tin đăng nhập!', 'Copied login credentials!'),
                         variant: 'success',
                       });
                     }}
                     className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-800 hover:bg-stone-100"
                   >
                     <Copy className="h-3.5 w-3.5" />
-                    <span>Sao chép thông tin</span>
+                    <span>{tr('Sao chép thông tin', 'Copy credentials')}</span>
                   </button>
                   <button
                     type="button"
@@ -2731,7 +3516,7 @@ export const TeacherWorkspace: React.FC = () => {
                     }}
                     className="min-h-[36px] rounded-xl bg-red-800 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                   >
-                    Hoàn tất
+                    {tr('Hoàn tất', 'Done')}
                   </button>
                 </div>
               </div>
@@ -2755,7 +3540,7 @@ export const TeacherWorkspace: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-stone-800">
-                    Lớp học trực tiếp (chỉ lớp bạn phụ trách):
+                    {tr('Lớp học trực tiếp (chỉ lớp bạn phụ trách):', 'Offline class (assigned classes only):')}
                   </label>
                   <select
                     data-testid="teacher-create-student-class-select"
@@ -2765,7 +3550,7 @@ export const TeacherWorkspace: React.FC = () => {
                   >
                     {classesList.map((cls) => (
                       <option key={cls.id} value={cls.id}>
-                        {cls.id} · {cls.name}
+                        {cls.id} · {translateCourseTitle(cls.name, lang)}
                       </option>
                     ))}
                   </select>
@@ -2773,7 +3558,7 @@ export const TeacherWorkspace: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-stone-800">
-                    Họ và tên học viên *
+                    {tr('Họ và tên học viên *', 'Student full name *')}
                   </label>
                   <input
                     type="text"
@@ -2781,14 +3566,14 @@ export const TeacherWorkspace: React.FC = () => {
                     data-testid="teacher-create-student-name-input"
                     value={newStuName}
                     onChange={(e) => setNewStuName(e.target.value)}
-                    placeholder="VD: Bé Trần Minh Khôi"
+                    placeholder={tr('VD: Bé Trần Minh Khôi', 'e.g., Tran Minh Khoi')}
                     className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-stone-800">
-                    Email đăng nhập học viên *
+                    {tr('Email đăng nhập học viên *', 'Student login email *')}
                   </label>
                   <input
                     type="email"
@@ -2796,69 +3581,77 @@ export const TeacherWorkspace: React.FC = () => {
                     data-testid="teacher-create-student-email-input"
                     value={newStuEmail}
                     onChange={(e) => setNewStuEmail(e.target.value)}
-                    placeholder="VD: minhkhoi@khongtunhi.com"
+                    placeholder={tr('VD: minhkhoi@khongtunhi.com', 'e.g., minhkhoi@khongtunhi.com')}
                     className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-stone-800">
-                    Số điện thoại học viên
+                    {tr('Số điện thoại học viên', 'Student phone')}
                   </label>
                   <input
                     type="tel"
                     data-testid="teacher-create-student-phone-input"
                     value={newStuPhone}
                     onChange={(e) => setNewStuPhone(e.target.value)}
-                    placeholder="VD: 0987654321"
+                    placeholder={tr('VD: 0987654321', 'e.g., 0987654321')}
                     className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-stone-800">
-                    Họ tên phụ huynh
+                    {tr('Họ tên phụ huynh', 'Parent name')}
                   </label>
                   <input
                     type="text"
                     data-testid="teacher-create-student-parent-name-input"
                     value={newStuParentName}
                     onChange={(e) => setNewStuParentName(e.target.value)}
-                    placeholder="VD: Chị Nguyễn Lan Anh"
+                    placeholder={tr('VD: Chị Nguyễn Lan Anh', 'e.g., Ms. Nguyen Lan Anh')}
                     className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-stone-800">
-                    Số điện thoại phụ huynh
+                    {tr('Số điện thoại phụ huynh', 'Parent phone')}
                   </label>
                   <input
                     type="tel"
                     data-testid="teacher-create-student-parent-phone-input"
                     value={newStuParentPhone}
                     onChange={(e) => setNewStuParentPhone(e.target.value)}
-                    placeholder="VD: 0912345678"
+                    placeholder={tr('VD: 0912345678', 'e.g., 0912345678')}
                     className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-stone-800">
-                    Ghi chú
+                    {tr('Ghi chú', 'Notes')}
                   </label>
                   <input
                     type="text"
                     data-testid="teacher-create-student-note-input"
                     value={newStuNotes}
                     onChange={(e) => setNewStuNotes(e.target.value)}
-                    placeholder="Ghi chú trình độ hoặc lịch học của con..."
+                    placeholder={tr('Ghi chú trình độ hoặc lịch học của con...', 'Notes on level or schedule...')}
                     className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                   />
                 </div>
 
                 <div className="rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-[11px] text-stone-600">
-                  Lưu ý: Học viên do giáo viên tạo mặc định <strong>chưa có khóa học video</strong>. Nếu cần cấp khóa học video, hãy dùng chức năng &ldquo;Đề nghị mở khóa học online&rdquo; để Quản lý phê duyệt.
+                  {lang === 'en' ? (
+                    <>
+                      Note: Teacher-created students have <strong>no video courses</strong> by default. Use &ldquo;Request online course&rdquo; for Admin approval when needed.
+                    </>
+                  ) : (
+                    <>
+                      Lưu ý: Học viên do giáo viên tạo mặc định <strong>chưa có khóa học video</strong>. Nếu cần cấp khóa học video, hãy dùng chức năng &ldquo;Đề nghị mở khóa học online&rdquo; để Quản lý phê duyệt.
+                    </>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-1">
@@ -2867,7 +3660,7 @@ export const TeacherWorkspace: React.FC = () => {
                     onClick={() => setCreateStudentModalOpen(false)}
                     className="min-h-[36px] rounded-xl border border-stone-300 px-3.5 py-1.5 text-xs font-semibold text-stone-700"
                   >
-                    Hủy
+                    {tr('Hủy', 'Cancel')}
                   </button>
                   <button
                     type="submit"
@@ -2880,7 +3673,7 @@ export const TeacherWorkspace: React.FC = () => {
                     ) : (
                       <UserPlus className="h-3.5 w-3.5" />
                     )}
-                    <span>Tạo học viên</span>
+                    <span>{tr('Tạo học viên', 'Create student')}</span>
                   </button>
                 </div>
               </form>
@@ -2899,10 +3692,13 @@ export const TeacherWorkspace: React.FC = () => {
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div>
                 <h3 className="font-display text-base font-bold text-stone-900">
-                  Đề nghị mở khóa học online
+                  {tr('Đề nghị mở khóa học online', 'Request online course access')}
                 </h3>
                 <p className="text-[11px] text-stone-500">
-                  Gửi yêu cầu để Quản lý duyệt và cấp quyền khóa học video cho học viên
+                  {tr(
+                    'Gửi yêu cầu để Quản lý duyệt và cấp quyền khóa học video cho học viên',
+                    'Submit a request for Admin to approve and grant video course access'
+                  )}
                 </p>
               </div>
               <button
@@ -2932,7 +3728,7 @@ export const TeacherWorkspace: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-stone-800">
-                  Chọn học viên trong lớp phụ trách *
+                  {tr('Chọn học viên trong lớp phụ trách *', 'Select student in assigned class *')}
                 </label>
                 <select
                   data-testid="teacher-request-course-student-select"
@@ -2940,7 +3736,7 @@ export const TeacherWorkspace: React.FC = () => {
                   onChange={(e) => setReqStudentEmail(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-900"
                 >
-                  <option value="">-- Chọn học viên --</option>
+                  <option value="">{tr('-- Chọn học viên --', '-- Select student --')}</option>
                   {studentsList.map((st) => (
                     <option key={st.email} value={st.email}>
                       {st.name} ({st.email})
@@ -2951,7 +3747,7 @@ export const TeacherWorkspace: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-stone-800">
-                  Khóa học video đề xuất mở *
+                  {tr('Khóa học video đề xuất mở *', 'Recommended video course *')}
                 </label>
                 <select
                   data-testid="teacher-request-course-select"
@@ -2959,10 +3755,10 @@ export const TeacherWorkspace: React.FC = () => {
                   onChange={(e) => setReqCourseId(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-xs font-bold text-stone-900"
                 >
-                  <option value="">-- Chọn khóa học video --</option>
+                  <option value="">{tr('-- Chọn khóa học video --', '-- Select video course --')}</option>
                   {(coursesQuery.data || DEMO_COURSES).map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.title}
+                      {translateCourseTitle(c.title, lang)}
                     </option>
                   ))}
                 </select>
@@ -2970,14 +3766,17 @@ export const TeacherWorkspace: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-stone-800">
-                  Lý do đề xuất
+                  {tr('Lý do đề xuất', 'Reason for request')}
                 </label>
                 <textarea
                   rows={2}
                   data-testid="teacher-request-course-reason-input"
                   value={reqReason}
                   onChange={(e) => setReqReason(e.target.value)}
-                  placeholder="VD: Học viên đã đóng học phí combo lớp trực tiếp + khóa video bổ trợ..."
+                  placeholder={tr(
+                    'VD: Học viên đã đóng học phí combo lớp trực tiếp + khóa video bổ trợ...',
+                    'e.g., Student paid combo tuition for offline class + supplementary video course...'
+                  )}
                   className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                 />
               </div>
@@ -2988,7 +3787,7 @@ export const TeacherWorkspace: React.FC = () => {
                   onClick={() => setCourseRequestModalOpen(false)}
                   className="min-h-[36px] rounded-xl border border-stone-300 px-3.5 py-1.5 text-xs font-semibold text-stone-700"
                 >
-                  Hủy
+                  {tr('Hủy', 'Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -3001,7 +3800,7 @@ export const TeacherWorkspace: React.FC = () => {
                   ) : (
                     <Send className="h-3.5 w-3.5" />
                   )}
-                  <span>Gửi đề nghị</span>
+                  <span>{tr('Gửi đề nghị', 'Submit request')}</span>
                 </button>
               </div>
             </form>

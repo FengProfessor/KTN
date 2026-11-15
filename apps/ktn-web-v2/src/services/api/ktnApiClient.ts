@@ -37,6 +37,7 @@ import type {
 } from '@/types/ktn.types';
 
 import { normalizeViSearchText, normalizeVietnameseText } from '@/lib/utils';
+import { trStatic } from '@/i18n';
 
 export type { KtnExerciseAttachment, KtnSessionExercise, KtnTeacherSearchResult };
 export { normalizeViSearchText, normalizeVietnameseText };
@@ -419,10 +420,13 @@ export async function ktnRequest<T>(
     if (options.signal?.aborted) {
       throw err instanceof Error && err.name === 'AbortError'
         ? err
-        : new DOMException('Yêu cầu đã bị hủy.', 'AbortError');
+        : new DOMException(trStatic('Yêu cầu đã bị hủy.', 'Request was cancelled.'), 'AbortError');
     }
     throw new KtnApiError({
-      message: 'Mất kết nối mạng hoặc máy chủ không phản hồi.',
+      message: trStatic(
+        'Mất kết nối mạng hoặc máy chủ không phản hồi.',
+        'Network connection lost or server is unreachable.'
+      ),
       status: 0,
       code: 'NETWORK_ERROR',
       isNetworkError: true
@@ -486,7 +490,7 @@ export async function ktnRequest<T>(
     throw new KtnApiError({
       message:
         (typeof data?.message === 'string' && data.message) ||
-        `Yêu cầu không thành công (HTTP ${res.status})`,
+        trStatic(`Yêu cầu không thành công (HTTP ${res.status})`, `Request failed (HTTP ${res.status})`),
       status: res.status || 500,
       code: errCode,
       syncStatus: typeof data?.syncStatus === 'string' ? data.syncStatus : undefined,
@@ -547,14 +551,27 @@ export const ktnApi = {
   async logout(tokenOverride?: string): Promise<void> {
     const tokenToRevoke = String(tokenOverride || getStoredSession()?.token || '').trim();
     clearStoredSession();
+    const collectedSubs: PushSubscription[] = [];
     try {
       let unsubscribeEndpoint = '';
-      if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
         try {
-          const reg = await navigator.serviceWorker.getRegistration('/');
-          const sub = await reg?.pushManager?.getSubscription();
-          if (sub?.endpoint) {
-            unsubscribeEndpoint = String(sub.endpoint).trim();
+          const regs =
+            typeof navigator.serviceWorker.getRegistrations === 'function'
+              ? await navigator.serviceWorker.getRegistrations()
+              : [];
+          const rootReg = await navigator.serviceWorker.getRegistration('/').catch(() => null);
+          const allRegs = [...regs, ...(rootReg ? [rootReg] : [])];
+          const seenEndpoints = new Set<string>();
+          for (const reg of allRegs) {
+            const sub = await reg?.pushManager?.getSubscription().catch(() => null);
+            if (sub?.endpoint && !seenEndpoints.has(sub.endpoint)) {
+              seenEndpoints.add(sub.endpoint);
+              collectedSubs.push(sub);
+              if (!unsubscribeEndpoint) {
+                unsubscribeEndpoint = String(sub.endpoint).trim();
+              }
+            }
           }
         } catch {
           // ignore
@@ -571,11 +588,21 @@ export const ktnApi = {
       await ktnRequest('/api/ktn/auth/logout', {
         method: 'POST',
         headers,
-        body: JSON.stringify(unsubscribeEndpoint ? { unsubscribeEndpoint } : {})
+        body: JSON.stringify(
+          collectedSubs.length > 0
+            ? {
+                unsubscribeEndpoint,
+                unsubscribeEndpoints: collectedSubs.map((s) => String(s.endpoint).trim()),
+              }
+            : {}
+        )
       });
     } catch {
       // Best-effort server revoke, always clear client state
     } finally {
+      for (const sub of collectedSubs) {
+        await sub.unsubscribe().catch(() => false);
+      }
       clearStoredSession();
     }
   },
@@ -716,8 +743,9 @@ export const ktnApi = {
     });
   },
 
-  async getClasses(): Promise<KtnClassItem[]> {
-    const res = await ktnRequest<{ ok: boolean; classes: KtnClassItem[] }>('/api/ktn/classes');
+  async getClasses(options?: { lite?: boolean }): Promise<KtnClassItem[]> {
+    const query = options?.lite ? '?lite=1' : '';
+    const res = await ktnRequest<{ ok: boolean; classes: KtnClassItem[] }>(`/api/ktn/classes${query}`);
     return (Array.isArray(res.classes) ? res.classes : []).filter((c) => c.active !== false);
   },
 
@@ -842,7 +870,7 @@ export const ktnApi = {
     const cleanCode = String(rawCode || '').trim().toUpperCase();
     if (!cleanCode) {
       throw new KtnApiError({
-        message: 'Thiếu mã lớp cần xóa.',
+        message: trStatic('Thiếu mã lớp cần xóa.', 'Missing class code to delete.'),
         status: 400,
         code: 'MISSING_CLASS_CODE',
       });
@@ -959,6 +987,8 @@ export const ktnApi = {
     preserveDefaultExercises?: boolean;
     status?: 'draft' | 'published';
     suppressDuplicateNotification?: boolean;
+    forceNotify?: boolean;
+    expectedUpdatedAt?: string | null;
     exercises: Array<{
       id?: string;
       num: number;
@@ -1077,7 +1107,10 @@ export const ktnApi = {
     const mappedMime = ALLOWED_HOMEWORK_ATTACHMENT_EXTENSIONS[ext];
     if (!mappedMime) {
       throw new KtnApiError({
-        message: `Định dạng tệp ".${ext || 'unknown'}" không được hỗ trợ. Chỉ chấp nhận PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4.`,
+        message: trStatic(
+          `Định dạng tệp ".${ext || 'unknown'}" không được hỗ trợ. Chỉ chấp nhận PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4.`,
+          `File format ".${ext || 'unknown'}" is not supported. Allowed types: PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4.`
+        ),
         status: 415,
         code: 'UNSUPPORTED_FILE_TYPE'
       });
@@ -1087,7 +1120,10 @@ export const ktnApi = {
     if (sizeBytes > MAX_HOMEWORK_ATTACHMENT_BYTES) {
       const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
       throw new KtnApiError({
-        message: `Tệp "${fileName}" có dung lượng ${sizeMb}MB, vượt quá giới hạn tối đa 50MB/tệp cho luồng giao bài tập.`,
+        message: trStatic(
+          `Tệp "${fileName}" có dung lượng ${sizeMb}MB, vượt quá giới hạn tối đa 50MB/tệp cho luồng giao bài tập.`,
+          `File "${fileName}" (${sizeMb}MB) exceeds the 50MB limit per homework attachment.`
+        ),
         status: 413,
         code: 'FILE_TOO_LARGE'
       });
@@ -1096,7 +1132,10 @@ export const ktnApi = {
     const cleanClassCode = String(params.classCode || '').trim().toUpperCase();
     if (!cleanClassCode) {
       throw new KtnApiError({
-        message: 'Vui lòng chọn lớp học trước khi tải tài liệu đính kèm.',
+        message: trStatic(
+          'Vui lòng chọn lớp học trước khi tải tài liệu đính kèm.',
+          'Please select a class before uploading attachments.'
+        ),
         status: 400,
         code: 'MISSING_CLASS_CODE'
       });
@@ -1114,7 +1153,10 @@ export const ktnApi = {
       !allowedList.some((c) => String(c || '').trim().toUpperCase() === cleanClassCode)
     ) {
       throw new KtnApiError({
-        message: `Giáo viên không có quyền tải tài liệu giao bài cho lớp ${cleanClassCode} không thuộc phạm vi phụ trách.`,
+        message: trStatic(
+          `Giáo viên không có quyền tải tài liệu giao bài cho lớp ${cleanClassCode} không thuộc phạm vi phụ trách.`,
+          `Teacher is not authorized to upload assignment materials for class ${cleanClassCode}.`
+        ),
         status: 403,
         code: 'FORBIDDEN_CLASS'
       });
@@ -1128,7 +1170,7 @@ export const ktnApi = {
 
     if (params.isDemoMode || session?.token === 'DEMO-MODE-ONLY') {
       if (params.signal?.aborted) {
-        throw new DOMException('Đã hủy tải tệp.', 'AbortError');
+        throw new DOMException(trStatic('Đã hủy tải tệp.', 'File upload cancelled.'), 'AbortError');
       }
       params.onProgress?.(60);
       const demoUrl = `https://cdn.khongtunhi.com/homework-assignments/${encodeURIComponent(
@@ -1155,7 +1197,7 @@ export const ktnApi = {
     });
 
     if (params.signal?.aborted) {
-      throw new DOMException('Đã hủy tải tệp.', 'AbortError');
+      throw new DOMException(trStatic('Đã hủy tải tệp.', 'File upload cancelled.'), 'AbortError');
     }
 
     params.onProgress?.(45);
@@ -1169,7 +1211,10 @@ export const ktnApi = {
 
     if (!uploadRes.ok) {
       throw new KtnApiError({
-        message: `Không thể tải tệp "${fileName}" lên kho lưu trữ (HTTP ${uploadRes.status}). Vui lòng thử lại.`,
+        message: trStatic(
+          `Không thể tải tệp "${fileName}" lên kho lưu trữ (HTTP ${uploadRes.status}). Vui lòng thử lại.`,
+          `Unable to upload "${fileName}" to storage (HTTP ${uploadRes.status}). Please try again.`
+        ),
         status: uploadRes.status || 502,
         code: 'STORAGE_UPLOAD_FAILED'
       });
@@ -1231,7 +1276,10 @@ export const ktnApi = {
     });
     if (!uploadRes.ok) {
       throw new KtnApiError({
-        message: 'Không thể tải tệp bài làm lên kho lưu trữ. Em vui lòng thử lại.',
+        message: trStatic(
+          'Không thể tải tệp bài làm lên kho lưu trữ. Em vui lòng thử lại.',
+          'Unable to upload your homework file. Please try again.'
+        ),
         status: uploadRes.status || 502
       });
     }
@@ -1282,7 +1330,10 @@ export const ktnApi = {
 
     if (fileSize > 100 * 1024 * 1024) {
       throw new KtnApiError({
-        message: 'Tệp đính kèm vượt quá giới hạn 100MB.',
+        message: trStatic(
+          'Tệp đính kèm vượt quá giới hạn 100MB.',
+          'Attachment exceeds the 100MB limit.'
+        ),
         status: 400
       });
     }
@@ -1316,7 +1367,10 @@ export const ktnApi = {
 
     if (!presign?.signedUrl || !presign?.fileUrl) {
       throw new KtnApiError({
-        message: 'Không tạo được đường dẫn tải tệp an toàn (Presigned URL).',
+        message: trStatic(
+          'Không tạo được đường dẫn tải tệp an toàn (Presigned URL).',
+          'Could not generate a secure upload link (Presigned URL).'
+        ),
         status: 502
       });
     }
@@ -1342,7 +1396,10 @@ export const ktnApi = {
             } else {
               reject(
                 new KtnApiError({
-                  message: `Không thể tải tệp đính kèm lên kho lưu trữ (HTTP ${xhr.status}).`,
+                  message: trStatic(
+                    `Không thể tải tệp đính kèm lên kho lưu trữ (HTTP ${xhr.status}).`,
+                    `Unable to upload attachment to storage (HTTP ${xhr.status}).`
+                  ),
                   status: xhr.status || 502
                 })
               );
@@ -1351,7 +1408,10 @@ export const ktnApi = {
           xhr.onerror = () => {
             reject(
               new KtnApiError({
-                message: 'Lỗi kết nối mạng khi tải tệp lớn lên S3.',
+                message: trStatic(
+                  'Lỗi kết nối mạng khi tải tệp lớn lên S3.',
+                  'Network error while uploading large file to storage.'
+                ),
                 status: 0,
                 isNetworkError: true
               })
@@ -1369,7 +1429,10 @@ export const ktnApi = {
       });
       if (!uploadRes.ok) {
         throw new KtnApiError({
-          message: 'Không thể tải tệp đính kèm lên kho lưu trữ. Vui lòng thử lại.',
+          message: trStatic(
+            'Không thể tải tệp đính kèm lên kho lưu trữ. Vui lòng thử lại.',
+            'Unable to upload attachment to storage. Please try again.'
+          ),
           status: uploadRes.status || 502
         });
       }
@@ -1437,20 +1500,55 @@ export const ktnApi = {
     return res;
   },
 
-  async getNotifications(): Promise<{
+  async getNotifications(params?: { limit?: number; offset?: number }): Promise<{
     notifications: KtnNotification[];
     readIds: string[];
+    unreadCount?: number;
+    totalCount?: number;
     settings?: UserNotificationSettings;
   }> {
+    const sp = new URLSearchParams();
+    if (typeof params?.limit === 'number' && params.limit > 0) {
+      sp.set('limit', String(params.limit));
+    }
+    if (typeof params?.offset === 'number' && params.offset >= 0) {
+      sp.set('offset', String(params.offset));
+    }
+    const qs = sp.toString();
     const res = await ktnRequest<{
       ok: boolean;
       notifications: KtnNotification[];
       readIds: string[];
+      unreadCount?: number;
+      totalCount?: number;
       settings?: UserNotificationSettings;
-    }>('/api/ktn/notifications');
+    }>(`/api/ktn/notifications${qs ? `?${qs}` : ''}`);
     return {
       notifications: Array.isArray(res.notifications) ? res.notifications : [],
       readIds: Array.isArray(res.readIds) ? res.readIds : [],
+      unreadCount: typeof res.unreadCount === 'number' ? res.unreadCount : undefined,
+      totalCount: typeof res.totalCount === 'number' ? res.totalCount : undefined,
+      settings: res.settings
+    };
+  },
+
+  async getNotificationsSummary(): Promise<{
+    unreadCount: number;
+    totalCount: number;
+    latestAt?: string | null;
+    settings?: UserNotificationSettings;
+  }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      unreadCount?: number;
+      totalCount?: number;
+      latestAt?: string | null;
+      settings?: UserNotificationSettings;
+    }>('/api/ktn/notifications/summary');
+    return {
+      unreadCount: Number(res.unreadCount || 0),
+      totalCount: Number(res.totalCount || 0),
+      latestAt: res.latestAt ?? null,
       settings: res.settings
     };
   },
@@ -1670,7 +1768,10 @@ export const ktnApi = {
     );
     if (cleanIds.length === 0) {
       throw new KtnApiError({
-        message: 'Vui lòng chọn ít nhất 1 khóa học cần cấp.',
+        message: trStatic(
+          'Vui lòng chọn ít nhất 1 khóa học cần cấp.',
+          'Please select at least 1 course to grant.'
+        ),
         status: 400,
         code: 'EMPTY_COURSE_SELECTION'
       });
@@ -1691,7 +1792,10 @@ export const ktnApi = {
     const cleanId = String(params.courseId || '').trim();
     if (!cleanId) {
       throw new KtnApiError({
-        message: 'Vui lòng chọn khóa học cần thu hồi.',
+        message: trStatic(
+          'Vui lòng chọn khóa học cần thu hồi.',
+          'Please select a course to revoke.'
+        ),
         status: 400,
         code: 'EMPTY_COURSE_REVOKE'
       });
@@ -1901,7 +2005,10 @@ export const ktnApi = {
     const rawTarget = String(params.teacherId || params.code || params.email || '').trim();
     if (!rawTarget) {
       throw new KtnApiError({
-        message: 'Vui lòng cung cấp mã giáo viên (code) hoặc email hợp lệ để xóa.',
+        message: trStatic(
+          'Vui lòng cung cấp mã giáo viên (code) hoặc email hợp lệ để xóa.',
+          'Please enter a valid teacher code or email to delete.'
+        ),
         status: 400,
         code: 'MISSING_TEACHER_IDENTIFIER'
       });

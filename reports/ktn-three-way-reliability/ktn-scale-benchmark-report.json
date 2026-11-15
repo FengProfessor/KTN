@@ -1,0 +1,389 @@
+{
+  "generatedAt": "2026-11-15T19:00:25.025Z",
+  "dataset": {
+    "students": 5000,
+    "classes": 100,
+    "teachers": 50,
+    "homeworks": 5000,
+    "dlpAlertsAndMessages": 10000,
+    "pushSubscriptions": 300
+  },
+  "postgresIndexComparison": {
+    "beforeIdx": {
+      "class_students_lookup": {
+        "phase": "before_indexes",
+        "p50Ms": 4.14,
+        "p95Ms": 8.7,
+        "usesIndexScan": false,
+        "planTop": "Seq Scan on ktn_students  (cost=0.00..203.50 rows=25 width=56) (actual time=0.064..3.726 rows=50.00 loops=1) |   Filter: (upper(btrim(COALESCE(class_code, ''::text))) = 'CLS-042'::text) |   Rows Removed by Filter: 4950"
+      },
+      "homeworks_class_status_queue": {
+        "phase": "before_indexes",
+        "p50Ms": 1.68,
+        "p95Ms": 2.57,
+        "usesIndexScan": false,
+        "planTop": "Limit  (cost=165.83..165.91 rows=33 width=52) (actual time=0.916..1.046 rows=33.00 loops=1) |   Buffers: shared hit=90 |   ->  Sort  (cost=165.83..165.91 rows=33 width=52) (actual time=0.913..0.996 rows=33.00 loops=1)"
+      },
+      "alerts_room_feed": {
+        "phase": "before_indexes",
+        "p50Ms": 2.33,
+        "p95Ms": 3.54,
+        "usesIndexScan": false,
+        "planTop": "Limit  (cost=265.32..265.45 rows=50 width=35) (actual time=1.672..1.766 rows=50.00 loops=1) |   Buffers: shared hit=137 |   ->  Sort  (cost=265.32..265.57 rows=100 width=35) (actual time=1.668..1.696 rows=50.00 loops=1)"
+      },
+      "messages_room_timeline": {
+        "phase": "before_indexes",
+        "p50Ms": 3,
+        "p95Ms": 3.99,
+        "usesIndexScan": false,
+        "planTop": "Limit  (cost=321.32..321.45 rows=50 width=58) (actual time=1.624..1.685 rows=50.00 loops=1) |   Buffers: shared hit=193 |   ->  Sort  (cost=321.32..321.57 rows=100 width=58) (actual time=1.621..1.642 rows=50.00 loops=1)"
+      },
+      "push_subs_by_user_email": {
+        "phase": "before_indexes",
+        "p50Ms": 0.28,
+        "p95Ms": 1.03,
+        "usesIndexScan": false,
+        "planTop": "Seq Scan on ktn_push_subscriptions  (cost=0.00..10.75 rows=1 width=57) (actual time=0.012..0.042 rows=1.00 loops=1) |   Filter: (user_email = 'student42@khongtunhi.com'::text) |   Rows Removed by Filter: 299"
+      },
+      "push_subs_by_endpoint": {
+        "phase": "before_indexes",
+        "p50Ms": 0.27,
+        "p95Ms": 0.74,
+        "usesIndexScan": true,
+        "planTop": "Index Scan using ktn_push_subscriptions_pkey on ktn_push_subscriptions  (cost=0.27..8.29 rows=1 width=33) (actual time=0.009..0.010 rows=1.00 loops=1) |   Index Cond: (endpoint = 'https://fcm.googleapis.com/fcm/send/scale-sub-42'::text) |   Index Searches: 1"
+      },
+      "notifications_recipient_unread": {
+        "phase": "before_indexes",
+        "p50Ms": 1.8,
+        "p95Ms": 2.76,
+        "usesIndexScan": false,
+        "planTop": "Limit  (cost=289.22..289.25 rows=12 width=49) (actual time=1.768..1.772 rows=0.00 loops=1) |   Buffers: shared hit=164 |   ->  Sort  (cost=289.22..289.25 rows=12 width=49) (actual time=1.765..1.766 rows=0.00 loops=1)"
+      }
+    },
+    "afterIdx": {
+      "class_students_lookup": {
+        "phase": "after_indexes",
+        "p50Ms": 0.87,
+        "p95Ms": 2.12,
+        "usesIndexScan": true,
+        "planTop": "Bitmap Heap Scan on ktn_students  (cost=4.67..97.73 rows=50 width=56) (actual time=0.050..0.152 rows=50.00 loops=1) |   Recheck Cond: (upper(btrim(COALESCE(class_code, ''::text))) = 'CLS-042'::text) |   Heap Blocks: exact=50"
+      },
+      "homeworks_class_status_queue": {
+        "phase": "after_indexes",
+        "p50Ms": 0.77,
+        "p95Ms": 1.17,
+        "usesIndexScan": true,
+        "planTop": "Limit  (cost=71.10..71.18 rows=33 width=52) (actual time=0.286..0.341 rows=33.00 loops=1) |   Buffers: shared hit=35 |   ->  Sort  (cost=71.10..71.18 rows=33 width=52) (actual time=0.282..0.302 rows=33.00 loops=1)"
+      },
+      "alerts_room_feed": {
+        "phase": "after_indexes",
+        "p50Ms": 0.99,
+        "p95Ms": 1.85,
+        "usesIndexScan": true,
+        "planTop": "Limit  (cost=142.47..142.60 rows=50 width=35) (actual time=0.249..0.302 rows=50.00 loops=1) |   Buffers: shared hit=102 |   ->  Sort  (cost=142.47..142.72 rows=100 width=35) (actual time=0.247..0.267 rows=50.00 loops=1)"
+      },
+      "messages_room_timeline": {
+        "phase": "after_indexes",
+        "p50Ms": 0.75,
+        "p95Ms": 1.59,
+        "usesIndexScan": true,
+        "planTop": "Limit  (cost=0.29..163.12 rows=50 width=58) (actual time=0.016..0.102 rows=50.00 loops=1) |   Buffers: shared hit=52 |   ->  Index Scan using idx_ktn_messages_room_created on ktn_messages  (cost=0.29..325.96 rows=100 width=58) (actual time=0.014..0.062 rows=50.00 loops=1)"
+      },
+      "push_subs_by_user_email": {
+        "phase": "after_indexes",
+        "p50Ms": 0.25,
+        "p95Ms": 0.61,
+        "usesIndexScan": true,
+        "planTop": "Index Scan using idx_ktn_push_subs_user_email on ktn_push_subscriptions  (cost=0.27..8.29 rows=1 width=57) (actual time=0.008..0.010 rows=1.00 loops=1) |   Index Cond: (user_email = 'student42@khongtunhi.com'::text) |   Index Searches: 1"
+      },
+      "push_subs_by_endpoint": {
+        "phase": "after_indexes",
+        "p50Ms": 0.24,
+        "p95Ms": 0.54,
+        "usesIndexScan": true,
+        "planTop": "Index Scan using idx_ktn_push_subs_endpoint on ktn_push_subscriptions  (cost=0.27..8.29 rows=1 width=33) (actual time=0.008..0.010 rows=1.00 loops=1) |   Index Cond: (endpoint = 'https://fcm.googleapis.com/fcm/send/scale-sub-42'::text) |   Index Searches: 1"
+      },
+      "notifications_recipient_unread": {
+        "phase": "after_indexes",
+        "p50Ms": 0.3,
+        "p95Ms": 0.85,
+        "usesIndexScan": true,
+        "planTop": "Limit  (cost=43.04..43.07 rows=12 width=49) (actual time=0.023..0.026 rows=0.00 loops=1) |   Buffers: shared hit=2 |   ->  Sort  (cost=43.04..43.07 rows=12 width=49) (actual time=0.022..0.024 rows=0.00 loops=1)"
+      }
+    }
+  },
+  "payloadAndQuerySavings": {
+    "classesFull": {
+      "supabaseQueries": 8,
+      "supabaseRowsReturned": 307,
+      "pushDispatches": 0,
+      "bytes": 2487
+    },
+    "classesLite": {
+      "supabaseQueries": 6,
+      "supabaseRowsReturned": 106,
+      "pushDispatches": 0,
+      "bytes": 1895
+    },
+    "notificationsFull": {
+      "supabaseQueries": 8,
+      "supabaseRowsReturned": 14,
+      "pushDispatches": 0,
+      "bytes": 1058
+    },
+    "notificationsSummary": {
+      "supabaseQueries": 8,
+      "supabaseRowsReturned": 14,
+      "pushDispatches": 0,
+      "bytes": 237
+    },
+    "homeworkGradePush": {
+      "supabaseQueries": 10,
+      "supabaseRowsReturned": 105,
+      "pushDispatches": 1,
+      "durationMs": 19.71
+    }
+  },
+  "concurrencyMatrix": {
+    "concurrency_20": {
+      "notificationsSummary": {
+        "requests": 20,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 46.77,
+        "rps": 427.6,
+        "p50Ms": 26.69,
+        "p95Ms": 43.34,
+        "p99Ms": 44.58,
+        "maxMs": 44.58
+      },
+      "notificationsFeed": {
+        "requests": 20,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 29.09,
+        "rps": 687.5,
+        "p50Ms": 14.48,
+        "p95Ms": 25.88,
+        "p99Ms": 27.63,
+        "maxMs": 27.63
+      },
+      "chatRooms": {
+        "requests": 20,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 30.89,
+        "rps": 647.5,
+        "p50Ms": 16.1,
+        "p95Ms": 28.08,
+        "p99Ms": 29.59,
+        "maxMs": 29.59
+      },
+      "chatMessages": {
+        "requests": 20,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 31.2,
+        "rps": 641,
+        "p50Ms": 17.21,
+        "p95Ms": 28.11,
+        "p99Ms": 29.33,
+        "maxMs": 29.33
+      },
+      "classesLite": {
+        "requests": 20,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 25.69,
+        "rps": 778.5,
+        "p50Ms": 12.56,
+        "p95Ms": 23.34,
+        "p99Ms": 24.38,
+        "maxMs": 24.38
+      }
+    },
+    "concurrency_100": {
+      "notificationsSummary": {
+        "requests": 100,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 131.56,
+        "rps": 760.1,
+        "p50Ms": 67.42,
+        "p95Ms": 119.48,
+        "p99Ms": 123.85,
+        "maxMs": 125.69
+      },
+      "notificationsFeed": {
+        "requests": 100,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 127.43,
+        "rps": 784.8,
+        "p50Ms": 66.64,
+        "p95Ms": 116.68,
+        "p99Ms": 120.95,
+        "maxMs": 121.93
+      },
+      "chatRooms": {
+        "requests": 100,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 134.61,
+        "rps": 742.9,
+        "p50Ms": 63.73,
+        "p95Ms": 120.22,
+        "p99Ms": 126.72,
+        "maxMs": 127.84
+      },
+      "chatMessages": {
+        "requests": 100,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 152.8,
+        "rps": 654.4,
+        "p50Ms": 74.22,
+        "p95Ms": 134.78,
+        "p99Ms": 140.54,
+        "maxMs": 142.64
+      },
+      "classesLite": {
+        "requests": 100,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 109.55,
+        "rps": 912.8,
+        "p50Ms": 55.69,
+        "p95Ms": 99.14,
+        "p99Ms": 102.43,
+        "maxMs": 103.15
+      }
+    },
+    "concurrency_300": {
+      "notificationsSummary": {
+        "requests": 300,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 421.85,
+        "rps": 711.1,
+        "p50Ms": 227.45,
+        "p95Ms": 389.4,
+        "p99Ms": 403.44,
+        "maxMs": 407.04
+      },
+      "notificationsFeed": {
+        "requests": 300,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 393.98,
+        "rps": 761.5,
+        "p50Ms": 198.22,
+        "p95Ms": 356.62,
+        "p99Ms": 374.61,
+        "maxMs": 379.87
+      },
+      "chatRooms": {
+        "requests": 300,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 381.98,
+        "rps": 785.4,
+        "p50Ms": 202.63,
+        "p95Ms": 351.59,
+        "p99Ms": 365.02,
+        "maxMs": 368.39
+      },
+      "chatMessages": {
+        "requests": 300,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 395.74,
+        "rps": 758.1,
+        "p50Ms": 210.66,
+        "p95Ms": 366.99,
+        "p99Ms": 379.79,
+        "maxMs": 382.93
+      },
+      "classesLite": {
+        "requests": 300,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 275.66,
+        "rps": 1088.3,
+        "p50Ms": 145.37,
+        "p95Ms": 249.82,
+        "p99Ms": 262.17,
+        "maxMs": 264.23
+      }
+    },
+    "concurrency_500": {
+      "notificationsSummary": {
+        "requests": 500,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 587.23,
+        "rps": 851.4,
+        "p50Ms": 288.83,
+        "p95Ms": 531.6,
+        "p99Ms": 559.24,
+        "maxMs": 566.5
+      },
+      "notificationsFeed": {
+        "requests": 500,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 579.4,
+        "rps": 863,
+        "p50Ms": 298.07,
+        "p95Ms": 531.73,
+        "p99Ms": 551.42,
+        "maxMs": 556.9
+      },
+      "chatRooms": {
+        "requests": 500,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 577.81,
+        "rps": 865.3,
+        "p50Ms": 290.04,
+        "p95Ms": 529.22,
+        "p99Ms": 549.49,
+        "maxMs": 555.16
+      },
+      "chatMessages": {
+        "requests": 500,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 633.86,
+        "rps": 788.8,
+        "p50Ms": 322.3,
+        "p95Ms": 585.09,
+        "p99Ms": 607.28,
+        "maxMs": 613.01
+      },
+      "classesLite": {
+        "requests": 500,
+        "errors": 0,
+        "errorRatePct": 0,
+        "wallMs": 531.36,
+        "rps": 941,
+        "p50Ms": 270.45,
+        "p95Ms": 472.65,
+        "p99Ms": 487.95,
+        "maxMs": 491.62
+      }
+    }
+  },
+  "pollingModel1000IdleTabs": {
+    "tabs": 1000,
+    "windowMinutes": 10,
+    "measuredFullNotifBytes": 1058,
+    "measuredSummaryNotifBytes": 237,
+    "beforeIdleRequestsPerMinTotal": 15000,
+    "afterIdleRequestsPerMinTotal": 2000,
+    "beforeIdleBandwidthMBPerMin": 15.13,
+    "afterIdleBandwidthMBPerMin": 0.45,
+    "idleRequestReductionPct": 86.7,
+    "idleBandwidthReductionPct": 97
+  }
+}

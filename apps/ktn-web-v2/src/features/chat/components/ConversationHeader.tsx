@@ -10,6 +10,8 @@ import {
   X,
 } from 'lucide-react';
 import { ChatConnectionState, ChatRoom } from '../types/chat.types';
+import { useI18n } from '@/i18n';
+import { translateChatRoomLabel, translateTeacherDisplayName } from '../services/chatApi';
 
 interface ConversationHeaderProps {
   room: ChatRoom | null;
@@ -32,6 +34,7 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
   onMobileBack,
   onRefresh,
 }) => {
+  const { lang, tr } = useI18n();
   if (!room) return null;
 
   const shortBadge = (room.classCode || room.shortLabel || room.roomId)
@@ -47,7 +50,7 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
           className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
         >
           <WifiOff className="h-3 w-3" />
-          Mất kết nối
+          {tr('Mất kết nối', 'Offline')}
         </span>
       );
     }
@@ -55,7 +58,7 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
           <RefreshCw className="h-3 w-3 animate-spin" />
-          Đang đồng bộ...
+          {tr('Đang đồng bộ...', 'Syncing...')}
         </span>
       );
     }
@@ -63,10 +66,10 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
       <span
         data-testid="chat-connection-online"
         className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
-        title="Trực tuyến"
+        title={tr('Trực tuyến', 'Online')}
       >
         <Wifi className="h-3 w-3" />
-        <span className="hidden sm:inline">Trực tuyến</span>
+        <span className="hidden sm:inline">{tr('Trực tuyến', 'Online')}</span>
       </span>
     );
   };
@@ -81,7 +84,7 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
             data-testid="mobile-chat-back-btn"
             onClick={onMobileBack}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100 lg:hidden"
-            aria-label="Quay lại danh sách hội thoại"
+            aria-label={tr('Quay lại danh sách hội thoại', 'Back to conversations')}
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
@@ -97,7 +100,11 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
                 data-testid="active-chat-room-title"
                 className="truncate font-display text-sm font-bold text-stone-900"
               >
-                {room.label || `Lớp ${room.classCode || room.roomId}`}
+                {translateChatRoomLabel(room.label, room.type, lang) ||
+                  tr(
+                    `Lớp ${room.classCode || room.roomId}`,
+                    `Class ${room.classCode || room.roomId}`
+                  )}
               </h2>
               {room.classCode && (
                 <span className="hidden rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-stone-600 sm:inline-block">
@@ -110,12 +117,20 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
               {room.teacherName && (
                 <span className="inline-flex min-w-0 items-center gap-1 truncate font-medium text-stone-700">
                   <GraduationCap className="h-3 w-3 shrink-0 text-red-800" />
-                  <span className="truncate">{room.teacherName}</span>
+                  <span className="truncate">
+                    {translateTeacherDisplayName(room.teacherName, lang)}
+                  </span>
                 </span>
               )}
               <span className="inline-flex shrink-0 items-center gap-1">
                 <Users className="h-3 w-3" />
-                {room.memberCount ? `${room.memberCount} TV` : 'Nhóm lớp'}
+                {room.memberCount
+                  ? tr(`${room.memberCount} TV`, `${room.memberCount} members`)
+                  : room.type === 'student'
+                  ? room.recipientTargetType === 'support_center' || room.hasAssignedTeacher === false
+                    ? tr('Học vụ / Trung tâm (1-1)', 'Academic Support (1-1)')
+                    : tr('Trao đổi 1-1', '1-1 Direct')
+                  : tr('Nhóm lớp', 'Class group')}
               </span>
             </div>
           </div>
@@ -132,8 +147,8 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
                 ? 'border-red-300 bg-red-50 text-red-800'
                 : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
             }`}
-            title="Tìm kiếm trong hội thoại"
-            aria-label="Tìm kiếm trong hội thoại"
+            title={tr('Tìm kiếm trong hội thoại', 'Search in conversation')}
+            aria-label={tr('Tìm kiếm trong hội thoại', 'Search in conversation')}
           >
             <Search className="h-3.5 w-3.5" />
           </button>
@@ -142,8 +157,8 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
             type="button"
             onClick={onRefresh}
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50"
-            title="Làm mới tin nhắn"
-            aria-label="Làm mới tin nhắn"
+            title={tr('Làm mới tin nhắn', 'Refresh messages')}
+            aria-label={tr('Làm mới tin nhắn', 'Refresh messages')}
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
@@ -157,7 +172,10 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Tìm nội dung tin nhắn hoặc tên người gửi trong lớp..."
+            placeholder={tr(
+              'Tìm nội dung tin nhắn hoặc tên người gửi trong lớp...',
+              'Search messages or senders in this class...'
+            )}
             className="w-full bg-transparent text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none"
             autoFocus
           />
@@ -165,6 +183,7 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
             <button
               type="button"
               onClick={() => onSearchChange('')}
+              aria-label={tr('Xóa tìm kiếm', 'Clear search')}
               className="rounded p-0.5 text-stone-400 hover:text-stone-700"
             >
               <X className="h-3.5 w-3.5" />

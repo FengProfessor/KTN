@@ -22,6 +22,13 @@ import { ktnApi, resolveUploadedMediaUrl } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_COURSES } from '@/lib/demoData';
+import {
+  getCurrentLang,
+  trStatic,
+  translateCourseTitle,
+  useI18n,
+  type AppLanguage,
+} from '@/i18n';
 import { formatRelativeTime } from '@/lib/utils';
 import {
   KtnCourse,
@@ -73,7 +80,8 @@ export function detectAttachmentKind(
 
 export function normalizeForumAttachmentRecord(
   raw: any,
-  idx = 0
+  idx = 0,
+  lang: AppLanguage = getCurrentLang()
 ): KtnForumAttachment & {
   title: string;
   fileName: string;
@@ -82,7 +90,12 @@ export function normalizeForumAttachmentRecord(
   mediaType: string;
 } {
   const url = String(raw?.url || raw?.fileUrl || '').trim();
-  const name = String(raw?.name || raw?.title || raw?.fileName || `Đính kèm ${idx + 1}`).trim();
+  const name = String(
+    raw?.name ||
+      raw?.title ||
+      raw?.fileName ||
+      trStatic(`Đính kèm ${idx + 1}`, `Attachment ${idx + 1}`, lang)
+  ).trim();
   const rawMime = String(raw?.fileType || raw?.mediaType || raw?.type || raw?.kind || '').trim();
   const kind = detectAttachmentKind(raw?.kind ? String(raw.kind) : rawMime, url);
   const fileType =
@@ -113,7 +126,8 @@ export function normalizeForumAttachmentRecord(
 
 export function normalizeForumAnswerRecord(
   raw: any,
-  fallbackQuestionId = ''
+  fallbackQuestionId = '',
+  lang: AppLanguage = getCurrentLang()
 ): KtnForumAnswer {
   const authorName = String(
     raw?.author_name ||
@@ -124,7 +138,7 @@ export function normalizeForumAnswerRecord(
       raw?.authorEmail ||
       raw?.teacher_email ||
       raw?.teacherEmail ||
-      'Giáo viên KTN'
+      trStatic('Giáo viên KTN', 'KTN Teacher', lang)
   ).trim();
   const authorEmail = String(
     raw?.author_email || raw?.authorEmail || raw?.teacher_email || raw?.teacherEmail || ''
@@ -134,7 +148,7 @@ export function normalizeForumAnswerRecord(
     ? (raw.attachments as Array<Record<string, unknown>>)
     : [];
   const attachments = rawAtts
-    .map((att, i) => normalizeForumAttachmentRecord(att, i))
+    .map((att, i) => normalizeForumAttachmentRecord(att, i, lang))
     .filter((att) => Boolean(att.url));
 
   const videoUrl = String(raw?.video_url || raw?.videoUrl || '').trim() || null;
@@ -156,7 +170,9 @@ export function normalizeForumAnswerRecord(
     teacher_id: (raw?.teacher_id || raw?.teacherId || null) as string | null,
     teacher_email: authorEmail || null,
     teacher_name: authorName,
-    teacher_title: String(raw?.teacher_title || raw?.teacherTitle || 'Giáo viên hướng dẫn'),
+    teacher_title: String(
+      raw?.teacher_title || raw?.teacherTitle || trStatic('Giáo viên hướng dẫn', 'Instructor', lang)
+    ),
     content: String(raw?.content || ''),
     attachments,
     video_url: videoUrl,
@@ -174,7 +190,8 @@ export function normalizeForumAnswerRecord(
 }
 
 export function normalizeForumQuestionRecord(
-  raw: any
+  raw: any,
+  lang: AppLanguage = getCurrentLang()
 ): KtnForumQuestion {
   const qId = String(raw?.id || `fq-${Date.now()}`);
   const courseId = String(raw?.course_id || raw?.courseId || '').trim();
@@ -182,11 +199,16 @@ export function normalizeForumQuestionRecord(
   const lessonNum =
     Number(raw?.lesson_num ?? raw?.lesson_number ?? raw?.lessonNum ?? 1) || 1;
   const lessonTitleSnapshot = String(
-    raw?.lesson_title_snapshot || raw?.lessonTitleSnapshot || `Bài ${lessonNum}`
+    raw?.lesson_title_snapshot ||
+      raw?.lessonTitleSnapshot ||
+      trStatic(`Bài ${lessonNum}`, `Lesson ${lessonNum}`, lang)
   ).trim();
   const studentEmail = String(raw?.student_email || raw?.studentEmail || '').trim();
   const studentName = String(
-    raw?.student_name || raw?.studentName || studentEmail || 'Học viên KTN'
+    raw?.student_name ||
+      raw?.studentName ||
+      studentEmail ||
+      trStatic('Học viên KTN', 'KTN Student', lang)
   ).trim();
   const rawTs = raw?.video_timestamp_seconds ?? raw?.videoTimestampSeconds;
   const videoTimestampSeconds =
@@ -198,13 +220,13 @@ export function normalizeForumQuestionRecord(
     ? (raw.attachments as Array<Record<string, unknown>>)
     : [];
   const attachments = rawAtts
-    .map((att, i) => normalizeForumAttachmentRecord(att, i))
+    .map((att, i) => normalizeForumAttachmentRecord(att, i, lang))
     .filter((att) => Boolean(att.url));
 
   const rawAnswers = Array.isArray(raw?.answers)
     ? (raw.answers as Array<Record<string, unknown>>)
     : [];
-  const answers = rawAnswers.map((ans) => normalizeForumAnswerRecord(ans, qId));
+  const answers = rawAnswers.map((ans) => normalizeForumAnswerRecord(ans, qId, lang));
 
   const answerCount =
     Number(
@@ -274,6 +296,7 @@ export function normalizeForumQuestionRecord(
 }
 
 export const TeacherForumInbox: React.FC = () => {
+  const { lang, tr } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -340,6 +363,7 @@ export const TeacherForumInbox: React.FC = () => {
       courseFilter,
       searchQuery,
       isDemoMode,
+      isDemoMode ? lang : 'live',
     ],
     queryFn: async () => {
       if (isDemoMode) {
@@ -351,13 +375,21 @@ export const TeacherForumInbox: React.FC = () => {
               course_id: '6adadba969897b0002482ca5',
               unit_id: '6af5b82169b0ed0002dc2589',
               lesson_num: 1,
-              lesson_title_snapshot: 'Bài 1: Xin chào — 你好',
+              lesson_title_snapshot: tr(
+                'Bài 1: Xin chào — 你好',
+                'Lesson 1: Hello — 你好'
+              ),
               student_id: 'STU-DEMO',
               student_email: 'hoangngan@khongtunhi.com',
               student_name: 'Bé Nguyễn Hoàng Ngân',
-              title: 'Thầy cô cho em hỏi quy tắc biến điệu hai thanh 3 ạ',
-              content:
+              title: tr(
+                'Thầy cô cho em hỏi quy tắc biến điệu hai thanh 3 ạ',
+                'Could you explain the double 3rd-tone sandhi rule?'
+              ),
+              content: tr(
                 'Ở đoạn 02:15 trong video Bài 1, khi đọc 你好 (nǐ hǎo) thì chữ nǐ đổi thành ní phải không ạ?',
+                'At 02:15 in Lesson 1 video, when pronouncing 你好 (nǐ hǎo), does nǐ change to ní?'
+              ),
               video_timestamp_seconds: 135,
               attachments: [],
               status: 'open',
@@ -387,11 +419,13 @@ export const TeacherForumInbox: React.FC = () => {
         search: searchQuery.trim() || undefined,
       });
     },
-    refetchInterval: isDemoMode ? false : 8000,
+    staleTime: 10000,
+    refetchInterval: isDemoMode ? false : 20000,
+    refetchIntervalInBackground: false,
   });
 
   const leaderboardQuery = useQuery<KtnForumLeaderboardResponse>({
-    queryKey: ['ktn-forum-leaderboard', selectedMonth, isDemoMode],
+    queryKey: ['ktn-forum-leaderboard', selectedMonth, isDemoMode, isDemoMode ? lang : 'live'],
     queryFn: async (): Promise<KtnForumLeaderboardResponse> => {
       if (isDemoMode) {
         return {
@@ -401,8 +435,8 @@ export const TeacherForumInbox: React.FC = () => {
             {
               teacherId: user?.code || 'GV-KTN',
               teacherEmail: user?.email || 'teacher@khongtunhi.com',
-              teacherName: user?.name || 'Giáo viên KTN',
-              title: 'Giáo viên',
+              teacherName: user?.name || tr('Giáo viên KTN', 'KTN Teacher'),
+              title: tr('Giáo viên', 'Teacher'),
               avatar: null,
               active: true,
               totalPoints: 23,
@@ -453,8 +487,11 @@ export const TeacherForumInbox: React.FC = () => {
         }));
         queryClient.invalidateQueries({ queryKey: ['ktn-teacher-forum-inbox'] });
         addToast({
-          title: 'Đã nhường lại câu hỏi',
-          description: 'Câu hỏi đã mở lại để các giáo viên khác nhận giải đáp.',
+          title: tr('Đã nhường lại câu hỏi', 'Question unclaimed'),
+          description: tr(
+            'Câu hỏi đã mở lại để các giáo viên khác nhận giải đáp.',
+            'This question is open again for other teachers to claim.'
+          ),
           variant: 'default',
         });
         return;
@@ -466,7 +503,7 @@ export const TeacherForumInbox: React.FC = () => {
           rawClaimed.claimed_by_name ||
           user?.name ||
           user?.email ||
-          'Giáo viên KTN'
+          tr('Giáo viên KTN', 'KTN Teacher')
       ).trim();
       const claimedId = String(
         rawClaimed.claimed_by_teacher_id ||
@@ -498,14 +535,17 @@ export const TeacherForumInbox: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-teacher-forum-inbox'] });
       setActiveQuestionId(questionId);
       addToast({
-        title: 'Đã nhận xử lý câu hỏi',
-        description: 'Bạn có thể gửi câu trả lời hoặc đính kèm video hướng dẫn cho học viên.',
+        title: tr('Đã nhận xử lý câu hỏi', 'Question claimed'),
+        description: tr(
+          'Bạn có thể gửi câu trả lời hoặc đính kèm video hướng dẫn cho học viên.',
+          'You can now reply or attach a guide video for the student.'
+        ),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Không thể nhận câu hỏi',
+        title: tr('Không thể nhận câu hỏi', 'Unable to claim question'),
         description: err.message,
         variant: 'error',
       });
@@ -518,14 +558,23 @@ export const TeacherForumInbox: React.FC = () => {
       const cleanVideo = answerVideoUrl.trim();
       if (!cleanText && !cleanVideo && answerAttachments.length === 0) {
         throw new Error(
-          'Vui lòng nhập nội dung câu trả lời hoặc đính kèm tệp/video hướng dẫn học viên.'
+          tr(
+            'Vui lòng nhập nội dung câu trả lời hoặc đính kèm tệp/video hướng dẫn học viên.',
+            'Please enter an answer or attach a guide file/video for the student.'
+          )
         );
       }
       const effectiveContent =
         cleanText ||
         (cleanVideo
-          ? 'Cô gửi video hướng dẫn chi tiết cho câu hỏi của em nhé.'
-          : 'Cô gửi tệp minh họa hướng dẫn bài học cho em nhé.');
+          ? tr(
+              'Cô gửi video hướng dẫn chi tiết cho câu hỏi của em nhé.',
+              'Here is a detailed guide video for your question.'
+            )
+          : tr(
+              'Cô gửi tệp minh họa hướng dẫn bài học cho em nhé.',
+              'Here is an illustrative file for your lesson question.'
+            ));
 
       const sig = `${question.id}|${effectiveContent}|${cleanVideo}|${answerAttachments.length}`;
       if (!answerRequestRef.current || answerRequestRef.current.signature !== sig) {
@@ -543,10 +592,10 @@ export const TeacherForumInbox: React.FC = () => {
           answer: {
             id: `ans-${Date.now()}`,
             question_id: question.id,
-            author_name: user?.name || 'Giáo viên KTN',
+            author_name: user?.name || tr('Giáo viên KTN', 'KTN Teacher'),
             author_email: user?.email || 'teacher@khongtunhi.com',
             author_role: 'teacher',
-            teacher_name: user?.name || 'Giáo viên KTN',
+            teacher_name: user?.name || tr('Giáo viên KTN', 'KTN Teacher'),
             content: effectiveContent,
             video_url: cleanVideo || null,
             attachments: answerAttachments,
@@ -584,30 +633,41 @@ export const TeacherForumInbox: React.FC = () => {
     onSuccess: (res, question) => {
       answerRequestRef.current = null;
       const normalizedFromServer = res?.question
-        ? normalizeForumQuestionRecord(res.question as unknown as Record<string, unknown>)
+        ? normalizeForumQuestionRecord(
+            res.question as unknown as Record<string, unknown>,
+            lang
+          )
         : null;
       const fallbackNewAns = res?.answer
         ? normalizeForumAnswerRecord(
             res.answer as unknown as Record<string, unknown>,
-            question.id
+            question.id,
+            lang
           )
         : normalizeForumAnswerRecord(
             {
               id: `ans-${Date.now()}`,
               question_id: question.id,
-              author_name: user?.name || 'Giáo viên KTN',
+              author_name: user?.name || tr('Giáo viên KTN', 'KTN Teacher'),
               author_email: user?.email || '',
               author_role: 'teacher',
               content:
                 answerContent.trim() ||
                 (answerVideoUrl.trim()
-                  ? 'Cô gửi video hướng dẫn chi tiết cho câu hỏi của em nhé.'
-                  : 'Cô gửi tệp minh họa hướng dẫn bài học cho em nhé.'),
+                  ? tr(
+                      'Cô gửi video hướng dẫn chi tiết cho câu hỏi của em nhé.',
+                      'Here is a detailed guide video for your question.'
+                    )
+                  : tr(
+                      'Cô gửi tệp minh họa hướng dẫn bài học cho em nhé.',
+                      'Here is an illustrative file for your lesson question.'
+                    )),
               video_url: answerVideoUrl.trim() || null,
               attachments: answerAttachments,
               created_at: new Date().toISOString(),
             },
-            question.id
+            question.id,
+            lang
           );
 
       setLocalQuestionPatches((prev) => {
@@ -638,16 +698,21 @@ export const TeacherForumInbox: React.FC = () => {
       addToast({
         title:
           pts > 0
-            ? `Đã gửi câu trả lời (+${pts} điểm đóng góp!)`
-            : 'Đã gửi câu trả lời cho học viên!',
-        description:
+            ? tr(
+                `Đã gửi câu trả lời (+${pts} điểm đóng góp!)`,
+                `Answer sent (+${pts} pts!)`
+              )
+            : tr('Đã gửi câu trả lời cho học viên!', 'Answer sent to student!'),
+        description: tr(
           'Học viên sẽ nhận được thông báo về phản hồi của bạn. Điểm đóng góp dùng để đánh giá chuyên môn (không tự quy đổi thành lương).',
+          'The student will be notified of your reply. Contribution points are for academic evaluation only (not converted to salary).'
+        ),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Chưa gửi được câu trả lời',
+        title: tr('Chưa gửi được câu trả lời', 'Failed to send answer'),
         description: err.message,
         variant: 'error',
       });
@@ -661,8 +726,11 @@ export const TeacherForumInbox: React.FC = () => {
     const maxBytes = 100 * 1024 * 1024;
     if (file.size > maxBytes) {
       addToast({
-        title: 'Video vượt quá 100 MB',
-        description: 'Vui lòng chọn video hướng dẫn ngắn (MP4/MOV/WebM) dưới 100 MB.',
+        title: tr('Video vượt quá 100 MB', 'Video exceeds 100 MB'),
+        description: tr(
+          'Vui lòng chọn video hướng dẫn ngắn (MP4/MOV/WebM) dưới 100 MB.',
+          'Please choose a short guide video (MP4/MOV/WebM) under 100 MB.'
+        ),
         variant: 'error',
       });
       return;
@@ -676,14 +744,20 @@ export const TeacherForumInbox: React.FC = () => {
       setAnswerVideoUrl(uploadRes.fileUrl);
       setAnswerVideoSize(uploadRes.size || file.size);
       addToast({
-        title: 'Tải lên video hướng dẫn thành công!',
-        description: 'Video đã được lưu trên S3 và đính kèm vào câu trả lời (+5 điểm đóng góp).',
+        title: tr('Tải lên video hướng dẫn thành công!', 'Guide video uploaded!'),
+        description: tr(
+          'Video đã được lưu trên S3 và đính kèm vào câu trả lời (+5 điểm đóng góp).',
+          'Video saved to S3 and attached to your answer (+5 pts).'
+        ),
         variant: 'success',
       });
     } catch (err) {
       addToast({
-        title: 'Tải video thất bại',
-        description: err instanceof Error ? err.message : 'Vui lòng thử lại.',
+        title: tr('Tải video thất bại', 'Video upload failed'),
+        description:
+          err instanceof Error
+            ? err.message
+            : tr('Vui lòng thử lại.', 'Please try again.'),
         variant: 'error',
       });
     } finally {
@@ -700,10 +774,10 @@ export const TeacherForumInbox: React.FC = () => {
     const maxBytes = isVideo ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
     if (file.size > maxBytes) {
       addToast({
-        title: 'Tệp đính kèm quá lớn',
+        title: tr('Tệp đính kèm quá lớn', 'Attachment too large'),
         description: isVideo
-          ? 'Video đính kèm tối đa 100 MB.'
-          : 'Ảnh/âm thanh đính kèm tối đa 20 MB.',
+          ? tr('Video đính kèm tối đa 100 MB.', 'Video attachments must be under 100 MB.')
+          : tr('Ảnh/âm thanh đính kèm tối đa 20 MB.', 'Image/audio attachments must be under 20 MB.'),
         variant: 'error',
       });
       return;
@@ -726,13 +800,17 @@ export const TeacherForumInbox: React.FC = () => {
           mediaType: uploadRes.fileType || file.type,
           size: uploadRes.size || file.size,
         },
-        answerAttachments.length
+        answerAttachments.length,
+        lang
       );
       setAnswerAttachments((prev) => [...prev, normalizedAtt]);
     } catch (err) {
       addToast({
-        title: 'Không thể tải tệp đính kèm',
-        description: err instanceof Error ? err.message : 'Vui lòng thử lại.',
+        title: tr('Không thể tải tệp đính kèm', 'Unable to upload attachment'),
+        description:
+          err instanceof Error
+            ? err.message
+            : tr('Vui lòng thử lại.', 'Please try again.'),
         variant: 'error',
       });
     } finally {
@@ -743,15 +821,21 @@ export const TeacherForumInbox: React.FC = () => {
   const allNormalizedQuestions = useMemo(() => {
     const rawList = forumQuery.data?.questions || [];
     return rawList.map((raw) => {
-      const base = normalizeForumQuestionRecord(raw as unknown as Record<string, unknown>);
+      const base = normalizeForumQuestionRecord(
+        raw as unknown as Record<string, unknown>,
+        lang
+      );
       const patch = localQuestionPatches[base.id];
       if (!patch) return base;
-      return normalizeForumQuestionRecord({
-        ...base,
-        ...patch,
-      } as unknown as Record<string, unknown>);
+      return normalizeForumQuestionRecord(
+        {
+          ...base,
+          ...patch,
+        } as unknown as Record<string, unknown>,
+        lang
+      );
     });
-  }, [forumQuery.data?.questions, localQuestionPatches]);
+  }, [forumQuery.data?.questions, localQuestionPatches, lang]);
 
   const questions = useMemo(() => {
     return allNormalizedQuestions.filter((q) => {
@@ -878,24 +962,24 @@ export const TeacherForumInbox: React.FC = () => {
             <div>
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
                 <Sparkles className="h-3 w-3 text-amber-700" />
-                Điểm đóng góp Hỏi đáp bài học
+                {tr('Điểm đóng góp Hỏi đáp bài học', 'Lesson Q&A Points')}
               </span>
               <h2
                 data-testid="teacher-forum-my-points"
                 className="mt-1.5 font-display text-base font-bold text-stone-900"
               >
                 {myLeaderboardEntry
-                  ? `${myLeaderboardEntry.monthlyPoints ?? myLeaderboardEntry.totalPoints} điểm`
-                  : '0 điểm'}{' '}
+                  ? `${myLeaderboardEntry.monthlyPoints ?? myLeaderboardEntry.totalPoints} ${tr('điểm', 'pts')}`
+                  : tr('0 điểm', '0 pts')}{' '}
                 <span className="text-xs font-normal text-stone-500">
-                  (Tháng {selectedMonth})
+                  ({tr(`Tháng ${selectedMonth}`, `Month ${selectedMonth}`)})
                 </span>
               </h2>
             </div>
 
             <input
               type="month"
-              aria-label="Chọn tháng thống kê"
+              aria-label={tr('Chọn tháng thống kê', 'Select stats month')}
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="rounded-lg border border-stone-300 bg-white px-2 py-1 text-xs font-bold text-stone-800"
@@ -904,19 +988,25 @@ export const TeacherForumInbox: React.FC = () => {
 
           <div className="mt-3 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-lg border border-stone-200/80 bg-white/90 p-2">
-              <p className="text-[11px] font-semibold text-stone-500">Trả lời đầu</p>
+              <p className="text-[11px] font-semibold text-stone-500">
+                {tr('Trả lời đầu', 'First Replies')}
+              </p>
               <p className="mt-0.5 font-display text-sm font-bold text-stone-900">
                 {myLeaderboardEntry?.answersCount || 0}
               </p>
             </div>
             <div className="rounded-lg border border-stone-200/80 bg-white/90 p-2">
-              <p className="text-[11px] font-semibold text-stone-500">Có Video</p>
+              <p className="text-[11px] font-semibold text-stone-500">
+                {tr('Có Video', 'With Video')}
+              </p>
               <p className="mt-0.5 font-display text-sm font-bold text-red-800">
                 {myLeaderboardEntry?.videoGuidesCount || 0}
               </p>
             </div>
             <div className="rounded-lg border border-stone-200/80 bg-white/90 p-2">
-              <p className="text-[11px] font-semibold text-stone-500">Hiểu bài ✓</p>
+              <p className="text-[11px] font-semibold text-stone-500">
+                {tr('Hiểu bài ✓', 'Understood ✓')}
+              </p>
               <p className="mt-0.5 font-display text-sm font-bold text-emerald-700">
                 {myLeaderboardEntry?.acceptedAnswersCount || 0}
               </p>
@@ -924,14 +1014,29 @@ export const TeacherForumInbox: React.FC = () => {
           </div>
 
           <div className="mt-3 space-y-1 rounded-lg bg-white/80 p-2.5 text-[11px] text-stone-600">
-            <p className="font-bold text-stone-800">Quy tắc tính điểm tự động:</p>
-            <p>• +5đ trả lời câu hỏi chưa có GV trả lời · +3đ nếu phản hồi &lt; 2 giờ</p>
-            <p>• +5đ đính kèm video hướng dẫn · +10đ khi học viên xác nhận Hiểu bài</p>
+            <p className="font-bold text-stone-800">
+              {tr('Quy tắc tính điểm tự động:', 'Auto-scoring rules:')}
+            </p>
+            <p>
+              {tr(
+                '• +5đ trả lời câu hỏi chưa có GV trả lời · +3đ nếu phản hồi < 2 giờ',
+                '• +5 pts for first teacher reply · +3 pts if replied < 2h'
+              )}
+            </p>
+            <p>
+              {tr(
+                '• +5đ đính kèm video hướng dẫn · +10đ khi học viên xác nhận Hiểu bài',
+                '• +5 pts for guide video · +10 pts when student marks Understood'
+              )}
+            </p>
             <p
               data-testid="teacher-forum-points-policy-notice"
               className="mt-1 border-t border-amber-200/80 pt-1 font-semibold text-amber-950"
             >
-              Lưu ý: Điểm đóng góp chỉ dùng để đánh giá chuyên môn &amp; xét thưởng định kỳ bởi Quản lý, không tự động quy đổi thành lương.
+              {tr(
+                'Lưu ý: Điểm đóng góp chỉ dùng để đánh giá chuyên môn & xét thưởng định kỳ bởi Quản lý, không tự động quy đổi thành lương.',
+                'Note: Points are used for academic evaluation & periodic bonuses by Management only (not converted to salary).'
+              )}
             </p>
           </div>
         </div>
@@ -941,17 +1046,26 @@ export const TeacherForumInbox: React.FC = () => {
             <div className="flex items-center gap-1.5">
               <Trophy className="h-4 w-4 text-amber-600" />
               <h3 className="font-display text-sm font-bold text-stone-900">
-                Bảng đóng góp giáo viên tháng {selectedMonth}
+                {tr(
+                  `Bảng đóng góp giáo viên tháng ${selectedMonth}`,
+                  `Teacher Leaderboard · ${selectedMonth}`
+                )}
               </h3>
             </div>
             <span className="text-[11px] font-semibold text-stone-500">
-              Cơ sở xét thưởng chuyên môn (không tự quy đổi lương)
+              {tr(
+                'Cơ sở xét thưởng chuyên môn (không tự quy đổi lương)',
+                'Academic bonus basis (no auto salary conversion)'
+              )}
             </span>
           </div>
 
           {(leaderboardQuery.data?.leaderboard || []).length === 0 ? (
             <p className="py-6 text-center text-xs text-stone-500">
-              Chưa có điểm đóng góp trong tháng {selectedMonth}. Hãy trả lời câu hỏi đầu tiên!
+              {tr(
+                `Chưa có điểm đóng góp trong tháng ${selectedMonth}. Hãy trả lời câu hỏi đầu tiên!`,
+                `No contribution points yet for ${selectedMonth}. Reply to the first question!`
+              )}
             </p>
           ) : (
             <div className="mt-2.5 divide-y divide-stone-100">
@@ -979,13 +1093,14 @@ export const TeacherForumInbox: React.FC = () => {
                         {row.teacherName}
                       </p>
                       <p className="truncate text-[11px] text-stone-500">
-                        {row.answersCount} câu trả lời · {row.videoGuidesCount} video ·{' '}
-                        {row.acceptedAnswersCount} giải đáp chuẩn
+                        {row.answersCount} {tr('câu trả lời', 'replies')} · {row.videoGuidesCount}{' '}
+                        {tr('video', 'videos')} · {row.acceptedAnswersCount}{' '}
+                        {tr('giải đáp chuẩn', 'accepted')}
                       </p>
                     </div>
                   </div>
                   <span className="shrink-0 rounded-lg bg-red-50 px-2.5 py-1 font-display text-xs font-extrabold text-red-900">
-                    {row.monthlyPoints ?? row.totalPoints} điểm
+                    {row.monthlyPoints ?? row.totalPoints} {tr('điểm', 'pts')}
                   </span>
                 </div>
               ))}
@@ -1000,10 +1115,31 @@ export const TeacherForumInbox: React.FC = () => {
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
-                { id: 'unanswered', label: `Chưa trả lời (${summary.unansweredCount})` },
-                { id: 'answered', label: `Đã trả lời (${summary.answeredCount})` },
-                { id: 'resolved', label: `Đã hiểu bài (${summary.resolvedCount})` },
-                { id: 'all', label: `Tất cả (${summary.total})` },
+                {
+                  id: 'unanswered',
+                  label: tr(
+                    `Chưa trả lời (${summary.unansweredCount})`,
+                    `Unanswered (${summary.unansweredCount})`
+                  ),
+                },
+                {
+                  id: 'answered',
+                  label: tr(
+                    `Đã trả lời (${summary.answeredCount})`,
+                    `Answered (${summary.answeredCount})`
+                  ),
+                },
+                {
+                  id: 'resolved',
+                  label: tr(
+                    `Đã hiểu bài (${summary.resolvedCount})`,
+                    `Resolved (${summary.resolvedCount})`
+                  ),
+                },
+                {
+                  id: 'all',
+                  label: tr(`Tất cả (${summary.total})`, `All (${summary.total})`),
+                },
               ] as const
             ).map((tab) => (
               <button
@@ -1024,15 +1160,15 @@ export const TeacherForumInbox: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-2">
             <select
-              aria-label="Lọc theo khóa học"
+              aria-label={tr('Lọc theo khóa học', 'Filter by course')}
               value={courseFilter}
               onChange={(e) => setCourseFilter(e.target.value)}
               className="min-h-[34px] rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1 text-xs font-bold text-stone-800"
             >
-              <option value="ALL">Tất cả khóa video</option>
+              <option value="ALL">{tr('Tất cả khóa video', 'All video courses')}</option>
               {(coursesQuery.data || DEMO_COURSES).map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.title}
+                  {translateCourseTitle(c.title, lang)}
                 </option>
               ))}
             </select>
@@ -1043,7 +1179,7 @@ export const TeacherForumInbox: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tìm câu hỏi, học viên..."
+                placeholder={tr('Tìm câu hỏi, học viên...', 'Search questions, students...')}
                 className="min-h-[34px] rounded-xl border border-stone-300 pl-8 pr-3 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
               />
             </div>
@@ -1055,16 +1191,21 @@ export const TeacherForumInbox: React.FC = () => {
           {forumQuery.isLoading ? (
             <div className="flex items-center justify-center gap-2 py-8 text-xs text-stone-500">
               <Loader2 className="h-4 w-4 animate-spin text-red-800" />
-              <span>Đang tải danh sách câu hỏi bài học...</span>
+              <span>
+                {tr('Đang tải danh sách câu hỏi bài học...', 'Loading lesson Q&A list...')}
+              </span>
             </div>
           ) : questions.length === 0 ? (
             <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-6 text-center">
               <MessageSquare className="mx-auto h-7 w-7 text-stone-400" />
               <p className="mt-2 text-xs font-bold text-stone-800">
-                Không có câu hỏi nào trong mục này
+                {tr('Không có câu hỏi nào trong mục này', 'No questions in this filter')}
               </p>
               <p className="mt-0.5 text-[11px] text-stone-500">
-                Khi học viên đặt câu hỏi tại từng bài giảng video, câu hỏi sẽ xuất hiện tại đây.
+                {tr(
+                  'Khi học viên đặt câu hỏi tại từng bài giảng video, câu hỏi sẽ xuất hiện tại đây.',
+                  'When students ask questions on video lessons, they will appear here.'
+                )}
               </p>
             </div>
           ) : (
@@ -1072,10 +1213,13 @@ export const TeacherForumInbox: React.FC = () => {
               const isAnswering = activeQuestionId === q.id;
               const tsBadge = formatTimestampBadge(q.video_timestamp_seconds);
               const safeCourseId = String(q.course_id || '');
-              const courseTitle =
+              const rawCourseTitle =
                 coursesMap.get(safeCourseId) ||
                 q.course_title ||
-                (safeCourseId ? `Khóa ${safeCourseId.slice(0, 8)}` : 'Khóa học KTN');
+                (safeCourseId
+                  ? tr(`Khóa ${safeCourseId.slice(0, 8)}`, `Course ${safeCourseId.slice(0, 8)}`)
+                  : tr('Khóa học KTN', 'KTN Course'));
+              const courseTitle = translateCourseTitle(rawCourseTitle, lang);
 
               return (
                 <div
@@ -1096,22 +1240,23 @@ export const TeacherForumInbox: React.FC = () => {
                           data-testid={`teacher-forum-lesson-badge-${q.id}`}
                           className="rounded bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-800"
                         >
-                          {q.lesson_title_snapshot || `Bài ${q.lesson_num || 1}`}
+                          {q.lesson_title_snapshot ||
+                            tr(`Bài ${q.lesson_num || 1}`, `Lesson ${q.lesson_num || 1}`)}
                         </span>
                         {tsBadge && (
                           <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                             <PlayCircle className="h-3 w-3" />
-                            Đoạn {tsBadge}
+                            {tr('Đoạn', 'At')} {tsBadge}
                           </span>
                         )}
                         {q.status === 'resolved' ? (
                           <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
                             <CheckCircle2 className="h-3 w-3" />
-                            Đã hiểu bài
+                            {tr('Đã hiểu bài', 'Resolved')}
                           </span>
                         ) : q.status === 'answered' ? (
                           <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-900">
-                            Đã trả lời ({q.answer_count || q.answers?.length || 1})
+                            {tr('Đã trả lời', 'Answered')} ({q.answer_count || q.answers?.length || 1})
                           </span>
                         ) : q.status === 'claimed' ? (
                           <span
@@ -1119,12 +1264,15 @@ export const TeacherForumInbox: React.FC = () => {
                             className="inline-flex items-center gap-1 rounded bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-900"
                           >
                             <UserCheck className="h-3 w-3" />
-                            Đang xử lý: {q.claimed_by_teacher_name || q.claimed_by_teacher_id || 'Giáo viên KTN'}
+                            {tr('Đang xử lý:', 'Claimed:')}{' '}
+                            {q.claimed_by_teacher_name ||
+                              q.claimed_by_teacher_id ||
+                              tr('Giáo viên KTN', 'KTN Teacher')}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                             <Clock className="h-3 w-3" />
-                            Chờ giải đáp (+5đ)
+                            {tr('Chờ giải đáp (+5đ)', 'Awaiting reply (+5 pts)')}
                           </span>
                         )}
                       </div>
@@ -1137,7 +1285,7 @@ export const TeacherForumInbox: React.FC = () => {
                       </p>
 
                       <p className="mt-1.5 text-[11px] text-stone-500">
-                        Học viên:{' '}
+                        {tr('Học viên:', 'Student:')}{' '}
                         <strong className="text-stone-800">
                           {q.student_name || q.student_email}
                         </strong>{' '}
@@ -1164,7 +1312,7 @@ export const TeacherForumInbox: React.FC = () => {
                                 >
                                   <img
                                     src={mediaUrl}
-                                    alt={att.name || 'Ảnh đính kèm'}
+                                    alt={att.name || tr('Ảnh đính kèm', 'Attached image')}
                                     className="max-h-32 rounded object-contain"
                                   />
                                 </a>
@@ -1201,7 +1349,7 @@ export const TeacherForumInbox: React.FC = () => {
                                 className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-800 hover:bg-red-50"
                               >
                                 <ExternalLink className="h-3 w-3" />
-                                <span>{att.name || 'Tệp đính kèm'}</span>
+                                <span>{att.name || tr('Tệp đính kèm', 'Attachment')}</span>
                               </a>
                             );
                           })}
@@ -1226,7 +1374,7 @@ export const TeacherForumInbox: React.FC = () => {
                         className="inline-flex min-h-[34px] items-center gap-1 rounded-xl border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-700 hover:bg-stone-100"
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
-                        <span>Mở bài học</span>
+                        <span>{tr('Mở bài học', 'Open lesson')}</span>
                       </button>
 
                       {q.status === 'open' && (
@@ -1238,7 +1386,7 @@ export const TeacherForumInbox: React.FC = () => {
                           className="inline-flex min-h-[34px] items-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-950 hover:bg-amber-100"
                         >
                           <UserCheck className="h-3.5 w-3.5" />
-                          <span>Nhận trả lời</span>
+                          <span>{tr('Nhận trả lời', 'Claim')}</span>
                         </button>
                       )}
 
@@ -1253,7 +1401,7 @@ export const TeacherForumInbox: React.FC = () => {
                           className="inline-flex min-h-[34px] items-center gap-1 rounded-xl border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-700 hover:bg-stone-100"
                         >
                           <X className="h-3.5 w-3.5" />
-                          <span>Nhường lại</span>
+                          <span>{tr('Nhường lại', 'Unclaim')}</span>
                         </button>
                       )}
 
@@ -1274,7 +1422,7 @@ export const TeacherForumInbox: React.FC = () => {
                         className="inline-flex min-h-[34px] items-center gap-1 rounded-xl bg-red-800 px-3 py-1 text-xs font-bold text-white hover:bg-red-900"
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
-                        <span>{isAnswering ? 'Đóng' : 'Trả lời'}</span>
+                        <span>{isAnswering ? tr('Đóng', 'Close') : tr('Trả lời', 'Reply')}</span>
                       </button>
                     </div>
                   </div>
@@ -1297,18 +1445,18 @@ export const TeacherForumInbox: React.FC = () => {
                               {ans.teacher_name ||
                                 ans.author_name ||
                                 ans.teacher_email ||
-                                'Giáo viên KTN'}
+                                tr('Giáo viên KTN', 'KTN Teacher')}
                             </span>
                             <div className="flex items-center gap-2 text-[11px] text-stone-500">
                               {ans.is_accepted && (
                                 <span className="inline-flex items-center gap-1 font-bold text-emerald-800">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
-                                  Học viên đã hiểu bài (+10đ)
+                                  {tr('Học viên đã hiểu bài (+10đ)', 'Marked understood (+10 pts)')}
                                 </span>
                               )}
                               <span className="inline-flex items-center gap-1">
                                 <ThumbsUp className="h-3 w-3" />
-                                {ans.helpful_count || 0} hữu ích
+                                {ans.helpful_count || 0} {tr('hữu ích', 'helpful')}
                               </span>
                             </div>
                           </div>
@@ -1403,14 +1551,20 @@ export const TeacherForumInbox: React.FC = () => {
                     >
                       <div>
                         <label className="block text-xs font-bold text-stone-800">
-                          Nội dung giải đáp cho học viên:
+                          {tr(
+                            'Nội dung giải đáp cho học viên:',
+                            'Answer for the student:'
+                          )}
                         </label>
                         <textarea
                           rows={3}
                           data-testid="teacher-forum-answer-textarea"
                           value={answerContent}
                           onChange={(e) => setAnswerContent(e.target.value)}
-                          placeholder="Giải thích chi tiết ngữ pháp, cách phát âm hoặc hướng dẫn làm bài..."
+                          placeholder={tr(
+                            'Giải thích chi tiết ngữ pháp, cách phát âm hoặc hướng dẫn làm bài...',
+                            'Explain grammar, pronunciation, or step-by-step instructions...'
+                          )}
                           className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2 text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                         />
                       </div>
@@ -1420,10 +1574,16 @@ export const TeacherForumInbox: React.FC = () => {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <p className="text-xs font-bold text-amber-950">
-                              Đính kèm Video hướng dẫn (+5 điểm đóng góp)
+                              {tr(
+                                'Đính kèm Video hướng dẫn (+5 điểm đóng góp)',
+                                'Attach Guide Video (+5 pts)'
+                              )}
                             </p>
                             <p className="text-[11px] text-amber-900/80">
-                              Hỗ trợ MP4 / MOV / WebM tối đa 100 MB (tải thẳng lên S3 có thanh tiến trình).
+                              {tr(
+                                'Hỗ trợ MP4 / MOV / WebM tối đa 100 MB (tải thẳng lên S3 có thanh tiến trình).',
+                                'Supports MP4 / MOV / WebM up to 100 MB (direct S3 upload with progress bar).'
+                              )}
                             </p>
                           </div>
 
@@ -1431,8 +1591,11 @@ export const TeacherForumInbox: React.FC = () => {
                             <Video className="h-3.5 w-3.5" />
                             <span>
                               {isUploadingVideo
-                                ? `Đang tải ${videoUploadProgress}%...`
-                                : 'Tải video hướng dẫn'}
+                                ? tr(
+                                    `Đang tải ${videoUploadProgress}%...`,
+                                    `Uploading ${videoUploadProgress}%...`
+                                  )
+                                : tr('Tải video hướng dẫn', 'Upload guide video')}
                             </span>
                             <input
                               type="file"
@@ -1461,7 +1624,8 @@ export const TeacherForumInbox: React.FC = () => {
                               />
                             </div>
                             <p className="text-[11px] font-bold text-red-900">
-                              Đang tải video lên S3: {videoUploadProgress}%
+                              {tr('Đang tải video lên S3:', 'Uploading video to S3:')}{' '}
+                              {videoUploadProgress}%
                             </p>
                           </div>
                         )}
@@ -1470,7 +1634,7 @@ export const TeacherForumInbox: React.FC = () => {
                           <div className="mt-2 space-y-1.5">
                             <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-900">
                               <span className="truncate font-semibold">
-                                ✓ Đã đính kèm video: {answerVideoUrl}
+                                ✓ {tr('Đã đính kèm video:', 'Video attached:')} {answerVideoUrl}
                               </span>
                               <button
                                 type="button"
@@ -1500,8 +1664,11 @@ export const TeacherForumInbox: React.FC = () => {
                             <Paperclip className="h-3.5 w-3.5" />
                             <span>
                               {isUploadingAttachment
-                                ? 'Đang tải...'
-                                : 'Đính kèm ảnh / ghi âm / video'}
+                                ? tr('Đang tải...', 'Uploading...')
+                                : tr(
+                                    'Đính kèm ảnh / ghi âm / video',
+                                    'Attach image / audio / video'
+                                  )}
                             </span>
                             <input
                               type="file"
@@ -1544,7 +1711,7 @@ export const TeacherForumInbox: React.FC = () => {
                             onClick={() => setActiveQuestionId(null)}
                             className="min-h-[36px] rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700"
                           >
-                            Hủy
+                            {tr('Hủy', 'Cancel')}
                           </button>
                           <button
                             type="submit"
@@ -1561,7 +1728,7 @@ export const TeacherForumInbox: React.FC = () => {
                             ) : (
                               <Send className="h-3.5 w-3.5" />
                             )}
-                            <span>Gửi câu trả lời</span>
+                            <span>{tr('Gửi câu trả lời', 'Send reply')}</span>
                           </button>
                         </div>
                       </div>

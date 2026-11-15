@@ -2,16 +2,18 @@ import React from 'react';
 import { CheckCircle2, AlertTriangle, XCircle, Info, X } from 'lucide-react';
 import { useUiStore } from '@/stores/useUiStore';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 
 export const ToastViewport: React.FC = () => {
   const { toasts, dismissToast } = useUiStore();
+  const { tr } = useI18n();
 
   if (toasts.length === 0) return null;
 
   return (
     <div
       aria-live="polite"
-      aria-label="Thông báo hệ thống"
+      aria-label={tr('Thông báo hệ thống', 'System notifications')}
       className="fixed bottom-20 right-4 z-50 flex flex-col gap-2 max-w-sm w-[calc(100vw-2rem)] pointer-events-none md:bottom-4"
     >
       {toasts.map((t) => {
@@ -44,7 +46,7 @@ export const ToastViewport: React.FC = () => {
             <button
               type="button"
               onClick={() => dismissToast(t.id)}
-              aria-label="Đóng thông báo"
+              aria-label={tr('Đóng thông báo', 'Close notification')}
               className="rounded-lg p-1 hover:bg-black/5"
             >
               <X className="h-4 w-4" />

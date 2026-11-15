@@ -45,8 +45,16 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_COURSES } from '@/lib/demoData';
 import {
-  COURSE_DURATION_PRESET_OPTIONS,
-  COURSE_DURATION_UNIT_OPTIONS,
+  useI18n,
+  trStatic,
+  translateCourseTitle,
+  translateDayLabel,
+  translateScheduleText,
+  type AppLanguage,
+} from '@/i18n';
+import {
+  getCourseDurationPresetOptions,
+  getCourseDurationUnitOptions,
   addPresetToCalendarDate,
   buildCourseDurationPreset,
   disambiguateCatalogCourses,
@@ -64,9 +72,9 @@ import { StudentDetailDrawer } from '@/features/admin/components/StudentDetailDr
 import { TeacherDetailDrawer } from '@/features/admin/components/TeacherDetailDrawer';
 import {
   OrderDetailDrawer,
-  ACCOUNT_STATUS_META,
-  CONTACT_STATUS_META,
-  PAYMENT_STATUS_META,
+  getAccountStatusMeta,
+  getContactStatusMeta,
+  getPaymentStatusMeta,
 } from '@/features/admin/components/OrderDetailDrawer';
 import {
   CourseDurationMode,
@@ -104,18 +112,35 @@ export type AdminOrderFilterKey =
   | 'needs_error_handling'
   | 'cancelled_refunded';
 
-export const ORDER_FILTER_OPTIONS: Array<{ id: AdminOrderFilterKey; label: string }> = [
-  { id: 'all', label: 'Tất cả đơn' },
-  { id: 'new', label: 'Đơn mới' },
-  { id: 'not_called', label: 'Chưa gọi' },
-  { id: 'called_awaiting_payment', label: 'Đã gọi, chờ thanh toán' },
-  { id: 'paid_awaiting_approval', label: 'Đã nhận thanh toán, chờ duyệt' },
-  { id: 'activated', label: 'Đã kích hoạt' },
-  { id: 'needs_error_handling', label: 'Cần xử lý lỗi' },
-  { id: 'cancelled_refunded', label: 'Đã hủy/hoàn tiền' },
-];
+export function getOrderFilterOptions(
+  lang: AppLanguage
+): Array<{ id: AdminOrderFilterKey; label: string }> {
+  return [
+    { id: 'all', label: trStatic('Tất cả đơn', 'All orders', lang) },
+    { id: 'new', label: trStatic('Đơn mới', 'New', lang) },
+    { id: 'not_called', label: trStatic('Chưa gọi', 'Not called', lang) },
+    {
+      id: 'called_awaiting_payment',
+      label: trStatic('Đã gọi, chờ thanh toán', 'Called, awaiting payment', lang),
+    },
+    {
+      id: 'paid_awaiting_approval',
+      label: trStatic('Đã nhận thanh toán, chờ duyệt', 'Paid, awaiting approval', lang),
+    },
+    { id: 'activated', label: trStatic('Đã kích hoạt', 'Activated', lang) },
+    {
+      id: 'needs_error_handling',
+      label: trStatic('Cần xử lý lỗi', 'Needs attention', lang),
+    },
+    {
+      id: 'cancelled_refunded',
+      label: trStatic('Đã hủy/hoàn tiền', 'Cancelled / Refunded', lang),
+    },
+  ];
+}
 
 export const AdminWorkspace: React.FC = () => {
+  const { lang, tr } = useI18n();
   const navigate = useNavigate();
   const { section } = useParams<{ section?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -206,7 +231,12 @@ export const AdminWorkspace: React.FC = () => {
   const handlePreviewBulkImport = async (overrideCsvText?: string) => {
     const raw = (overrideCsvText ?? bulkCsvText).trim();
     if (!raw) {
-      setBulkError('Vui lòng dán dữ liệu CSV/Excel hoặc bấm "Tải dữ liệu mẫu của Trung tâm".');
+      setBulkError(
+        tr(
+          'Vui lòng dán dữ liệu CSV/Excel hoặc bấm "Tải dữ liệu mẫu của Trung tâm".',
+          'Please paste CSV/Excel data or click "Load Center Sample Data".'
+        )
+      );
       return;
     }
     setBulkError(null);
@@ -214,6 +244,7 @@ export const AdminWorkspace: React.FC = () => {
     try {
       const localPreview = parseKtnCenterBulkCsv(raw, {
         defaultPassword: bulkDefaultPassword.trim() || '12345678',
+        lang,
       });
       setBulkPreviewResult(localPreview);
       if (!isDemoMode) {
@@ -236,7 +267,9 @@ export const AdminWorkspace: React.FC = () => {
       // Keep local preview if available, or show error
       if (!bulkPreviewResult) {
         setBulkError(
-          err instanceof Error ? err.message : 'Không thể phân tích dữ liệu CSV.'
+          err instanceof Error
+            ? err.message
+            : tr('Không thể phân tích dữ liệu CSV.', 'Could not parse CSV data.')
         );
       }
     } finally {
@@ -247,7 +280,12 @@ export const AdminWorkspace: React.FC = () => {
   const handleConfirmBulkImport = async () => {
     const raw = bulkCsvText.trim();
     if (!raw) {
-      setBulkError('Vui lòng dán dữ liệu CSV trước khi tạo hàng loạt.');
+      setBulkError(
+        tr(
+          'Vui lòng dán dữ liệu CSV trước khi tạo hàng loạt.',
+          'Please paste CSV data before bulk creating.'
+        )
+      );
       return;
     }
     setBulkError(null);
@@ -256,11 +294,15 @@ export const AdminWorkspace: React.FC = () => {
       if (isDemoMode) {
         const parsed = parseKtnCenterBulkCsv(raw, {
           defaultPassword: bulkDefaultPassword.trim() || '12345678',
+          lang,
         });
         setBulkPreviewResult(parsed);
         addToast({
-          title: 'Đã tạo hàng loạt thành công (Demo)',
-          description: `Đã tạo ${parsed.summary.classCount} lớp, ${parsed.summary.teacherCount} giáo viên, ${parsed.summary.studentCount} học viên.`,
+          title: tr('Đã tạo hàng loạt thành công (Demo)', 'Bulk creation succeeded (Demo)'),
+          description: tr(
+            `Đã tạo ${parsed.summary.classCount} lớp, ${parsed.summary.teacherCount} giáo viên, ${parsed.summary.studentCount} học viên.`,
+            `Created ${parsed.summary.classCount} classes, ${parsed.summary.teacherCount} teachers, ${parsed.summary.studentCount} students.`
+          ),
           variant: 'success',
         });
         setShowBulkImportModal(false);
@@ -278,16 +320,21 @@ export const AdminWorkspace: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-overview'] });
       addToast({
-        title: 'Đã nhập hàng loạt thành công!',
+        title: tr('Đã nhập hàng loạt thành công!', 'Bulk import completed!'),
         description:
           res.message ||
-          `Đã khởi tạo ${res.summary.classCount} lớp, ${res.summary.teacherCount} giáo viên và ${res.summary.studentCount} học sinh.`,
+          tr(
+            `Đã khởi tạo ${res.summary.classCount} lớp, ${res.summary.teacherCount} giáo viên và ${res.summary.studentCount} học sinh.`,
+            `Initialized ${res.summary.classCount} classes, ${res.summary.teacherCount} teachers, and ${res.summary.studentCount} students.`
+          ),
         variant: 'success',
       });
       setShowBulkImportModal(false);
     } catch (err: unknown) {
       setBulkError(
-        err instanceof Error ? err.message : 'Không thể thực thi nhập hàng loạt.'
+        err instanceof Error
+          ? err.message
+          : tr('Không thể thực thi nhập hàng loạt.', 'Unable to run bulk import.')
       );
     } finally {
       setIsExecutingBulk(false);
@@ -449,9 +496,18 @@ export const AdminWorkspace: React.FC = () => {
             source_label: 'Website',
             can_activate: false,
             activation_block_reasons: [
-              'Chưa xác minh tiền thực nhận (Trạng thái thanh toán chưa phải "Đã xác minh tiền thực nhận").',
-              'Chưa có email đăng nhập hợp lệ cho học viên.',
-              'Chưa cập nhật trạng thái chăm sóc (vui lòng gọi phụ huynh và đánh dấu "Đã gọi" hoặc ghi chú tư vấn trước khi kích hoạt).',
+              tr(
+                'Chưa xác minh tiền thực nhận (Trạng thái thanh toán chưa phải "Đã xác minh tiền thực nhận").',
+                'Payment receipt not yet verified (status is not "Payment verified").'
+              ),
+              tr(
+                'Chưa có email đăng nhập hợp lệ cho học viên.',
+                'Valid student login email is missing.'
+              ),
+              tr(
+                'Chưa cập nhật trạng thái chăm sóc (vui lòng gọi phụ huynh và đánh dấu "Đã gọi" hoặc ghi chú tư vấn trước khi kích hoạt).',
+                'Care status not updated (please call parent and mark "Called" or add consult notes before activating).'
+              ),
             ],
             created_at: new Date(Date.now() - 1800 * 1000).toISOString(),
           },
@@ -816,7 +872,7 @@ export const AdminWorkspace: React.FC = () => {
         await new Promise((r) => setTimeout(r, 250));
         return {
           ok: true,
-          message: 'Đã cập nhật thông tin đơn hàng (Demo)!',
+          message: tr('Đã cập nhật thông tin đơn hàng (Demo)!', 'Order info updated (Demo)!'),
         };
       }
       return ktnApi.updateOrder(params);
@@ -825,14 +881,14 @@ export const AdminWorkspace: React.FC = () => {
       setOrderDrawerError(null);
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
       addToast({
-        title: res.message || 'Đã cập nhật thông tin đơn hàng!',
+        title: res.message || tr('Đã cập nhật thông tin đơn hàng!', 'Order info updated!'),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       setOrderDrawerError(err.message);
       addToast({
-        title: 'Không thể cập nhật đơn hàng',
+        title: tr('Không thể cập nhật đơn hàng', 'Unable to update order'),
         description: err.message,
         variant: 'error',
       });
@@ -853,7 +909,7 @@ export const AdminWorkspace: React.FC = () => {
         const todayStr = getHoChiMinhCalendarDateString(getServerNowMs());
         const limitTime = addPresetToCalendarDate(todayStr, preset);
         return {
-          message: 'Đã cấp thành công',
+          message: tr('Đã cấp thành công', 'Granted successfully'),
           orderId: params.orderId,
           studentEmail: params.studentEmail || 'giahan@khongtunhi.com',
           accountCreated: true,
@@ -887,7 +943,7 @@ export const AdminWorkspace: React.FC = () => {
         setCredentialHandoff({
           name: res.studentEmail,
           email: res.studentEmail,
-          roleLabel: 'Học viên (Duyệt đơn)',
+          roleLabel: tr('Học viên (Duyệt đơn)', 'Student (Order approved)'),
           accountCreated: true,
           existingAccount: false,
           initialPassword: res.initialPassword,
@@ -895,13 +951,13 @@ export const AdminWorkspace: React.FC = () => {
       }
       if (res.syncStatus === 'partial_failure') {
         addToast({
-          title: 'Cần hoàn tất đồng bộ thời hạn',
+          title: tr('Cần hoàn tất đồng bộ thời hạn', 'Duration sync needs completion'),
           description: res.message,
           variant: 'warning',
         });
       } else {
         addToast({
-          title: res.message || 'Đã cấp thành công!',
+          title: res.message || tr('Đã cấp thành công!', 'Granted successfully!'),
           variant: 'success',
         });
       }
@@ -911,7 +967,7 @@ export const AdminWorkspace: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-sync-status'] });
       addToast({
-        title: 'Chưa thể kích hoạt khóa học',
+        title: tr('Chưa thể kích hoạt khóa học', 'Unable to activate course'),
         description: err.message,
         variant: 'error',
       });
@@ -947,7 +1003,7 @@ export const AdminWorkspace: React.FC = () => {
       setCredentialHandoff({
         name: res.student?.name || fallbackEmail,
         email: res.student?.email || fallbackEmail,
-        roleLabel: 'Học viên',
+        roleLabel: tr('Học viên', 'Student'),
         accountCreated: true,
         existingAccount: false,
         initialPassword: res.initialPassword,
@@ -980,7 +1036,12 @@ export const AdminWorkspace: React.FC = () => {
     }) => {
       setDrawerActionError(null);
       if (!params.courseIds || params.courseIds.length === 0) {
-        throw new Error('Vui lòng chọn ít nhất 1 khóa học trước khi cấp quyền.');
+        throw new Error(
+          tr(
+            'Vui lòng chọn ít nhất 1 khóa học trước khi cấp quyền.',
+            'Please select at least 1 course before granting access.'
+          )
+        );
       }
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 250));
@@ -1010,7 +1071,10 @@ export const AdminWorkspace: React.FC = () => {
           has_online_courses: mergedMap.size > 0,
           online_courses: Array.from(mergedMap.values()),
         };
-        return { message: 'Đã cấp thêm khóa học thành công!', student: updatedStudent };
+        return {
+          message: tr('Đã cấp thêm khóa học thành công!', 'Added course access successfully!'),
+          student: updatedStudent,
+        };
       }
       return ktnApi.grantStudentCourses({
         email: params.email,
@@ -1023,13 +1087,16 @@ export const AdminWorkspace: React.FC = () => {
       handleStudentMutationSuccess(
         res,
         vars.email,
-        'Đã cấp thêm khóa học (giữ nguyên lớp trực tiếp)!'
+        tr(
+          'Đã cấp thêm khóa học (giữ nguyên lớp trực tiếp)!',
+          'Added courses (offline class unchanged)!'
+        )
       );
     },
     onError: (err: Error) => {
       setDrawerActionError(err.message);
       addToast({
-        title: 'Không thể cấp khóa học',
+        title: tr('Không thể cấp khóa học', 'Unable to grant course'),
         description: err.message,
         variant: 'error',
       });
@@ -1080,7 +1147,7 @@ export const AdminWorkspace: React.FC = () => {
         };
         return {
           ok: true,
-          message: 'Đã cập nhật thời hạn khóa học thành công!',
+          message: tr('Đã cập nhật thời hạn khóa học thành công!', 'Updated course duration successfully!'),
           student: updatedStudent,
         };
       }
@@ -1090,13 +1157,13 @@ export const AdminWorkspace: React.FC = () => {
       handleStudentMutationSuccess(
         res,
         vars.studentEmail,
-        'Đã cập nhật thời hạn khóa học!'
+        tr('Đã cập nhật thời hạn khóa học!', 'Course duration updated!')
       );
     },
     onError: (err: Error) => {
       setDrawerActionError(err.message);
       addToast({
-        title: 'Không thể cập nhật thời hạn khóa học',
+        title: tr('Không thể cập nhật thời hạn khóa học', 'Unable to update course duration'),
         description: err.message,
         variant: 'error',
       });
@@ -1107,7 +1174,7 @@ export const AdminWorkspace: React.FC = () => {
     mutationFn: async (params: { email: string; courseId: string }) => {
       setDrawerActionError(null);
       if (!params.courseId) {
-        throw new Error('Vui lòng chọn khóa học cần thu hồi.');
+        throw new Error(tr('Vui lòng chọn khóa học cần thu hồi.', 'Please select a course to revoke.'));
       }
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 250));
@@ -1120,7 +1187,7 @@ export const AdminWorkspace: React.FC = () => {
           has_online_courses: remaining.length > 0,
           online_courses: remaining,
         };
-        return { message: 'Đã thu hồi khóa học!', student: updatedStudent };
+        return { message: tr('Đã thu hồi khóa học!', 'Revoked course access!'), student: updatedStudent };
       }
       return ktnApi.revokeStudentCourse({
         email: params.email,
@@ -1131,13 +1198,16 @@ export const AdminWorkspace: React.FC = () => {
       handleStudentMutationSuccess(
         res,
         vars.email,
-        'Đã thu hồi khóa học (giữ nguyên các khóa khác & lớp học)!'
+        tr(
+          'Đã thu hồi khóa học (giữ nguyên các khóa khác & lớp học)!',
+          'Course revoked (other courses & classes kept unchanged)!'
+        )
       );
     },
     onError: (err: Error) => {
       setDrawerActionError(err.message);
       addToast({
-        title: 'Không thể thu hồi khóa học',
+        title: tr('Không thể thu hồi khóa học', 'Unable to revoke course'),
         description: err.message,
         variant: 'error',
       });
@@ -1158,8 +1228,8 @@ export const AdminWorkspace: React.FC = () => {
         };
         return {
           message: params.classCode
-            ? `Đã chuyển sang lớp ${params.classCode}!`
-            : 'Đã bỏ xếp lớp trực tiếp!',
+            ? tr(`Đã chuyển sang lớp ${params.classCode}!`, `Transferred to class ${params.classCode}!`)
+            : tr('Đã bỏ xếp lớp trực tiếp!', 'Unassigned from offline class!'),
           student: updatedStudent,
           prevClassCode,
         };
@@ -1229,14 +1299,20 @@ export const AdminWorkspace: React.FC = () => {
         res,
         vars.email,
         vars.classCode
-          ? `Đã cập nhật lớp trực tiếp (${vars.classCode}) — giữ nguyên quyền khóa học!`
-          : 'Đã bỏ xếp lớp trực tiếp — giữ nguyên quyền khóa học!'
+          ? tr(
+              `Đã cập nhật lớp trực tiếp (${vars.classCode}) — giữ nguyên quyền khóa học!`,
+              `Updated live class (${vars.classCode}) — course access preserved!`
+            )
+          : tr(
+              'Đã bỏ xếp lớp trực tiếp — giữ nguyên quyền khóa học!',
+              'Unassigned live class — course access preserved!'
+            )
       );
     },
     onError: (err: Error) => {
       setDrawerActionError(err.message);
       addToast({
-        title: 'Không thể cập nhật lớp trực tiếp',
+        title: tr('Không thể cập nhật lớp trực tiếp', 'Unable to update offline class'),
         description: err.message,
         variant: 'error',
       });
@@ -1262,7 +1338,10 @@ export const AdminWorkspace: React.FC = () => {
           has_online_courses: nextCourses.length > 0,
           online_courses: nextCourses,
         };
-        return { message: 'Đã thay thế danh sách khóa học!', student: updatedStudent };
+        return {
+          message: tr('Đã thay thế danh sách khóa học!', 'Replaced courses list!'),
+          student: updatedStudent,
+        };
       }
       return ktnApi.replaceAllStudentCourses({
         email: params.email,
@@ -1273,13 +1352,13 @@ export const AdminWorkspace: React.FC = () => {
       handleStudentMutationSuccess(
         res,
         vars.email,
-        'Đã thay thế toàn bộ danh sách khóa học!'
+        tr('Đã thay thế toàn bộ danh sách khóa học!', 'Replaced full courses list!')
       );
     },
     onError: (err: Error) => {
       setDrawerActionError(err.message);
       addToast({
-        title: 'Không thể thay thế danh sách khóa học',
+        title: tr('Không thể thay thế danh sách khóa học', 'Unable to replace courses list'),
         description: err.message,
         variant: 'error',
       });
@@ -1303,7 +1382,10 @@ export const AdminWorkspace: React.FC = () => {
           phone: params.phone || '',
           parent_name: params.parentName || '',
         };
-        return { message: 'Đã lưu thông tin hồ sơ học viên!', student: updatedStudent };
+        return {
+          message: tr('Đã lưu thông tin hồ sơ học viên!', 'Saved student profile!'),
+          student: updatedStudent,
+        };
       }
       return ktnApi.updateStudentProfile(params);
     },
@@ -1311,13 +1393,13 @@ export const AdminWorkspace: React.FC = () => {
       handleStudentMutationSuccess(
         res,
         vars.email,
-        'Đã cập nhật thông tin hồ sơ học viên!'
+        tr('Đã cập nhật thông tin hồ sơ học viên!', 'Updated student profile!')
       );
     },
     onError: (err: Error) => {
       setDrawerActionError(err.message);
       addToast({
-        title: 'Không thể lưu thông tin học viên',
+        title: tr('Không thể lưu thông tin học viên', 'Unable to save student info'),
         description: err.message,
         variant: 'error',
       });
@@ -1350,7 +1432,7 @@ export const AdminWorkspace: React.FC = () => {
             online_courses: [],
             studentCase: 'both' as const,
           },
-          message: 'Đã tạo học viên mới thành công!',
+          message: tr('Đã tạo học viên mới thành công!', 'Created new student successfully!'),
         };
       }
       const normalizedEmail = newStuEmail.trim().toLowerCase();
@@ -1381,7 +1463,7 @@ export const AdminWorkspace: React.FC = () => {
       setCredentialHandoff({
         name: res.student?.name || newStuName,
         email: res.student?.email || newStuEmail,
-        roleLabel: 'Học viên mới',
+        roleLabel: tr('Học viên mới', 'New student'),
         accountCreated: Boolean(res.accountCreated),
         existingAccount: Boolean(res.existingAccount),
         initialPassword: res.accountCreated ? res.initialPassword || null : null,
@@ -1398,20 +1480,20 @@ export const AdminWorkspace: React.FC = () => {
       setNewStuIdempotencyKey(`PROV-UI-${Date.now()}`);
       if (res.syncStatus === 'partial_failure') {
         addToast({
-          title: 'Cần hoàn tất đồng bộ thời hạn',
+          title: tr('Cần hoàn tất đồng bộ thời hạn', 'Duration sync needs completion'),
           description: res.message,
           variant: 'warning',
         });
       } else {
         addToast({
-          title: res.message || 'Đã tạo & cấp quyền học viên thành công!',
+          title: res.message || tr('Đã tạo & cấp quyền học viên thành công!', 'Student created & granted access!'),
           variant: 'success',
         });
       }
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Chưa tạo được tài khoản học viên',
+        title: tr('Chưa tạo được tài khoản học viên', 'Could not create student account'),
         description: err.message,
         variant: 'error',
       });
@@ -1436,7 +1518,7 @@ export const AdminWorkspace: React.FC = () => {
           accountCreated: true,
           existingAccount: false,
           initialPassword: 'KtnTeacher!2026',
-          message: 'Đã tạo tài khoản giáo viên!',
+          message: tr('Đã tạo tài khoản giáo viên!', 'Created teacher account!'),
         };
       }
       return ktnApi.saveTeacher({
@@ -1464,7 +1546,7 @@ export const AdminWorkspace: React.FC = () => {
       setCredentialHandoff({
         name: res.teacher?.name || newTeacherName,
         email: res.teacher?.email || newTeacherEmail,
-        roleLabel: 'Giáo viên',
+        roleLabel: tr('Giáo viên', 'Teacher'),
         accountCreated: Boolean(res.accountCreated),
         existingAccount: Boolean(res.existingAccount),
         initialPassword: res.accountCreated ? res.initialPassword || null : null,
@@ -1476,13 +1558,13 @@ export const AdminWorkspace: React.FC = () => {
       setNewTeacherCode('');
       setNewTeacherClasses([]);
       addToast({
-        title: res.message || 'Đã lưu hồ sơ giáo viên & phân công lớp!',
+        title: res.message || tr('Đã lưu hồ sơ giáo viên & phân công lớp!', 'Saved teacher profile & class assignments!'),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Không thể tạo giáo viên',
+        title: tr('Không thể tạo giáo viên', 'Unable to create teacher'),
         description: err.message,
         variant: 'error',
       });
@@ -1526,8 +1608,11 @@ export const AdminWorkspace: React.FC = () => {
             : undefined,
           message:
             params.action === 'delete'
-              ? `Đã gỡ ${params.email} khỏi danh sách hoạt động Supabase và chặn đồng bộ ngược (chưa xác minh xóa cứng Cognito/izTeach, giữ nguyên đơn hàng).`
-              : 'Đã cập nhật trạng thái tài khoản học viên!',
+              ? tr(
+                  `Đã gỡ ${params.email} khỏi danh sách hoạt động Supabase và chặn đồng bộ ngược (chưa xác minh xóa cứng Cognito/izTeach, giữ nguyên đơn hàng).`,
+                  `Removed ${params.email} from active Supabase list and blocked reverse sync (hard deletion on Cognito/izTeach unverified, orders preserved).`
+                )
+              : tr('Đã cập nhật trạng thái tài khoản học viên!', 'Updated student account status!'),
         };
       }
       return ktnApi.manageStudentLifecycle(params);
@@ -1579,15 +1664,19 @@ export const AdminWorkspace: React.FC = () => {
 
       if (vars.action === 'delete' && !upstreamVerified) {
         addToast({
-          title:
+          title: tr(
             'Đã xử lý xóa có điều kiện trên Supabase (Chưa xác minh xóa Cognito/izTeach)',
-          description:
+            'Conditional Supabase deletion processed (Cognito/izTeach deletion unverified)'
+          ),
+          description: tr(
             'Hồ sơ hoạt động đã gỡ khỏi Supabase & chặn đồng bộ ngược. Đơn hàng/lịch sử học tập được bảo toàn; tài khoản gốc Cognito/izTeach chưa xóa cứng.',
+            'Active record removed from Supabase & reverse sync blocked. Orders/learning history preserved; Cognito/izTeach root account not hard-deleted.'
+          ),
           variant: 'warning',
         });
       } else {
         addToast({
-          title: res.message || 'Đã cập nhật trạng thái tài khoản học viên!',
+          title: res.message || tr('Đã cập nhật trạng thái tài khoản học viên!', 'Updated student account status!'),
           variant: 'success',
         });
       }
@@ -1595,7 +1684,7 @@ export const AdminWorkspace: React.FC = () => {
     onError: (err: Error) => {
       setDrawerActionError(err.message);
       addToast({
-        title: 'Không thể cập nhật trạng thái tài khoản',
+        title: tr('Không thể cập nhật trạng thái tài khoản', 'Unable to update account status'),
         description: err.message,
         variant: 'error',
       });
@@ -1615,8 +1704,11 @@ export const AdminWorkspace: React.FC = () => {
           request: null as unknown as KtnCourseGrantRequest,
           message:
             params.decision === 'approve'
-              ? 'Đã phê duyệt & kích hoạt khóa học video cho học viên!'
-              : 'Đã từ chối đề nghị mở khóa học.',
+              ? tr(
+                  'Đã phê duyệt & kích hoạt khóa học video cho học viên!',
+                  'Approved & activated video course for student!'
+                )
+              : tr('Đã từ chối đề nghị mở khóa học.', 'Rejected course access request.'),
         };
       }
       return ktnApi.reviewCourseGrantRequest(params);
@@ -1625,13 +1717,13 @@ export const AdminWorkspace: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-course-grant-requests'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
       addToast({
-        title: res.message || 'Đã xử lý đề nghị mở khóa học của giáo viên!',
+        title: res.message || tr('Đã xử lý đề nghị mở khóa học của giáo viên!', 'Processed teacher course request!'),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Không thể xử lý yêu cầu',
+        title: tr('Không thể xử lý yêu cầu', 'Unable to process request'),
         description: err.message,
         variant: 'error',
       });
@@ -1674,7 +1766,7 @@ export const AdminWorkspace: React.FC = () => {
             assigned_courses: payload.assignedCourses,
           };
         }
-        return { ok: true, message: 'Đã cập nhật hồ sơ giáo viên!' };
+        return { ok: true, message: tr('Đã cập nhật hồ sơ giáo viên!', 'Updated teacher profile!') };
       }
       return ktnApi.saveTeacher({
         ...payload,
@@ -1689,13 +1781,13 @@ export const AdminWorkspace: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
       queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
       addToast({
-        title: res.message || 'Đã cập nhật hồ sơ & phân công giáo viên!',
+        title: res.message || tr('Đã cập nhật hồ sơ & phân công giáo viên!', 'Updated teacher profile & assignments!'),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Không thể cập nhật giáo viên',
+        title: tr('Không thể cập nhật giáo viên', 'Unable to update teacher'),
         description: err.message,
         variant: 'error',
       });
@@ -1738,14 +1830,17 @@ export const AdminWorkspace: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-forum-leaderboard'] });
       addToast({
-        title: `Đã ghi nhận ${vars.pointsDelta > 0 ? `+${vars.pointsDelta}` : vars.pointsDelta} điểm đóng góp!`,
-        description: `Lý do: ${vars.reason}`,
+        title: tr(
+          `Đã ghi nhận ${vars.pointsDelta > 0 ? `+${vars.pointsDelta}` : vars.pointsDelta} điểm đóng góp!`,
+          `Recorded ${vars.pointsDelta > 0 ? `+${vars.pointsDelta}` : vars.pointsDelta} contribution points!`
+        ),
+        description: `${tr('Lý do:', 'Reason:')} ${vars.reason}`,
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Không thể điều chỉnh điểm đóng góp',
+        title: tr('Không thể điều chỉnh điểm đóng góp', 'Unable to adjust contribution points'),
         description: err.message,
         variant: 'error',
       });
@@ -1781,13 +1876,13 @@ export const AdminWorkspace: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
       addToast({
-        title: 'Đã đồng bộ lại dữ liệu thành công!',
+        title: tr('Đã đồng bộ lại dữ liệu thành công!', 'Data re-synced successfully!'),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Đồng bộ lại chưa thành công',
+        title: tr('Đồng bộ lại chưa thành công', 'Re-sync failed'),
         description: err.message,
         variant: 'error',
       });
@@ -1799,7 +1894,12 @@ export const AdminWorkspace: React.FC = () => {
       setDeleteClassError(null);
       const cleanCode = params.classCode.trim().toUpperCase();
       if (params.confirmClassCode.trim().toUpperCase() !== cleanCode) {
-        throw new Error(`Vui lòng nhập chính xác mã lớp "${cleanCode}" để xác nhận xóa.`);
+        throw new Error(
+          tr(
+            `Vui lòng nhập chính xác mã lớp "${cleanCode}" để xác nhận xóa.`,
+            `Please enter exact class code "${cleanCode}" to confirm deletion.`
+          )
+        );
       }
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 250));
@@ -1814,7 +1914,10 @@ export const AdminWorkspace: React.FC = () => {
           classCode: cleanCode,
           softDeleted: true,
           active: false,
-          message: `Đã lưu trữ (soft-delete) lớp ${cleanCode} thành công. Dữ liệu lịch sử được bảo toàn.`,
+          message: tr(
+            `Đã lưu trữ (soft-delete) lớp ${cleanCode} thành công. Dữ liệu lịch sử được bảo toàn.`,
+            `Archived (soft-deleted) class ${cleanCode} successfully. Historical data preserved.`
+          ),
         };
       }
       return ktnApi.deleteClass({
@@ -1942,15 +2045,19 @@ export const AdminWorkspace: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-overview'] });
 
       addToast({
-        title: res.message || `Đã xóa / lưu trữ lớp ${cleanCode}`,
-        description:
+        title:
+          res.message ||
+          tr(`Đã xóa / lưu trữ lớp ${cleanCode}`, `Deleted / archived class ${cleanCode}`),
+        description: tr(
           'Nhóm lớp đã ẩn khỏi danh sách hoạt động & phân công hiện hành; tin nhắn, bài tập và điểm danh lịch sử được bảo toàn.',
+          'Class hidden from active lists & assignments; past messages, homework, and attendance are preserved.'
+        ),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       const apiErr = err as KtnApiError;
-      const errMsg = err.message || 'Không thể xóa lớp học.';
+      const errMsg = err.message || tr('Không thể xóa lớp học.', 'Unable to delete class.');
       setDeleteClassError(errMsg);
       if (
         apiErr?.status === 409 ||
@@ -1960,7 +2067,7 @@ export const AdminWorkspace: React.FC = () => {
         setDeleteClassBlockedStudentCount((prev) => (prev && prev > 0 ? prev : 1));
       }
       addToast({
-        title: 'Chưa thể xóa lớp học',
+        title: tr('Chưa thể xóa lớp học', 'Unable to delete class'),
         description: errMsg,
         variant: 'error',
       });
@@ -2003,7 +2110,10 @@ export const AdminWorkspace: React.FC = () => {
           unassignedClasses: teacher.assigned_classes ?? [],
           sessionRevoked: true,
           syncStatus: 'synced',
-          message: 'Đã xóa giáo viên thành công (chế độ demo).',
+          message: tr(
+            'Đã xóa giáo viên thành công (chế độ demo).',
+            'Teacher deleted successfully (demo mode).'
+          ),
         };
       }
 
@@ -2076,13 +2186,13 @@ export const AdminWorkspace: React.FC = () => {
 
       // 6. Display success toast
       addToast({
-        title: 'Đã xóa giáo viên thành công!',
+        title: tr('Đã xóa giáo viên thành công!', 'Teacher deleted successfully!'),
         variant: 'success',
       });
     },
     onError: (err: Error) => {
       addToast({
-        title: 'Không thể xóa giáo viên',
+        title: tr('Không thể xóa giáo viên', 'Unable to delete teacher'),
         description: err.message,
         variant: 'error',
       });
@@ -2418,17 +2528,23 @@ export const AdminWorkspace: React.FC = () => {
 
   const copyCredentialText = (info: NonNullable<typeof credentialHandoff>) => {
     const lines = [
-      `THÔNG TIN TÀI KHOẢN HỌC VIỆN KHỔNG TỬ NHÍ (${info.roleLabel})`,
-      `- Họ tên: ${info.name}`,
-      `- Email đăng nhập: ${info.email}`,
+      tr(
+        `THÔNG TIN TÀI KHOẢN HỌC VIỆN KHỔNG TỬ NHÍ (${info.roleLabel})`,
+        `LITTLE CONFUCIUS ACADEMY ACCOUNT DETAILS (${info.roleLabel})`
+      ),
+      `- ${tr('Họ tên', 'Full name')}: ${info.name}`,
+      `- ${tr('Email đăng nhập', 'Login email')}: ${info.email}`,
       info.accountCreated && info.initialPassword
-        ? `- Mật khẩu khởi tạo (dùng 1 lần): ${info.initialPassword}`
-        : `- Mật khẩu: Giữ nguyên mật khẩu tài khoản hiện có của bạn (nếu quên mật khẩu, vui lòng bấm Quên mật khẩu hoặc nhắn Học vụ hỗ trợ).`,
-      info.classCode ? `- Lớp trực tiếp: ${info.classCode}` : null,
+        ? `- ${tr('Mật khẩu khởi tạo (dùng 1 lần)', 'Initial password (one-time)')}: ${info.initialPassword}`
+        : `- ${tr(
+            'Mật khẩu: Giữ nguyên mật khẩu tài khoản hiện có của bạn (nếu quên mật khẩu, vui lòng bấm Quên mật khẩu hoặc nhắn Học vụ hỗ trợ).',
+            'Password: Keeps your existing account password (if forgotten, click Forgot Password or message Academic Support).'
+          )}`,
+      info.classCode ? `- ${tr('Lớp trực tiếp', 'Offline class')}: ${info.classCode}` : null,
     ].filter(Boolean);
     navigator.clipboard?.writeText(lines.join('\n')).catch(() => {});
     addToast({
-      title: 'Đã sao chép thông tin bàn giao tài khoản!',
+      title: tr('Đã sao chép thông tin bàn giao tài khoản!', 'Copied account handoff info!'),
       variant: 'success',
     });
   };
@@ -2440,22 +2556,23 @@ export const AdminWorkspace: React.FC = () => {
         <div className="flex items-center gap-1 overflow-x-auto">
           {(
             [
-              { id: 'all', label: 'Tất cả', to: '/admin' },
+              { id: 'all', label: tr('Tất cả', 'Overview'), to: '/admin' },
               {
                 id: 'students',
-                label: `Học viên (${totalStudentsCount})`,
+                label: `${tr('Học viên', 'Students')} (${totalStudentsCount})`,
                 to: '/admin/students',
               },
               {
                 id: 'teachers',
-                label: `Giáo viên (${totalTeachersCount})${
-                  pendingCourseRequestsCount > 0 ? ` · ${pendingCourseRequestsCount} YC` : ''
+                label: `${tr('Giáo viên', 'Teachers')} (${totalTeachersCount})${
+                  pendingCourseRequestsCount > 0 ? ` · ${pendingCourseRequestsCount} ${tr('YC', 'req')}` : ''
                 }`,
                 to: '/admin/teachers',
               },
-              { id: 'classes', label: `Lớp (${classesList.length})`, to: '/admin/classes' },
-              { id: 'orders', label: `Đơn hàng (${ordersList.length})`, to: '/admin/orders' },
-              { id: 'more', label: 'Đối soát & Đồng bộ', to: '/admin/more' },
+              { id: 'classes', label: `${tr('Lớp', 'Classes')} (${classesList.length})`, to: '/admin/classes' },
+              { id: 'orders', label: `${tr('Đơn hàng', 'Orders')} (${ordersList.length})`, to: '/admin/orders' },
+              { id: 'consultations', label: tr('Tư vấn', 'Consults'), to: '/admin/consultations' },
+              { id: 'more', label: tr('Đối soát & Đồng bộ', 'Sync & Audit'), to: '/admin/more' },
             ] as const
           ).map((t) => (
             <button
@@ -2485,7 +2602,7 @@ export const AdminWorkspace: React.FC = () => {
             className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-red-900 hover:bg-amber-100"
           >
             <Upload className="h-3.5 w-3.5 text-red-800" />
-            <span>Nhập hàng loạt (Excel/CSV)</span>
+            <span>{tr('Nhập hàng loạt (Excel/CSV)', 'Bulk Import (Excel/CSV)')}</span>
           </button>
           <button
             type="button"
@@ -2494,7 +2611,7 @@ export const AdminWorkspace: React.FC = () => {
             className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-900"
           >
             <UserPlus className="h-3.5 w-3.5" />
-            <span>+ Tạo học viên</span>
+            <span>{tr('+ Tạo học viên', '+ Add student')}</span>
           </button>
           <button
             type="button"
@@ -2503,7 +2620,7 @@ export const AdminWorkspace: React.FC = () => {
             className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-1 text-xs font-bold text-stone-800 hover:bg-stone-100"
           >
             <GraduationCap className="h-3.5 w-3.5 text-red-800" />
-            <span>+ Tạo giáo viên</span>
+            <span>{tr('+ Tạo giáo viên', '+ Add teacher')}</span>
           </button>
         </div>
       </div>
@@ -2518,19 +2635,30 @@ export const AdminWorkspace: React.FC = () => {
             <div className="space-y-1">
               <p className="flex items-center gap-1.5 font-display text-xs font-bold text-emerald-900">
                 <KeyRound className="h-4 w-4 text-emerald-700" />
-                Thông tin bàn giao tài khoản ({credentialHandoff.roleLabel}):{' '}
+                {tr('Thông tin bàn giao tài khoản', 'Account handoff details')} ({credentialHandoff.roleLabel}):{' '}
                 <span>{credentialHandoff.name}</span> ({credentialHandoff.email})
               </p>
               {credentialHandoff.accountCreated && credentialHandoff.initialPassword ? (
                 <p data-testid="admin-credential-initial-password" className="text-xs">
-                  Mật khẩu khởi tạo (chỉ hiển thị 1 lần, không lưu trữ bản rõ):{' '}
+                  {tr(
+                    'Mật khẩu khởi tạo (chỉ hiển thị 1 lần, không lưu trữ bản rõ):',
+                    'Initial password (shown once only, not stored in plaintext):'
+                  )}{' '}
                   <code className="rounded bg-white px-2 py-0.5 font-mono font-bold text-red-800">
                     {credentialHandoff.initialPassword}
                   </code>
                 </p>
               ) : (
                 <p data-testid="admin-credential-existing-account-notice" className="text-xs">
-                  Tài khoản đã tồn tại trên hệ thống — <strong>giữ nguyên mật khẩu hiện tại</strong> của người dùng (không ghi đè mật khẩu).
+                  {lang === 'en' ? (
+                    <>
+                      Account already exists — <strong>current password preserved</strong> (not overwritten).
+                    </>
+                  ) : (
+                    <>
+                      Tài khoản đã tồn tại trên hệ thống — <strong>giữ nguyên mật khẩu hiện tại</strong> của người dùng (không ghi đè mật khẩu).
+                    </>
+                  )}
                 </p>
               )}
             </div>
@@ -2542,11 +2670,11 @@ export const AdminWorkspace: React.FC = () => {
                 className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-900"
               >
                 <Copy className="h-3.5 w-3.5" />
-                Sao chép
+                {tr('Sao chép', 'Copy')}
               </button>
               <button
                 type="button"
-                aria-label="Đóng thông tin bàn giao"
+                aria-label={tr('Đóng thông tin bàn giao', 'Close handoff info')}
                 onClick={() => setCredentialHandoff(null)}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-white text-emerald-900"
               >
@@ -2563,7 +2691,7 @@ export const AdminWorkspace: React.FC = () => {
           data-testid="bulk-import-modal"
           role="dialog"
           aria-modal="true"
-          aria-label="Nhập hàng loạt Lớp · Giáo viên · Học sinh"
+          aria-label={tr('Nhập hàng loạt Lớp · Giáo viên · Học sinh', 'Bulk Import Classes · Teachers · Students')}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-xs sm:p-5"
         >
           <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl">
@@ -2574,10 +2702,18 @@ export const AdminWorkspace: React.FC = () => {
                 </span>
                 <div>
                   <h2 className="font-display text-sm font-extrabold text-stone-900 sm:text-base">
-                    Nhập hàng loạt Lớp · Giáo viên · Học sinh (Excel / CSV)
+                    {tr('Nhập hàng loạt Lớp · Giáo viên · Học sinh (Excel / CSV)', 'Bulk Import Classes · Teachers · Students (Excel / CSV)')}
                   </h2>
                   <p className="text-[11px] text-stone-500">
-                    Tự động chuẩn hóa mã lớp (<code className="font-mono">LO2-N01</code>, <code className="font-mono">HSK-N01</code>...), mã Giáo viên (<code className="font-mono">GV001@khongtunhi.com</code>), mã Học sinh (<code className="font-mono">20260001@khongtunhi.com</code>) & mật khẩu mặc định <code className="font-mono font-bold text-red-800">12345678</code>
+                    {lang === 'en' ? (
+                      <>
+                        Auto-normalizes class codes (<code className="font-mono">LO2-N01</code>, <code className="font-mono">HSK-N01</code>...), Teacher IDs (<code className="font-mono">GV001@khongtunhi.com</code>), Student IDs (<code className="font-mono">20260001@khongtunhi.com</code>) & default password <code className="font-mono font-bold text-red-800">12345678</code>
+                      </>
+                    ) : (
+                      <>
+                        Tự động chuẩn hóa mã lớp (<code className="font-mono">LO2-N01</code>, <code className="font-mono">HSK-N01</code>...), mã Giáo viên (<code className="font-mono">GV001@khongtunhi.com</code>), mã Học sinh (<code className="font-mono">20260001@khongtunhi.com</code>) & mật khẩu mặc định <code className="font-mono font-bold text-red-800">12345678</code>
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -2585,7 +2721,7 @@ export const AdminWorkspace: React.FC = () => {
                 type="button"
                 onClick={() => setShowBulkImportModal(false)}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-500 hover:bg-stone-100"
-                aria-label="Đóng"
+                aria-label={tr('Đóng', 'Close')}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2604,7 +2740,15 @@ export const AdminWorkspace: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="text-xs font-bold text-stone-800">
-                    Dữ liệu 5 cột (<code className="font-mono">LỚP · LỊCH HỌC, GIÁO VIÊN, HỌC SINH, SĐT, PHỤ HUYNH</code>)
+                    {lang === 'en' ? (
+                      <>
+                        5-column data (<code className="font-mono">CLASS · SCHEDULE, TEACHER, STUDENT, PHONE, PARENT</code>)
+                      </>
+                    ) : (
+                      <>
+                        Dữ liệu 5 cột (<code className="font-mono">LỚP · LỊCH HỌC, GIÁO VIÊN, HỌC SINH, SĐT, PHỤ HUYNH</code>)
+                      </>
+                    )}
                   </label>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
@@ -2616,10 +2760,10 @@ export const AdminWorkspace: React.FC = () => {
                       }}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-amber-100"
                     >
-                      <span>Tải dữ liệu mẫu của Trung tâm</span>
+                      <span>{tr('Tải dữ liệu mẫu của Trung tâm', 'Load Center Sample Data')}</span>
                     </button>
                     <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-50">
-                      <span>Chọn file .CSV</span>
+                      <span>{tr('Chọn file .CSV', 'Choose .CSV file')}</span>
                       <input
                         type="file"
                         accept=".csv,.tsv,.txt"
@@ -2645,13 +2789,18 @@ export const AdminWorkspace: React.FC = () => {
                   data-testid="bulk-import-csv-textarea"
                   value={bulkCsvText}
                   onChange={(e) => setBulkCsvText(e.target.value)}
-                  placeholder={'Dán trực tiếp bảng dữ liệu từ Excel hoặc CSV 5 cột:\n"LỘ 2 · Nhóm 1\nT2-T4_ 20h-21h",Cô Hồng,Bùi Đức Huy,0366753257,Mẹ Bùi Hằng'}
+                  placeholder={tr(
+                    'Dán trực tiếp bảng dữ liệu từ Excel hoặc CSV 5 cột:\n"LỘ 2 · Nhóm 1\nT2-T4_ 20h-21h",Cô Hồng,Bùi Đức Huy,0366753257,Mẹ Bùi Hằng',
+                    'Paste 5-column Excel or CSV data here:\n"LỘ 2 · Nhóm 1\nT2-T4_ 20h-21h",Ms. Hong,Bui Duc Huy,0366753257,Mom Bui Hang'
+                  )}
                   className="w-full rounded-xl border border-stone-300 p-3 font-mono text-xs text-stone-900 focus:border-red-800 focus:outline-none"
                 />
 
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-stone-700">Mật khẩu mặc định:</span>
+                    <span className="text-xs font-bold text-stone-700">
+                      {tr('Mật khẩu mặc định:', 'Default password:')}
+                    </span>
                     <input
                       type="text"
                       data-testid="bulk-import-default-password-input"
@@ -2668,7 +2817,7 @@ export const AdminWorkspace: React.FC = () => {
                     className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:opacity-50"
                   >
                     {isAnalyzingBulk && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    <span>Phân tích & Xem trước</span>
+                    <span>{tr('Phân tích & Xem trước', 'Parse & Preview')}</span>
                   </button>
                 </div>
               </div>
@@ -2679,29 +2828,29 @@ export const AdminWorkspace: React.FC = () => {
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                     <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
                       <span className="block text-[11px] font-semibold text-stone-500">
-                        Tổng số Lớp học
+                        {tr('Tổng số Lớp học', 'Total Classes')}
                       </span>
                       <span
                         data-testid="bulk-preview-class-count"
                         className="mt-0.5 block font-display text-lg font-extrabold text-stone-900"
                       >
-                        {bulkPreviewResult.summary.classCount} lớp
+                        {bulkPreviewResult.summary.classCount} {tr('lớp', 'classes')}
                       </span>
                       <span className="text-[11px] text-stone-600">
-                        {bulkPreviewResult.summary.activeClassCount} đang học ·{' '}
-                        {bulkPreviewResult.summary.archivedClassCount} bảo lưu
+                        {bulkPreviewResult.summary.activeClassCount} {tr('đang học', 'active')} ·{' '}
+                        {bulkPreviewResult.summary.archivedClassCount} {tr('bảo lưu', 'archived')}
                       </span>
                     </div>
 
                     <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
                       <span className="block text-[11px] font-semibold text-stone-500">
-                        Giáo viên phụ trách
+                        {tr('Giáo viên phụ trách', 'Teachers')}
                       </span>
                       <span
                         data-testid="bulk-preview-teacher-count"
                         className="mt-0.5 block font-display text-lg font-extrabold text-red-900"
                       >
-                        {bulkPreviewResult.summary.teacherCount} GV
+                        {bulkPreviewResult.summary.teacherCount} {tr('GV', 'teachers')}
                       </span>
                       <span className="font-mono text-[11px] text-stone-600">
                         {bulkPreviewResult.teachers[0]?.code || 'GV001'} →{' '}
@@ -2711,29 +2860,29 @@ export const AdminWorkspace: React.FC = () => {
 
                     <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
                       <span className="block text-[11px] font-semibold text-stone-500">
-                        Tổng số Học sinh
+                        {tr('Tổng số Học sinh', 'Total Students')}
                       </span>
                       <span
                         data-testid="bulk-preview-student-count"
                         className="mt-0.5 block font-display text-lg font-extrabold text-emerald-900"
                       >
-                        {bulkPreviewResult.summary.studentCount} học viên
+                        {bulkPreviewResult.summary.studentCount} {tr('học viên', 'students')}
                       </span>
                       <span className="text-[11px] text-stone-600">
-                        {bulkPreviewResult.summary.activeStudentCount} đang học ·{' '}
-                        {bulkPreviewResult.summary.archivedStudentCount} bảo lưu
+                        {bulkPreviewResult.summary.activeStudentCount} {tr('đang học', 'active')} ·{' '}
+                        {bulkPreviewResult.summary.archivedStudentCount} {tr('bảo lưu', 'archived')}
                       </span>
                     </div>
 
                     <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
                       <span className="block text-[11px] font-semibold text-amber-900">
-                        Mật khẩu mặc định & Cảnh báo
+                        {tr('Mật khẩu mặc định & Cảnh báo', 'Default Password & Notes')}
                       </span>
                       <span className="mt-0.5 block font-mono text-base font-extrabold text-red-800">
                         {bulkPreviewResult.summary.defaultPassword}
                       </span>
                       <span className="text-[11px] font-medium text-amber-900">
-                        {bulkPreviewResult.summary.warningCount} ghi chú chuẩn hóa SĐT/tên
+                        {bulkPreviewResult.summary.warningCount} {tr('ghi chú chuẩn hóa SĐT/tên', 'phone/name normalization note(s)')}
                       </span>
                     </div>
                   </div>
@@ -2744,19 +2893,19 @@ export const AdminWorkspace: React.FC = () => {
                       [
                         {
                           id: 'classes',
-                          label: `Lớp học (${bulkPreviewResult.classes.length})`,
+                          label: `${tr('Lớp học', 'Classes')} (${bulkPreviewResult.classes.length})`,
                         },
                         {
                           id: 'teachers',
-                          label: `Giáo viên (${bulkPreviewResult.teachers.length})`,
+                          label: `${tr('Giáo viên', 'Teachers')} (${bulkPreviewResult.teachers.length})`,
                         },
                         {
                           id: 'students',
-                          label: `Học sinh (${bulkPreviewResult.students.length})`,
+                          label: `${tr('Học sinh', 'Students')} (${bulkPreviewResult.students.length})`,
                         },
                         {
                           id: 'warnings',
-                          label: `Chuẩn hóa tự động (${bulkPreviewResult.warnings.length})`,
+                          label: `${tr('Chuẩn hóa tự động', 'Auto-normalized')} (${bulkPreviewResult.warnings.length})`,
                         },
                       ] as const
                     ).map((tab) => (
@@ -2781,12 +2930,12 @@ export const AdminWorkspace: React.FC = () => {
                       <table className="w-full text-left text-xs">
                         <thead className="sticky top-0 bg-stone-100 text-[11px] font-bold uppercase text-stone-600">
                           <tr>
-                            <th className="px-3 py-2">Mã lớp</th>
-                            <th className="px-3 py-2">Tên lớp</th>
-                            <th className="px-3 py-2">Lịch học</th>
-                            <th className="px-3 py-2">Giáo viên</th>
-                            <th className="px-3 py-2">Sĩ số</th>
-                            <th className="px-3 py-2">Trạng thái</th>
+                            <th className="px-3 py-2">{tr('Mã lớp', 'Class code')}</th>
+                            <th className="px-3 py-2">{tr('Tên lớp', 'Class name')}</th>
+                            <th className="px-3 py-2">{tr('Lịch học', 'Schedule')}</th>
+                            <th className="px-3 py-2">{tr('Giáo viên', 'Teacher')}</th>
+                            <th className="px-3 py-2">{tr('Sĩ số', 'Size')}</th>
+                            <th className="px-3 py-2">{tr('Trạng thái', 'Status')}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100">
@@ -2798,10 +2947,16 @@ export const AdminWorkspace: React.FC = () => {
                               <td className="px-3 py-2 font-semibold text-stone-900">
                                 {cls.title}
                               </td>
-                              <td className="px-3 py-2 text-stone-600">{cls.schedule}</td>
+                              <td className="px-3 py-2 text-stone-600">
+                                {cls.schedule === 'Đang cập nhật lịch học'
+                                  ? tr('Đang cập nhật lịch học', 'Schedule pending')
+                                  : translateScheduleText(cls.schedule, lang)}
+                              </td>
                               <td className="px-3 py-2">
                                 <span className="font-semibold text-stone-800">
-                                  {cls.teacherDisplayName}
+                                  {cls.teacherDisplayName === 'Chưa phân công'
+                                    ? tr('Chưa phân công', 'Unassigned')
+                                    : cls.teacherDisplayName}
                                 </span>{' '}
                                 {cls.teacherCode && (
                                   <span className="font-mono text-[11px] text-stone-500">
@@ -2810,16 +2965,16 @@ export const AdminWorkspace: React.FC = () => {
                                 )}
                               </td>
                               <td className="px-3 py-2 font-bold text-stone-800">
-                                {cls.studentCount} HV
+                                {cls.studentCount} {tr('HV', 'st')}
                               </td>
                               <td className="px-3 py-2">
                                 {cls.isArchived ? (
                                   <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                                    Bảo lưu (Archived)
+                                    {tr('Bảo lưu (Archived)', 'Archived')}
                                   </span>
                                 ) : (
                                   <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
-                                    Đang hoạt động
+                                    {tr('Đang hoạt động', 'Active')}
                                   </span>
                                 )}
                               </td>
@@ -2833,11 +2988,11 @@ export const AdminWorkspace: React.FC = () => {
                       <table className="w-full text-left text-xs">
                         <thead className="sticky top-0 bg-stone-100 text-[11px] font-bold uppercase text-stone-600">
                           <tr>
-                            <th className="px-3 py-2">Mã GV</th>
-                            <th className="px-3 py-2">Tên giáo viên</th>
-                            <th className="px-3 py-2">Email đăng nhập</th>
-                            <th className="px-3 py-2">Mật khẩu mặc định</th>
-                            <th className="px-3 py-2">Lớp phụ trách</th>
+                            <th className="px-3 py-2">{tr('Mã GV', 'Teacher ID')}</th>
+                            <th className="px-3 py-2">{tr('Tên giáo viên', 'Teacher name')}</th>
+                            <th className="px-3 py-2">{tr('Email đăng nhập', 'Login email')}</th>
+                            <th className="px-3 py-2">{tr('Mật khẩu mặc định', 'Default password')}</th>
+                            <th className="px-3 py-2">{tr('Lớp phụ trách', 'Assigned classes')}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100">
@@ -2854,7 +3009,7 @@ export const AdminWorkspace: React.FC = () => {
                                 {t.defaultPassword}
                               </td>
                               <td className="px-3 py-2 font-mono text-[11px] text-stone-600">
-                                {t.assignedClasses.join(', ') || 'Chưa gán lớp'}
+                                {t.assignedClasses.join(', ') || tr('Chưa gán lớp', 'No class assigned')}
                               </td>
                             </tr>
                           ))}
@@ -2866,13 +3021,13 @@ export const AdminWorkspace: React.FC = () => {
                       <table className="w-full text-left text-xs">
                         <thead className="sticky top-0 bg-stone-100 text-[11px] font-bold uppercase text-stone-600">
                           <tr>
-                            <th className="px-3 py-2">Mã HS</th>
-                            <th className="px-3 py-2">Email đăng nhập</th>
-                            <th className="px-3 py-2">Họ tên học sinh</th>
-                            <th className="px-3 py-2">SĐT</th>
-                            <th className="px-3 py-2">Phụ huynh</th>
-                            <th className="px-3 py-2">Lớp</th>
-                            <th className="px-3 py-2">Trạng thái</th>
+                            <th className="px-3 py-2">{tr('Mã HS', 'Student ID')}</th>
+                            <th className="px-3 py-2">{tr('Email đăng nhập', 'Login email')}</th>
+                            <th className="px-3 py-2">{tr('Họ tên học sinh', 'Student name')}</th>
+                            <th className="px-3 py-2">{tr('SĐT', 'Phone')}</th>
+                            <th className="px-3 py-2">{tr('Phụ huynh', 'Parent')}</th>
+                            <th className="px-3 py-2">{tr('Lớp', 'Class')}</th>
+                            <th className="px-3 py-2">{tr('Trạng thái', 'Status')}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100">
@@ -2897,11 +3052,11 @@ export const AdminWorkspace: React.FC = () => {
                               <td className="px-3 py-2">
                                 {s.status === 'archived' ? (
                                   <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                                    Bảo lưu
+                                    {tr('Bảo lưu', 'Archived')}
                                   </span>
                                 ) : (
                                   <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
-                                    Đang học
+                                    {tr('Đang học', 'Active')}
                                   </span>
                                 )}
                               </td>
@@ -2914,7 +3069,9 @@ export const AdminWorkspace: React.FC = () => {
                     {bulkPreviewTab === 'warnings' && (
                       <div className="space-y-1.5 p-3 text-xs">
                         {bulkPreviewResult.warnings.length === 0 ? (
-                          <p className="text-stone-500">Không có cảnh báo dữ liệu.</p>
+                          <p className="text-stone-500">
+                            {tr('Không có cảnh báo dữ liệu.', 'No data warnings.')}
+                          </p>
                         ) : (
                           bulkPreviewResult.warnings.map((w, i) => (
                             <div
@@ -2934,9 +3091,19 @@ export const AdminWorkspace: React.FC = () => {
 
             <div className="flex items-center justify-between border-t border-stone-200 bg-stone-50 px-4 py-3">
               <p className="text-[11px] text-stone-600">
-                Học sinh đăng nhập bằng <strong className="font-mono">2026xxxx</strong> (hoặc{' '}
-                <strong className="font-mono">2026xxxx@khongtunhi.com</strong>) · Giáo viên bằng{' '}
-                <strong className="font-mono">GVxxx</strong> · Mật khẩu:{' '}
+                {lang === 'en' ? (
+                  <>
+                    Students sign in with <strong className="font-mono">2026xxxx</strong> (or{' '}
+                    <strong className="font-mono">2026xxxx@khongtunhi.com</strong>) · Teachers with{' '}
+                    <strong className="font-mono">GVxxx</strong> · Password:{' '}
+                  </>
+                ) : (
+                  <>
+                    Học sinh đăng nhập bằng <strong className="font-mono">2026xxxx</strong> (hoặc{' '}
+                    <strong className="font-mono">2026xxxx@khongtunhi.com</strong>) · Giáo viên bằng{' '}
+                    <strong className="font-mono">GVxxx</strong> · Mật khẩu:{' '}
+                  </>
+                )}
                 <strong className="font-mono text-red-800">{bulkDefaultPassword}</strong>
               </p>
               <div className="flex items-center gap-2">
@@ -2945,7 +3112,7 @@ export const AdminWorkspace: React.FC = () => {
                   onClick={() => setShowBulkImportModal(false)}
                   className="rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"
                 >
-                  Đóng
+                  {tr('Đóng', 'Close')}
                 </button>
                 <button
                   type="button"
@@ -2955,7 +3122,7 @@ export const AdminWorkspace: React.FC = () => {
                   className="inline-flex items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-900 disabled:opacity-50"
                 >
                   {isExecutingBulk && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  <span>Xác nhận tạo hàng loạt</span>
+                  <span>{tr('Xác nhận tạo hàng loạt', 'Confirm Bulk Create')}</span>
                 </button>
               </div>
             </div>
@@ -2976,11 +3143,11 @@ export const AdminWorkspace: React.FC = () => {
           <div className="flex items-center justify-between border-b border-stone-100 pb-2">
             <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
               <UserPlus className="h-4 w-4 text-red-800" />
-              Tạo tài khoản học viên mới (Đồng bộ izTeach + Supabase)
+              {tr('Tạo tài khoản học viên mới (Đồng bộ izTeach + Supabase)', 'Create new student account (izTeach + Supabase sync)')}
             </h2>
             <button
               type="button"
-              aria-label="Đóng cửa sổ tạo học viên"
+              aria-label={tr('Đóng cửa sổ tạo học viên', 'Close create student dialog')}
               onClick={() => setShowCreateStudentModal(false)}
               className="rounded-lg p-1 text-stone-500 hover:bg-stone-100"
             >
@@ -2990,19 +3157,23 @@ export const AdminWorkspace: React.FC = () => {
 
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="block text-xs font-bold text-stone-700">Họ tên học viên *</label>
+              <label className="block text-xs font-bold text-stone-700">
+                {tr('Họ tên học viên *', 'Student full name *')}
+              </label>
               <input
                 type="text"
                 required
                 data-testid="provision-student-name-input"
                 value={newStuName}
                 onChange={(e) => setNewStuName(e.target.value)}
-                placeholder="VD: Nguyễn Hoàng Ngân"
+                placeholder={tr('VD: Nguyễn Hoàng Ngân', 'e.g., Nguyen Hoang Ngan')}
                 className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-stone-700">Email đăng nhập *</label>
+              <label className="block text-xs font-bold text-stone-700">
+                {tr('Email đăng nhập *', 'Login email *')}
+              </label>
               <input
                 type="email"
                 required
@@ -3014,7 +3185,9 @@ export const AdminWorkspace: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-stone-700">Số điện thoại</label>
+              <label className="block text-xs font-bold text-stone-700">
+                {tr('Số điện thoại', 'Phone number')}
+              </label>
               <input
                 type="tel"
                 data-testid="provision-student-phone-input"
@@ -3025,13 +3198,15 @@ export const AdminWorkspace: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-stone-700">Phụ huynh</label>
+              <label className="block text-xs font-bold text-stone-700">
+                {tr('Phụ huynh', 'Parent')}
+              </label>
               <input
                 type="text"
                 data-testid="provision-student-parent-input"
                 value={newStuParent}
                 onChange={(e) => setNewStuParent(e.target.value)}
-                placeholder="Tên phụ huynh (tùy chọn)"
+                placeholder={tr('Tên phụ huynh (tùy chọn)', 'Parent name (optional)')}
                 className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold"
               />
             </div>
@@ -3040,7 +3215,7 @@ export const AdminWorkspace: React.FC = () => {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-bold text-stone-700">
-                Xếp lớp trực tiếp (tùy chọn):
+                {tr('Xếp lớp trực tiếp (tùy chọn):', 'Assign offline class (optional):')}
               </label>
               <select
                 data-testid="provision-student-class-select"
@@ -3048,10 +3223,10 @@ export const AdminWorkspace: React.FC = () => {
                 onChange={(e) => setNewStuClassCode(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-stone-300 px-2.5 py-1.5 text-xs font-bold"
               >
-                <option value="">— Chưa xếp lớp —</option>
+                <option value="">{tr('— Chưa xếp lớp —', '— Unassigned —')}</option>
                 {classesList.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.id} · {c.name}
+                    {c.id} · {translateCourseTitle(c.name, lang)}
                   </option>
                 ))}
               </select>
@@ -3059,16 +3234,16 @@ export const AdminWorkspace: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-stone-700">
-                Cấp khóa học Video (tùy chọn —{' '}
+                {tr('Cấp khóa học Video (tùy chọn —', 'Grant Video Courses (optional —')}{' '}
                 {newStuCourseIds.length > 0
-                  ? `${newStuCourseIds.length} khóa đã chọn`
-                  : '— Chưa chọn khóa học —'}
+                  ? tr(`${newStuCourseIds.length} khóa đã chọn`, `${newStuCourseIds.length} selected`)
+                  : tr('— Chưa chọn khóa học —', '— No course selected —')}
                 ):
               </label>
               <div className="mt-1 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-2">
                 {coursesList.length === 0 ? (
                   <span className="text-[11px] font-medium text-stone-500">
-                    — Chưa chọn khóa học —
+                    {tr('— Chưa chọn khóa học —', '— No course selected —')}
                   </span>
                 ) : (
                   coursesList.map((course) => {
@@ -3091,7 +3266,7 @@ export const AdminWorkspace: React.FC = () => {
                             : 'border border-stone-200 bg-white text-stone-700'
                         }`}
                       >
-                        {course.shortTitle || course.title}
+                        {translateCourseTitle(course.shortTitle || course.title, lang)}
                       </button>
                     );
                   })
@@ -3107,16 +3282,16 @@ export const AdminWorkspace: React.FC = () => {
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-stone-700">
-                        Thời hạn học:
+                        {tr('Thời hạn học:', 'Duration:')}
                       </span>
                       <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-extrabold text-red-900">
-                        {formatCourseDurationPresetLabel(newStuDurationPreset)}
+                        {formatCourseDurationPresetLabel(newStuDurationPreset, lang)}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[10px] font-semibold text-stone-600">
-                          Số lượng (1–365)
+                          {tr('Số lượng (1–365)', 'Amount (1–365)')}
                         </label>
                         <input
                           type="number"
@@ -3138,7 +3313,7 @@ export const AdminWorkspace: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-[10px] font-semibold text-stone-600">
-                          Đơn vị (Ngày / Tuần / Tháng)
+                          {tr('Đơn vị (Ngày / Tuần / Tháng)', 'Unit (Day / Week / Month)')}
                         </label>
                         <select
                           data-testid="provision-student-duration-unit-select"
@@ -3151,7 +3326,7 @@ export const AdminWorkspace: React.FC = () => {
                           }}
                           className="mt-0.5 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-800"
                         >
-                          {COURSE_DURATION_UNIT_OPTIONS.map((u) => (
+                          {getCourseDurationUnitOptions(lang).map((u) => (
                             <option key={u.id} value={u.id}>
                               {u.label}
                             </option>
@@ -3160,7 +3335,7 @@ export const AdminWorkspace: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1 pt-0.5">
-                      {COURSE_DURATION_PRESET_OPTIONS.map((opt) => (
+                      {getCourseDurationPresetOptions(lang).map((opt) => (
                         <button
                           key={opt.id}
                           type="button"
@@ -3188,7 +3363,7 @@ export const AdminWorkspace: React.FC = () => {
               onClick={() => setShowCreateStudentModal(false)}
               className="min-h-[36px] rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold text-stone-700"
             >
-              Hủy
+              {tr('Hủy', 'Cancel')}
             </button>
             <button
               type="submit"
@@ -3201,7 +3376,7 @@ export const AdminWorkspace: React.FC = () => {
               ) : (
                 <UserPlus className="h-3.5 w-3.5" />
               )}
-              <span>Tạo & Kích hoạt ngay</span>
+              <span>{tr('Tạo & Kích hoạt ngay', 'Create & Activate')}</span>
             </button>
           </div>
         </form>
@@ -3220,11 +3395,11 @@ export const AdminWorkspace: React.FC = () => {
           <div className="flex items-center justify-between border-b border-stone-100 pb-2">
             <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
               <GraduationCap className="h-4 w-4 text-red-800" />
-              Tạo tài khoản Giáo viên & Phân công lớp phụ trách
+              {tr('Tạo tài khoản Giáo viên & Phân công lớp phụ trách', 'Create Teacher Account & Assign Classes')}
             </h2>
             <button
               type="button"
-              aria-label="Đóng cửa sổ tạo giáo viên"
+              aria-label={tr('Đóng cửa sổ tạo giáo viên', 'Close create teacher dialog')}
               onClick={() => setShowCreateTeacherModal(false)}
               className="rounded-lg p-1 text-stone-500 hover:bg-stone-100"
             >
@@ -3234,19 +3409,23 @@ export const AdminWorkspace: React.FC = () => {
 
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="block text-xs font-bold text-stone-700">Họ tên giáo viên *</label>
+              <label className="block text-xs font-bold text-stone-700">
+                {tr('Họ tên giáo viên *', 'Teacher full name *')}
+              </label>
               <input
                 type="text"
                 required
                 data-testid="create-teacher-name-input"
                 value={newTeacherName}
                 onChange={(e) => setNewTeacherName(e.target.value)}
-                placeholder="VD: Cô Nguyễn Phương Anh"
+                placeholder={tr('VD: Cô Nguyễn Phương Anh', 'e.g., Ms. Nguyen Phuong Anh')}
                 className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-stone-700">Email đăng nhập *</label>
+              <label className="block text-xs font-bold text-stone-700">
+                {tr('Email đăng nhập *', 'Login email *')}
+              </label>
               <input
                 type="email"
                 required
@@ -3258,7 +3437,9 @@ export const AdminWorkspace: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-stone-700">Số điện thoại</label>
+              <label className="block text-xs font-bold text-stone-700">
+                {tr('Số điện thoại', 'Phone number')}
+              </label>
               <input
                 type="tel"
                 data-testid="create-teacher-phone-input"
@@ -3269,13 +3450,15 @@ export const AdminWorkspace: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-stone-700">Mã GV (tùy chọn)</label>
+              <label className="block text-xs font-bold text-stone-700">
+                {tr('Mã GV (tùy chọn)', 'Teacher ID (optional)')}
+              </label>
               <input
                 type="text"
                 data-testid="create-teacher-code-input"
                 value={newTeacherCode}
                 onChange={(e) => setNewTeacherCode(e.target.value)}
-                placeholder="Tự sinh nếu để trống"
+                placeholder={tr('Tự sinh nếu để trống', 'Auto-generated if empty')}
                 className="mt-1 w-full rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold"
               />
             </div>
@@ -3283,10 +3466,10 @@ export const AdminWorkspace: React.FC = () => {
 
           <div>
             <label className="block text-xs font-bold text-stone-700">
-              Lớp phụ trách (tùy chọn —{' '}
+              {tr('Lớp phụ trách (tùy chọn — ', 'Assigned classes (optional — ')}
               {newTeacherClasses.length > 0
-                ? `${newTeacherClasses.length} lớp đã chọn`
-                : '— Chưa xếp lớp —'}
+                ? tr(`${newTeacherClasses.length} lớp đã chọn`, `${newTeacherClasses.length} selected`)
+                : tr('— Chưa xếp lớp —', '— None assigned —')}
               ):
             </label>
             <div className="mt-1 flex flex-wrap gap-1.5">
@@ -3321,7 +3504,7 @@ export const AdminWorkspace: React.FC = () => {
               onClick={() => setShowCreateTeacherModal(false)}
               className="min-h-[36px] rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold text-stone-700"
             >
-              Hủy
+              {tr('Hủy', 'Cancel')}
             </button>
             <button
               type="submit"
@@ -3334,7 +3517,7 @@ export const AdminWorkspace: React.FC = () => {
               ) : (
                 <GraduationCap className="h-3.5 w-3.5" />
               )}
-              <span>Lưu giáo viên</span>
+              <span>{tr('Lưu giáo viên', 'Save teacher')}</span>
             </button>
           </div>
         </form>
@@ -3347,7 +3530,7 @@ export const AdminWorkspace: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
-            <span>Chưa tải được dữ liệu quản trị.</span>
+            <span>{tr('Chưa tải được dữ liệu quản trị.', 'Failed to load admin data.')}</span>
           </div>
           <button
             type="button"
@@ -3359,7 +3542,7 @@ export const AdminWorkspace: React.FC = () => {
             className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-red-800"
           >
             <RotateCcw className="h-3 w-3" />
-            Thử lại
+            {tr('Thử lại', 'Retry')}
           </button>
         </div>
       )}
@@ -3375,7 +3558,7 @@ export const AdminWorkspace: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
                   <ShieldCheck className="h-4 w-4 text-red-800" />
-                  Đối soát & Đồng bộ hệ thống
+                  {tr('Đối soát & Đồng bộ hệ thống', 'System Audit & Sync')}
                 </h2>
                 <button
                   type="button"
@@ -3384,13 +3567,20 @@ export const AdminWorkspace: React.FC = () => {
                   className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-900 hover:bg-red-100"
                 >
                   <Users className="h-3.5 w-3.5" />
-                  <span>Mở danh sách Học viên để cấp quyền / xếp lớp</span>
+                  <span>{tr('Mở danh sách Học viên để cấp quyền / xếp lớp', 'Open Students to manage access & classes')}</span>
                 </button>
               </div>
 
               <p className="text-[11px] text-stone-600">
-                Để cấp khóa học, thu hồi khóa học hoặc chuyển lớp trực tiếp, hãy chọn trực tiếp học viên trong mục{' '}
-                <strong className="text-stone-900">Học viên</strong>. Khu vực này dành riêng cho đối soát đồng bộ giữa Web · Supabase · izTeach.
+                {tr(
+                  'Để cấp khóa học, thu hồi khóa học hoặc chuyển lớp trực tiếp, hãy chọn trực tiếp học viên trong mục ',
+                  'To grant courses, revoke courses, or transfer classes directly, select a student under '
+                )}
+                <strong className="text-stone-900">{tr('Học viên', 'Students')}</strong>
+                {tr(
+                  '. Khu vực này dành riêng cho đối soát đồng bộ giữa Web · Supabase · izTeach.',
+                  '. This area is dedicated to sync auditing across Web · Supabase · izTeach.'
+                )}
               </p>
 
               {/* 3-System Sync Health Summary */}
@@ -3401,7 +3591,7 @@ export const AdminWorkspace: React.FC = () => {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-stone-800">
-                      Đồng bộ 3 hệ thống (Web · Supabase · izTeach)
+                      {tr('Đồng bộ 3 hệ thống (Web · Supabase · izTeach)', '3-System Sync (Web · Supabase · izTeach)')}
                     </span>
                     <button
                       type="button"
@@ -3413,24 +3603,24 @@ export const AdminWorkspace: React.FC = () => {
                       <RefreshCw
                         className={`h-3 w-3 ${retrySyncMutation.isPending ? 'animate-spin' : ''}`}
                       />
-                      Đối soát ngay
+                      {tr('Đối soát ngay', 'Audit now')}
                     </button>
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-lg bg-emerald-50 p-1.5 text-emerald-900">
-                      <p className="text-[10px] font-semibold">Đã đồng bộ</p>
+                      <p className="text-[10px] font-semibold">{tr('Đã đồng bộ', 'Synced')}</p>
                       <p className="font-display text-sm font-extrabold">
                         {syncStatus.summary?.healthyCount ?? 0}
                       </p>
                     </div>
                     <div className="rounded-lg bg-amber-50 p-1.5 text-amber-900">
-                      <p className="text-[10px] font-semibold">Chờ đồng bộ lại</p>
+                      <p className="text-[10px] font-semibold">{tr('Chờ đồng bộ lại', 'Pending resync')}</p>
                       <p className="font-display text-sm font-extrabold">
                         {syncStatus.summary?.needsResyncCount ?? 0}
                       </p>
                     </div>
                     <div className="rounded-lg bg-red-50 p-1.5 text-red-900">
-                      <p className="text-[10px] font-semibold">Cần kiểm tra</p>
+                      <p className="text-[10px] font-semibold">{tr('Cần kiểm tra', 'Needs review')}</p>
                       <p className="font-display text-sm font-extrabold">
                         {syncStatus.summary?.manualReviewCount ?? 0}
                       </p>
@@ -3463,7 +3653,7 @@ export const AdminWorkspace: React.FC = () => {
                                 }
                                 className="rounded-lg border border-stone-200 bg-stone-50 px-2 py-1 text-[10px] font-bold text-stone-700 hover:bg-stone-100"
                               >
-                                Mở hồ sơ
+                                {tr('Mở hồ sơ', 'Open profile')}
                               </button>
                             )}
                             {item.retryAction && (
@@ -3472,7 +3662,7 @@ export const AdminWorkspace: React.FC = () => {
                                 onClick={() => retrySyncMutation.mutate(item.retryAction!)}
                                 className="rounded-lg bg-red-800 px-2 py-1 text-[10px] font-bold text-white"
                               >
-                                Đồng bộ lại
+                                {tr('Đồng bộ lại', 'Resync')}
                               </button>
                             )}
                           </div>
@@ -3491,7 +3681,7 @@ export const AdminWorkspace: React.FC = () => {
                     className="flex items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 py-2 text-xs font-bold text-stone-800 hover:bg-stone-100"
                   >
                     <MessageSquare className="h-3.5 w-3.5 text-red-800" />
-                    <span>Tin nhắn hỗ trợ</span>
+                    <span>{tr('Tin nhắn hỗ trợ', 'Support chat')}</span>
                   </button>
                   <button
                     type="button"
@@ -3499,7 +3689,7 @@ export const AdminWorkspace: React.FC = () => {
                     className="flex items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 py-2 text-xs font-bold text-stone-800 hover:bg-stone-100"
                   >
                     <Bell className="h-3.5 w-3.5 text-amber-700" />
-                    <span>Thông báo</span>
+                    <span>{tr('Thông báo', 'Notifications')}</span>
                   </button>
                 </div>
               )}
@@ -3517,7 +3707,7 @@ export const AdminWorkspace: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
                   <ClipboardList className="h-4 w-4 text-amber-700" />
-                  Quản lý đơn hàng ({filteredOrdersList.length}/{ordersList.length})
+                  {tr('Quản lý đơn hàng', 'Order Management')} ({filteredOrdersList.length}/{ordersList.length})
                 </h2>
 
                 {/* Quick Search by Name, Parent, Email, Phone, Order ID */}
@@ -3528,7 +3718,10 @@ export const AdminWorkspace: React.FC = () => {
                     data-testid="admin-order-search-input"
                     value={orderSearchInput}
                     onChange={(e) => setOrderSearchInput(e.target.value)}
-                    placeholder="Tìm mã đơn, tên HV, tên PH, SĐT, email..."
+                    placeholder={tr(
+                      'Tìm mã đơn, tên HV, tên PH, SĐT, email...',
+                      'Search order ID, student, parent, phone, email...'
+                    )}
                     className="w-full rounded-xl border border-stone-300 bg-stone-50 py-1.5 pl-8 pr-3 text-xs font-semibold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
                   />
                 </div>
@@ -3539,7 +3732,7 @@ export const AdminWorkspace: React.FC = () => {
                 data-testid="admin-order-filter-bar"
                 className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-1"
               >
-                {ORDER_FILTER_OPTIONS.map((flt) => (
+                {getOrderFilterOptions(lang).map((flt) => (
                   <button
                     key={flt.id}
                     type="button"
@@ -3561,7 +3754,7 @@ export const AdminWorkspace: React.FC = () => {
                   data-testid="admin-orders-empty-state"
                   className="mt-3 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-6 text-center text-xs text-stone-600"
                 >
-                  Không có đơn hàng nào khớp bộ lọc hiện tại.
+                  {tr('Không có đơn hàng nào khớp bộ lọc hiện tại.', 'No orders match the current filter.')}
                 </div>
               ) : (
                 <>
@@ -3576,16 +3769,20 @@ export const AdminWorkspace: React.FC = () => {
                         ord.account_detailed_status ||
                         (ord.approval_status === 'approved' ? 'activated' : 'no_account');
 
+                      const contactStatusMap = getContactStatusMeta(lang);
+                      const paymentStatusMap = getPaymentStatusMeta(lang);
+                      const accountStatusMap = getAccountStatusMeta(lang);
+
                       const contactMeta =
-                        CONTACT_STATUS_META[contactSt] || CONTACT_STATUS_META.not_called;
+                        contactStatusMap[contactSt] || contactStatusMap.not_called;
                       const payMeta =
-                        PAYMENT_STATUS_META[payDetSt] || PAYMENT_STATUS_META.unpaid;
+                        paymentStatusMap[payDetSt] || paymentStatusMap.unpaid;
                       const accMeta =
-                        ACCOUNT_STATUS_META[accDetSt] || ACCOUNT_STATUS_META.no_account;
+                        accountStatusMap[accDetSt] || accountStatusMap.no_account;
                       const parentNameDisplay =
                         ord.parent_name && ord.parent_name.trim()
                           ? ord.parent_name.trim()
-                          : 'Chưa cung cấp';
+                          : tr('Chưa cung cấp', 'Not provided');
                       const contactPhone = ord.parent_phone || ord.phone || '—';
 
                       return (
@@ -3606,14 +3803,14 @@ export const AdminWorkspace: React.FC = () => {
 
                           <div className="text-xs">
                             <p className="font-bold text-stone-900">
-                              HV: {ord.student_name}
+                              {tr('HV:', 'Student:')} {ord.student_name}
                             </p>
                             <p className="text-[11px] text-stone-600">
-                              PH: <strong className="text-stone-800">{parentNameDisplay}</strong> · SĐT:{' '}
+                              {tr('PH:', 'Parent:')} <strong className="text-stone-800">{parentNameDisplay}</strong> · {tr('SĐT:', 'Phone:')}{' '}
                               <strong className="font-mono text-red-900">{contactPhone}</strong>
                             </p>
                             <p className="mt-0.5 truncate text-[11px] font-semibold text-stone-700">
-                              {ord.course_name}
+                              {translateCourseTitle(ord.course_name, lang)}
                             </p>
                           </div>
 
@@ -3645,7 +3842,7 @@ export const AdminWorkspace: React.FC = () => {
                               }}
                               className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-red-800 px-3 py-1 text-xs font-bold text-white"
                             >
-                              <span>Xem chi tiết</span>
+                              <span>{tr('Xem chi tiết', 'View details')}</span>
                               <ChevronRight className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -3662,25 +3859,25 @@ export const AdminWorkspace: React.FC = () => {
                     >
                       <thead>
                         <tr className="border-b border-stone-200 text-[11px] text-stone-500">
-                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">Mã đơn</th>
-                          <th className="pb-2 pr-2 font-bold">Tên học viên</th>
-                          <th className="pb-2 pr-2 font-bold">Tên phụ huynh</th>
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">{tr('Mã đơn', 'Order ID')}</th>
+                          <th className="pb-2 pr-2 font-bold">{tr('Tên học viên', 'Student')}</th>
+                          <th className="pb-2 pr-2 font-bold">{tr('Tên phụ huynh', 'Parent')}</th>
                           <th className="whitespace-nowrap pb-2 pr-2 font-bold">
-                            SĐT liên hệ
+                            {tr('SĐT liên hệ', 'Contact phone')}
                           </th>
-                          <th className="pb-2 pr-2 font-bold">Khóa học</th>
-                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">Số tiền</th>
+                          <th className="pb-2 pr-2 font-bold">{tr('Khóa học', 'Course')}</th>
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">{tr('Số tiền', 'Amount')}</th>
                           <th className="whitespace-nowrap pb-2 pr-2 font-bold">
-                            Trạng thái chăm sóc
-                          </th>
-                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">
-                            Trạng thái thanh toán
+                            {tr('Trạng thái chăm sóc', 'Care status')}
                           </th>
                           <th className="whitespace-nowrap pb-2 pr-2 font-bold">
-                            Trạng thái cấp TK
+                            {tr('Trạng thái thanh toán', 'Payment status')}
+                          </th>
+                          <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                            {tr('Trạng thái cấp TK', 'Account status')}
                           </th>
                           <th className="whitespace-nowrap pb-2 text-right font-bold">
-                            Thao tác
+                            {tr('Thao tác', 'Actions')}
                           </th>
                         </tr>
                       </thead>
@@ -3694,16 +3891,20 @@ export const AdminWorkspace: React.FC = () => {
                             ord.account_detailed_status ||
                             (ord.approval_status === 'approved' ? 'activated' : 'no_account');
 
+                          const contactStatusMap = getContactStatusMeta(lang);
+                          const paymentStatusMap = getPaymentStatusMeta(lang);
+                          const accountStatusMap = getAccountStatusMeta(lang);
+
                           const contactMeta =
-                            CONTACT_STATUS_META[contactSt] || CONTACT_STATUS_META.not_called;
+                            contactStatusMap[contactSt] || contactStatusMap.not_called;
                           const payMeta =
-                            PAYMENT_STATUS_META[payDetSt] || PAYMENT_STATUS_META.unpaid;
+                            paymentStatusMap[payDetSt] || paymentStatusMap.unpaid;
                           const accMeta =
-                            ACCOUNT_STATUS_META[accDetSt] || ACCOUNT_STATUS_META.no_account;
-                          const parentNameDisplay =
-                            ord.parent_name && ord.parent_name.trim()
-                              ? ord.parent_name.trim()
-                              : 'Chưa cung cấp';
+                            accountStatusMap[accDetSt] || accountStatusMap.no_account;
+                          const missingParentName = !ord.parent_name || !ord.parent_name.trim();
+                          const parentNameDisplay = missingParentName
+                            ? tr('Chưa cung cấp', 'Not provided')
+                            : ord.parent_name!.trim();
                           const contactPhone = ord.parent_phone || ord.phone || '—';
 
                           return (
@@ -3716,10 +3917,13 @@ export const AdminWorkspace: React.FC = () => {
                               <td className="whitespace-nowrap py-2.5 pr-2 font-mono font-bold text-red-900">
                                 <div>{ord.order_id}</div>
                                 <div className="font-sans text-[10px] font-medium text-stone-400">
-                                  {ord.source_label ||
-                                    (ord.source === 'authenticated_student'
-                                      ? 'HV đăng nhập'
-                                      : 'Website')}
+                                  {ord.source_label
+                                    ? ord.source_label === 'HV đăng nhập'
+                                      ? tr('HV đăng nhập', 'Logged-in student')
+                                      : ord.source_label
+                                    : ord.source === 'authenticated_student'
+                                      ? tr('HV đăng nhập', 'Logged-in student')
+                                      : 'Website'}
                                 </div>
                               </td>
                               <td className="py-2.5 pr-2">
@@ -3727,13 +3931,13 @@ export const AdminWorkspace: React.FC = () => {
                                   {ord.student_name}
                                 </div>
                                 <div className="text-[11px] text-stone-500">
-                                  {ord.student_email || 'Chưa có email'}
+                                  {ord.student_email || tr('Chưa có email', 'No email')}
                                 </div>
                               </td>
                               <td
                                 data-testid={`admin-order-parent-${ord.order_id}`}
                                 className={`py-2.5 pr-2 font-semibold ${
-                                  parentNameDisplay === 'Chưa cung cấp'
+                                  missingParentName
                                     ? 'italic text-stone-400'
                                     : 'text-stone-800'
                                 }`}
@@ -3746,9 +3950,9 @@ export const AdminWorkspace: React.FC = () => {
                               <td className="max-w-[200px] py-2.5 pr-2">
                                 <div
                                   className="truncate font-semibold text-stone-900"
-                                  title={ord.course_name}
+                                  title={translateCourseTitle(ord.course_name, lang)}
                                 >
-                                  {ord.course_name}
+                                  {translateCourseTitle(ord.course_name, lang)}
                                 </div>
                               </td>
                               <td className="whitespace-nowrap py-2.5 pr-2 font-display font-extrabold text-red-900">
@@ -3788,7 +3992,7 @@ export const AdminWorkspace: React.FC = () => {
                                   }}
                                   className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs hover:bg-red-50"
                                 >
-                                  <span>Xem chi tiết</span>
+                                  <span>{tr('Xem chi tiết', 'View details')}</span>
                                   <ChevronRight className="h-3.5 w-3.5" />
                                 </button>
                               </td>
@@ -3815,10 +4019,13 @@ export const AdminWorkspace: React.FC = () => {
             <div>
               <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
                 <GraduationCap className="h-4 w-4 text-red-800" />
-                Danh sách lớp học ({classesList.length}) & Lịch học chính thức
+                {tr('Danh sách lớp học', 'Classes')} ({classesList.length}) {tr('& Lịch học chính thức', '& Official Schedules')}
               </h2>
               <p className="mt-0.5 text-[11px] text-stone-500">
-                Hệ thống tự động tạo nhóm chat lớp và nhắc học viên, giáo viên trước giờ học 30 phút dựa trên lịch chính thức đã xác nhận.
+                {tr(
+                  'Hệ thống tự động tạo nhóm chat lớp và nhắc học viên, giáo viên trước giờ học 30 phút dựa trên lịch chính thức đã xác nhận.',
+                  'The system automatically creates class group chats and reminds students and teachers 30 minutes before class based on confirmed official schedules.'
+                )}
               </p>
             </div>
 
@@ -3833,7 +4040,7 @@ export const AdminWorkspace: React.FC = () => {
               className="inline-flex min-h-[34px] items-center gap-1 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-red-900"
             >
               <PlusCircle className="h-3.5 w-3.5" />
-              <span>+ Tạo lớp mới</span>
+              <span>{tr('+ Tạo lớp mới', '+ New class')}</span>
             </button>
           </div>
 
@@ -3845,20 +4052,22 @@ export const AdminWorkspace: React.FC = () => {
               <div className="flex flex-wrap items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700" />
                 <span>
-                  Lớp <strong>{recentlyCreatedClass.id}</strong> ({recentlyCreatedClass.name}) đã tạo thành công
+                  {tr('Lớp', 'Class')} <strong>{recentlyCreatedClass.id}</strong> ({recentlyCreatedClass.name}){' '}
+                  {tr('đã tạo thành công', 'was created')}
                   {recentlyCreatedClass.teacherName &&
                   recentlyCreatedClass.teacherName !== 'Chưa phân công giáo viên' ? (
                     <>
-                      {' '}và phân công cho <strong>{recentlyCreatedClass.teacherName}</strong>.
+                      {' '}
+                      {tr('và phân công cho', 'and assigned to')} <strong>{recentlyCreatedClass.teacherName}</strong>.
                     </>
                   ) : (
-                    <> (chưa phân công giáo viên).</>
+                    <> {tr('(chưa phân công giáo viên).', '(no teacher assigned yet).')}</>
                   )}{' '}
-                  Nhóm chat{' '}
+                  {tr('Nhóm chat', 'Group chat')}{' '}
                   <code className="rounded bg-white px-1.5 py-0.5 font-mono font-bold text-emerald-900">
                     {recentlyCreatedClass.roomId}
                   </code>{' '}
-                  đã sẵn sàng!
+                  {tr('đã sẵn sàng!', 'is ready!')}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -3869,11 +4078,11 @@ export const AdminWorkspace: React.FC = () => {
                   className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-emerald-800 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-900"
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
-                  <span>Mở nhóm chat</span>
+                  <span>{tr('Mở nhóm chat', 'Open group chat')}</span>
                 </button>
                 <button
                   type="button"
-                  aria-label="Đóng thông báo lớp vừa tạo"
+                  aria-label={tr('Đóng thông báo lớp vừa tạo', 'Dismiss created class notice')}
                   onClick={() => setRecentlyCreatedClass(null)}
                   className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100"
                 >
@@ -3888,8 +4097,8 @@ export const AdminWorkspace: React.FC = () => {
               const isConfirmed =
                 cls.scheduleStatus === 'confirmed' && Boolean(cls.officialScheduleText);
               const displaySchedule = isConfirmed
-                ? `Lớp ${cls.id} — ${cls.officialScheduleText}`
-                : 'Chưa có lịch học chính thức';
+                ? `${tr('Lớp', 'Class')} ${cls.id} — ${translateScheduleText(cls.officialScheduleText!, lang)}`
+                : tr('Chưa có lịch học chính thức', 'No official schedule yet');
               const activeStudentCount = getClassActiveStudentCount(cls);
 
               return (
@@ -3911,10 +4120,12 @@ export const AdminWorkspace: React.FC = () => {
                             : 'bg-amber-100 text-amber-900'
                         }`}
                       >
-                        {isConfirmed ? 'Đã có lịch chính thức' : 'Chưa có lịch học chính thức'}
+                        {isConfirmed
+                          ? tr('Đã có lịch chính thức', 'Official schedule set')
+                          : tr('Chưa có lịch học chính thức', 'No official schedule yet')}
                       </span>
                       <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-700">
-                        Buổi {cls.current_lesson}/{cls.total_lessons}
+                        {tr('Buổi', 'Session')} {cls.current_lesson}/{cls.total_lessons}
                       </span>
                       <span
                         data-testid={`class-student-count-${cls.id}`}
@@ -3924,13 +4135,18 @@ export const AdminWorkspace: React.FC = () => {
                             : 'bg-stone-100 text-stone-600'
                         }`}
                       >
-                        {activeStudentCount} học viên
+                        {activeStudentCount}{' '}
+                        {tr('học viên', activeStudentCount === 1 ? 'student' : 'students')}
                       </span>
                     </div>
 
                     <p className="text-[11px] font-medium text-stone-600">
-                      GV phụ trách:{' '}
-                      <strong className="text-stone-800">{cls.teacher_name}</strong>
+                      {tr('GV phụ trách:', 'Assigned teacher:')}{' '}
+                      <strong className="text-stone-800">
+                        {cls.teacher_name === 'Chưa phân công giáo viên'
+                          ? tr('Chưa phân công giáo viên', 'No teacher assigned')
+                          : cls.teacher_name}
+                      </strong>
                       {cls.teacher_email || cls.teacher_code
                         ? ` (${cls.teacher_email || cls.teacher_code})`
                         : ''}
@@ -3949,15 +4165,19 @@ export const AdminWorkspace: React.FC = () => {
 
                       {!isConfirmed && cls.legacyScheduleText && (
                         <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                          Lịch văn bản cũ: &ldquo;{cls.legacyScheduleText}&rdquo; (Cần xác nhận)
+                          {tr('Lịch văn bản cũ:', 'Legacy schedule text:')} &ldquo;
+                          {translateScheduleText(cls.legacyScheduleText, lang)}&rdquo; (
+                          {tr('Cần xác nhận', 'Needs confirmation')})
                         </span>
                       )}
 
                       {isConfirmed && cls.nextSession && (
                         <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
                           <Clock className="h-3 w-3" />
-                          Buổi tới: {cls.nextSession.dayLabel}, {cls.nextSession.sessionDate} (
-                          {cls.nextSession.startTime}–{cls.nextSession.endTime})
+                          {tr('Buổi tới:', 'Next session:')}{' '}
+                          {translateDayLabel(cls.nextSession.dayLabel, lang)},{' '}
+                          {cls.nextSession.sessionDate} ({cls.nextSession.startTime}–
+                          {cls.nextSession.endTime})
                         </span>
                       )}
                     </div>
@@ -3971,7 +4191,9 @@ export const AdminWorkspace: React.FC = () => {
                       className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-100"
                     >
                       <MessageSquare className="h-3.5 w-3.5" />
-                      <span data-testid={`admin-open-chat-btn-${cls.id}`}>Mở nhóm chat</span>
+                      <span data-testid={`admin-open-chat-btn-${cls.id}`}>
+                        {tr('Mở nhóm chat', 'Open group chat')}
+                      </span>
                     </button>
 
                     <button
@@ -3985,7 +4207,9 @@ export const AdminWorkspace: React.FC = () => {
                       className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-900 hover:bg-red-100"
                     >
                       <Calendar className="h-3.5 w-3.5" />
-                      <span>{isConfirmed ? 'Chỉnh lịch' : 'Cài lịch học'}</span>
+                      <span>
+                        {isConfirmed ? tr('Chỉnh lịch', 'Edit schedule') : tr('Cài lịch học', 'Set schedule')}
+                      </span>
                     </button>
 
                     <button
@@ -4000,7 +4224,7 @@ export const AdminWorkspace: React.FC = () => {
                       className="inline-flex min-h-[34px] items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs font-bold text-stone-700 hover:border-red-300 hover:bg-red-50 hover:text-red-900"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      <span data-testid={`class-delete-btn-${cls.id}`}>Xóa lớp</span>
+                      <span data-testid={`class-delete-btn-${cls.id}`}>{tr('Xóa lớp', 'Delete class')}</span>
                     </button>
                   </div>
                 </div>
@@ -4022,8 +4246,14 @@ export const AdminWorkspace: React.FC = () => {
                 <h3 className="flex items-center gap-1.5 font-display text-sm font-bold text-stone-900">
                   <Trash2 className="h-4 w-4 text-red-800" />
                   {(deleteClassBlockedStudentCount ?? 0) > 0
-                    ? `Chưa thể xóa lớp ${classToDelete.id}`
-                    : `Xác nhận xóa / lưu trữ lớp ${classToDelete.id}`}
+                    ? tr(
+                        `Chưa thể xóa lớp ${classToDelete.id}`,
+                        `Cannot delete class ${classToDelete.id}`
+                      )
+                    : tr(
+                        `Xác nhận xóa / lưu trữ lớp ${classToDelete.id}`,
+                        `Confirm delete / archive class ${classToDelete.id}`
+                      )}
                 </h3>
                 <p className="mt-0.5 text-xs text-stone-500">
                   {classToDelete.id} · {classToDelete.name}
@@ -4031,7 +4261,7 @@ export const AdminWorkspace: React.FC = () => {
               </div>
               <button
                 type="button"
-                aria-label="Đóng hộp thoại xóa lớp"
+                aria-label={tr('Đóng hộp thoại xóa lớp', 'Close delete class dialog')}
                 onClick={() => {
                   setClassToDelete(null);
                   setDeleteClassConfirmInput('');
@@ -4052,11 +4282,22 @@ export const AdminWorkspace: React.FC = () => {
                 >
                   <p className="flex items-center gap-1.5 font-bold text-amber-900">
                     <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
-                    Lớp {classToDelete.id} hiện còn {deleteClassBlockedStudentCount} học viên đang theo học nên chưa thể xóa.
+                    {tr(
+                      `Lớp ${classToDelete.id} hiện còn ${deleteClassBlockedStudentCount} học viên đang theo học nên chưa thể xóa.`,
+                      `Class ${classToDelete.id} still has ${deleteClassBlockedStudentCount} active student(s) and cannot be deleted yet.`
+                    )}
                   </p>
                   <p className="mt-1.5 leading-relaxed text-amber-900">
-                    <strong>Cách xử lý an toàn:</strong> Vui lòng mở danh sách học viên của lớp{' '}
-                    <strong>{classToDelete.id}</strong>, chuyển từng học viên sang lớp mới (hoặc chọn &ldquo;Bỏ xếp lớp trực tiếp&rdquo;) trước khi thực hiện xóa / lưu trữ lớp.
+                    <strong>{tr('Cách xử lý an toàn:', 'Safe resolution:')}</strong>{' '}
+                    {tr(
+                      'Vui lòng mở danh sách học viên của lớp',
+                      'Please open the student list for class'
+                    )}{' '}
+                    <strong>{classToDelete.id}</strong>
+                    {tr(
+                      ', chuyển từng học viên sang lớp mới (hoặc chọn “Bỏ xếp lớp trực tiếp”) trước khi thực hiện xóa / lưu trữ lớp.',
+                      ', transfer each student to another class (or choose "Unassign class directly") before deleting or archiving this class.'
+                    )}
                   </p>
                   {deleteClassError && (
                     <p
@@ -4080,7 +4321,7 @@ export const AdminWorkspace: React.FC = () => {
                     }}
                     className="rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50"
                   >
-                    Đóng
+                    {tr('Đóng', 'Close')}
                   </button>
                   <button
                     type="button"
@@ -4100,7 +4341,9 @@ export const AdminWorkspace: React.FC = () => {
                     className="inline-flex items-center gap-1.5 rounded-xl bg-red-800 px-3.5 py-2 text-xs font-bold text-white hover:bg-red-900"
                   >
                     <Users className="h-3.5 w-3.5" />
-                    <span>Xem &amp; Chuyển lớp học viên ({classToDelete.id})</span>
+                    <span>
+                      {tr('Xem & Chuyển lớp học viên', 'View & Transfer students')} ({classToDelete.id})
+                    </span>
                   </button>
                 </div>
               </div>
@@ -4117,22 +4360,39 @@ export const AdminWorkspace: React.FC = () => {
               >
                 <div className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-stone-700">
                   <p className="font-semibold text-stone-900">
-                    Lớp <strong>{classToDelete.id}</strong> hiện trống (0 học viên) và đủ điều kiện lưu trữ an toàn:
+                    {tr('Lớp', 'Class')} <strong>{classToDelete.id}</strong>{' '}
+                    {tr(
+                      'hiện trống (0 học viên) và đủ điều kiện lưu trữ an toàn:',
+                      'is currently empty (0 students) and eligible for safe archiving:'
+                    )}
                   </p>
                   <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] text-stone-600">
-                    <li>Nhóm chat <code>class:{classToDelete.id}</code> sẽ ẩn khỏi danh sách hoạt động.</li>
-                    <li>Lớp được gỡ khỏi phân công hiện hành và các danh sách chọn lớp.</li>
-                    <li>Toàn bộ lịch sử tin nhắn, bài tập và điểm danh cũ được bảo toàn.</li>
+                    <li>
+                      {tr('Nhóm chat', 'Group chat')} <code>class:{classToDelete.id}</code>{' '}
+                      {tr('sẽ ẩn khỏi danh sách hoạt động.', 'will be hidden from active chats.')}
+                    </li>
+                    <li>
+                      {tr(
+                        'Lớp được gỡ khỏi phân công hiện hành và các danh sách chọn lớp.',
+                        'The class is removed from active assignments and class selectors.'
+                      )}
+                    </li>
+                    <li>
+                      {tr(
+                        'Toàn bộ lịch sử tin nhắn, bài tập và điểm danh cũ được bảo toàn.',
+                        'All past chat history, homework, and attendance records are preserved.'
+                      )}
+                    </li>
                   </ul>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-stone-700">
-                    Nhập chính xác mã lớp{' '}
+                    {tr('Nhập chính xác mã lớp', 'Type exact class code')}{' '}
                     <code className="rounded bg-red-50 px-1.5 py-0.5 font-mono font-bold text-red-900">
                       {classToDelete.id}
                     </code>{' '}
-                    để xác nhận xóa:
+                    {tr('để xác nhận xóa:', 'to confirm deletion:')}
                   </label>
                   <input
                     type="text"
@@ -4168,7 +4428,7 @@ export const AdminWorkspace: React.FC = () => {
                     }}
                     className="rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50"
                   >
-                    Hủy
+                    {tr('Hủy', 'Cancel')}
                   </button>
                   <button
                     type="submit"
@@ -4182,7 +4442,9 @@ export const AdminWorkspace: React.FC = () => {
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     <span data-testid="delete-class-submit-btn">
-                      {deleteClassMutation.isPending ? 'Đang xóa lớp...' : 'Xác nhận xóa lớp'}
+                      {deleteClassMutation.isPending
+                        ? tr('Đang xóa lớp...', 'Deleting class...')
+                        : tr('Xác nhận xóa lớp', 'Confirm delete class')}
                     </span>
                   </button>
                 </div>
@@ -4203,7 +4465,12 @@ export const AdminWorkspace: React.FC = () => {
               <div>
                 <h3 className="flex items-center gap-1.5 font-display text-sm font-bold text-stone-900">
                   <Trash2 className="h-4 w-4 text-red-800" />
-                  <span>Xóa giáo viên {teacherToDelete.name}?</span>
+                  <span>
+                    {tr(
+                      `Xóa giáo viên ${teacherToDelete.name}?`,
+                      `Delete teacher ${teacherToDelete.name}?`
+                    )}
+                  </span>
                 </h3>
                 <p className="mt-0.5 text-xs text-stone-500">
                   {teacherToDelete.email}
@@ -4212,7 +4479,7 @@ export const AdminWorkspace: React.FC = () => {
               </div>
               <button
                 type="button"
-                aria-label="Đóng hộp thoại xóa giáo viên"
+                aria-label={tr('Đóng hộp thoại xóa giáo viên', 'Close delete teacher dialog')}
                 disabled={deleteTeacherMutation.isPending}
                 onClick={() => setTeacherToDelete(null)}
                 className="rounded-lg p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-50"
@@ -4230,10 +4497,16 @@ export const AdminWorkspace: React.FC = () => {
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
                   <div>
                     <p className="font-bold text-amber-900">
-                      Sẽ gỡ phân công khỏi {teacherToDelete.assigned_classes!.length} lớp ({teacherToDelete.assigned_classes!.join(', ')}).
+                      {tr(
+                        `Sẽ gỡ phân công khỏi ${teacherToDelete.assigned_classes!.length} lớp (${teacherToDelete.assigned_classes!.join(', ')}).`,
+                        `Will unassign from ${teacherToDelete.assigned_classes!.length} class(es) (${teacherToDelete.assigned_classes!.join(', ')}).`
+                      )}
                     </p>
                     <p className="mt-0.5 text-amber-800">
-                      Các lớp này sẽ được chuyển về trạng thái &quot;Chưa phân công giáo viên&quot;.
+                      {tr(
+                        'Các lớp này sẽ được chuyển về trạng thái "Chưa phân công giáo viên".',
+                        'These classes will revert to "No teacher assigned".'
+                      )}
                     </p>
                   </div>
                 </div>
@@ -4242,7 +4515,10 @@ export const AdminWorkspace: React.FC = () => {
 
             <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs text-stone-600">
               <p>
-                Hồ sơ giáo viên sẽ được lưu trữ (soft-delete) và vô hiệu hóa tài khoản ngay lập tức. Toàn bộ lịch sử tin nhắn, bài tập, chấm điểm và điểm danh của lớp được bảo toàn.
+                {tr(
+                  'Hồ sơ giáo viên sẽ được lưu trữ (soft-delete) và vô hiệu hóa tài khoản ngay lập tức. Toàn bộ lịch sử tin nhắn, bài tập, chấm điểm và điểm danh của lớp được bảo toàn.',
+                  'The teacher profile will be archived (soft-deleted) and the account deactivated immediately. All class chat history, homework, grading, and attendance records remain preserved.'
+                )}
               </p>
             </div>
 
@@ -4254,7 +4530,7 @@ export const AdminWorkspace: React.FC = () => {
                 onClick={() => setTeacherToDelete(null)}
                 className="rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50 disabled:opacity-50"
               >
-                Hủy
+                {tr('Hủy', 'Cancel')}
               </button>
               <button
                 type="button"
@@ -4269,7 +4545,9 @@ export const AdminWorkspace: React.FC = () => {
                   <Trash2 className="h-3.5 w-3.5" />
                 )}
                 <span>
-                  {deleteTeacherMutation.isPending ? 'Đang xóa giáo viên...' : 'Xác nhận xóa'}
+                  {deleteTeacherMutation.isPending
+                    ? tr('Đang xóa giáo viên...', 'Deleting teacher...')
+                    : tr('Xác nhận xóa', 'Confirm delete')}
                 </span>
               </button>
             </div>
@@ -4387,7 +4665,10 @@ export const AdminWorkspace: React.FC = () => {
               );
               if (isCreateClass && existingIdx >= 0) {
                 throw new KtnApiError({
-                  message: `Mã lớp ${cleanCode} đã tồn tại trên hệ thống. Vui lòng chọn mã lớp khác hoặc chỉnh sửa lớp hiện có.`,
+                  message: tr(
+                    `Mã lớp ${cleanCode} đã tồn tại trên hệ thống. Vui lòng chọn mã lớp khác hoặc chỉnh sửa lớp hiện có.`,
+                    `Class code ${cleanCode} already exists. Please choose another code or edit the existing class.`
+                  ),
                   status: 409,
                   code: 'DUPLICATE_CLASS_CODE',
                 });
@@ -4544,8 +4825,11 @@ export const AdminWorkspace: React.FC = () => {
             const canonicalRoomId = `class:${cleanCode}`;
             const newChatRoom: ChatRoom = {
               roomId: canonicalRoomId,
-              label: `Nhóm Lớp ${cleanCode} — ${savedClassItem.name}`,
-              shortLabel: `Lớp ${cleanCode}`,
+              label: tr(
+                `Nhóm Lớp ${cleanCode} — ${savedClassItem.name}`,
+                `Class Group ${cleanCode} — ${savedClassItem.name}`
+              ),
+              shortLabel: tr(`Lớp ${cleanCode}`, `Class ${cleanCode}`),
               type: 'class',
               classCode: cleanCode,
               teacherName: savedClassItem.teacher_name,
@@ -4664,15 +4948,30 @@ export const AdminWorkspace: React.FC = () => {
               title:
                 serverMessage ||
                 (isCreateClass
-                  ? `Đã tạo lớp ${cleanCode} & nhóm chat ${canonicalRoomId}`
-                  : `Đã cập nhật lịch học lớp ${cleanCode}`),
+                  ? tr(
+                      `Đã tạo lớp ${cleanCode} & nhóm chat ${canonicalRoomId}`,
+                      `Created class ${cleanCode} & chat ${canonicalRoomId}`
+                    )
+                  : tr(
+                      `Đã cập nhật lịch học lớp ${cleanCode}`,
+                      `Updated schedule for class ${cleanCode}`
+                    )),
               description: isCreateClass
                 ? hasAssignedTeacherInput
-                  ? `Đã phân công ${savedClassItem.teacher_name} và kích hoạt nhóm trao đổi lớp.`
-                  : 'Đã kích hoạt nhóm trao đổi lớp (chưa phân công giáo viên).'
+                  ? tr(
+                      `Đã phân công ${savedClassItem.teacher_name} và kích hoạt nhóm trao đổi lớp.`,
+                      `Assigned ${savedClassItem.teacher_name} and activated the class group chat.`
+                    )
+                  : tr(
+                      'Đã kích hoạt nhóm trao đổi lớp (chưa phân công giáo viên).',
+                      'Activated the class group chat (no teacher assigned yet).'
+                    )
                 : schedulePayload.status === 'confirmed'
-                ? 'Lịch học chính thức đã được lưu và đồng bộ bộ nhắc tự động.'
-                : 'Thông tin lớp học đã được lưu.',
+                ? tr(
+                    'Lịch học chính thức đã được lưu và đồng bộ bộ nhắc tự động.',
+                    'Official schedule saved and automated reminders synced.'
+                  )
+                : tr('Thông tin lớp học đã được lưu.', 'Class details saved.'),
               variant: 'success',
             });
             setScheduleModalOpen(false);
@@ -4680,11 +4979,11 @@ export const AdminWorkspace: React.FC = () => {
             const errMsg =
               err instanceof Error
                 ? err.message
-                : 'Không thể lưu thông tin lớp học.';
+                : tr('Không thể lưu thông tin lớp học.', 'Unable to save class details.');
             addToast({
               title: isCreateClass
-                ? 'Không thể tạo lớp mới'
-                : 'Không thể cập nhật lớp học',
+                ? tr('Không thể tạo lớp mới', 'Unable to create class')
+                : tr('Không thể cập nhật lớp học', 'Unable to update class'),
               description: errMsg,
               variant: 'error',
             });
@@ -4705,7 +5004,7 @@ export const AdminWorkspace: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
                 <Award className="h-4 w-4 text-red-800" />
-                Quản lý giáo viên & Hiệu suất ({totalTeachersCount})
+                {tr('Quản lý giáo viên & Hiệu suất', 'Teachers & Performance')} ({totalTeachersCount})
                 {(teachersQuery.isFetching || teacherSearchQuery.isFetching) && (
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-stone-400" />
                 )}
@@ -4718,7 +5017,10 @@ export const AdminWorkspace: React.FC = () => {
                     data-testid="admin-teacher-search-input"
                     value={teacherSearchInput}
                     onChange={(e) => setTeacherSearchInput(e.target.value)}
-                    placeholder="Tìm tên (có/không dấu), email, mã GV, lớp..."
+                    placeholder={tr(
+                      'Tìm tên (có/không dấu), email, mã GV, lớp...',
+                      'Search name, email, teacher ID, class...'
+                    )}
                     className="w-full rounded-xl border border-stone-300 bg-stone-50 py-1.5 pl-8 pr-3 text-xs font-semibold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
                   />
                 </div>
@@ -4731,13 +5033,13 @@ export const AdminWorkspace: React.FC = () => {
                     );
                     setTeacherPage(1);
                   }}
-                  aria-label="Lọc trạng thái giáo viên"
+                  aria-label={tr('Lọc trạng thái giáo viên', 'Filter teachers by status')}
                   className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-800 focus:border-red-800 focus:bg-white focus:outline-none"
                 >
-                  <option value="ALL">Tất cả trạng thái</option>
-                  <option value="ACTIVE">Đang hoạt động</option>
-                  <option value="INACTIVE">Tạm khóa</option>
-                  <option value="UNASSIGNED">Chưa có lớp</option>
+                  <option value="ALL">{tr('Tất cả trạng thái', 'All statuses')}</option>
+                  <option value="ACTIVE">{tr('Đang hoạt động', 'Active')}</option>
+                  <option value="INACTIVE">{tr('Tạm khóa', 'Suspended')}</option>
+                  <option value="UNASSIGNED">{tr('Chưa có lớp', 'Unassigned')}</option>
                 </select>
                 <select
                   data-testid="admin-teacher-class-filter"
@@ -4746,13 +5048,13 @@ export const AdminWorkspace: React.FC = () => {
                     setTeacherClassFilter(e.target.value);
                     setTeacherPage(1);
                   }}
-                  aria-label="Lọc giáo viên theo lớp"
+                  aria-label={tr('Lọc giáo viên theo lớp', 'Filter teachers by class')}
                   className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-800 focus:border-red-800 focus:bg-white focus:outline-none"
                 >
-                  <option value="ALL">Tất cả lớp</option>
+                  <option value="ALL">{tr('Tất cả lớp', 'All classes')}</option>
                   {classesList.map((cls) => (
                     <option key={cls.id} value={cls.id}>
-                      Lớp {cls.id}
+                      {tr('Lớp', 'Class')} {cls.id}
                     </option>
                   ))}
                 </select>
@@ -4763,10 +5065,10 @@ export const AdminWorkspace: React.FC = () => {
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
               {(
                 [
-                  { id: 'ALL', label: 'Tất cả' },
-                  { id: 'ACTIVE', label: 'Đang hoạt động' },
-                  { id: 'INACTIVE', label: 'Tạm khóa' },
-                  { id: 'UNASSIGNED', label: 'Chưa có lớp' },
+                  { id: 'ALL', label: tr('Tất cả', 'All') },
+                  { id: 'ACTIVE', label: tr('Đang hoạt động', 'Active') },
+                  { id: 'INACTIVE', label: tr('Tạm khóa', 'Suspended') },
+                  { id: 'UNASSIGNED', label: tr('Chưa có lớp', 'Unassigned') },
                 ] as const
               ).map((pill) => (
                 <button
@@ -4790,7 +5092,7 @@ export const AdminWorkspace: React.FC = () => {
 
             {filteredTeachersList.length === 0 ? (
               <div className="mt-4 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-6 text-center text-xs text-stone-600">
-                Chưa có giáo viên phù hợp.
+                {tr('Chưa có giáo viên phù hợp.', 'No matching teachers found.')}
               </div>
             ) : (
               <>
@@ -4835,7 +5137,7 @@ export const AdminWorkspace: React.FC = () => {
                                 : 'bg-emerald-100 text-emerald-900'
                             }`}
                           >
-                            {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
+                            {isLocked ? tr('Tạm khóa', 'Suspended') : tr('Đang hoạt động', 'Active')}
                           </span>
                         </div>
 
@@ -4845,14 +5147,16 @@ export const AdminWorkspace: React.FC = () => {
                             {teacher.email}
                           </div>
                           <div className="text-[11px] text-stone-700">
-                            <span className="font-semibold text-stone-600">Lớp:</span>{' '}
+                            <span className="font-semibold text-stone-600">
+                              {tr('Lớp:', 'Classes:')}
+                            </span>{' '}
                             {classes.length > 0 ? (
                               <span className="font-medium text-stone-800">
                                 {classes.join(', ')}
                               </span>
                             ) : (
                               <span className="italic text-stone-400">
-                                Chưa phân công
+                                {tr('Chưa phân công', 'Unassigned')}
                               </span>
                             )}
                           </div>
@@ -4869,7 +5173,7 @@ export const AdminWorkspace: React.FC = () => {
                             }}
                             className="inline-flex min-h-[32px] flex-1 items-center justify-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-800 shadow-2xs transition-colors hover:bg-stone-50 active:bg-stone-100"
                           >
-                            <span>Xem / Sửa</span>
+                            <span>{tr('Xem / Sửa', 'View / Edit')}</span>
                           </button>
                           <button
                             type="button"
@@ -4881,7 +5185,7 @@ export const AdminWorkspace: React.FC = () => {
                             className="inline-flex min-h-[32px] items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50/70 px-2.5 py-1 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 active:bg-red-200"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            <span>Xóa</span>
+                            <span>{tr('Xóa', 'Delete')}</span>
                           </button>
                         </div>
                       </div>
@@ -4894,11 +5198,17 @@ export const AdminWorkspace: React.FC = () => {
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-stone-200 text-stone-500">
-                        <th className="pb-2 pr-2 font-bold">Tên</th>
+                        <th className="pb-2 pr-2 font-bold">{tr('Tên', 'Name')}</th>
                         <th className="pb-2 pr-2 font-bold">Email</th>
-                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">Lớp đang phụ trách</th>
-                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">Trạng thái</th>
-                        <th className="whitespace-nowrap pb-2 text-right font-bold">Thao tác</th>
+                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                          {tr('Lớp đang phụ trách', 'Assigned classes')}
+                        </th>
+                        <th className="whitespace-nowrap pb-2 pr-2 font-bold">
+                          {tr('Trạng thái', 'Status')}
+                        </th>
+                        <th className="whitespace-nowrap pb-2 text-right font-bold">
+                          {tr('Thao tác', 'Actions')}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100">
@@ -4970,7 +5280,7 @@ export const AdminWorkspace: React.FC = () => {
                               clsObj?.schedule ||
                               clsObj?.legacyScheduleText ||
                               '';
-                            return sched ? `${clsCode}: ${sched}` : '';
+                            return sched ? `${clsCode}: ${translateScheduleText(sched, lang)}` : '';
                           })
                           .filter(Boolean);
 
@@ -4998,48 +5308,59 @@ export const AdminWorkspace: React.FC = () => {
                               {/* Deep stats live in TeacherDetailDrawer; sr-only preserves accessibility & test selectors */}
                               <div className="sr-only">
                                 <span data-testid={`teacher-students-count-${teacher.email}`}>
-                                  Học viên phụ trách: {managedStudentsCount} HV
+                                  {tr('Học viên phụ trách:', 'Managed students:')}{' '}
+                                  {managedStudentsCount} {tr('HV', 'students')}
                                 </span>
                                 <span data-testid={`teacher-courses-summary-${teacher.email}`}>
-                                  Khóa phụ trách: {courses.length} khóa
+                                  {tr('Khóa phụ trách:', 'Assigned courses:')} {courses.length}{' '}
+                                  {tr('khóa', courses.length === 1 ? 'course' : 'courses')}
                                 </span>
                                 {scheduleSummaries.length > 0 && (
                                   <span data-testid={`teacher-schedule-summary-${teacher.email}`}>
-                                    Lịch dạy: {scheduleSummaries.join(' · ')}
+                                    {tr('Lịch dạy:', 'Schedule:')} {scheduleSummaries.join(' · ')}
                                   </span>
                                 )}
                                 <span data-testid={`teacher-scheduled-sessions-${teacher.email}`}>
-                                  Lịch: {scheduledSessionsCount}
+                                  {tr('Lịch:', 'Scheduled:')} {scheduledSessionsCount}
                                 </span>
                                 <span data-testid={`teacher-confirmed-sessions-${teacher.email}`}>
-                                  Thực dạy: {confirmedTaughtSessionsCount}
+                                  {tr('Thực dạy:', 'Confirmed taught:')}{' '}
+                                  {confirmedTaughtSessionsCount}
                                 </span>
                                 <span>
-                                  Ghi nhận log: {recordedSessionsCount} buổi (Lịch ≠ Thực dạy)
+                                  {tr('Ghi nhận log:', 'Logged:')} {recordedSessionsCount}{' '}
+                                  {tr(
+                                    'buổi (Lịch ≠ Thực dạy)',
+                                    'sessions (Scheduled ≠ Taught)'
+                                  )}
                                 </span>
                                 {unverifiedTeachingLog && (
                                   <span data-testid={`teacher-unverified-badge-${teacher.email}`}>
-                                    Chưa xác minh số buổi thực dạy
+                                    {tr('Chưa xác minh số buổi thực dạy', 'Unverified taught sessions')}
                                   </span>
                                 )}
                                 <span data-testid={`teacher-graded-count-${teacher.email}`}>
-                                  Đã chấm: {submissionsReviewedCount}
+                                  {tr('Đã chấm:', 'Graded:')} {submissionsReviewedCount}
                                 </span>
                                 <span data-testid={`teacher-pending-grading-count-${teacher.email}`}>
-                                  Chờ chấm: {pendingGradingCount}
+                                  {tr('Chờ chấm:', 'Pending grading:')} {pendingGradingCount}
                                 </span>
-                                <span>{forumAnswersCount} trả lời</span>
+                                <span>
+                                  {forumAnswersCount} {tr('trả lời', 'replies')}
+                                </span>
                                 <span data-testid={`teacher-resolved-forum-count-${teacher.email}`}>
-                                  {acceptedAnswersCount} giải quyết
+                                  {acceptedAnswersCount} {tr('giải quyết', 'accepted')}
                                 </span>
                                 <span data-testid={`teacher-video-guides-count-${teacher.email}`}>
-                                  Video giải đáp: {videoAnswersCount}
+                                  {tr('Video giải đáp:', 'Video replies:')} {videoAnswersCount}
                                 </span>
                                 <span data-testid={`teacher-monthly-points-${teacher.email}`}>
-                                  Tháng: {monthlyContributionPoints} điểm
+                                  {tr('Tháng:', 'Monthly:')} {monthlyContributionPoints}{' '}
+                                  {tr('điểm', 'pts')}
                                 </span>
                                 <span data-testid={`teacher-total-points-${teacher.email}`}>
-                                  Tích lũy: {totalContributionPoints} điểm
+                                  {tr('Tích lũy:', 'Total:')} {totalContributionPoints}{' '}
+                                  {tr('điểm', 'pts')}
                                 </span>
                               </div>
                             </td>
@@ -5054,7 +5375,8 @@ export const AdminWorkspace: React.FC = () => {
                             {/* Col 3: Lớp đang phụ trách */}
                             <td className="py-2.5 pr-2">
                               <div className="font-bold text-stone-900">
-                                {classes.length} lớp
+                                {classes.length}{' '}
+                                {tr('lớp', classes.length === 1 ? 'class' : 'classes')}
                               </div>
                               {classes.length > 0 ? (
                                 <div className="mt-0.5 flex flex-wrap gap-1">
@@ -5069,7 +5391,7 @@ export const AdminWorkspace: React.FC = () => {
                                 </div>
                               ) : (
                                 <span className="text-[10px] text-stone-400">
-                                  Chưa phân công lớp
+                                  {tr('Chưa phân công lớp', 'No classes assigned')}
                                 </span>
                               )}
                             </td>
@@ -5083,7 +5405,9 @@ export const AdminWorkspace: React.FC = () => {
                                     : 'bg-emerald-100 text-emerald-900'
                                 }`}
                               >
-                                {isLocked ? 'Tạm khóa' : 'Đang hoạt động'}
+                                {isLocked
+                                  ? tr('Tạm khóa', 'Suspended')
+                                  : tr('Đang hoạt động', 'Active')}
                               </span>
                             </td>
 
@@ -5099,7 +5423,7 @@ export const AdminWorkspace: React.FC = () => {
                                   }}
                                   className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-stone-700 shadow-2xs hover:bg-stone-50 hover:text-stone-900"
                                 >
-                                  <span>Xem / Sửa</span>
+                                  <span>{tr('Xem / Sửa', 'View / Edit')}</span>
                                 </button>
                                 <button
                                   type="button"
@@ -5109,10 +5433,10 @@ export const AdminWorkspace: React.FC = () => {
                                     setTeacherToDelete(teacher);
                                   }}
                                   className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700 shadow-2xs hover:bg-red-100 hover:text-red-800"
-                                  title="Xóa giáo viên"
+                                  title={tr('Xóa giáo viên', 'Delete teacher')}
                                 >
                                   <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                                  <span>Xóa</span>
+                                  <span>{tr('Xóa', 'Delete')}</span>
                                 </button>
                               </div>
                             </td>
@@ -5132,13 +5456,15 @@ export const AdminWorkspace: React.FC = () => {
                     data-testid="teacher-search-pagination-summary"
                     className="text-stone-500"
                   >
-                    Trang {teacherPage} / {totalTeacherPages} · Hiển thị{' '}
+                    {tr('Trang', 'Page')} {teacherPage} / {totalTeacherPages} ·{' '}
+                    {tr('Hiển thị', 'Showing')}{' '}
                     {Math.min(totalTeachersCount, teacherSearchOffset + 1)}–
                     {Math.min(
                       totalTeachersCount,
                       teacherSearchOffset + filteredTeachersList.length
                     )}{' '}
-                    / {totalTeachersCount} giáo viên
+                    / {totalTeachersCount}{' '}
+                    {tr('giáo viên', totalTeachersCount === 1 ? 'teacher' : 'teachers')}
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -5148,7 +5474,7 @@ export const AdminWorkspace: React.FC = () => {
                       onClick={() => setTeacherPage((p) => Math.max(1, p - 1))}
                       className="rounded-lg border border-stone-200 px-2.5 py-1 font-bold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
                     >
-                      Trang trước
+                      {tr('Trang trước', 'Previous')}
                     </button>
                     <button
                       type="button"
@@ -5157,7 +5483,7 @@ export const AdminWorkspace: React.FC = () => {
                       onClick={() => setTeacherPage((p) => p + 1)}
                       className="rounded-lg border border-stone-200 px-2.5 py-1 font-bold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
                     >
-                      Trang sau
+                      {tr('Trang sau', 'Next')}
                     </button>
                   </div>
                 </div>
@@ -5173,13 +5499,20 @@ export const AdminWorkspace: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
                 <BookOpen className="h-4 w-4 text-red-800" />
-                Yêu cầu cấp khóa học online từ Giáo viên ({courseGrantRequestsList.length})
+                {tr(
+                  'Yêu cầu cấp khóa học online từ Giáo viên',
+                  'Teacher Online Course Requests'
+                )}{' '}
+                ({courseGrantRequestsList.length})
               </h3>
             </div>
 
             {courseGrantRequestsList.length === 0 ? (
               <p className="mt-2 text-xs text-stone-500">
-                Chưa có yêu cầu cấp khóa học online nào từ giáo viên.
+                {tr(
+                  'Chưa có yêu cầu cấp khóa học online nào từ giáo viên.',
+                  'No online course grant requests from teachers yet.'
+                )}
               </p>
             ) : (
               <div className="mt-3 space-y-2">
@@ -5192,12 +5525,12 @@ export const AdminWorkspace: React.FC = () => {
                     <div className="space-y-0.5">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-bold text-stone-900">
-                          HV: {req.student_name || req.student_email}
+                          {tr('HV:', 'Student:')} {req.student_name || req.student_email}
                         </span>
                         <span className="text-stone-500">({req.student_email})</span>
                         {req.class_code && (
                           <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
-                            Lớp {req.class_code}
+                            {tr('Lớp', 'Class')} {req.class_code}
                           </span>
                         )}
                         <span
@@ -5210,24 +5543,27 @@ export const AdminWorkspace: React.FC = () => {
                           }`}
                         >
                           {req.status === 'approved'
-                            ? 'Đã duyệt'
+                            ? tr('Đã duyệt', 'Approved')
                             : req.status === 'rejected'
-                            ? 'Đã từ chối'
-                            : 'Chờ duyệt'}
+                            ? tr('Đã từ chối', 'Rejected')
+                            : tr('Chờ duyệt', 'Pending')}
                         </span>
                       </div>
                       <p className="text-[11px] font-semibold text-stone-700">
-                        Khóa đề nghị:{' '}
+                        {tr('Khóa đề nghị:', 'Requested courses:')}{' '}
                         {(req.requested_course_titles && req.requested_course_titles.length > 0
                           ? req.requested_course_titles
                           : req.requested_course_ids && req.requested_course_ids.length > 0
                           ? req.requested_course_ids
                           : [req.course_title || req.course_id]
-                        ).join(', ')}
+                        )
+                          .map((title) => translateCourseTitle(title, lang))
+                          .join(', ')}
                       </p>
                       <p className="text-[11px] text-stone-500">
-                        Giáo viên đề nghị: {req.teacher_name || req.teacher_email} · Lý do:{' '}
-                        {req.reason || 'Không ghi chú'}
+                        {tr('Giáo viên đề nghị:', 'Requested by:')}{' '}
+                        {req.teacher_name || req.teacher_email} · {tr('Lý do:', 'Reason:')}{' '}
+                        {req.reason || tr('Không ghi chú', 'No note')}
                       </p>
                     </div>
 
@@ -5245,7 +5581,7 @@ export const AdminWorkspace: React.FC = () => {
                           }
                           className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
                         >
-                          Duyệt & Mở khóa
+                          {tr('Duyệt & Mở khóa', 'Approve & Unlock')}
                         </button>
                         <button
                           type="button"
@@ -5255,12 +5591,12 @@ export const AdminWorkspace: React.FC = () => {
                             reviewCourseRequestMutation.mutate({
                               requestId: req.id,
                               decision: 'reject',
-                              reviewNote: 'Quản lý từ chối yêu cầu',
+                              reviewNote: tr('Quản lý từ chối yêu cầu', 'Rejected by admin'),
                             })
                           }
                           className="rounded-lg border border-red-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-red-800 hover:bg-red-50 disabled:opacity-50"
                         >
-                          Từ chối
+                          {tr('Từ chối', 'Reject')}
                         </button>
                       </div>
                     )}
@@ -5281,7 +5617,7 @@ export const AdminWorkspace: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
               <Users className="h-4 w-4 text-red-800" />
-              Danh sách học viên ({totalStudentsCount})
+              {tr('Danh sách học viên', 'Students')} ({totalStudentsCount})
               {studentSearchQuery.data?.queryMs !== undefined && (
                 <span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] font-normal text-stone-500">
                   {studentSearchQuery.data.queryMs}ms
@@ -5301,13 +5637,16 @@ export const AdminWorkspace: React.FC = () => {
                   data-testid="admin-search-input"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Tìm tên (có/không dấu), email, SĐT, mã HV..."
+                  placeholder={tr(
+                    'Tìm tên (có/không dấu), email, SĐT, mã HV...',
+                    'Search name, email, phone, student ID...'
+                  )}
                   className="w-full rounded-xl border border-stone-300 bg-stone-50 py-1.5 pl-8 pr-3 text-xs font-semibold text-stone-900 focus:border-red-800 focus:bg-white focus:outline-none"
                 />
               </div>
 
               <select
-                aria-label="Lọc theo lớp"
+                aria-label={tr('Lọc theo lớp', 'Filter by class')}
                 data-testid="admin-filter-class"
                 value={classFilter}
                 onChange={(e) => {
@@ -5316,17 +5655,17 @@ export const AdminWorkspace: React.FC = () => {
                 }}
                 className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
               >
-                <option value="ALL">Tất cả lớp</option>
-                <option value="NONE">— Chưa xếp lớp —</option>
+                <option value="ALL">{tr('Tất cả lớp', 'All classes')}</option>
+                <option value="NONE">{tr('— Chưa xếp lớp —', '— Unassigned —')}</option>
                 {classesList.map((c) => (
                   <option key={c.id} value={c.id}>
-                    Lớp {c.id}
+                    {tr('Lớp', 'Class')} {c.id}
                   </option>
                 ))}
               </select>
 
               <select
-                aria-label="Lọc theo khóa học"
+                aria-label={tr('Lọc theo khóa học', 'Filter by course')}
                 data-testid="admin-filter-course"
                 value={courseFilter}
                 onChange={(e) => {
@@ -5335,16 +5674,16 @@ export const AdminWorkspace: React.FC = () => {
                 }}
                 className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
               >
-                <option value="ALL">Tất cả khóa học</option>
+                <option value="ALL">{tr('Tất cả khóa học', 'All courses')}</option>
                 {disambiguateCatalogCourses(coursesList).map((course) => (
                   <option key={course.id} value={course.id}>
-                    {course.displayLabel}
+                    {translateCourseTitle(course.displayLabel, lang)}
                   </option>
                 ))}
               </select>
 
               <select
-                aria-label="Lọc theo trạng thái đồng bộ"
+                aria-label={tr('Lọc theo trạng thái đồng bộ', 'Filter by sync status')}
                 data-testid="admin-filter-sync-status"
                 value={statusFilter}
                 onChange={(e) => {
@@ -5353,14 +5692,14 @@ export const AdminWorkspace: React.FC = () => {
                 }}
                 className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
               >
-                <option value="ALL">Mọi đồng bộ</option>
-                <option value="synced">Đã đồng bộ</option>
-                <option value="pending_activation">Chờ kích hoạt</option>
-                <option value="needs_resync">Cần đồng bộ lại</option>
+                <option value="ALL">{tr('Mọi đồng bộ', 'All sync statuses')}</option>
+                <option value="synced">{tr('Đã đồng bộ', 'Synced')}</option>
+                <option value="pending_activation">{tr('Chờ kích hoạt', 'Pending activation')}</option>
+                <option value="needs_resync">{tr('Cần đồng bộ lại', 'Needs resync')}</option>
               </select>
 
               <select
-                aria-label="Lọc theo vòng đời tài khoản"
+                aria-label={tr('Lọc theo vòng đời tài khoản', 'Filter by account status')}
                 data-testid="admin-filter-account-status"
                 value={accountStatusFilter}
                 onChange={(e) => {
@@ -5369,13 +5708,13 @@ export const AdminWorkspace: React.FC = () => {
                 }}
                 className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
               >
-                <option value="ALL">Mọi tài khoản</option>
-                <option value="ready_to_login">Sẵn sàng đăng nhập</option>
-                <option value="active">Đang hoạt động (Active)</option>
-                <option value="pending_activation">Chờ kích hoạt</option>
-                <option value="suspended">Tạm khóa</option>
-                <option value="archived">Đã lưu trữ</option>
-                <option value="deleted">Đã xóa (Supabase)</option>
+                <option value="ALL">{tr('Mọi tài khoản', 'All accounts')}</option>
+                <option value="ready_to_login">{tr('Sẵn sàng đăng nhập', 'Ready to log in')}</option>
+                <option value="active">{tr('Đang hoạt động (Active)', 'Active')}</option>
+                <option value="pending_activation">{tr('Chờ kích hoạt', 'Pending activation')}</option>
+                <option value="suspended">{tr('Tạm khóa', 'Suspended')}</option>
+                <option value="archived">{tr('Đã lưu trữ', 'Archived')}</option>
+                <option value="deleted">{tr('Đã xóa (Supabase)', 'Deleted (Supabase)')}</option>
               </select>
 
               <button
@@ -5385,7 +5724,7 @@ export const AdminWorkspace: React.FC = () => {
                 className="inline-flex min-h-[32px] items-center gap-1 rounded-xl bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-900"
               >
                 <UserPlus className="h-3.5 w-3.5" />
-                <span>+ Tạo học viên</span>
+                <span>{tr('+ Tạo học viên', '+ New student')}</span>
               </button>
             </div>
           </div>
@@ -5396,7 +5735,11 @@ export const AdminWorkspace: React.FC = () => {
               className="mt-4 rounded-xl border border-dashed border-stone-200 bg-stone-50 p-6 text-center"
             >
               <p className="text-xs font-bold text-stone-800">
-                Không tìm thấy học viên phù hợp với từ khóa &ldquo;{searchInput}&rdquo;.
+                {tr(
+                  'Không tìm thấy học viên phù hợp với từ khóa',
+                  'No students found matching'
+                )}{' '}
+                &ldquo;{searchInput}&rdquo;.
               </p>
               <button
                 type="button"
@@ -5407,7 +5750,7 @@ export const AdminWorkspace: React.FC = () => {
                 className="mt-2.5 inline-flex min-h-[34px] items-center gap-1.5 rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white"
               >
                 <UserPlus className="h-3.5 w-3.5" />
-                Tạo học viên mới
+                {tr('Tạo học viên mới', 'Create new student')}
               </button>
             </div>
           ) : (
@@ -5477,10 +5820,10 @@ export const AdminWorkspace: React.FC = () => {
                               }`}
                             >
                               {isDeleted
-                                ? 'Đã xóa (Supabase)'
+                                ? tr('Đã xóa (Supabase)', 'Deleted (Supabase)')
                                 : isSuspended
-                                ? 'Tạm khóa'
-                                : 'Đã lưu trữ'}
+                                ? tr('Tạm khóa', 'Suspended')
+                                : tr('Đã lưu trữ', 'Archived')}
                             </span>
                           )}
                           {stu.class_code ? (
@@ -5489,13 +5832,13 @@ export const AdminWorkspace: React.FC = () => {
                             </span>
                           ) : (
                             <span className="inline-block whitespace-nowrap rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
-                              Chưa xếp lớp
+                              {tr('Chưa xếp lớp', 'Unassigned')}
                             </span>
                           )}
                           {hasLegacyInvalidClass && (
                             <span className="inline-flex items-center gap-0.5 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
                               <AlertTriangle className="h-2.5 w-2.5" />
-                              Cần kiểm tra mã lớp
+                              {tr('Cần kiểm tra mã lớp', 'Check class code')}
                             </span>
                           )}
                           {visibleCourses.map((c) => (
@@ -5503,7 +5846,7 @@ export const AdminWorkspace: React.FC = () => {
                               key={c.id}
                               className="max-w-[150px] truncate rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-900"
                             >
-                              {c.shortTitle || c.title}
+                              {translateCourseTitle(c.shortTitle || c.title, lang)}
                             </span>
                           ))}
                           {extraCoursesCount > 0 && (
@@ -5511,7 +5854,7 @@ export const AdminWorkspace: React.FC = () => {
                               data-testid={`student-mobile-extra-courses-badge-${stu.email}`}
                               className="whitespace-nowrap rounded bg-stone-200 px-1.5 py-0.5 text-[10px] font-bold text-stone-700"
                             >
-                              +{extraCoursesCount} khóa
+                              +{extraCoursesCount} {tr('khóa', 'more')}
                             </span>
                           )}
                         </div>
@@ -5525,7 +5868,7 @@ export const AdminWorkspace: React.FC = () => {
                         }}
                         className="inline-flex min-h-[34px] shrink-0 items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs"
                       >
-                        <span>Xem / Sửa</span>
+                        <span>{tr('Xem / Sửa', 'View / Edit')}</span>
                         <ChevronRight className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -5538,17 +5881,17 @@ export const AdminWorkspace: React.FC = () => {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-stone-200 text-stone-500">
-                      <th className="pb-2 pr-2 font-bold">Học viên</th>
-                      <th className="pb-2 pr-2 font-bold">Email / SĐT</th>
+                      <th className="pb-2 pr-2 font-bold">{tr('Học viên', 'Student')}</th>
+                      <th className="pb-2 pr-2 font-bold">{tr('Email / SĐT', 'Email / Phone')}</th>
                       <th className="whitespace-nowrap pb-2 pr-2 font-bold">
-                        Lớp trực tiếp
+                        {tr('Lớp trực tiếp', 'Live class')}
                       </th>
-                      <th className="pb-2 pr-2 font-bold">Khóa học đã mở</th>
+                      <th className="pb-2 pr-2 font-bold">{tr('Khóa học đã mở', 'Unlocked courses')}</th>
                       <th className="whitespace-nowrap pb-2 pr-2 font-bold">
-                        Trạng thái & Đồng bộ
+                        {tr('Trạng thái & Đồng bộ', 'Status & Sync')}
                       </th>
                       <th className="whitespace-nowrap pb-2 text-right font-bold">
-                        Thao tác
+                        {tr('Thao tác', 'Actions')}
                       </th>
                     </tr>
                   </thead>
@@ -5603,7 +5946,10 @@ export const AdminWorkspace: React.FC = () => {
                           data-testid={`admin-student-row-${stu.email}`}
                           tabIndex={0}
                           role="button"
-                          aria-label={`Mở hồ sơ học viên ${stu.name}`}
+                          aria-label={tr(
+                            `Mở hồ sơ học viên ${stu.name}`,
+                            `Open profile for ${stu.name}`
+                          )}
                           onClick={() => openStudentDrawer(stu)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
@@ -5642,13 +5988,13 @@ export const AdminWorkspace: React.FC = () => {
                                     className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900"
                                   >
                                     <AlertTriangle className="h-3 w-3" />
-                                    Cần kiểm tra mã lớp
+                                    {tr('Cần kiểm tra mã lớp', 'Check class code')}
                                   </span>
                                 )}
                               </div>
                             ) : (
                               <span className="whitespace-nowrap text-stone-400">
-                                Chưa xếp lớp
+                                {tr('Chưa xếp lớp', 'Unassigned')}
                               </span>
                             )}
                           </td>
@@ -5659,9 +6005,9 @@ export const AdminWorkspace: React.FC = () => {
                                   <span
                                     key={c.id}
                                     className="max-w-[180px] truncate rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-900"
-                                    title={c.title}
+                                    title={translateCourseTitle(c.title, lang)}
                                   >
-                                    {c.shortTitle || c.title}
+                                    {translateCourseTitle(c.shortTitle || c.title, lang)}
                                   </span>
                                 ))}
                                 {extraCoursesCount > 0 && (
@@ -5670,16 +6016,16 @@ export const AdminWorkspace: React.FC = () => {
                                     className="whitespace-nowrap rounded bg-stone-200 px-1.5 py-0.5 text-[11px] font-bold text-stone-700"
                                     title={resolvedCourses
                                       .slice(2)
-                                      .map((c) => c.title)
+                                      .map((c) => translateCourseTitle(c.title, lang))
                                       .join(', ')}
                                   >
-                                    +{extraCoursesCount} khóa
+                                    +{extraCoursesCount} {tr('khóa', 'more')}
                                   </span>
                                 )}
                               </div>
                             ) : (
                               <span className="font-semibold text-amber-700">
-                                Chưa mở khóa
+                                {tr('Chưa mở khóa', 'No courses yet')}
                               </span>
                             )}
                           </td>
@@ -5697,10 +6043,10 @@ export const AdminWorkspace: React.FC = () => {
                                   }`}
                                 >
                                   {isDeleted
-                                    ? 'Đã xóa (Supabase)'
+                                    ? tr('Đã xóa (Supabase)', 'Deleted (Supabase)')
                                     : isSuspended
-                                    ? 'Tạm khóa'
-                                    : 'Đã lưu trữ'}
+                                    ? tr('Tạm khóa', 'Suspended')
+                                    : tr('Đã lưu trữ', 'Archived')}
                                 </span>
                               )}
                               {isSyncError ? (
@@ -5716,7 +6062,7 @@ export const AdminWorkspace: React.FC = () => {
                                   className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-900 hover:bg-red-200"
                                 >
                                   <AlertCircle className="h-3 w-3" />
-                                  Lỗi đồng bộ (Đồng bộ lại)
+                                  {tr('Lỗi đồng bộ (Đồng bộ lại)', 'Sync error (Retry)')}
                                 </button>
                               ) : isPendingActivation ? (
                                 <button
@@ -5731,17 +6077,17 @@ export const AdminWorkspace: React.FC = () => {
                                   className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900 hover:bg-amber-200"
                                 >
                                   <RefreshCw className="h-3 w-3" />
-                                  Chờ kích hoạt (Đồng bộ lại)
+                                  {tr('Chờ kích hoạt (Đồng bộ lại)', 'Pending activation (Retry)')}
                                 </button>
                               ) : hasLegacyInvalidClass ? (
                                 <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">
                                   <AlertTriangle className="h-3 w-3" />
-                                  Cần kiểm tra mã lớp
+                                  {tr('Cần kiểm tra mã lớp', 'Check class code')}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
                                   <CheckCircle2 className="h-3 w-3" />
-                                  Đã đồng bộ
+                                  {tr('Đã đồng bộ', 'Synced')}
                                 </span>
                               )}
                             </div>
@@ -5756,7 +6102,7 @@ export const AdminWorkspace: React.FC = () => {
                               }}
                               className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-800 shadow-2xs hover:bg-red-50"
                             >
-                              <span>Xem / Sửa</span>
+                              <span>{tr('Xem / Sửa', 'View / Edit')}</span>
                               <ChevronRight className="h-3.5 w-3.5" />
                             </button>
                           </td>
@@ -5771,8 +6117,9 @@ export const AdminWorkspace: React.FC = () => {
               {(pageOffset > 0 || studentSearchQuery.data?.hasMore) && (
                 <div className="mt-3 flex items-center justify-between border-t border-stone-100 pt-2.5 text-xs">
                   <span className="text-stone-500">
-                    Hiển thị {pageOffset + 1}–{pageOffset + studentsList.length} /{' '}
-                    {totalStudentsCount} học viên
+                    {tr('Hiển thị', 'Showing')} {pageOffset + 1}–{pageOffset + studentsList.length} /{' '}
+                    {totalStudentsCount}{' '}
+                    {tr('học viên', totalStudentsCount === 1 ? 'student' : 'students')}
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -5781,7 +6128,7 @@ export const AdminWorkspace: React.FC = () => {
                       onClick={() => setPageOffset((p) => Math.max(0, p - pageLimit))}
                       className="rounded-lg border border-stone-200 px-2.5 py-1 font-bold text-stone-700 disabled:opacity-40"
                     >
-                      Trang trước
+                      {tr('Trang trước', 'Previous')}
                     </button>
                     <button
                       type="button"
@@ -5789,7 +6136,7 @@ export const AdminWorkspace: React.FC = () => {
                       onClick={() => setPageOffset((p) => p + pageLimit)}
                       className="rounded-lg border border-stone-200 px-2.5 py-1 font-bold text-stone-700 disabled:opacity-40"
                     >
-                      Trang sau
+                      {tr('Trang sau', 'Next')}
                     </button>
                   </div>
                 </div>
@@ -5853,7 +6200,7 @@ export const AdminWorkspace: React.FC = () => {
         onCopyEmail={(email) => {
           navigator.clipboard?.writeText(email).catch(() => {});
           addToast({
-            title: `Đã sao chép email: ${email}`,
+            title: tr(`Đã sao chép email: ${email}`, `Copied email: ${email}`),
             variant: 'success',
           });
         }}

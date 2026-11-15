@@ -20,26 +20,31 @@ import type {
   KtnTeacherRecord,
 } from '@/types/ktn.types';
 import { SearchableTeacherCombobox } from './SearchableTeacherCombobox';
+import { useI18n, trStatic, type AppLanguage } from '@/i18n';
 
-const DAY_OPTIONS = [
-  { value: 1, label: 'Thứ 2', short: 'T2' },
-  { value: 2, label: 'Thứ 3', short: 'T3' },
-  { value: 3, label: 'Thứ 4', short: 'T4' },
-  { value: 4, label: 'Thứ 5', short: 'T5' },
-  { value: 5, label: 'Thứ 6', short: 'T6' },
-  { value: 6, label: 'Thứ 7', short: 'T7' },
-  { value: 0, label: 'Chủ nhật', short: 'CN' },
-] as const;
+function getDayOptions(lang: AppLanguage) {
+  return [
+    { value: 1, label: trStatic('Thứ 2', 'Monday', lang), short: trStatic('T2', 'Mon', lang) },
+    { value: 2, label: trStatic('Thứ 3', 'Tuesday', lang), short: trStatic('T3', 'Tue', lang) },
+    { value: 3, label: trStatic('Thứ 4', 'Wednesday', lang), short: trStatic('T4', 'Wed', lang) },
+    { value: 4, label: trStatic('Thứ 5', 'Thursday', lang), short: trStatic('T5', 'Thu', lang) },
+    { value: 5, label: trStatic('Thứ 6', 'Friday', lang), short: trStatic('T6', 'Fri', lang) },
+    { value: 6, label: trStatic('Thứ 7', 'Saturday', lang), short: trStatic('T7', 'Sat', lang) },
+    { value: 0, label: trStatic('Chủ nhật', 'Sunday', lang), short: trStatic('CN', 'Sun', lang) },
+  ] as const;
+}
 
 const DAY_SORT_ORDER: Record<number, number> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 0: 7 };
 const EMPTY_TEACHERS: KtnTeacherRecord[] = [];
 
-const EXCEPTION_TYPE_LABELS: Record<ClassScheduleException['type'], string> = {
-  rescheduled: 'Đổi giờ / Đổi buổi',
-  postponed: 'Hoãn buổi học',
-  holiday: 'Nghỉ lễ',
-  cancelled: 'Hủy buổi học',
-};
+function getExceptionTypeLabels(lang: AppLanguage): Record<ClassScheduleException['type'], string> {
+  return {
+    rescheduled: trStatic('Đổi giờ / Đổi buổi', 'Rescheduled', lang),
+    postponed: trStatic('Hoãn buổi học', 'Postponed', lang),
+    holiday: trStatic('Nghỉ lễ', 'Holiday', lang),
+    cancelled: trStatic('Hủy buổi học', 'Cancelled', lang),
+  };
+}
 
 function getTodayVnStr(): string {
   const vnNow = new Date(Date.now() + 7 * 3600 * 1000);
@@ -56,8 +61,11 @@ function getIsoDayFromDateStr(dateStr: string): number {
   return d.getUTCDay();
 }
 
-function formatDayLabelVi(isoDay: number): string {
-  return DAY_OPTIONS.find((d) => d.value === isoDay)?.label || `Thứ ${isoDay + 1}`;
+function formatDayLabelByLang(isoDay: number, lang: AppLanguage): string {
+  return (
+    getDayOptions(lang).find((d) => d.value === isoDay)?.label ||
+    trStatic(`Thứ ${isoDay + 1}`, `Day ${isoDay + 1}`, lang)
+  );
 }
 
 export interface ClassScheduleModalProps {
@@ -105,6 +113,9 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
   onClose,
   onSaveClassAndSchedule,
 }) => {
+  const { lang, tr } = useI18n();
+  const dayOptions = useMemo(() => getDayOptions(lang), [lang]);
+  const exceptionTypeLabels = useMemo(() => getExceptionTypeLabels(lang), [lang]);
   const todayStr = useMemo(() => getTodayVnStr(), []);
   const isAdmin = role === 'admin';
   const isCreateMode = mode === 'create_class' && isAdmin;
@@ -189,7 +200,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
     }
 
     setClassCode(classItem.id || '');
-    setClassName(classItem.name || `Lớp ${classItem.id}`);
+    setClassName(classItem.name || tr(`Lớp ${classItem.id}`, `Class ${classItem.id}`));
     setSelectedTeacherEmail(classItem.teacher_email || '');
     setTotalLessons(Number(classItem.total_lessons) || 25);
 
@@ -266,7 +277,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
         date: todayStr,
         startTime: startTime || '19:30',
         endTime: endTime || '20:30',
-        title: `Buổi học ${prev.length + 1}`,
+        title: tr(`Buổi học ${prev.length + 1}`, `Session ${prev.length + 1}`),
       },
     ]);
     if (isCreateMode && !statusManuallyChanged) {
@@ -286,7 +297,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
             endTime: newExcEndTime || endTime || '20:30',
           }
         : {}),
-      note: newExcNote.trim() || EXCEPTION_TYPE_LABELS[newExcType],
+      note: newExcNote.trim() || exceptionTypeLabels[newExcType],
     };
     setExceptions((prev) => [...prev.filter((e) => e.date !== newExcDate), item]);
     setNewExcNote('');
@@ -311,7 +322,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
         excByDate.set(exc.date, {
           ...exc,
           type: 'postponed',
-          note: exc.note || `Đổi lịch sang ${exc.newDate}`,
+          note: exc.note || tr(`Đổi lịch sang ${exc.newDate}`, `Rescheduled to ${exc.newDate}`),
         });
         excByDate.set(exc.newDate, {
           ...exc,
@@ -331,7 +342,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
         const isoDay = getIsoDayFromDateStr(targetDate);
         results.push({
           date: targetDate,
-          dayLabel: formatDayLabelVi(isoDay),
+          dayLabel: formatDayLabelByLang(isoDay, lang),
           startTime: exc?.startTime || cs.startTime,
           endTime: exc?.endTime || cs.endTime || '20:30',
           status: exc ? exc.type : 'scheduled',
@@ -362,7 +373,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       const targetIsoDay = getIsoDayFromDateStr(targetDate);
       results.push({
         date: targetDate,
-        dayLabel: formatDayLabelVi(targetIsoDay),
+        dayLabel: formatDayLabelByLang(targetIsoDay, lang),
         startTime: exc?.startTime || startTime,
         endTime: exc?.endTime || endTime,
         status: exc ? exc.type : 'scheduled',
@@ -382,23 +393,50 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
     customSessions,
     exceptions,
     todayStr,
+    lang,
+    tr,
   ]);
 
   const formattedSummaryLine = useMemo(() => {
     const code = (classCode || classItem?.id || 'LOP').toUpperCase();
     if (status !== 'confirmed') {
-      return `Lớp ${code} — Chưa có lịch học chính thức`;
+      return tr(
+        `Lớp ${code} — Chưa có lịch học chính thức`,
+        `Class ${code} — No official schedule yet`
+      );
     }
     if (scheduleMode === 'custom_sessions') {
-      if (customSessions.length === 0) return `Lớp ${code} — Chưa có buổi học nào`;
-      return `Lớp ${code} — Lịch riêng từng buổi (${customSessions.length} buổi)`;
+      if (customSessions.length === 0) {
+        return tr(`Lớp ${code} — Chưa có buổi học nào`, `Class ${code} — No sessions added yet`);
+      }
+      return tr(
+        `Lớp ${code} — Lịch riêng từng buổi (${customSessions.length} buổi)`,
+        `Class ${code} — Custom sessions (${customSessions.length})`
+      );
     }
     if (daysOfWeek.length === 0 || !startTime || !endTime) {
-      return `Lớp ${code} — Chưa chọn đủ Thứ và Giờ học`;
+      return tr(
+        `Lớp ${code} — Chưa chọn đủ Thứ và Giờ học`,
+        `Class ${code} — Select days & class times`
+      );
     }
-    const dayStr = daysOfWeek.map((d) => formatDayLabelVi(d)).join(' & ');
-    return `Lớp ${code} — ${dayStr} — ${startTime}–${endTime}`;
-  }, [classCode, classItem?.id, status, scheduleMode, customSessions.length, daysOfWeek, startTime, endTime]);
+    const dayStr = daysOfWeek.map((d) => formatDayLabelByLang(d, lang)).join(' & ');
+    return tr(
+      `Lớp ${code} — ${dayStr} — ${startTime}–${endTime}`,
+      `Class ${code} — ${dayStr} — ${startTime}–${endTime}`
+    );
+  }, [
+    classCode,
+    classItem?.id,
+    status,
+    scheduleMode,
+    customSessions.length,
+    daysOfWeek,
+    startTime,
+    endTime,
+    lang,
+    tr,
+  ]);
 
   if (!open) return null;
 
@@ -408,28 +446,50 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
     const cleanCode = (classCode || classItem?.id || '').trim().toUpperCase();
     if (!cleanCode) {
-      setFormError('Vui lòng nhập mã lớp (ví dụ: YCT2-04).');
+      setFormError(
+        tr('Vui lòng nhập mã lớp (ví dụ: YCT2-04).', 'Please enter class code (e.g., YCT2-04).')
+      );
       return;
     }
 
     if (status === 'confirmed') {
       if (scheduleMode === 'weekly') {
         if (daysOfWeek.length === 0) {
-          setFormError('Vui lòng chọn ít nhất một Thứ trong tuần cho lịch học chính thức.');
+          setFormError(
+            tr(
+              'Vui lòng chọn ít nhất một Thứ trong tuần cho lịch học chính thức.',
+              'Please select at least one day of the week for the official schedule.'
+            )
+          );
           return;
         }
         if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
-          setFormError('Vui lòng chọn Giờ bắt đầu và Giờ kết thúc hợp lệ (HH:mm).');
+          setFormError(
+            tr(
+              'Vui lòng chọn Giờ bắt đầu và Giờ kết thúc hợp lệ (HH:mm).',
+              'Please select valid Start Time and End Time (HH:mm).'
+            )
+          );
           return;
         }
       } else if (customSessions.length === 0) {
-        setFormError('Vui lòng thêm ít nhất 1 buổi học cho chế độ lịch riêng từng buổi.');
+        setFormError(
+          tr(
+            'Vui lòng thêm ít nhất 1 buổi học cho chế độ lịch riêng từng buổi.',
+            'Please add at least 1 session for custom session mode.'
+          )
+        );
         return;
       }
     }
 
     if (meetingUrl.trim() && !/^https:\/\//i.test(meetingUrl.trim())) {
-      setFormError('Link phòng học trực tuyến phải bắt đầu bằng https:// (hoặc để trống).');
+      setFormError(
+        tr(
+          'Link phòng học trực tuyến phải bắt đầu bằng https:// (hoặc để trống).',
+          'Live classroom URL must start with https:// (or leave blank).'
+        )
+      );
       return;
     }
 
@@ -459,7 +519,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
         isCreateClass: isCreateMode,
         clientRequestId: `${clientRequestIdSeed}:${cleanCode}`,
         classCode: cleanCode,
-        className: (className || `Lớp ${cleanCode}`).trim(),
+        className: (className || tr(`Lớp ${cleanCode}`, `Class ${cleanCode}`)).trim(),
         teacherCode: resolvedSubmitTeacherCode,
         teacherEmail: resolvedSubmitTeacherEmail,
         totalLessons,
@@ -482,7 +542,9 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       });
     } catch (err) {
       setFormError(
-        err instanceof Error ? err.message : 'Không thể lưu lịch học. Vui lòng kiểm tra lại.'
+        err instanceof Error
+          ? err.message
+          : tr('Không thể lưu lịch học. Vui lòng kiểm tra lại.', 'Could not save schedule. Please review fields.')
       );
     }
   };
@@ -496,7 +558,11 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={isCreateMode ? 'Tạo lớp mới & Cài lịch học' : `Cài lịch học chính thức — ${classCode}`}
+        aria-label={
+          isCreateMode
+            ? tr('Tạo lớp mới & Cài lịch học', 'Create Class & Set Schedule')
+            : tr(`Cài lịch học chính thức — ${classCode}`, `Set Official Schedule — ${classCode}`)
+        }
         data-testid="class-schedule-modal"
         onClick={(e) => e.stopPropagation()}
         className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl"
@@ -506,13 +572,19 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
           <div>
             <h2 className="font-display text-sm font-bold text-stone-900 sm:text-base">
               {isCreateMode
-                ? 'Tạo lớp mới & Cài lịch học chính thức'
-                : `Cài lịch học chính thức — Lớp ${classCode}`}
+                ? tr('Tạo lớp mới & Cài lịch học chính thức', 'Create Class & Set Official Schedule')
+                : tr(`Cài lịch học chính thức — Lớp ${classCode}`, `Official Schedule — Class ${classCode}`)}
             </h2>
             <p className="text-[11px] font-medium text-stone-500">
               {isAdmin
-                ? 'Quyền Quản lý: Toàn quyền tạo lớp, phân công giáo viên, xác nhận lịch và hoãn/hủy buổi'
-                : 'Quyền Giáo viên: Cập nhật giờ học & ngoại lệ buổi học cho lớp mình phụ trách'}
+                ? tr(
+                    'Quyền Quản lý: Toàn quyền tạo lớp, phân công giáo viên, xác nhận lịch và hoãn/hủy buổi',
+                    'Admin Role: Create classes, assign teachers, confirm schedules & manage exceptions'
+                  )
+                : tr(
+                    'Quyền Giáo viên: Cập nhật giờ học & ngoại lệ buổi học cho lớp mình phụ trách',
+                    'Teacher Role: Update class hours & session exceptions for assigned classes'
+                  )}
             </p>
           </div>
           <button
@@ -520,7 +592,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
             data-testid="close-schedule-modal-btn"
             onClick={onClose}
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-100"
-            aria-label="Đóng"
+            aria-label={tr('Đóng', 'Close')}
           >
             <X className="h-4 w-4" />
           </button>
@@ -549,10 +621,14 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
               >
                 <div>
                   <p className="font-bold text-amber-950">
-                    Lịch văn bản cũ chưa xác nhận: “{classItem.legacyScheduleText}”
+                    {tr('Lịch văn bản cũ chưa xác nhận:', 'Unconfirmed legacy schedule text:')}{' '}
+                    &ldquo;{classItem.legacyScheduleText}&rdquo;
                   </p>
                   <p className="text-[11px] text-amber-800">
-                    Hệ thống không tự động phát thông báo nhắc giờ từ văn bản tự do. Bấm nút bên cạnh để chuyển thành lịch có cấu trúc rồi bấm Lưu.
+                    {tr(
+                      'Hệ thống không tự động phát thông báo nhắc giờ từ văn bản tự do. Bấm nút bên cạnh để chuyển thành lịch có cấu trúc rồi bấm Lưu.',
+                      'Automatic reminders cannot run on free-text schedules. Click Convert to apply structured times, then click Save.'
+                    )}
                   </p>
                 </div>
                 {classItem.suggestedFromLegacyText && (
@@ -563,7 +639,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                     className="inline-flex items-center gap-1 rounded-lg bg-amber-800 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-amber-900"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
-                    Chuyển thành lịch chính thức
+                    {tr('Chuyển thành lịch chính thức', 'Convert to Official Schedule')}
                   </button>
                 )}
               </div>
@@ -572,27 +648,31 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
           {/* Section 1: Class Info (Create Class or Admin Teacher Assignment) */}
           <div className="grid grid-cols-1 gap-3 rounded-xl border border-stone-200 bg-stone-50/60 p-3 sm:grid-cols-3">
             <div>
-              <label className="mb-1 block font-bold text-stone-700">Mã lớp *</label>
+              <label className="mb-1 block font-bold text-stone-700">
+                {tr('Mã lớp *', 'Class Code *')}
+              </label>
               <input
                 type="text"
                 data-testid="schedule-class-code-input"
                 disabled={!isCreateMode}
                 value={classCode}
                 onChange={(e) => setClassCode(e.target.value.toUpperCase())}
-                placeholder="VD: YCT2-04"
+                placeholder={tr('VD: YCT2-04', 'e.g., YCT2-04')}
                 className="w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-900 disabled:bg-stone-100"
               />
             </div>
 
             <div className="sm:col-span-2">
-              <label className="mb-1 block font-bold text-stone-700">Tên hiển thị lớp học *</label>
+              <label className="mb-1 block font-bold text-stone-700">
+                {tr('Tên hiển thị lớp học *', 'Class Display Name *')}
+              </label>
               <input
                 type="text"
                 data-testid="schedule-class-name-input"
                 disabled={!isAdmin}
                 value={className}
                 onChange={(e) => setClassName(e.target.value)}
-                placeholder="VD: Lớp YCT 2 — Ca tối Thứ 3 & Thứ 6"
+                placeholder={tr('VD: Lớp YCT 2 — Ca tối Thứ 3 & Thứ 6', 'e.g., YCT 2 — Evening Tue & Fri')}
                 className="w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-900 disabled:bg-stone-100"
               />
             </div>
@@ -601,7 +681,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
               <>
                 <div className="relative z-30 sm:col-span-2">
                   <label className="mb-1 block font-bold text-stone-700">
-                    Giáo viên phụ trách (Chỉ Quản lý được đổi)
+                    {tr('Giáo viên phụ trách (Chỉ Quản lý được đổi)', 'Assigned Teacher (Admin only)')}
                   </label>
                   <SearchableTeacherCombobox
                     value={selectedTeacherEmail}
@@ -612,7 +692,9 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="mb-1 block font-bold text-stone-700">Tổng số buổi</label>
+                  <label className="mb-1 block font-bold text-stone-700">
+                    {tr('Tổng số buổi', 'Total Sessions')}
+                  </label>
                   <input
                     type="number"
                     min={1}
@@ -632,7 +714,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-red-800" />
                 <span className="font-display text-xs font-bold text-stone-900">
-                  Cấu hình giờ học chính thức
+                  {tr('Cấu hình giờ học chính thức', 'Official Schedule Settings')}
                 </span>
               </div>
 
@@ -646,9 +728,9 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                   }}
                   className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-bold text-stone-800"
                 >
-                  <option value="confirmed">Đã xác nhận lịch chính thức</option>
-                  <option value="unconfirmed">Chưa có lịch học chính thức</option>
-                  <option value="paused">Tạm dừng nhắc lịch</option>
+                  <option value="confirmed">{tr('Đã xác nhận lịch chính thức', 'Confirmed official schedule')}</option>
+                  <option value="unconfirmed">{tr('Chưa có lịch học chính thức', 'No official schedule yet')}</option>
+                  <option value="paused">{tr('Tạm dừng nhắc lịch', 'Reminders paused')}</option>
                 </select>
 
                 <select
@@ -659,8 +741,8 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                   }
                   className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-700"
                 >
-                  <option value="weekly">Lặp hằng tuần</option>
-                  <option value="custom_sessions">Lịch riêng từng buổi</option>
+                  <option value="weekly">{tr('Lặp hằng tuần', 'Weekly recurring')}</option>
+                  <option value="custom_sessions">{tr('Lịch riêng từng buổi', 'Custom session dates')}</option>
                 </select>
               </div>
             </div>
@@ -670,10 +752,10 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                 {/* Days of week */}
                 <div>
                   <label className="mb-1.5 block font-bold text-stone-700">
-                    Chọn thứ trong tuần *
+                    {tr('Chọn thứ trong tuần *', 'Days of Week *')}
                   </label>
                   <div className="flex flex-wrap gap-1.5">
-                    {DAY_OPTIONS.map((day) => {
+                    {dayOptions.map((day) => {
                       const active = daysOfWeek.includes(day.value);
                       return (
                         <button
@@ -699,7 +781,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                   <div>
                     <label className="mb-1 block font-bold text-stone-700">
                       <Clock className="mr-1 inline h-3.5 w-3.5 text-stone-500" />
-                      Giờ bắt đầu *
+                      {tr('Giờ bắt đầu *', 'Start Time *')}
                     </label>
                     <input
                       type="time"
@@ -729,7 +811,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                   <div>
                     <label className="mb-1 block font-bold text-stone-700">
                       <Clock className="mr-1 inline h-3.5 w-3.5 text-stone-500" />
-                      Giờ kết thúc *
+                      {tr('Giờ kết thúc *', 'End Time *')}
                     </label>
                     <input
                       type="time"
@@ -743,7 +825,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                   <div>
                     <label className="mb-1 block font-bold text-stone-700">
                       <Globe className="mr-1 inline h-3.5 w-3.5 text-stone-500" />
-                      Múi giờ
+                      {tr('Múi giờ', 'Timezone')}
                     </label>
                     <input
                       type="text"
@@ -758,7 +840,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block font-bold text-stone-700">
-                      Ngày bắt đầu áp dụng
+                      {tr('Ngày bắt đầu áp dụng', 'Effective From')}
                     </label>
                     <input
                       type="date"
@@ -771,7 +853,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
                   <div>
                     <label className="mb-1 block font-bold text-stone-700">
-                      Ngày kết thúc (Tùy chọn)
+                      {tr('Ngày kết thúc (Tùy chọn)', 'Effective Until (Optional)')}
                     </label>
                     <input
                       type="date"
@@ -788,7 +870,10 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-stone-700">
-                    Danh sách các buổi học riêng ({customSessions.length})
+                    {tr(
+                      `Danh sách các buổi học riêng (${customSessions.length})`,
+                      `Custom Sessions (${customSessions.length})`
+                    )}
                   </span>
                   <button
                     type="button"
@@ -796,7 +881,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                     className="inline-flex items-center gap-1 rounded-lg bg-stone-800 px-2.5 py-1 text-[11px] font-bold text-white"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Thêm buổi
+                    {tr('Thêm buổi', 'Add Session')}
                   </button>
                 </div>
                 {customSessions.map((cs, idx) => (
@@ -842,7 +927,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                       className="inline-flex items-center justify-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-bold text-red-700"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Xóa
+                      {tr('Xóa', 'Delete')}
                     </button>
                   </div>
                 ))}
@@ -853,14 +938,17 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
             <div>
               <label className="mb-1 block font-bold text-stone-700">
                 <Video className="mr-1 inline h-3.5 w-3.5 text-stone-500" />
-                Link phòng học trực tuyến (Tùy chọn — Để trống nếu mở chi tiết lớp trên Sổ liên lạc)
+                {tr(
+                  'Link phòng học trực tuyến (Tùy chọn — Để trống nếu mở chi tiết lớp trên Sổ liên lạc)',
+                  'Live Classroom URL (Optional — leave empty to open details on Dashboard)'
+                )}
               </label>
               <input
                 type="url"
                 data-testid="schedule-meeting-url-input"
                 value={meetingUrl}
                 onChange={(e) => setMeetingUrl(e.target.value)}
-                placeholder="https://zoom.us/j/... hoặc để trống"
+                placeholder={tr('https://zoom.us/j/... hoặc để trống', 'https://zoom.us/j/... or leave blank')}
                 className="w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs text-stone-900"
               />
             </div>
@@ -877,13 +965,16 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
           {/* Section 3: Date-specific Exceptions (Postpone / Cancel / Reschedule / Holiday) */}
           <div className="space-y-2.5 rounded-xl border border-stone-200 p-3">
             <p className="font-display text-xs font-bold text-stone-900">
-              Ngoại lệ theo ngày (Đổi giờ 1 buổi / Hoãn / Nghỉ lễ / Hủy buổi)
+              {tr(
+                'Ngoại lệ theo ngày (Đổi giờ 1 buổi / Hoãn / Nghỉ lễ / Hủy buổi)',
+                'Date Exceptions (Reschedule / Postpone / Holiday / Cancel)'
+              )}
             </p>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
               <div>
                 <label className="mb-1 block text-[11px] font-semibold text-stone-600">
-                  Ngày buổi học gốc
+                  {tr('Ngày buổi học gốc', 'Original Session Date')}
                 </label>
                 <input
                   type="date"
@@ -896,7 +987,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
               <div>
                 <label className="mb-1 block text-[11px] font-semibold text-stone-600">
-                  Loại thay đổi
+                  {tr('Loại thay đổi', 'Exception Type')}
                 </label>
                 <select
                   data-testid="exception-type-select"
@@ -906,16 +997,16 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                   }
                   className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1.5 text-xs font-semibold"
                 >
-                  <option value="postponed">Hoãn buổi học</option>
-                  <option value="cancelled">Hủy buổi học</option>
-                  <option value="holiday">Nghỉ lễ</option>
-                  <option value="rescheduled">Đổi giờ / Đổi ngày</option>
+                  <option value="postponed">{tr('Hoãn buổi học', 'Postpone session')}</option>
+                  <option value="cancelled">{tr('Hủy buổi học', 'Cancel session')}</option>
+                  <option value="holiday">{tr('Nghỉ lễ', 'Holiday')}</option>
+                  <option value="rescheduled">{tr('Đổi giờ / Đổi ngày', 'Reschedule time/date')}</option>
                 </select>
               </div>
 
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-[11px] font-semibold text-stone-600">
-                  Lý do / Ghi chú gửi học viên
+                  {tr('Lý do / Ghi chú gửi học viên', 'Reason / Note for students')}
                 </label>
                 <div className="flex gap-1.5">
                   <input
@@ -923,7 +1014,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                     data-testid="exception-note-input"
                     value={newExcNote}
                     onChange={(e) => setNewExcNote(e.target.value)}
-                    placeholder="VD: Nghỉ lễ / Đổi giờ sang 20:00"
+                    placeholder={tr('VD: Nghỉ lễ / Đổi giờ sang 20:00', 'e.g., Public holiday / Moved to 20:00')}
                     className="min-w-0 flex-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs"
                   />
                   <button
@@ -932,7 +1023,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                     onClick={handleAddException}
                     className="shrink-0 rounded-lg bg-stone-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-stone-900"
                   >
-                    + Thêm
+                    {tr('+ Thêm', '+ Add')}
                   </button>
                 </div>
               </div>
@@ -942,7 +1033,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
               <div className="grid grid-cols-1 gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 sm:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-[11px] font-semibold text-amber-950">
-                    Ngày học bù (Tùy chọn)
+                    {tr('Ngày học bù (Tùy chọn)', 'Makeup Date (Optional)')}
                   </label>
                   <input
                     type="date"
@@ -953,7 +1044,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                 </div>
                 <div>
                   <label className="mb-1 block text-[11px] font-semibold text-amber-950">
-                    Giờ bắt đầu mới
+                    {tr('Giờ bắt đầu mới', 'New Start Time')}
                   </label>
                   <input
                     type="time"
@@ -965,7 +1056,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                 </div>
                 <div>
                   <label className="mb-1 block text-[11px] font-semibold text-amber-950">
-                    Giờ kết thúc mới
+                    {tr('Giờ kết thúc mới', 'New End Time')}
                   </label>
                   <input
                     type="time"
@@ -988,7 +1079,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                     <div className="min-w-0">
                       <span className="font-bold text-stone-900">{exc.date}</span>
                       <span className="mx-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                        {EXCEPTION_TYPE_LABELS[exc.type] || exc.type}
+                        {exceptionTypeLabels[exc.type] || exc.type}
                       </span>
                       {exc.type === 'rescheduled' && (
                         <span className="text-[11px] font-semibold text-stone-700">
@@ -1005,7 +1096,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                         setExceptions((prev) => prev.filter((item) => item.date !== exc.date))
                       }
                       className="text-stone-400 hover:text-red-700"
-                      aria-label={`Xóa ngoại lệ ngày ${exc.date}`}
+                      aria-label={tr(`Xóa ngoại lệ ngày ${exc.date}`, `Delete exception for ${exc.date}`)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -1022,16 +1113,16 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
           >
             <div className="mb-2 flex items-center justify-between">
               <span className="font-display text-xs font-bold text-stone-900">
-                Xem trước các buổi học sắp tới
+                {tr('Xem trước các buổi học sắp tới', 'Upcoming Sessions Preview')}
               </span>
               <span className="text-[11px] text-stone-500">
-                Tự động nhắc trước 30 phút (Giờ VN)
+                {tr('Tự động nhắc trước 30 phút (Giờ VN)', 'Auto-remind 30m prior (VN time)')}
               </span>
             </div>
 
             {previewSessions.length === 0 ? (
               <p className="py-2 text-center text-xs text-stone-500">
-                Chưa có buổi học sắp tới được xác nhận.
+                {tr('Chưa có buổi học sắp tới được xác nhận.', 'No upcoming confirmed sessions yet.')}
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -1066,10 +1157,10 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                         }`}
                       >
                         {isCancelledOrPostponed
-                          ? EXCEPTION_TYPE_LABELS[s.status as ClassScheduleException['type']]
+                          ? exceptionTypeLabels[s.status as ClassScheduleException['type']]
                           : s.status === 'rescheduled'
-                          ? 'Đã đổi giờ'
-                          : 'Sẽ nhắc giờ'}
+                          ? tr('Đã đổi giờ', 'Rescheduled')
+                          : tr('Sẽ nhắc giờ', 'Will notify')}
                       </span>
                     </div>
                   );
@@ -1087,13 +1178,18 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                 onChange={(e) => setNotifyMembers(e.target.checked)}
                 className="h-4 w-4 rounded accent-red-800"
               />
-              <span>Thông báo cho học viên & giáo viên trong lớp khi thay đổi lịch</span>
+              <span>
+                {tr(
+                  'Thông báo cho học viên & giáo viên trong lớp khi thay đổi lịch',
+                  'Notify students & teacher when schedule changes'
+                )}
+              </span>
             </label>
 
             {classItem?.scheduleConfig?.updatedBy && (
               <span className="inline-flex items-center gap-1 text-[11px] text-stone-500">
                 <History className="h-3 w-3" />
-                Cập nhật bởi: {classItem.scheduleConfig.updatedBy}
+                {tr('Cập nhật bởi:', 'Updated by:')} {classItem.scheduleConfig.updatedBy}
               </span>
             )}
           </div>
@@ -1105,7 +1201,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
               onClick={onClose}
               className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50"
             >
-              Hủy
+              {tr('Hủy', 'Cancel')}
             </button>
             <button
               type="submit"
@@ -1116,10 +1212,10 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
               <CheckCircle2 className="h-4 w-4" />
               <span>
                 {isSubmitting
-                  ? 'Đang lưu...'
+                  ? tr('Đang lưu...', 'Saving...')
                   : isCreateMode
-                  ? 'Tạo lớp & Lưu lịch học'
-                  : 'Lưu lịch học'}
+                  ? tr('Tạo lớp & Lưu lịch học', 'Create Class & Save')
+                  : tr('Lưu lịch học', 'Save Schedule')}
               </span>
             </button>
           </div>

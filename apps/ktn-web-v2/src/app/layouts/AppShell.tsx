@@ -8,7 +8,9 @@ import {
   Sparkles,
   KeyRound,
   X,
+  Download,
 } from 'lucide-react';
+import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { DemoControlBar } from '@/components/shared/DemoControlBar';
 import { RoleBottomNavigation } from '@/app/navigation/RoleBottomNavigation';
 import { RoleDesktopNavigation } from '@/app/navigation/RoleDesktopNavigation';
@@ -22,6 +24,7 @@ import { DEMO_HOMEWORKS, DEMO_NOTIFICATIONS } from '@/lib/demoData';
 import { formatRelativeTime, resolveNotificationLink } from '@/lib/utils';
 import { KtnHomework, KtnNotification, KtnOrder } from '@/types/ktn.types';
 import { ChatImageLightbox } from '@/features/chat/components/AttachmentPreview';
+import { translateNotificationItem, useI18n } from '@/i18n';
 
 export const AppShell: React.FC = () => {
   const navigate = useNavigate();
@@ -37,9 +40,11 @@ export const AppShell: React.FC = () => {
   const setNotifDropdownOpen = useUiStore((s) => s.setNotifDropdownOpen);
   const resetSessionUiState = useUiStore((s) => s.resetSessionUiState);
   const addToast = useUiStore((s) => s.addToast);
+  const { lang, toggleLang, tr } = useI18n();
 
   const seenNotifIdsRef = useRef<Set<string>>(new Set());
   const initializedNotifsForUserRef = useRef<string>('');
+  const prevSummarySigRef = useRef<string>('');
   const bellButtonRef = useRef<HTMLButtonElement | null>(null);
   const notifDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -49,6 +54,15 @@ export const AppShell: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [pwdError, setPwdError] = useState<string | null>(null);
   const [pwdSubmitting, setPwdSubmitting] = useState(false);
+  const {
+    canNativeInstall,
+    isInstalled: isPwaInstalled,
+    installing: isPwaInstalling,
+    platformHint,
+    showGuideModal: pwaGuideOpen,
+    setShowGuideModal: setPwaGuideOpen,
+    triggerInstall: handleTriggerPwaInstall,
+  } = usePwaInstall();
 
   const handleOpenChangePwdModal = () => {
     setCurrentPassword('');
@@ -63,25 +77,38 @@ export const AppShell: React.FC = () => {
     setPwdError(null);
     const minLen = effectiveRole === 'admin' ? 8 : 6;
     if (!currentPassword.trim()) {
-      setPwdError('Vui lòng nhập mật khẩu hiện tại.');
+      setPwdError(tr('Vui lòng nhập mật khẩu hiện tại.', 'Please enter your current password.'));
       return;
     }
     if (newPassword.trim().length < minLen) {
-      setPwdError(`Mật khẩu mới cần tối thiểu ${minLen} ký tự.`);
+      setPwdError(
+        tr(
+          `Mật khẩu mới cần tối thiểu ${minLen} ký tự.`,
+          `New password must be at least ${minLen} characters.`
+        )
+      );
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPwdError('Xác nhận mật khẩu mới không khớp.');
+      setPwdError(tr('Xác nhận mật khẩu mới không khớp.', 'New password confirmation does not match.'));
       return;
     }
     if (newPassword === currentPassword) {
-      setPwdError('Mật khẩu mới phải khác mật khẩu hiện tại.');
+      setPwdError(
+        tr(
+          'Mật khẩu mới phải khác mật khẩu hiện tại.',
+          'New password must be different from your current password.'
+        )
+      );
       return;
     }
     if (isDemoMode) {
       addToast({
-        title: 'Đã đổi mật khẩu (Demo)',
-        description: 'Mật khẩu mới đã được ghi nhận trong phiên dùng thử.',
+        title: tr('Đã đổi mật khẩu (Demo)', 'Password updated (Demo)'),
+        description: tr(
+          'Mật khẩu mới đã được ghi nhận trong phiên dùng thử.',
+          'Your new password has been saved for this demo session.'
+        ),
         variant: 'success',
       });
       setChangePwdModalOpen(false);
@@ -94,13 +121,24 @@ export const AppShell: React.FC = () => {
         newPassword,
       });
       addToast({
-        title: 'Đổi mật khẩu thành công',
-        description: res.message || 'Bạn có thể dùng mật khẩu mới cho lần đăng nhập tiếp theo.',
+        title: tr('Đổi mật khẩu thành công', 'Password changed successfully'),
+        description:
+          (lang === 'en' ? '' : res.message) ||
+          tr(
+            'Bạn có thể dùng mật khẩu mới cho lần đăng nhập tiếp theo.',
+            'You can use your new password on your next sign-in.'
+          ),
         variant: 'success',
       });
       setChangePwdModalOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Không thể đổi mật khẩu. Vui lòng kiểm tra lại.';
+      const msg =
+        err instanceof Error
+          ? err.message
+          : tr(
+              'Không thể đổi mật khẩu. Vui lòng kiểm tra lại.',
+              'Unable to change password. Please double-check and try again.'
+            );
       setPwdError(msg);
     } finally {
       setPwdSubmitting(false);
@@ -170,13 +208,40 @@ export const AppShell: React.FC = () => {
           readIds: DEMO_NOTIFICATIONS.filter((n) => n.id && n.read).map((n) => n.id),
         };
       }
-      return ktnApi.getNotifications();
+      return ktnApi.getNotifications({ limit: 50, offset: 0 });
     },
-    enabled: Boolean(user) || isDemoMode,
-    staleTime: 2000,
-    refetchInterval: isDemoMode ? false : 4000,
-    refetchIntervalInBackground: true,
+    enabled: isDemoMode || (Boolean(user) && notifDropdownOpen),
+    staleTime: 10000,
+    refetchInterval: isDemoMode ? false : notifDropdownOpen ? 10000 : false,
+    refetchIntervalInBackground: false,
   });
+
+  const notificationsSummaryQuery = useQuery({
+    queryKey: ['ktn-notifications-summary', user?.email, isDemoMode],
+    queryFn: async () => ktnApi.getNotificationsSummary(),
+    enabled: !isDemoMode && Boolean(user),
+    staleTime: 10000,
+    refetchInterval: isDemoMode ? false : 30000,
+    refetchIntervalInBackground: false,
+  });
+
+  useEffect(() => {
+    prevSummarySigRef.current = '';
+  }, [user?.email, isDemoMode]);
+
+  useEffect(() => {
+    const d = notificationsSummaryQuery.data;
+    if (!d) return;
+    const sig = `${d.unreadCount}:${d.totalCount}:${d.latestAt || ''}`;
+    if (!prevSummarySigRef.current) {
+      prevSummarySigRef.current = sig;
+      return;
+    }
+    if (prevSummarySigRef.current !== sig) {
+      prevSummarySigRef.current = sig;
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+    }
+  }, [notificationsSummaryQuery.data, queryClient]);
 
   const teacherHomeworksQuery = useQuery<KtnHomework[]>({
     queryKey: ['ktn-homeworks', 'teacher-badge', user?.email, isDemoMode],
@@ -185,6 +250,8 @@ export const AppShell: React.FC = () => {
       return ktnApi.getHomeworks();
     },
     enabled: !isRestoringLiveSession && effectiveRole === 'teacher' && (Boolean(user) || isDemoMode),
+    staleTime: 15000,
+    refetchIntervalInBackground: false,
   });
 
   const adminOrdersQuery = useQuery<KtnOrder[]>({
@@ -194,10 +261,15 @@ export const AppShell: React.FC = () => {
       return ktnApi.getOrders();
     },
     enabled: !isRestoringLiveSession && effectiveRole === 'admin' && (Boolean(user) || isDemoMode),
+    staleTime: 15000,
+    refetchIntervalInBackground: false,
   });
 
   const notificationsList = notificationsQuery.data?.notifications || [];
-  const unreadNotifications = notificationsList.filter((n) => !n.read).length;
+  const unreadNotifications =
+    !isDemoMode && notificationsSummaryQuery.data
+      ? Number(notificationsSummaryQuery.data.unreadCount || 0)
+      : notificationsList.filter((n) => !n.read).length;
   const recentNotifications = notificationsList.slice(0, 5);
 
   // Register Service Worker (/sw.js), auto-sync existing PushSubscription, and handle deep-links
@@ -371,7 +443,10 @@ export const AppShell: React.FC = () => {
         }
       } else if (payload.type === 'KTN_PUSH_RECEIVED') {
         queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+        queryClient.invalidateQueries({ queryKey: ['ktn-notifications-summary'] });
         queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
+        queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+        queryClient.invalidateQueries({ queryKey: ['ktn-homeworks'] });
         const pushType = String(payload.data?.type || payload.data?.eventType || '').trim();
         if (
           pushType === 'class_created' ||
@@ -380,7 +455,6 @@ export const AppShell: React.FC = () => {
           pushType === 'schedule_changed'
         ) {
           queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
-          queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
           queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
         }
       }
@@ -412,16 +486,19 @@ export const AppShell: React.FC = () => {
           // ignore
         }
         if (!alreadyWelcomed) {
-          const latest = unreadItems[0];
+          const latest = translateNotificationItem(unreadItems[0], lang);
           const cleanBody = String(latest.body || '').replace(
-            /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm)\]/gi,
-            '📷 Hình ảnh'
+            /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm|Attached image(?::\s*[^\r\n]*)?)\]/gi,
+            tr('📷 Hình ảnh', '📷 Image')
           );
           addToast({
             title:
               unreadItems.length === 1
                 ? `🔔 ${latest.title}`
-                : `🔔 Bạn có ${unreadItems.length} thông báo mới`,
+                : tr(
+                    `🔔 Bạn có ${unreadItems.length} thông báo mới`,
+                    `🔔 You have ${unreadItems.length} new notifications`
+                  ),
             description: cleanBody,
             variant: 'default',
           });
@@ -438,10 +515,10 @@ export const AppShell: React.FC = () => {
     }
 
     if (newlyArrivedUnread.length > 0) {
-      const topNotif = newlyArrivedUnread[0];
+      const topNotif = translateNotificationItem(newlyArrivedUnread[0], lang);
       const cleanTopBody = String(topNotif.body || '').replace(
-        /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm)\]/gi,
-        '📷 Hình ảnh'
+        /\[(?:Đã (?:gửi|đính kèm) (?:ảnh|hình ảnh)(?::\s*[^\r\n]*)?|Ảnh đính kèm|Attached image(?::\s*[^\r\n]*)?)\]/gi,
+        tr('📷 Hình ảnh', '📷 Image')
       );
       addToast({
         title: `🔔 ${topNotif.title}`,
@@ -449,7 +526,7 @@ export const AppShell: React.FC = () => {
         variant: 'default',
       });
     }
-  }, [notificationsList, user?.email, isDemoMode, addToast]);
+  }, [notificationsList, user?.email, isDemoMode, addToast, lang, tr]);
 
   const pendingGradingCount = useMemo(
     () => (teacherHomeworksQuery.data || []).filter((h) => h.status === 'pending').length,
@@ -481,6 +558,7 @@ export const AppShell: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications-summary'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
@@ -492,6 +570,7 @@ export const AppShell: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications-summary'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
@@ -499,9 +578,11 @@ export const AppShell: React.FC = () => {
   const handleLogout = async () => {
     setDemoMode(false);
     resetSessionUiState();
+    prevSummarySigRef.current = '';
     queryClient.clear();
     try {
       sessionStorage.removeItem('ktn_post_login_redirect');
+      localStorage.removeItem('ktn_push_enabled_v2');
     } catch {
       // ignore
     }
@@ -512,6 +593,7 @@ export const AppShell: React.FC = () => {
     resetSessionUiState();
     try {
       sessionStorage.removeItem('ktn_post_login_redirect');
+      localStorage.removeItem('ktn_push_enabled_v2');
     } catch {
       // ignore
     }
@@ -519,8 +601,11 @@ export const AppShell: React.FC = () => {
   };
 
   const headerInfo = isRestoringLiveSession
-    ? { title: 'Khổng Tử Nhí', subtitle: 'Đang khôi phục phiên...' }
-    : resolveHeaderTitle(location.pathname, effectiveRole, user);
+    ? {
+        title: tr('Khổng Tử Nhí', 'Khong Tu Nhi'),
+        subtitle: tr('Đang khôi phục phiên...', 'Restoring session...'),
+      }
+    : resolveHeaderTitle(location.pathname, effectiveRole, user, lang);
   const isChatRoute =
     location.pathname === '/chat' || location.pathname.startsWith('/chat/');
 
@@ -553,7 +638,7 @@ export const AppShell: React.FC = () => {
           {/* Compact Top App Bar (48px-52px on mobile) */}
           <header
             data-testid="compact-top-header"
-            className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between border-b border-stone-200 bg-white/95 px-3 backdrop-blur-md sm:h-13 sm:px-5"
+            className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between gap-2 border-b border-stone-200 bg-white/95 px-3 backdrop-blur-md sm:h-13 sm:px-5"
           >
             <div className="flex min-w-0 items-center gap-2.5">
               <button
@@ -561,8 +646,8 @@ export const AppShell: React.FC = () => {
                 data-testid="header-home-btn"
                 onClick={() => navigate('/')}
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-800 font-display text-xs font-extrabold text-amber-300 shadow-2xs transition-transform active:scale-95"
-                title="Trang chủ"
-                aria-label="Trang chủ"
+                title={tr('Trang chủ', 'Home')}
+                aria-label={tr('Trang chủ', 'Home')}
               >
                 KTN
               </button>
@@ -582,19 +667,74 @@ export const AppShell: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Header Controls: Notification Bell + Logout */}
-            <div className="flex shrink-0 items-center gap-1.5">
+            {/* Right Header Controls: PWA Install + Language Switch + Notification Bell + Change Password + Logout */}
+            <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+              {!isPwaInstalled && (
+                <button
+                  type="button"
+                  data-testid="header-pwa-install-btn"
+                  disabled={isPwaInstalling}
+                  onClick={() => void handleTriggerPwaInstall()}
+                  title={
+                    canNativeInstall
+                      ? tr('Cài ứng dụng Khổng Tử Nhí lên máy tính / điện thoại', 'Install Khổng Tử Nhí Desktop App')
+                      : tr('Hướng dẫn cài đặt ứng dụng Desktop & nhận thông báo đẩy', 'Install Desktop App & Push guide')
+                  }
+                  aria-label={tr('Cài App', 'Install App')}
+                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 text-[11px] font-bold text-red-800 shadow-2xs transition-colors hover:bg-red-100 disabled:opacity-50 sm:h-9 sm:px-2.5"
+                >
+                  <Download className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden md:inline">
+                    {canNativeInstall ? tr('Cài App', 'Install App') : tr('Cài Desktop', 'Desktop App')}
+                  </span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                data-testid="header-lang-toggle"
+                onClick={toggleLang}
+                title={tr('Chuyển ngôn ngữ (Tiếng Việt / English)', 'Switch language (Vietnamese / English)')}
+                aria-label={tr('Chuyển ngôn ngữ', 'Switch language')}
+                className="inline-flex h-8 shrink-0 items-center rounded-xl border border-stone-200 bg-stone-50 p-0.5 text-[10px] font-extrabold shadow-2xs transition-colors hover:border-amber-300 sm:h-9 sm:text-[11px]"
+              >
+                <span
+                  className={
+                    lang === 'vi'
+                      ? 'rounded-lg bg-red-800 px-1.5 py-0.5 text-white'
+                      : 'px-1.5 py-0.5 text-stone-500'
+                  }
+                >
+                  VI
+                </span>
+                <span
+                  className={
+                    lang === 'en'
+                      ? 'rounded-lg bg-red-800 px-1.5 py-0.5 text-white'
+                      : 'px-1.5 py-0.5 text-stone-500'
+                  }
+                >
+                  EN
+                </span>
+              </button>
+
               {/* Notification Bell & Dropdown */}
               <div className="relative">
                 <button
                   ref={bellButtonRef}
                   type="button"
                   data-testid="header-notification-bell"
-                  aria-label="Thông báo"
+                  aria-label={tr('Thông báo', 'Notifications')}
                   aria-expanded={notifDropdownOpen}
                   aria-haspopup="dialog"
                   aria-controls="header-notification-dropdown"
-                  onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
+                  onClick={() => {
+                    const next = !notifDropdownOpen;
+                    setNotifDropdownOpen(next);
+                    if (next && !isDemoMode) {
+                      queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+                    }
+                  }}
                   className={`relative inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
                     notifDropdownOpen
                       ? 'border-red-300 bg-red-50 text-red-800'
@@ -617,18 +757,18 @@ export const AppShell: React.FC = () => {
                     id="header-notification-dropdown"
                     ref={notifDropdownRef}
                     role="dialog"
-                    aria-label="Thông báo gần đây"
+                    aria-label={tr('Thông báo gần đây', 'Recent notifications')}
                     data-testid="header-notification-dropdown"
                     className="fixed left-3 right-3 top-13 z-50 max-w-md overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96"
                   >
                     <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50 px-3.5 py-2.5">
                       <div className="flex items-center gap-1.5">
                         <span className="font-display text-xs font-bold text-stone-900">
-                          Thông báo mới nhất
+                          {tr('Thông báo mới nhất', 'Latest notifications')}
                         </span>
                         {unreadNotifications > 0 && (
                           <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                            {unreadNotifications} chưa đọc
+                            {tr(`${unreadNotifications} chưa đọc`, `${unreadNotifications} unread`)}
                           </span>
                         )}
                       </div>
@@ -645,7 +785,7 @@ export const AppShell: React.FC = () => {
                         className="inline-flex items-center gap-1 text-[11px] font-bold text-red-800 hover:underline disabled:cursor-default disabled:text-stone-400 disabled:no-underline"
                       >
                         <CheckCheck className="h-3.5 w-3.5" />
-                        Đánh dấu tất cả đã đọc
+                        {tr('Đánh dấu tất cả đã đọc', 'Mark all as read')}
                       </button>
                     </div>
 
@@ -655,10 +795,12 @@ export const AppShell: React.FC = () => {
                     >
                       {recentNotifications.length === 0 ? (
                         <p className="p-5 text-center text-xs text-stone-500">
-                          Chưa có thông báo mới.
+                          {tr('Chưa có thông báo mới.', 'No new notifications.')}
                         </p>
                       ) : (
-                        recentNotifications.map((n) => (
+                        recentNotifications.map((rawNotif) => {
+                          const n = translateNotificationItem(rawNotif, lang);
+                          return (
                           <button
                             key={n.id}
                             type="button"
@@ -677,7 +819,7 @@ export const AppShell: React.FC = () => {
                                 queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
                               }
                               setNotifDropdownOpen(false);
-                              const target = resolveNotificationLink(n, user?.role);
+                              const target = resolveNotificationLink(rawNotif, user?.role);
                               if (/^https:\/\//i.test(target)) {
                                 window.open(target, '_blank', 'noopener,noreferrer');
                               } else {
@@ -712,7 +854,7 @@ export const AppShell: React.FC = () => {
                                     !n.read ? 'text-red-700' : 'text-stone-400'
                                   }`}
                                 >
-                                  {!n.read ? 'Chưa đọc' : 'Đã đọc'}
+                                  {!n.read ? tr('Chưa đọc', 'Unread') : tr('Đã đọc', 'Read')}
                                 </span>
                                 {n.actionLabel && (
                                   <span className="text-[10px] font-bold text-red-800">
@@ -722,7 +864,8 @@ export const AppShell: React.FC = () => {
                               </div>
                             </div>
                           </button>
-                        ))
+                          );
+                        })
                       )}
                     </div>
 
@@ -736,7 +879,7 @@ export const AppShell: React.FC = () => {
                         }}
                         className="w-full rounded-xl py-1.5 text-xs font-bold text-red-800 hover:bg-red-50"
                       >
-                        Xem tất cả thông báo →
+                        {tr('Xem tất cả thông báo →', 'View all notifications →')}
                       </button>
                     </div>
                   </div>
@@ -749,20 +892,20 @@ export const AppShell: React.FC = () => {
                     type="button"
                     data-testid="open-change-password-modal-btn"
                     onClick={handleOpenChangePwdModal}
-                    className="inline-flex h-9 items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 px-2.5 text-xs font-bold text-stone-700 hover:bg-amber-50 hover:border-amber-300 hover:text-red-900"
-                    title="Đổi mật khẩu"
-                    aria-label="Đổi mật khẩu"
+                    className="inline-flex h-8 items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 px-2 text-xs font-bold text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-red-900 sm:h-9 sm:px-2.5"
+                    title={tr('Đổi mật khẩu', 'Change password')}
+                    aria-label={tr('Đổi mật khẩu', 'Change password')}
                   >
                     <KeyRound className="h-3.5 w-3.5 text-red-800" />
-                    <span className="hidden sm:inline">Đổi mật khẩu</span>
+                    <span className="hidden sm:inline">{tr('Đổi mật khẩu', 'Change password')}</span>
                   </button>
                   <button
                     type="button"
                     data-testid="logout-btn"
                     onClick={handleLogout}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 hover:bg-red-50 hover:text-red-800"
-                    title="Đăng xuất"
-                    aria-label="Đăng xuất"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 hover:bg-red-50 hover:text-red-800 sm:h-9 sm:w-9"
+                    title={tr('Đăng xuất', 'Sign out')}
+                    aria-label={tr('Đăng xuất', 'Sign out')}
                   >
                     <LogOut className="h-4 w-4" />
                   </button>
@@ -771,10 +914,10 @@ export const AppShell: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => navigate('/login')}
-                  className="inline-flex h-9 items-center gap-1 rounded-xl bg-red-800 px-3 text-xs font-bold text-white"
+                  className="inline-flex h-8 items-center gap-1 rounded-xl bg-red-800 px-3 text-xs font-bold text-white sm:h-9"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
-                  Đăng nhập
+                  {tr('Đăng nhập', 'Sign in')}
                 </button>
               )}
             </div>
@@ -805,7 +948,7 @@ export const AppShell: React.FC = () => {
               data-testid="change-password-modal"
               role="dialog"
               aria-modal="true"
-              aria-label="Đổi mật khẩu"
+              aria-label={tr('Đổi mật khẩu', 'Change password')}
               className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
             >
               <div className="w-full max-w-md overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl">
@@ -816,11 +959,11 @@ export const AppShell: React.FC = () => {
                     </span>
                     <div>
                       <h3 className="font-display text-sm font-bold text-stone-900">
-                        Đổi mật khẩu tài khoản
+                        {tr('Đổi mật khẩu tài khoản', 'Change account password')}
                       </h3>
                       <p className="text-[11px] text-stone-500">
                         {user?.code ? `${user.code} · ` : ''}
-                        {user?.email || 'Tài khoản đang đăng nhập'}
+                        {user?.email || tr('Tài khoản đang đăng nhập', 'Signed-in account')}
                       </p>
                     </div>
                   </div>
@@ -828,7 +971,7 @@ export const AppShell: React.FC = () => {
                     type="button"
                     onClick={() => setChangePwdModalOpen(false)}
                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-200/60 hover:text-stone-700"
-                    aria-label="Đóng"
+                    aria-label={tr('Đóng', 'Close')}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -846,14 +989,17 @@ export const AppShell: React.FC = () => {
 
                   <div>
                     <label className="mb-1 block text-xs font-bold text-stone-700">
-                      Mật khẩu hiện tại
+                      {tr('Mật khẩu hiện tại', 'Current password')}
                     </label>
                     <input
                       type="password"
                       data-testid="change-password-current-input"
                       value={currentPassword}
                       onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Nhập mật khẩu hiện tại (mặc định: 12345678)"
+                      placeholder={tr(
+                        'Nhập mật khẩu hiện tại (mặc định: 12345678)',
+                        'Enter current password (default: 12345678)'
+                      )}
                       autoComplete="current-password"
                       className="w-full rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-red-700 focus:outline-none"
                     />
@@ -861,14 +1007,17 @@ export const AppShell: React.FC = () => {
 
                   <div>
                     <label className="mb-1 block text-xs font-bold text-stone-700">
-                      Mật khẩu mới
+                      {tr('Mật khẩu mới', 'New password')}
                     </label>
                     <input
                       type="password"
                       data-testid="change-password-new-input"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder={`Tối thiểu ${effectiveRole === 'admin' ? 8 : 6} ký tự`}
+                      placeholder={tr(
+                        `Tối thiểu ${effectiveRole === 'admin' ? 8 : 6} ký tự`,
+                        `At least ${effectiveRole === 'admin' ? 8 : 6} characters`
+                      )}
                       autoComplete="new-password"
                       className="w-full rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-red-700 focus:outline-none"
                     />
@@ -876,14 +1025,14 @@ export const AppShell: React.FC = () => {
 
                   <div>
                     <label className="mb-1 block text-xs font-bold text-stone-700">
-                      Xác nhận mật khẩu mới
+                      {tr('Xác nhận mật khẩu mới', 'Confirm new password')}
                     </label>
                     <input
                       type="password"
                       data-testid="change-password-confirm-input"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Nhập lại mật khẩu mới"
+                      placeholder={tr('Nhập lại mật khẩu mới', 'Re-enter new password')}
                       autoComplete="new-password"
                       className="w-full rounded-xl border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-red-700 focus:outline-none"
                     />
@@ -895,7 +1044,7 @@ export const AppShell: React.FC = () => {
                       onClick={() => setChangePwdModalOpen(false)}
                       className="rounded-xl border border-stone-200 px-3.5 py-2 text-xs font-bold text-stone-600 hover:bg-stone-100"
                     >
-                      Hủy
+                      {tr('Hủy', 'Cancel')}
                     </button>
                     <button
                       type="submit"
@@ -903,10 +1052,121 @@ export const AppShell: React.FC = () => {
                       disabled={pwdSubmitting}
                       className="rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-900 disabled:opacity-50"
                     >
-                      {pwdSubmitting ? 'Đang lưu...' : 'Lưu mật khẩu mới'}
+                      {pwdSubmitting
+                        ? tr('Đang lưu...', 'Saving...')
+                        : tr('Lưu mật khẩu mới', 'Save new password')}
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+          {pwaGuideOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/50 p-4 backdrop-blur-xs"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pwa-install-modal-title"
+              data-testid="pwa-install-guide-modal"
+            >
+              <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src="/icons/icon-192.png"
+                      alt="Khổng Tử Nhí"
+                      className="h-10 w-10 rounded-xl border border-stone-200 object-cover"
+                    />
+                    <div>
+                      <h3 id="pwa-install-modal-title" className="font-display text-base font-bold text-stone-900">
+                        {tr('Cài Khổng Tử Nhí thành Ứng dụng Desktop', 'Install Khổng Tử Nhí Desktop App')}
+                      </h3>
+                      <p className="text-xs text-stone-500">
+                        {tr(
+                          'Chạy cửa sổ riêng có icon trên Windows / macOS & nhận thông báo đẩy realtime.',
+                          'Run in a standalone window with OS notifications on Windows / macOS.'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPwaGuideOpen(false)}
+                    className="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                    aria-label={tr('Đóng', 'Close')}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-2.5 text-xs text-stone-700">
+                  <div
+                    className={`rounded-xl border p-3 ${
+                      platformHint === 'windows' ? 'border-red-200 bg-red-50/70' : 'border-stone-200 bg-stone-50'
+                    }`}
+                  >
+                    <p className="font-bold text-stone-900">
+                      🪟 Windows (Chrome / Microsoft Edge)
+                    </p>
+                    <p className="mt-1 leading-relaxed text-stone-600">
+                      {tr(
+                        'Nhấn biểu tượng Cài đặt (hình màn hình + mũi tên) ở góc phải thanh địa chỉ Chrome/Edge, hoặc mở Menu (⋮ / …) → Apps / Ứng dụng → "Cài đặt Sổ Liên Lạc Điện Tử".',
+                        'Click the Install icon in the Chrome/Edge address bar, or open Menu → Apps → "Install Sổ Liên Lạc Điện Tử".'
+                      )}
+                    </p>
+                  </div>
+
+                  <div
+                    className={`rounded-xl border p-3 ${
+                      platformHint === 'macos' ? 'border-red-200 bg-red-50/70' : 'border-stone-200 bg-stone-50'
+                    }`}
+                  >
+                    <p className="font-bold text-stone-900">
+                      🍎 macOS (Chrome / Edge / Safari)
+                    </p>
+                    <p className="mt-1 leading-relaxed text-stone-600">
+                      {tr(
+                        'Trên Chrome/Edge: chọn biểu tượng Cài đặt trên thanh URL hoặc Menu → Truyền, lưu và chia sẻ → Cài đặt trang. Trên Safari (macOS Sonoma+): File → Add to Dock…',
+                        'On Chrome/Edge: click Install in URL bar or Menu → Cast, save & share → Install page. On Safari (macOS Sonoma+): File → Add to Dock…'
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                    <p className="font-bold text-amber-900">
+                      🔔 {tr('Thông báo đẩy Desktop (Web Push)', 'Desktop Web Push Status')}
+                    </p>
+                    <p className="mt-0.5 text-amber-800">
+                      {typeof Notification !== 'undefined'
+                        ? Notification.permission === 'granted'
+                          ? tr('Trình duyệt đã cấp quyền thông báo đẩy.', 'Browser notification permission is granted.')
+                          : Notification.permission === 'denied'
+                            ? tr('Quyền thông báo đang bị chặn — hãy bật lại trong biểu tượng Ổ khóa trên thanh URL.', 'Notifications blocked — re-enable in site permissions.')
+                            : tr('Vào mục Thông báo và nhấn "Bật thông báo" để nhận nhắc bài & tin nhắn realtime.', 'Open Notifications and click "Enable push" to receive real-time alerts.')
+                        : tr('Vui lòng dùng Chrome/Edge/Safari phiên bản mới để bật thông báo đẩy.', 'Use a modern Chrome/Edge/Safari browser for push alerts.')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPwaGuideOpen(false);
+                      navigate('/notifications');
+                    }}
+                    className="rounded-xl border border-stone-200 px-3.5 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"
+                  >
+                    {tr('Mở cài đặt Thông báo', 'Open Notifications')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPwaGuideOpen(false)}
+                    className="rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white hover:bg-red-900"
+                  >
+                    {tr('Đã hiểu', 'Got it')}
+                  </button>
+                </div>
               </div>
             </div>
           )}

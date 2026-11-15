@@ -18,6 +18,7 @@ import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES, DEMO_HOMEWORKS } from '@/lib/demoData';
 import { useChatRooms } from '@/features/chat/hooks/useMessages';
 import { formatRelativeTime } from '@/lib/utils';
+import { translateCourseTitle, translateScheduleText, useI18n } from '@/i18n';
 import { KtnClassItem, KtnHomework } from '@/types/ktn.types';
 import {
   PrimaryActionCard,
@@ -29,6 +30,7 @@ import {
 } from '@/components/shared/CompactUi';
 
 export const TeacherHome: React.FC = () => {
+  const { lang, tr } = useI18n();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
@@ -39,7 +41,7 @@ export const TeacherHome: React.FC = () => {
     queryKey: ['ktn-classes', user?.email, isDemoMode],
     queryFn: async () => {
       if (isDemoMode) return DEMO_CLASSES;
-      return ktnApi.getClasses();
+      return ktnApi.getClasses({ lite: true });
     },
     enabled: Boolean(user) || isDemoMode,
   });
@@ -129,7 +131,7 @@ export const TeacherHome: React.FC = () => {
                 : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
             }`}
           >
-            Tất cả ({assignedClasses.length} lớp)
+            {tr(`Tất cả (${assignedClasses.length} lớp)`, `All (${assignedClasses.length})`)}
           </button>
           {assignedClasses.map((cls) => (
             <button
@@ -156,7 +158,7 @@ export const TeacherHome: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
-            <span>Chưa tải được dữ liệu lớp học.</span>
+            <span>{tr('Chưa tải được dữ liệu lớp học.', 'Could not load class data.')}</span>
           </div>
           <button
             type="button"
@@ -167,7 +169,7 @@ export const TeacherHome: React.FC = () => {
             className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-red-800"
           >
             <RotateCcw className="h-3 w-3" />
-            Thử lại
+            {tr('Thử lại', 'Retry')}
           </button>
         </div>
       )}
@@ -175,20 +177,20 @@ export const TeacherHome: React.FC = () => {
       {/* Khối ưu tiên: Bài chờ chấm */}
       <PrimaryActionCard
         testId="teacher-priority-grading-card"
-        eyebrow="Ưu tiên hôm nay"
+        eyebrow={tr('Ưu tiên hôm nay', "Today's priority")}
         title={
           homeworksQuery.isLoading
-            ? 'Đang kiểm tra bài nộp...'
+            ? tr('Đang kiểm tra bài nộp...', 'Checking submissions...')
             : pendingHomeworks.length > 0
-            ? `${pendingHomeworks.length} bài chờ chấm`
-            : `Đã chấm hết (${filteredHomeworks.length} bài nộp)`
+            ? tr(`${pendingHomeworks.length} bài chờ chấm`, `${pendingHomeworks.length} pending grading`)
+            : tr(`Đã chấm hết (${filteredHomeworks.length} bài nộp)`, `All graded (${filteredHomeworks.length})`)
         }
         subtitle={
           selectedClassFilter === 'ALL'
-            ? `Phụ trách ${assignedClasses.length} lớp học`
-            : `Lớp ${selectedClassFilter}`
+            ? tr(`Phụ trách ${assignedClasses.length} lớp học`, `Managing ${assignedClasses.length} classes`)
+            : tr(`Lớp ${selectedClassFilter}`, `Class ${selectedClassFilter}`)
         }
-        ctaLabel="Chấm bài"
+        ctaLabel={tr('Chấm bài', 'Grade now')}
         ctaIcon={FileCheck2}
         ctaTestId="teacher-home-grade-btn"
         onCtaClick={() =>
@@ -207,8 +209,8 @@ export const TeacherHome: React.FC = () => {
       >
         <QuickActionTile
           icon={Users}
-          label="Lớp của tôi"
-          status={`${assignedClasses.length} lớp phụ trách`}
+          label={tr('Lớp của tôi', 'My Classes')}
+          status={tr(`${assignedClasses.length} lớp phụ trách`, `${assignedClasses.length} classes`)}
           accent="red"
           testId="teacher-quick-classes"
           onClick={() => navigate('/teacher/classes')}
@@ -216,11 +218,11 @@ export const TeacherHome: React.FC = () => {
 
         <QuickActionTile
           icon={FileCheck2}
-          label="Chấm bài"
+          label={tr('Chấm bài', 'Grading')}
           status={
             pendingHomeworks.length > 0
-              ? `${pendingHomeworks.length} chờ chấm`
-              : `${filteredHomeworks.length} đã chấm`
+              ? tr(`${pendingHomeworks.length} chờ chấm`, `${pendingHomeworks.length} pending`)
+              : tr(`${filteredHomeworks.length} đã chấm`, `${filteredHomeworks.length} graded`)
           }
           badgeCount={pendingHomeworks.length}
           accent="emerald"
@@ -230,9 +232,11 @@ export const TeacherHome: React.FC = () => {
 
         <QuickActionTile
           icon={MessageSquare}
-          label="Hỏi đáp bài học"
+          label={tr('Hỏi đáp bài học', 'Lesson Q&A')}
           status={
-            openForumCount > 0 ? `${openForumCount} câu chờ giải đáp` : 'Cộng đồng bài học'
+            openForumCount > 0
+              ? tr(`${openForumCount} câu chờ giải đáp`, `${openForumCount} open`)
+              : tr('Cộng đồng bài học', 'Lesson community')
           }
           badgeCount={openForumCount}
           accent="amber"
@@ -242,8 +246,8 @@ export const TeacherHome: React.FC = () => {
 
         <QuickActionTile
           icon={CalendarPlus}
-          label="Giao bài"
-          status="Cập nhật buổi học"
+          label={tr('Giao bài', 'Assign')}
+          status={tr('Cập nhật buổi học', 'Update sessions')}
           accent="amber"
           testId="teacher-quick-assign"
           onClick={() => navigate('/teacher/assign')}
@@ -251,9 +255,11 @@ export const TeacherHome: React.FC = () => {
 
         <QuickActionTile
           icon={MessageSquare}
-          label="Tin nhắn"
+          label={tr('Tin nhắn', 'Messages')}
           status={
-            totalUnreadChat > 0 ? `${totalUnreadChat} tin chưa đọc` : 'Nhắn phụ huynh'
+            totalUnreadChat > 0
+              ? tr(`${totalUnreadChat} tin chưa đọc`, `${totalUnreadChat} unread`)
+              : tr('Nhắn phụ huynh', 'Message parents')
           }
           badgeCount={totalUnreadChat}
           accent="blue"
@@ -265,21 +271,24 @@ export const TeacherHome: React.FC = () => {
       {/* Lớp phụ trách (Assigned Classes Compact List) */}
       <section className="space-y-2">
         <SectionHeading
-          title="Lớp phụ trách"
+          title={tr('Lớp phụ trách', 'Assigned Classes')}
           count={assignedClasses.length}
-          actionLabel="Quản lý lớp →"
+          actionLabel={tr('Quản lý lớp →', 'Manage classes →')}
           onAction={() => navigate('/teacher/classes')}
         />
 
         {classesQuery.isLoading ? (
           <div className="rounded-xl border border-stone-200 bg-white p-4 text-xs text-stone-500">
-            Đang tải danh sách lớp...
+            {tr('Đang tải danh sách lớp...', 'Loading classes...')}
           </div>
         ) : assignedClasses.length === 0 ? (
           <EmptyState
             icon={GraduationCap}
-            title="Chưa có lớp được phân công"
-            description="Khi Học vụ phân công lớp mới, danh sách lớp sẽ hiển thị tại đây."
+            title={tr('Chưa có lớp được phân công', 'No classes assigned yet')}
+            description={tr(
+              'Khi Học vụ phân công lớp mới, danh sách lớp sẽ hiển thị tại đây.',
+              'Once Academic Admin assigns classes, they will appear here.'
+            )}
           />
         ) : (
           <MobileTaskList testId="teacher-assigned-classes-list">
@@ -296,12 +305,15 @@ export const TeacherHome: React.FC = () => {
                       {cls.id.slice(0, 4)}
                     </div>
                   }
-                  title={`${cls.id} · ${cls.name}`}
-                  subtitle={`${cls.schedule} · Buổi ${cls.current_lesson}/${cls.total_lessons}`}
+                  title={`${cls.id} · ${translateScheduleText(cls.name || cls.id, lang)}`}
+                  subtitle={tr(
+                    `${translateScheduleText(cls.schedule || '', lang)} · Buổi ${cls.current_lesson ?? 1}/${cls.total_lessons ?? 25}`,
+                    `${translateScheduleText(cls.schedule || '', lang)} · Session ${cls.current_lesson ?? 1}/${cls.total_lessons ?? 25}`
+                  )}
                   badge={
                     clsPending > 0 ? (
                       <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                        {clsPending} chờ chấm
+                        {tr(`${clsPending} chờ chấm`, `${clsPending} pending`)}
                       </span>
                     ) : null
                   }
@@ -318,17 +330,20 @@ export const TeacherHome: React.FC = () => {
       {/* Hoạt động gần đây (Recent Student Submissions) */}
       <section className="space-y-2">
         <SectionHeading
-          title="Hoạt động gần đây"
+          title={tr('Hoạt động gần đây', 'Recent Activity')}
           count={filteredHomeworks.length}
-          actionLabel="Mở chấm bài →"
+          actionLabel={tr('Mở chấm bài →', 'Open grading →')}
           onAction={() => navigate('/teacher/grading')}
         />
 
         {filteredHomeworks.length === 0 ? (
           <EmptyState
             icon={FileCheck2}
-            title="Chưa có bài nộp mới"
-            description="Bài thu âm và ảnh viết chữ của học viên sẽ xuất hiện tại đây."
+            title={tr('Chưa có bài nộp mới', 'No new submissions')}
+            description={tr(
+              'Bài thu âm và ảnh viết chữ của học viên sẽ xuất hiện tại đây.',
+              'Student audio recordings and handwriting photos will appear here.'
+            )}
           />
         ) : (
           <MobileTaskList testId="teacher-recent-submissions-list">
@@ -354,18 +369,21 @@ export const TeacherHome: React.FC = () => {
                 }
                 title={`${hw.student_name || hw.student_email} · ${
                   hw.lesson_num > 100
-                    ? `Buổi ${Math.floor(hw.lesson_num / 100)} · Bài ${hw.lesson_num % 100}`
-                    : `Bài ${hw.lesson_num}`
+                    ? tr(
+                        `Buổi ${Math.floor(hw.lesson_num / 100)} · Bài ${hw.lesson_num % 100}`,
+                        `Session ${Math.floor(hw.lesson_num / 100)} · Ex ${hw.lesson_num % 100}`
+                      )
+                    : tr(`Bài ${hw.lesson_num}`, `Lesson ${hw.lesson_num}`)
                 }`}
-                subtitle={hw.student_note || hw.lesson_title}
+                subtitle={hw.student_note || translateCourseTitle(hw.lesson_title, lang)}
                 badge={
                   hw.status === 'pending' ? (
                     <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
-                      Chờ chấm
+                      {tr('Chờ chấm', 'Pending')}
                     </span>
                   ) : hw.status === 'revision_requested' ? (
                     <span className="rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-900">
-                      Cần sửa
+                      {tr('Cần sửa', 'Needs revision')}
                     </span>
                   ) : (
                     <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-900">

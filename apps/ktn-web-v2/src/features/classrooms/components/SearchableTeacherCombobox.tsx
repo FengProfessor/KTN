@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, Check, X, UserX } from 'lucide-react';
 import type { KtnTeacherRecord } from '@/types/ktn.types';
 import { normalizeVietnameseText } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 
 export interface SearchableTeacherComboboxProps {
   value: string; // teacher email or empty string ""
@@ -26,10 +27,12 @@ export const SearchableTeacherCombobox: React.FC<SearchableTeacherComboboxProps>
   onChange,
   teachers = [],
   disabled = false,
-  placeholder = 'Chọn giáo viên phụ trách...',
+  placeholder: placeholderProp,
   className = '',
   testId = 'schedule-teacher-combobox',
 }) => {
+  const { tr } = useI18n();
+  const placeholder = placeholderProp ?? tr('Chọn giáo viên phụ trách...', 'Select assigned teacher...');
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -64,7 +67,7 @@ export const SearchableTeacherCombobox: React.FC<SearchableTeacherComboboxProps>
     const list: ComboboxOption[] = [
       {
         value: '',
-        name: 'Chưa phân công giáo viên',
+        name: tr('Chưa phân công giáo viên', 'No teacher assigned yet'),
         email: '',
         code: '',
         isUnassigned: true,
@@ -80,7 +83,7 @@ export const SearchableTeacherCombobox: React.FC<SearchableTeacherComboboxProps>
       });
     }
     return list;
-  }, [teachers]);
+  }, [teachers, tr]);
 
   // Filtered options based on search query
   const filteredOptions = useMemo(() => {
@@ -95,7 +98,11 @@ export const SearchableTeacherCombobox: React.FC<SearchableTeacherComboboxProps>
         return (
           'chua phan cong giao vien'.includes(qNorm) ||
           'chua'.includes(qNorm) ||
-          'trong'.includes(qNorm)
+          'trong'.includes(qNorm) ||
+          'no teacher assigned yet'.includes(qNorm) ||
+          'unassigned'.includes(qNorm) ||
+          'none'.includes(qNorm) ||
+          'leave blank'.includes(qNorm)
         );
       }
       const nameNorm = normalizeVietnameseText(opt.name);
@@ -205,7 +212,7 @@ export const SearchableTeacherCombobox: React.FC<SearchableTeacherComboboxProps>
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
       >
-        <option value="">-- Chọn giáo viên phụ trách --</option>
+        <option value="">{tr('-- Chọn giáo viên phụ trách --', '-- Select assigned teacher --')}</option>
         {teachers.map((t) => (
           <option key={t.code || t.email} value={t.email}>
             {t.name} ({t.email})
@@ -262,7 +269,7 @@ export const SearchableTeacherCombobox: React.FC<SearchableTeacherComboboxProps>
                 inputRef.current?.focus();
               }}
               className="rounded p-0.5 text-stone-400 hover:text-stone-600 focus:outline-none"
-              title="Xóa tìm kiếm"
+              title={tr('Xóa tìm kiếm', 'Clear search')}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -304,7 +311,7 @@ export const SearchableTeacherCombobox: React.FC<SearchableTeacherComboboxProps>
               data-testid="schedule-teacher-empty-state"
               className="px-3 py-3 text-center text-xs text-stone-500"
             >
-              Không tìm thấy giáo viên phù hợp với &ldquo;{searchQuery}&rdquo;
+              {tr('Không tìm thấy giáo viên phù hợp với', 'No teacher matching')} &ldquo;{searchQuery}&rdquo;
             </div>
           ) : (
             <ul ref={listRef} role="listbox" className="divide-y divide-stone-100">
@@ -334,10 +341,10 @@ export const SearchableTeacherCombobox: React.FC<SearchableTeacherComboboxProps>
                         <UserX className="h-4 w-4 shrink-0 text-amber-600" />
                         <div>
                           <p className="font-semibold text-amber-900">
-                            Chưa phân công giáo viên
+                            {tr('Chưa phân công giáo viên', 'No teacher assigned yet')}
                           </p>
                           <p className="text-[11px] text-stone-400">
-                            Để trống, phân công sau
+                            {tr('Để trống, phân công sau', 'Leave blank, assign later')}
                           </p>
                         </div>
                       </div>

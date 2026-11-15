@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { DEMO_CLASSES } from '@/lib/demoData';
 import { formatVnd } from '@/lib/utils';
+import { translateCourseTitle, useI18n } from '@/i18n';
 import { KtnClassItem, KtnOrder, KtnStudentRecord } from '@/types/ktn.types';
 import {
   QuickActionTile,
@@ -26,6 +27,7 @@ import {
 } from '@/components/shared/CompactUi';
 
 export const AdminHome: React.FC = () => {
+  const { lang, tr } = useI18n();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
@@ -128,7 +130,10 @@ export const AdminHome: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
       addToast({
-        title: 'Đã duyệt đơn hàng & kích hoạt khóa học!',
+        title: tr(
+          'Đã duyệt đơn hàng & kích hoạt khóa học!',
+          'Order approved & course activated!'
+        ),
         variant: 'success',
       });
     },
@@ -164,7 +169,7 @@ export const AdminHome: React.FC = () => {
           className="rounded-xl border border-stone-200/90 bg-white p-2.5 text-left shadow-2xs transition-colors hover:border-red-300"
         >
           <p className="truncate text-[11px] font-semibold text-stone-500">
-            Đơn chờ duyệt
+            {tr('Đơn chờ duyệt', 'Pending orders')}
           </p>
           <p
             data-testid="admin-kpi-pending-orders"
@@ -180,7 +185,7 @@ export const AdminHome: React.FC = () => {
           className="rounded-xl border border-stone-200/90 bg-white p-2.5 text-left shadow-2xs transition-colors hover:border-amber-300"
         >
           <p className="truncate text-[11px] font-semibold text-stone-500">
-            Chưa xếp lớp
+            {tr('Chưa xếp lớp', 'Unassigned')}
           </p>
           <p
             data-testid="admin-kpi-unassigned-students"
@@ -196,7 +201,7 @@ export const AdminHome: React.FC = () => {
           className="rounded-xl border border-stone-200/90 bg-white p-2.5 text-left shadow-2xs transition-colors hover:border-emerald-300"
         >
           <p className="truncate text-[11px] font-semibold text-stone-500">
-            Lớp hoạt động
+            {tr('Lớp hoạt động', 'Active classes')}
           </p>
           <p
             data-testid="admin-kpi-active-classes"
@@ -214,7 +219,7 @@ export const AdminHome: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-700" />
-            <span>Chưa tải được dữ liệu quản trị.</span>
+            <span>{tr('Chưa tải được dữ liệu quản trị.', 'Could not load admin data.')}</span>
           </div>
           <button
             type="button"
@@ -226,7 +231,7 @@ export const AdminHome: React.FC = () => {
             className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-red-800"
           >
             <RotateCcw className="h-3 w-3" />
-            Thử lại
+            {tr('Thử lại', 'Retry')}
           </button>
         </div>
       )}
@@ -238,8 +243,8 @@ export const AdminHome: React.FC = () => {
       >
         <QuickActionTile
           icon={Users}
-          label="Học viên"
-          status={`${unassignedTotalCount} chưa xếp lớp`}
+          label={tr('Học viên', 'Students')}
+          status={tr(`${unassignedTotalCount} chưa xếp lớp`, `${unassignedTotalCount} unassigned`)}
           accent="red"
           testId="admin-quick-students"
           onClick={() => navigate('/admin/students')}
@@ -247,8 +252,8 @@ export const AdminHome: React.FC = () => {
 
         <QuickActionTile
           icon={GraduationCap}
-          label="Lớp học"
-          status={`${activeClasses.length} lớp`}
+          label={tr('Lớp học', 'Classes')}
+          status={tr(`${activeClasses.length} lớp`, `${activeClasses.length} classes`)}
           accent="blue"
           testId="admin-quick-classes"
           onClick={() => navigate('/admin/classes')}
@@ -256,11 +261,11 @@ export const AdminHome: React.FC = () => {
 
         <QuickActionTile
           icon={ClipboardList}
-          label="Đơn hàng"
+          label={tr('Đơn hàng', 'Orders')}
           status={
             pendingOrders.length > 0
-              ? `${pendingOrders.length} chờ duyệt`
-              : `${ordersList.length} đơn`
+              ? tr(`${pendingOrders.length} chờ duyệt`, `${pendingOrders.length} pending`)
+              : tr(`${ordersList.length} đơn`, `${ordersList.length} orders`)
           }
           badgeCount={pendingOrders.length}
           accent="amber"
@@ -270,8 +275,8 @@ export const AdminHome: React.FC = () => {
 
         <QuickActionTile
           icon={ShieldCheck}
-          label="Đồng bộ"
-          status="Đối soát 3 hệ thống"
+          label={tr('Đồng bộ', 'Sync & Audit')}
+          status={tr('Đối soát 3 hệ thống', '3-system audit')}
           accent="emerald"
           testId="admin-quick-permissions"
           onClick={() => navigate('/admin/more')}
@@ -281,17 +286,20 @@ export const AdminHome: React.FC = () => {
       {/* Việc cần xử lý: Đơn chờ duyệt & Học viên chưa xếp lớp */}
       <section className="space-y-2">
         <SectionHeading
-          title="Việc cần xử lý"
+          title={tr('Việc cần xử lý', 'Action Queue')}
           count={pendingOrders.length + unassignedTotalCount}
-          actionLabel="Mở đơn hàng →"
+          actionLabel={tr('Mở đơn hàng →', 'Open orders →')}
           onAction={() => navigate('/admin/orders')}
         />
 
         {pendingOrders.length === 0 && unassignedStudents.length === 0 ? (
           <EmptyState
             icon={CheckCircle2}
-            title="Đã xử lý hết công việc"
-            description="Không có đơn đăng ký tồn đọng hoặc học viên chờ xếp lớp."
+            title={tr('Đã xử lý hết công việc', 'All caught up')}
+            description={tr(
+              'Không có đơn đăng ký tồn đọng hoặc học viên chờ xếp lớp.',
+              'No pending orders or unassigned students.'
+            )}
           />
         ) : (
           <MobileTaskList testId="admin-action-queue">
@@ -299,17 +307,17 @@ export const AdminHome: React.FC = () => {
               const payLabel =
                 ord.payment_detailed_status === 'verified_paid' ||
                 ord.payment_status === 'paid'
-                  ? 'Đã xác minh tiền thực nhận'
+                  ? tr('Đã xác minh tiền thực nhận', 'Payment verified')
                   : ord.payment_detailed_status === 'customer_reported'
-                  ? 'Khách báo đã chuyển khoản'
+                  ? tr('Khách báo đã chuyển khoản', 'Transfer reported')
                   : ord.payment_detailed_status === 'verifying_tx'
-                  ? 'Chờ kiểm tra giao dịch'
+                  ? tr('Chờ kiểm tra giao dịch', 'Verifying transaction')
                   : ord.payment_detailed_status === 'amount_mismatch'
-                  ? 'Thanh toán sai/thiếu'
+                  ? tr('Thanh toán sai/thiếu', 'Amount mismatch')
                   : ord.payment_detailed_status === 'refunded' ||
                     ord.payment_status === 'refunded'
-                  ? 'Hoàn tiền'
-                  : 'Chưa thanh toán';
+                  ? tr('Hoàn tiền', 'Refunded')
+                  : tr('Chưa thanh toán', 'Unpaid');
               return (
                 <CompactListItem
                   key={ord.order_id}
@@ -323,7 +331,7 @@ export const AdminHome: React.FC = () => {
                     </div>
                   }
                   title={`${ord.student_name} · ${ord.order_id}`}
-                  subtitle={`${ord.course_name} · ${formatVnd(ord.amount)} · ${payLabel}`}
+                  subtitle={`${translateCourseTitle(ord.course_name, lang)} · ${formatVnd(ord.amount)} · ${payLabel}`}
                   rightAction={
                     <button
                       type="button"
@@ -336,7 +344,7 @@ export const AdminHome: React.FC = () => {
                       }}
                       className="min-h-[36px] rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                     >
-                      Xem chi tiết
+                      {tr('Xem chi tiết', 'View details')}
                     </button>
                   }
                 />
@@ -353,7 +361,9 @@ export const AdminHome: React.FC = () => {
                 }
                 title={stu.name}
                 subtitle={`${stu.email} · ${
-                  stu.class_code ? `Lớp ${stu.class_code}` : 'Chưa xếp lớp'
+                  stu.class_code
+                    ? tr(`Lớp ${stu.class_code}`, `Class ${stu.class_code}`)
+                    : tr('Chưa xếp lớp', 'Unassigned')
                 }`}
                 rightAction={
                   <button
@@ -364,7 +374,7 @@ export const AdminHome: React.FC = () => {
                     }
                     className="min-h-[36px] rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-900 hover:bg-red-100"
                   >
-                    Xếp lớp
+                    {tr('Xếp lớp', 'Assign')}
                   </button>
                 }
               />

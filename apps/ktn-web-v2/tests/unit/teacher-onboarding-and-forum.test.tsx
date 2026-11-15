@@ -1170,6 +1170,11 @@ describe('Agent C — Teacher Onboarding, Permission Boundaries & Forum UI', () 
         ['/teacher?tab=sessions&class=YCT2-04']
       );
 
+      // Select existing session 2 cleanly from dropdown (no auto-prefill on open)
+      await screen.findByTestId('teacher-saved-session-card-2');
+      const sessionSelect = await screen.findByTestId('teacher-session-select');
+      fireEvent.change(sessionSelect, { target: { value: '2' } });
+
       // Wait for sessions tab and existing exercises banner
       expect(
         await screen.findByTestId('teacher-existing-exercises-banner')

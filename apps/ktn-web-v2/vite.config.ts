@@ -40,6 +40,47 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes('hubArtAssets')) {
+            return 'games-art-hub';
+          }
+          if (id.includes('zombieArtAssets')) {
+            return 'games-art-zombie';
+          }
+          if (
+            id.includes('stageArtAssets') ||
+            id.includes('features/games/assets') ||
+            id.includes('features\\games\\assets')
+          ) {
+            return 'games-art-stage';
+          }
+          if (id.includes('englishVocabularyMap')) {
+            return 'games-vocab-en';
+          }
+          if (
+            id.includes('features/games/data') ||
+            id.includes('features\\games\\data')
+          ) {
+            return 'games-vocab';
+          }
+          if (
+            id.includes('features/games/') ||
+            id.includes('features\\games\\')
+          ) {
+            return 'games-ui';
+          }
+          if (
+            id.includes('OrderDetailDrawer') ||
+            id.includes('StudentDetailDrawer') ||
+            id.includes('TeacherDetailDrawer')
+          ) {
+            return 'admin-drawers';
+          }
+          if (
+            id.includes('features/chat/') ||
+            id.includes('features\\chat\\')
+          ) {
+            return 'chat-ui';
+          }
           if (id.includes('node_modules/hls.js')) {
             return 'vendor-hls';
           }

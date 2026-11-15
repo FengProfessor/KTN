@@ -11,10 +11,12 @@ import {
 import { ChatRoom } from '../types/chat.types';
 import { UnreadBadge } from './UnreadBadge';
 import { formatRelativeTime, getInitials } from '@/lib/utils';
+import { AppLanguage, useI18n } from '@/i18n';
 import {
   formatRoomPreviewText,
   hasRoomRealMessages,
   normalizeVietnameseSearchText,
+  translateChatRoomLabel,
 } from '../services/chatApi';
 
 export type ChatInboxFilterTab = 'all' | 'unread' | 'groups' | 'support';
@@ -27,11 +29,12 @@ interface ConversationListProps {
   onOpenNewMessage?: () => void;
 }
 
-export function formatCompactRoomTitle(room: ChatRoom): string {
+export function formatCompactRoomTitle(room: ChatRoom, langOverride?: AppLanguage): string {
   const raw = String(room.label || room.shortLabel || room.roomId || '').trim();
   if (!raw) return room.roomId;
   // Strip leading emoji clutter while keeping the meaningful room name on 1 line
-  return raw.replace(/^(?:👩‍🏫|👨‍🏫|🏫|🎬|💬)\s*/u, '').trim();
+  const cleaned = raw.replace(/^(?:👩‍🏫|👨‍🏫|🏫|🎬|💬)\s*/u, '').trim();
+  return translateChatRoomLabel(cleaned, room.type, langOverride);
 }
 
 export const ConversationList: React.FC<ConversationListProps> = ({
@@ -41,6 +44,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   onSelectRoom,
   onOpenNewMessage,
 }) => {
+  const { lang, tr } = useI18n();
   const [searchText, setSearchText] = useState('');
   const [filterTab, setFilterTab] = useState<ChatInboxFilterTab>('all');
   const [showEmptyGroups, setShowEmptyGroups] = useState(true);
@@ -116,8 +120,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       room.type === 'student' || String(room.roomId || '').toLowerCase().startsWith('student:');
     const unread = Number(room.unreadCount) || 0;
     const hasMessages = hasRoomRealMessages(room);
-    const titleText = formatCompactRoomTitle(room);
-    const previewText = formatRoomPreviewText(room);
+    const titleText = formatCompactRoomTitle(room, lang);
+    const previewText = formatRoomPreviewText(room, lang);
     const timestampValue = hasMessages ? room.lastMessageAt || room.updatedAt : undefined;
 
     const badgeText = isDirect
@@ -181,7 +185,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             </p>
             {room.isEphemeral && !hasMessages ? (
               <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
-                Nháp
+                {tr('Nháp', 'Draft')}
               </span>
             ) : timestampValue ? (
               <span
@@ -223,7 +227,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
             <h1 className="truncate font-display text-base font-bold text-stone-900">
-              Tin nhắn
+              {tr('Tin nhắn', 'Messages')}
             </h1>
             {totalUnread > 0 && <UnreadBadge count={totalUnread} />}
           </div>
@@ -232,12 +236,12 @@ export const ConversationList: React.FC<ConversationListProps> = ({
               type="button"
               data-testid="chat-new-message-btn"
               onClick={onOpenNewMessage}
-              title="Nhắn mới"
-              aria-label="Nhắn mới"
+              title={tr('Nhắn mới', 'New message')}
+              aria-label={tr('Nhắn mới', 'New message')}
               className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1.5 text-xs font-bold text-white shadow-2xs transition-colors hover:bg-red-900"
             >
               <MessageSquarePlus className="h-3.5 w-3.5" />
-              <span>Nhắn mới</span>
+              <span>{tr('Nhắn mới', 'New message')}</span>
             </button>
           )}
         </div>
@@ -250,15 +254,15 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             data-testid="chat-room-search-input"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Tìm tên phòng, lớp, học viên..."
+            placeholder={tr('Tìm tên phòng, lớp, học viên...', 'Search rooms, classes, students...')}
             className="w-full bg-transparent text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none"
           />
           {searchText && (
             <button
               type="button"
               onClick={() => setSearchText('')}
-              aria-label="Xóa tìm kiếm phòng"
-              title="Xóa tìm kiếm phòng"
+              aria-label={tr('Xóa tìm kiếm phòng', 'Clear room search')}
+              title={tr('Xóa tìm kiếm phòng', 'Clear room search')}
               className="rounded p-0.5 text-stone-400 hover:text-stone-700"
             >
               <X className="h-3 w-3" />
@@ -278,7 +282,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            Gần đây
+            {tr('Gần đây', 'Recent')}
           </button>
           <button
             type="button"
@@ -290,7 +294,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            <span className="truncate">Chưa đọc</span>
+            <span className="truncate">{tr('Chưa đọc', 'Unread')}</span>
             {totalUnread > 0 && (
               <span className="rounded-full bg-red-600 px-1 text-[9.5px] leading-tight text-white">
                 {totalUnread > 99 ? '99+' : totalUnread}
@@ -307,7 +311,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            Nhóm lớp
+            {tr('Nhóm lớp', 'Classes')}
           </button>
           <button
             type="button"
@@ -347,17 +351,23 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             <MessageSquare className="h-8 w-8 text-stone-300" />
             <p className="mt-2 text-xs font-semibold text-stone-700">
               {filterTab === 'unread'
-                ? 'Không có tin nhắn chưa đọc'
+                ? tr('Không có tin nhắn chưa đọc', 'No unread messages')
                 : filterTab === 'support'
-                ? 'Chưa có cuộc trò chuyện 1-1 nào'
-                : 'Không tìm thấy hội thoại phù hợp'}
+                ? tr('Chưa có cuộc trò chuyện 1-1 nào', 'No 1-1 conversations yet')
+                : tr('Không tìm thấy hội thoại phù hợp', 'No matching conversations found')}
             </p>
             <p className="mt-1 text-[11px] text-stone-500">
               {filterTab === 'unread'
-                ? 'Bạn đã xem hết tất cả các tin nhắn mới.'
+                ? tr('Bạn đã xem hết tất cả các tin nhắn mới.', 'You have read all new messages.')
                 : filterTab === 'support'
-                ? 'Nhấn "Nhắn mới" để bắt đầu trao đổi riêng 1-1.'
-                : 'Thử từ khóa khác hoặc mở tab Nhóm lớp để xem toàn bộ lớp.'}
+                ? tr(
+                    'Nhấn "Nhắn mới" để bắt đầu trao đổi riêng 1-1.',
+                    'Click "New message" to start a private 1-1 chat.'
+                  )
+                : tr(
+                    'Thử từ khóa khác hoặc mở tab Nhóm lớp để xem toàn bộ lớp.',
+                    'Try another keyword or open the Classes tab to view all classes.'
+                  )}
             </p>
             {filterTab === 'support' && onOpenNewMessage && (
               <button
@@ -366,7 +376,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
               >
                 <MessageSquarePlus className="h-3.5 w-3.5" />
-                <span>Nhắn mới 1-1</span>
+                <span>{tr('Nhắn mới 1-1', 'New 1-1 message')}</span>
               </button>
             )}
           </div>
@@ -385,7 +395,12 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                   onClick={() => setShowEmptyGroups((prev) => !prev)}
                   className="flex w-full items-center justify-between text-left text-[11px] font-bold uppercase tracking-wider text-stone-500 hover:text-stone-800"
                 >
-                  <span>Nhóm lớp chưa có tin nhắn ({emptyGroupRooms.length})</span>
+                  <span>
+                    {tr(
+                      `Nhóm lớp chưa có tin nhắn (${emptyGroupRooms.length})`,
+                      `Classes without messages (${emptyGroupRooms.length})`
+                    )}
+                  </span>
                   {showEmptyGroups ? (
                     <ChevronDown className="h-3.5 w-3.5 shrink-0" />
                   ) : (

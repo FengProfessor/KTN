@@ -11,3 +11,8 @@ crons = ["*/5 * * * *", "0 3 * * *"]
 [vars]
 IZTEACH_VENDOR_ID = "3529cd2b-7af6-4fda-887c-392a79393d6a"
 DEFAULT_COURSE_ID = "6adadba969897b0002482ca5"
+
+[[ratelimits]]
+name = "KTN_CONSULTATION_LIMIT"
+namespace_id = "20261114"
+simple = { limit = 30, period = 60 }

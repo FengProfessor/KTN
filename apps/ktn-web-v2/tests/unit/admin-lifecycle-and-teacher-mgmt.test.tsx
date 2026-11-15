@@ -1786,7 +1786,7 @@ describe('C1 & C2 — Class Lifecycle, Auto Chat Group & Safe Soft-Delete UX', (
       expect(screen.getByTestId('bulk-import-preview-section')).toBeInTheDocument();
       expect(screen.getByTestId('bulk-preview-class-count')).toHaveTextContent('100 lớp');
       expect(screen.getByTestId('bulk-preview-teacher-count')).toHaveTextContent('44 GV');
-      expect(screen.getByTestId('bulk-preview-student-count')).toHaveTextContent('299 học viên');
+      expect(screen.getByTestId('bulk-preview-student-count')).toHaveTextContent('303 học viên');
     });
   });
 });

@@ -1,9 +1,10 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
-import { roleNavigation, NavBadgeKey } from './navigationConfig';
+import { getRoleNavigation, NavBadgeKey } from './navigationConfig';
 import { UnreadBadge } from '@/features/chat/components/UnreadBadge';
 import { getInitials } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 import type { KtnUserSession, UserRole } from '@/types/ktn.types';
 
 interface RoleDesktopNavigationProps {
@@ -22,18 +23,19 @@ export const RoleDesktopNavigation: React.FC<RoleDesktopNavigationProps> = ({
   onLogout,
 }) => {
   const location = useLocation();
-  const config = roleNavigation[role] || roleNavigation.student;
+  const { lang, tr } = useI18n();
+  const config = getRoleNavigation(role, lang);
 
   const subtitle =
     role === 'teacher'
-      ? 'Giáo viên chủ nhiệm'
+      ? tr('Giáo viên chủ nhiệm', 'Homeroom Teacher')
       : role === 'admin'
-      ? 'Quản lý Học vụ'
+      ? tr('Quản lý Học vụ', 'Academic Admin')
       : user?.classCode
-      ? `Lớp ${user.classCode}`
+      ? tr(`Lớp ${user.classCode}`, `Class ${user.classCode}`)
       : isDemoMode
-      ? 'Lớp YCT2-04'
-      : 'Học viên tự học / Chưa xếp lớp';
+      ? tr('Lớp YCT2-04', 'Class YCT2-04')
+      : tr('Học viên tự học / Chưa xếp lớp', 'Self-study / Unassigned');
 
   return (
     <aside
@@ -49,7 +51,7 @@ export const RoleDesktopNavigation: React.FC<RoleDesktopNavigationProps> = ({
           </div>
           <div className="min-w-0">
             <p className="truncate font-display text-sm font-extrabold text-stone-900">
-              Khổng Tử Nhí
+              {tr('Khổng Tử Nhí', 'Khong Tu Nhi')}
             </p>
             <p className="truncate text-[11px] font-medium text-stone-500">
               {config.roleBadgeLabel}
@@ -59,7 +61,7 @@ export const RoleDesktopNavigation: React.FC<RoleDesktopNavigationProps> = ({
       </div>
 
       {/* Role-Specific Nav Links */}
-      <nav className="flex-1 space-y-1 p-2.5" aria-label="Điều hướng chính">
+      <nav className="flex-1 space-y-1 p-2.5" aria-label={tr('Điều hướng chính', 'Main navigation')}>
         {config.desktop.map((item) => {
           const Icon = item.icon;
           const badgeCount = item.badgeKey ? badges[item.badgeKey] || 0 : 0;
@@ -105,7 +107,7 @@ export const RoleDesktopNavigation: React.FC<RoleDesktopNavigationProps> = ({
               data-testid="sidebar-user-name"
               className="truncate text-xs font-bold text-stone-900"
             >
-              {user?.name || 'Thành viên KTN'}
+              {user?.name || tr('Thành viên KTN', 'KTN Member')}
             </p>
             <p
               data-testid="sidebar-user-subtitle"
@@ -118,8 +120,8 @@ export const RoleDesktopNavigation: React.FC<RoleDesktopNavigationProps> = ({
             type="button"
             onClick={onLogout}
             className="rounded-lg p-1.5 text-stone-500 hover:bg-red-100 hover:text-red-800"
-            title="Đăng xuất"
-            aria-label="Đăng xuất"
+            title={tr('Đăng xuất', 'Sign out')}
+            aria-label={tr('Đăng xuất', 'Sign out')}
           >
             <LogOut className="h-4 w-4" />
           </button>

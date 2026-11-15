@@ -3,9 +3,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatApi, sortChatRoomsLatestFirst } from '../services/chatApi';
 import { useUiStore } from '@/stores/useUiStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { KtnApiError } from '@/services/api/ktnApiClient';
 import { generateClientMessageId } from '@/lib/utils';
 import { ChatMessage, ChatRoom, PinnedAnnouncement, SendMessageInput } from '../types/chat.types';
 import { RealtimeChatBroadcastPayload } from './useChatRealtime';
+import { trStatic } from '@/i18n';
 
 const inFlightPromisesByClientId = new Map<string, Promise<{
   message: ChatMessage;
@@ -49,7 +51,7 @@ export function useSendMessage(
           room_id: input.roomId,
           class_code: input.classCode || input.roomId.replace(/^class:/, ''),
           sender_email: user?.email || (isDemoMode ? 'hoangngan@khongtunhi.com' : ''),
-          sender_name: user?.name || user?.email || 'Thành viên KTN',
+          sender_name: user?.name || user?.email || trStatic('Thành viên KTN', 'KTN Member'),
           sender_role: user?.role || 'student',
           content: input.content,
           attachment: input.attachment || null,
@@ -65,9 +67,9 @@ export function useSendMessage(
           const basePreview =
             msg.content ||
             input.content ||
-            (effAtt?.kind === 'image' ? '📷 Hình ảnh' : '');
+            (effAtt?.kind === 'image' ? trStatic('📷 Hình ảnh', '📷 Image') : '');
           const resolvedPreview = effReply
-            ? `[Trả lời ${effReply.senderName || 'tin nhắn'}: "${effReply.content || ''}"]${
+            ? `[Trả lời ${effReply.senderName || trStatic('tin nhắn', 'message')}: "${effReply.content || ''}"]${
                 basePreview ? `\n${basePreview}` : ''
               }`
             : basePreview;
@@ -103,7 +105,9 @@ export function useSendMessage(
                 teacherName: input.roomMeta?.teacherName,
                 label:
                   input.roomMeta?.label ||
-                  (isStudent ? `Học viên (${studentEmail})` : `Phòng ${input.roomId}`),
+                  (isStudent
+                    ? trStatic(`Học viên (${studentEmail})`, `Student (${studentEmail})`)
+                    : trStatic(`Phòng ${input.roomId}`, `Room ${input.roomId}`)),
                 shortLabel: input.roomMeta?.shortLabel || (isStudent ? '1-1' : input.roomId),
                 lastMessage: resolvedPreview,
                 lastSenderName: msg.sender_name || user?.name || user?.email,
@@ -127,7 +131,12 @@ export function useSendMessage(
         try {
           if (isOfflineSimulated) {
             await new Promise((r) => setTimeout(r, 250));
-            throw new Error('Thiết bị đang mất kết nối mạng. Tin nhắn được giữ trên máy.');
+            throw new Error(
+              trStatic(
+                'Thiết bị đang mất kết nối mạng. Tin nhắn được giữ trên máy.',
+                'Device is offline. Message has been saved locally.'
+              )
+            );
           }
 
           if (isDemoMode) {
@@ -215,11 +224,30 @@ export function useSendMessage(
           const errorReason =
             err instanceof Error
               ? err.message
-              : 'Chưa gửi được tin nhắn. Vui lòng kiểm tra kết nối và thử lại.';
+              : trStatic(
+                  'Chưa gửi được tin nhắn. Vui lòng kiểm tra kết nối và thử lại.',
+                  'Could not send message. Please check your connection and try again.'
+                );
 
           const isStillAuthenticated =
             Boolean(useAuthStore.getState().user) || useUiStore.getState().isDemoMode;
           if (!isStillAuthenticated) {
+            throw err;
+          }
+
+          if (err instanceof KtnApiError && err.status === 403) {
+            removeSendingMessage(input.roomId, clientMessageId);
+            void useAuthStore.getState().refreshPermissions?.().catch(() => null);
+            queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
+            queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
+            queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+            queryClient.invalidateQueries({ queryKey: ['notifications'] });
+            queryClient.removeQueries({ queryKey: ['chat-messages', input.roomId] });
+            addToast({
+              title: trStatic('Không còn quyền truy cập phòng chat', 'Room access revoked'),
+              description: errorReason,
+              variant: 'error',
+            });
             throw err;
           }
 
@@ -232,8 +260,11 @@ export function useSendMessage(
           }
 
           addToast({
-            title: 'Chưa gửi được tin nhắn',
-            description: `${errorReason} (Tin nhắn vẫn được giữ để thử lại).`,
+            title: trStatic('Chưa gửi được tin nhắn', 'Failed to send message'),
+            description: trStatic(
+              `${errorReason} (Tin nhắn vẫn được giữ để thử lại).`,
+              `${errorReason} (Message kept for retry).`
+            ),
             variant: 'error',
           });
 
@@ -269,7 +300,11 @@ export function useSendMessage(
 
   const toggleReaction = useCallback(
     (params: { roomId: string; messageId: string; emoji: string }) => {
-      toggleReactionStore(params.messageId, params.emoji, user?.name || user?.email || 'Thành viên KTN');
+      toggleReactionStore(
+        params.messageId,
+        params.emoji,
+        user?.name || user?.email || trStatic('Thành viên KTN', 'KTN Member')
+      );
       onBroadcast?.({
         type: 'REACTION_UPDATED',
         roomId: params.roomId,
@@ -295,7 +330,10 @@ export function useSendMessage(
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['chat-messages', variables.roomId] });
       addToast({
-        title: 'Đã cập nhật thông báo ghim của lớp học',
+        title: trStatic(
+          'Đã cập nhật thông báo ghim của lớp học',
+          'Updated pinned class announcement'
+        ),
         variant: 'success',
       });
     },

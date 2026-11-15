@@ -61,11 +61,10 @@ jobs:
         run: |
           node tests/ktn_three_way_reliability_suite.cjs
 
-      - name: Run Class Lifecycle, Chat/Notification Isolation & UX Acceptance Suites (N01-N33, UX/Scale)
+      - name: Run Class Lifecycle & Chat/Notification Isolation Acceptance Suites (N01-N33)
         run: |
           node tests/ktn_lifecycle_n01_n20_acceptance.cjs
           node tests/ktn_class_notification_matrix_n01_n33.cjs
-          node tests/ktn_ux_and_performance_upgrade_suite.cjs
 
       - name: Run Headless Chromium Browser E2E Suite (Group B — Real DOM & Teacher/Student Flows)
         env:
@@ -81,6 +80,7 @@ jobs:
         working-directory: apps/ktn-web-v2
         run: |
           npm ci
+          node ../../tests/ktn_ux_and_performance_upgrade_suite.cjs
           node ../../tests/ktn_postgres_migration_and_search_benchmark.mjs
           node ../../tests/ktn_scale_benchmark.mjs
           npm run typecheck

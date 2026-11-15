@@ -43,6 +43,8 @@ tests/*
 !tests/ktn_scale_benchmark.mjs
 !tests/ktn_lifecycle_n01_n20_acceptance.cjs
 !apps/ktn-web-v2/public/icons/*.png
+!apps/ktn-web-v2/src/features/games/assets/
+!apps/ktn-web-v2/src/features/games/assets/*.ts
 ebook-bulk-rollout/
 ebook-detail-prototype/
 free-library-redesign/

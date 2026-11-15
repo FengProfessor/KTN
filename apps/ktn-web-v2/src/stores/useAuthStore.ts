@@ -279,7 +279,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('storage', (event: StorageEvent) => {
-    if ((event.key === 'ktn_v2_auth_session' && !event.newValue) || event.key === null) {
+    const isAuthStorageKey =
+      event.key === 'ktn_sll_persistent_auth_v2' || event.key === 'ktn_v2_auth_session';
+    if ((isAuthStorageKey && !event.newValue) || event.key === null) {
       ++authEpoch;
       restoreInFlight = null;
       clearStoredSession();
@@ -291,6 +293,36 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
         isRestoring: false,
         error: null
       });
+      return;
+    }
+    if (event.key === 'ktn_sll_persistent_auth_v2' && event.newValue) {
+      try {
+        const parsed = JSON.parse(event.newValue) as { email?: string; token?: string } | null;
+        const nextEmail = String(parsed?.email || '').trim().toLowerCase();
+        const currentEmail = String(useAuthStore.getState().authUser?.email || '')
+          .trim()
+          .toLowerCase();
+        if (!nextEmail || parsed?.token === 'DEMO-MODE-ONLY') {
+          ++authEpoch;
+          restoreInFlight = null;
+          clearStoredSession();
+          useUiStore.getState().resetSessionUiState();
+          useAuthStore.setState({
+            user: null,
+            authUser: null,
+            isLoading: false,
+            isRestoring: false,
+            error: null
+          });
+        } else if (currentEmail !== nextEmail) {
+          ++authEpoch;
+          restoreInFlight = null;
+          useUiStore.getState().resetSessionUiState();
+          void useAuthStore.getState().restoreSession();
+        }
+      } catch {
+        // Ignore malformed cross-tab auth storage payload
+      }
     }
   });
 }

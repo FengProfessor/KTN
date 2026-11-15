@@ -21516,7 +21516,6 @@ export default {
         const shouldSuppressDuplicateEditNotify =
           !body.forceNotify &&
           newlyPublishedCount === 0 &&
-          updatedExistingCount > 0 &&
           existingDbRow !== null;
 
         let pushDispatch = null;
@@ -21531,7 +21530,7 @@ export default {
           pushDispatch = {
             ok: true,
             skipped: true,
-            reason: 'EDIT_EXISTING_EXERCISE_NO_DUPLICATE_NOTIFY',
+            reason: updatedExistingCount > 0 ? 'EDIT_EXISTING_EXERCISE_NO_DUPLICATE_NOTIFY' : 'NO_NEW_PUBLISHED_EXERCISE_NOTIFY',
             sent: 0
           };
         } else {
@@ -23489,7 +23488,7 @@ export default {
         const teacherHwSelectParam = isSummaryOnly
           ? '&select=id,student_email,student_name,class_code,course_id,lesson_num,lesson_title,status,submitted_at,updated_at'
           : '';
-        const needTeacherMsgs = isTeacherActive && userPrefs.messages !== false;
+        const needTeacherMsgs = isTeacherActive && userPrefs.chat !== false;
 
         const [hwRes, groupMsgRes, classStudentsRes, coursePrivMsgRes] = await Promise.all([
           needTeacherHws

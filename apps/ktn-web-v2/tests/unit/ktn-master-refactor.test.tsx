@@ -9,7 +9,9 @@ import { ClassroomsPage } from '@/features/classrooms/components/ClassroomsPage'
 import { ChatLayout } from '@/features/chat/components/ChatLayout';
 import { AppShell } from '@/app/layouts/AppShell';
 import { chatApi } from '@/features/chat/services/chatApi';
-import { ktnApi, KtnApiError } from '@/services/api/ktnApiClient';
+import { ktnApi, KtnApiError, saveStoredSession } from '@/services/api/ktnApiClient';
+
+type KtnClassSession = Awaited<ReturnType<typeof ktnApi.getClassSessions>>[number];
 import { syncRemoteVocabulary } from '@/features/games/services/vocabularyService';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
@@ -974,5 +976,270 @@ describe('KTN Master Refactor Acceptance Suite (Agent A / B / C / D)', () => {
     expect(calledUrl).toBe('/api/ktn/vocab?level=hsk1');
     expect(calledUrl).not.toContain('workers.dev');
     expect(words.length).toBeGreaterThan(0);
+  });
+
+  it('BUG-1 Regression: cross-tab logout & account switch on ktn_sll_persistent_auth_v2 syncs useAuthStore and clears drafts', async () => {
+    const studentSession = {
+      id: 'stu-ct-1',
+      email: 'tab1.student@khongtunhi.com',
+      name: 'Bé Tab Một',
+      role: 'student' as const,
+      roles: ['student' as const],
+      classCode: 'YCT2-04',
+      assignedClasses: ['YCT2-04'],
+      hasLiveClass: true,
+      hasOnlineCourses: false,
+      onlineCourses: [],
+    };
+    saveStoredSession(studentSession, 'jwt-tab1-token');
+    expect(localStorage.getItem('ktn_sll_persistent_auth_v2')).toContain('tab1.student@khongtunhi.com');
+
+    useAuthStore.setState({
+      user: { ...studentSession, token: 'jwt-tab1-token' },
+      authUser: { ...studentSession, token: 'jwt-tab1-token' },
+    });
+    useUiStore.getState().setRoomDraft('class:YCT2-04', 'Bản nháp riêng của Tab 1');
+
+    act(() => {
+      localStorage.removeItem('ktn_sll_persistent_auth_v2');
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'ktn_sll_persistent_auth_v2',
+          newValue: null,
+        })
+      );
+    });
+
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().authUser).toBeNull();
+    expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
+
+    // Also test switching to a different account in another tab
+    saveStoredSession(studentSession, 'jwt-tab1-token');
+    useAuthStore.setState({
+      user: { ...studentSession, token: 'jwt-tab1-token' },
+      authUser: { ...studentSession, token: 'jwt-tab1-token' },
+    });
+    useUiStore.getState().setRoomDraft('class:YCT2-04', 'Bản nháp trước khi đổi tài khoản');
+    const teacherSession = {
+      ...studentSession,
+      id: 'tea-ct-2',
+      email: 'linh.lam@khongtunhi.com',
+      name: 'Cô Lâm Linh',
+      role: 'teacher' as const,
+      roles: ['teacher' as const],
+      token: 'jwt-tab2-teacher-token',
+    };
+    const verifySpy = vi.spyOn(ktnApi, 'verifySession').mockResolvedValue(teacherSession);
+    saveStoredSession(teacherSession, 'jwt-tab2-teacher-token');
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'ktn_sll_persistent_auth_v2',
+          newValue: JSON.stringify(teacherSession),
+        })
+      );
+    });
+
+    expect(localStorage.getItem('ktn_v2_chat_draft_class:YCT2-04')).toBeNull();
+    await waitFor(() => {
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(useAuthStore.getState().user?.email).toBe('linh.lam@khongtunhi.com');
+    });
+  });
+
+  it('BUG-2 Regression: newer server sessionsQuery data overrides older localSavedSessions timestamp in TeacherWorkspace', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 't-bug2',
+        email: 'linh.lam@khongtunhi.com',
+        name: 'Cô Lâm Linh',
+        role: 'teacher',
+        roles: ['teacher'],
+        classCode: 'YCT2-04',
+        assignedClasses: ['YCT2-04'],
+        hasLiveClass: true,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([
+      {
+        id: 'YCT2-04',
+        name: 'Lớp YCT2-04',
+        teacher_code: 'GV-01',
+        schedule: 'T3-T5',
+        teacher_name: 'Cô Lâm Linh',
+        teacher_email: 'linh.lam@khongtunhi.com',
+        total_lessons: 24,
+        current_lesson: 1,
+        active: true,
+      },
+    ]);
+    vi.spyOn(ktnApi, 'getStudents').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([]);
+
+    let currentRemoteSessions: KtnClassSession[] = [
+      {
+        id: 'YCT2-04__S5',
+        classCode: 'YCT2-04',
+        session_num: 5,
+        sessionNum: 5,
+        session_title: 'Buổi 5',
+        title: 'Buổi 5',
+        updatedAt: '2026-11-15T10:00:00.000Z',
+        exercises: [
+          {
+            id: 'EX-5A',
+            num: 1,
+            type: 'audio',
+            title: 'Bài 1: Phiên bản cũ',
+            prompt: 'Đọc từ mới',
+            submissionType: 'audio',
+            status: 'published',
+            attachments: [],
+          },
+        ],
+      },
+    ];
+    vi.spyOn(ktnApi, 'getClassSessions').mockImplementation(async () => currentRemoteSessions);
+    vi.spyOn(ktnApi, 'saveClassSession').mockResolvedValue({
+      id: 'YCT2-04__S5',
+      classCode: 'YCT2-04',
+      session_num: 5,
+      sessionNum: 5,
+      session_title: 'Buổi 5',
+      title: 'Buổi 5',
+      updatedAt: '2026-11-15T10:05:00.000Z',
+      exercises: [
+        {
+          id: 'EX-5A',
+          num: 1,
+          type: 'audio',
+          title: 'Bài 1: Lưu tại Tab A (10:05)',
+          prompt: 'Đọc từ mới',
+          submissionType: 'audio',
+          status: 'published',
+          attachments: [],
+        },
+      ],
+    });
+
+    const { queryClient } = renderWithQuery(<TeacherWorkspace />, ['/teacher?tab=sessions']);
+
+    const classSel = await screen.findByTestId('teacher-exercise-class-select');
+    await waitFor(() => {
+      expect(classSel.querySelector('option[value="YCT2-04"]')).toBeTruthy();
+    });
+    fireEvent.change(classSel, { target: { value: 'YCT2-04' } });
+
+    fireEvent.click(await screen.findByTestId('teacher-edit-saved-exercise-btn-EX-5A'));
+    fireEvent.change(await screen.findByTestId('teacher-exercise-title-input'), {
+      target: { value: 'Bài 1: Lưu tại Tab A (10:05)' },
+    });
+    fireEvent.click(screen.getByTestId('teacher-save-session-btn'));
+    fireEvent.click(await screen.findByTestId('teacher-confirm-overwrite-btn'));
+
+    expect((await screen.findAllByText(/Lưu tại Tab A \(10:05\)/)).length).toBeGreaterThan(0);
+
+    // Simulate Tab B saving newer data at 10:15:00Z and sessionsQuery refetching
+    currentRemoteSessions = [
+      {
+        id: 'YCT2-04__S5',
+        classCode: 'YCT2-04',
+        session_num: 5,
+        sessionNum: 5,
+        session_title: 'Buổi 5',
+        title: 'Buổi 5',
+        updatedAt: '2026-11-15T10:15:00.000Z',
+        exercises: [
+          {
+            id: 'EX-5A',
+            num: 1,
+            type: 'audio',
+            title: 'Bài 1: Cập nhật mới từ Tab B (10:15)',
+            prompt: 'Đọc từ mới',
+            submissionType: 'audio',
+            status: 'published',
+            attachments: [],
+          },
+          {
+            id: 'EX-5B',
+            num: 2,
+            type: 'audio',
+            title: 'Bài 2: Thêm mới ở Tab B',
+            prompt: 'Viết chữ Hán',
+            submissionType: 'audio',
+            status: 'published',
+            attachments: [],
+          },
+        ],
+      },
+    ];
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ktn-class-sessions', 'YCT2-04'] });
+    });
+
+    expect((await screen.findAllByText(/Cập nhật mới từ Tab B \(10:15\)/)).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('teacher-saved-exercise-EX-5B')).toBeInTheDocument();
+  });
+
+  it('BUG-3 Regression: StudentHome markReadMutation invalidates ktn-notifications-summary for header badge consistency', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 'stu-bug3',
+        email: 'hoangngan@khongtunhi.com',
+        name: 'Hoàng Ngân',
+        role: 'student',
+        roles: ['student'],
+        classCode: 'YCT2-04',
+        assignedClasses: ['YCT2-04'],
+        hasLiveClass: true,
+        hasOnlineCourses: false,
+        onlineCourses: [],
+      },
+    });
+    vi.spyOn(ktnApi, 'getStudentMe').mockResolvedValue({
+      ok: true,
+      student: {
+        code: 'HS-01',
+        name: 'Hoàng Ngân',
+        email: 'hoangngan@khongtunhi.com',
+        class_code: 'YCT2-04',
+        online_courses: [],
+      },
+    } as never);
+    vi.spyOn(ktnApi, 'getClasses').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getHomeworks').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getClassSessions').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getNotifications').mockResolvedValue({
+      notifications: [
+        {
+          id: 'NOTIF-BUG3-UNREAD',
+          type: 'homework_graded',
+          classCode: 'YCT2-04',
+          title: 'Cô đã chấm bài tập số 1',
+          body: '9.5/10 — Phát âm rõ ràng',
+          actionUrl: '#/classrooms?class=YCT2-04',
+          createdAt: new Date().toISOString(),
+          read: false,
+        },
+      ],
+      readIds: [],
+    });
+    const markSpy = vi.spyOn(ktnApi, 'markNotificationsRead').mockResolvedValue({ ok: true, markedCount: 1 } as never);
+
+    const { queryClient } = renderWithQuery(<StudentHome />, ['/']);
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const notifItemBtn = await screen.findByText(/Cô đã chấm bài tập số 1/);
+    fireEvent.click(notifItemBtn);
+
+    await waitFor(() => {
+      expect(markSpy).toHaveBeenCalledWith(['NOTIF-BUG3-UNREAD']);
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['ktn-notifications-summary'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['ktn-notifications'] });
+    });
   });
 });

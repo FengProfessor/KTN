@@ -291,6 +291,7 @@ export const StudentHome: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['ktn-notifications-summary'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });

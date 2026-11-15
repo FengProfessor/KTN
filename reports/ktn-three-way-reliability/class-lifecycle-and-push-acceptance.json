@@ -1,6 +1,6 @@
 {
   "suite": "KTN Class Lifecycle, Auto Chat Group & Push Notification Matrix (N01-N33)",
-  "generatedAt": "2026-11-15T20:50:23.480Z",
+  "generatedAt": "2026-11-15T21:30:35.754Z",
   "totalScenarios": 33,
   "passedScenarios": 33,
   "failedScenarios": 0,
@@ -480,7 +480,7 @@
       "title": "Teacher A giao bài tập -> Student A nhận homework_assigned (in-app + Web Push)",
       "status": "PASS",
       "passed": true,
-      "evidence": "notifId=NOTIF-ASSIGN-YCT2-05-S1-2026-11-15T20:50:22.512Z, pushEndpoints=https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
+      "evidence": "notifId=NOTIF-ASSIGN-YCT2-05-S1-2026-11-15T21:30:34.733Z, pushEndpoints=https://web.push.apple.com/QA_STUDENT_A_IPHONE_PWA"
     },
     {
       "id": "N24",
@@ -488,7 +488,7 @@
       "title": "Student A nộp bài -> Giáo viên phụ trách (Teacher A) nhận thông báo homework_submitted (in-app + Web Push)",
       "status": "PASS",
       "passed": true,
-      "evidence": "homeworkId=HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1, notifId=NOTIF-SUB-HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1-2026-11-15T20:50:22.521Z, pushEndpoints=https://fcm.googleapis.com/fcm/send/QA_TEACHER_A_ANDROID"
+      "evidence": "homeworkId=HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1, notifId=NOTIF-SUB-HW-e2e.hs.a@khongtunhi.com-CLASS_YCT2-05-L1-2026-11-15T21:30:34.741Z, pushEndpoints=https://fcm.googleapis.com/fcm/send/QA_TEACHER_A_ANDROID"
     },
     {
       "id": "N25",

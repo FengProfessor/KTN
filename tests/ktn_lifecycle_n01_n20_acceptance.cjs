@@ -1238,7 +1238,106 @@ async function run() {
   assert.strictEqual(clsCodeOnlyAfter.teacher_email, null);
   pass('N30', 'Teacher 1-1 notifications resist >15 global student:* flooding and POST /api/ktn/teachers clears teacher_code-only classes', 'verified');
 
-  console.log('\nSUMMARY: 30/30 KTN LIFECYCLE & PWA ACCEPTANCE CHECKS (N01–N30) PASSED');
+  // N31: Deleting an exercise from an existing session via deletedExerciseIds + exercises: [] does NOT emit spurious homework_assigned notification
+  const addExForDelRes = await h.callApi('/api/ktn/class-sessions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${teacherYTok}` },
+    body: {
+      classCode: 'CLS-B',
+      sessionNum: 1,
+      title: 'Buổi 1 Lớp B',
+      mode: 'append_exercise',
+      status: 'published',
+      exercise: { id: 'EX-B-DEL-TARGET', num: 2, title: 'Bài chuẩn bị xóa N31', prompt: 'Đọc thêm', status: 'published' }
+    }
+  });
+  assert.strictEqual(addExForDelRes.status, 200);
+  const stuBNotifCountBeforeDelete = h.state.tables.ktn_dlp_alerts.filter(
+    (a) => a.room_id === 'KTN_LIFECYCLE_NOTIFICATION'
+  ).length;
+  const delExRes = await h.callApi('/api/ktn/class-sessions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${teacherYTok}` },
+    body: {
+      classCode: 'CLS-B',
+      sessionNum: 1,
+      title: 'Buổi 1 Lớp B',
+      mode: 'save_session',
+      status: 'published',
+      deletedExerciseIds: ['EX-B-DEL-TARGET'],
+      exercises: []
+    }
+  });
+  assert.strictEqual(delExRes.status, 200);
+  assert.strictEqual(delExRes.data?.pushDispatch?.skipped, true, `Deleting an exercise must suppress duplicate homework_assigned notify, got: ${JSON.stringify(delExRes.data?.pushDispatch)}`);
+  assert.strictEqual(delExRes.data?.pushDispatch?.reason, 'NO_NEW_PUBLISHED_EXERCISE_NOTIFY');
+  const stuBNotifCountAfterDelete = h.state.tables.ktn_dlp_alerts.filter(
+    (a) => a.room_id === 'KTN_LIFECYCLE_NOTIFICATION'
+  ).length;
+  assert.strictEqual(stuBNotifCountAfterDelete, stuBNotifCountBeforeDelete, 'Deleting an exercise must not create a new lifecycle notification');
+  pass('N31', 'Deleting an exercise with deletedExerciseIds + exercises: [] suppresses phantom homework_assigned notification', 'verified');
+
+  // N32: Teacher notification prefs chat: false skips teacher message queries/notifications and chat: true restores them
+  h.state.tables.ktn_students.push({
+    code: 'HS-N-32',
+    name: 'Học Viên N32',
+    email: 'student.n32@khongtunhi.com',
+    phone: '0901000032',
+    class_code: 'CLS-B',
+    online_courses: [],
+    account_status: 'active',
+    updated_at: new Date().toISOString()
+  });
+  h.state.tables.ktn_messages.push({
+    id: 'MSG-N32-B',
+    room_id: 'student:student.n32@khongtunhi.com',
+    class_code: null,
+    sender_email: 'student.n32@khongtunhi.com',
+    sender_name: 'Học Viên N32',
+    sender_role: 'student',
+    content: 'Tin nhắn N32 cho Cô Y',
+    created_at: new Date(Date.now() + 5000).toISOString()
+  });
+  const prefOffRes = await h.callApi('/api/ktn/notifications/settings', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${teacherYTok}` },
+    body: { chat: false }
+  });
+  assert.strictEqual(prefOffRes.status, 200);
+  assert.strictEqual(prefOffRes.data?.settings?.chat, false);
+  const sbQueryIdxBeforeChatOff = h.state.supabaseQueries.length;
+  const teaNotifsChatOff = await h.callApi('/api/ktn/notifications', {
+    headers: { Authorization: `Bearer ${teacherYTok}` }
+  });
+  assert.strictEqual(teaNotifsChatOff.status, 200);
+  const queriesDuringChatOff = h.state.supabaseQueries.slice(sbQueryIdxBeforeChatOff);
+  assert.strictEqual(
+    queriesDuringChatOff.some((q) => q.table === 'ktn_messages'),
+    false,
+    `Teacher with chat: false must skip ktn_messages queries upfront, got: ${JSON.stringify(queriesDuringChatOff.filter((q) => q.table === 'ktn_messages'))}`
+  );
+  assert.strictEqual(
+    (teaNotifsChatOff.data?.notifications || []).some((n) => String(n.type || '').startsWith('chat_')),
+    false,
+    'Teacher with chat: false must not receive chat notifications'
+  );
+  const prefOnRes = await h.callApi('/api/ktn/notifications/settings', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${teacherYTok}` },
+    body: { chat: true }
+  });
+  assert.strictEqual(prefOnRes.status, 200);
+  const teaNotifsChatOn = await h.callApi('/api/ktn/notifications', {
+    headers: { Authorization: `Bearer ${teacherYTok}` }
+  });
+  assert.strictEqual(teaNotifsChatOn.status, 200);
+  assert.ok(
+    (teaNotifsChatOn.data?.notifications || []).some((n) => String(n.roomId || '').toLowerCase() === 'student:student.n32@khongtunhi.com'),
+    'Teacher restoring chat: true must regain student.n32 chat notifications'
+  );
+  pass('N32', 'GET /api/ktn/notifications honors userPrefs.chat setting cleanly and skips ktn_messages queries when chat=false', 'verified');
+
+  console.log('\nSUMMARY: 32/32 KTN LIFECYCLE & PWA ACCEPTANCE CHECKS (N01–N32) PASSED');
 }
 
 run().catch((err) => {

@@ -634,9 +634,26 @@ export const TeacherWorkspace: React.FC = () => {
       const numSession = Math.max(1, Math.floor(Number(sessionNum)));
       const remoteSessions = sessionsQuery.data || [];
       const localSessions = localSavedSessions[effectiveClassId] || [];
+      const getUpdatedAtMs = (s?: (KtnClassSession & { updated_at?: string }) | null) => {
+        const raw = s?.updatedAt ?? s?.updated_at;
+        const ts = typeof raw === 'string' && raw ? Date.parse(raw) : Number.NaN;
+        return Number.isFinite(ts) ? ts : Number.NaN;
+      };
       const sessionMap = new Map<number, KtnClassSession>();
       remoteSessions.forEach((s) => sessionMap.set(Number(s.sessionNum ?? s.session_num), s));
-      localSessions.forEach((s) => sessionMap.set(Number(s.sessionNum ?? s.session_num), s));
+      localSessions.forEach((s) => {
+        const num = Number(s.sessionNum ?? s.session_num);
+        const existingRemote = sessionMap.get(num);
+        if (!existingRemote) {
+          sessionMap.set(num, s);
+          return;
+        }
+        const remoteTs = getUpdatedAtMs(existingRemote);
+        const localTs = getUpdatedAtMs(s);
+        if (!Number.isFinite(remoteTs) || (Number.isFinite(localTs) && localTs > remoteTs)) {
+          sessionMap.set(num, s);
+        }
+      });
 
       const existingSession = sessionMap.get(numSession);
       const existingExercises: KtnSessionExercise[] = Array.isArray(existingSession?.exercises)
@@ -777,15 +794,20 @@ export const TeacherWorkspace: React.FC = () => {
       };
     },
     onSuccess: ({ savedSession, submitStatus, saveMode, targetExercise }) => {
+      const savedWithSnake = savedSession as KtnClassSession & { updated_at?: string };
+      const normalizedSavedSession: KtnClassSession =
+        savedWithSnake.updatedAt || savedWithSnake.updated_at
+          ? savedSession
+          : { ...savedSession, updatedAt: new Date().toISOString() };
       setLocalSavedSessions((prev) => {
         const list = prev[effectiveClassId] || [];
-        const num = Number(savedSession.sessionNum ?? savedSession.session_num);
+        const num = Number(normalizedSavedSession.sessionNum ?? normalizedSavedSession.session_num);
         const filtered = list.filter(
           (s) => Number(s.sessionNum ?? s.session_num) !== num
         );
         return {
           ...prev,
-          [effectiveClassId]: [...filtered, savedSession].sort(
+          [effectiveClassId]: [...filtered, normalizedSavedSession].sort(
             (a, b) =>
               Number(a.sessionNum ?? a.session_num) -
               Number(b.sessionNum ?? b.session_num)
@@ -1348,6 +1370,11 @@ export const TeacherWorkspace: React.FC = () => {
   const sessionsList = useMemo(() => {
     const remote = sessionsQuery.data || [];
     const local = localSavedSessions[effectiveClassId] || [];
+    const getUpdatedAtMs = (s?: (KtnClassSession & { updated_at?: string }) | null) => {
+      const raw = s?.updatedAt ?? s?.updated_at;
+      const ts = typeof raw === 'string' && raw ? Date.parse(raw) : Number.NaN;
+      return Number.isFinite(ts) ? ts : Number.NaN;
+    };
     const mergedMap = new Map<number, KtnClassSession>();
     remote.forEach((s) => {
       const num = Number(s.sessionNum ?? s.session_num);
@@ -1355,7 +1382,17 @@ export const TeacherWorkspace: React.FC = () => {
     });
     local.forEach((s) => {
       const num = Number(s.sessionNum ?? s.session_num);
-      if (num > 0) mergedMap.set(num, s);
+      if (num <= 0) return;
+      const existingRemote = mergedMap.get(num);
+      if (!existingRemote) {
+        mergedMap.set(num, s);
+        return;
+      }
+      const remoteTs = getUpdatedAtMs(existingRemote);
+      const localTs = getUpdatedAtMs(s);
+      if (!Number.isFinite(remoteTs) || (Number.isFinite(localTs) && localTs > remoteTs)) {
+        mergedMap.set(num, s);
+      }
     });
     return Array.from(mergedMap.values()).sort(
       (a, b) =>

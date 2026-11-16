@@ -934,6 +934,8 @@ export const LearningPage: React.FC = () => {
     unitsQuery.error,
   ]);
 
+  const [drmManualRetrying, setDrmManualRetrying] = useState(false);
+
   const activeDrmUnitId = String(
     activeLesson?.unitId || activeLesson?._id || activeLesson?.id || ''
   ).trim();
@@ -954,6 +956,8 @@ export const LearningPage: React.FC = () => {
     enabled: isDrmLessonActive,
     staleTime: 1000 * 45,
     gcTime: 1000 * 90,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: 1,
   });
 
@@ -1330,7 +1334,10 @@ export const LearningPage: React.FC = () => {
                 : drmPlaybackQuery.data || null
             }
             isDrmLoading={Boolean(
-              isDrmLessonActive && (drmPlaybackQuery.isLoading || drmPlaybackQuery.isFetching)
+              isDrmLessonActive &&
+                (drmPlaybackQuery.isLoading ||
+                  drmManualRetrying ||
+                  (drmPlaybackQuery.isFetching && !drmPlaybackQuery.data))
             )}
             drmPlaybackError={
               drmPlaybackQuery.isError
@@ -1353,7 +1360,10 @@ export const LearningPage: React.FC = () => {
               if (videoDemoScenario === 'error') setVideoDemoScenario('live_real');
               void unitsQuery.refetch();
               if (isDrmLessonActive) {
-                void drmPlaybackQuery.refetch();
+                setDrmManualRetrying(true);
+                void drmPlaybackQuery.refetch().finally(() => {
+                  setDrmManualRetrying(false);
+                });
               }
             }}
             onWatchDemoCourse={() => openDemoVideoModal(activeCourse)}

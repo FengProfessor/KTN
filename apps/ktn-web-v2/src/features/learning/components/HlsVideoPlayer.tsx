@@ -620,7 +620,9 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
 
           const sessionToken = String(getStoredSession()?.token || '').trim();
           const authHeaderValue =
-            sessionToken && sessionToken !== 'DEMO-MODE-ONLY'
+            sessionToken &&
+            sessionToken !== 'DEMO-MODE-ONLY' &&
+            !sessionToken.startsWith('KTN-')
               ? toHttpHeaderSafeValue(`Bearer ${sessionToken}`)
               : '';
 
@@ -682,13 +684,14 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             const prRob = capReport.playready.maxRobustness
               ? [capReport.playready.maxRobustness]
               : ['2000'];
+            const useLegacyPrOnly =
+              capReport.playready.keySystem === DRM_KEY_SYSTEMS.playready;
             drmConfig.keySystemsMapping = {
               [DRM_KEY_SYSTEMS.playready]: DRM_KEY_SYSTEMS.playreadyRecommendation,
             };
-            drmConfig.preferredKeySystems = [
-              DRM_KEY_SYSTEMS.playreadyRecommendation,
-              DRM_KEY_SYSTEMS.playready,
-            ];
+            drmConfig.preferredKeySystems = useLegacyPrOnly
+              ? [DRM_KEY_SYSTEMS.playready, DRM_KEY_SYSTEMS.playreadyRecommendation]
+              : [DRM_KEY_SYSTEMS.playreadyRecommendation, DRM_KEY_SYSTEMS.playready];
             drmConfig.servers = {
               [DRM_KEY_SYSTEMS.playready]: drmPlayback.licenseEndpoints.playready,
               [DRM_KEY_SYSTEMS.playreadyRecommendation]: drmPlayback.licenseEndpoints.playready,
@@ -696,12 +699,17 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             drmConfig.advanced = {
               [DRM_KEY_SYSTEMS.playreadyRecommendation]: {
                 videoRobustness: prRob,
-                audioRobustness: ['2000'],
+                audioRobustness: ['2000', ''],
               },
-              [DRM_KEY_SYSTEMS.playready]: {
-                videoRobustness: prRob,
-                audioRobustness: ['2000'],
-              },
+              [DRM_KEY_SYSTEMS.playready]: useLegacyPrOnly
+                ? {
+                    videoRobustness: [''],
+                    audioRobustness: [''],
+                  }
+                : {
+                    videoRobustness: prRob,
+                    audioRobustness: ['2000', ''],
+                  },
             };
           } else {
             const wvRob = capReport.widevine.maxRobustness
@@ -1126,6 +1134,9 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             onLoadedMetadata={(e) => {
               setDuration(e.currentTarget.duration || 0);
               setIsMuted(Boolean(e.currentTarget.muted));
+              if (e.currentTarget.playbackRate !== playbackRate) {
+                e.currentTarget.playbackRate = playbackRate;
+              }
               setInternalStatus('ready');
             }}
             onError={(e) => {

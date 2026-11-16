@@ -392,7 +392,7 @@ function computeStudentCase(stu) {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, X-KTN-Webhook-Secret, X-KTN-Test-Mode, X-KTN-QA-Simulated-Now, X-KTN-DRM-Token',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, SOAPAction, X-KTN-Webhook-Secret, X-KTN-Test-Mode, X-KTN-QA-Simulated-Now, X-KTN-DRM-Token',
   'Access-Control-Max-Age': '86400',
   'X-KTN-Worker-Version': 'ktn-prod-v2026.11.03'
 };
@@ -14563,14 +14563,52 @@ export default {
         mappedOwner && mappedOwner.courseId === resolvedCourseId
           ? String(COURSE_UNIT_MAP[resolvedCourseId]?.[mappedOwner.lessonNum] || '').toLowerCase()
           : '';
-      const matchedUnit = rawList.find((u) => {
-        const uid = String(u?._id || u?.id || '').trim().toLowerCase();
-        return (
-          uid === normUnitId ||
-          (pairedVideoUnitId && uid === pairedVideoUnitId) ||
-          (pairedHwUnitId && uid === pairedHwUnitId)
+      const hasUnitVideoPayload = (u) =>
+        Boolean(
+          u &&
+            u.type !== 'homework' &&
+            (u.videoId ||
+              (typeof u.video === 'string' && u.video.trim()) ||
+              u.resources?.[0]?._id ||
+              u.resources?.[0]?.id ||
+              u.streamUrl)
         );
-      });
+      const exactMatchedUnit =
+        rawList.find((u) => String(u?._id || u?.id || '').trim().toLowerCase() === normUnitId) ||
+        null;
+      const pairedVideoUnit = pairedVideoUnitId
+        ? rawList.find(
+            (u) =>
+              String(u?._id || u?.id || '').trim().toLowerCase() === pairedVideoUnitId &&
+              u?.type !== 'homework'
+          ) ||
+          rawList.find((u) => String(u?._id || u?.id || '').trim().toLowerCase() === pairedVideoUnitId) ||
+          null
+        : null;
+      const pairedHwUnit = pairedHwUnitId
+        ? rawList.find((u) => String(u?._id || u?.id || '').trim().toLowerCase() === pairedHwUnitId) ||
+          null
+        : null;
+      let indexPairedVideoUnit = null;
+      if (!hasUnitVideoPayload(exactMatchedUnit) && !pairedVideoUnit && exactMatchedUnit?.type === 'homework') {
+        const sortedRaw = [...rawList].sort(
+          (a, b) => Number(a?.index ?? a?.num ?? 0) - Number(b?.index ?? b?.num ?? 0)
+        );
+        const hwOnly = sortedRaw.filter((u) => u && u.type === 'homework');
+        const vidOnly = sortedRaw.filter((u) => u && u.type !== 'homework');
+        const hwIdx = hwOnly.findIndex(
+          (u) => String(u?._id || u?.id || '').trim().toLowerCase() === normUnitId
+        );
+        if (hwIdx >= 0 && vidOnly[hwIdx]) {
+          indexPairedVideoUnit = vidOnly[hwIdx];
+        }
+      }
+      const matchedUnit =
+        (hasUnitVideoPayload(exactMatchedUnit) ? exactMatchedUnit : null) ||
+        pairedVideoUnit ||
+        indexPairedVideoUnit ||
+        exactMatchedUnit ||
+        pairedHwUnit;
       const belongsToCourseInMap = Boolean(mappedOwner && mappedOwner.courseId === resolvedCourseId);
       if (!matchedUnit && !belongsToCourseInMap) {
         return jsonResponse({
@@ -14580,15 +14618,21 @@ export default {
         }, 404);
       }
 
+      const rawVidSource =
+        (hasUnitVideoPayload(exactMatchedUnit) ? exactMatchedUnit : null) ||
+        pairedVideoUnit ||
+        indexPairedVideoUnit ||
+        (HSK1_UNIT_VID_MAP[normUnitId] ? null : pairedHwUnit) ||
+        matchedUnit;
       const rawVidField = String(
-        matchedUnit?.videoId ||
-          (typeof matchedUnit?.video === 'string' ? matchedUnit.video : '') ||
-          matchedUnit?.resources?.[0]?._id ||
-          matchedUnit?.resources?.[0]?.id ||
+        rawVidSource?.videoId ||
+          (typeof rawVidSource?.video === 'string' ? rawVidSource.video : '') ||
+          rawVidSource?.resources?.[0]?._id ||
+          rawVidSource?.resources?.[0]?.id ||
           HSK1_UNIT_VID_MAP[normUnitId] ||
           ''
       ).trim();
-      const vidMatch = `${rawVidField} ${String(matchedUnit?.streamUrl || matchedUnit?.video || '')}`.match(
+      const vidMatch = `${rawVidField} ${String(rawVidSource?.streamUrl || rawVidSource?.video || '')}`.match(
         /media\.izteach\.vn\/[^/]+\/([0-9a-f]{24})\//i
       );
       const cleanVid = /^[0-9a-f]{24}$/i.test(rawVidField)
@@ -14881,6 +14925,10 @@ export default {
         'X-KTN-Unit-Id': String(drmPayload.uid || ''),
         'X-KTN-Video-Id': String(drmPayload.v || '')
       });
+      const soapAction = request.headers.get('SOAPAction');
+      if (soapAction) {
+        upstreamHeaders.set('SOAPAction', soapAction);
+      }
       if (env?.KTN_DRM_AUTH_HEADER) {
         upstreamHeaders.set('Authorization', String(env.KTN_DRM_AUTH_HEADER).trim());
       } else if (env?.KTN_DRM_PROVIDER_API_KEY) {
@@ -15031,7 +15079,7 @@ export default {
             if (!trimmed) return line;
             if (trimmed.startsWith('#')) {
               return trimmed.replace(/URI="([^"]+)"/gi, (_m, uri) => {
-                if (/^skd:/i.test(uri) || /^https?:/i.test(uri)) return `URI="${uri}"`;
+                if (/^(skd|data|https?):/i.test(uri)) return `URI="${uri}"`;
                 const rel = (subDir + uri.replace(/^\/+/, '')).split('?')[0];
                 return `URI="/api/ktn/drm/manifest/${vid}/${fmt}/t-${encodeURIComponent(dt)}/${rel}"`;
               });

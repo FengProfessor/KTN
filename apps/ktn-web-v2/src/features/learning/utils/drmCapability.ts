@@ -92,6 +92,27 @@ async function probeKeySystem(
   }
 }
 
+function hasLegacyWebKitFairPlaySupport(supportsNativeHls: boolean): boolean {
+  if (!supportsNativeHls || typeof window === 'undefined') return false;
+  const wmk = (
+    window as unknown as {
+      WebKitMediaKeys?: { isTypeSupported?: (ks: string, type: string) => boolean };
+    }
+  ).WebKitMediaKeys;
+  if (!wmk) return false;
+  if (typeof wmk.isTypeSupported === 'function') {
+    try {
+      return Boolean(
+        wmk.isTypeSupported(DRM_KEY_SYSTEMS.fairplayLegacy, 'video/mp4') ||
+          wmk.isTypeSupported(DRM_KEY_SYSTEMS.fairplay, 'video/mp4')
+      );
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 export async function detectDrmCapabilities(): Promise<DrmCapabilityReport> {
   const isSecureContext =
     typeof window !== 'undefined' ? Boolean(window.isSecureContext) : false;
@@ -145,13 +166,7 @@ export async function detectDrmCapabilities(): Promise<DrmCapabilityReport> {
 
   if (!isSecureContext || !hasEme) {
     // Check legacy WebKitMediaKeys for older Safari FairPlay presence only as capability hint
-    if (
-      isSecureContext &&
-      typeof window !== 'undefined' &&
-      typeof (window as unknown as { WebKitMediaKeys?: unknown }).WebKitMediaKeys !==
-        'undefined' &&
-      supportsNativeHls
-    ) {
+    if (isSecureContext && hasLegacyWebKitFairPlaySupport(supportsNativeHls)) {
       report.fairplay = {
         supported: true,
         keySystem: DRM_KEY_SYSTEMS.fairplayLegacy,
@@ -319,12 +334,7 @@ export async function detectDrmCapabilities(): Promise<DrmCapabilityReport> {
         keySystem: DRM_KEY_SYSTEMS.fairplayLegacy,
         hardwareBackedLikely: true,
       };
-    } else if (
-      typeof window !== 'undefined' &&
-      typeof (window as unknown as { WebKitMediaKeys?: unknown }).WebKitMediaKeys !==
-        'undefined' &&
-      supportsNativeHls
-    ) {
+    } else if (hasLegacyWebKitFairPlaySupport(supportsNativeHls)) {
       report.fairplay = {
         supported: true,
         keySystem: DRM_KEY_SYSTEMS.fairplayLegacy,
@@ -700,6 +710,7 @@ export function classifyDrmError(
     numericCode === 6010 ||
     numericCode === 6012 ||
     numericCode === 6015 ||
+    numericCode === 6016 ||
     numericCode === 6017 ||
     /license|503|BLOCKED/i.test(rawMessage)
   ) {
@@ -711,8 +722,23 @@ export function classifyDrmError(
           : `Không xác thực được giấy phép phát (${sysLabel})`,
       description:
         lang === 'en'
-          ? 'Your lesson license expired, reached the device cap, or the license service rejected the request.'
-          : 'Phiên cấp phép phát video đã hết hạn, vượt giới hạn thiết bị hoặc máy chủ bản quyền từ chối yêu cầu.',
+          ? 'Your lesson license expired, reached the device cap, or the license/certificate initialization failed.'
+          : 'Phiên cấp phép phát video đã hết hạn, vượt giới hạn thiết bị, thiếu chứng chỉ DRM hoặc máy chủ bản quyền từ chối yêu cầu.',
+    };
+  }
+
+  if (numericCode === 6003) {
+    return {
+      code: 'DRM_MEDIA_ERROR',
+      title:
+        lang === 'en'
+          ? `Unable to attach ${sysLabel} session to video`
+          : `Không thể gắn phiên giải mã ${sysLabel} vào trình phát`,
+      description:
+        lang === 'en'
+          ? 'The browser failed to attach DRM keys to the media element. Please reload or switch browsers.'
+          : 'Trình duyệt không gắn được khóa giải mã DRM vào phần tử video. Vui lòng thử tải lại hoặc mở bằng trình duyệt tương thích.',
+      browserGuidance: guidance,
     };
   }
 

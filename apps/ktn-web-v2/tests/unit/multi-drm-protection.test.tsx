@@ -1321,4 +1321,297 @@ describe('KTN Multi-DRM Protection Suite (Worker APIs, Anti-Bypass, Policy Matri
     fpResponseFilters[0](2, { data: new ArrayBuffer(0) }, {});
     expect(commonRespSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('11. Regression: resolves CFK1 videoId when homework unit precedes video unit, forwards PlayReady SOAPAction, and preserves data: PSSH URIs in FairPlay HLS', async () => {
+    const cfkStudentToken = (
+      await signTestToken({
+        id: 'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68',
+        cognitoUserId: 'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68',
+        email: 'hoangngan@khongtunhi.com',
+        name: 'Bé Nguyễn Hoàng Ngân',
+        role: 'student',
+        roles: ['student'],
+        onlineCourses: [{ id: COURSE_CFK_ID, code: 'CFK-01', title: 'CFK 1' }],
+      })
+    ).token;
+
+    const cfkVideoUnitId = '65e8a76f7a2e2600088125b4';
+    const cfkHwUnitId = '663e2cb2f960e80008fb905a';
+    const expectedCfkVideoId = '65e8a7a56036860008448c37';
+
+    await callWorker('/api/ktn/drm/policy', {
+      method: 'POST',
+      token: adminToken,
+      body: {
+        courseId: COURSE_CFK_ID,
+        policy: 'drmRequired',
+        pilotUnitIds: [cfkVideoUnitId],
+        packagedAssets: {
+          [cfkVideoUnitId]: {
+            dashUrl: 'https://drm-cdn.khongtunhi.test/cfk1-l1/manifest.mpd',
+            hlsFairPlayUrl: 'https://drm-cdn.khongtunhi.test/cfk1-l1/master.m3u8',
+            encryptionScheme: 'cbcs',
+          },
+        },
+      },
+    });
+
+    let capturedSoapAction = '';
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      // Return CFK1 units with HOMEWORK unit BEFORE VIDEO unit (real izTeach unsorted order)
+      if (urlStr.includes('/prod/unit') && urlStr.includes(COURSE_CFK_ID)) {
+        return new Response(
+          JSON.stringify([
+            {
+              _id: cfkHwUnitId,
+              id: cfkHwUnitId,
+              index: 1,
+              num: 1,
+              course: COURSE_CFK_ID,
+              title: 'Assignment 1',
+              type: 'homework',
+            },
+            {
+              _id: cfkVideoUnitId,
+              id: cfkVideoUnitId,
+              index: 0,
+              num: 1,
+              course: COURSE_CFK_ID,
+              title: 'Lesson 1',
+              type: 'video',
+              resources: [{ _id: expectedCfkVideoId, id: expectedCfkVideoId }],
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (urlStr.includes('drm-cdn.khongtunhi.test/cfk1-l1/v720.m3u8')) {
+        return new Response(
+          [
+            '#EXTM3U',
+            '#EXT-X-VERSION:7',
+            '#EXT-X-MAP:URI="v720/init.mp4"',
+            '#EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://ktn/cfk1",KEYFORMAT="com.apple.streamingkeydelivery",KEYFORMATVERSIONS="1"',
+            '#EXT-X-KEY:METHOD=SAMPLE-AES,URI="data:text/plain;base64,AAAAW3Bzc2g=",KEYFORMAT="urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed"',
+            '#EXTINF:4.0,',
+            'v720/1.m4s',
+            '#EXT-X-ENDLIST',
+          ].join('\n'),
+          { status: 200, headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } }
+        );
+      }
+      if (urlStr.includes('kms.vendor-drm.test/playready')) {
+        const hdrs = new Headers(init?.headers || {});
+        capturedSoapAction = hdrs.get('SOAPAction') || '';
+        return new Response('<AcquireLicenseResponse/>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+        });
+      }
+      return baseFetch(input as any, init);
+    }) as any;
+
+    const mockEnv = {
+      KTN_DRM_PLAYREADY_PROXY_URL: 'https://kms.vendor-drm.test/playready',
+      KTN_DRM_PROVIDER_API_KEY: 'super-secret-vendor-key-never-in-browser',
+    };
+
+    const playbackRes = await callWorker(
+      `/api/ktn/drm/playback?unitId=${cfkHwUnitId}&courseId=${COURSE_CFK_ID}`,
+      { token: cfkStudentToken, envOverride: mockEnv }
+    );
+    expect(playbackRes.status).toBe(200);
+    const playbackJson = await playbackRes.json();
+    expect(playbackJson.videoId).toBe(expectedCfkVideoId);
+    expect(playbackJson.manifests.packaged).toBe(true);
+    expect(playbackJson.manifests.dashUrl).toContain(`/api/ktn/drm/manifest/${expectedCfkVideoId}/dash/`);
+    expect(playbackJson.manifests.hlsFairPlayUrl).toContain(`/api/ktn/drm/manifest/${expectedCfkVideoId}/hls/`);
+
+    // Verify CORS preflight allows SOAPAction and PlayReady proxy forwards SOAPAction header
+    const preflightRes = await callWorker('/api/ktn/drm/license/playready', { method: 'OPTIONS' });
+    expect(preflightRes.headers.get('Access-Control-Allow-Headers')).toContain('SOAPAction');
+
+    const soapActionValue = '"http://schemas.microsoft.com/DRM/2007/03/protocols/AcquireLicense"';
+    const prLicRes = await callWorker('/api/ktn/drm/license/playready', {
+      method: 'POST',
+      token: cfkStudentToken,
+      headers: {
+        'X-KTN-DRM-Token': playbackJson.drmToken,
+        'Content-Type': 'text/xml; charset=utf-8',
+        SOAPAction: soapActionValue,
+      },
+      rawBody: new TextEncoder().encode('<AcquireLicense/>'),
+      envOverride: mockEnv,
+    });
+    expect(prLicRes.status).toBe(200);
+    expect(capturedSoapAction).toBe(soapActionValue);
+
+    // Verify FairPlay HLS manifest rewriter preserves both skd: and data: PSSH URIs
+    const hlsVarUrl = playbackJson.manifests.hlsFairPlayUrl.replace(/master\.m3u8$/, 'v720.m3u8');
+    const rewrittenRes = await callWorker(hlsVarUrl, { token: cfkStudentToken, envOverride: mockEnv });
+    expect(rewrittenRes.status).toBe(200);
+    const rewrittenText = await rewrittenRes.text();
+    expect(rewrittenText).toContain('URI="skd://ktn/cfk1"');
+    expect(rewrittenText).toContain('URI="data:text/plain;base64,AAAAW3Bzc2g="');
+    expect(rewrittenText).toContain(`/api/ktn/drm/manifest/${expectedCfkVideoId}/hls/`);
+    expect(rewrittenText).toContain('v720/init.mp4');
+    expect(rewrittenText).toContain('v720/1.m4s');
+  });
+
+  it('12. Regression: keeps active DRM Shaka session alive across window focus events, configures PlayReady fallback audio robustness, and gates legacy WebKitMediaKeys', async () => {
+    // 12a. Legacy WebKitMediaKeys.isTypeSupported=false does not report FairPlay supported
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+    Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    const canPlaySpy = vi
+      .spyOn(HTMLMediaElement.prototype, 'canPlayType')
+      .mockImplementation((mime: string) => (mime.includes('mpegurl') ? 'maybe' : ''));
+    (window as any).WebKitMediaKeys = { isTypeSupported: vi.fn(() => false) };
+    const unsupportedWebViewReport = await detectDrmCapabilities();
+    expect(unsupportedWebViewReport.fairplay.supported).toBe(false);
+    expect(unsupportedWebViewReport.preferredDrm).toBeNull();
+    delete (window as any).WebKitMediaKeys;
+    canPlaySpy.mockRestore();
+
+    // 12b. Shaka 6016 & 6003 classification
+    expect(classifyDrmError({ code: 6016 }, 'fairplay', 'vi').code).toBe('DRM_LICENSE_DENIED');
+    expect(classifyDrmError({ code: 6003 }, 'playready', 'en').code).toBe('DRM_MEDIA_ERROR');
+
+    // 12c. PlayReady player config includes ['2000', ''] audioRobustness fallback & LearningPage ignores focus refetch
+    const unitsJson = await (
+      await callWorker(`/api/ktn/courses/units?courseId=${COURSE_HSK1_ID}`, {
+        token: studentToken,
+      })
+    ).json();
+    const unit1Id = String(unitsJson.lessons[0].unitId || unitsJson.lessons[0]._id);
+
+    await callWorker('/api/ktn/drm/policy', {
+      method: 'POST',
+      token: adminToken,
+      body: {
+        courseId: COURSE_HSK1_ID,
+        policy: 'drmRequired',
+        packagedAssets: {
+          [unit1Id]: {
+            dashUrl: 'https://drm-cdn.khongtunhi.test/pilot/manifest.mpd',
+            encryptionScheme: 'cbcs',
+          },
+        },
+      },
+    });
+
+    const authUser = {
+      id: 'a5782fcf-a0a5-469c-89bc-ed79cd2c1f68',
+      email: 'hoangngan@khongtunhi.com',
+      name: 'Bé Nguyễn Hoàng Ngân',
+      role: 'student' as const,
+      roles: ['student' as const],
+      classCode: 'YCT2-04',
+      hasLiveClass: true,
+      hasOnlineCourses: true,
+      onlineCourses: [{ id: COURSE_HSK1_ID, code: 'HSK1', title: 'HSK 1' }],
+      token: studentToken,
+    };
+    saveStoredSession(authUser, studentToken);
+    useAuthStore.setState({ user: authUser, authUser, isLoading: false });
+    useUiStore.setState({ isDemoMode: false, videoDemoScenario: 'live_real' });
+
+    Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(async (keySystem: string, configs: MediaKeySystemConfiguration[]) => {
+        const rob = configs?.[0]?.videoCapabilities?.[0]?.robustness || '';
+        if (keySystem === 'com.microsoft.playready.recommendation' && rob === '2000') {
+          return {} as MediaKeySystemAccess;
+        }
+        throw new DOMException('Unsupported', 'NotSupportedError');
+      }),
+    });
+
+    let shakaConstructCount = 0;
+    let shakaDestroyCount = 0;
+    const prConfigureCalls: any[] = [];
+    class FakePlayReadyPlayer {
+      constructor() {
+        shakaConstructCount += 1;
+      }
+      getNetworkingEngine() {
+        return { registerRequestFilter: () => {}, registerResponseFilter: () => {} };
+      }
+      configure = (cfg: any) => prConfigureCalls.push(cfg);
+      addEventListener() {}
+      attach = vi.fn(async () => {});
+      load = vi.fn(async () => {});
+      drmInfo = () => ({ keySystem: 'com.microsoft.playready.recommendation' });
+      getVariantTracks = () => [];
+      destroy = vi.fn(async () => {
+        shakaDestroyCount += 1;
+      });
+    }
+    (window as any).shaka = {
+      Player: FakePlayReadyPlayer,
+      polyfill: { installAll: vi.fn() },
+      net: { NetworkingEngine: { RequestType: { LICENSE: 2 } } },
+    };
+
+    let playbackFetchCount = 0;
+    const mockEnv = {
+      KTN_DRM_PLAYREADY_PROXY_URL: 'https://kms.vendor-drm.test/playready',
+      KTN_DRM_PROVIDER_API_KEY: 'super-secret-vendor-key-never-in-browser',
+    };
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (urlStr.includes('/api/ktn/')) {
+        const pathOnly = urlStr.replace(/^https?:\/\/[^/]+/, '');
+        if (pathOnly.startsWith('/api/ktn/drm/playback')) {
+          playbackFetchCount += 1;
+        }
+        const res = await callWorker(pathOnly, {
+          method: init?.method,
+          token: studentToken,
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+          envOverride: mockEnv,
+        });
+        return new Response(await res.text(), { status: res.status });
+      }
+      return prevFetch(input as any, init);
+    }) as any;
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[`/learning?courseId=${COURSE_HSK1_ID}&lesson=1`]}>
+          <LearningPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    const prBadge = await screen.findByTestId('drm-active-badge', {}, { timeout: 5000 });
+    expect(prBadge.textContent).toContain('PlayReady DRM');
+    expect(playbackFetchCount).toBe(1);
+    expect(shakaConstructCount).toBe(1);
+    expect(shakaDestroyCount).toBe(0);
+
+    const prCfg = prConfigureCalls.find((c) => c && typeof c === 'object' && c.drm);
+    expect(prCfg.drm.advanced['com.microsoft.playready.recommendation'].audioRobustness).toEqual([
+      '2000',
+      '',
+    ]);
+
+    // Simulate window focus + visibility return after playback started -> must NOT refetch drmPlayback or destroy active Shaka Player
+    fireEvent(window, new Event('focus'));
+    fireEvent(document, new Event('visibilitychange'));
+    await new Promise((r) => setTimeout(r, 60));
+    expect(playbackFetchCount).toBe(1);
+    expect(shakaConstructCount).toBe(1);
+    expect(shakaDestroyCount).toBe(0);
+  });
 });

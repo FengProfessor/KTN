@@ -1,71 +1,63 @@
 {
-  "reportVersion": "3.0",
-  "generatedAt": "2026-11-15T21:08:30.000Z",
+  "reportVersion": "3.1",
+  "generatedAt": "2026-11-16T00:05:00.000Z",
   "branch": "feat/ktn-react-ui-v2",
   "commits": {
     "baseSha": "940f5a03010a0c64e9ffe6cc21da5d95544b8b34",
     "priorSessionHeadSha": "b42d532cee5d3507ea3375a211a8125221b27784",
     "priorRound2CodeSha": "20ca462d3f442b3ef2525eb9b231402d96102ca6",
     "priorRound2DocsSha": "0a73eee9a1084200ab116c71f33d80f779eba506",
-    "deployedCodeSha": "525b0ac6e704044aa30f7e891d904711f625006f",
-    "deployedShortSha": "525b0ac"
+    "priorRound3CodeSha": "525b0ac6e704044aa30f7e891d904711f625006f",
+    "priorRound3DocsSha": "456a7af461fa92a7e1ec26786a123004c3ae1fe2",
+    "deployedCodeSha": "523da9cbc125b4a8af2bf8b10d80410c76e744f0",
+    "deployedShortSha": "523da9c"
   },
   "githubActionsCiOnDeployedSha": [
     {
       "workflow": "KTN Three-Way Sync & Security Quality Gate",
       "event": "push",
-      "runId": 43760835996,
+      "runId": 43777764579,
       "status": "completed",
       "conclusion": "success",
-      "duration": "5m40s",
-      "url": "https://github.com/FengProfessor/KTN/actions/runs/43760835996"
+      "url": "https://github.com/FengProfessor/KTN/actions/runs/43777764579"
     },
     {
       "workflow": "KTN Three-Way Sync & Security Quality Gate",
       "event": "pull_request",
-      "runId": 43760841291,
+      "runId": 43777769356,
       "status": "completed",
       "conclusion": "success",
-      "url": "https://github.com/FengProfessor/KTN/actions/runs/43760841291"
-    },
-    {
-      "workflow": "KTN Flashcards & Hanzi Writing Quality Gate",
-      "event": "push",
-      "runId": 43760836054,
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/FengProfessor/KTN/actions/runs/43760836054"
+      "url": "https://github.com/FengProfessor/KTN/actions/runs/43777769356"
     },
     {
       "workflow": "KTN Flashcards & Hanzi Writing Quality Gate",
       "event": "pull_request",
-      "runId": 43760841299,
+      "runId": 43777769357,
       "status": "completed",
       "conclusion": "success",
-      "url": "https://github.com/FengProfessor/KTN/actions/runs/43760841299"
+      "url": "https://github.com/FengProfessor/KTN/actions/runs/43777769357"
     }
   ],
   "productionDeployment": {
     "worker": {
       "name": "ktn-sw-proxy",
-      "previousVersionId": "b60a42b7-6472-463f-81ab-245e440fba82",
-      "previousDeploymentId": "166ca326-cf4c-457c-a0fa-9227914c3ad5",
-      "newVersionId": "af9146c2-5873-40fb-a29b-6b28119e3243",
-      "newDeploymentId": "2d82e129-46ba-46ff-b520-ebfede64037d",
-      "deployedAt": "2026-11-15T21:02:39.031637Z",
-      "uploadKiB": 1445.03,
-      "gzipKiB": 374.48,
-      "startupMs": 2,
+      "previousVersionId": "af9146c2-5873-40fb-a29b-6b28119e3243",
+      "previousDeploymentId": "2d82e129-46ba-46ff-b520-ebfede64037d",
+      "newVersionId": "1f768ba8-6aae-4f63-8ad9-5465fc9106ea",
+      "deployedAt": "2026-11-15T21:36:53.267Z",
+      "uploadKiB": 1445.06,
+      "gzipKiB": 374.50,
+      "startupMs": 1,
       "crons": ["*/5 * * * *", "0 3 * * *"],
-      "rollbackCommand": "npx wrangler rollback b60a42b7-6472-463f-81ab-245e440fba82 --config wrangler.toml"
+      "rollbackCommand": "npx wrangler rollback af9146c2-5873-40fb-a29b-6b28119e3243 --config wrangler.toml"
     },
     "frontend": {
       "customPageId": "6adff7ba36309b0002b6e659",
       "customPageSlug": "so-lien-lac-test",
       "v1CustomPageUntouched": "696f7bb3d8cb3100021fd870",
-      "s3Prefix": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-525b0ac",
+      "s3Prefix": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-523da9c",
       "totalAssets": 19,
-      "totalBytes": 2526486,
+      "totalBytes": 2527768,
       "allChunksUnder500KiB": true,
       "hlsPreloadedOnInitialShell": false,
       "backups": [
@@ -113,26 +105,26 @@
     "upgradeNeededNow": "NO (apply pending SQL migrations first; monitor after pg_trgm + ktn_notifications live)"
   },
   "localSuitesVerified": {
-    "syntaxChecks": "PASS (16 files)",
-    "portalBuildDriftCheck": "PASS (sll-hocsinh.html 0 diff)",
-    "threeWayReliabilitySuite": "PASS (64/64)",
-    "lifecycleAcceptanceN01toN30": "PASS (30/30)",
+    "syntaxChecks": "PASS (cloudflare-worker-sw-proxy.js)",
+    "portalBuildDriftCheck": "PASS (build_clean_real_portal.js)",
+    "threeWayReliabilitySuite": "PASS",
+    "lifecycleAcceptanceN01toN32": "PASS (32/32)",
     "classNotificationMatrixN01toN33": "PASS (33/33)",
     "uxAndPerfUpgradeSuite": "PASS (23/23)",
     "postgresV3MigrationAndBenchmark": "PASS (21/21)",
     "scaleBenchmark": "PASS (0 errors across 20/100/300/500 concurrent requests)",
     "reactTypecheck": "PASS",
-    "reactUnitTests": "PASS (19 files, 375 tests)",
+    "reactUnitTests": "PASS (19 files, 378 tests)",
     "reactBuild": "PASS",
     "playwrightUiV2E2E": "PASS (133/133)",
     "browserE2ELocal": "PASS (8/8)",
     "flashcardsVerification": "PASS",
-    "deployAndRollbackDryRun": "PASS"
+    "deployDryRun": "PASS (19 assets < 500 KiB)"
   },
   "checklists": {
     "N01_N30": {
       "status": "PASS",
-      "evidence": "30/30 PASS in tests/ktn_lifecycle_n01_n20_acceptance.cjs + 33/33 PASS in tests/ktn_class_notification_matrix_n01_n33.cjs; physical mobile/desktop closed-app OS display remains NOT VERIFIED"
+      "evidence": "32/32 PASS (N01-N32) in tests/ktn_lifecycle_n01_n20_acceptance.cjs + 33/33 PASS in tests/ktn_class_notification_matrix_n01_n33.cjs; physical mobile/desktop closed-app OS display remains NOT VERIFIED"
     },
     "H01_H15": {
       "status": "PASS",
@@ -155,7 +147,7 @@
     "v2LiveDomAndPwa": {
       "url": "https://khongtunhi.com/custom-page/so-lien-lac-test",
       "httpStatus": 200,
-      "dataKtnCommit": "525b0ac",
+      "dataKtnCommit": "523da9c",
       "manifestHref": "/manifest.json",
       "manifestStatus": 200,
       "manifestStartUrl": "/custom-page/so-lien-lac-test",

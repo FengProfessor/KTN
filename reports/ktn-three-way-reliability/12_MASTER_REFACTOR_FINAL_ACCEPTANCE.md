@@ -1,27 +1,33 @@
-# KTN MASTER REFACTOR — FINAL ACCEPTANCE REPORT (2026-11-16, Round 3 Release)
+# KTN MASTER REFACTOR — FINAL ACCEPTANCE REPORT (2026-11-16, Round 4 Verification & Fix Release)
 
 > Nhánh: `feat/ktn-react-ui-v2`
 > Commit gốc trước đợt refactor (`BASE SHA`): `940f5a03010a0c64e9ffe6cc21da5d95544b8b34` (`PRIOR_SESSION_HEAD`: `b42d532cee5d3507ea3375a211a8125221b27784`)
-> Release trước (`Round 2`): code `20ca462d3f442b3ef2525eb9b231402d96102ca6` (`20ca462`), docs `0a73eee9a1084200ab116c71f33d80f779eba506`
-> **PRODUCTION CODE SHA (`NEW SHA`):** `525b0ac6e704044aa30f7e891d904711f625006f` (`525b0ac`)
+> Release trước (`Round 3`): code `525b0ac6e704044aa30f7e891d904711f625006f` (`525b0ac`), docs `456a7af461fa92a7e1ec26786a123004c3ae1fe2` (`456a7af`)
+> **PRODUCTION CODE SHA (`NEW SHA`):** `523da9cbc125b4a8af2bf8b10d80410c76e744f0` (`523da9c`)
 
 ---
 
-## 1. Xác nhận GitHub Actions CI & Triển khai Production
+## 1. Xác nhận Triển khai Production (`523da9c`) & Sửa lỗi Phản biện
 
-### GitHub Actions CI (`525b0ac`)
-- `KTN Three-Way Sync & Security Quality Gate` (`push`, Run ID `43760835996`, `5m40s`): **`success`** — https://github.com/FengProfessor/KTN/actions/runs/43760835996
-- `KTN Three-Way Sync & Security Quality Gate` (`pull_request`, Run ID `43760841291`): **`success`** — https://github.com/FengProfessor/KTN/actions/runs/43760841291
-- `KTN Flashcards & Hanzi Writing Quality Gate` (`push`, Run ID `43760836054`): **`success`** — https://github.com/FengProfessor/KTN/actions/runs/43760836054
-- `KTN Flashcards & Hanzi Writing Quality Gate` (`pull_request`, Run ID `43760841299`): **`success`** — https://github.com/FengProfessor/KTN/actions/runs/43760841299
+### Các lỗi thật đã phát hiện & vá triệt để ở `523da9c`
+1. **Cross-tab session logout/switch sync (`apps/ktn-web-v2/src/stores/useAuthStore.ts`):** `storage` listener chỉ nghe `'ktn_v2_auth_session'`, bỏ qua key lưu trữ thật `'ktn_sll_persistent_auth_v2'` (`ktnApiClient.ts`), khiến đăng xuất hoặc đổi tài khoản ở tab khác không xóa state/drafts ở tab còn lại. Đã bổ sung đồng bộ `'ktn_sll_persistent_auth_v2'` (giữ tương thích `'ktn_v2_auth_session'`) và xử lý chuyển tài khoản liên tab.
+2. **Merge cache buổi học cũ ghi đè server mới (`apps/ktn-web-v2/src/features/teacher/components/TeacherWorkspace.tsx`):** `localSavedSessions` luôn ghi đè `sessionsQuery.data` theo `sessionNum` bất kể server đã có `updatedAt` mới hơn. Đã chuyển sang so sánh mốc thời gian `updatedAt` ở cả `sessionsList` và `handleSaveSession` (và gắn fallback `updatedAt` khi mock thiếu trường).
+3. **Badge chuông lệch khi đọc trên Dashboard (`apps/ktn-web-v2/src/features/dashboard/components/StudentHome.tsx`):** `markReadMutation.onSuccess` chưa invalidate `['ktn-notifications-summary']`. Đã bổ sung invalidate `['ktn-notifications-summary']`.
+4. **Thông báo ma `homework_assigned` khi xóa bài tập (`cloudflare-worker-sw-proxy.js`):** `POST /api/ktn/class-sessions` khi xóa bài qua `deletedExerciseIds` kèm `exercises: []` khiến `updatedExistingCount === 0` và phát nhầm push `homework_assigned`. Đã chặn phát trùng khi `existingDbRow !== null && newlyPublishedCount === 0 && !body.forceNotify` (trả `NO_NEW_PUBLISHED_EXERCISE_NOTIFY`).
+5. **Sai tên pref `messages` vs `chat` cho giáo viên (`cloudflare-worker-sw-proxy.js`):** `GET /api/ktn/notifications` kiểm tra `userPrefs.messages !== false` thay vì `userPrefs.chat !== false`, khiến vẫn chạy 3 truy vấn `ktn_messages` dù giáo viên đã tắt `chat: false`. Đã sửa thành `userPrefs.chat !== false`.
+
+### GitHub Actions CI (`523da9c`)
+- `KTN Three-Way Sync & Security Quality Gate` (`push`, Run ID `43777764579`): **`success`** — https://github.com/FengProfessor/KTN/actions/runs/43777764579
+- `KTN Three-Way Sync & Security Quality Gate` (`pull_request`, Run ID `43777769356`): **`success`** — https://github.com/FengProfessor/KTN/actions/runs/43777769356
+- `KTN Flashcards & Hanzi Writing Quality Gate` (`pull_request`, Run ID `43777769357`): **`success`** — https://github.com/FengProfessor/KTN/actions/runs/43777769357
 
 ### Cloudflare Worker (`ktn-sw-proxy`)
-- **Version trước (`Round 2`, rollback target):** `b60a42b7-6472-463f-81ab-245e440fba82` (Deployment `166ca326-cf4c-457c-a0fa-9227914c3ad5`, `2026-11-15T20:03:17.473709Z`; phiên bản cũ hơn nữa `9d8222ff-4fdc-4cb1-abf9-798c3d7256c4`)
-- **Version mới (live 100%):** `af9146c2-5873-40fb-a29b-6b28119e3243` (Deployment `2d82e129-46ba-46ff-b520-ebfede64037d`, `2026-11-15T21:02:39.031637Z`, Upload `1445.03 KiB` / gzip `374.48 KiB`, Startup `2 ms`, Crons `*/5 * * * *`, `0 3 * * *`)
+- **Version trước (`Round 3`, rollback target):** `af9146c2-5873-40fb-a29b-6b28119e3243` (Deployment `2d82e129-46ba-46ff-b520-ebfede64037d`, `2026-11-15T21:02:38.268Z`)
+- **Version mới (live 100%):** `1f768ba8-6aae-4f63-8ad9-5465fc9106ea` (`Created: 2026-11-15T21:36:53.267Z`, Upload `1445.06 KiB` / gzip `374.50 KiB`, Startup `1 ms`, Crons `*/5 * * * *`, `0 3 * * *`)
 
 ### Frontend React V2 (S3/CloudFront & izTeach Custom Page)
 - **Custom Page ID:** `6adff7ba36309b0002b6e659` (`so-lien-lac-test`) — **KHÔNG** chỉnh sửa V1 `/custom-page/so-lien-lac` (`696f7bb3d8cb3100021fd870`)
-- **S3 Prefix:** `resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.0-525b0ac` (`19` assets, `2,526,486` B, toàn bộ chunk `< 500 KiB`, không preload `vendor-hls` ở shell khởi tạo, toàn bộ 19 asset xác minh HTTP 200 + SHA-256 trên CloudFront)
+- **S3 Prefix:** `resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-523da9c` (`19` assets, `2,527,768` B, toàn bộ chunk `< 500 KiB`, không preload `vendor-hls` ở shell khởi tạo, toàn bộ 19 asset xác minh HTTP 200 + SHA-256 trên CloudFront)
 - **Backups đã lưu trước deploy Round 3:**
   - `reports/backups/20261116-pre-round3-deploy/v3-release-manifest.20ca462.json`
   - `reports/backups/20261116-pre-round3-deploy/ktn-sw-proxy.live-backup.js`
@@ -30,33 +36,32 @@
   - `reports/backups/20261116-pre-round3-deploy/sw.live-backup.js`
   - `backups/cutover-2026-11-06/custom-page-prev-react-6adff7ba36309b0002b6e659.json`
 
-### Lệnh Rollback Khẩn Cấp (về Round 2 `20ca462`)
+### Lệnh Rollback Khẩn Cấp (về Round 3 `af9146c2` / Round 2 `20ca462`)
 ```powershell
-npx wrangler rollback b60a42b7-6472-463f-81ab-245e440fba82 --config wrangler.toml
+npx wrangler rollback af9146c2-5873-40fb-a29b-6b28119e3243 --config wrangler.toml
 $env:KTN_ALLOW_PROD_CUSTOM_PAGE_OVERWRITE = "true"
 node deploy_ktn_react_v2_izteach.cjs --rollback reports/backups/20261116-pre-round3-deploy/v3-release-manifest.20ca462.json --live --allow-prod-page-overwrite
 ```
-*(Dự phòng nếu không có file backup untracked: lấy manifest `20ca462` từ `git show 0a73eee:reports/ktn-three-way-reliability/v3-release-manifest.json` hoặc khôi phục viewData từ `backups/cutover-2026-11-06/custom-page-prev-react-6adff7ba36309b0002b6e659.json`.)*
 
 ---
 
-## 2. Kết quả Toàn bộ Test Suite Đã Chạy Lại Trên `525b0ac`
+## 2. Kết quả Toàn bộ Test Suite Đã Chạy Lại Trên `523da9c`
 
 | Suite | Kết quả |
 |---|---|
-| `node --check` (16 scripts Worker/SDK/LMS/Deploy/Tests) | **PASS** |
-| `build_clean_real_portal.js` + `git diff --exit-code sll-hocsinh.html` | **PASS** (0 drift) |
-| `tests/ktn_three_way_reliability_suite.cjs` | **PASS (64/64)** |
-| `tests/ktn_lifecycle_n01_n20_acceptance.cjs` | **PASS (30/30 — N01–N30)** |
-| `tests/ktn_class_notification_matrix_n01_n33.cjs` | **PASS (33/33 — N01–N33)** |
-| `tests/ktn_ux_and_performance_upgrade_suite.cjs` | **PASS (23/23 — T01–T07, C01–C08, F01–F08)** |
-| `tests/ktn_postgres_migration_and_search_benchmark.mjs` | **PASS (21/21 — PG-01..15 + 1k/10k/50k)** |
-| `tests/ktn_scale_benchmark.mjs` | **PASS (0 errors @ 20/100/300/500 concurrent)** |
-| `apps/ktn-web-v2`: `npm run typecheck` + `npm run test:unit` + `npm run build` | **PASS (19 files, 375 tests)** |
+| `node --check cloudflare-worker-sw-proxy.js` | **PASS** |
+| `node build_clean_real_portal.js` (`Total lessons: 15`) | **PASS** |
+| `node tests/ktn_three_way_reliability_suite.cjs` | **PASS** |
+| `node tests/ktn_lifecycle_n01_n20_acceptance.cjs` | **PASS (32/32 — N01–N32)** |
+| `node tests/ktn_class_notification_matrix_n01_n33.cjs` | **PASS (33/33 — N01–N33)** |
+| `node tests/ktn_ux_and_performance_upgrade_suite.cjs` | **PASS (23/23)** |
+| `node tests/ktn_postgres_migration_and_search_benchmark.mjs` | **PASS (21/21 — PG-01..15 + 1k/10k/50k + 1k/10k teacher)** |
+| `node tests/ktn_scale_benchmark.mjs` | **PASS (0 errors @ 20/100/300/500 concurrent)** |
+| `apps/ktn-web-v2`: `npx tsc --noEmit` + `npm run test:unit` + `npm run build` | **PASS (19 files, 378 tests)** |
 | `apps/ktn-web-v2`: `npm run test:e2e` (`verify-ui-v2.mjs`) | **PASS (133/133)** |
-| `tests/ktn_browser_e2e_local.cjs` | **PASS (8/8 — B1–B8)** |
-| `flashcards/tests/verify-flashcards.mjs` | **PASS** |
-| `deploy_ktn_react_v2_izteach.cjs --dry-run --rollback` (`20ca462` target) | **PASS** |
+| `node tests/ktn_browser_e2e_local.cjs` | **PASS (8/8 — B1–B8)** |
+| `node flashcards/tests/verify-flashcards.mjs` | **PASS** |
+| `node deploy_ktn_react_v2_izteach.cjs --dry-run` | **PASS (19 assets < 500 KiB)** |
 
 ---
 
@@ -112,13 +117,9 @@ node deploy_ktn_react_v2_izteach.cjs --rollback reports/backups/20261116-pre-rou
 
 ---
 
-## 6. Xác minh Live Không Phá Dữ Liệu (Playwright + API)
+## 6. Xác minh Live Không Phá Dữ Liệu (Playwright + API trên `523da9c`)
 
-- **V1 `/custom-page/so-lien-lac`:** HTTP `200`, HTML từ Worker **đã gỡ sạch** `<link rel="manifest">` và V2 apple-icon (`hasManifest: false`, `hasAppleIcon: false`, `hasV2Mount: false`). Custom Page `696f7bb3d8cb3100021fd870` không bị sửa đổi. *(Lưu ý kỹ thuật: mã JS legacy của chính V1 vẫn tự chèn thẻ manifest/icon `sofl-remake/logo.png` ở client sau hydration.)*
-- **V2 `/custom-page/so-lien-lac-test`:** Render đúng commit **`525b0ac`** (`#ktn-react-v2-root[data-ktn-commit="525b0ac"]`), `/manifest.json` (`200`, `start_url: "/custom-page/so-lien-lac-test"`, `display: "standalone"`), 4 PNG icons thật (`89504e47`), `/sw.js` active scope `/` (`ktn-pwa-v3`, có `openWindow` & route `homework_graded`, khớp strict `/custom-page/so-lien-lac-test`, **không còn `anyClient.navigate`**), `/api/ktn/push/vapid-public-key` (`200`).
-- **Bảo toàn animation, game & i18n:**
-  - `#/games?game=zombie-defender` mount `<ZombieDefenderGame />` & `<JiangshiPuppet />` bình thường (`77` SVGs / `144` SVG nodes), `/api/ktn/vocab?level=hsk1` trả `200 []` kèm `Access-Control-Allow-Origin: *`, **0 lỗi CORS, 0 lỗi 404, 0 `pageerror`**.
-  - Toggle `VI | EN` (`vi <-> en`) hoạt động mượt trên cả 3 vai trò: Student (`e2e.hs.a@khongtunhi.com`, `e2e.hs.b@khongtunhi.com`), Teacher (`gv001@khongtunhi.com`), Admin (`quanly@khongtunhi.com`).
-  - Nút **`Cài Khổng Tử Nhí`** hiển thị nhất quán trong header ở cả 3 vai trò.
-  - Học viên chưa xếp lớp (`e2e.hs.b@khongtunhi.com`, `classCode: null`) mở `#/chat?room=student:e2e.hs.b@khongtunhi.com` hiển thị đích **`Học vụ Khổng Tử Nhí`**, không có fallback `"Nhắn riêng Cô"`.
-  - Teacher `#/teacher?tab=sessions` (`gv001@khongtunhi.com`) mở form tạo bài mới sạch hoàn toàn (`classVal=""`, `sessionSelectVal=""`, `titleVal=""`, `promptVal=""`), 0 lỗi ghi dư dữ liệu QA.
+- **V1 `/custom-page/so-lien-lac`:** HTTP `200`, HTML & DOM kiểm tra qua Playwright **không có** `<link rel="manifest">` và V2 mount (`hasManifest: false`, `hasV2Root: false`). Custom Page `696f7bb3d8cb3100021fd870` không bị sửa đổi.
+- **V2 `/custom-page/so-lien-lac-test`:** Render đúng commit **`523da9c`** (`[data-ktn-commit="523da9c"]`, script CDN `v3.0.1-523da9c/assets/index-DKagorsM.js`, `hasLoginPage: true`, `0 pageerror`), `/manifest.json` (`200`, `start_url: "/custom-page/so-lien-lac-test"`, `X-KTN-Worker-Version: ktn-prod-v2026.11.03`), `/sw.js` (`200`, `12,865 B`, `ktn-pwa-v3`), `/api/ktn/vocab?level=hsk1` (`200 []`, `Access-Control-Allow-Origin: *`), `/api/ktn/notifications` chưa đăng nhập trả `401`.
+- **Chưa kiểm chứng vật lý (NOT VERIFIED):** Cài đặt PWA dialog hệ điều hành Windows/macOS thật & push notification OS khi trình duyệt đóng hoàn toàn trên máy thật.
+- *(Các kiểm tra tương tác sâu trên Role Student/Teacher/Admin, ZombieDefender, i18n VI|EN và latency theo endpoint đã được xác minh trên `525b0ac` ở Round 3 và giữ nguyên hành vi ở `523da9c`.)*

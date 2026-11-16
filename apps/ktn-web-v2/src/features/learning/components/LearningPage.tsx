@@ -27,6 +27,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { HlsVideoPlayer, VideoPlayerStatus } from './HlsVideoPlayer';
+import { ProtectedPdfModal } from './ProtectedPdfModal';
 import { HomeworkPanel } from './HomeworkPanel';
 import { LessonForumPanel } from './LessonForumPanel';
 import { KtnApiError, getServerNowMs, ktnApi } from '@/services/api/ktnApiClient';
@@ -47,6 +48,7 @@ import {
 import {
   KtnCourse,
   KtnHomework,
+  KtnLearningMaterial,
   KtnLessonUnit,
   KtnOrder,
   KtnStudentRecord,
@@ -167,6 +169,7 @@ export const LearningPage: React.FC = () => {
   const [forumDraftTimestamp, setForumDraftTimestamp] = useState<number | null>(null);
   const [seekVideoTimestamp, setSeekVideoTimestamp] = useState<number | null>(null);
   const [mobileLessonDrawerOpen, setMobileLessonDrawerOpen] = useState(false);
+  const [viewingMaterial, setViewingMaterial] = useState<KtnLearningMaterial | null>(null);
 
   // Phase 4.2: Demo Video Modal state
   const [demoModalCourse, setDemoModalCourse] = useState<KtnCourse | null>(null);
@@ -447,6 +450,32 @@ export const LearningPage: React.FC = () => {
       document.removeEventListener('visibilitychange', onVisibilityOrFocus);
     };
   }, [isDemoMode, user?.role, studentMeQuery, restoreSession]);
+
+  // Non-intrusive copyright guard for PrintScreen & Ctrl/Cmd+S while viewing lessons
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return;
+
+      const isSaveShortcut = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's';
+      const isPrintScreen = e.key === 'PrintScreen';
+      if (isSaveShortcut) e.preventDefault();
+
+      if (isSaveShortcut || isPrintScreen) {
+        addToast({
+          title: tr('Nội dung có bản quyền Khổng Tử Nhí', 'Khong Tu Nhi Copyright Notice'),
+          description: tr(
+            'Bài giảng và tài liệu chỉ dành cho học viên học tập cá nhân, nghiêm cấm tải lậu hoặc phát tán.',
+            'Lessons and materials are for personal study only; unauthorized saving or redistribution is prohibited.'
+          ),
+          variant: 'warning',
+        });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [addToast, tr]);
 
   // Open Registration Modal and auto-fill from session/profile (Phase 4.3)
   const openRegistrationModal = (course: KtnCourse) => {
@@ -1705,15 +1734,25 @@ export const LearningPage: React.FC = () => {
                         </div>
 
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                          {(activeLesson.materials || []).slice(0, 3).map((mat) => (
-                            <a
-                              key={mat.id}
-                              href={mat.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              data-testid={`overview-material-link-${mat.id}`}
-                              className="flex flex-col justify-between rounded-xl border border-stone-200 bg-stone-50 p-2.5 transition-colors hover:border-red-300 hover:bg-red-50/40"
-                            >
+                          {(activeLesson.materials || []).slice(0, 3).map((mat) => {
+                            const isPdfMat =
+                              Boolean(mat.mimeType?.includes('pdf')) ||
+                              Boolean(mat.type?.includes('pdf'));
+                            return (
+                              <a
+                                key={mat.id}
+                                href={mat.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                data-testid={`overview-material-link-${mat.id}`}
+                                onClick={(e) => {
+                                  if (isPdfMat) {
+                                    e.preventDefault();
+                                    setViewingMaterial(mat);
+                                  }
+                                }}
+                                className="flex flex-col justify-between rounded-xl border border-stone-200 bg-stone-50 p-2.5 transition-colors hover:border-red-300 hover:bg-red-50/40"
+                              >
                               <div>
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-red-800">
                                   <FileText className="h-3 w-3" />
@@ -1725,17 +1764,18 @@ export const LearningPage: React.FC = () => {
                                   {mat.title}
                                 </p>
                               </div>
-                              <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-800">
-                                {translateMaterialActionLabel(
-                                  mat.actionLabel,
-                                  undefined,
-                                  tr('Mở xem tài liệu', 'Open material'),
-                                  lang
-                                )}
-                                <ExternalLink className="h-3 w-3" />
-                              </span>
-                            </a>
-                          ))}
+                                <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-800">
+                                  {translateMaterialActionLabel(
+                                    mat.actionLabel,
+                                    undefined,
+                                    tr('Mở xem tài liệu', 'Open material'),
+                                    lang
+                                  )}
+                                  <ExternalLink className="h-3 w-3" />
+                                </span>
+                              </a>
+                            );
+                          })}
                         </div>
                       </div>
                     ) : (
@@ -1803,6 +1843,9 @@ export const LearningPage: React.FC = () => {
                                 const sizeStr = formatMaterialBytes(mat.size);
                                 const downloadHref =
                                   mat.baseUrl || mat.fileUrl || mat.url;
+                                const isPdfMat =
+                                  Boolean(mat.mimeType?.includes('pdf')) ||
+                                  Boolean(mat.type?.includes('pdf'));
                                 return (
                                   <div
                                     key={mat.id}
@@ -1824,7 +1867,15 @@ export const LearningPage: React.FC = () => {
                                             </span>
                                           )}
                                           {sizeStr && <span>• {sizeStr}</span>}
-                                          <span>• {tr('PDF chuẩn', 'Standard PDF')}</span>
+                                          <span>
+                                            •{' '}
+                                            {mat.canDownload === true
+                                              ? tr('PDF có thể tải / in', 'Printable PDF')
+                                              : tr(
+                                                  'PDF bảo vệ bản quyền',
+                                                  'Copyright Protected PDF'
+                                                )}
+                                          </span>
                                         </div>
                                       </div>
                                     </div>
@@ -1835,6 +1886,12 @@ export const LearningPage: React.FC = () => {
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         data-testid={`material-open-btn-${mat.id}`}
+                                        onClick={(e) => {
+                                          if (isPdfMat) {
+                                            e.preventDefault();
+                                            setViewingMaterial(mat);
+                                          }
+                                        }}
                                         className="inline-flex min-h-[34px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-red-900"
                                       >
                                         <ExternalLink className="h-3.5 w-3.5" />
@@ -1847,17 +1904,19 @@ export const LearningPage: React.FC = () => {
                                           )}
                                         </span>
                                       </a>
-                                      <a
-                                        href={downloadHref}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        download
-                                        data-testid={`material-download-btn-${mat.id}`}
-                                        className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-100"
-                                      >
-                                        <Download className="h-3.5 w-3.5" />
-                                        <span>{tr('Tải về', 'Download')}</span>
-                                      </a>
+                                      {mat.canDownload === true && (
+                                        <a
+                                          href={downloadHref}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          download
+                                          data-testid={`material-download-btn-${mat.id}`}
+                                          className="inline-flex min-h-[34px] items-center justify-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-100"
+                                        >
+                                          <Download className="h-3.5 w-3.5" />
+                                          <span>{tr('Tải về', 'Download')}</span>
+                                        </a>
+                                      )}
                                     </div>
                                   </div>
                                 );
@@ -1906,6 +1965,8 @@ export const LearningPage: React.FC = () => {
                                   <audio
                                     controls
                                     preload="none"
+                                    {...({ controlsList: 'nodownload noplaybackrate' } as Record<string, string>)}
+                                    onContextMenu={(e) => e.preventDefault()}
                                     data-testid={`lesson-audio-player-${idx}`}
                                     src={audio.url}
                                     className="h-8 w-full max-w-xs sm:w-64"
@@ -3132,6 +3193,12 @@ export const LearningPage: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+      {viewingMaterial && (
+        <ProtectedPdfModal
+          material={viewingMaterial}
+          onClose={() => setViewingMaterial(null)}
+        />
       )}
     </div>
   );

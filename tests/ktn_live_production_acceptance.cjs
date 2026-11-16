@@ -636,9 +636,11 @@ async function run() {
     let hls403Or404 = 0;
     stuAPage.on('response', res => {
       const u = res.url();
-      if (u.includes('media.izteach.vn') && u.endsWith('.m3u8')) hlsManifestStatus = res.status();
-      if (u.includes('media.izteach.vn') && u.endsWith('.ts')) hlsSegmentStatus = res.status();
-      if (u.includes('media.izteach.vn') && (res.status() === 403 || res.status() === 404)) hls403Or404++;
+      const isHlsUrl = u.includes('/api/ktn/media/hls/') || u.includes('media.izteach.vn');
+      const baseU = u.split('?')[0];
+      if (isHlsUrl && baseU.endsWith('.m3u8')) hlsManifestStatus = res.status();
+      if (isHlsUrl && baseU.endsWith('.ts')) hlsSegmentStatus = res.status();
+      if (isHlsUrl && (res.status() === 403 || res.status() === 404)) hls403Or404++;
     });
 
     const studentLoginMs = await loginOnReactV2(stuAPage, STUDENT_A_EMAIL, STUDENT_E2E_PWD);

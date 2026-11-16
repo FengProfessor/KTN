@@ -391,8 +391,8 @@ function computeStudentCase(stu) {
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-KTN-Webhook-Secret, X-KTN-Test-Mode',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, X-KTN-Webhook-Secret, X-KTN-Test-Mode, X-KTN-QA-Simulated-Now',
   'Access-Control-Max-Age': '86400',
   'X-KTN-Worker-Version': 'ktn-prod-v2026.11.03'
 };
@@ -2939,15 +2939,24 @@ function getRoleTargetPage(role) {
 // ============================================================================
 // KÝ & KIỂM TRA THẺ PHIÊN LÀM VIỆC (HMAC-SHA256 SIGNED TOKEN — 365 NGÀY)
 // ============================================================================
+const hmacKeyPromiseCache = new Map();
+
 async function getHmacKey(secret) {
-  const enc = new TextEncoder();
-  return crypto.subtle.importKey(
-    'raw',
-    enc.encode(secret || 'ktn-default-change-me-in-production-env'),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify']
-  );
+  const effectiveSecret = secret || 'ktn-default-change-me-in-production-env';
+  let cached = hmacKeyPromiseCache.get(effectiveSecret);
+  if (!cached) {
+    const enc = new TextEncoder();
+    cached = crypto.subtle.importKey(
+      'raw',
+      enc.encode(effectiveSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign', 'verify']
+    );
+    if (hmacKeyPromiseCache.size > 16) hmacKeyPromiseCache.clear();
+    hmacKeyPromiseCache.set(effectiveSecret, cached);
+  }
+  return cached;
 }
 
 function toBase64Url(str) {
@@ -3088,6 +3097,21 @@ async function isTokenRevoked(env, rawToken, jti, userEmail) {
   );
 }
 
+const MAX_CONCURRENT_STUDENT_SESSIONS = 3;
+const mediaJtiValidCache = new Map();
+const activeStudentSessionsByEmail = new Map();
+const hlsSegmentBurstMap = new Map();
+
+function invalidateMediaJtiCache(jti, email) {
+  const cleanJti = String(jti || '').trim();
+  const cleanEmail = normalizeEmail(email || '');
+  if (cleanJti) mediaJtiValidCache.delete(cleanJti);
+  if (cleanEmail || !cleanJti) {
+    // Xóa cache khi thu hồi theo email hoặc diện rộng để bảo đảm fail-closed tức thì
+    mediaJtiValidCache.clear();
+  }
+}
+
 async function revokeSessionTokenServerSide(env, rawToken, jti) {
   const cleanRaw = String(rawToken || '').trim();
   if (cleanRaw) {
@@ -3095,7 +3119,12 @@ async function revokeSessionTokenServerSide(env, rawToken, jti) {
   }
   const key1 = jti ? String(jti).trim() : '';
   const key2 = getTokenRevocationKey(cleanRaw, null);
-  if (key1) revokedTokenMemorySet.add(key1);
+  if (key1) {
+    revokedTokenMemorySet.add(key1);
+    mediaJtiValidCache.delete(key1);
+  } else {
+    mediaJtiValidCache.clear();
+  }
   if (key2) revokedTokenMemorySet.add(key2);
   const keys = Array.from(new Set([key1, key2].filter(Boolean)));
   if (keys.length === 0) return { ok: true, persisted: true };
@@ -3131,6 +3160,339 @@ async function revokeSessionTokenServerSide(env, rawToken, jti) {
   } catch {
     return { ok: false, persisted: false, status: 503 };
   }
+}
+
+// ============================================================================
+// BẢO VỆ NỘI DUNG CẤP ĐỘ 1: CHỮ KÝ MEDIA NGẮN HẠN, MÃ HÓA HLS AES-128 & GIỚI HẠN 3 THIẾT BỊ
+// ============================================================================
+function getMediaSecret(env) {
+  return String(env?.KTN_MEDIA_SECRET || env?.KTN_SESSION_SECRET || 'ktn-media-guard-default-secret');
+}
+
+function toBase64UrlBytes(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) {
+    bin += String.fromCharCode(bytes[i]);
+  }
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64UrlBytes(b64u) {
+  const padding = '='.repeat((4 - (b64u.length % 4)) % 4);
+  const bin = atob((b64u + padding).replace(/-/g, '+').replace(/_/g, '/'));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function signMediaToken(payload, secret, ttlMs = 2 * 3600 * 1000) {
+  const now = Date.now();
+  const data = {
+    ...payload,
+    iat: now,
+    exp: payload.exp || (now + ttlMs)
+  };
+  const bodyB64 = toBase64Url(JSON.stringify(data));
+  const key = await getHmacKey(secret);
+  const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(bodyB64));
+  const sigB64 = toBase64UrlBytes(new Uint8Array(sigBuf));
+  return `${bodyB64}.${sigB64}`;
+}
+
+async function verifyMediaToken(token, secret) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [bodyB64, sigB64] = parts;
+  if (!bodyB64 || !sigB64) return null;
+  try {
+    const key = await getHmacKey(secret);
+    const sigArr = fromBase64UrlBytes(sigB64);
+    const valid = await crypto.subtle.verify('HMAC', key, sigArr, new TextEncoder().encode(bodyB64));
+    if (!valid) return null;
+    const payload = JSON.parse(fromBase64Url(bodyB64));
+    if (!payload || typeof payload !== 'object') return null;
+    if (payload.exp && Date.now() > Number(payload.exp)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function deriveHlsAesKeyBytes(secret, videoId, scopeKey) {
+  const key = await getHmacKey(secret);
+  const input = `ktn_hls_aes128_key_v1:${String(scopeKey || 'demo')}:${String(videoId || '').toLowerCase()}`;
+  const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(input));
+  return new Uint8Array(sigBuf).slice(0, 16);
+}
+
+async function deriveHlsIvBytes(secret, videoId) {
+  const key = await getHmacKey(secret);
+  const input = `ktn_hls_aes128_iv_v1:${String(videoId || '').toLowerCase()}`;
+  const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(input));
+  return new Uint8Array(sigBuf).slice(0, 16);
+}
+
+function isScraperUserAgent(ua) {
+  return /\b(yt-dlp|youtube-dl|ffmpeg|Lavf|Internet Download Manager|IDM|aria2|Wget|python-requests|python-httpx|Go-http-client)\b/i.test(String(ua || ''));
+}
+
+function isMediaOriginAllowed(request) {
+  const origin = request.headers.get('Origin');
+  if (!origin) {
+    // Safari / AppleCoreMedia / native <video> / <audio> thường bỏ trống Origin khi tải luồng GET
+    return true;
+  }
+  try {
+    const originHost = new URL(origin).hostname.toLowerCase();
+    const reqHost = new URL(request.url).hostname.toLowerCase();
+    if (originHost === reqHost) return true;
+    return (
+      originHost === 'khongtunhi.com' ||
+      originHost.endsWith('.khongtunhi.com') ||
+      originHost === 'localhost' ||
+      originHost === '127.0.0.1' ||
+      originHost === '[::1]'
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isInMemorySessionRevoked(jti, email) {
+  const key1 = String(jti || '').trim();
+  const cleanEmail = normalizeEmail(email || '');
+  if (key1 && (revokedTokenMemorySet.has(key1) || revokedTokenMemorySet.has(`REVOKED_${key1}`))) {
+    return true;
+  }
+  if (
+    cleanEmail &&
+    (revokedTokenMemorySet.has(`REVOKED_EMAIL_${cleanEmail}`) ||
+      revokedTokenMemorySet.has(`EMAIL_${cleanEmail}`) ||
+      revokedTokenMemorySet.has(cleanEmail))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+async function isMediaSessionRevoked(env, jti, email, { checkDb = true } = {}) {
+  if (isInMemorySessionRevoked(jti, email)) return true;
+  const cleanJti = String(jti || '').trim();
+  const cleanEmail = normalizeEmail(email || '');
+  const cacheKey = cleanJti || cleanEmail;
+  if (!checkDb || !cacheKey) return false;
+  const cached = mediaJtiValidCache.get(cacheKey);
+  if (cached && cached.valid && Date.now() < cached.expiresAt) {
+    return false;
+  }
+  const jtiArg = cleanJti && cleanJti !== cleanEmail ? cleanJti : null;
+  const revoked = await isTokenRevoked(env, null, jtiArg, cleanEmail);
+  if (revoked) {
+    if (cacheKey) mediaJtiValidCache.delete(cacheKey);
+    return true;
+  }
+  if (mediaJtiValidCache.size >= 2000) {
+    const firstKey = mediaJtiValidCache.keys().next().value;
+    if (firstKey) mediaJtiValidCache.delete(firstKey);
+  }
+  mediaJtiValidCache.set(cacheKey, { valid: true, expiresAt: Date.now() + 30_000 });
+  return false;
+}
+
+function checkHlsSegmentBurstLimit(actorKey, videoId, nowMs = Date.now()) {
+  const key = `${String(actorKey || 'anon')}:${String(videoId || '').toLowerCase()}`;
+  const cutoff = nowMs - 10_000;
+  const existing = hlsSegmentBurstMap.get(key) || [];
+  const recent = existing.filter(ts => ts > cutoff);
+  if (recent.length >= 40) {
+    hlsSegmentBurstMap.set(key, recent);
+    return false;
+  }
+  recent.push(nowMs);
+  if (hlsSegmentBurstMap.size >= 2000 && !hlsSegmentBurstMap.has(key)) {
+    const firstKey = hlsSegmentBurstMap.keys().next().value;
+    if (firstKey) hlsSegmentBurstMap.delete(firstKey);
+  }
+  hlsSegmentBurstMap.set(key, recent);
+  return true;
+}
+
+async function enforceStudentConcurrentSessionCap(env, email, newJti, userAgent) {
+  const cleanEmail = normalizeEmail(email || '');
+  const cleanJti = String(newJti || '').trim();
+  if (!cleanEmail || !cleanJti) return;
+
+  const now = Date.now();
+  const maxAgeCutoff = now - 30 * 86400 * 1000;
+  const registryId = `ACTIVE_SESS_${cleanEmail}`;
+  let list = Array.isArray(activeStudentSessionsByEmail.get(cleanEmail))
+    ? [...activeStudentSessionsByEmail.get(cleanEmail)]
+    : [];
+
+  try {
+    const dbRes = await supabaseRequest(
+      env,
+      `ktn_dlp_alerts?id=eq.${encodeURIComponent(registryId)}&room_id=eq.AUTH_ACTIVE_SESSIONS&select=id,blocked_content&limit=1`
+    );
+    if (dbRes?.ok && Array.isArray(dbRes.data) && dbRes.data[0]?.blocked_content) {
+      const parsed = JSON.parse(String(dbRes.data[0].blocked_content));
+      if (Array.isArray(parsed)) {
+        const mergedMap = new Map();
+        for (const item of [...parsed, ...list]) {
+          const itemJti = String(item?.jti || '').trim();
+          const itemIat = Number(item?.iat || 0);
+          if (!itemJti || itemIat < maxAgeCutoff || revokedTokenMemorySet.has(itemJti)) continue;
+          if (!mergedMap.has(itemJti) || itemIat > mergedMap.get(itemJti).iat) {
+            mergedMap.set(itemJti, { jti: itemJti, iat: itemIat, ua: String(item?.ua || '').slice(0, 120) });
+          }
+        }
+        list = Array.from(mergedMap.values());
+      }
+    }
+  } catch {
+    // Fail-open nếu bảng lưu trữ tạm thời gián đoạn để không chặn đăng nhập hợp lệ
+  }
+
+  list = list.filter(s => s && s.jti && !revokedTokenMemorySet.has(s.jti) && Number(s.iat || 0) >= maxAgeCutoff && s.jti !== cleanJti);
+  list.push({ jti: cleanJti, iat: now, ua: String(userAgent || '').slice(0, 120) });
+  list.sort((a, b) => Number(a.iat || 0) - Number(b.iat || 0));
+
+  const evicted = [];
+  while (list.length > MAX_CONCURRENT_STUDENT_SESSIONS) {
+    const oldest = list.shift();
+    if (oldest?.jti) evicted.push(oldest.jti);
+  }
+
+  activeStudentSessionsByEmail.set(cleanEmail, list);
+
+  await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=minimal',
+    body: [{
+      id: registryId,
+      room_id: 'AUTH_ACTIVE_SESSIONS',
+      sender_email: cleanEmail,
+      sender_name: 'Concurrent Session Guard',
+      sender_role: 'system',
+      blocked_content: JSON.stringify(list),
+      reason: 'STUDENT_ACTIVE_SESSION_REGISTRY',
+      resolved: true
+    }]
+  }).catch(() => null);
+
+  for (const oldJti of evicted) {
+    mediaJtiValidCache.delete(oldJti);
+    await revokeSessionTokenServerSide(env, null, oldJti).catch(() => null);
+  }
+}
+
+async function removeStudentSessionFromCapRegistry(env, email, revokedJti) {
+  const cleanEmail = normalizeEmail(email || '');
+  const cleanJti = String(revokedJti || '').trim();
+  if (!cleanEmail || !cleanJti) return;
+  const current = activeStudentSessionsByEmail.get(cleanEmail);
+  let nextList = Array.isArray(current) ? current.filter(s => s && s.jti !== cleanJti) : null;
+  if (nextList) {
+    activeStudentSessionsByEmail.set(cleanEmail, nextList);
+  }
+  try {
+    const registryId = `ACTIVE_SESS_${cleanEmail}`;
+    const dbRes = await supabaseRequest(
+      env,
+      `ktn_dlp_alerts?id=eq.${encodeURIComponent(registryId)}&room_id=eq.AUTH_ACTIVE_SESSIONS&select=id,blocked_content&limit=1`
+    );
+    if (dbRes?.ok && Array.isArray(dbRes.data) && dbRes.data[0]?.blocked_content) {
+      const parsed = JSON.parse(String(dbRes.data[0].blocked_content));
+      if (Array.isArray(parsed)) {
+        nextList = parsed.filter(s => s && s.jti !== cleanJti && !revokedTokenMemorySet.has(s.jti));
+        activeStudentSessionsByEmail.set(cleanEmail, nextList);
+        await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+          method: 'POST',
+          prefer: 'resolution=merge-duplicates,return=minimal',
+          body: [{
+            id: registryId,
+            room_id: 'AUTH_ACTIVE_SESSIONS',
+            sender_email: cleanEmail,
+            sender_name: 'Concurrent Session Guard',
+            sender_role: 'system',
+            blocked_content: JSON.stringify(nextList),
+            reason: 'STUDENT_ACTIVE_SESSION_REGISTRY',
+            resolved: true
+          }]
+        }).catch(() => null);
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function guardMediaRequest(request, env, { mt, expectedKinds, expectedVideoId, checkRevocationDb = true }) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return { ok: false, response: jsonResponse({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405) };
+  }
+  const ua = request.headers.get('User-Agent') || '';
+  if (isScraperUserAgent(ua)) {
+    return {
+      ok: false,
+      response: jsonResponse({
+        ok: false,
+        error: 'SCRAPER_BLOCKED',
+        message: 'Hệ thống không hỗ trợ trình tải xuống tự động.'
+      }, 403)
+    };
+  }
+  if (!isMediaOriginAllowed(request)) {
+    return {
+      ok: false,
+      response: jsonResponse({
+        ok: false,
+        error: 'FORBIDDEN_ORIGIN',
+        message: 'Nguồn truy cập học liệu không hợp lệ.'
+      }, 403)
+    };
+  }
+  const secret = getMediaSecret(env);
+  const payload = await verifyMediaToken(mt, secret);
+  if (!payload || !expectedKinds.includes(payload.k)) {
+    return {
+      ok: false,
+      response: jsonResponse({
+        ok: false,
+        error: 'INVALID_OR_EXPIRED_MEDIA_TOKEN',
+        message: 'Phiên phát học liệu đã hết hạn. Vui lòng tải lại trang bài học.'
+      }, 403)
+    };
+  }
+  if (expectedVideoId && String(payload.v || '').toLowerCase() !== String(expectedVideoId).toLowerCase()) {
+    return {
+      ok: false,
+      response: jsonResponse({
+        ok: false,
+        error: 'VIDEO_TOKEN_MISMATCH',
+        message: 'Mã bài giảng không khớp với phiên phát.'
+      }, 403)
+    };
+  }
+  if (payload.k !== 'demo') {
+    const revoked = await isMediaSessionRevoked(env, payload.j, payload.u, { checkDb: checkRevocationDb });
+    if (revoked) {
+      return {
+        ok: false,
+        response: jsonResponse({
+          ok: false,
+          error: 'SESSION_REVOKED',
+          message: 'Phiên đăng nhập đã hết hiệu lực hoặc đã bị đăng xuất / thay thế bởi thiết bị khác.'
+        }, 403)
+      };
+    }
+  }
+  return { ok: true, payload, secret };
 }
 
 const verifiedIzTeachTokenCache = new Map();
@@ -11299,7 +11661,19 @@ export default {
         serverNow: sessionNowIso
       };
 
-      const signedToken = await signSessionToken(sessionObj, env.KTN_SESSION_SECRET);
+      const sessionJti = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+      const signedToken = await signSessionToken(
+        { ...sessionObj, jti: sessionJti },
+        env.KTN_SESSION_SECRET
+      );
+      if (role === 'student') {
+        await enforceStudentConcurrentSessionCap(
+          env,
+          email,
+          sessionJti,
+          request.headers.get('User-Agent') || ''
+        ).catch(() => null);
+      }
       const redirectUrl = getRoleTargetPage(role);
       const cookieVal = encodeURIComponent(signedToken);
 
@@ -11450,6 +11824,9 @@ export default {
         const revRes = await revokeSessionTokenServerSide(env, rawTok, verified?.jti || null);
         if (!revRes || !revRes.ok || !revRes.persisted) {
           allPersisted = false;
+        }
+        if (verified?.email && verified?.jti) {
+          await removeStudentSessionFromCapRegistry(env, verified.email, verified.jti).catch(() => null);
         }
       }
 
@@ -12316,6 +12693,326 @@ export default {
     }
 
     // ------------------------------------------------------------------------
+    // B1.5. CỔNG PHÁT BÀI GIẢNG & HỌC LIỆU ĐƯỢC BẢO VỆ (AES-128 HLS + SIGNED STREAM)
+    // ------------------------------------------------------------------------
+    if (path.startsWith('/api/ktn/media/')) {
+      const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+
+      // 1. /api/ktn/media/hls-key?mt=...&vid=...
+      if (path === '/api/ktn/media/hls-key') {
+        const mt = url.searchParams.get('mt') || '';
+        const vid = String(url.searchParams.get('vid') || '').trim().toLowerCase();
+        if (!/^[0-9a-f]{24}$/.test(vid)) {
+          return jsonResponse({ ok: false, error: 'INVALID_VIDEO_ID' }, 400);
+        }
+        const guard = await guardMediaRequest(request, env, {
+          mt,
+          expectedKinds: ['hls', 'demo'],
+          expectedVideoId: vid,
+          checkRevocationDb: true
+        });
+        if (!guard.ok) return guard.response;
+        const aesKeyBytes = await deriveHlsAesKeyBytes(guard.secret, vid, guard.payload.j || 'demo');
+        return new Response(request.method === 'HEAD' ? null : aesKeyBytes, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(aesKeyBytes.byteLength),
+            'Cache-Control': 'private, no-store',
+            'X-Robots-Tag': 'noindex, noarchive',
+            ...CORS_HEADERS
+          }
+        });
+      }
+
+      // 2. /api/ktn/media/poster/<vid>.jpg?mt=...
+      if (path.startsWith('/api/ktn/media/poster/')) {
+        const posterFile = path.slice('/api/ktn/media/poster/'.length);
+        const pm = posterFile.match(/^([0-9a-f]{24})\.jpg$/i);
+        if (!pm) {
+          return jsonResponse({ ok: false, error: 'INVALID_POSTER_PATH' }, 400);
+        }
+        const vid = pm[1].toLowerCase();
+        const mt = url.searchParams.get('mt') || '';
+        const guard = await guardMediaRequest(request, env, {
+          mt,
+          expectedKinds: ['hls', 'demo'],
+          expectedVideoId: vid,
+          checkRevocationDb: false
+        });
+        if (!guard.ok) return guard.response;
+        const upRes = await fetch(`https://media.izteach.vn/${vendorId}/${vid}/thumbnail.jpg`, {
+          method: request.method,
+          cf: { cacheEverything: true, cacheTtl: 86400 }
+        });
+        if (!upRes.ok) {
+          return new Response(null, { status: upRes.status, headers: CORS_HEADERS });
+        }
+        return new Response(request.method === 'HEAD' ? null : upRes.body, {
+          status: 200,
+          headers: {
+            'Content-Type': upRes.headers.get('Content-Type') || 'image/jpeg',
+            'Cache-Control': 'private, max-age=3600',
+            ...CORS_HEADERS
+          }
+        });
+      }
+
+      // 3. /api/ktn/media/hls/<vid>/<subPath>?mt=...
+      if (path.startsWith('/api/ktn/media/hls/')) {
+        const rest = path.slice('/api/ktn/media/hls/'.length);
+        const firstSlash = rest.indexOf('/');
+        if (firstSlash <= 0) {
+          return jsonResponse({ ok: false, error: 'INVALID_HLS_PATH' }, 400);
+        }
+        const rawVid = rest.slice(0, firstSlash).trim().toLowerCase();
+        const subPath = rest.slice(firstSlash + 1).trim();
+        if (
+          !/^[0-9a-f]{24}$/.test(rawVid) ||
+          !subPath ||
+          subPath.includes('..') ||
+          subPath.includes('\\') ||
+          subPath.startsWith('/') ||
+          !/^[a-zA-Z0-9_.\-\/]+\.(m3u8|ts)$/i.test(subPath)
+        ) {
+          return jsonResponse({ ok: false, error: 'INVALID_HLS_PATH' }, 400);
+        }
+        const isManifest = /\.m3u8$/i.test(subPath);
+        const mt = url.searchParams.get('mt') || '';
+        const guard = await guardMediaRequest(request, env, {
+          mt,
+          expectedKinds: ['hls', 'demo'],
+          expectedVideoId: rawVid,
+          checkRevocationDb: isManifest
+        });
+        if (!guard.ok) return guard.response;
+
+        const upstreamUrl = `https://media.izteach.vn/${vendorId}/${rawVid}/${subPath}`;
+        if (!isManifest) {
+          const actorKey = guard.payload.k === 'demo'
+            ? (request.headers.get('CF-Connecting-IP') || 'demo')
+            : (guard.payload.j || guard.payload.u || 'anon');
+          if (!checkHlsSegmentBurstLimit(actorKey, rawVid)) {
+            return jsonResponse({
+              ok: false,
+              error: 'MEDIA_SCRAPE_RATE_LIMITED',
+              message: 'Phát hiện tải phân đoạn video bất thường. Vui lòng chờ vài giây rồi phát lại.'
+            }, 429);
+          }
+          if (request.method === 'HEAD') {
+            return new Response(null, {
+              status: 200,
+              headers: {
+                'Content-Type': 'video/MP2T',
+                'Cache-Control': 'private, no-store',
+                ...CORS_HEADERS
+              }
+            });
+          }
+          const upRes = await fetch(upstreamUrl, {
+            cf: { cacheEverything: true, cacheTtl: 86400 }
+          });
+          if (!upRes.ok) {
+            return new Response(null, { status: upRes.status, headers: CORS_HEADERS });
+          }
+          const plainBuf = await upRes.arrayBuffer();
+          const aesKeyBytes = await deriveHlsAesKeyBytes(guard.secret, rawVid, guard.payload.j || 'demo');
+          const ivBytes = await deriveHlsIvBytes(guard.secret, rawVid);
+          const aesCryptoKey = await crypto.subtle.importKey(
+            'raw',
+            aesKeyBytes,
+            { name: 'AES-CBC' },
+            false,
+            ['encrypt']
+          );
+          const encBuf = await crypto.subtle.encrypt(
+            { name: 'AES-CBC', iv: ivBytes },
+            aesCryptoKey,
+            plainBuf
+          );
+          return new Response(encBuf, {
+            status: 200,
+            headers: {
+              'Content-Type': 'video/MP2T',
+              'Content-Length': String(encBuf.byteLength),
+              'Cache-Control': 'private, no-store',
+              'X-Robots-Tag': 'noindex, noarchive',
+              ...CORS_HEADERS
+            }
+          });
+        }
+
+        // Manifest .m3u8
+        const upRes = await fetch(upstreamUrl, {
+          cf: { cacheEverything: true, cacheTtl: 86400 }
+        });
+        if (!upRes.ok) {
+          return new Response(null, { status: upRes.status, headers: CORS_HEADERS });
+        }
+        const rawText = await upRes.text();
+        const isMaster = /#EXT-X-STREAM-INF/i.test(rawText);
+        const baseDir = subPath.includes('/') ? subPath.slice(0, subPath.lastIndexOf('/') + 1) : '';
+        const upBasePrefix = `https://media.izteach.vn/${vendorId}/${rawVid}/`;
+        const ivHex = bytesToHex(await deriveHlsIvBytes(guard.secret, rawVid));
+        const keyUri = `/api/ktn/media/hls-key?mt=${encodeURIComponent(mt)}&vid=${encodeURIComponent(rawVid)}`;
+        const maxDemoSec = guard.payload.k === 'demo' && Number(guard.payload.maxSec) > 0
+          ? Number(guard.payload.maxSec) + 4
+          : 0;
+
+        const rawLines = rawText.replace(/\r\n/g, '\n').split('\n');
+        const outLines = [];
+        let keyInjected = false;
+        let accumSec = 0;
+        let hasEndList = false;
+
+        for (let i = 0; i < rawLines.length; i++) {
+          const line = rawLines[i].trim();
+          if (!line) continue;
+
+          if (!isMaster && /^#EXT-X-ALLOW-CACHE:/i.test(line)) {
+            outLines.push('#EXT-X-ALLOW-CACHE:NO');
+            continue;
+          }
+          if (!isMaster && /^#EXT-X-KEY:/i.test(line)) {
+            continue;
+          }
+          if (!isMaster && /^#EXT-X-ENDLIST$/i.test(line)) {
+            hasEndList = true;
+            outLines.push(line);
+            break;
+          }
+
+          if (!isMaster && /^#EXTINF:/i.test(line)) {
+            if (maxDemoSec > 0 && accumSec >= maxDemoSec) {
+              break;
+            }
+            if (!keyInjected) {
+              outLines.push(`#EXT-X-KEY:METHOD=AES-128,URI="${keyUri}",IV=0x${ivHex}`);
+              keyInjected = true;
+            }
+            const durMatch = line.match(/^#EXTINF:([\d.]+)/i);
+            accumSec += durMatch ? (parseFloat(durMatch[1]) || 4) : 4;
+            outLines.push(line);
+            continue;
+          }
+
+          if (line.startsWith('#')) {
+            outLines.push(line);
+            continue;
+          }
+
+          let relTarget = line.split('?')[0].trim();
+          if (relTarget.startsWith(upBasePrefix)) {
+            relTarget = relTarget.slice(upBasePrefix.length);
+          } else if (/^https?:/i.test(relTarget) || relTarget.startsWith('/')) {
+            continue;
+          } else if (baseDir && !relTarget.startsWith(baseDir)) {
+            relTarget = baseDir + relTarget.replace(/^\/+/, '');
+          }
+          if (relTarget.includes('..') || !/^[a-zA-Z0-9_.\-\/]+\.(m3u8|ts)$/i.test(relTarget)) {
+            continue;
+          }
+          outLines.push(`/api/ktn/media/hls/${rawVid}/${relTarget}?mt=${encodeURIComponent(mt)}`);
+        }
+
+        if (!isMaster && !hasEndList) {
+          outLines.push('#EXT-X-ENDLIST');
+        }
+        const rewrittenM3u8 = outLines.join('\n') + '\n';
+        return new Response(request.method === 'HEAD' ? null : rewrittenM3u8, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
+            'Cache-Control': 'private, no-store',
+            'X-Robots-Tag': 'noindex, noarchive',
+            ...CORS_HEADERS
+          }
+        });
+      }
+
+      // 4. /api/ktn/media/doc/... & /api/ktn/media/audio/...
+      const isDocRoute = path.startsWith('/api/ktn/media/doc/');
+      const isAudioRoute = path.startsWith('/api/ktn/media/audio/');
+      if (isDocRoute || isAudioRoute) {
+        const prefix = isDocRoute ? '/api/ktn/media/doc/' : '/api/ktn/media/audio/';
+        const rest = path.slice(prefix.length);
+        let mt = url.searchParams.get('mt') || '';
+        const slashIdx = rest.indexOf('/');
+        let filePart = rest;
+        if (!mt && slashIdx > 0) {
+          mt = decodeURIComponent(rest.slice(0, slashIdx));
+          filePart = rest.slice(slashIdx + 1);
+        }
+        if (!filePart || filePart.includes('..') || filePart.includes('/')) {
+          return jsonResponse({ ok: false, error: 'INVALID_MEDIA_FILENAME' }, 400);
+        }
+        const guard = await guardMediaRequest(request, env, {
+          mt,
+          expectedKinds: [isDocRoute ? 'doc' : 'aud'],
+          checkRevocationDb: true
+        });
+        if (!guard.ok) return guard.response;
+
+        const safeObjKey = String(guard.payload.r || '').replace(/^\/+/, '');
+        if (
+          !safeObjKey ||
+          safeObjKey.includes('..') ||
+          safeObjKey.includes('\\') ||
+          safeObjKey.includes('?') ||
+          safeObjKey.includes('#') ||
+          /^[a-z]+:/i.test(safeObjKey)
+        ) {
+          return jsonResponse({ ok: false, error: 'INVALID_MEDIA_OBJECT_KEY' }, 400);
+        }
+
+        const upstreamUrl = `https://d21acfi38wn3iy.cloudfront.net/${safeObjKey}`;
+        const rangeHdr = request.headers.get('Range');
+        const upHeaders = rangeHdr ? { Range: rangeHdr } : {};
+
+        const upRes = await fetch(upstreamUrl, {
+          method: request.method,
+          headers: upHeaders,
+          cf: { cacheEverything: true, cacheTtl: 86400 }
+        });
+        if (!upRes.ok && upRes.status !== 206) {
+          return new Response(null, { status: upRes.status, headers: CORS_HEADERS });
+        }
+
+        const allowAttachment = url.searchParams.get('dl') === '1' && Number(guard.payload.dl) === 1;
+        let decodedName = filePart;
+        try {
+          decodedName = decodeURIComponent(filePart);
+        } catch (_) {}
+        const asciiSafeName = decodedName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+
+        const resHeaders = new Headers(CORS_HEADERS);
+        resHeaders.set(
+          'Content-Type',
+          upRes.headers.get('Content-Type') || (isDocRoute ? 'application/pdf' : 'audio/mpeg')
+        );
+        const cl = upRes.headers.get('Content-Length');
+        if (cl && !upRes.headers.get('Content-Encoding')) resHeaders.set('Content-Length', cl);
+        const cr = upRes.headers.get('Content-Range');
+        if (cr) resHeaders.set('Content-Range', cr);
+        resHeaders.set('Accept-Ranges', upRes.headers.get('Accept-Ranges') || 'bytes');
+        resHeaders.set('Access-Control-Expose-Headers', 'Accept-Ranges, Content-Range, Content-Length');
+        resHeaders.set('Cache-Control', 'private, no-store');
+        resHeaders.set('X-Robots-Tag', 'noindex, noarchive');
+        resHeaders.set(
+          'Content-Disposition',
+          `${allowAttachment ? 'attachment' : 'inline'}; filename="${asciiSafeName}"`
+        );
+
+        return new Response(request.method === 'HEAD' ? null : upRes.body, {
+          status: upRes.status,
+          headers: resHeaders
+        });
+      }
+
+      return jsonResponse({ ok: false, error: 'MEDIA_ROUTE_NOT_FOUND' }, 404);
+    }
+
+    // ------------------------------------------------------------------------
     // B2. QUẢN LÝ DANH MỤC KHÓA HỌC & ĐỒNG BỘ KHÓA HỌC MỚI TỪ IZTEACH
     // ------------------------------------------------------------------------
     if (path === '/api/ktn/courses' && request.method === 'GET') {
@@ -12358,10 +13055,39 @@ export default {
           bundleCourseIds: Array.isArray(c.bundle_course_ids) ? c.bundle_course_ids : (base.bundleCourseIds || [])
         };
       });
+      const catalogMediaSecret = getMediaSecret(env);
+      const protectedCourses = await Promise.all(
+        Object.values(catalogMap).map(async (course) => {
+          const rawDemo = typeof course.demoVideoUrl === 'string' ? course.demoVideoUrl.trim() : '';
+          const m = rawDemo.match(/media\.izteach\.vn\/[^/]+\/([0-9a-f]{24})\//i);
+          if (m && m[1]) {
+            const vid = m[1].toLowerCase();
+            const demoMt = await signMediaToken(
+              {
+                k: 'demo',
+                v: vid,
+                j: 'demo',
+                maxSec: Number(course.demoDurationSeconds) || 90
+              },
+              catalogMediaSecret,
+              30 * 60 * 1000
+            );
+            return {
+              ...course,
+              demoVideoUrl: `/api/ktn/media/hls/${vid}/playlist.m3u8?mt=${encodeURIComponent(demoMt)}`
+            };
+          }
+          return course;
+        })
+      );
+      const protectedCatalogMap = {};
+      for (const item of protectedCourses) {
+        if (item && item.id) protectedCatalogMap[item.id] = item;
+      }
       return jsonResponse({
         ok: true,
-        courses: Object.values(catalogMap),
-        catalogMap,
+        courses: protectedCourses,
+        catalogMap: protectedCatalogMap,
         paymentInfo: buildVietQrPaymentInfo(cfgRow, 'ORD-DEMO', cfgRow?.default_amount || 890000)
       });
     }
@@ -12448,6 +13174,62 @@ export default {
       }
 
       const normCourseId = courseId.toLowerCase();
+      const mediaSecret = getMediaSecret(env);
+      const mediaActorEmail = normalizeEmail(session.email || '');
+      const mediaActorJti = String(session.jti || mediaActorEmail || 'anon');
+      const hlsMtCache = new Map();
+      const docMtCache = new Map();
+      const audMtCache = new Map();
+      const signCachedHlsMt = (vid) => {
+        const cleanVid = String(vid || '').trim().toLowerCase();
+        if (!cleanVid) return Promise.resolve('');
+        if (!hlsMtCache.has(cleanVid)) {
+          hlsMtCache.set(
+            cleanVid,
+            signMediaToken(
+              { k: 'hls', u: mediaActorEmail, j: mediaActorJti, c: normCourseId, v: cleanVid },
+              mediaSecret,
+              2 * 3600 * 1000
+            )
+          );
+        }
+        return hlsMtCache.get(cleanVid);
+      };
+      const signCachedDocMt = (objKey, allowDl) => {
+        const cacheKey = `${objKey}:${allowDl ? 1 : 0}`;
+        if (!docMtCache.has(cacheKey)) {
+          docMtCache.set(
+            cacheKey,
+            signMediaToken(
+              { k: 'doc', u: mediaActorEmail, j: mediaActorJti, c: normCourseId, r: objKey, dl: allowDl ? 1 : 0 },
+              mediaSecret,
+              2 * 3600 * 1000
+            )
+          );
+        }
+        return docMtCache.get(cacheKey);
+      };
+      const signCachedAudMt = (objKey) => {
+        if (!audMtCache.has(objKey)) {
+          audMtCache.set(
+            objKey,
+            signMediaToken(
+              { k: 'aud', u: mediaActorEmail, j: mediaActorJti, c: normCourseId, r: objKey, dl: 0 },
+              mediaSecret,
+              2 * 3600 * 1000
+            )
+          );
+        }
+        return audMtCache.get(objKey);
+      };
+      const extractHexVideoId = (rawVidArg, fallbackUrlArg) => {
+        const cleanRaw = String(rawVidArg || '').trim();
+        if (/^[0-9a-f]{24}$/i.test(cleanRaw)) return cleanRaw.toLowerCase();
+        const combined = `${cleanRaw} ${String(fallbackUrlArg || '')}`;
+        const m = combined.match(/media\.izteach\.vn\/[^/]+\/([0-9a-f]{24})\//i);
+        return m && m[1] ? m[1].toLowerCase() : '';
+      };
+
       if (normCourseId === DEFAULT_COURSE_ID.toLowerCase()) {
         const HSK1_CDN_DOC = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/hsk1-3.0/docs`;
         const HSK1_CDN_AUDIO = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/hsk1-3.0/audio`;
@@ -12513,105 +13295,115 @@ export default {
           '6aed934844034f00029b3d9e': { l: 17, p: 'SBT 1.2', label: 'Chữa Sách bài tập Phần 2 (Trang 79–150)', vid: '6aed9347b89c6d0002660e46', dur: '13:10', sec: 790, wb: true }
         };
 
-        const buildLessonMaterials = (lNum) => {
+        const buildProtectedMaterialEntry = async ({
+          id,
+          title,
+          type,
+          fileName,
+          objectKey,
+          page = null,
+          size = null,
+          mimeType = 'application/pdf',
+          actionLabel,
+          canDownload = false
+        }) => {
+          const docMt = await signCachedDocMt(objectKey, canDownload);
+          const baseProxyUrl = `/api/ktn/media/doc/${docMt}/${encodeURIComponent(fileName)}`;
+          return {
+            id,
+            title,
+            type,
+            url: page ? `${baseProxyUrl}#page=${page}` : baseProxyUrl,
+            fileUrl: canDownload ? `${baseProxyUrl}?dl=1` : baseProxyUrl,
+            page,
+            size,
+            mimeType,
+            actionLabel,
+            canView: true,
+            canDownload,
+            httpStatus: 200
+          };
+        };
+
+        const buildLessonMaterials = async (lNum) => {
           const meta = HSK1_LESSON_META[lNum];
           if (!meta) return [];
           if (meta.isWorkbook) {
             const pRange = lNum === 16 ? '1–78' : '79–150';
-            return [{
-              id: `hsk1-sbt-${lNum - 15}-pdf`,
-              title: `SBT HSK 1 (3.0) — Phần ${lNum - 15} (Trang ${pRange})`,
-              type: 'sbt_pdf',
-              url: `${HSK1_CDN_DOC}/HSK1_SBT.pdf#page=${meta.sbtPage}`,
-              fileUrl: `${HSK1_CDN_DOC}/HSK1_SBT.pdf`,
-              objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_SBT.pdf`,
-              page: meta.sbtPage,
-              size: 49047337,
-              mimeType: 'application/pdf',
-              actionLabel: `Xem bài tập (Trang ${meta.sbtPage})`,
-              canView: true,
-              canDownload: true,
-              httpStatus: 200
-            }];
+            return [
+              await buildProtectedMaterialEntry({
+                id: `hsk1-sbt-${lNum - 15}-pdf`,
+                title: `SBT HSK 1 (3.0) — Phần ${lNum - 15} (Trang ${pRange})`,
+                type: 'sbt_pdf',
+                fileName: 'HSK1_SBT.pdf',
+                objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_SBT.pdf`,
+                page: meta.sbtPage,
+                size: 49047337,
+                actionLabel: `Xem bài tập (Trang ${meta.sbtPage})`,
+                canDownload: false
+              })
+            ];
           }
-          return [
-            {
+          return Promise.all([
+            buildProtectedMaterialEntry({
               id: `hsk1-l${lNum}-sgk-pdf`,
               title: `SGK HSK 1 (3.0) — Bài ${lNum}: ${meta.titleZh}`,
               type: 'sgk_pdf',
-              url: `${HSK1_CDN_DOC}/HSK1_SGK.pdf#page=${meta.sgkPage}`,
-              fileUrl: `${HSK1_CDN_DOC}/HSK1_SGK.pdf`,
+              fileName: 'HSK1_SGK.pdf',
               objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_SGK.pdf`,
               page: meta.sgkPage,
               size: 63200770,
-              mimeType: 'application/pdf',
               actionLabel: `Xem sách (Trang ${meta.sgkPage})`,
-              canView: true,
-              canDownload: true,
-              httpStatus: 200
-            },
-            {
+              canDownload: false
+            }),
+            buildProtectedMaterialEntry({
               id: `hsk1-l${lNum}-sbt-pdf`,
               title: `SBT HSK 1 (3.0) — Bài tập Bài ${lNum}`,
               type: 'sbt_pdf',
-              url: `${HSK1_CDN_DOC}/HSK1_SBT.pdf#page=${meta.sbtPage}`,
-              fileUrl: `${HSK1_CDN_DOC}/HSK1_SBT.pdf`,
+              fileName: 'HSK1_SBT.pdf',
               objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_SBT.pdf`,
               page: meta.sbtPage,
               size: 49047337,
-              mimeType: 'application/pdf',
               actionLabel: `Xem bài tập (Trang ${meta.sbtPage})`,
-              canView: true,
-              canDownload: true,
-              httpStatus: 200
-            },
-            {
+              canDownload: false
+            }),
+            buildProtectedMaterialEntry({
               id: `hsk1-l${lNum}-voviet-pdf`,
               title: `Vở tập viết chữ Hán — Bài ${lNum}`,
               type: 'voviet_pdf',
-              url: `${HSK1_CDN_DOC}/HSK1_Vo_luyen_viet.pdf#page=${meta.voVietPage}`,
-              fileUrl: `${HSK1_CDN_DOC}/HSK1_Vo_luyen_viet.pdf`,
+              fileName: 'HSK1_Vo_luyen_viet.pdf',
               objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/HSK1_Vo_luyen_viet.pdf`,
               page: meta.voVietPage,
               size: 2324690,
-              mimeType: 'application/pdf',
               actionLabel: `Xem / Tải vở viết (Trang ${meta.voVietPage})`,
-              canView: true,
-              canDownload: true,
-              httpStatus: 200
-            },
-            {
+              canDownload: true
+            }),
+            buildProtectedMaterialEntry({
               id: `hsk1-l${lNum}-vocab-pdf`,
               title: 'Từ vựng New HSK 1 (3.0) — Bảng tổng hợp',
               type: 'vocab_pdf',
-              url: `${HSK1_CDN_DOC}/Tu_vung_New_HSK1_HSK5.pdf`,
-              fileUrl: `${HSK1_CDN_DOC}/Tu_vung_New_HSK1_HSK5.pdf`,
+              fileName: 'Tu_vung_New_HSK1_HSK5.pdf',
               objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/Tu_vung_New_HSK1_HSK5.pdf`,
+              page: null,
               size: 13231348,
-              mimeType: 'application/pdf',
               actionLabel: 'Xem từ vựng',
-              canView: true,
-              canDownload: true,
-              httpStatus: 200
-            },
-            {
+              canDownload: false
+            }),
+            buildProtectedMaterialEntry({
               id: `hsk1-l${lNum}-radicals-pdf`,
               title: 'Bảng 214 Bộ thủ tiếng Trung',
               type: 'reference_pdf',
-              url: `${HSK1_CDN_DOC}/Bo_thu_tieng_trung.pdf`,
-              fileUrl: `${HSK1_CDN_DOC}/Bo_thu_tieng_trung.pdf`,
+              fileName: 'Bo_thu_tieng_trung.pdf',
               objectKey: `resource/documents/${vendorId}/hsk1-3.0/docs/Bo_thu_tieng_trung.pdf`,
+              page: null,
               size: 52324255,
-              mimeType: 'application/pdf',
               actionLabel: 'Xem bộ thủ',
-              canView: true,
-              canDownload: true,
-              httpStatus: 200
-            }
-          ];
+              canDownload: false
+            })
+          ]);
         };
 
-        const buildLessonAudio = (lNum) => {
+        const buildLessonAudio = async (lNum) => {
           const sgkLabels = [
             `MP3 Bài khóa 1 (Bài ${lNum})`,
             `MP3 Từ mới 1 (Bài ${lNum})`,
@@ -12621,40 +13413,53 @@ export default {
             `MP3 Luyện phát âm (Bài ${lNum})`,
             `MP3 Luyện đọc mở rộng (Bài ${lNum})`
           ];
-          const sgkTracks = (HSK1_SGK_AUDIO_MAP[String(lNum)] || []).map(([fname, sz], i) => ({
-            id: `hsk1-l${lNum}-sgk-${i + 1}`,
-            name: sgkLabels[i] || `MP3 SGK Bài ${lNum} (${fname})`,
-            category: 'mp3_sgk',
-            filename: fname,
-            url: `${HSK1_CDN_AUDIO}/sgk/${fname}`,
-            size: sz,
-            mimeType: 'audio/mpeg',
-            httpStatus: 200
-          }));
-          const buildSbtForLesson = (n) => {
+          const sgkTracks = await Promise.all(
+            (HSK1_SGK_AUDIO_MAP[String(lNum)] || []).map(async ([fname, sz], i) => {
+              const objKey = `resource/documents/${vendorId}/hsk1-3.0/audio/sgk/${fname}`;
+              const audMt = await signCachedAudMt(objKey);
+              return {
+                id: `hsk1-l${lNum}-sgk-${i + 1}`,
+                name: sgkLabels[i] || `MP3 SGK Bài ${lNum} (${fname})`,
+                category: 'mp3_sgk',
+                filename: fname,
+                url: `/api/ktn/media/audio/${audMt}/${encodeURIComponent(fname)}`,
+                size: sz,
+                mimeType: 'audio/mpeg',
+                httpStatus: 200
+              };
+            })
+          );
+          const buildSbtForLesson = async (n) => {
             const folder = encodeURIComponent(`第${String(n).padStart(2, '0')}课`);
-            return (HSK1_SBT_AUDIO_MAP[String(n)] || []).map(([fname, sz], i) => ({
-              id: `hsk1-l${n}-sbt-${i + 1}`,
-              name: fname.includes('听读练')
-                ? `MP3 Luyện nghe SBT Bài ${n} — Nghe & Đọc (听读练)`
-                : fname.includes('语音')
-                  ? `MP3 Luyện nghe SBT Bài ${n} — Ngữ âm (语音)`
-                  : `MP3 Luyện nghe SBT Bài ${n} (${fname})`,
-              category: 'mp3_sbt',
-              filename: fname,
-              url: `${HSK1_CDN_AUDIO}/sbt/${folder}/${encodeURIComponent(fname)}`,
-              size: sz,
-              mimeType: 'audio/mpeg',
-              httpStatus: 200
-            }));
+            return Promise.all(
+              (HSK1_SBT_AUDIO_MAP[String(n)] || []).map(async ([fname, sz], i) => {
+                const encFname = encodeURIComponent(fname);
+                const objKey = `resource/documents/${vendorId}/hsk1-3.0/audio/sbt/${folder}/${encFname}`;
+                const audMt = await signCachedAudMt(objKey);
+                return {
+                  id: `hsk1-l${n}-sbt-${i + 1}`,
+                  name: fname.includes('听读练')
+                    ? `MP3 Luyện nghe SBT Bài ${n} — Nghe & Đọc (听读练)`
+                    : fname.includes('语音')
+                      ? `MP3 Luyện nghe SBT Bài ${n} — Ngữ âm (语音)`
+                      : `MP3 Luyện nghe SBT Bài ${n} (${fname})`,
+                  category: 'mp3_sbt',
+                  filename: fname,
+                  url: `/api/ktn/media/audio/${audMt}/${encFname}`,
+                  size: sz,
+                  mimeType: 'audio/mpeg',
+                  httpStatus: 200
+                };
+              })
+            );
           };
           if (lNum === 16) {
-            return [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap(buildSbtForLesson);
+            return (await Promise.all([1, 2, 3, 4, 5, 6, 7, 8, 9].map(buildSbtForLesson))).flat();
           }
           if (lNum === 17) {
-            return [10, 11, 12, 13, 14, 15].flatMap(buildSbtForLesson);
+            return (await Promise.all([10, 11, 12, 13, 14, 15].map(buildSbtForLesson))).flat();
           }
-          return [...sgkTracks, ...buildSbtForLesson(lNum)];
+          return [...sgkTracks, ...(await buildSbtForLesson(lNum))];
         };
 
         const buildHomeworkAssignment = (lNum) => {
@@ -12687,7 +13492,7 @@ export default {
         const hasVideoUnit = sortedList.some(u => u && u.type !== 'homework');
         const effectiveList = hasVideoUnit ? sortedList.filter(u => u && u.type !== 'homework') : sortedList;
 
-        const units = effectiveList.map((u, idx) => {
+        const units = await Promise.all(effectiveList.map(async (u, idx) => {
           if (!u || typeof u !== 'object') return u;
           const unitId = String(u._id || u.id || '').trim();
           const rawTitle = String(u.title || '').trim();
@@ -12706,15 +13511,22 @@ export default {
           }
           const lessonNumber = spec ? spec.l : null;
           const meta = lessonNumber ? HSK1_LESSON_META[lessonNumber] : null;
-          const rawVid = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || spec?.vid || '').trim();
-          const isHexVid = /^[0-9a-f]{24}$/i.test(rawVid);
-          const streamUrl = u.streamUrl || (rawVid.startsWith('http') ? rawVid : (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/playlist.m3u8` : ''));
-          const posterUrl = u.posterUrl || (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/thumbnail.jpg` : '');
+          const rawVidField = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || spec?.vid || '').trim();
+          const cleanVid = extractHexVideoId(rawVidField, u.streamUrl || u.video);
+          const rawVid = cleanVid || (/^[0-9a-f]{24}$/i.test(rawVidField) ? rawVidField : '');
+          const hlsMt = cleanVid ? await signCachedHlsMt(cleanVid) : '';
+          const streamUrl = cleanVid ? `/api/ktn/media/hls/${cleanVid}/playlist.m3u8?mt=${encodeURIComponent(hlsMt)}` : '';
+          const posterUrl = cleanVid ? `/api/ktn/media/poster/${cleanVid}.jpg?mt=${encodeURIComponent(hlsMt)}` : '';
           const durMs = Number(u.resources?.[0]?.duration || 0);
           const duration = spec?.dur || u.duration || (durMs > 0 ? `${Math.floor(durMs / 60000)}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}` : '13:35');
+          const [audioTracks, materials] = lessonNumber
+            ? await Promise.all([buildLessonAudio(lessonNumber), buildLessonMaterials(lessonNumber)])
+            : [[], []];
+          const safeBaseUnit = { ...u };
+          delete safeBaseUnit.syllabus;
 
           return {
-            ...u,
+            ...safeBaseUnit,
             id: u.id || unitId,
             _id: u._id || unitId,
             unitId,
@@ -12733,18 +13545,19 @@ export default {
             sbtPage: meta ? meta.sbtPage : null,
             voVietPage: meta ? meta.voVietPage : null,
             videoId: rawVid,
+            video: streamUrl,
             streamUrl,
             posterUrl,
             duration,
             durationSec: spec?.sec || Math.round(durMs / 1000) || 815,
-            audioTracks: lessonNumber ? buildLessonAudio(lessonNumber) : [],
-            materials: lessonNumber ? buildLessonMaterials(lessonNumber) : [],
+            audioTracks,
+            materials,
             homeworkAssignment: lessonNumber ? buildHomeworkAssignment(lessonNumber) : { assigned: false, mandatory: false, title: 'Chưa có bài tập cần nộp cho bài này.', instructions: 'Chưa có bài tập cần nộp cho bài này.', allowedTypes: [], maxFiles: 0, deadline: null },
             resourceIds: rawVid ? [rawVid] : [],
             confidence: spec ? 'HIGH' : 'NEEDS_REVIEW',
             verified: Boolean(spec)
           };
-        });
+        }));
 
         // Gom nhóm thành các bài chính (1..15) và Sách bài tập (16..17) kèm danh sách parts để UI hiển thị chuẩn
         const lessonsByNum = new Map();
@@ -12823,16 +13636,18 @@ export default {
       const courseMeta = MASTER_PRODUCT_MAPPING[normCourseId] || null;
       const courseShortTitle = courseMeta?.shortTitle || courseMeta?.title || 'Khóa học';
 
-      const units = baseList.map((u, idx) => {
+      const units = await Promise.all(baseList.map(async (u, idx) => {
         if (!u || typeof u !== 'object') return u;
         const lNum = Number(u.num) > 0 ? Number(u.num) : idx + 1;
         const videoUnitId = String(u._id || u.id || '').trim();
         const canonicalHwUnitId = COURSE_UNIT_MAP[normCourseId]?.[lNum] || homeworkUnitsOnly[idx]?._id || videoUnitId;
         const pairedHwUnit = homeworkUnitsOnly.find(h => String(h._id || h.id) === String(canonicalHwUnitId)) || homeworkUnitsOnly[idx] || null;
-        const rawVid = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || '').trim();
-        const isHexVid = /^[0-9a-f]{24}$/i.test(rawVid);
-        const streamUrl = u.streamUrl || (rawVid.startsWith('http') ? rawVid : (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/playlist.m3u8` : ''));
-        const posterUrl = u.posterUrl || (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/thumbnail.jpg` : '');
+        const rawVidField = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || '').trim();
+        const cleanVid = extractHexVideoId(rawVidField, u.streamUrl || u.video);
+        const rawVid = cleanVid || (/^[0-9a-f]{24}$/i.test(rawVidField) ? rawVidField : '');
+        const hlsMt = cleanVid ? await signCachedHlsMt(cleanVid) : '';
+        const streamUrl = cleanVid ? `/api/ktn/media/hls/${cleanVid}/playlist.m3u8?mt=${encodeURIComponent(hlsMt)}` : '';
+        const posterUrl = cleanVid ? `/api/ktn/media/poster/${cleanVid}.jpg?mt=${encodeURIComponent(hlsMt)}` : '';
         const durMs = Number(u.resources?.[0]?.duration || 0);
         const duration = u.duration || (durMs > 0 ? `${String(Math.floor(durMs / 60000)).padStart(2, '0')}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}` : '12:00');
         const rawTitle = String(u.title || `Bài ${lNum}`).trim();
@@ -12844,28 +13659,43 @@ export default {
           ...(Array.isArray(u.syllabus) ? u.syllabus : []),
           ...(Array.isArray(pairedHwUnit?.syllabus) ? pairedHwUnit.syllabus : [])
         ];
-        const materials = syllabusDocs
-          .filter(s => s && (s.link || s.origin?.link))
-          .map((s, sIdx) => {
-            const relLink = String(s.link || s.origin?.link || '').replace(/^\/+/, '');
-            const fullUrl = relLink.startsWith('http') ? relLink : `https://d21acfi38wn3iy.cloudfront.net/${relLink}`;
-            const docTitle = String(s.title || `Tài liệu Bài ${lNum}`);
-            const isPdf = docTitle.toLowerCase().endsWith('.pdf') || String(s.origin?.mimeType || '').includes('pdf');
-            return {
-              id: String(s._id || s.id || `${normCourseId}-l${lNum}-doc-${sIdx + 1}`),
-              title: docTitle,
-              type: isPdf ? 'lesson_pdf' : 'lesson_doc',
-              url: fullUrl,
-              fileUrl: fullUrl,
-              objectKey: relLink,
-              size: Number(s.size || s.origin?.size || 0) || null,
-              mimeType: s.origin?.mimeType || (isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
-              actionLabel: isPdf ? 'Xem / Tải PDF bài học' : 'Tải tài liệu bài học',
-              canView: true,
-              canDownload: true,
-              httpStatus: 200
-            };
-          });
+        const materials = await Promise.all(
+          syllabusDocs
+            .filter(s => s && (s.link || s.origin?.link))
+            .map(async (s, sIdx) => {
+              const relLink = String(s.link || s.origin?.link || '').replace(/^\/+/, '');
+              const docTitle = String(s.title || `Tài liệu Bài ${lNum}`);
+              const isPdf = docTitle.toLowerCase().endsWith('.pdf') || String(s.origin?.mimeType || '').includes('pdf');
+              const canDownload = !isPdf;
+              const cfPrefix = 'https://d21acfi38wn3iy.cloudfront.net/';
+              const objectKey = relLink.startsWith(cfPrefix) ? relLink.slice(cfPrefix.length) : relLink;
+              let protectedUrl = '';
+              let protectedFileUrl = '';
+              if (!/^https?:/i.test(objectKey) && objectKey) {
+                const rawName = (objectKey.split('/').pop() || (isPdf ? `lesson_${lNum}.pdf` : `doc_${lNum}.docx`)).split('?')[0];
+                const docMt = await signCachedDocMt(objectKey, canDownload);
+                const baseProxyUrl = `/api/ktn/media/doc/${docMt}/${rawName}`;
+                protectedUrl = baseProxyUrl;
+                protectedFileUrl = canDownload ? `${baseProxyUrl}?dl=1` : baseProxyUrl;
+              } else {
+                protectedUrl = relLink;
+                protectedFileUrl = relLink;
+              }
+              return {
+                id: String(s._id || s.id || `${normCourseId}-l${lNum}-doc-${sIdx + 1}`),
+                title: docTitle,
+                type: isPdf ? 'lesson_pdf' : 'lesson_doc',
+                url: protectedUrl,
+                fileUrl: protectedFileUrl,
+                size: Number(s.size || s.origin?.size || 0) || null,
+                mimeType: s.origin?.mimeType || (isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                actionLabel: isPdf ? 'Xem PDF bài học' : 'Tải tài liệu bài học',
+                canView: true,
+                canDownload,
+                httpStatus: 200
+              };
+            })
+        );
 
         const hasHomeworkUnit = Boolean(pairedHwUnit || COURSE_UNIT_MAP[normCourseId]?.[lNum]);
         const customHw = hwConfigByLesson[lNum];
@@ -12874,7 +13704,7 @@ export default {
           mandatory: Boolean(pairedHwUnit),
           title: pairedHwUnit ? `Bài tập Bài ${lNum}: ${titleZh}` : `Bài tập tự luyện Bài ${lNum}`,
           instructions: pairedHwUnit
-            ? `Xem hết video Bài ${lNum} (${titleZh})${materials.length > 0 ? ', tải tài liệu bài học đính kèm' : ''} và nộp bản thu âm phát âm hoặc ảnh/PDF bài làm.`
+            ? `Xem hết video Bài ${lNum} (${titleZh})${materials.length > 0 ? ', xem tài liệu bài học đính kèm' : ''} và nộp bản thu âm phát âm hoặc ảnh/PDF bài làm.`
             : 'Chưa có bài tập cần nộp cho bài này.',
           relatedPages: materials.length > 0 ? materials.map(m => m.title).join(' · ') : null,
           allowedTypes: ['audio', 'image', 'pdf', 'video', 'text'],
@@ -12882,9 +13712,11 @@ export default {
           deadline: null,
           completionCriteria: pairedHwUnit ? `Hoàn thành thu âm hoặc nộp bài làm Bài ${lNum}.` : null
         };
+        const safeBaseUnit = { ...u };
+        delete safeBaseUnit.syllabus;
 
         return {
-          ...u,
+          ...safeBaseUnit,
           id: canonicalHwUnitId || videoUnitId,
           _id: canonicalHwUnitId || videoUnitId,
           unitId: canonicalHwUnitId || videoUnitId,
@@ -12906,6 +13738,7 @@ export default {
           sbtPage: null,
           voVietPage: null,
           videoId: rawVid,
+          video: streamUrl,
           streamUrl,
           posterUrl,
           duration,
@@ -12927,7 +13760,7 @@ export default {
           confidence: 'HIGH',
           verified: true
         };
-      });
+      }));
 
       return jsonResponse({
         ok: unitRes.ok,

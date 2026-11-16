@@ -1371,6 +1371,18 @@ export function createLocalWorkerHarness() {
       }
     }
 
+    if (
+      u.hostname === 'media.izteach.vn' ||
+      (u.hostname === 'd21acfi38wn3iy.cloudfront.net' && u.pathname.startsWith('/resource/documents/'))
+    ) {
+      const cleanInit = { ...init };
+      delete cleanInit.cf;
+      if (cleanInit.headers && typeof cleanInit.headers.entries === 'function') {
+        cleanInit.headers = Object.fromEntries(cleanInit.headers.entries());
+      }
+      return globalThis.fetch(u.toString(), cleanInit);
+    }
+
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: {
@@ -1733,8 +1745,8 @@ export function createLocalWorkerHarness() {
         workerRes.headers.forEach((val, key) => {
           res.setHeader(key, val);
         });
-        const text = await workerRes.text();
-        res.end(text);
+        const arrayBuf = await workerRes.arrayBuffer();
+        res.end(Buffer.from(arrayBuf));
       } catch (err) {
         console.error('[LocalWorkerHarness] Error handling /api/ktn/*:', err);
         res.statusCode = 500;

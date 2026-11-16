@@ -373,6 +373,15 @@ function getApiBase(): string {
   return '';
 }
 
+export function resolveMediaUrl(rawUrl?: string | null): string {
+  const s = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+  if (!s) return '';
+  if (s.startsWith('/api/ktn/')) {
+    return `${getApiBase()}${s}`;
+  }
+  return s;
+}
+
 export function toHttpHeaderSafeValue(raw: string): string {
   return String(raw ?? '')
     .replace(/[\r\n]+/g, ' ')
@@ -642,7 +651,12 @@ export const ktnApi = {
 
   async getCourses(): Promise<KtnCourse[]> {
     const res = await ktnRequest<{ ok: boolean; courses: KtnCourse[] }>('/api/ktn/courses');
-    return Array.isArray(res.courses) ? res.courses : [];
+    return Array.isArray(res.courses)
+      ? res.courses.map((c) => ({
+          ...c,
+          demoVideoUrl: c.demoVideoUrl ? resolveMediaUrl(c.demoVideoUrl) : c.demoVideoUrl ?? null,
+        }))
+      : [];
   },
 
   async getCourseUnits(courseId: string): Promise<KtnLessonUnit[]> {
@@ -673,7 +687,6 @@ export const ktnApi = {
       }
     }
     const rawUnits = Array.isArray(res.units) ? res.units : [];
-    const vendorId = '3529cd2b-7af6-4fda-887c-392a79393d6a';
     const sorted = [...rawUnits].sort(
       (a, b) => Number(a?.index ?? a?.num ?? 0) - Number(b?.index ?? b?.num ?? 0)
     );
@@ -682,24 +695,18 @@ export const ktnApi = {
       const resources = Array.isArray(u.resources) ? (u.resources as Array<Record<string, unknown>>) : [];
       const rawVid = String(
         u.videoId ||
-          (typeof u.video === 'string' ? u.video : '') ||
           resources[0]?._id ||
           resources[0]?.id ||
           ''
       ).trim();
-      const isHexVid = /^[0-9a-f]{24}$/i.test(rawVid);
-      const streamUrl = String(
-        u.streamUrl ||
-          (rawVid.startsWith('http')
-            ? rawVid
-            : isHexVid
-            ? `https://media.izteach.vn/${vendorId}/${rawVid}/playlist.m3u8`
-            : '')
+      const streamUrl = resolveMediaUrl(
+        typeof u.streamUrl === 'string' && u.streamUrl
+          ? u.streamUrl
+          : typeof u.video === 'string' && u.video.startsWith('/api/ktn/')
+          ? u.video
+          : ''
       );
-      const posterUrl = String(
-        u.posterUrl ||
-          (isHexVid ? `https://media.izteach.vn/${vendorId}/${rawVid}/thumbnail.jpg` : '')
-      );
+      const posterUrl = resolveMediaUrl(typeof u.posterUrl === 'string' ? u.posterUrl : '');
       const durMs = Number(u.durationMs || resources[0]?.duration || 0);
       const duration = String(
         u.duration ||
@@ -708,6 +715,28 @@ export const ktnApi = {
             : '15:00')
       );
       const num = Number(u.lessonNumber ?? u.num) > 0 ? Number(u.lessonNumber ?? u.num) : idx + 1;
+      const materials = Array.isArray(u.materials)
+        ? (u.materials as KtnLessonUnit['materials'])!.map((m) => ({
+            ...m,
+            url: resolveMediaUrl(m.url),
+            fileUrl: m.fileUrl ? resolveMediaUrl(m.fileUrl) : m.fileUrl,
+            baseUrl: m.baseUrl ? resolveMediaUrl(m.baseUrl) : m.baseUrl,
+          }))
+        : [];
+      const audioTracks = Array.isArray(u.audioTracks)
+        ? (u.audioTracks as KtnLessonUnit['audioTracks'])!.map((a) => ({
+            ...a,
+            url: resolveMediaUrl(a.url),
+          }))
+        : [];
+      const parts = Array.isArray(u.parts)
+        ? (u.parts as KtnLessonUnit['parts'])!.map((p) => ({
+            ...p,
+            url: p.url ? resolveMediaUrl(p.url) : p.url,
+            streamUrl: p.streamUrl ? resolveMediaUrl(p.streamUrl) : p.streamUrl,
+            posterUrl: p.posterUrl ? resolveMediaUrl(p.posterUrl) : p.posterUrl,
+          }))
+        : [];
       return {
         ...(u as unknown as KtnLessonUnit),
         id: unitId,
@@ -729,10 +758,11 @@ export const ktnApi = {
         sgkPage: typeof u.sgkPage === 'number' ? u.sgkPage : null,
         sbtPage: typeof u.sbtPage === 'number' ? u.sbtPage : null,
         voVietPage: typeof u.voVietPage === 'number' ? u.voVietPage : null,
-        audioTracks: Array.isArray(u.audioTracks) ? (u.audioTracks as KtnLessonUnit['audioTracks']) : [],
-        materials: Array.isArray(u.materials) ? (u.materials as KtnLessonUnit['materials']) : [],
+        audioTracks,
+        materials,
         homeworkAssignment: (u.homeworkAssignment as KtnHomeworkAssignment | null) || null,
-        parts: Array.isArray(u.parts) ? (u.parts as KtnLessonUnit['parts']) : [],
+        parts,
+        video: streamUrl,
         videoId: rawVid || undefined,
         streamUrl,
         posterUrl,

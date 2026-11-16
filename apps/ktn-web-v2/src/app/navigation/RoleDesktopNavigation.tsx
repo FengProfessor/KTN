@@ -98,28 +98,42 @@ export const RoleDesktopNavigation: React.FC<RoleDesktopNavigationProps> = ({
 
       {/* User Profile Footer */}
       <div className="border-t border-stone-200 p-3">
-        <div className="flex items-center gap-2.5 rounded-xl border border-stone-200/80 bg-stone-50 p-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-800 text-xs font-bold text-white">
-            {getInitials(user?.name || 'KTN')}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p
-              data-testid="sidebar-user-name"
-              className="truncate text-xs font-bold text-stone-900"
-            >
-              {user?.name || tr('Thành viên KTN', 'KTN Member')}
-            </p>
-            <p
-              data-testid="sidebar-user-subtitle"
-              className="truncate text-[11px] text-stone-500"
-            >
-              {subtitle}
-            </p>
-          </div>
+        <div className="flex items-center gap-1.5 rounded-xl border border-stone-200/80 bg-stone-50 p-1.5">
+          <NavLink
+            to="/profile"
+            data-testid="sidebar-profile-link"
+            title={tr('Hồ sơ & Đổi mật khẩu', 'Profile & Password')}
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1 transition-colors ${
+                isActive ? 'bg-red-50' : 'hover:bg-stone-100'
+              }`
+            }
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-800 text-xs font-bold text-white">
+              {getInitials(user?.name || 'KTN')}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p
+                data-testid="sidebar-user-name"
+                className="truncate text-xs font-bold text-stone-900"
+              >
+                {user?.name || tr('Thành viên KTN', 'KTN Member')}
+              </p>
+              <p
+                data-testid="sidebar-user-subtitle"
+                className="truncate text-[11px] text-stone-500"
+              >
+                {subtitle}
+              </p>
+              <p className="truncate text-[10px] font-semibold text-red-800">
+                {tr('Hồ sơ & Đổi mật khẩu', 'Profile & Password')}
+              </p>
+            </div>
+          </NavLink>
           <button
             type="button"
             onClick={onLogout}
-            className="rounded-lg p-1.5 text-stone-500 hover:bg-red-100 hover:text-red-800"
+            className="shrink-0 rounded-lg p-1.5 text-stone-500 hover:bg-red-100 hover:text-red-800"
             title={tr('Đăng xuất', 'Sign out')}
             aria-label={tr('Đăng xuất', 'Sign out')}
           >

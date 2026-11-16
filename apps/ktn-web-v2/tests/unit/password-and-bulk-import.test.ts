@@ -835,4 +835,168 @@ Thứ 5 & Chủ Nhật 18:30-19:30",Cô Nông Linh,Huy,0977679764,Trịnh Kim Ng
       expect(scheduleExample.timezone).toBe('Asia/Ho_Chi_Minh');
     });
   });
+
+  describe('Suite 4: Unified Default Password 12345678 Across All Account Creation Paths & Change Password', () => {
+    it('provisions new Admin/Teacher-created students and new teachers with initialPassword=12345678, allows login -> change-password -> blocks old 12345678, while preserving existing account passwords', async () => {
+      // 1. Admin creates a brand new student via POST /api/ktn/admin/students/provision
+      const adminStuEmail = 'new.admin.stu.1to8@khongtunhi.com';
+      const provStuRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/students/provision', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            name: 'Bé Học Viên Mới',
+            email: adminStuEmail,
+            phone: '0905123456',
+            courseIds: ['6adadba969897b0002482ca5'],
+          }),
+        }),
+        harness.env
+      );
+      expect(provStuRes.status).toBe(200);
+      const provStuData = await provStuRes.json();
+      expect(provStuData.accountCreated).toBe(true);
+      expect(provStuData.initialPassword).toBe('12345678');
+
+      // Re-provisioning existing student MUST keep initialPassword=null and existing password untouched
+      const existingStuRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/students/provision', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            name: 'Bé Học Viên Mới',
+            email: adminStuEmail,
+            phone: '0905123456',
+            courseIds: ['65e7704a9ea90c00080d5195'],
+          }),
+        }),
+        harness.env
+      );
+      expect(existingStuRes.status).toBe(200);
+      const existingStuData = await existingStuRes.json();
+      expect(existingStuData.existingAccount).toBe(true);
+      expect(existingStuData.initialPassword).toBeNull();
+
+      // 2. New student logs in with default password 12345678 -> changes password -> old 12345678 blocked
+      const stuLogin1 = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: adminStuEmail, password: '12345678' }),
+        }),
+        harness.env
+      );
+      expect(stuLogin1.status).toBe(200);
+      const stuLogin1Data = await stuLogin1.json();
+      expect(stuLogin1Data.token).toBeTruthy();
+
+      const stuPwdChange = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${stuLogin1Data.token}`,
+          },
+          body: JSON.stringify({
+            currentPassword: '12345678',
+            newPassword: 'StudentNew!2026',
+          }),
+        }),
+        harness.env
+      );
+      expect(stuPwdChange.status).toBe(200);
+
+      const stuOldBlocked = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: adminStuEmail, password: '12345678' }),
+        }),
+        harness.env
+      );
+      expect(stuOldBlocked.status).toBe(401);
+
+      const stuNewOk = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: adminStuEmail, password: 'StudentNew!2026' }),
+        }),
+        harness.env
+      );
+      expect(stuNewOk.status).toBe(200);
+
+      // 3. Admin creates a brand new Teacher without explicit password -> defaults to 12345678
+      const newTeaEmail = 'new.teacher.1to8@khongtunhi.com';
+      const provTeaRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/teachers', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            code: 'GV-1TO8',
+            name: 'Cô Giáo Mới',
+            email: newTeaEmail,
+            assignedClasses: ['YCT2-04'],
+          }),
+        }),
+        harness.env
+      );
+      expect(provTeaRes.status).toBe(200);
+      const provTeaData = await provTeaRes.json();
+      expect(provTeaData.accountCreated).toBe(true);
+      expect(provTeaData.initialPassword).toBe('12345678');
+
+      // 4. New teacher logs in with 12345678, and creates a student via POST /api/ktn/teacher/students/create -> also 12345678
+      const teaLogin1 = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: newTeaEmail, password: '12345678' }),
+        }),
+        harness.env
+      );
+      expect(teaLogin1.status).toBe(200);
+      const teaToken = (await teaLogin1.json()).token;
+
+      const teaCreateStuRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/teacher/students/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${teaToken}`,
+          },
+          body: JSON.stringify({
+            name: 'Học Viên GV Tạo',
+            email: 'tea.created.1to8@khongtunhi.com',
+            phone: '0907778899',
+            classCode: 'YCT2-04',
+          }),
+        }),
+        harness.env
+      );
+      expect(teaCreateStuRes.status).toBe(200);
+      const teaCreateStuData = await teaCreateStuRes.json();
+      expect(teaCreateStuData.accountCreated).toBe(true);
+      expect(teaCreateStuData.initialPassword).toBe('12345678');
+
+      const teaStuLogin = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: 'tea.created.1to8@khongtunhi.com', password: '12345678' }),
+        }),
+        harness.env
+      );
+      expect(teaStuLogin.status).toBe(200);
+    });
+  });
 });

@@ -1075,7 +1075,7 @@ export const TeacherWorkspace: React.FC = () => {
             online_courses: [],
             studentCase: 'sll_only',
           } as KtnStudentRecord & { parent_phone?: string },
-          initialPassword: 'Ktn@123456',
+          initialPassword: '12345678',
           classCode: chosenClass,
           message: tr('Đã tạo học viên mới.', 'Created new student.'),
         };
@@ -3670,11 +3670,11 @@ export const TeacherWorkspace: React.FC = () => {
                 <div className="rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-[11px] text-stone-600">
                   {lang === 'en' ? (
                     <>
-                      Note: Teacher-created students have <strong>no video courses</strong> by default. Use &ldquo;Request online course&rdquo; for Admin approval when needed.
+                      Default password: <strong className="font-mono text-red-800">12345678</strong> (student can change it in Profile after sign-in). Note: Teacher-created students have <strong>no video courses</strong> by default; use &ldquo;Request online course&rdquo; for Admin approval when needed.
                     </>
                   ) : (
                     <>
-                      Lưu ý: Học viên do giáo viên tạo mặc định <strong>chưa có khóa học video</strong>. Nếu cần cấp khóa học video, hãy dùng chức năng &ldquo;Đề nghị mở khóa học online&rdquo; để Quản lý phê duyệt.
+                      Mật khẩu mặc định khi tạo mới: <strong className="font-mono text-red-800">12345678</strong> (tự đổi tại mục Hồ sơ sau khi đăng nhập). Lưu ý: Học viên do giáo viên tạo mặc định <strong>chưa có khóa học video</strong>; nếu cần cấp khóa học video, hãy dùng chức năng &ldquo;Đề nghị mở khóa học online&rdquo; để Quản lý phê duyệt.
                     </>
                   )}
                 </div>

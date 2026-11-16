@@ -1200,8 +1200,8 @@ async function runSuite() {
     recordTest(
       'TEST J',
       'J1',
-      'Admin 1-click student provisioning creates student without default YCT2-04 and displays one-time credential handoff banner',
-      Boolean(bannerText && bannerText.includes(v3Email) && !bannerText.includes('123456')),
+      'Admin 1-click student provisioning creates student without default YCT2-04 and displays one-time credential handoff banner with default password 12345678',
+      Boolean(bannerText && bannerText.includes(v3Email) && bannerText.includes('12345678') && !/(?<!\d)123456(?!\d)/.test(bannerText)),
       `Provisioned: ${v3Email}`
     );
 

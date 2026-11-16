@@ -2016,9 +2016,9 @@ async function runSuite() {
       `syncOk=${syncDefaultRes.data?.ok}, dupCount=${syncDefaultRes.data?.duplicateUpstreamCount}, idempotent=${syncIdempotentRes.data?.idempotent}, emptyProtected=${syncEmptyProtectedRes.data?.skippedEmptyUpstream}`
     );
 
-    // 2. BUG BE-02: Credential handoff safety (no hardcoded 123456, no fabricated password for existing izTeach account)
+    // 2. BUG BE-02: Credential handoff safety (no hardcoded 123456, default initialPassword=12345678, no fabricated password for existing izTeach account)
     const sllAdminHtml = fs.readFileSync(path.join(ROOT_DIR, 'sll-admin.html'), 'utf8');
-    const hasHardcoded123456InCopy = /Mật khẩu mặc định:\s*123456/.test(sllAdminHtml);
+    const hasHardcoded123456InCopy = /Mật khẩu mặc định:\s*123456(?!\d)/.test(sllAdminHtml);
 
     const newStuProv = await callApi('/api/ktn/admin/students/provision', {
       method: 'POST',
@@ -2057,19 +2057,18 @@ async function runSuite() {
     record(
       'BE02-CREDENTIAL-SAFETY-AND-ONE-CLICK-IDEMPOTENCY',
       'GROUP_V3',
-      'New student provision returns one-time initialPassword (accountCreated=true), replay returns idempotentReplay=true, existing account returns initialPassword=null (existingAccount=true), and sll-admin.html has 0 hardcoded 123456',
+      'New student provision returns initialPassword=12345678 (accountCreated=true), replay returns idempotentReplay=true, existing account returns initialPassword=null (existingAccount=true), and sll-admin.html has 0 hardcoded 123456',
       hasHardcoded123456InCopy === false &&
         newStuProv.status === 200 &&
         newStuProv.data?.accountCreated === true &&
-        typeof newStuProv.data?.initialPassword === 'string' &&
-        newStuProv.data.initialPassword.length >= 10 &&
+        newStuProv.data?.initialPassword === '12345678' &&
         newStuProv.data?.student?.class_code === null && // Never auto-assigned YCT2-04!
         newStuProvReplay.status === 200 &&
         newStuProvReplay.data?.idempotentReplay === true &&
         existingStuGrant.status === 200 &&
         existingStuGrant.data?.existingAccount === true &&
         existingStuGrant.data?.initialPassword === null,
-      `no123456=${!hasHardcoded123456InCopy}, newCreated=${newStuProv.data?.accountCreated}, replay=${newStuProvReplay.data?.idempotentReplay}, existingNullPwd=${existingStuGrant.data?.initialPassword === null}, noAutoClass=${newStuProv.data?.student?.class_code === null}`
+      `no123456=${!hasHardcoded123456InCopy}, newCreated=${newStuProv.data?.accountCreated}, initPwd=${newStuProv.data?.initialPassword}, replay=${newStuProvReplay.data?.idempotentReplay}, existingNullPwd=${existingStuGrant.data?.initialPassword === null}, noAutoClass=${newStuProv.data?.student?.class_code === null}`
     );
 
     // 3. BUG BE-03 & BE-04: Order approval & Payment webhook partial failure and unified orchestration
@@ -2836,7 +2835,9 @@ async function runSuite() {
     });
     const auditPayloadsJson = JSON.stringify(state.tables.ktn_sync_events.concat(state.tables.ktn_provisioning_jobs));
     const hasPlaintextPasswordInAudit =
-      auditPayloadsJson.includes('TestStrongPassword!2026') || auditPayloadsJson.includes('"initialPassword":"Ktn@');
+      auditPayloadsJson.includes('TestStrongPassword!2026') ||
+      auditPayloadsJson.includes('"initialPassword":"Ktn@') ||
+      auditPayloadsJson.includes('"initialPassword":"12345678"');
 
     record(
       'D11-TEACHER-PROVISIONING-TRUTH-AND-AUDIT-SECRET-SCRUBBING',
@@ -3097,13 +3098,12 @@ async function runSuite() {
     record(
       'D16-STEP-RESUMED-INITIAL-PASSWORD-HANDOFF-PRESERVATION',
       'GROUP_V3',
-      'When Step 1 (izteach_account) creates a new account and Step 3 (supabase_student_upsert) fails, retrying with the same Idempotency-Key resumes without recreating Cognito user, preserves accountCreated=true + one-time initialPassword, and scrubs initialPassword on subsequent completed replay',
+      'When Step 1 (izteach_account) creates a new account and Step 3 (supabase_student_upsert) fails, retrying with the same Idempotency-Key resumes without recreating Cognito user, preserves accountCreated=true + default initialPassword 12345678, and scrubs initialPassword on subsequent completed replay',
       resumeAttempt1.status === 502 &&
         resumeAttempt1.data?.partialFailure === true &&
         resumeAttempt2.status === 200 &&
         resumeAttempt2.data?.accountCreated === true &&
-        typeof resumeAttempt2.data?.initialPassword === 'string' &&
-        resumeAttempt2.data.initialPassword.startsWith('Ktn@') &&
+        resumeAttempt2.data?.initialPassword === '12345678' &&
         resumeAttempt3Replay.status === 200 &&
         resumeAttempt3Replay.data?.idempotentReplay === true &&
         !resumeAttempt3Replay.data?.initialPassword,

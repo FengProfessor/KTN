@@ -8,8 +8,18 @@ import { StudentHome } from '@/features/dashboard/components/StudentHome';
 import { ClassroomsPage } from '@/features/classrooms/components/ClassroomsPage';
 import { ChatLayout } from '@/features/chat/components/ChatLayout';
 import { AppShell } from '@/app/layouts/AppShell';
+import { ProfilePage } from '@/features/profile/components/ProfilePage';
+import {
+  ClassScheduleModal,
+  normalizeClassCodeInput,
+} from '@/features/classrooms/components/ClassScheduleModal';
 import { chatApi } from '@/features/chat/services/chatApi';
-import { ktnApi, KtnApiError, saveStoredSession } from '@/services/api/ktnApiClient';
+import {
+  ktnApi,
+  KtnApiError,
+  saveStoredSession,
+  toHttpHeaderSafeValue,
+} from '@/services/api/ktnApiClient';
 
 type KtnClassSession = Awaited<ReturnType<typeof ktnApi.getClassSessions>>[number];
 import { syncRemoteVocabulary } from '@/features/games/services/vocabularyService';
@@ -567,7 +577,7 @@ describe('KTN Master Refactor Acceptance Suite (Agent A / B / C / D)', () => {
       endpoint: 'https://fcm.googleapis.com/fcm/send/device-xyz',
       unsubscribe: unsubMock,
     };
-    const origSw = navigator.serviceWorker;
+    const origSwDesc = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
     Object.defineProperty(navigator, 'serviceWorker', {
       configurable: true,
       value: {
@@ -593,7 +603,11 @@ describe('KTN Master Refactor Acceptance Suite (Agent A / B / C / D)', () => {
       expect(bodyObj.unsubscribeEndpoint).toBe('https://fcm.googleapis.com/fcm/send/device-xyz');
       expect(unsubMock).toHaveBeenCalledTimes(1);
     } finally {
-      Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: origSw });
+      if (origSwDesc) {
+        Object.defineProperty(navigator, 'serviceWorker', origSwDesc);
+      } else {
+        delete (navigator as unknown as { serviceWorker?: unknown }).serviceWorker;
+      }
     }
   });
 
@@ -1241,5 +1255,148 @@ describe('KTN Master Refactor Acceptance Suite (Agent A / B / C / D)', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['ktn-notifications-summary'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['ktn-notifications'] });
     });
+  });
+
+  it('Class Create Fix: toHttpHeaderSafeValue & ClassScheduleModal handle Vietnamese diacritics without throwing Headers ISO-8859-1 TypeError', async () => {
+    expect(toHttpHeaderSafeValue('CLS-REQ-1:LỘ2-01')).toBe('CLS-REQ-1:L%E1%BB%982-01');
+    expect(normalizeClassCodeInput('Lớp Lộ 2 - 01 (ĐB)')).toBe('LOP-LO-2-01-DB');
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, classItem: { id: 'LO2-01', name: 'Lớp Lộ 2' } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    // Even direct saveClass call with raw Vietnamese clientRequestId must NEVER construct invalid Headers
+    await expect(
+      ktnApi.saveClass({
+        id: 'LỘ2-01',
+        name: 'Lớp Lộ 2',
+        mode: 'create',
+        isNew: true,
+        clientRequestId: 'CLS-REQ-RAW:LỘ2-01',
+      })
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const sentHeaders = fetchSpy.mock.calls[0][1]?.headers as Headers;
+    expect(sentHeaders.get('Idempotency-Key')).toBe('CLS-REQ-RAW:L%E1%BB%982-01');
+
+    // Also verify ClassScheduleModal normalizes Vietnamese class code and submits cleanly
+    const onSaveSpy = vi.fn().mockResolvedValue(undefined);
+    renderWithQuery(
+      <ClassScheduleModal
+        open
+        mode="create_class"
+        role="admin"
+        teachers={[]}
+        onClose={() => {}}
+        onSaveClassAndSchedule={onSaveSpy}
+      />
+    );
+
+    fireEvent.change(screen.getByTestId('schedule-class-code-input'), {
+      target: { value: 'Lộ2-01' },
+    });
+    expect((screen.getByTestId('schedule-class-code-input') as HTMLInputElement).value).toBe('LO2-01');
+    fireEvent.change(screen.getByTestId('schedule-class-name-input'), {
+      target: { value: 'Lớp Tiếng Trung Lộ 2' },
+    });
+    fireEvent.click(screen.getByTestId('save-class-schedule-btn'));
+
+    await waitFor(() => {
+      expect(onSaveSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isCreateClass: true,
+          classCode: 'LO2-01',
+        })
+      );
+    });
+  });
+
+  it('Profile Page & Header/Sidebar Navigation: opens /profile and changes password cleanly in VI & EN', async () => {
+    const stuUser = {
+      id: 'stu-prof-1',
+      code: '20260001',
+      email: '20260001@khongtunhi.com',
+      name: 'Nguyễn Hoàng Ngân',
+      role: 'student' as const,
+      roles: ['student' as const],
+      classCode: 'LO2-N01',
+      assignedClasses: ['LO2-N01'],
+      hasLiveClass: true,
+      hasOnlineCourses: false,
+      onlineCourses: [],
+    };
+    useAuthStore.setState({ user: stuUser, authUser: stuUser });
+    vi.spyOn(ktnApi, 'getNotificationsSummary').mockResolvedValue({
+      unreadCount: 0,
+      totalCount: 0,
+      latestAt: null,
+    });
+    vi.spyOn(ktnApi, 'getNotifications').mockResolvedValue({
+      notifications: [],
+      readIds: [],
+      unreadCount: 0,
+      totalCount: 0,
+    });
+    vi.spyOn(chatApi, 'getRooms').mockResolvedValue({
+      role: 'student',
+      groupRooms: [],
+      privateThreads: [],
+    });
+    const changePwdSpy = vi.spyOn(ktnApi, 'changePassword').mockResolvedValue({
+      ok: true,
+      email: '20260001@khongtunhi.com',
+      role: 'student',
+      message: 'Đã đổi mật khẩu thành công!',
+    });
+
+    const queryClient = createTestQueryClient();
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <QueryClientProvider client={queryClient}>
+          <Routes>
+            <Route path="/" element={<AppShell />}>
+              <Route index element={<div>HomeView</div>} />
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="notifications" element={<div>NotificationsView</div>} />
+            </Route>
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+
+    const headerProfileBtn = await screen.findByTestId('header-profile-btn');
+    fireEvent.click(headerProfileBtn);
+
+    expect(await screen.findByTestId('profile-page')).toBeInTheDocument();
+    expect(screen.getByTestId('profile-user-email')).toHaveTextContent('20260001@khongtunhi.com');
+    expect(screen.getByTestId('profile-user-classes')).toHaveTextContent('LO2-N01');
+    expect(screen.getByTestId('sidebar-profile-link')).toHaveAttribute('href', '/profile');
+
+    fireEvent.change(screen.getByTestId('profile-current-password-input'), {
+      target: { value: '12345678' },
+    });
+    fireEvent.change(screen.getByTestId('profile-new-password-input'), {
+      target: { value: 'MyNewPass2026' },
+    });
+    fireEvent.change(screen.getByTestId('profile-confirm-password-input'), {
+      target: { value: 'MyNewPass2026' },
+    });
+    fireEvent.click(screen.getByTestId('profile-change-password-submit-btn'));
+
+    await waitFor(() => {
+      expect(changePwdSpy).toHaveBeenCalledWith({
+        currentPassword: '12345678',
+        newPassword: 'MyNewPass2026',
+      });
+    });
+    expect(await screen.findByTestId('profile-password-success')).toBeInTheDocument();
+
+    // Switch language to English and verify ProfilePage translates cleanly
+    fireEvent.click(screen.getByTestId('profile-lang-toggle-btn'));
+    expect(screen.getByTestId('profile-change-password-card')).toHaveTextContent('Change account password');
   });
 });

@@ -373,12 +373,38 @@ function getApiBase(): string {
   return '';
 }
 
+export function toHttpHeaderSafeValue(raw: string): string {
+  return String(raw ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, (ch) => encodeURIComponent(ch));
+}
+
 export async function ktnRequest<T>(
   path: string,
   options: RequestInit & { timeoutMs?: number } = {}
 ): Promise<T> {
   const session = getStoredSession();
-  const headers = new Headers(options.headers || {});
+  const headers = new Headers();
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        headers.set(key, toHttpHeaderSafeValue(value));
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    }
+  }
   if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
     headers.set('Content-Type', 'application/json');
   }
@@ -387,12 +413,12 @@ export async function ktnRequest<T>(
     session.token !== 'DEMO-MODE-ONLY' &&
     !session.token.startsWith('KTN-')
   ) {
-    headers.set('Authorization', `Bearer ${session.token}`);
+    headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${session.token}`));
   }
   if (typeof window !== 'undefined') {
     const winSim = (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__;
     if (typeof winSim === 'string' && winSim.trim() && !headers.has('X-KTN-QA-Simulated-Now')) {
-      headers.set('X-KTN-QA-Simulated-Now', winSim.trim());
+      headers.set('X-KTN-QA-Simulated-Now', toHttpHeaderSafeValue(winSim));
     }
   }
 

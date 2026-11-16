@@ -47,6 +47,9 @@ export function resolveHeaderTitle(
   if (pathname.startsWith('/notifications')) {
     return { title: trStatic('Thông báo', 'Notifications', lang) };
   }
+  if (pathname.startsWith('/profile')) {
+    return { title: trStatic('Hồ sơ cá nhân', 'My Profile', lang) };
+  }
   if (pathname.startsWith('/teacher')) {
     if (pathname.includes('/grading')) return { title: trStatic('Chấm bài', 'Grading', lang) };
     if (pathname.includes('/assign')) return { title: trStatic('Giao bài', 'Assignments', lang) };

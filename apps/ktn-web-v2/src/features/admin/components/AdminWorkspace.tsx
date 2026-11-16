@@ -914,7 +914,7 @@ export const AdminWorkspace: React.FC = () => {
           studentEmail: params.studentEmail || 'giahan@khongtunhi.com',
           accountCreated: true,
           existingAccount: false,
-          initialPassword: 'KtnDemoOrder!2026',
+          initialPassword: '12345678',
           syncStatus: 'synced' as const,
           durationPreset: preset,
           limitTime,
@@ -1421,7 +1421,7 @@ export const AdminWorkspace: React.FC = () => {
           accountCreated: true,
           existingAccount: false,
           credentialMode: 'new_account_initial_password',
-          initialPassword: 'KtnDemo!2026',
+          initialPassword: '12345678',
           student: {
             code: 'KTN-DEMO-NEW',
             email: newStuEmail,
@@ -1517,7 +1517,7 @@ export const AdminWorkspace: React.FC = () => {
           readyToLogin: true,
           accountCreated: true,
           existingAccount: false,
-          initialPassword: 'KtnTeacher!2026',
+          initialPassword: '12345678',
           message: tr('Đã tạo tài khoản giáo viên!', 'Created teacher account!'),
         };
       }
@@ -3357,6 +3357,13 @@ export const AdminWorkspace: React.FC = () => {
             </div>
           </div>
 
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] font-medium text-amber-950">
+            {tr(
+              'Mật khẩu mặc định khi tạo mới: 12345678 (tự đổi tại mục Hồ sơ sau khi đăng nhập).',
+              'Default password for new accounts: 12345678 (can be changed in Profile after sign-in).'
+            )}
+          </div>
+
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -3498,6 +3505,13 @@ export const AdminWorkspace: React.FC = () => {
             </div>
           </div>
 
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] font-medium text-amber-950">
+            {tr(
+              'Mật khẩu mặc định khi tạo mới: 12345678 (tự đổi tại mục Hồ sơ sau khi đăng nhập).',
+              'Default password for new accounts: 12345678 (can be changed in Profile after sign-in).'
+            )}
+          </div>
+
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -3560,15 +3574,26 @@ export const AdminWorkspace: React.FC = () => {
                   <ShieldCheck className="h-4 w-4 text-red-800" />
                   {tr('Đối soát & Đồng bộ hệ thống', 'System Audit & Sync')}
                 </h2>
-                <button
-                  type="button"
-                  data-testid="admin-goto-students-btn"
-                  onClick={() => navigate('/admin/students')}
-                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-900 hover:bg-red-100"
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  <span>{tr('Mở danh sách Học viên để cấp quyền / xếp lớp', 'Open Students to manage access & classes')}</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="admin-more-profile-btn"
+                    onClick={() => navigate('/profile')}
+                    className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-stone-50 px-2.5 py-1 text-[11px] font-bold text-stone-800 hover:bg-stone-100"
+                  >
+                    <KeyRound className="h-3.5 w-3.5 text-red-800" />
+                    <span>{tr('Hồ sơ cá nhân & Đổi mật khẩu', 'Profile & Change Password')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="admin-goto-students-btn"
+                    onClick={() => navigate('/admin/students')}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-900 hover:bg-red-100"
+                  >
+                    <Users className="h-3.5 w-3.5" />
+                    <span>{tr('Mở danh sách Học viên để cấp quyền / xếp lớp', 'Open Students to manage access & classes')}</span>
+                  </button>
+                </div>
               </div>
 
               <p className="text-[11px] text-stone-600">

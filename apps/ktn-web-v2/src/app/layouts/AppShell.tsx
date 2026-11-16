@@ -9,6 +9,7 @@ import {
   KeyRound,
   X,
   Download,
+  UserCircle,
 } from 'lucide-react';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { DemoControlBar } from '@/components/shared/DemoControlBar';
@@ -277,7 +278,7 @@ export const AppShell: React.FC = () => {
 
   // Register Service Worker (/sw.js), auto-sync existing PushSubscription, and handle deep-links
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !navigator.serviceWorker) return;
     let cancelled = false;
     let lastSyncTs = 0;
 
@@ -893,20 +894,35 @@ export const AppShell: React.FC = () => {
                 <>
                   <button
                     type="button"
+                    data-testid="header-profile-btn"
+                    onClick={() => navigate('/profile')}
+                    className={`inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-xl border px-2 text-xs font-bold transition-colors sm:h-9 sm:px-2.5 ${
+                      location.pathname.startsWith('/profile')
+                        ? 'border-red-300 bg-red-50 text-red-900'
+                        : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-red-900'
+                    }`}
+                    title={tr('Hồ sơ & Đổi mật khẩu', 'Profile & Password')}
+                    aria-label={tr('Hồ sơ & Đổi mật khẩu', 'Profile & Password')}
+                  >
+                    <UserCircle className="h-4 w-4 text-red-800 shrink-0" />
+                    <span className="hidden md:inline">{tr('Hồ sơ', 'Profile')}</span>
+                  </button>
+                  <button
+                    type="button"
                     data-testid="open-change-password-modal-btn"
                     onClick={handleOpenChangePwdModal}
-                    className="inline-flex h-8 items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 px-2 text-xs font-bold text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-red-900 sm:h-9 sm:px-2.5"
+                    className="hidden h-8 items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 px-2 text-xs font-bold text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-red-900 sm:inline-flex sm:h-9 sm:px-2.5"
                     title={tr('Đổi mật khẩu', 'Change password')}
                     aria-label={tr('Đổi mật khẩu', 'Change password')}
                   >
                     <KeyRound className="h-3.5 w-3.5 text-red-800" />
-                    <span className="hidden sm:inline">{tr('Đổi mật khẩu', 'Change password')}</span>
+                    <span className="hidden lg:inline">{tr('Đổi mật khẩu', 'Change password')}</span>
                   </button>
                   <button
                     type="button"
                     data-testid="logout-btn"
                     onClick={handleLogout}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 hover:bg-red-50 hover:text-red-800 sm:h-9 sm:w-9"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 hover:bg-red-50 hover:text-red-800 sm:h-9 sm:w-9"
                     title={tr('Đăng xuất', 'Sign out')}
                     aria-label={tr('Đăng xuất', 'Sign out')}
                   >

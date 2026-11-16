@@ -61,6 +61,18 @@ function getIsoDayFromDateStr(dateStr: string): number {
   return d.getUTCDay();
 }
 
+export function normalizeClassCodeInput(raw: string, trimDashes = true): string {
+  const cleaned = String(raw || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'D')
+    .toUpperCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Z0-9_-]/g, '')
+    .replace(/-+/g, '-');
+  return trimDashes ? cleaned.replace(/^-+|-+$/g, '') : cleaned.replace(/^-+/, '');
+}
+
 function formatDayLabelByLang(isoDay: number, lang: AppLanguage): string {
   return (
     getDayOptions(lang).find((d) => d.value === isoDay)?.label ||
@@ -444,7 +456,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
     e.preventDefault();
     setFormError('');
 
-    const cleanCode = (classCode || classItem?.id || '').trim().toUpperCase();
+    const cleanCode = normalizeClassCodeInput(classCode || classItem?.id || '', true);
     if (!cleanCode) {
       setFormError(
         tr('Vui lòng nhập mã lớp (ví dụ: YCT2-04).', 'Please enter class code (e.g., YCT2-04).')
@@ -517,7 +529,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
     try {
       await onSaveClassAndSchedule({
         isCreateClass: isCreateMode,
-        clientRequestId: `${clientRequestIdSeed}:${cleanCode}`,
+        clientRequestId: `${clientRequestIdSeed}:${encodeURIComponent(cleanCode)}`,
         classCode: cleanCode,
         className: (className || tr(`Lớp ${cleanCode}`, `Class ${cleanCode}`)).trim(),
         teacherCode: resolvedSubmitTeacherCode,
@@ -656,7 +668,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                 data-testid="schedule-class-code-input"
                 disabled={!isCreateMode}
                 value={classCode}
-                onChange={(e) => setClassCode(e.target.value.toUpperCase())}
+                onChange={(e) => setClassCode(normalizeClassCodeInput(e.target.value, false))}
                 placeholder={tr('VD: YCT2-04', 'e.g., YCT2-04')}
                 className="w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-900 disabled:bg-stone-100"
               />

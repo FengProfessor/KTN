@@ -28,6 +28,9 @@ const FlashcardsPage = lazy(() =>
 const GamesPage = lazy(() =>
   import('@/features/games/components/GamesPage').then((m) => ({ default: m.GamesPage }))
 );
+const ProfilePage = lazy(() =>
+  import('@/features/profile/components/ProfilePage').then((m) => ({ default: m.ProfilePage }))
+);
 
 function AdminConsultations() {
   const { tr } = useI18n();
@@ -249,6 +252,14 @@ export const AppRouter: React.FC = () => {
           />
           <Route path="chat" element={<ChatLayout />} />
           <Route path="notifications" element={<NotificationCenter />} />
+          <Route
+            path="profile"
+            element={
+              <RequireRole allowed={['student', 'teacher', 'admin']}>
+                <ProfilePage />
+              </RequireRole>
+            }
+          />
           <Route
             path="teacher"
             element={

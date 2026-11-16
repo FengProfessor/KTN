@@ -3341,13 +3341,10 @@ async function computeTeacherCredentialHmac(email, password, secret) {
   return sigBytes;
 }
 
+const DEFAULT_KTN_INITIAL_PASSWORD = '12345678';
+
 async function deriveDeterministicInitialPassword(env, operationId, email) {
-  const cleanEmail = normalizeEmail(email || '');
-  const cleanOp = String(operationId || 'default-op').trim();
-  const key = await getHmacKey(env?.KTN_SESSION_SECRET || 'ktn-default-change-me-in-production-env');
-  const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`ktn_init_pwd_v1:${cleanOp}:${cleanEmail}`));
-  const hex = Array.from(new Uint8Array(sigBuf), b => b.toString(16).padStart(2, '0')).join('');
-  return `Ktn@${hex.slice(0, 6).toUpperCase()}9!`;
+  return DEFAULT_KTN_INITIAL_PASSWORD;
 }
 
 async function getTeacherAssignedClassCodes(env, teacherEmail, preloadedClassesRes = null) {
@@ -7720,6 +7717,16 @@ async function approveAndProvisionOrder(env, {
       };
     }
 
+    if (Boolean(prov.accountCreated || priorAccountCreated) && prov.initialPassword) {
+      await ensureInitialStudentCredentialMeta(
+        env,
+        prov.email,
+        prov.initialPassword,
+        false,
+        { email: approvedBy, name: approvedBy, role: 'admin' }
+      ).catch(() => null);
+    }
+
     await saveProvisioningJobState(env, {
       operation_id: opId,
       status: 'completed',
@@ -8725,6 +8732,22 @@ async function saveStudentCredentialMeta(env, email, metaObj, actorSession) {
     payload,
     reason: payload.customPassword ? 'STUDENT_CUSTOM_PASSWORD' : 'STUDENT_DEFAULT_PASSWORD'
   });
+}
+
+async function ensureInitialStudentCredentialMeta(env, email, initialPassword, isCustomPassword, actorSession) {
+  const cleanEmail = normalizeEmail(email || '');
+  const rawPwd = String(initialPassword || '').trim();
+  if (!cleanEmail || rawPwd.length < 6) return { ok: true, skipped: true };
+  const existing = await getStudentCredentialMeta(env, cleanEmail).catch(() => null);
+  if (existing?.customPassword === true && existing?.passwordHmac) {
+    return { ok: true, skipped: true };
+  }
+  const pwdHmac = await computeTeacherCredentialHmac(cleanEmail, rawPwd, env.KTN_SESSION_SECRET);
+  return saveStudentCredentialMeta(env, cleanEmail, {
+    passwordHmac: pwdHmac,
+    pwdHmac,
+    customPassword: Boolean(isCustomPassword)
+  }, actorSession);
 }
 
 async function getAdminCredentialMeta(env, email) {
@@ -13961,6 +13984,16 @@ export default {
         if (!completedSteps.includes('supabase_student_upsert')) completedSteps.push('supabase_student_upsert');
         if (effectiveClassCode && !completedSteps.includes('class_assignment')) completedSteps.push('class_assignment');
 
+        if (effectiveAccountCreated && prov.initialPassword) {
+          await ensureInitialStudentCredentialMeta(
+            env,
+            email,
+            prov.initialPassword,
+            Boolean(String(body.initialPassword || body.password || '').trim().length >= 6),
+            session
+          ).catch(() => null);
+        }
+
         const responseSummary = {
           operationId: opId,
           idempotencyKey: finalIdempotencyKey,
@@ -14857,6 +14890,16 @@ export default {
           izteachRevoked: izteachRevokeResult || undefined,
           message: 'Đã cập nhật trên izTeach nhưng chưa lưu được vào cơ sở dữ liệu Supabase. Vui lòng bấm đồng bộ lại.'
         }, 502);
+      }
+
+      if (provResult?.accountCreated && provResult?.initialPassword) {
+        await ensureInitialStudentCredentialMeta(
+          env,
+          email,
+          provResult.initialPassword,
+          Boolean(String(body.initialPassword || body.password || '').trim().length >= 6),
+          session
+        ).catch(() => null);
       }
 
       if (assignClassProvisionFailed && !hasValidAccount) {
@@ -16765,7 +16808,7 @@ export default {
         } else if ((!existingTeaRow || wasSoftDeleted || !existingMeta.passwordHmac) && provisioningStatus === 'ready_to_login') {
           const fallbackInitPwd = String(
             initialPassword ||
-            (body.provisionOnIzTeach !== false ? (env.KTN_STAFF_AND_TEST_PASSWORD || '') : '')
+            (body.provisionOnIzTeach !== false ? DEFAULT_KTN_INITIAL_PASSWORD : '')
           ).trim();
           if (fallbackInitPwd.length >= 6) {
             passwordHmac = await computeTeacherCredentialHmac(tEmail, fallbackInitPwd, env.KTN_SESSION_SECRET);
@@ -19171,15 +19214,39 @@ export default {
           }, 502);
         }
         if (existingTea) {
-          await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(existingTea.code)}`, {
+          const existingTeaMeta = extractTeacherMetaFromRow(existingTea);
+          const nextAliases = Array.isArray(existingTea.aliases)
+            ? existingTea.aliases.filter(
+                a => typeof a === 'string' && !String(a).startsWith('__status:') && !String(a).startsWith('__uid:')
+              )
+            : [];
+          nextAliases.push('__status:ready_to_login');
+          if (prov.cognitoUserId) nextAliases.push(`__uid:${prov.cognitoUserId}`);
+          if (!existingTeaMeta.passwordHmac && !existingTeaMeta.customPassword) {
+            const retryPwd = String(prov.initialPassword || DEFAULT_KTN_INITIAL_PASSWORD).trim();
+            if (retryPwd.length >= 6) {
+              const retryHmac = await computeTeacherCredentialHmac(targetEmail, retryPwd, env.KTN_SESSION_SECRET);
+              if (retryHmac) nextAliases.push(`__pwd_hmac:${retryHmac}`);
+            }
+          }
+          const tPatch = await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(existingTea.code)}`, {
             method: 'PATCH',
             body: {
               cognito_user_id: prov.cognitoUserId,
               provisioning_status: 'ready_to_login',
               sync_status: 'synced',
+              aliases: nextAliases,
               updated_at: new Date().toISOString()
             }
           });
+          if ((!tPatch || !tPatch.ok) && tPatch?.status === 400) {
+            await supabaseRequest(env, `ktn_teachers?code=eq.${encodeURIComponent(existingTea.code)}`, {
+              method: 'PATCH',
+              body: {
+                aliases: nextAliases
+              }
+            });
+          }
         }
         return jsonResponse({
           ok: true,
@@ -19468,6 +19535,16 @@ export default {
         const completedSteps = ['izteach_account', 'supabase_student_upsert'];
         if (currentCourseIds.length > 0) completedSteps.push('izteach_permissions');
         if (resolvedClassCode) completedSteps.push('class_assignment');
+
+        if (Boolean(prov.accountCreated || priorAccountCreated) && prov.initialPassword) {
+          await ensureInitialStudentCredentialMeta(
+            env,
+            resolvedEmail,
+            prov.initialPassword,
+            Boolean(String(body.initialPassword || '').trim().length >= 6),
+            session
+          ).catch(() => null);
+        }
 
         const retrySummary = {
           operationId: opId,
@@ -25636,6 +25713,16 @@ export default {
           }, 502);
         }
 
+        if (prov.accountCreated && prov.initialPassword) {
+          await ensureInitialStudentCredentialMeta(
+            env,
+            email,
+            prov.initialPassword,
+            explicitInitialPassword.length >= 6,
+            session
+          ).catch(() => null);
+        }
+
         await recordAdminAuditLog(env, {
           actorEmail: session.email,
           actorRole: session.role,
@@ -25965,6 +26052,16 @@ export default {
         syncStatus: 'synced',
         nowMs: reqNowMs
       });
+
+      if (updatedStudent && updatedStudent.ok !== false && prov.accountCreated && prov.initialPassword) {
+        await ensureInitialStudentCredentialMeta(
+          env,
+          targetReq.student_email,
+          prov.initialPassword,
+          false,
+          session
+        ).catch(() => null);
+      }
 
       const updated = await saveCourseGrantRequest(env, {
         ...targetReq,

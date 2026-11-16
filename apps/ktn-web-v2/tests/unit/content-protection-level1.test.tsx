@@ -1,5 +1,6 @@
 import React from 'react';
 import crypto from 'node:crypto';
+import vm from 'node:vm';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -266,13 +267,13 @@ describe('Level 1 Content Protection Suite (HLS AES-128, Signed Doc/Audio Proxy,
     const subtle = globalThis.crypto?.subtle || crypto.webcrypto.subtle;
     const aesKey = await subtle.importKey(
       'raw',
-      keyBuf,
+      Buffer.from(keyBuf),
       { name: 'AES-CBC' },
       false,
       ['decrypt']
     );
     const decBuf = new Uint8Array(
-      await subtle.decrypt({ name: 'AES-CBC', iv: ivBytes }, aesKey, encBuf)
+      await subtle.decrypt({ name: 'AES-CBC', iv: ivBytes }, aesKey, Buffer.from(encBuf))
     );
     expect(Buffer.from(decBuf).equals(Buffer.from(sampleTsBytes))).toBe(true);
   });
@@ -528,5 +529,56 @@ describe('Level 1 Content Protection Suite (HLS AES-128, Signed Doc/Audio Proxy,
 
     fireEvent.click(screen.getByTestId('protected-pdf-close-btn'));
     expect(screen.queryByTestId('protected-pdf-modal')).toBeNull();
+  });
+
+  it('8. Regression: encrypts cross-realm VM ArrayBuffer .ts segment cleanly without WebCrypto ERR_INVALID_ARG_TYPE (Node 20 CI parity)', async () => {
+    const foreignTsBuffer = vm.runInNewContext(
+      '(() => { const b = new Uint8Array(564); for (let i = 0; i < b.length; i++) b[i] = (i * 23 + 11) & 0xff; return b.buffer; })()'
+    ) as ArrayBuffer;
+
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (urlStr.includes('media.izteach.vn') && urlStr.endsWith('.ts')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'Content-Type': 'video/MP2T' }),
+          arrayBuffer: async () => foreignTsBuffer,
+        } as unknown as Response;
+      }
+      return prevFetch(input as any, init);
+    }) as any;
+
+    const unitsRes = await callWorker(`/api/ktn/courses/units?courseId=${COURSE_HSK1_ID}`, {
+      token: studentToken,
+    });
+    const unitsJson = await unitsRes.json();
+    const masterRes = await callWorker(unitsJson.lessons[0].streamUrl as string);
+    const masterText = await masterRes.text();
+    const variantPath = masterText
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l && !l.startsWith('#') && l.includes('variant_01.m3u8'))!;
+    const variantText = await (await callWorker(variantPath)).text();
+    const keyMatch = variantText.match(/#EXT-X-KEY:METHOD=AES-128,URI="([^"]+)",IV=0x([0-9a-f]{32})/i)!;
+    const segPath = variantText
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l && !l.startsWith('#') && l.includes('.ts'))!;
+
+    const [keyRes, segRes] = await Promise.all([callWorker(keyMatch[1]), callWorker(segPath)]);
+    expect(keyRes.status).toBe(200);
+    expect(segRes.status).toBe(200);
+
+    const keyBytes = Buffer.from(new Uint8Array(await keyRes.arrayBuffer()));
+    const encBytes = Buffer.from(new Uint8Array(await segRes.arrayBuffer()));
+    const ivBytes = Buffer.from(keyMatch[2], 'hex');
+    const subtle = crypto.webcrypto.subtle;
+    const aesKey = await subtle.importKey('raw', keyBytes, { name: 'AES-CBC' }, false, ['decrypt']);
+    const decBytes = Buffer.from(
+      new Uint8Array(await subtle.decrypt({ name: 'AES-CBC', iv: ivBytes }, aesKey, encBytes))
+    );
+    expect(decBytes.equals(Buffer.from(new Uint8Array(foreignTsBuffer)))).toBe(true);
   });
 });

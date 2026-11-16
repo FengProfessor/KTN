@@ -9,6 +9,9 @@ import type {
   KtnClassSession,
   KtnCourse,
   KtnCourseGrantRequest,
+  KtnDrmPlaybackInfo,
+  KtnDrmPolicy,
+  KtnDrmPolicyConfigResponse,
   KtnExerciseAttachment,
   KtnForumAnswer,
   KtnForumAttachment,
@@ -732,11 +735,16 @@ export const ktnApi = {
       const parts = Array.isArray(u.parts)
         ? (u.parts as KtnLessonUnit['parts'])!.map((p) => ({
             ...p,
-            url: p.url ? resolveMediaUrl(p.url) : p.url,
-            streamUrl: p.streamUrl ? resolveMediaUrl(p.streamUrl) : p.streamUrl,
+            url: p.url ? resolveMediaUrl(p.url) : p.url ?? null,
+            streamUrl: p.streamUrl ? resolveMediaUrl(p.streamUrl) : p.streamUrl ?? null,
             posterUrl: p.posterUrl ? resolveMediaUrl(p.posterUrl) : p.posterUrl,
+            drmPlaybackUrl: p.drmPlaybackUrl ? resolveMediaUrl(p.drmPlaybackUrl) : p.drmPlaybackUrl ?? null,
           }))
         : [];
+      const drmPlaybackUrl =
+        typeof u.drmPlaybackUrl === 'string' && u.drmPlaybackUrl
+          ? resolveMediaUrl(u.drmPlaybackUrl)
+          : null;
       return {
         ...(u as unknown as KtnLessonUnit),
         id: unitId,
@@ -764,10 +772,61 @@ export const ktnApi = {
         parts,
         video: streamUrl,
         videoId: rawVid || undefined,
-        streamUrl,
+        streamUrl: streamUrl || null,
         posterUrl,
+        drmEnabled: Boolean(u.drmEnabled),
+        drmPolicy: (typeof u.drmPolicy === 'string' ? u.drmPolicy : 'drmDisabled') as KtnDrmPolicy,
+        drmPlaybackUrl,
+        drmFallbackAllowed: u.drmFallbackAllowed !== false,
+        drmCaptureProtectionGuaranteed: Boolean(u.drmCaptureProtectionGuaranteed),
         duration
       };
+    });
+  },
+
+  async getDrmPlayback(unitId: string, courseId?: string | null): Promise<KtnDrmPlaybackInfo> {
+    const qs = new URLSearchParams({ unitId });
+    if (courseId) qs.set('courseId', courseId);
+    const res = await ktnRequest<KtnDrmPlaybackInfo>(`/api/ktn/drm/playback?${qs.toString()}`);
+    return {
+      ...res,
+      licenseEndpoints: {
+        widevine: resolveMediaUrl(res.licenseEndpoints?.widevine || '/api/ktn/drm/license/widevine'),
+        playready: resolveMediaUrl(res.licenseEndpoints?.playready || '/api/ktn/drm/license/playready'),
+        fairplay: resolveMediaUrl(res.licenseEndpoints?.fairplay || '/api/ktn/drm/license/fairplay'),
+      },
+      fairplayCertificateUrl: resolveMediaUrl(res.fairplayCertificateUrl || '/api/ktn/drm/fairplay-cert'),
+      manifests: {
+        ...res.manifests,
+        dashUrl: res.manifests?.dashUrl ? resolveMediaUrl(res.manifests.dashUrl) : null,
+        hlsFairPlayUrl: res.manifests?.hlsFairPlayUrl ? resolveMediaUrl(res.manifests.hlsFairPlayUrl) : null,
+      },
+      fallbackStreamUrl: res.fallbackStreamUrl ? resolveMediaUrl(res.fallbackStreamUrl) : null,
+    };
+  },
+
+  async getDrmPolicy(courseId: string): Promise<KtnDrmPolicyConfigResponse> {
+    return ktnRequest<KtnDrmPolicyConfigResponse>(
+      `/api/ktn/drm/policy?courseId=${encodeURIComponent(courseId)}`
+    );
+  },
+
+  async updateDrmPolicy(payload: {
+    courseId: string;
+    policy: KtnDrmPolicy;
+    pilotEmails?: string[];
+    pilotUnitIds?: string[];
+    pilotVideoIds?: string[];
+    packagedAssets?: Record<string, {
+      dashUrl?: string | null;
+      hlsFairPlayUrl?: string | null;
+      encryptionScheme?: 'cbcs' | 'cenc';
+      keyId?: string;
+    }>;
+  }): Promise<KtnDrmPolicyConfigResponse> {
+    return ktnRequest<KtnDrmPolicyConfigResponse>('/api/ktn/drm/policy', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 

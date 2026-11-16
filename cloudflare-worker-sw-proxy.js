@@ -392,7 +392,7 @@ function computeStudentCase(stu) {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, X-KTN-Webhook-Secret, X-KTN-Test-Mode, X-KTN-QA-Simulated-Now',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, X-KTN-Webhook-Secret, X-KTN-Test-Mode, X-KTN-QA-Simulated-Now, X-KTN-DRM-Token',
   'Access-Control-Max-Age': '86400',
   'X-KTN-Worker-Version': 'ktn-prod-v2026.11.03'
 };
@@ -3169,6 +3169,20 @@ function getMediaSecret(env) {
   return String(env?.KTN_MEDIA_SECRET || env?.KTN_SESSION_SECRET || 'ktn-media-guard-default-secret');
 }
 
+function toCryptoBytes(input) {
+  if (input instanceof Uint8Array && input.buffer instanceof ArrayBuffer) {
+    return input;
+  }
+  if (input instanceof ArrayBuffer) {
+    return new Uint8Array(input);
+  }
+  if (ArrayBuffer.isView(input)) {
+    const view = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+    return view.buffer instanceof ArrayBuffer ? view : new Uint8Array(view);
+  }
+  return new Uint8Array(new Uint8Array(input));
+}
+
 function toBase64UrlBytes(bytes) {
   let bin = '';
   for (let i = 0; i < bytes.length; i++) {
@@ -3493,6 +3507,350 @@ async function guardMediaRequest(request, env, { mt, expectedKinds, expectedVide
     }
   }
   return { ok: true, payload, secret };
+}
+
+// ============================================================================
+// BẢO VỆ NỘI DUNG MULTI-DRM (CHÍNH SÁCH THEO KHÓA, TOKEN NGẮN HẠN & LICENSE PROXY)
+// ============================================================================
+const VALID_DRM_POLICIES = new Set([
+  'drmDisabled',
+  'drmPilot',
+  'drmRequired',
+  'drmFallbackAllowed'
+]);
+const VALID_DRM_SYSTEMS = new Set(['widevine', 'playready', 'fairplay']);
+const PUBLIC_TEST_LICENSE_PATTERNS = [
+  /test\.playready\.microsoft\.com/i,
+  /proxy\.uat\.widevine\.com/i,
+  /cwip-shaka-proxy\.appspot\.com/i,
+  /fps\.ezdrm\.com\/demo/i,
+  /fps\.ezdrm\.com\/api\/licenses\/09cc0377-6dd4-40cb-b09d-b582236e70fe/i
+];
+const drmCoursePolicyMemoryCache = new Map();
+
+function normalizeDrmPolicyName(raw) {
+  const clean = String(raw || '').trim();
+  return VALID_DRM_POLICIES.has(clean) ? clean : 'drmDisabled';
+}
+
+function isUnsafePublicTestLicenseUrl(rawUrl) {
+  const s = String(rawUrl || '').trim();
+  if (!s) return false;
+  return PUBLIC_TEST_LICENSE_PATTERNS.some((re) => re.test(s));
+}
+
+function parseJsonSafe(raw, fallback = null) {
+  if (!raw || typeof raw !== 'string') return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function inspectDrmLicenseProviderConfig(env, drmSystem) {
+  const sys = String(drmSystem || '').trim().toLowerCase();
+  if (!VALID_DRM_SYSTEMS.has(sys)) {
+    return {
+      configured: false,
+      blocked: true,
+      status: 'BLOCKED',
+      reason: 'UNSUPPORTED_DRM_SYSTEM',
+      proxyUrl: ''
+    };
+  }
+  const proxyEnvMap = {
+    widevine: env?.KTN_DRM_WIDEVINE_PROXY_URL,
+    playready: env?.KTN_DRM_PLAYREADY_PROXY_URL,
+    fairplay: env?.KTN_DRM_FAIRPLAY_PROXY_URL
+  };
+  const proxyUrl = String(proxyEnvMap[sys] || '').trim();
+  if (!proxyUrl) {
+    return {
+      configured: false,
+      blocked: true,
+      status: 'BLOCKED',
+      reason: 'DRM_LICENSE_PROVIDER_NOT_CONFIGURED',
+      proxyUrl: ''
+    };
+  }
+  if (!/^https:\/\//i.test(proxyUrl)) {
+    return {
+      configured: false,
+      blocked: true,
+      status: 'BLOCKED',
+      reason: 'DRM_LICENSE_INSECURE_URL',
+      proxyUrl: ''
+    };
+  }
+  if (isUnsafePublicTestLicenseUrl(proxyUrl)) {
+    return {
+      configured: false,
+      blocked: true,
+      status: 'BLOCKED',
+      reason: 'UNSAFE_PUBLIC_TEST_LICENSE_REJECTED',
+      proxyUrl: ''
+    };
+  }
+  const hasCredential = Boolean(
+    String(env?.KTN_DRM_PROVIDER_API_KEY || '').trim() ||
+      String(env?.KTN_DRM_AUTH_HEADER || '').trim() ||
+      String(env?.KTN_DRM_TENANT_ID || '').trim() ||
+      String(env?.KTN_DRM_SIGNING_KEY || '').trim()
+  );
+  if (!hasCredential) {
+    return {
+      configured: false,
+      blocked: true,
+      status: 'BLOCKED',
+      reason: 'DRM_LICENSE_CREDENTIAL_MISSING',
+      proxyUrl: ''
+    };
+  }
+  if (sys === 'fairplay') {
+    const certB64 = String(env?.KTN_DRM_FAIRPLAY_CERT_B64 || '').trim();
+    const certUrl = String(env?.KTN_DRM_FAIRPLAY_CERT_URL || '').trim();
+    if ((!certB64 && !certUrl) || isUnsafePublicTestLicenseUrl(certUrl)) {
+      return {
+        configured: false,
+        blocked: true,
+        status: 'BLOCKED',
+        reason: 'DRM_FAIRPLAY_CERT_NOT_CONFIGURED',
+        proxyUrl: ''
+      };
+    }
+  }
+  return {
+    configured: true,
+    blocked: false,
+    status: 'READY',
+    reason: null,
+    proxyUrl,
+    provider: String(env?.KTN_DRM_PROVIDER || 'custom').trim()
+  };
+}
+
+function getAllDrmLicenseProviderStatus(env) {
+  return {
+    widevine: inspectDrmLicenseProviderConfig(env, 'widevine'),
+    playready: inspectDrmLicenseProviderConfig(env, 'playready'),
+    fairplay: inspectDrmLicenseProviderConfig(env, 'fairplay')
+  };
+}
+
+function normalizePackagedAssetsMap(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const cleanKey = String(k || '').trim().toLowerCase();
+    if (cleanKey && v && typeof v === 'object') {
+      out[cleanKey] = v;
+    }
+  }
+  return out;
+}
+
+function getDrmEnvSignature(env) {
+  return `${String(env?.KTN_DRM_COURSE_POLICIES || '')}|${String(env?.KTN_DRM_PILOT_EMAILS || '')}|${String(env?.KTN_DRM_PILOT_UNIT_IDS || '')}|${String(env?.KTN_DRM_MANIFESTS_JSON || '')}`;
+}
+
+async function loadCourseDrmPolicy(env, courseId) {
+  const normCourseId = String(courseId || '').trim().toLowerCase();
+  const envPolicies = parseJsonSafe(env?.KTN_DRM_COURSE_POLICIES, {}) || {};
+  const envCourseEntry = envPolicies[normCourseId] || envPolicies[courseId] || null;
+  const envPilotEmails = String(env?.KTN_DRM_PILOT_EMAILS || '')
+    .split(',')
+    .map((e) => normalizeEmail(e))
+    .filter(Boolean);
+  const envPilotUnits = String(env?.KTN_DRM_PILOT_UNIT_IDS || '')
+    .split(',')
+    .map((id) => id.trim().toLowerCase())
+    .filter(Boolean);
+  const envManifests = parseJsonSafe(env?.KTN_DRM_MANIFESTS_JSON, {}) || {};
+  const envSig = getDrmEnvSignature(env);
+
+  let baseConfig = {
+    courseId: normCourseId,
+    policy: normalizeDrmPolicyName(
+      typeof envCourseEntry === 'string' ? envCourseEntry : envCourseEntry?.policy
+    ),
+    pilotEmails: Array.isArray(envCourseEntry?.pilotEmails)
+      ? envCourseEntry.pilotEmails.map((e) => normalizeEmail(e)).filter(Boolean)
+      : envPilotEmails,
+    pilotUnitIds: Array.isArray(envCourseEntry?.pilotUnitIds)
+      ? envCourseEntry.pilotUnitIds.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean)
+      : envPilotUnits,
+    pilotVideoIds: Array.isArray(envCourseEntry?.pilotVideoIds)
+      ? envCourseEntry.pilotVideoIds.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean)
+      : [],
+    packagedAssets: normalizePackagedAssetsMap(
+      envCourseEntry?.packagedAssets && typeof envCourseEntry.packagedAssets === 'object'
+        ? envCourseEntry.packagedAssets
+        : envManifests
+    ),
+    updatedAt: null,
+    updatedBy: null
+  };
+
+  if (normCourseId) {
+    const cacheKey = `${normCourseId}::${envSig}`;
+    const cached = drmCoursePolicyMemoryCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt && cached.config) {
+      return cached.config;
+    }
+    const dbRes = await supabaseRequest(
+      env,
+      `ktn_dlp_alerts?id=eq.${encodeURIComponent(`DRM_POLICY_${normCourseId}`)}&room_id=eq.DRM_COURSE_POLICY&select=id,blocked_content&limit=1`
+    ).catch(() => ({ ok: false, data: [] }));
+    if (dbRes?.ok && Array.isArray(dbRes.data) && dbRes.data[0]?.blocked_content) {
+      const parsed = parseJsonSafe(String(dbRes.data[0].blocked_content), null);
+      if (parsed && typeof parsed === 'object') {
+        baseConfig = {
+          courseId: normCourseId,
+          policy: normalizeDrmPolicyName(parsed.policy),
+          pilotEmails: Array.isArray(parsed.pilotEmails)
+            ? parsed.pilotEmails.map((e) => normalizeEmail(e)).filter(Boolean)
+            : baseConfig.pilotEmails,
+          pilotUnitIds: Array.isArray(parsed.pilotUnitIds)
+            ? parsed.pilotUnitIds.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean)
+            : baseConfig.pilotUnitIds,
+          pilotVideoIds: Array.isArray(parsed.pilotVideoIds)
+            ? parsed.pilotVideoIds.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean)
+            : baseConfig.pilotVideoIds,
+          packagedAssets:
+            parsed.packagedAssets && typeof parsed.packagedAssets === 'object'
+              ? { ...baseConfig.packagedAssets, ...normalizePackagedAssetsMap(parsed.packagedAssets) }
+              : baseConfig.packagedAssets,
+          updatedAt: parsed.updatedAt || null,
+          updatedBy: parsed.updatedBy || null
+        };
+      }
+    }
+    drmCoursePolicyMemoryCache.set(cacheKey, {
+      config: baseConfig,
+      expiresAt: Date.now() + 5000
+    });
+  }
+  return baseConfig;
+}
+
+function resolveEffectiveUnitDrmState(policyCfg, { unitId, candidateUnitIds = [], videoId, userEmail }) {
+  const policy = normalizeDrmPolicyName(policyCfg?.policy);
+  const normCourseId = String(policyCfg?.courseId || '').trim().toLowerCase();
+  const normVid = String(videoId || '').trim().toLowerCase();
+  const normEmail = normalizeEmail(userEmail || '');
+  const pilotEmails = Array.isArray(policyCfg?.pilotEmails) ? policyCfg.pilotEmails : [];
+  const pilotUnitIds = Array.isArray(policyCfg?.pilotUnitIds) ? policyCfg.pilotUnitIds : [];
+  const pilotVideoIds = Array.isArray(policyCfg?.pilotVideoIds) ? policyCfg.pilotVideoIds : [];
+
+  const candidateSet = new Set();
+  for (const rawUid of [unitId, ...(Array.isArray(candidateUnitIds) ? candidateUnitIds : [])]) {
+    const clean = String(rawUid || '').trim().toLowerCase();
+    if (!clean) continue;
+    for (const eq of getEquivalentUnitIdsForCourse(normCourseId, clean)) {
+      candidateSet.add(eq);
+    }
+  }
+  if (normVid && typeof HSK1_VID_TO_UNITS_MAP === 'object' && HSK1_VID_TO_UNITS_MAP[normVid]) {
+    for (const u of HSK1_VID_TO_UNITS_MAP[normVid]) candidateSet.add(u);
+  }
+
+  const packagedMap = normalizePackagedAssetsMap(policyCfg?.packagedAssets);
+  let assetMeta = null;
+  for (const key of [...candidateSet, normVid].filter(Boolean)) {
+    if (packagedMap[key]) {
+      assetMeta = packagedMap[key];
+      break;
+    }
+  }
+
+  if (policy === 'drmDisabled') {
+    return {
+      policy,
+      drmActiveForUser: false,
+      allowHlsParallel: true,
+      fallbackAllowed: true,
+      captureProtectionGuaranteed: false,
+      assetMeta
+    };
+  }
+
+  if (policy === 'drmPilot') {
+    const emailMatched = Boolean(normEmail && pilotEmails.includes(normEmail));
+    const hasUnitRestriction = pilotUnitIds.length > 0 || pilotVideoIds.length > 0;
+    const expandedPilotUnits = new Set();
+    const expandedPilotVideos = new Set(pilotVideoIds.map((v) => String(v || '').trim().toLowerCase()).filter(Boolean));
+    for (const pUid of pilotUnitIds) {
+      const cleanP = String(pUid || '').trim().toLowerCase();
+      if (!cleanP) continue;
+      for (const eq of getEquivalentUnitIdsForCourse(normCourseId, cleanP)) {
+        expandedPilotUnits.add(eq);
+      }
+      if (typeof HSK1_UNIT_VID_MAP === 'object' && HSK1_UNIT_VID_MAP[cleanP]) {
+        expandedPilotVideos.add(HSK1_UNIT_VID_MAP[cleanP]);
+      }
+    }
+    let unitMatched = false;
+    for (const cUid of candidateSet) {
+      if (expandedPilotUnits.has(cUid)) {
+        unitMatched = true;
+        break;
+      }
+    }
+    const videoMatched = Boolean(normVid && expandedPilotVideos.has(normVid));
+    const targetMatched = !hasUnitRestriction || unitMatched || videoMatched;
+    const active = Boolean(emailMatched && targetMatched);
+    return {
+      policy,
+      drmActiveForUser: active,
+      allowHlsParallel: !active,
+      fallbackAllowed: !active,
+      captureProtectionGuaranteed: false,
+      assetMeta
+    };
+  }
+
+  if (policy === 'drmRequired') {
+    return {
+      policy,
+      drmActiveForUser: true,
+      allowHlsParallel: false,
+      fallbackAllowed: false,
+      captureProtectionGuaranteed: false,
+      assetMeta
+    };
+  }
+
+  // drmFallbackAllowed: prefer DRM when supported & configured, allow fallback HLS with watermark, never guarantee anti-capture
+  return {
+    policy: 'drmFallbackAllowed',
+    drmActiveForUser: true,
+    allowHlsParallel: true,
+    fallbackAllowed: true,
+    captureProtectionGuaranteed: false,
+    assetMeta
+  };
+}
+
+async function isVideoDrmBypassBlocked(env, { courseId, unitId, videoId, userEmail }) {
+  const normCourseId = String(courseId || '').trim().toLowerCase();
+  if (!normCourseId) return { blocked: false, policy: 'drmDisabled' };
+  const policyCfg = await loadCourseDrmPolicy(env, normCourseId);
+  const state = resolveEffectiveUnitDrmState(policyCfg, { unitId, videoId, userEmail });
+  if (state.drmActiveForUser && !state.allowHlsParallel) {
+    return { blocked: true, policy: state.policy };
+  }
+  if (
+    state.policy === 'drmPilot' &&
+    !unitId &&
+    Array.isArray(policyCfg?.pilotUnitIds) &&
+    policyCfg.pilotUnitIds.length > 0 &&
+    Array.isArray(policyCfg?.pilotEmails) &&
+    policyCfg.pilotEmails.includes(normalizeEmail(userEmail || ''))
+  ) {
+    return { blocked: true, policy: state.policy };
+  }
+  return { blocked: false, policy: state.policy };
 }
 
 const verifiedIzTeachTokenCache = new Map();
@@ -6149,6 +6507,79 @@ const UNIT_TO_COURSE_MAP = (() => {
   }
   return rev;
 })();
+
+const HSK1_UNIT_VID_MAP = {
+  '6adadbcaf75fe5000247ca71': '6adadc45f8c3c60002a2b3c1',
+  '6adb27370ae64c00025de049': '6adadc45f8c3c60002a2b3c1',
+  '6adadc3b69897b0002482d22': '6adadd60f8c3c60002a2b3c2',
+  '6adae08769897b000248340a': '6adf16b358da95000267ef60',
+  '6adf1a4fe2681300028de082': '6adf188558da95000267ef62',
+  '6adf1b51e2681300028de363': '6adf1a87edf12a00022cde3c',
+  '6adf1c22e2681300028de711': '6adf1b8aedf12a00022cde3f',
+  '6adf1c491d600a0002d4010d': '6adf1b8aedf12a00022cde3f',
+  '6adf1d00e2681300028de9a6': '6adf1c5cedf12a00022cde43',
+  '6adf1d2be2681300028dea4a': '6adf1c5cedf12a00022cde43',
+  '6adf1e12e5b2290002718830': '6adf1d4258da95000267ef72',
+  '6adf1fade5b2290002718df9': '6adf1e7cedf12a00022cde53',
+  '6adf2171e5b22900027194df': '6adf2015ff3e240002282e5e',
+  '6adf22e9e5b22900027199e7': '6adf21dbff3e240002282e6c',
+  '6adf3932e8e0af00026814ef': '6adf384637e34400025dfc49',
+  '6adf3578b3cfe60002ab5a55': '6adf34321d93990002196230',
+  '6adf3633b3cfe60002ab5cf4': '6adf359b1d9399000219623e',
+  '6adf3707b3cfe60002ab5fd6': '6adf366037e34400025dfc39',
+  '6adf37f61d600a0002d466ae': '6adf374337e34400025dfc3f',
+  '6ae52ef17b101100026bb5d7': '6ae52a57a6947f0002b2407a',
+  '6ae532927b101100026bb9f3': '6ae52f6af9f5190002993c47',
+  '6ae546eaa1908400020410e3': '6ae53844f133e40002a7083d',
+  '6ae547d1a1908400020412fd': '6ae54742f133e40002a70842',
+  '6ae54a51fab31400021bee3b': '6ae54811f133e40002a70843',
+  '6ae54abdfab31400021befb0': '6ae54a7d238c0700028dced8',
+  '6ae54f37a1908400020426c9': '6ae54af4a8aec300024f0915',
+  '6ae54fe0a1908400020428a5': '6ae54f7b4b62f10002342205',
+  '6ae5504aa1908400020429c9': '6ae54ffc4b62f1000234220b',
+  '6ae550b3a190840002042a62': '6ae55062a8aec300024f0936',
+  '6ae550fefab31400021bff7a': '6ae550d34b62f10002342211',
+  '6ae558d7fab31400021c1676': '6ae55149a8aec300024f0945',
+  '6ae56b19b734640002ce823d': '6ae56486e8c772000259fd59',
+  '6ae56d92b734640002ce863a': '6ae56bb4e8c772000259fd66',
+  '6ae56f7f9902f90002d5ebdc': '6ae56ddde8c772000259fd6d',
+  '6adf21c2e2681300028dfa46': '6adf20d8e8e0af00026808bf',
+  '6aed8dd944034f00029b2b12': '6aed9326b89c6d0002660e45',
+  '6ae56c9db734640002ce8446': '6ae5671be8c772000259fd61',
+  '6aed934844034f00029b3d9e': '6aed9347b89c6d0002660e46'
+};
+
+const HSK1_VID_TO_UNITS_MAP = (() => {
+  const m = {};
+  for (const [uid, vid] of Object.entries(HSK1_UNIT_VID_MAP)) {
+    if (!m[vid]) m[vid] = [];
+    m[vid].push(uid);
+  }
+  return m;
+})();
+
+function getEquivalentUnitIdsForCourse(courseId, unitId) {
+  const cleanUid = String(unitId || '').trim().toLowerCase();
+  if (!cleanUid) return [];
+  const out = new Set([cleanUid]);
+  const owner = UNIT_TO_COURSE_MAP[cleanUid];
+  const normCid = String(courseId || owner?.courseId || '').trim().toLowerCase();
+  if (normCid && owner && owner.courseId === normCid) {
+    const hwUid = COURSE_UNIT_MAP[normCid]?.[owner.lessonNum];
+    const vidUid = COURSE_VIDEO_UNIT_MAP[normCid]?.[owner.lessonNum];
+    if (hwUid) out.add(String(hwUid).toLowerCase());
+    if (vidUid) out.add(String(vidUid).toLowerCase());
+  }
+  if (!normCid || normCid === DEFAULT_COURSE_ID.toLowerCase()) {
+    const mappedVid = HSK1_UNIT_VID_MAP[cleanUid];
+    if (mappedVid && HSK1_VID_TO_UNITS_MAP[mappedVid]) {
+      for (const sib of HSK1_VID_TO_UNITS_MAP[mappedVid]) {
+        out.add(sib);
+      }
+    }
+  }
+  return Array.from(out);
+}
 
 /**
  * Phân giải chính xác Course -> Lesson -> Unit cho toàn bộ 17 khóa học (346 bài + các phần nhỏ).
@@ -12712,6 +13143,22 @@ export default {
           checkRevocationDb: true
         });
         if (!guard.ok) return guard.response;
+        if (guard.payload.k === 'hls') {
+          const bypassCheck = await isVideoDrmBypassBlocked(env, {
+            courseId: guard.payload.c,
+            unitId: guard.payload.uid,
+            videoId: vid,
+            userEmail: guard.payload.u
+          });
+          if (bypassCheck.blocked) {
+            return jsonResponse({
+              ok: false,
+              error: 'DRM_REQUIRED_NO_HLS_BYPASS',
+              policy: bypassCheck.policy,
+              message: 'Bài giảng này yêu cầu phát qua Multi-DRM, không thể lấy khóa HLS không DRM.'
+            }, 403);
+          }
+        }
         const aesKeyBytes = await deriveHlsAesKeyBytes(guard.secret, vid, guard.payload.j || 'demo');
         return new Response(request.method === 'HEAD' ? null : aesKeyBytes, {
           status: 200,
@@ -12786,6 +13233,22 @@ export default {
           checkRevocationDb: isManifest
         });
         if (!guard.ok) return guard.response;
+        if (guard.payload.k === 'hls') {
+          const bypassCheck = await isVideoDrmBypassBlocked(env, {
+            courseId: guard.payload.c,
+            unitId: guard.payload.uid,
+            videoId: rawVid,
+            userEmail: guard.payload.u
+          });
+          if (bypassCheck.blocked) {
+            return jsonResponse({
+              ok: false,
+              error: 'DRM_REQUIRED_NO_HLS_BYPASS',
+              policy: bypassCheck.policy,
+              message: 'Bài giảng này yêu cầu phát qua Multi-DRM, không thể phát luồng HLS không DRM.'
+            }, 403);
+          }
+        }
 
         const upstreamUrl = `https://media.izteach.vn/${vendorId}/${rawVid}/${subPath}`;
         if (!isManifest) {
@@ -12815,9 +13278,9 @@ export default {
           if (!upRes.ok) {
             return new Response(null, { status: upRes.status, headers: CORS_HEADERS });
           }
-          const plainBuf = await upRes.arrayBuffer();
-          const aesKeyBytes = await deriveHlsAesKeyBytes(guard.secret, rawVid, guard.payload.j || 'demo');
-          const ivBytes = await deriveHlsIvBytes(guard.secret, rawVid);
+          const plainBytes = toCryptoBytes(await upRes.arrayBuffer());
+          const aesKeyBytes = toCryptoBytes(await deriveHlsAesKeyBytes(guard.secret, rawVid, guard.payload.j || 'demo'));
+          const ivBytes = toCryptoBytes(await deriveHlsIvBytes(guard.secret, rawVid));
           const aesCryptoKey = await crypto.subtle.importKey(
             'raw',
             aesKeyBytes,
@@ -12828,7 +13291,7 @@ export default {
           const encBuf = await crypto.subtle.encrypt(
             { name: 'AES-CBC', iv: ivBytes },
             aesCryptoKey,
-            plainBuf
+            plainBytes
           );
           return new Response(encBuf, {
             status: 200,
@@ -13174,26 +13637,36 @@ export default {
       }
 
       const normCourseId = courseId.toLowerCase();
+      const courseDrmPolicyCfg = await loadCourseDrmPolicy(env, normCourseId);
       const mediaSecret = getMediaSecret(env);
       const mediaActorEmail = normalizeEmail(session.email || '');
       const mediaActorJti = String(session.jti || mediaActorEmail || 'anon');
       const hlsMtCache = new Map();
       const docMtCache = new Map();
       const audMtCache = new Map();
-      const signCachedHlsMt = (vid) => {
+      const signCachedHlsMt = (vid, unitIdArg = '') => {
         const cleanVid = String(vid || '').trim().toLowerCase();
+        const cleanUid = String(unitIdArg || '').trim().toLowerCase();
         if (!cleanVid) return Promise.resolve('');
-        if (!hlsMtCache.has(cleanVid)) {
+        const cacheKey = `${cleanVid}:${cleanUid}`;
+        if (!hlsMtCache.has(cacheKey)) {
           hlsMtCache.set(
-            cleanVid,
+            cacheKey,
             signMediaToken(
-              { k: 'hls', u: mediaActorEmail, j: mediaActorJti, c: normCourseId, v: cleanVid },
+              {
+                k: 'hls',
+                u: mediaActorEmail,
+                j: mediaActorJti,
+                c: normCourseId,
+                v: cleanVid,
+                ...(cleanUid ? { uid: cleanUid } : {})
+              },
               mediaSecret,
               2 * 3600 * 1000
             )
           );
         }
-        return hlsMtCache.get(cleanVid);
+        return hlsMtCache.get(cacheKey);
       };
       const signCachedDocMt = (objKey, allowDl) => {
         const cacheKey = `${objKey}:${allowDl ? 1 : 0}`;
@@ -13514,9 +13987,18 @@ export default {
           const rawVidField = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || spec?.vid || '').trim();
           const cleanVid = extractHexVideoId(rawVidField, u.streamUrl || u.video);
           const rawVid = cleanVid || (/^[0-9a-f]{24}$/i.test(rawVidField) ? rawVidField : '');
-          const hlsMt = cleanVid ? await signCachedHlsMt(cleanVid) : '';
-          const streamUrl = cleanVid ? `/api/ktn/media/hls/${cleanVid}/playlist.m3u8?mt=${encodeURIComponent(hlsMt)}` : '';
+          const effectiveDrm = resolveEffectiveUnitDrmState(courseDrmPolicyCfg, {
+            unitId,
+            videoId: rawVid,
+            userEmail: mediaActorEmail
+          });
+          const allowHlsLink = Boolean(cleanVid && effectiveDrm.allowHlsParallel);
+          const hlsMt = cleanVid ? await signCachedHlsMt(cleanVid, unitId) : '';
+          const streamUrl = allowHlsLink ? `/api/ktn/media/hls/${cleanVid}/playlist.m3u8?mt=${encodeURIComponent(hlsMt)}` : '';
           const posterUrl = cleanVid ? `/api/ktn/media/poster/${cleanVid}.jpg?mt=${encodeURIComponent(hlsMt)}` : '';
+          const drmPlaybackUrl = effectiveDrm.drmActiveForUser
+            ? `/api/ktn/drm/playback?unitId=${encodeURIComponent(unitId)}&courseId=${encodeURIComponent(normCourseId)}`
+            : null;
           const durMs = Number(u.resources?.[0]?.duration || 0);
           const duration = spec?.dur || u.duration || (durMs > 0 ? `${Math.floor(durMs / 60000)}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}` : '13:35');
           const [audioTracks, materials] = lessonNumber
@@ -13546,8 +14028,13 @@ export default {
             voVietPage: meta ? meta.voVietPage : null,
             videoId: rawVid,
             video: streamUrl,
-            streamUrl,
+            streamUrl: streamUrl || null,
             posterUrl,
+            drmEnabled: Boolean(effectiveDrm.drmActiveForUser),
+            drmPolicy: effectiveDrm.policy,
+            drmPlaybackUrl,
+            drmFallbackAllowed: effectiveDrm.fallbackAllowed,
+            drmCaptureProtectionGuaranteed: effectiveDrm.captureProtectionGuaranteed,
             duration,
             durationSec: spec?.sec || Math.round(durMs / 1000) || 815,
             audioTracks,
@@ -13582,9 +14069,14 @@ export default {
             videoId: u.videoId,
             duration: u.duration,
             durationSec: u.durationSec || 0,
-            url: u.streamUrl,
-            streamUrl: u.streamUrl,
-            posterUrl: u.posterUrl
+            url: u.streamUrl || null,
+            streamUrl: u.streamUrl || null,
+            posterUrl: u.posterUrl,
+            drmEnabled: Boolean(u.drmEnabled),
+            drmPolicy: u.drmPolicy || 'drmDisabled',
+            drmPlaybackUrl: u.drmPlaybackUrl || null,
+            drmFallbackAllowed: u.drmFallbackAllowed !== false,
+            drmCaptureProtectionGuaranteed: Boolean(u.drmCaptureProtectionGuaranteed)
           });
         }
         const groupedLessons = Array.from(lessonsByNum.values()).map((grp) => {
@@ -13645,9 +14137,20 @@ export default {
         const rawVidField = String(u.videoId || (typeof u.video === 'string' ? u.video : '') || u.resources?.[0]?._id || u.resources?.[0]?.id || '').trim();
         const cleanVid = extractHexVideoId(rawVidField, u.streamUrl || u.video);
         const rawVid = cleanVid || (/^[0-9a-f]{24}$/i.test(rawVidField) ? rawVidField : '');
-        const hlsMt = cleanVid ? await signCachedHlsMt(cleanVid) : '';
-        const streamUrl = cleanVid ? `/api/ktn/media/hls/${cleanVid}/playlist.m3u8?mt=${encodeURIComponent(hlsMt)}` : '';
+        const effectiveUnitKey = canonicalHwUnitId || videoUnitId;
+        const effectiveDrm = resolveEffectiveUnitDrmState(courseDrmPolicyCfg, {
+          unitId: effectiveUnitKey,
+          candidateUnitIds: [effectiveUnitKey, videoUnitId],
+          videoId: rawVid,
+          userEmail: mediaActorEmail
+        });
+        const allowHlsLink = Boolean(cleanVid && effectiveDrm.allowHlsParallel);
+        const hlsMt = cleanVid ? await signCachedHlsMt(cleanVid, effectiveUnitKey) : '';
+        const streamUrl = allowHlsLink ? `/api/ktn/media/hls/${cleanVid}/playlist.m3u8?mt=${encodeURIComponent(hlsMt)}` : '';
         const posterUrl = cleanVid ? `/api/ktn/media/poster/${cleanVid}.jpg?mt=${encodeURIComponent(hlsMt)}` : '';
+        const drmPlaybackUrl = effectiveDrm.drmActiveForUser
+          ? `/api/ktn/drm/playback?unitId=${encodeURIComponent(effectiveUnitKey)}&courseId=${encodeURIComponent(normCourseId)}`
+          : null;
         const durMs = Number(u.resources?.[0]?.duration || 0);
         const duration = u.duration || (durMs > 0 ? `${String(Math.floor(durMs / 60000)).padStart(2, '0')}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}` : '12:00');
         const rawTitle = String(u.title || `Bài ${lNum}`).trim();
@@ -13739,8 +14242,13 @@ export default {
           voVietPage: null,
           videoId: rawVid,
           video: streamUrl,
-          streamUrl,
+          streamUrl: streamUrl || null,
           posterUrl,
+          drmEnabled: Boolean(effectiveDrm.drmActiveForUser),
+          drmPolicy: effectiveDrm.policy,
+          drmPlaybackUrl,
+          drmFallbackAllowed: effectiveDrm.fallbackAllowed,
+          drmCaptureProtectionGuaranteed: effectiveDrm.captureProtectionGuaranteed,
           duration,
           audioTracks: [],
           materials,
@@ -13752,9 +14260,14 @@ export default {
             title: titleZh,
             videoId: rawVid,
             duration,
-            url: streamUrl,
-            streamUrl,
-            posterUrl
+            url: streamUrl || null,
+            streamUrl: streamUrl || null,
+            posterUrl,
+            drmEnabled: Boolean(effectiveDrm.drmActiveForUser),
+            drmPolicy: effectiveDrm.policy,
+            drmPlaybackUrl,
+            drmFallbackAllowed: effectiveDrm.fallbackAllowed,
+            drmCaptureProtectionGuaranteed: effectiveDrm.captureProtectionGuaranteed
           }],
           resourceIds: rawVid ? [rawVid] : [],
           confidence: 'HIGH',
@@ -13770,6 +14283,786 @@ export default {
         units,
         lessons: units
       }, unitRes.ok ? 200 : unitRes.status);
+    }
+
+    // ------------------------------------------------------------------------
+    // B1.6. CỔNG MULTI-DRM (POLICY, PLAYBACK HANDSHAKE, LICENSE PROXY & MANIFEST)
+    // ------------------------------------------------------------------------
+    if (path === '/api/ktn/drm/policy' && (request.method === 'GET' || request.method === 'POST')) {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, error: 'AUTH_REQUIRED', message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      const revoked = await isMediaSessionRevoked(env, session.jti, session.email, { checkDb: true });
+      if (revoked) {
+        return jsonResponse({ ok: false, error: 'SESSION_REVOKED', message: 'Phiên đăng nhập đã hết hiệu lực.' }, 401);
+      }
+
+      if (request.method === 'GET') {
+        const courseId = String(url.searchParams.get('courseId') || DEFAULT_COURSE_ID).trim().toLowerCase();
+        if (!/^[0-9a-f]{24}$/i.test(courseId)) {
+          return jsonResponse({ ok: false, error: 'INVALID_COURSE_ID', message: 'Mã khóa học không hợp lệ.' }, 400);
+        }
+        const cfg = await loadCourseDrmPolicy(env, courseId);
+        const providers = getAllDrmLicenseProviderStatus(env);
+        const providerSummary = {
+          widevine: { configured: providers.widevine.configured, status: providers.widevine.status, reason: providers.widevine.reason },
+          playready: { configured: providers.playready.configured, status: providers.playready.status, reason: providers.playready.reason },
+          fairplay: { configured: providers.fairplay.configured, status: providers.fairplay.status, reason: providers.fairplay.reason }
+        };
+        if (session.role === 'admin') {
+          return jsonResponse({
+            ok: true,
+            courseId,
+            config: {
+              courseId: cfg.courseId,
+              policy: cfg.policy,
+              pilotEmails: cfg.pilotEmails,
+              pilotUnitIds: cfg.pilotUnitIds,
+              pilotVideoIds: cfg.pilotVideoIds,
+              packagedAssetKeys: Object.keys(cfg.packagedAssets || {}),
+              updatedAt: cfg.updatedAt,
+              updatedBy: cfg.updatedBy
+            },
+            licenseProviders: providerSummary
+          });
+        }
+        const normEmail = normalizeEmail(session.email || '');
+        return jsonResponse({
+          ok: true,
+          courseId,
+          policy: cfg.policy,
+          isPilotEmail: cfg.pilotEmails.includes(normEmail),
+          licenseProviders: providerSummary
+        });
+      }
+
+      if (session.role !== 'admin') {
+        return jsonResponse({
+          ok: false,
+          error: 'DRM_POLICY_ADMIN_ONLY',
+          message: 'Chỉ Quản trị viên (Admin) mới được phép thay đổi chính sách DRM của khóa học.'
+        }, 403);
+      }
+
+      const body = await request.json().catch(() => ({}));
+      const rawCourseId = String(body.courseId || '').trim().toLowerCase();
+      if (!/^[0-9a-f]{24}$/i.test(rawCourseId)) {
+        return jsonResponse({ ok: false, error: 'INVALID_COURSE_ID', message: 'Mã khóa học (courseId) không hợp lệ.' }, 400);
+      }
+      const nextPolicy = String(body.policy || '').trim();
+      if (!VALID_DRM_POLICIES.has(nextPolicy)) {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_DRM_POLICY',
+          message: 'Chính sách DRM phải là một trong: drmDisabled, drmPilot, drmRequired, drmFallbackAllowed.'
+        }, 400);
+      }
+
+      const existingCfg = await loadCourseDrmPolicy(env, rawCourseId);
+      const nextPilotEmails = Array.isArray(body.pilotEmails)
+        ? Array.from(new Set(body.pilotEmails.map((e) => normalizeEmail(e)).filter(Boolean)))
+        : existingCfg.pilotEmails;
+      const nextPilotUnitIds = Array.isArray(body.pilotUnitIds)
+        ? Array.from(new Set(body.pilotUnitIds.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean)))
+        : existingCfg.pilotUnitIds;
+      const nextPilotVideoIds = Array.isArray(body.pilotVideoIds)
+        ? Array.from(new Set(body.pilotVideoIds.map((id) => String(id || '').trim().toLowerCase()).filter(Boolean)))
+        : existingCfg.pilotVideoIds;
+      const nextPackagedAssets =
+        body.packagedAssets && typeof body.packagedAssets === 'object'
+          ? normalizePackagedAssetsMap(body.packagedAssets)
+          : normalizePackagedAssetsMap(existingCfg.packagedAssets);
+
+      for (const [, meta] of Object.entries(nextPackagedAssets || {})) {
+        if (meta && typeof meta === 'object') {
+          for (const assetUrl of [meta.dashUrl, meta.hlsFairPlayUrl]) {
+            if (!assetUrl) continue;
+            const trimmedUrl = String(assetUrl).trim();
+            if (!/^https:\/\//i.test(trimmedUrl)) {
+              return jsonResponse({
+                ok: false,
+                error: 'INVALID_DRM_ASSET_URL',
+                message: 'URL manifest DRM phải sử dụng HTTPS hợp lệ.'
+              }, 400);
+            }
+            if (isUnsafePublicTestLicenseUrl(trimmedUrl)) {
+              return jsonResponse({
+                ok: false,
+                error: 'UNSAFE_PUBLIC_TEST_ASSET_REJECTED',
+                message: 'Không được gán stream thử nghiệm công khai làm asset DRM sản xuất.'
+              }, 400);
+            }
+          }
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      const savedConfig = {
+        courseId: rawCourseId,
+        policy: nextPolicy,
+        pilotEmails: nextPilotEmails,
+        pilotUnitIds: nextPilotUnitIds,
+        pilotVideoIds: nextPilotVideoIds,
+        packagedAssets: nextPackagedAssets || {},
+        updatedAt: nowIso,
+        updatedBy: session.email
+      };
+
+      const recordId = `DRM_POLICY_${rawCourseId}`;
+      const saveRes = await supabaseRequest(env, 'ktn_dlp_alerts?on_conflict=id', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates,return=representation',
+        body: [{
+          id: recordId,
+          room_id: 'DRM_COURSE_POLICY',
+          sender_email: session.email,
+          sender_name: session.name || session.email,
+          sender_role: session.role,
+          blocked_content: JSON.stringify(savedConfig),
+          reason: `DRM_POLICY_${nextPolicy.toUpperCase()}`,
+          resolved: true,
+          created_at: nowIso
+        }]
+      });
+      if (!saveRes.ok) {
+        return jsonResponse({ ok: false, message: 'Không thể lưu chính sách DRM vào cơ sở dữ liệu.' }, 502);
+      }
+      for (const k of Array.from(drmCoursePolicyMemoryCache.keys())) {
+        if (k.startsWith(`${rawCourseId}::`)) {
+          drmCoursePolicyMemoryCache.delete(k);
+        }
+      }
+      drmCoursePolicyMemoryCache.set(`${rawCourseId}::${getDrmEnvSignature(env)}`, {
+        config: savedConfig,
+        expiresAt: Date.now() + 5000
+      });
+      await recordAdminAuditLog(env, {
+        actorEmail: session.email,
+        action: 'update_course_drm_policy',
+        targetType: 'course',
+        targetId: rawCourseId,
+        reason: `POLICY:${nextPolicy}`,
+        metadata: {
+          policy: nextPolicy,
+          pilotEmailsCount: nextPilotEmails.length,
+          pilotUnitIdsCount: nextPilotUnitIds.length
+        }
+      }).catch(() => null);
+
+      return jsonResponse({
+        ok: true,
+        courseId: rawCourseId,
+        config: {
+          courseId: savedConfig.courseId,
+          policy: savedConfig.policy,
+          pilotEmails: savedConfig.pilotEmails,
+          pilotUnitIds: savedConfig.pilotUnitIds,
+          pilotVideoIds: savedConfig.pilotVideoIds,
+          packagedAssetKeys: Object.keys(savedConfig.packagedAssets || {}),
+          updatedAt: savedConfig.updatedAt,
+          updatedBy: savedConfig.updatedBy
+        }
+      });
+    }
+
+    if (path === '/api/ktn/drm/playback' && request.method === 'GET') {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, error: 'AUTH_REQUIRED', message: 'Vui lòng đăng nhập để phát bài giảng.' }, 401);
+      }
+      const revoked = await isMediaSessionRevoked(env, session.jti, session.email, { checkDb: true });
+      if (revoked) {
+        return jsonResponse({
+          ok: false,
+          error: 'SESSION_REVOKED',
+          message: 'Phiên đăng nhập đã hết hiệu lực hoặc đã bị thiết bị khác thay thế.'
+        }, 401);
+      }
+
+      const rawUnitId = String(url.searchParams.get('unitId') || '').trim();
+      const rawCourseParam = String(url.searchParams.get('courseId') || '').trim();
+      if (!/^[0-9a-f]{24}$/i.test(rawUnitId)) {
+        return jsonResponse({ ok: false, error: 'INVALID_UNIT_ID', message: 'Mã bài giảng (unitId) không hợp lệ.' }, 400);
+      }
+      if (rawCourseParam && !/^[0-9a-f]{24}$/i.test(rawCourseParam)) {
+        return jsonResponse({ ok: false, error: 'INVALID_COURSE_ID', message: 'Mã khóa học (courseId) không hợp lệ.' }, 400);
+      }
+
+      const normUnitId = rawUnitId.toLowerCase();
+      const mappedOwner = UNIT_TO_COURSE_MAP[normUnitId] || null;
+      const requestedCourseId = rawCourseParam ? rawCourseParam.toLowerCase() : '';
+      if (requestedCourseId && mappedOwner && mappedOwner.courseId !== requestedCourseId) {
+        return jsonResponse({
+          ok: false,
+          error: 'UNIT_COURSE_MISMATCH',
+          message: 'Bài giảng không thuộc khóa học đã chọn.'
+        }, 403);
+      }
+
+      const resolvedCourseId = requestedCourseId || mappedOwner?.courseId || '';
+      if (!resolvedCourseId) {
+        return jsonResponse({
+          ok: false,
+          error: 'UNIT_NOT_FOUND',
+          message: 'Không xác định được khóa học sở hữu bài giảng này.'
+        }, 404);
+      }
+
+      const nowMs = resolveEffectiveRequestNowMs(request, session);
+      const nowIso = new Date(nowMs).toISOString();
+
+      if (session.role === 'student') {
+        const accessCheck = await verifyStudentCourseAccessServerSide(env, session, resolvedCourseId, { nowMs });
+        if (!accessCheck.ok) {
+          const { httpStatus, ...errPayload } = accessCheck;
+          return jsonResponse({ ...errPayload, serverNow: nowIso }, httpStatus || 403);
+        }
+      } else if (session.role === 'teacher') {
+        const tEmail = normalizeEmail(session.email || '');
+        if (revokedTokenMemorySet.has(`REVOKED_EMAIL_${tEmail}`) || revokedTokenMemorySet.has(`EMAIL_${tEmail}`) || revokedTokenMemorySet.has(tEmail)) {
+          return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE', message: 'Tài khoản giáo viên đã bị vô hiệu hóa.' }, 403);
+        }
+        const tRes = await supabaseRequest(env, `ktn_teachers?email=ilike.${encodeURIComponent(tEmail)}&select=active&limit=1`);
+        const isActiveTeacher = tRes && tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0 && tRes.data[0].active !== false;
+        if (!isActiveTeacher) {
+          return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE', message: 'Tài khoản giáo viên chưa được kích hoạt.' }, 403);
+        }
+      } else if (session.role !== 'admin') {
+        return jsonResponse({ ok: false, error: 'FORBIDDEN', message: 'Không có quyền truy cập bài giảng.' }, 403);
+      }
+
+      // Xác minh bài giảng thực sự thuộc khóa học trên izTeach & lấy videoId nội bộ (không bao giờ trả raw URL nguồn)
+      const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+      let tokenToUse = session.izteachAccessToken || session.accessToken || (await getIzTeachAdminToken(env));
+      let rawList = [];
+      if (tokenToUse) {
+        let unitRes = await fetch(`${IZTEACH_ENDPOINTS.courseUnits}?course=${encodeURIComponent(resolvedCourseId)}&vendorId=${encodeURIComponent(vendorId)}`, {
+          headers: { Authorization: tokenToUse }
+        });
+        let rawUnits = await unitRes.json().catch(() => []);
+        if ((!unitRes.ok || !Array.isArray(rawUnits) || rawUnits.length === 0) && (session.izteachAccessToken || session.accessToken)) {
+          const adminTok = await getIzTeachAdminToken(env);
+          if (adminTok && adminTok !== tokenToUse) {
+            const retryRes = await fetch(`${IZTEACH_ENDPOINTS.courseUnits}?course=${encodeURIComponent(resolvedCourseId)}&vendorId=${encodeURIComponent(vendorId)}`, {
+              headers: { Authorization: adminTok }
+            });
+            if (retryRes.ok) {
+              rawUnits = await retryRes.json().catch(() => []);
+            }
+          }
+        }
+        rawList = Array.isArray(rawUnits) ? rawUnits : (Array.isArray(rawUnits?.data) ? rawUnits.data : []);
+      }
+
+      const pairedVideoUnitId =
+        mappedOwner && mappedOwner.courseId === resolvedCourseId
+          ? String(COURSE_VIDEO_UNIT_MAP[resolvedCourseId]?.[mappedOwner.lessonNum] || '').toLowerCase()
+          : '';
+      const pairedHwUnitId =
+        mappedOwner && mappedOwner.courseId === resolvedCourseId
+          ? String(COURSE_UNIT_MAP[resolvedCourseId]?.[mappedOwner.lessonNum] || '').toLowerCase()
+          : '';
+      const matchedUnit = rawList.find((u) => {
+        const uid = String(u?._id || u?.id || '').trim().toLowerCase();
+        return (
+          uid === normUnitId ||
+          (pairedVideoUnitId && uid === pairedVideoUnitId) ||
+          (pairedHwUnitId && uid === pairedHwUnitId)
+        );
+      });
+      const belongsToCourseInMap = Boolean(mappedOwner && mappedOwner.courseId === resolvedCourseId);
+      if (!matchedUnit && !belongsToCourseInMap) {
+        return jsonResponse({
+          ok: false,
+          error: 'UNIT_NOT_FOUND',
+          message: 'Bài giảng không tồn tại trong khóa học này.'
+        }, 404);
+      }
+
+      const rawVidField = String(
+        matchedUnit?.videoId ||
+          (typeof matchedUnit?.video === 'string' ? matchedUnit.video : '') ||
+          matchedUnit?.resources?.[0]?._id ||
+          matchedUnit?.resources?.[0]?.id ||
+          HSK1_UNIT_VID_MAP[normUnitId] ||
+          ''
+      ).trim();
+      const vidMatch = `${rawVidField} ${String(matchedUnit?.streamUrl || matchedUnit?.video || '')}`.match(
+        /media\.izteach\.vn\/[^/]+\/([0-9a-f]{24})\//i
+      );
+      const cleanVid = /^[0-9a-f]{24}$/i.test(rawVidField)
+        ? rawVidField.toLowerCase()
+        : vidMatch && vidMatch[1]
+        ? vidMatch[1].toLowerCase()
+        : '';
+
+      const policyCfg = await loadCourseDrmPolicy(env, resolvedCourseId);
+      const effectiveDrm = resolveEffectiveUnitDrmState(policyCfg, {
+        unitId: normUnitId,
+        candidateUnitIds: [normUnitId, pairedVideoUnitId, pairedHwUnitId],
+        videoId: cleanVid,
+        userEmail: session.email
+      });
+      const providerStatuses = getAllDrmLicenseProviderStatus(env);
+      const anyLicenseConfigured = Object.values(providerStatuses).some((p) => p.configured);
+      const mediaSecret = getMediaSecret(env);
+      const actorEmail = normalizeEmail(session.email || '');
+      const actorJti = String(session.jti || actorEmail || 'anon');
+
+      const drmToken = effectiveDrm.drmActiveForUser
+        ? await signMediaToken(
+            {
+              k: 'drm_lic',
+              u: actorEmail,
+              j: actorJti,
+              r: String(session.role || '').toLowerCase(),
+              c: resolvedCourseId,
+              uid: normUnitId,
+              v: cleanVid,
+              policy: effectiveDrm.policy,
+              nonce: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : String(Date.now())
+            },
+            mediaSecret,
+            120 * 1000
+          )
+        : null;
+
+      const drmStreamToken = effectiveDrm.drmActiveForUser
+        ? await signMediaToken(
+            {
+              k: 'drm_stream',
+              u: actorEmail,
+              j: actorJti,
+              r: String(session.role || '').toLowerCase(),
+              c: resolvedCourseId,
+              uid: normUnitId,
+              v: cleanVid,
+              policy: effectiveDrm.policy
+            },
+            mediaSecret,
+            2 * 3600 * 1000
+          )
+        : null;
+
+      let fallbackStreamUrl = null;
+      if (effectiveDrm.allowHlsParallel && cleanVid) {
+        const hlsMt = await signMediaToken(
+          { k: 'hls', u: actorEmail, j: actorJti, c: resolvedCourseId, v: cleanVid, uid: normUnitId },
+          mediaSecret,
+          2 * 3600 * 1000
+        );
+        fallbackStreamUrl = `/api/ktn/media/hls/${cleanVid}/playlist.m3u8?mt=${encodeURIComponent(hlsMt)}`;
+      }
+
+      const assetMeta = effectiveDrm.assetMeta;
+      const hasPackagedDash = Boolean(assetMeta?.dashUrl && cleanVid && drmStreamToken);
+      const hasPackagedHls = Boolean(assetMeta?.hlsFairPlayUrl && cleanVid && drmStreamToken);
+      const isPackaged = hasPackagedDash || hasPackagedHls;
+      const manifests = {
+        packaged: isPackaged,
+        encryptionScheme: assetMeta?.encryptionScheme || null,
+        keyId: assetMeta?.keyId || null,
+        dashUrl: hasPackagedDash
+          ? `/api/ktn/drm/manifest/${cleanVid}/dash/t-${encodeURIComponent(drmStreamToken)}/manifest.mpd`
+          : null,
+        hlsFairPlayUrl: hasPackagedHls
+          ? `/api/ktn/drm/manifest/${cleanVid}/hls/t-${encodeURIComponent(drmStreamToken)}/master.m3u8`
+          : null
+      };
+
+      let licenseStatus = 'DISABLED';
+      let blockedReason = null;
+      if (effectiveDrm.drmActiveForUser) {
+        if (!anyLicenseConfigured) {
+          licenseStatus = 'BLOCKED_MISSING_CREDENTIALS';
+          blockedReason = 'DRM_LICENSE_PROVIDER_NOT_CONFIGURED';
+        } else if (!isPackaged) {
+          licenseStatus = 'READY';
+          blockedReason = 'DRM_CONTENT_NOT_PACKAGED';
+        } else {
+          licenseStatus = 'READY';
+        }
+      }
+
+      return jsonResponse({
+        ok: true,
+        unitId: normUnitId,
+        courseId: resolvedCourseId,
+        videoId: cleanVid || null,
+        policy: effectiveDrm.policy,
+        drmActiveForUser: effectiveDrm.drmActiveForUser,
+        drmToken,
+        expiresInSeconds: drmToken ? 120 : 0,
+        licenseStatus,
+        blockedReason,
+        licenseProviders: {
+          widevine: {
+            configured: providerStatuses.widevine.configured,
+            status: providerStatuses.widevine.status,
+            reason: providerStatuses.widevine.reason
+          },
+          playready: {
+            configured: providerStatuses.playready.configured,
+            status: providerStatuses.playready.status,
+            reason: providerStatuses.playready.reason
+          },
+          fairplay: {
+            configured: providerStatuses.fairplay.configured,
+            status: providerStatuses.fairplay.status,
+            reason: providerStatuses.fairplay.reason
+          }
+        },
+        licenseEndpoints: {
+          widevine: '/api/ktn/drm/license/widevine',
+          playready: '/api/ktn/drm/license/playready',
+          fairplay: '/api/ktn/drm/license/fairplay'
+        },
+        fairplayCertificateUrl: '/api/ktn/drm/fairplay-cert',
+        manifests,
+        fallbackAllowed: effectiveDrm.fallbackAllowed,
+        fallbackStreamUrl,
+        captureProtectionGuaranteed: false,
+        captureProtectionWarning: effectiveDrm.fallbackAllowed
+          ? 'Chế độ này không bảo đảm chống quay màn hình trên các trình duyệt/thiết bị không có DRM.'
+          : null,
+        serverNow: nowIso
+      });
+    }
+
+    if (path === '/api/ktn/drm/fairplay-cert' && (request.method === 'GET' || request.method === 'HEAD')) {
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, error: 'AUTH_REQUIRED', message: 'Vui lòng đăng nhập.' }, 401);
+      }
+      const revoked = await isMediaSessionRevoked(env, session.jti, session.email, { checkDb: true });
+      if (revoked) {
+        return jsonResponse({ ok: false, error: 'SESSION_REVOKED', message: 'Phiên đăng nhập đã hết hiệu lực.' }, 401);
+      }
+      const provider = inspectDrmLicenseProviderConfig(env, 'fairplay');
+      if (!provider.configured) {
+        return jsonResponse({
+          ok: false,
+          blocked: true,
+          status: 'BLOCKED',
+          error: provider.reason || 'DRM_FAIRPLAY_CERT_NOT_CONFIGURED',
+          message: 'Chưa cấu hình chứng chỉ FairPlay thương mại trên máy chủ.'
+        }, 503);
+      }
+      const certB64 = String(env?.KTN_DRM_FAIRPLAY_CERT_B64 || '').replace(/\s+/g, '').trim();
+      if (certB64) {
+        const certBytes = fromBase64UrlBytes(certB64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
+        return new Response(request.method === 'HEAD' ? null : certBytes, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Cache-Control': 'private, max-age=3600',
+            ...CORS_HEADERS
+          }
+        });
+      }
+      const certRes = await fetch(String(env.KTN_DRM_FAIRPLAY_CERT_URL).trim(), {
+        method: request.method
+      });
+      if (!certRes.ok) {
+        return jsonResponse({ ok: false, error: 'FAIRPLAY_CERT_FETCH_FAILED' }, 502);
+      }
+      return new Response(request.method === 'HEAD' ? null : certRes.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Cache-Control': 'private, max-age=3600',
+          ...CORS_HEADERS
+        }
+      });
+    }
+
+    if (path.startsWith('/api/ktn/drm/license/') && request.method === 'POST') {
+      const drmSystem = path.slice('/api/ktn/drm/license/'.length).trim().toLowerCase();
+      if (!VALID_DRM_SYSTEMS.has(drmSystem)) {
+        return jsonResponse({
+          ok: false,
+          error: 'UNSUPPORTED_DRM_SYSTEM',
+          message: 'Hệ thống DRM không hợp lệ (chỉ hỗ trợ widevine, playready, fairplay).'
+        }, 400);
+      }
+
+      const session = await extractSessionFromRequest(request, env);
+      if (!session) {
+        return jsonResponse({ ok: false, error: 'AUTH_REQUIRED', message: 'Vui lòng đăng nhập để xin cấp license DRM.' }, 401);
+      }
+      const drmTokenRaw = String(request.headers.get('X-KTN-DRM-Token') || url.searchParams.get('dt') || '').trim();
+      if (!drmTokenRaw) {
+        return jsonResponse({ ok: false, error: 'MISSING_DRM_TOKEN', message: 'Thiếu token phiên phát DRM ngắn hạn.' }, 401);
+      }
+      const drmPayload = await verifyMediaToken(drmTokenRaw, getMediaSecret(env));
+      if (!drmPayload || drmPayload.k !== 'drm_lic') {
+        return jsonResponse({
+          ok: false,
+          error: 'INVALID_OR_EXPIRED_DRM_TOKEN',
+          message: 'Token license DRM đã hết hạn hoặc không hợp lệ.'
+        }, 403);
+      }
+
+      const actorEmail = normalizeEmail(session.email || '');
+      const actorJti = String(session.jti || actorEmail || 'anon');
+      if (drmPayload.u !== actorEmail || drmPayload.j !== actorJti) {
+        return jsonResponse({
+          ok: false,
+          error: 'DRM_TOKEN_SESSION_MISMATCH',
+          message: 'Token DRM không khớp với tài khoản hoặc phiên đăng nhập hiện tại.'
+        }, 403);
+      }
+
+      const revoked = await isMediaSessionRevoked(env, session.jti, session.email, { checkDb: true });
+      if (revoked) {
+        return jsonResponse({
+          ok: false,
+          error: 'SESSION_REVOKED',
+          message: 'Phiên đăng nhập đã bị thu hồi hoặc vượt quá giới hạn thiết bị.'
+        }, 401);
+      }
+
+      const nowMs = resolveEffectiveRequestNowMs(request, session);
+      if (session.role === 'student') {
+        const accessCheck = await verifyStudentCourseAccessServerSide(env, session, drmPayload.c, { nowMs });
+        if (!accessCheck.ok) {
+          const { httpStatus, ...errPayload } = accessCheck;
+          return jsonResponse({ ...errPayload, serverNow: new Date(nowMs).toISOString() }, httpStatus || 403);
+        }
+      } else if (session.role === 'teacher') {
+        const tRes = await supabaseRequest(env, `ktn_teachers?email=ilike.${encodeURIComponent(actorEmail)}&select=active&limit=1`);
+        const isActiveTeacher = tRes && tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0 && tRes.data[0].active !== false;
+        if (!isActiveTeacher) {
+          return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE', message: 'Tài khoản giáo viên không còn hiệu lực.' }, 403);
+        }
+      } else if (session.role !== 'admin') {
+        return jsonResponse({ ok: false, error: 'FORBIDDEN' }, 403);
+      }
+
+      const policyCfg = await loadCourseDrmPolicy(env, drmPayload.c);
+      const effectiveDrm = resolveEffectiveUnitDrmState(policyCfg, {
+        unitId: drmPayload.uid,
+        videoId: drmPayload.v,
+        userEmail: actorEmail
+      });
+      if (!effectiveDrm.drmActiveForUser) {
+        return jsonResponse({
+          ok: false,
+          error: 'DRM_POLICY_DISABLED',
+          message: 'Chính sách DRM của khóa/bài giảng này đã bị tắt hoặc thay đổi.'
+        }, 403);
+      }
+
+      const provider = inspectDrmLicenseProviderConfig(env, drmSystem);
+      if (!provider.configured) {
+        return jsonResponse({
+          ok: false,
+          blocked: true,
+          status: 'BLOCKED',
+          error: provider.reason || 'DRM_LICENSE_PROVIDER_NOT_CONFIGURED',
+          drmSystem,
+          message: 'Chưa cấu hình license service thương mại hợp pháp trên máy chủ. Đã chặn cấp license giả lập.'
+        }, 503);
+      }
+
+      const challengeBytes = toCryptoBytes(await request.arrayBuffer());
+      if (!challengeBytes.byteLength) {
+        return jsonResponse({
+          ok: false,
+          error: 'EMPTY_DRM_CHALLENGE',
+          message: 'Thiếu dữ liệu CDM license challenge.'
+        }, 400);
+      }
+
+      const upstreamHeaders = new Headers({
+        'Content-Type': request.headers.get('Content-Type') || 'application/octet-stream',
+        'X-KTN-Course-Id': String(drmPayload.c || ''),
+        'X-KTN-Unit-Id': String(drmPayload.uid || ''),
+        'X-KTN-Video-Id': String(drmPayload.v || '')
+      });
+      if (env?.KTN_DRM_AUTH_HEADER) {
+        upstreamHeaders.set('Authorization', String(env.KTN_DRM_AUTH_HEADER).trim());
+      } else if (env?.KTN_DRM_PROVIDER_API_KEY) {
+        upstreamHeaders.set('X-API-Key', String(env.KTN_DRM_PROVIDER_API_KEY).trim());
+        upstreamHeaders.set('Authorization', `Bearer ${String(env.KTN_DRM_PROVIDER_API_KEY).trim()}`);
+      }
+      if (env?.KTN_DRM_TENANT_ID) {
+        upstreamHeaders.set('X-Tenant-Id', String(env.KTN_DRM_TENANT_ID).trim());
+      }
+
+      const licRes = await fetch(provider.proxyUrl, {
+        method: 'POST',
+        headers: upstreamHeaders,
+        body: challengeBytes
+      });
+      if (!licRes.ok) {
+        return jsonResponse({
+          ok: false,
+          error: 'DRM_LICENSE_UPSTREAM_FAILED',
+          upstreamStatus: licRes.status,
+          drmSystem,
+          message: `Máy chủ cấp phép DRM trả về lỗi HTTP ${licRes.status}.`
+        }, licRes.status >= 400 && licRes.status < 500 ? licRes.status : 502);
+      }
+      const licBuf = await licRes.arrayBuffer();
+      return new Response(licBuf, {
+        status: 200,
+        headers: {
+          'Content-Type': licRes.headers.get('Content-Type') || 'application/octet-stream',
+          'Cache-Control': 'private, no-store',
+          'X-Robots-Tag': 'noindex, noarchive',
+          ...CORS_HEADERS
+        }
+      });
+    }
+
+    if (path.startsWith('/api/ktn/drm/manifest/') && (request.method === 'GET' || request.method === 'HEAD')) {
+      const rest = path.slice('/api/ktn/drm/manifest/'.length);
+      const parts = rest.split('/');
+      const vid = String(parts[0] || '').trim().toLowerCase();
+      const fmt = String(parts[1] || '').trim().toLowerCase();
+      let pathDt = '';
+      let subParts = parts.slice(2);
+      if (subParts[0] && subParts[0].startsWith('t-')) {
+        try {
+          pathDt = decodeURIComponent(subParts[0].slice(2));
+        } catch {
+          pathDt = subParts[0].slice(2);
+        }
+        subParts = subParts.slice(1);
+      }
+      const subPath = subParts.join('/').trim();
+      if (
+        !/^[0-9a-f]{24}$/.test(vid) ||
+        (fmt !== 'dash' && fmt !== 'hls') ||
+        !subPath ||
+        subPath.includes('..') ||
+        subPath.includes('\\') ||
+        !/^[a-zA-Z0-9_.\-\/]+\.(mpd|m3u8|m4s|mp4|m4v|m4a|cmfv|cmfa|cmf|vtt|ttml)$/i.test(subPath)
+      ) {
+        return jsonResponse({ ok: false, error: 'INVALID_DRM_MANIFEST_PATH' }, 400);
+      }
+
+      const dt = String(pathDt || url.searchParams.get('dt') || request.headers.get('X-KTN-DRM-Token') || '').trim();
+      const drmPayload = await verifyMediaToken(dt, getMediaSecret(env));
+      if (
+        !drmPayload ||
+        (drmPayload.k !== 'drm_stream' && drmPayload.k !== 'drm_lic') ||
+        String(drmPayload.v || '').toLowerCase() !== vid
+      ) {
+        return jsonResponse({ ok: false, error: 'INVALID_OR_EXPIRED_DRM_TOKEN' }, 403);
+      }
+      const revoked = await isMediaSessionRevoked(env, drmPayload.j, drmPayload.u, { checkDb: true });
+      if (revoked) {
+        return jsonResponse({ ok: false, error: 'SESSION_REVOKED' }, 401);
+      }
+
+      const policyCfg = await loadCourseDrmPolicy(env, drmPayload.c);
+      const effectiveDrm = resolveEffectiveUnitDrmState(policyCfg, {
+        unitId: drmPayload.uid,
+        videoId: vid,
+        userEmail: drmPayload.u
+      });
+      if (!effectiveDrm.drmActiveForUser) {
+        return jsonResponse({
+          ok: false,
+          error: 'DRM_POLICY_DISABLED',
+          message: 'Chính sách DRM của khóa/bài giảng này đã bị tắt hoặc thay đổi.'
+        }, 403);
+      }
+      const isEntry = subPath === 'manifest.mpd' || subPath === 'master.m3u8';
+      const isManifestFetch = isEntry || /\.(mpd|m3u8)$/i.test(subPath);
+      if (isManifestFetch) {
+        const tokenRole = String(drmPayload.r || 'student').toLowerCase();
+        if (tokenRole === 'teacher') {
+          const tEmail = normalizeEmail(drmPayload.u || '');
+          if (
+            revokedTokenMemorySet.has(`REVOKED_EMAIL_${tEmail}`) ||
+            revokedTokenMemorySet.has(`EMAIL_${tEmail}`) ||
+            revokedTokenMemorySet.has(tEmail)
+          ) {
+            return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE' }, 403);
+          }
+          const tRes = await supabaseRequest(
+            env,
+            `ktn_teachers?email=ilike.${encodeURIComponent(tEmail)}&select=active&limit=1`
+          );
+          const isActiveTeacher =
+            tRes && tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0 && tRes.data[0].active !== false;
+          if (!isActiveTeacher) {
+            return jsonResponse({ ok: false, error: 'TEACHER_INACTIVE' }, 403);
+          }
+        } else if (tokenRole !== 'admin') {
+          const accessCheck = await verifyStudentCourseAccessServerSide(
+            env,
+            { email: drmPayload.u },
+            drmPayload.c,
+            { nowMs: Date.now() }
+          );
+          if (!accessCheck.ok) {
+            const { httpStatus, ...errPayload } = accessCheck;
+            return jsonResponse(errPayload, httpStatus || 403);
+          }
+        }
+      }
+      const entryUrl = fmt === 'dash' ? effectiveDrm.assetMeta?.dashUrl : effectiveDrm.assetMeta?.hlsFairPlayUrl;
+      if (!entryUrl || !/^https:\/\//i.test(entryUrl)) {
+        return jsonResponse({ ok: false, error: 'DRM_CONTENT_NOT_PACKAGED' }, 404);
+      }
+      const baseDirUrl = entryUrl.slice(0, entryUrl.lastIndexOf('/') + 1);
+      const targetUrl = isEntry ? entryUrl : `${baseDirUrl}${subPath}`;
+      const rangeHdr = request.headers.get('Range');
+      const upRes = await fetch(targetUrl, {
+        method: request.method,
+        headers: rangeHdr ? { Range: rangeHdr } : undefined
+      });
+      if (!upRes.ok && upRes.status !== 206) {
+        return new Response(null, { status: upRes.status, headers: CORS_HEADERS });
+      }
+      if (/\.m3u8$/i.test(subPath) && request.method !== 'HEAD') {
+        const text = await upRes.text();
+        const subDir = subPath.includes('/') ? subPath.slice(0, subPath.lastIndexOf('/') + 1) : '';
+        const rewritten = text
+          .replace(/\r\n/g, '\n')
+          .split('\n')
+          .map((line) => {
+            const trimmed = line.trim();
+            if (!trimmed) return line;
+            if (trimmed.startsWith('#')) {
+              return trimmed.replace(/URI="([^"]+)"/gi, (_m, uri) => {
+                if (/^skd:/i.test(uri) || /^https?:/i.test(uri)) return `URI="${uri}"`;
+                const rel = (subDir + uri.replace(/^\/+/, '')).split('?')[0];
+                return `URI="/api/ktn/drm/manifest/${vid}/${fmt}/t-${encodeURIComponent(dt)}/${rel}"`;
+              });
+            }
+            if (/^https?:/i.test(trimmed)) return trimmed;
+            const rel = (subDir + trimmed.replace(/^\/+/, '')).split('?')[0];
+            return `/api/ktn/drm/manifest/${vid}/${fmt}/t-${encodeURIComponent(dt)}/${rel}`;
+          })
+          .join('\n');
+        return new Response(rewritten, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
+            'Cache-Control': 'private, no-store',
+            ...CORS_HEADERS
+          }
+        });
+      }
+      const resHeaders = new Headers(CORS_HEADERS);
+      resHeaders.set(
+        'Content-Type',
+        upRes.headers.get('Content-Type') ||
+          (/\.mpd$/i.test(subPath) ? 'application/dash+xml' : 'application/octet-stream')
+      );
+      if (upRes.headers.get('Content-Range')) resHeaders.set('Content-Range', upRes.headers.get('Content-Range'));
+      if (upRes.headers.get('Accept-Ranges')) resHeaders.set('Accept-Ranges', upRes.headers.get('Accept-Ranges'));
+      resHeaders.set('Cache-Control', 'private, no-store');
+      return new Response(request.method === 'HEAD' ? null : upRes.body, {
+        status: upRes.status,
+        headers: resHeaders
+      });
     }
 
     if (path === '/api/ktn/courses/homework-configs' && (request.method === 'GET' || request.method === 'POST')) {

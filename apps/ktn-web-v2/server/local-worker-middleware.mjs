@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
+import { TextEncoder as NodeTextEncoder, TextDecoder as NodeTextDecoder } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1373,6 +1374,7 @@ export function createLocalWorkerHarness() {
 
     if (
       u.hostname === 'media.izteach.vn' ||
+      u.hostname.endsWith('.test') ||
       (u.hostname === 'd21acfi38wn3iy.cloudfront.net' && u.pathname.startsWith('/resource/documents/'))
     ) {
       const cleanInit = { ...init };
@@ -1395,6 +1397,10 @@ export function createLocalWorkerHarness() {
   let workerCode = fs.readFileSync(WORKER_PATH, 'utf8');
   workerCode = workerCode.replace(/export\s+default\s+\{/, 'module.exports = {');
 
+  const NativeUint8Array = Object.getPrototypeOf(Buffer);
+  const NativeArrayBuffer = new NativeUint8Array(0).buffer.constructor;
+  const NativeDataView = new DataView(new NativeArrayBuffer(0)).constructor;
+
   const sandbox = {
     module: { exports: {} },
     exports: {},
@@ -1404,9 +1410,9 @@ export function createLocalWorkerHarness() {
     Headers,
     URL,
     URLSearchParams,
-    crypto: globalThis.crypto || crypto.webcrypto,
-    TextEncoder,
-    TextDecoder,
+    crypto: crypto.webcrypto || globalThis.crypto,
+    TextEncoder: NodeTextEncoder,
+    TextDecoder: NodeTextDecoder,
     atob: globalThis.atob || (str => Buffer.from(str, 'base64').toString('binary')),
     btoa: globalThis.btoa || (str => Buffer.from(str, 'binary').toString('base64')),
     console,
@@ -1416,7 +1422,9 @@ export function createLocalWorkerHarness() {
     Math,
     JSON,
     Array,
-    Uint8Array,
+    ArrayBuffer: NativeArrayBuffer,
+    Uint8Array: NativeUint8Array,
+    DataView: NativeDataView,
     Object,
     String,
     Number,

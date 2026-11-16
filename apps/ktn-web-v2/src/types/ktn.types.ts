@@ -114,6 +114,78 @@ export interface KtnHomeworkAssignment {
   updatedAt?: string;
 }
 
+export type KtnDrmPolicy =
+  | 'drmDisabled'
+  | 'drmPilot'
+  | 'drmRequired'
+  | 'drmFallbackAllowed';
+
+export type KtnDrmSystem = 'widevine' | 'playready' | 'fairplay';
+
+export interface KtnDrmProviderStatus {
+  configured: boolean;
+  status: 'READY' | 'BLOCKED' | string;
+  reason?: string | null;
+}
+
+export interface KtnDrmPlaybackInfo {
+  ok: boolean;
+  unitId: string;
+  courseId: string;
+  videoId?: string | null;
+  policy: KtnDrmPolicy;
+  drmActiveForUser: boolean;
+  drmToken?: string | null;
+  expiresInSeconds?: number;
+  licenseStatus: 'READY' | 'BLOCKED_MISSING_CREDENTIALS' | 'DISABLED' | string;
+  blockedReason?: string | null;
+  licenseProviders: {
+    widevine: KtnDrmProviderStatus;
+    playready: KtnDrmProviderStatus;
+    fairplay: KtnDrmProviderStatus;
+  };
+  licenseEndpoints: {
+    widevine: string;
+    playready: string;
+    fairplay: string;
+  };
+  fairplayCertificateUrl: string;
+  manifests: {
+    packaged: boolean;
+    encryptionScheme?: 'cbcs' | 'cenc' | string | null;
+    keyId?: string | null;
+    dashUrl?: string | null;
+    hlsFairPlayUrl?: string | null;
+  };
+  fallbackAllowed: boolean;
+  fallbackStreamUrl?: string | null;
+  captureProtectionGuaranteed: boolean;
+  captureProtectionWarning?: string | null;
+  serverNow?: string;
+}
+
+export interface KtnDrmPolicyConfigResponse {
+  ok: boolean;
+  courseId: string;
+  policy?: KtnDrmPolicy;
+  isPilotEmail?: boolean;
+  config?: {
+    courseId: string;
+    policy: KtnDrmPolicy;
+    pilotEmails: string[];
+    pilotUnitIds: string[];
+    pilotVideoIds: string[];
+    packagedAssetKeys: string[];
+    updatedAt?: string | null;
+    updatedBy?: string | null;
+  };
+  licenseProviders?: {
+    widevine: KtnDrmProviderStatus;
+    playready: KtnDrmProviderStatus;
+    fairplay: KtnDrmProviderStatus;
+  };
+}
+
 export interface KtnLessonVideoPart {
   unitId: string;
   partNumber?: string | number | null;
@@ -122,9 +194,14 @@ export interface KtnLessonVideoPart {
   videoId?: string;
   duration?: string;
   durationSec?: number;
-  url?: string;
-  streamUrl?: string;
+  url?: string | null;
+  streamUrl?: string | null;
   posterUrl?: string;
+  drmEnabled?: boolean;
+  drmPolicy?: KtnDrmPolicy;
+  drmPlaybackUrl?: string | null;
+  drmFallbackAllowed?: boolean;
+  drmCaptureProtectionGuaranteed?: boolean;
 }
 
 export interface KtnLessonUnit {
@@ -152,8 +229,13 @@ export interface KtnLessonUnit {
   type: string;
   video: string;
   videoId?: string;
-  streamUrl?: string;
+  streamUrl?: string | null;
   posterUrl?: string;
+  drmEnabled?: boolean;
+  drmPolicy?: KtnDrmPolicy;
+  drmPlaybackUrl?: string | null;
+  drmFallbackAllowed?: boolean;
+  drmCaptureProtectionGuaranteed?: boolean;
   audioTracks?: KtnAudioTrack[];
   materials?: KtnLearningMaterial[];
   homeworkAssignment?: KtnHomeworkAssignment | null;

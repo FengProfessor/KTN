@@ -47,6 +47,7 @@ import {
 } from '@/i18n';
 import {
   KtnCourse,
+  KtnDrmPlaybackInfo,
   KtnHomework,
   KtnLearningMaterial,
   KtnLessonUnit,
@@ -933,13 +934,46 @@ export const LearningPage: React.FC = () => {
     unitsQuery.error,
   ]);
 
+  const activeDrmUnitId = String(
+    activeLesson?.unitId || activeLesson?._id || activeLesson?.id || ''
+  ).trim();
+  const isDrmLessonActive = Boolean(
+    !isDemoMode &&
+      videoDemoScenario === 'live_real' &&
+      activeLesson?.drmEnabled &&
+      activeDrmUnitId &&
+      playerStatusOverride !== 'expired' &&
+      playerStatusOverride !== 'unentitled'
+  );
+  const drmPlaybackQuery = useQuery<KtnDrmPlaybackInfo | null>({
+    queryKey: ['ktn-drm-playback', activeCourse.id, activeDrmUnitId, user?.email],
+    queryFn: async () => {
+      if (!activeDrmUnitId) return null;
+      return ktnApi.getDrmPlayback(activeDrmUnitId, activeCourse.id);
+    },
+    enabled: isDrmLessonActive,
+    staleTime: 1000 * 45,
+    gcTime: 1000 * 90,
+    retry: 1,
+  });
+
+  const effectivePlayerStatusOverride: VideoPlayerStatus | null = useMemo(() => {
+    if (playerStatusOverride) return playerStatusOverride;
+    if (drmPlaybackQuery.isError) {
+      const drmErr = drmPlaybackQuery.error as KtnApiError;
+      if (drmErr?.code === 'COURSE_EXPIRED') return 'expired';
+      if (drmErr?.code === 'COURSE_NOT_ENTITLED') return 'unentitled';
+    }
+    return null;
+  }, [playerStatusOverride, drmPlaybackQuery.isError, drmPlaybackQuery.error]);
+
   // When countdown transitions to expired or server returns 403 COURSE_EXPIRED, immediately re-verify permissions server-side
   useEffect(() => {
     if (
       !isDemoMode &&
       user?.role === 'student' &&
       isCourseEntitled(activeCourse.id) &&
-      (activeCourseExpInfo.isExpired || playerStatusOverride === 'expired')
+      (activeCourseExpInfo.isExpired || effectivePlayerStatusOverride === 'expired')
     ) {
       studentMeQuery.refetch();
       restoreSession().catch(() => null);
@@ -949,7 +983,7 @@ export const LearningPage: React.FC = () => {
     }
   }, [
     activeCourseExpInfo.isExpired,
-    playerStatusOverride,
+    effectivePlayerStatusOverride,
     activeCourse.id,
     isDemoMode,
     user?.role,
@@ -1102,7 +1136,7 @@ export const LearningPage: React.FC = () => {
             )}
           </span>
           {user?.role === 'student' && isCourseEntitled(activeCourse.id) && (
-            activeCourseExpInfo.isExpired || playerStatusOverride === 'expired' ? (
+            activeCourseExpInfo.isExpired || effectivePlayerStatusOverride === 'expired' ? (
               <button
                 type="button"
                 data-testid="learning-active-course-countdown"
@@ -1183,8 +1217,8 @@ export const LearningPage: React.FC = () => {
         <div className="space-y-3 sm:space-y-4 lg:col-span-8">
           {/* Phase 3A: Prominent Active Lesson Header Banner */}
           {activeLesson &&
-            playerStatusOverride !== 'unentitled' &&
-            playerStatusOverride !== 'expired' && (
+            effectivePlayerStatusOverride !== 'unentitled' &&
+            effectivePlayerStatusOverride !== 'expired' && (
             <div
               data-testid="lesson-header-banner"
               className="rounded-xl border border-stone-200 bg-white px-3.5 py-3 shadow-2xs sm:px-4"
@@ -1276,24 +1310,51 @@ export const LearningPage: React.FC = () => {
             }
             courseName={translateCourseTitle(activeCourse.title, lang)}
             streamUrl={
-              playerStatusOverride === 'expired' || playerStatusOverride === 'unentitled'
+              effectivePlayerStatusOverride === 'expired' ||
+              effectivePlayerStatusOverride === 'unentitled'
                 ? null
                 : activeLesson?.streamUrl || activeLesson?.video || null
             }
             fallbackVideoUrl={
-              playerStatusOverride === 'expired' || playerStatusOverride === 'unentitled'
+              effectivePlayerStatusOverride === 'expired' ||
+              effectivePlayerStatusOverride === 'unentitled'
                 ? null
                 : activeLesson?.video || null
             }
-            statusOverride={playerStatusOverride}
+            drmEnabled={Boolean(activeLesson?.drmEnabled)}
+            drmPolicy={activeLesson?.drmPolicy || 'drmDisabled'}
+            drmPlayback={
+              effectivePlayerStatusOverride === 'expired' ||
+              effectivePlayerStatusOverride === 'unentitled'
+                ? null
+                : drmPlaybackQuery.data || null
+            }
+            isDrmLoading={Boolean(
+              isDrmLessonActive && (drmPlaybackQuery.isLoading || drmPlaybackQuery.isFetching)
+            )}
+            drmPlaybackError={
+              drmPlaybackQuery.isError
+                ? drmPlaybackQuery.error instanceof Error
+                  ? drmPlaybackQuery.error.message
+                  : tr('Không lấy được cấu hình DRM.', 'Unable to load DRM configuration.')
+                : null
+            }
+            statusOverride={effectivePlayerStatusOverride}
             unentitledReason={
-              unitsQuery.error instanceof Error ? unitsQuery.error.message : undefined
+              unitsQuery.error instanceof Error
+                ? unitsQuery.error.message
+                : drmPlaybackQuery.error instanceof Error
+                ? drmPlaybackQuery.error.message
+                : undefined
             }
             isCompleted={isCurrentLessonCompleted}
             onMarkCompleted={handleToggleCompleted}
             onRetryStream={() => {
               if (videoDemoScenario === 'error') setVideoDemoScenario('live_real');
-              unitsQuery.refetch();
+              void unitsQuery.refetch();
+              if (isDrmLessonActive) {
+                void drmPlaybackQuery.refetch();
+              }
             }}
             onWatchDemoCourse={() => openDemoVideoModal(activeCourse)}
             onRequestUnlockCourse={() => openRegistrationModal(activeCourse)}
@@ -1312,8 +1373,8 @@ export const LearningPage: React.FC = () => {
 
           {/* Sub-part Video Switcher (When a lesson has multiple video parts like 3.1/3.2 or 13.1/13.2) */}
           {activeLesson &&
-            playerStatusOverride !== 'unentitled' &&
-            playerStatusOverride !== 'expired' &&
+            effectivePlayerStatusOverride !== 'unentitled' &&
+            effectivePlayerStatusOverride !== 'expired' &&
             activeLessonGroup &&
             activeLessonGroup.subUnits.length > 1 && (
               <div
@@ -1362,7 +1423,7 @@ export const LearningPage: React.FC = () => {
               </div>
             )}
 
-          {playerStatusOverride === 'expired' && (
+          {effectivePlayerStatusOverride === 'expired' && (
             <div
               data-testid="expired-course-preserved-progress-box"
               className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-950"
@@ -1394,8 +1455,8 @@ export const LearningPage: React.FC = () => {
 
           {/* Mobile Lesson Drawer Trigger & Content Tabs (Only when entitled and lessons exist) */}
           {activeLesson &&
-            playerStatusOverride !== 'unentitled' &&
-            playerStatusOverride !== 'expired' && (
+            effectivePlayerStatusOverride !== 'unentitled' &&
+            effectivePlayerStatusOverride !== 'expired' && (
             <>
               <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 lg:hidden">
                 <div className="min-w-0">

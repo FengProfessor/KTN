@@ -14,10 +14,28 @@ import {
   Minimize2,
   Sparkles,
   MessageSquare,
+  ShieldCheck,
 } from 'lucide-react';
 import { useI18n, translateCourseTitle } from '@/i18n';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { getStoredSession, toHttpHeaderSafeValue } from '@/services/api/ktnApiClient';
+import type {
+  KtnDrmPlaybackInfo,
+  KtnDrmPolicy,
+  KtnDrmSystem,
+} from '@/types/ktn.types';
 import { buildLearnerWatermarkLines } from '../utils/watermark';
+import {
+  DRM_KEY_SYSTEMS,
+  type DrmCapabilityReport,
+  type DrmStructuredError,
+  buildUnsupportedDrmError,
+  classifyDrmError,
+  createFairPlayInitDataTransform,
+  detectDrmCapabilities,
+  selectDrmPlaybackPlan,
+} from '../utils/drmCapability';
+import { loadShakaPlayer, type ShakaStatic } from '../utils/shakaLoader';
 
 export type VideoPlayerStatus =
   | 'loading'
@@ -27,6 +45,14 @@ export type VideoPlayerStatus =
   | 'error'
   | 'unentitled'
   | 'expired';
+
+interface VideoQualityOption {
+  id: string;
+  label: string;
+  height: number;
+  levelIndex?: number;
+  trackId?: number;
+}
 
 function formatVideoTime(totalSec: number): string {
   const safe = Number.isFinite(totalSec) && totalSec > 0 ? Math.floor(totalSec) : 0;
@@ -40,6 +66,12 @@ interface HlsVideoPlayerProps {
   courseName: string;
   streamUrl: string | null;
   fallbackVideoUrl?: string | null;
+  drmEnabled?: boolean;
+  drmPolicy?: KtnDrmPolicy;
+  drmPlayback?: KtnDrmPlaybackInfo | null;
+  isDrmLoading?: boolean;
+  drmPlaybackError?: string | null;
+  onCapabilityChecked?: (report: DrmCapabilityReport) => void;
   statusOverride?: VideoPlayerStatus | null;
   unentitledReason?: string | null;
   isCompleted: boolean;
@@ -59,6 +91,12 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   courseName,
   streamUrl,
   fallbackVideoUrl,
+  drmEnabled = false,
+  drmPolicy = 'drmDisabled',
+  drmPlayback = null,
+  isDrmLoading = false,
+  drmPlaybackError = null,
+  onCapabilityChecked,
   statusOverride,
   unentitledReason,
   isCompleted,
@@ -79,6 +117,8 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const wmHostRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const shakaRef = useRef<InstanceType<ShakaStatic['Player']> | null>(null);
+  const shakaErrorHandledRef = useRef<boolean>(false);
 
   const [internalStatus, setInternalStatus] = useState<VideoPlayerStatus>('loading');
   const [playbackRate, setPlaybackRate] = useState<number>(1);
@@ -89,6 +129,11 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
   const [wmPos, setWmPos] = useState<{ top: number; left: number }>({ top: 14, left: 10 });
   const [clockTick, setClockTick] = useState<number>(() => Date.now());
+  const [drmError, setDrmError] = useState<DrmStructuredError | null>(null);
+  const [activeDrmSystem, setActiveDrmSystem] = useState<KtnDrmSystem | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [qualityOptions, setQualityOptions] = useState<VideoQualityOption[]>([]);
+  const [selectedQualityId, setSelectedQualityId] = useState<string>('auto');
 
   const isFullscreen = isNativeFullscreen || isPseudoFullscreen;
 
@@ -335,10 +380,21 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
     setIsPseudoFullscreen(true);
   };
 
+  const onCapabilityCheckedRef = useRef(onCapabilityChecked);
+  onCapabilityCheckedRef.current = onCapabilityChecked;
+
   const cleanupHls = useCallback(() => {
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
+    }
+  }, []);
+
+  const cleanupShaka = useCallback(() => {
+    if (shakaRef.current) {
+      const instance = shakaRef.current;
+      shakaRef.current = null;
+      void instance.destroy().catch(() => {});
     }
   }, []);
 
@@ -350,6 +406,12 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
       statusOverride === 'loading'
     ) {
       cleanupHls();
+      cleanupShaka();
+      setDrmError(null);
+      setActiveDrmSystem(null);
+      setFallbackNotice(null);
+      setQualityOptions([]);
+      setSelectedQualityId('auto');
       if (statusOverride === 'expired' && videoRef.current) {
         try {
           videoRef.current.pause();
@@ -362,94 +424,452 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
       return;
     }
 
-    const activeUrl = streamUrl || fallbackVideoUrl;
-    if (!activeUrl) {
-      setInternalStatus('loading');
-      return;
-    }
-
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     cleanupHls();
+    cleanupShaka();
+    shakaErrorHandledRef.current = false;
+    setDrmError(null);
+    setActiveDrmSystem(null);
+    setFallbackNotice(null);
+    setQualityOptions([]);
+    setSelectedQualityId('auto');
     setInternalStatus('loading');
 
     let cancelled = false;
-    const isM3u8 = /\.m3u8(\?|$)/i.test(activeUrl);
 
-    if (isM3u8) {
-      import('hls.js')
-        .then(({ default: HlsLib }) => {
+    const startHlsOrDirectPlayback = (targetUrl: string, allowRawFallback: boolean) => {
+      const isM3u8 = /\.m3u8(\?|$)/i.test(targetUrl);
+      if (isM3u8) {
+        import('hls.js')
+          .then(({ default: HlsLib }) => {
+            if (cancelled) return;
+            if (HlsLib.isSupported()) {
+              const hls = new HlsLib({
+                enableWorker: true,
+                lowLatencyMode: false,
+              });
+              hlsRef.current = hls;
+
+              hls.loadSource(targetUrl);
+              hls.attachMedia(videoEl);
+
+              hls.on(HlsLib.Events.MANIFEST_PARSED, () => {
+                if (cancelled) return;
+                const seenHeights = new Set<number>();
+                const nextOptions: VideoQualityOption[] = [];
+                (hls.levels || []).forEach((lvl, idx) => {
+                  const h = Number(lvl?.height || 0);
+                  if (h > 0 && !seenHeights.has(h)) {
+                    seenHeights.add(h);
+                    nextOptions.push({
+                      id: String(idx),
+                      label: `${h}p`,
+                      height: h,
+                      levelIndex: idx,
+                    });
+                  }
+                });
+                nextOptions.sort((a, b) => b.height - a.height);
+                setQualityOptions(nextOptions);
+                setInternalStatus('ready');
+              });
+
+              let mediaRecoveredOnce = false;
+              hls.on(HlsLib.Events.ERROR, (_event, data) => {
+                if (cancelled) return;
+                if (data.fatal) {
+                  switch (data.type) {
+                    case HlsLib.ErrorTypes.NETWORK_ERROR:
+                      if (
+                        allowRawFallback &&
+                        fallbackVideoUrl &&
+                        fallbackVideoUrl !== targetUrl
+                      ) {
+                        cleanupHls();
+                        videoEl.src = fallbackVideoUrl;
+                      } else {
+                        cleanupHls();
+                        setInternalStatus('error');
+                      }
+                      break;
+                    case HlsLib.ErrorTypes.MEDIA_ERROR:
+                      if (!mediaRecoveredOnce) {
+                        mediaRecoveredOnce = true;
+                        hls.recoverMediaError();
+                      } else {
+                        cleanupHls();
+                        setInternalStatus('error');
+                      }
+                      break;
+                    default:
+                      cleanupHls();
+                      setInternalStatus('error');
+                      break;
+                  }
+                }
+              });
+            } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+              videoEl.src = targetUrl;
+              setInternalStatus('ready');
+            } else {
+              setInternalStatus('error');
+            }
+          })
+          .catch(() => {
+            if (!cancelled) setInternalStatus('error');
+          });
+      } else {
+        videoEl.src = targetUrl;
+        setInternalStatus('ready');
+      }
+    };
+
+    if (drmEnabled) {
+      if (drmPlaybackError) {
+        setDrmError({
+          code: 'DRM_LICENSE_DENIED',
+          title: tr('Không thể khởi tạo phiên phát DRM', 'Unable to initialize DRM session'),
+          description: drmPlaybackError,
+        });
+        setInternalStatus('error');
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      if (isDrmLoading) {
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      if (!drmPlayback) {
+        setDrmError({
+          code: 'DRM_LICENSE_UNCONFIGURED',
+          title: tr(
+            'Chưa nhận được cấu hình phiên DRM từ máy chủ',
+            'DRM playback session configuration is missing'
+          ),
+          description: tr(
+            'Vui lòng thử tải lại bài giảng để đồng bộ quyền phát DRM.',
+            'Please retry loading this lesson to refresh your DRM playback token.'
+          ),
+        });
+        setInternalStatus('error');
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      void (async () => {
+        let chosenDrmSystem: KtnDrmSystem | null = null;
+        try {
+          const capReport = await detectDrmCapabilities();
           if (cancelled) return;
-          if (HlsLib.isSupported()) {
-            const hls = new HlsLib({
-              enableWorker: true,
-              lowLatencyMode: false,
-            });
-            hlsRef.current = hls;
+          onCapabilityCheckedRef.current?.(capReport);
 
-            hls.loadSource(activeUrl);
-            hls.attachMedia(videoEl);
+          const decision = selectDrmPlaybackPlan(capReport, drmPlayback, lang);
+          if (cancelled) return;
+          chosenDrmSystem = decision.drmSystem;
 
-            hls.on(HlsLib.Events.MANIFEST_PARSED, () => {
-              if (!cancelled) setInternalStatus('ready');
-            });
+          if (decision.mode === 'blocked') {
+            setDrmError(
+              decision.error ||
+                buildUnsupportedDrmError('DRM_BROWSER_UNSUPPORTED', capReport, lang)
+            );
+            setInternalStatus('error');
+            return;
+          }
 
-            let mediaRecoveredOnce = false;
-            hls.on(HlsLib.Events.ERROR, (_event, data) => {
-              if (cancelled) return;
-              if (data.fatal) {
-                switch (data.type) {
-                  case HlsLib.ErrorTypes.NETWORK_ERROR:
-                    if (fallbackVideoUrl && fallbackVideoUrl !== activeUrl) {
-                      cleanupHls();
-                      videoEl.src = fallbackVideoUrl;
-                    } else {
-                      cleanupHls();
-                      setInternalStatus('error');
-                    }
-                    break;
-                  case HlsLib.ErrorTypes.MEDIA_ERROR:
-                    if (!mediaRecoveredOnce) {
-                      mediaRecoveredOnce = true;
-                      hls.recoverMediaError();
-                    } else {
-                      cleanupHls();
-                      setInternalStatus('error');
-                    }
-                    break;
-                  default:
-                    cleanupHls();
-                    setInternalStatus('error');
-                    break;
+          if (decision.mode === 'hls-fallback') {
+            if (drmPolicy === 'drmRequired' || drmPlayback.policy === 'drmRequired') {
+              setDrmError(buildUnsupportedDrmError('DRM_BROWSER_UNSUPPORTED', capReport, lang));
+              setInternalStatus('error');
+              return;
+            }
+            const fallbackSrc =
+              drmPlayback.fallbackStreamUrl || streamUrl || fallbackVideoUrl;
+            if (!fallbackSrc) {
+              setDrmError(buildUnsupportedDrmError('DRM_CONTENT_NOT_PACKAGED', capReport, lang));
+              setInternalStatus('error');
+              return;
+            }
+            setFallbackNotice(decision.fallbackNotice);
+            startHlsOrDirectPlayback(fallbackSrc, false);
+            return;
+          }
+
+          const targetManifest =
+            decision.drmSystem === 'fairplay'
+              ? drmPlayback.manifests?.hlsFairPlayUrl
+              : drmPlayback.manifests?.dashUrl;
+
+          if (!targetManifest || !decision.drmSystem) {
+            setDrmError(buildUnsupportedDrmError('DRM_CONTENT_NOT_PACKAGED', capReport, lang));
+            setInternalStatus('error');
+            return;
+          }
+
+          const shaka = await loadShakaPlayer();
+          if (cancelled) return;
+
+          const player = new shaka.Player();
+          shakaRef.current = player;
+
+          const sessionToken = String(getStoredSession()?.token || '').trim();
+          const authHeaderValue =
+            sessionToken && sessionToken !== 'DEMO-MODE-ONLY'
+              ? toHttpHeaderSafeValue(`Bearer ${sessionToken}`)
+              : '';
+
+          const netEngine = player.getNetworkingEngine();
+          const licenseReqType = shaka.net?.NetworkingEngine?.RequestType?.LICENSE;
+          if (netEngine) {
+            netEngine.registerRequestFilter((type, request) => {
+              const primaryUri = Array.isArray(request.uris)
+                ? String(request.uris[0] || '')
+                : '';
+              if (primaryUri.includes('/api/ktn/drm/')) {
+                if (authHeaderValue) {
+                  request.headers['Authorization'] = authHeaderValue;
+                }
+                if (drmPlayback.drmToken) {
+                  request.headers['X-KTN-DRM-Token'] = drmPlayback.drmToken;
                 }
               }
+              if (
+                decision.drmSystem === 'fairplay' &&
+                licenseReqType !== undefined &&
+                type === licenseReqType &&
+                !request.headers['Content-Type'] &&
+                !request.headers['content-type']
+              ) {
+                request.headers['Content-Type'] = 'application/octet-stream';
+              }
             });
-          } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-            videoEl.src = activeUrl;
-            setInternalStatus('ready');
-          } else {
-            setInternalStatus('error');
+
+            if (decision.drmSystem === 'fairplay') {
+              netEngine.registerResponseFilter((type, response, context) => {
+                if (licenseReqType !== undefined && type === licenseReqType) {
+                  shaka.drm?.FairPlay?.commonFairPlayResponse?.(type, response, context);
+                }
+              });
+            }
           }
-        })
-        .catch(() => {
-          if (!cancelled) setInternalStatus('error');
-        });
-    } else {
-      videoEl.src = activeUrl;
-      setInternalStatus('ready');
+
+          const drmConfig: Record<string, unknown> = {};
+          if (decision.drmSystem === 'fairplay') {
+            drmConfig.initDataTransform = createFairPlayInitDataTransform(shaka);
+            drmConfig.servers = {
+              [DRM_KEY_SYSTEMS.fairplay]: drmPlayback.licenseEndpoints.fairplay,
+              [DRM_KEY_SYSTEMS.fairplayLegacy]: drmPlayback.licenseEndpoints.fairplay,
+            };
+            drmConfig.preferredKeySystems = [
+              DRM_KEY_SYSTEMS.fairplay,
+              DRM_KEY_SYSTEMS.fairplayLegacy,
+            ];
+            drmConfig.advanced = {
+              [DRM_KEY_SYSTEMS.fairplay]: {
+                serverCertificateUri: drmPlayback.fairplayCertificateUrl,
+              },
+              [DRM_KEY_SYSTEMS.fairplayLegacy]: {
+                serverCertificateUri: drmPlayback.fairplayCertificateUrl,
+              },
+            };
+          } else if (decision.drmSystem === 'playready') {
+            const prRob = capReport.playready.maxRobustness
+              ? [capReport.playready.maxRobustness]
+              : ['2000'];
+            drmConfig.keySystemsMapping = {
+              [DRM_KEY_SYSTEMS.playready]: DRM_KEY_SYSTEMS.playreadyRecommendation,
+            };
+            drmConfig.preferredKeySystems = [
+              DRM_KEY_SYSTEMS.playreadyRecommendation,
+              DRM_KEY_SYSTEMS.playready,
+            ];
+            drmConfig.servers = {
+              [DRM_KEY_SYSTEMS.playready]: drmPlayback.licenseEndpoints.playready,
+              [DRM_KEY_SYSTEMS.playreadyRecommendation]: drmPlayback.licenseEndpoints.playready,
+            };
+            drmConfig.advanced = {
+              [DRM_KEY_SYSTEMS.playreadyRecommendation]: {
+                videoRobustness: prRob,
+                audioRobustness: ['2000'],
+              },
+              [DRM_KEY_SYSTEMS.playready]: {
+                videoRobustness: prRob,
+                audioRobustness: ['2000'],
+              },
+            };
+          } else {
+            const wvRob = capReport.widevine.maxRobustness
+              ? [capReport.widevine.maxRobustness]
+              : ['SW_SECURE_CRYPTO'];
+            drmConfig.preferredKeySystems = [DRM_KEY_SYSTEMS.widevine];
+            drmConfig.servers = {
+              [DRM_KEY_SYSTEMS.widevine]: drmPlayback.licenseEndpoints.widevine,
+            };
+            drmConfig.advanced = {
+              [DRM_KEY_SYSTEMS.widevine]: {
+                videoRobustness: wvRob,
+                audioRobustness: ['SW_SECURE_CRYPTO'],
+              },
+            };
+          }
+
+          player.configure({
+            drm: drmConfig,
+            ...(decision.drmSystem === 'fairplay'
+              ? {
+                  streaming: {
+                    useNativeHlsForFairPlay: true,
+                    fallbackToNativeHlsOnMseError: true,
+                  },
+                }
+              : {}),
+            restrictions: { maxHeight: 1080 },
+          });
+
+          const syncShakaTracks = () => {
+            if (cancelled || !shakaRef.current) return;
+            const seenHeights = new Set<number>();
+            const nextOptions: VideoQualityOption[] = [];
+            const sortedTracks = [...(shakaRef.current.getVariantTracks() || [])].sort(
+              (a, b) =>
+                Number(b.height || 0) - Number(a.height || 0) ||
+                Number(b.bandwidth || 0) - Number(a.bandwidth || 0)
+            );
+            for (const track of sortedTracks) {
+              const h = Number(track.height || 0);
+              if (h > 0 && !seenHeights.has(h)) {
+                seenHeights.add(h);
+                nextOptions.push({
+                  id: String(track.id),
+                  label: `${h}p`,
+                  height: h,
+                  trackId: track.id,
+                });
+              }
+            }
+            nextOptions.sort((a, b) => b.height - a.height);
+            setQualityOptions(nextOptions);
+          };
+
+          player.addEventListener('trackschanged', syncShakaTracks);
+          player.addEventListener('error', (event: Event) => {
+            if (cancelled) return;
+            const detail =
+              'detail' in event
+                ? (event as CustomEvent<unknown>).detail
+                : event;
+            shakaErrorHandledRef.current = true;
+            cleanupShaka();
+            setDrmError(classifyDrmError(detail, decision.drmSystem, lang));
+            setInternalStatus('error');
+          });
+
+          await player.attach(videoEl);
+          if (cancelled) {
+            await player.destroy().catch(() => {});
+            return;
+          }
+
+          await player.load(targetManifest);
+          if (cancelled) {
+            await player.destroy().catch(() => {});
+            return;
+          }
+
+          if (!player.drmInfo()?.keySystem) {
+            throw new Error('DRM keySystem was not activated by browser CDM');
+          }
+
+          syncShakaTracks();
+          setActiveDrmSystem(decision.drmSystem);
+          setInternalStatus('ready');
+        } catch (err) {
+          if (cancelled) return;
+          shakaErrorHandledRef.current = true;
+          cleanupShaka();
+          setDrmError(classifyDrmError(err, chosenDrmSystem, lang));
+          setInternalStatus('error');
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        cleanupHls();
+        cleanupShaka();
+      };
     }
+
+    const activeUrl = streamUrl || fallbackVideoUrl;
+    if (!activeUrl) {
+      setInternalStatus('loading');
+      return () => {
+        cancelled = true;
+        cleanupHls();
+        cleanupShaka();
+      };
+    }
+
+    startHlsOrDirectPlayback(activeUrl, true);
 
     return () => {
       cancelled = true;
       cleanupHls();
+      cleanupShaka();
     };
-  }, [streamUrl, fallbackVideoUrl, statusOverride, cleanupHls]);
+  }, [
+    streamUrl,
+    fallbackVideoUrl,
+    drmEnabled,
+    drmPolicy,
+    drmPlayback,
+    isDrmLoading,
+    drmPlaybackError,
+    statusOverride,
+    lang,
+    tr,
+    cleanupHls,
+    cleanupShaka,
+  ]);
 
   const handleSpeedChange = (rate: number) => {
     setPlaybackRate(rate);
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
+    }
+  };
+
+  const handleQualityChange = (nextValue: string) => {
+    setSelectedQualityId(nextValue);
+    if (shakaRef.current) {
+      if (nextValue === 'auto') {
+        shakaRef.current.configure('abr.enabled', true);
+        return;
+      }
+      const targetId = Number(nextValue);
+      const track = (shakaRef.current.getVariantTracks() || []).find(
+        (t) => t.id === targetId
+      );
+      if (track) {
+        shakaRef.current.configure('abr.enabled', false);
+        shakaRef.current.selectVariantTrack(track, true);
+      }
+      return;
+    }
+    if (hlsRef.current) {
+      if (nextValue === 'auto') {
+        hlsRef.current.currentLevel = -1;
+      } else {
+        const levelIdx = Number(nextValue);
+        if (Number.isFinite(levelIdx)) {
+          hlsRef.current.currentLevel = levelIdx;
+        }
+      }
     }
   };
 
@@ -622,32 +1042,43 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             </div>
           )}
 
-          {/* State 2: Stream Error */}
+          {/* State 2: Stream / DRM Error */}
           {effectiveStatus === 'error' && (
             <div
               data-testid="video-error-state"
-              className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-stone-950/95 p-6 text-center text-white"
+              data-drm-error-code={drmError?.code || undefined}
+              className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-stone-950/95 p-5 text-center text-white"
             >
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/20 text-red-400 ring-1 ring-red-400/40">
-                <AlertTriangle className="h-7 w-7" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/20 text-red-400 ring-1 ring-red-400/40 sm:h-14 sm:w-14">
+                <AlertTriangle className="h-6 w-6 sm:h-7 sm:w-7" />
               </div>
-              <h3 className="mt-3 font-display text-base font-bold">
-                {tr('Không tải được video bài giảng', 'Unable to load lesson video')}
+              <h3 className="mt-2.5 font-display text-sm font-bold sm:text-base">
+                {drmError?.title ||
+                  tr('Không tải được video bài giảng', 'Unable to load lesson video')}
               </h3>
-              <p className="mt-1 max-w-md text-xs text-stone-400">
-                {tr(
-                  'Đường truyền mạng đang gián đoạn hoặc phiên xem video đã hết hạn. Hãy nhấn thử lại để phát tiếp.',
-                  'Your network connection was interrupted or the video session expired. Click retry to continue watching.'
-                )}
+              <p className="mt-1 max-w-md text-xs leading-relaxed text-stone-300">
+                {drmError?.description ||
+                  tr(
+                    'Đường truyền mạng đang gián đoạn hoặc phiên xem video đã hết hạn. Hãy nhấn thử lại để phát tiếp.',
+                    'Your network connection was interrupted or the video session expired. Click retry to continue watching.'
+                  )}
               </p>
+              {drmError?.browserGuidance && (
+                <p
+                  data-testid="drm-error-guidance"
+                  className="mt-2 max-w-md rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-medium text-amber-200"
+                >
+                  {drmError.browserGuidance}
+                </p>
+              )}
               <button
                 type="button"
                 data-testid="retry-video-stream-btn"
                 onClick={onRetryStream}
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-red-600"
+                className="mt-3.5 inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-red-600"
               >
                 <RotateCcw className="h-4 w-4" />
-                {tr('Thử tải lại video', 'Retry Video')}
+                <span>{tr('Thử tải lại video', 'Retry Video')}</span>
               </button>
             </div>
           )}
@@ -697,8 +1128,22 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               setIsMuted(Boolean(e.currentTarget.muted));
               setInternalStatus('ready');
             }}
-            onError={() => {
+            onError={(e) => {
+              if (shakaErrorHandledRef.current) {
+                return;
+              }
+              if (drmEnabled && shakaRef.current) {
+                const mediaErr = e.currentTarget.error;
+                setDrmError(
+                  classifyDrmError(
+                    { code: 3016, message: mediaErr?.message || '' },
+                    activeDrmSystem,
+                    lang
+                  )
+                );
+              }
               cleanupHls();
+              cleanupShaka();
               setInternalStatus('error');
             }}
             onEnded={() => {
@@ -722,6 +1167,17 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
           />
         </div>
+
+        {/* Non-DRM Compatibility Notice when drmFallbackAllowed is active */}
+        {fallbackNotice && (
+          <div
+            data-testid="drm-fallback-notice"
+            className="flex items-center gap-2 border-t border-amber-700/40 bg-amber-950/70 px-3 py-1.5 text-[11px] text-amber-200"
+          >
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+            <span>{fallbackNotice}</span>
+          </div>
+        )}
 
         {/* Custom Seek Bar + Bottom Control Strip (Inside Fullscreen Stage) */}
         <div className="border-t border-stone-800 bg-stone-900 px-3 py-2 text-xs text-stone-200">
@@ -798,10 +1254,44 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                     : tr('Sẵn sàng', 'Ready')}
                 </strong>
               </span>
+
+              {activeDrmSystem && (
+                <span
+                  data-testid="drm-active-badge"
+                  className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-950/60 px-2 py-1 text-[10.5px] font-bold uppercase tracking-wider text-emerald-300"
+                >
+                  <ShieldCheck className="h-3 w-3 text-emerald-400" />
+                  <span>
+                    {activeDrmSystem === 'fairplay'
+                      ? 'FairPlay DRM'
+                      : activeDrmSystem === 'playready'
+                      ? 'PlayReady DRM'
+                      : 'Widevine DRM'}
+                  </span>
+                </span>
+              )}
             </div>
 
-            {/* Speed, Q&A, Completion & Protected Fullscreen Actions */}
+            {/* Quality, Speed, Q&A, Completion & Protected Fullscreen Actions */}
             <div className="flex flex-wrap items-center gap-1.5">
+              {qualityOptions.length > 0 && (
+                <select
+                  data-testid="video-quality-select"
+                  value={selectedQualityId}
+                  onChange={(e) => handleQualityChange(e.target.value)}
+                  disabled={lockedControls}
+                  aria-label={tr('Chất lượng video', 'Video quality')}
+                  className="h-[26px] rounded-lg border border-stone-700 bg-stone-800 px-1.5 text-[10.5px] font-bold text-stone-200 focus:border-amber-500 focus:outline-none disabled:opacity-40"
+                >
+                  <option value="auto">{tr('Tự động', 'Auto')}</option>
+                  {qualityOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               <div className="flex items-center gap-0.5 rounded-lg bg-stone-800 p-0.5">
                 {[0.75, 1, 1.25, 1.5].map((rate) => (
                   <button

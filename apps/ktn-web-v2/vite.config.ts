@@ -1,19 +1,41 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createLocalWorkerHarness } from './server/local-worker-middleware.mjs';
+
+const SHAKA_BUNDLE_PATH = path.resolve(
+  __dirname,
+  './node_modules/shaka-player/dist/shaka-player.compiled-es2021.js'
+);
+
+function serveShakaVendorBundle(
+  req: { url?: string },
+  res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (b?: Buffer) => void }
+) {
+  if (req.url && req.url.split('?')[0] === '/vendor/shaka-player.compiled-es2021.js' && fs.existsSync(SHAKA_BUNDLE_PATH)) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.end(fs.readFileSync(SHAKA_BUNDLE_PATH));
+    return true;
+  }
+  return false;
+}
 
 function ktnLocalWorkerPlugin() {
   const harness = createLocalWorkerHarness();
   return {
     name: 'ktn-local-worker-bff',
     configureServer(server: { middlewares: { use: (fn: unknown) => void } }) {
-      server.middlewares.use((req: unknown, res: unknown, next: unknown) => {
+      server.middlewares.use((req: { url?: string }, res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (b?: Buffer) => void }, next: () => void) => {
+        if (serveShakaVendorBundle(req, res)) return;
         harness.handleRequest(req, res, next);
       });
     },
     configurePreviewServer(server: { middlewares: { use: (fn: unknown) => void } }) {
-      server.middlewares.use((req: unknown, res: unknown, next: unknown) => {
+      server.middlewares.use((req: { url?: string }, res: { statusCode: number; setHeader: (k: string, v: string) => void; end: (b?: Buffer) => void }, next: () => void) => {
+        if (serveShakaVendorBundle(req, res)) return;
         harness.handleRequest(req, res, next);
       });
     }

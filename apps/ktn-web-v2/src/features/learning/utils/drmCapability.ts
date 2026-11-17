@@ -65,11 +65,12 @@ export interface DrmPlaybackDecision {
   error: DrmStructuredError | null;
 }
 
-function detectEmbeddedWebView(ua: string): { isEmbedded: boolean; appName: string | null } {
+export function detectEmbeddedWebView(ua: string): { isEmbedded: boolean; appName: string | null } {
   const s = String(ua || '');
   if (/Zalo/i.test(s)) return { isEmbedded: true, appName: 'Zalo' };
   if (/FBAN|FBAV|FB_IAB/i.test(s)) return { isEmbedded: true, appName: 'Facebook' };
   if (/Instagram/i.test(s)) return { isEmbedded: true, appName: 'Instagram' };
+  if (/BytedanceWebview|TikTok/i.test(s)) return { isEmbedded: true, appName: 'TikTok' };
   if (/Line\//i.test(s)) return { isEmbedded: true, appName: 'LINE' };
   return { isEmbedded: false, appName: null };
 }

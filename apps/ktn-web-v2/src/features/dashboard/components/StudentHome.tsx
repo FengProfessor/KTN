@@ -299,18 +299,29 @@ export const StudentHome: React.FC = () => {
   const homeworks = homeworksQuery.data || [];
   const notificationsList = notificationsQuery.data?.notifications || [];
 
-  // Calculate real lesson progress for primary course
+  // Calculate real lesson progress for primary course using unified curriculum denominator
   const courseUnits = unitsQuery.data || [];
+  const mainCourseLessonNums = new Set(
+    courseUnits
+      .filter((u) => u.unitType !== 'workbook')
+      .map((u) => Number(u.lessonNumber || u.num || 1))
+  );
+  const effectiveLessonDenom = Math.max(
+    mainCourseLessonNums.size,
+    primaryCourse?.lessonsCount || 0
+  );
   const completedInCourse = primaryCourse
-    ? courseUnits.filter((u) => completedLessons[`${primaryCourse.id}:${u.num}`]).length
+    ? Array.from(mainCourseLessonNums).filter(
+        (lNum) => completedLessons[`${primaryCourse.id}:${lNum}`]
+      ).length
     : 0;
   const nextLesson =
     courseUnits.find((u) => primaryCourse && !completedLessons[`${primaryCourse.id}:${u.num}`]) ||
     courseUnits[0] ||
     null;
   const progressPercent =
-    courseUnits.length > 0
-      ? Math.round((completedInCourse / courseUnits.length) * 100)
+    effectiveLessonDenom > 0
+      ? Math.round((completedInCourse / effectiveLessonDenom) * 100)
       : undefined;
 
   // Official class schedule text (never assume unconfirmed text in live mode)

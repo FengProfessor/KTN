@@ -51,6 +51,7 @@ jobs:
           node --check tests/ktn_ux_and_performance_upgrade_suite.cjs
           node --check tests/ktn_scale_benchmark.mjs
           node --check tests/ktn_live_production_acceptance.cjs
+          node --check flashcards/tests/verify-flashcards.mjs
 
       - name: Verify Student Portal Build Consistency (No Unbuilt Template Drift)
         run: |
@@ -83,6 +84,7 @@ jobs:
           node ../../tests/ktn_ux_and_performance_upgrade_suite.cjs
           node ../../tests/ktn_postgres_migration_and_search_benchmark.mjs
           node ../../tests/ktn_scale_benchmark.mjs
+          node ../../flashcards/tests/verify-flashcards.mjs
           npm run typecheck
           npm run test:unit
           npm run build

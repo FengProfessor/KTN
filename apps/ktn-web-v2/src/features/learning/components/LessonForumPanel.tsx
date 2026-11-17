@@ -184,6 +184,13 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
   useEffect(() => {
     if (highlightQuestionId) {
       setExpandedQuestionId(highlightQuestionId);
+      const timer = window.setTimeout(() => {
+        const el = document.querySelector(`[data-forum-question-id="${CSS?.escape ? CSS.escape(highlightQuestionId) : highlightQuestionId}"]`);
+        if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
+          (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 150);
+      return () => window.clearTimeout(timer);
     }
   }, [highlightQuestionId]);
 
@@ -191,6 +198,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
     'ktn-lesson-forum',
     courseId,
     unitId,
+    lessonNumber,
     statusFilter,
     searchQuery,
     isDemoMode,
@@ -260,6 +268,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
       return ktnApi.getForumQuestions({
         courseId,
         unitId,
+        lessonNum: lessonNumber,
         status: statusFilter,
         q: searchQuery.trim() || undefined,
       });
@@ -1329,6 +1338,7 @@ export const LessonForumPanel: React.FC<LessonForumPanelProps> = ({
             return (
               <div
                 key={q.id}
+                data-forum-question-id={q.id}
                 data-testid={`forum-question-card-${q.id}`}
                 className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xs"
               >

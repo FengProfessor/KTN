@@ -54,6 +54,18 @@ export function getAudioExtensionFromMime(rawMime?: string | null): string {
   return 'wav';
 }
 
+const MAX_RECORDING_SECONDS = 300;
+
+function isE2EMicMockEnvironment(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (Boolean((window as unknown as { __KTN_E2E_MOCK_MIC__?: boolean }).__KTN_E2E_MOCK_MIC__)) {
+    return true;
+  }
+  const host = String(window.location?.hostname || '').toLowerCase();
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+  return Boolean(typeof navigator !== 'undefined' && navigator.webdriver === true && isLocalHost);
+}
+
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   onSendVoice,
   onRecordingReady,
@@ -68,13 +80,28 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   const [durationSec, setDurationSec] = useState(0);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [micError, setMicError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<number | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
   const durationSecRef = useRef<number>(0);
   const sessionIdRef = useRef<number>(0);
   const isCancelledRef = useRef<boolean>(false);
+
+  const updatePreviewUrl = (nextUrl: string | null) => {
+    const prev = previewUrlRef.current;
+    if (prev && prev !== nextUrl && prev.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(prev);
+      } catch {
+        // ignore revoke error
+      }
+    }
+    previewUrlRef.current = nextUrl;
+    setPreviewUrl(nextUrl);
+  };
 
   const createSyntheticWavBlob = (seconds: number): Blob => {
     const sampleRate = 8000;
@@ -129,13 +156,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     }
     onRecordingStateChange?.(false);
     const finalDur = Math.max(2, durationSecRef.current);
-    const validBlob =
-      rawBlob && rawBlob.size > 44
-        ? new Blob([rawBlob], { type: normalizeAudioMimeType(rawBlob.type) })
-        : createSyntheticWavBlob(finalDur);
+    let validBlob: Blob | null = null;
+    if (rawBlob && rawBlob.size > 44) {
+      validBlob = new Blob([rawBlob], { type: normalizeAudioMimeType(rawBlob.type) });
+    } else if (isE2EMicMockEnvironment()) {
+      validBlob = createSyntheticWavBlob(finalDur);
+    }
+    if (!validBlob) {
+      setMicError(
+        tr(
+          'Bản thu không có âm thanh. Vui lòng kiểm tra micro rồi bấm Thu lại.',
+          'No audio was captured. Please check your microphone and re-record.'
+        )
+      );
+      return;
+    }
     const url = URL.createObjectURL(validBlob);
     setRecordedBlob(validBlob);
-    setPreviewUrl(url);
+    updatePreviewUrl(url);
     onRecordingReady?.(validBlob, finalDur, url);
   };
 
@@ -165,67 +203,105 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     durationSecRef.current = 0;
     setDurationSec(0);
     setRecordedBlob(null);
-    setPreviewUrl(null);
+    updatePreviewUrl(null);
+    setMicError(null);
     chunksRef.current = [];
-    setIsRecording(true);
-    onRecordingStateChange?.(true);
 
-    timerRef.current = window.setInterval(() => {
-      durationSecRef.current += 1;
-      setDurationSec(durationSecRef.current);
-    }, 1000);
+    const hasMediaRecorder =
+      typeof navigator !== 'undefined' &&
+      Boolean(navigator.mediaDevices) &&
+      typeof navigator.mediaDevices.getUserMedia === 'function' &&
+      typeof window !== 'undefined' &&
+      'MediaRecorder' in window;
+
+    const beginTimer = () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = window.setInterval(() => {
+        durationSecRef.current += 1;
+        setDurationSec(durationSecRef.current);
+        if (durationSecRef.current >= MAX_RECORDING_SECONDS) {
+          stopRecording();
+        }
+      }, 1000);
+    };
+
+    if (!hasMediaRecorder) {
+      if (isE2EMicMockEnvironment()) {
+        setIsRecording(true);
+        onRecordingStateChange?.(true);
+        beginTimer();
+        return;
+      }
+      setIsRecording(false);
+      onRecordingStateChange?.(false);
+      setMicError(
+        tr(
+          'Trình duyệt này không hỗ trợ thu âm trực tiếp. Hãy mở trang bằng Chrome/Safari hoặc đính kèm tệp âm thanh.',
+          'This browser does not support in-app recording. Use Chrome/Safari or attach an audio file.'
+        )
+      );
+      return;
+    }
 
     try {
-      if (
-        typeof navigator !== 'undefined' &&
-        navigator.mediaDevices &&
-        typeof navigator.mediaDevices.getUserMedia === 'function' &&
-        typeof window !== 'undefined' &&
-        'MediaRecorder' in window
-      ) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (isCancelledRef.current || sessionIdRef.current !== currentSessionId) {
+        try {
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      streamRef.current = stream;
+      const preferredMime = getPreferredSupportedAudioMime();
+      const recorder = preferredMime
+        ? new MediaRecorder(stream, { mimeType: preferredMime })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        cleanupMediaStream();
         if (isCancelledRef.current || sessionIdRef.current !== currentSessionId) {
-          try {
-            stream.getTracks().forEach((t) => t.stop());
-          } catch {
-            // ignore
-          }
           return;
         }
-        streamRef.current = stream;
-        const preferredMime = getPreferredSupportedAudioMime();
-        const recorder = preferredMime
-          ? new MediaRecorder(stream, { mimeType: preferredMime })
-          : new MediaRecorder(stream);
-        mediaRecorderRef.current = recorder;
+        const cleanMime = normalizeAudioMimeType(
+          recorder.mimeType || preferredMime || 'audio/webm'
+        );
+        const blob =
+          chunksRef.current.length > 0
+            ? new Blob(chunksRef.current, { type: cleanMime })
+            : null;
+        finalizeRecording(blob, currentSessionId);
+      };
 
-        recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            chunksRef.current.push(e.data);
-          }
-        };
-
-        recorder.onstop = () => {
-          cleanupMediaStream();
-          if (isCancelledRef.current || sessionIdRef.current !== currentSessionId) {
-            return;
-          }
-          const cleanMime = normalizeAudioMimeType(
-            recorder.mimeType || preferredMime || 'audio/webm'
-          );
-          const blob =
-            chunksRef.current.length > 0
-              ? new Blob(chunksRef.current, { type: cleanMime })
-              : null;
-          finalizeRecording(blob, currentSessionId);
-        };
-
-        recorder.start(250);
-      }
+      recorder.start(250);
+      setIsRecording(true);
+      onRecordingStateChange?.(true);
+      beginTimer();
     } catch {
-      // Fallback for headless browser or when microphone permission is not granted in test environment
       mediaRecorderRef.current = null;
       cleanupMediaStream();
+      if (isE2EMicMockEnvironment()) {
+        setIsRecording(true);
+        onRecordingStateChange?.(true);
+        beginTimer();
+        return;
+      }
+      setIsRecording(false);
+      onRecordingStateChange?.(false);
+      setMicError(
+        tr(
+          'Chưa được cấp quyền Micro. Hãy bấm biểu tượng ổ khóa trên thanh địa chỉ → Cho phép Micro (hoặc Cài đặt iPhone/Android → Safari/Chrome → Micro) rồi bấm "Thu lại".',
+          'Microphone permission denied. Please allow Microphone access in browser settings and click Re-record.'
+        )
+      );
     }
   };
 
@@ -295,6 +371,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         }
       }
       cleanupMediaStream();
+      if (previewUrlRef.current && previewUrlRef.current.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(previewUrlRef.current);
+        } catch {
+          // ignore
+        }
+        previewUrlRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -305,6 +389,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
+  const canSendAudio = Boolean(recordedBlob) || isE2EMicMockEnvironment();
+
   return (
     <div
       data-testid="voice-recorder-panel"
@@ -313,7 +399,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       <div className="flex items-center gap-2.5">
         <span
           className={`flex h-8 w-8 items-center justify-center rounded-full ${
-            isRecording ? 'animate-pulse bg-red-600 text-white' : 'bg-emerald-700 text-white'
+            isRecording
+              ? 'animate-pulse bg-red-600 text-white'
+              : micError
+              ? 'bg-amber-600 text-white'
+              : 'bg-emerald-700 text-white'
           }`}
         >
           <Mic className="h-4 w-4" />
@@ -322,14 +412,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
           <p className="text-xs font-bold text-red-950">
             {isRecording
               ? tr('Đang thu âm luyện phát âm...', 'Recording pronunciation practice...')
+              : micError
+              ? tr('Chưa thu được âm thanh từ micro', 'Could not record from microphone')
               : tr(
                   'Đã thu âm xong (bản thu đã sẵn sàng nộp)',
                   'Recording complete (ready to submit)'
                 )}
           </p>
-          <p className="font-mono text-[11px] font-semibold text-red-700">
-            {tr('Thời lượng:', 'Duration:')} {formatTimer(Math.max(1, durationSec))}
-          </p>
+          {micError ? (
+            <p className="mt-0.5 max-w-md text-[11px] font-medium text-amber-800">{micError}</p>
+          ) : (
+            <p className="font-mono text-[11px] font-semibold text-red-700">
+              {tr('Thời lượng:', 'Duration:')} {formatTimer(Math.max(1, durationSec))}
+            </p>
+          )}
         </div>
       </div>
 
@@ -355,20 +451,22 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
           </button>
         ) : (
           <>
-            <button
-              type="button"
-              data-testid="send-voice-recording-btn"
-              onClick={() => {
-                const finalDur = Math.max(2, durationSecRef.current || durationSec);
-                const blob = recordedBlob || createSyntheticWavBlob(finalDur);
-                const url = previewUrl || URL.createObjectURL(blob);
-                onSendVoice(blob, finalDur, url);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-900"
-            >
-              <Send className="h-3.5 w-3.5" />
-              {resolvedSubmitLabel}
-            </button>
+            {canSendAudio && (
+              <button
+                type="button"
+                data-testid="send-voice-recording-btn"
+                onClick={() => {
+                  const finalDur = Math.max(2, durationSecRef.current || durationSec);
+                  const blob = recordedBlob || createSyntheticWavBlob(finalDur);
+                  const url = previewUrl || URL.createObjectURL(blob);
+                  onSendVoice(blob, finalDur, url);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-900"
+              >
+                <Send className="h-3.5 w-3.5" />
+                {resolvedSubmitLabel}
+              </button>
+            )}
             <button
               type="button"
               data-testid="retry-voice-recording-btn"

@@ -599,6 +599,12 @@ export const CANONICAL_IZTEACH_COURSE_TITLES: Record<string, CanonicalCourseMeta
     title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
     shortTitle: 'HSK1 3.0'
   },
+  '6af2d9719a8b000002ad4bc0': {
+    id: '6af2d9719a8b000002ad4bc0',
+    code: 'HSK2-30',
+    title: 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)',
+    shortTitle: 'HSK2 3.0'
+  },
   '65e7704a9ea90c00080d5195': {
     id: '65e7704a9ea90c00080d5195',
     code: 'CFK-01',

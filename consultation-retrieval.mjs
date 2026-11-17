@@ -10,6 +10,13 @@ function normalize(value = '') {
     .replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+export function isAdultTutoringRequest(question) {
+  const text = normalize(question);
+  if (/\bnguoi di lam\b/.test(text)) return true;
+  if (/\b(?:cho (?:be|con|chau)|(?:be|con|chau) (?:nha |toi |chi |anh )?\d{1,2} tuoi|tre em|thieu nhi)\b/.test(text)) return false;
+  return /\b(?:tieng trung cong so|giao tiep (?:trong )?cong viec|tieng trung thuong mai|(?:goi|khoa) (?:963|1500)\s?k|963\s?k (?:va|voi|vs) 1500\s?k)\b/.test(text);
+}
+
 function terms(value) {
   const words = normalize(value).split(' ').filter(Boolean);
   return new Set(words.flatMap((word, index) => {

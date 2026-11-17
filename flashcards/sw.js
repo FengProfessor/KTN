@@ -30,7 +30,12 @@ const CORE_ASSETS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(CORE_ASSETS)).then(() => self.skipWaiting())
+    caches
+      .open(SHELL_CACHE)
+      .then((cache) =>
+        Promise.allSettled(CORE_ASSETS.map((asset) => cache.add(encodeURI(asset))))
+      )
+      .then(() => self.skipWaiting())
   );
 });
 

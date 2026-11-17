@@ -241,6 +241,7 @@ export const BalloonPopGame: React.FC<BalloonPopGameProps> = ({ levelId, onBack 
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
   const animationFrameRef = useRef<number | null>(null);
   const lastTickTimeRef = useRef<number>(Date.now());
+  const balloonElsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
   const seenWordIdsRef = useRef<Set<string>>(new Set());
   const seenLevelRef = useRef<string>(levelId);
   const lastTargetIdRef = useRef<string | null>(null);
@@ -422,7 +423,17 @@ export const BalloonPopGame: React.FC<BalloonPopGameProps> = ({ levelId, onBack 
         }
 
         balloonsRef.current = nextBalloons;
-        setBalloons(nextBalloons);
+        if (hasExitedTop) {
+          setBalloons(nextBalloons);
+        } else {
+          for (let i = 0; i < nextBalloons.length; i++) {
+            const b = nextBalloons[i];
+            const el = balloonElsRef.current.get(b.id);
+            if (el) {
+              el.style.top = `${b.yPercent}%`;
+            }
+          }
+        }
       }
 
       if (!cancelled) {
@@ -679,6 +690,10 @@ export const BalloonPopGame: React.FC<BalloonPopGameProps> = ({ levelId, onBack 
             <button
               type="button"
               key={balloon.id}
+              ref={(el) => {
+                if (el) balloonElsRef.current.set(balloon.id, el);
+                else balloonElsRef.current.delete(balloon.id);
+              }}
               data-testid={`balloon-item-${idx}`}
               onClick={() => handlePopBalloon(balloon)}
               className={`group absolute z-10 flex -translate-x-1/2 -translate-y-1/2 appearance-none flex-col items-center border-0 bg-transparent p-0 focus:outline-none ${

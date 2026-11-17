@@ -32,6 +32,7 @@ import {
   formatCourseDurationPresetLabel,
   getCourseDurationPresetOptions,
   getCourseDurationUnitOptions,
+  normalizeVietnameseText,
   parseCourseDurationPreset,
   resolveStudentOnlineCourses,
   type CourseDurationUnitOption,
@@ -78,7 +79,11 @@ export interface StudentDetailDrawerProps {
     mode: CourseDurationMode;
   }) => Promise<unknown>;
   onRevokeCourse: (params: { email: string; courseId: string }) => Promise<unknown>;
-  onAssignClass: (params: { email: string; classCode: string | null }) => Promise<unknown>;
+  onAssignClass: (params: {
+    email: string;
+    classCode: string | null;
+    enrolledClasses?: string[];
+  }) => Promise<unknown>;
   onReplaceAllCourses: (params: { email: string; courseIds: string[] }) => Promise<unknown>;
   onUpdateProfile: (params: {
     email: string;
@@ -153,6 +158,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
 
   // Section C: Live Class Assignment state (Always starts neutral!)
   const [selectedClassCode, setSelectedClassCode] = useState('');
+  const [selectedEnrolledClasses, setSelectedEnrolledClasses] = useState<string[]>([]);
   const [showUnassignConfirm, setShowUnassignConfirm] = useState(false);
 
   // Section E: Account Lifecycle state
@@ -252,15 +258,29 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   );
 
   const filteredCatalog = useMemo(() => {
-    const q = courseSearchQuery.trim().toLowerCase();
-    if (!q) return disambiguatedCatalog;
-    return disambiguatedCatalog.filter(
-      (c) =>
-        c.title.toLowerCase().includes(q) ||
-        (c.shortTitle || '').toLowerCase().includes(q) ||
-        (c.code || '').toLowerCase().includes(q) ||
-        c.id.toLowerCase().includes(q)
-    );
+    const rawQ = courseSearchQuery.trim().toLowerCase();
+    const normQ = normalizeVietnameseText(courseSearchQuery);
+    if (!rawQ && !normQ) return disambiguatedCatalog;
+    const compactQ = normQ.replace(/[\s\-_]+/g, '');
+    return disambiguatedCatalog.filter((c) => {
+      const fields = [
+        c.title,
+        c.shortTitle,
+        c.displayLabel,
+        c.fullDisplayLabel,
+        c.code,
+        c.id,
+      ];
+      return fields.some((f) => {
+        if (!f) return false;
+        const low = f.toLowerCase();
+        if (rawQ && low.includes(rawQ)) return true;
+        const normF = normalizeVietnameseText(f);
+        if (normQ && normF.includes(normQ)) return true;
+        if (compactQ && normF.replace(/[\s\-_]+/g, '').includes(compactQ)) return true;
+        return false;
+      });
+    });
   }, [disambiguatedCatalog, courseSearchQuery]);
 
   const selectedCoursesPreview = useMemo(
@@ -282,6 +302,24 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   );
 
   const currentClassCode = student?.class_code ? String(student.class_code).trim() : '';
+  const currentEnrolledClasses = useMemo(() => {
+    const set = new Set<string>();
+    if (Array.isArray(student?.enrolledClasses)) {
+      for (const code of student.enrolledClasses) {
+        const clean = String(code || '').trim().toUpperCase();
+        if (clean) set.add(clean);
+      }
+    }
+    if (currentClassCode) {
+      set.add(currentClassCode.toUpperCase());
+    }
+    return Array.from(set);
+  }, [student?.enrolledClasses, currentClassCode]);
+
+  useEffect(() => {
+    setSelectedEnrolledClasses(currentEnrolledClasses);
+  }, [student?.email, currentEnrolledClasses]);
+
   const matchedClassItem = useMemo(() => {
     if (!currentClassCode) return null;
     return (
@@ -520,9 +558,13 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     }
     onClearError();
     try {
+      const nextEnrolled = Array.from(
+        new Set([selectedClassCode.toUpperCase(), ...selectedEnrolledClasses])
+      );
       await onAssignClass({
         email: student.email,
         classCode: selectedClassCode,
+        enrolledClasses: nextEnrolled,
       });
       setSelectedClassCode('');
     } catch {
@@ -537,9 +579,30 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
       await onAssignClass({
         email: student.email,
         classCode: null,
+        enrolledClasses: [],
       });
       setShowUnassignConfirm(false);
       setSelectedClassCode('');
+    } catch {
+      // Error is displayed via actionError prop
+    }
+  };
+
+  const handleSaveMultiClasses = async () => {
+    if (!student || isAssigningClass) return;
+    onClearError();
+    const cleaned = Array.from(
+      new Set(selectedEnrolledClasses.map((c) => c.trim().toUpperCase()).filter(Boolean))
+    );
+    const nextPrimary = cleaned.includes(currentClassCode.toUpperCase())
+      ? currentClassCode
+      : cleaned[0] || null;
+    try {
+      await onAssignClass({
+        email: student.email,
+        classCode: nextPrimary,
+        enrolledClasses: cleaned,
+      });
     } catch {
       // Error is displayed via actionError prop
     }
@@ -1819,6 +1882,78 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   </p>
                 )}
             </form>
+
+            {/* Optional Multi-Class Enrollment Checkboxes */}
+            {classesList.some((cls) => cls.active !== false) && (
+              <div
+                data-testid="drawer-multiclass-section"
+                className="mt-3 space-y-2 border-t border-stone-100 pt-2.5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-stone-700">
+                    {tr(
+                      'Học nhiều lớp cùng lúc (tùy chọn)',
+                      'Multi-class enrollment (optional)'
+                    )}
+                  </span>
+                  {currentEnrolledClasses.length > 1 && (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                      {currentEnrolledClasses.length} {tr('lớp', 'classes')}
+                    </span>
+                  )}
+                </div>
+                <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-stone-200 bg-stone-50/70 p-2">
+                  {classesList
+                    .filter((cls) => cls.active !== false)
+                    .map((cls) => {
+                      const code = cls.id.toUpperCase();
+                      const checked = selectedEnrolledClasses.includes(code);
+                      return (
+                        <label
+                          key={cls.id}
+                          className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold transition-colors ${
+                            checked
+                              ? 'border-red-800 bg-red-50 text-red-900'
+                              : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            data-testid={`drawer-multiclass-checkbox-${cls.id}`}
+                            checked={checked}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setSelectedEnrolledClasses((prev) =>
+                                isChecked
+                                  ? Array.from(new Set([...prev, code]))
+                                  : prev.filter((item) => item !== code)
+                              );
+                            }}
+                            className="h-3.5 w-3.5 accent-red-800"
+                          />
+                          <span>{cls.id}</span>
+                        </label>
+                      );
+                    })}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    data-testid="drawer-save-multiclass-btn"
+                    disabled={
+                      isAssigningClass ||
+                      (selectedEnrolledClasses.length === currentEnrolledClasses.length &&
+                        selectedEnrolledClasses.every((c) => currentEnrolledClasses.includes(c)))
+                    }
+                    onClick={handleSaveMultiClasses}
+                    className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-bold text-red-900 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isAssigningClass && <Loader2 className="h-3 w-3 animate-spin" />}
+                    <span>{tr('Lưu danh sách lớp', 'Save enrolled classes')}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* =============================================================== */}

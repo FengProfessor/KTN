@@ -562,14 +562,69 @@ export function createLocalWorkerHarness() {
       .trim();
   }
 
+  function matchesJsonbContainsMock(rawCell, jsonTarget) {
+    if (!Array.isArray(rawCell)) return false;
+    try {
+      const needles = JSON.parse(jsonTarget);
+      if (!Array.isArray(needles)) return false;
+      return needles.every((needle) => {
+        if (needle && typeof needle === 'object') {
+          return rawCell.some(
+            (item) =>
+              item &&
+              typeof item === 'object' &&
+              Object.keys(needle).every((k) => String(item[k] ?? '') === String(needle[k] ?? ''))
+          );
+        }
+        return rawCell.some(
+          (item) => (typeof item === 'string' || typeof item === 'number') && String(item) === String(needle)
+        );
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  function comparePostgrestScalar(rawCell, target, op) {
+    if (rawCell === null || rawCell === undefined || rawCell === '') return false;
+    const rawStr = String(rawCell);
+    const targetStr = String(target ?? '');
+    let diff = null;
+    if (targetStr.includes('-')) {
+      const cellTs = Date.parse(rawStr);
+      const targetTs = Date.parse(targetStr);
+      if (Number.isFinite(cellTs) && Number.isFinite(targetTs)) {
+        diff = cellTs - targetTs;
+      }
+    }
+    if (diff === null) {
+      const cellNum = Number(rawStr);
+      const targetNum = Number(targetStr);
+      if (rawStr.trim() !== '' && targetStr.trim() !== '' && Number.isFinite(cellNum) && Number.isFinite(targetNum)) {
+        diff = cellNum - targetNum;
+      } else {
+        diff = rawStr === targetStr ? 0 : (rawStr > targetStr ? 1 : -1);
+      }
+    }
+    if (op === 'gt') return diff > 0;
+    if (op === 'gte') return diff >= 0;
+    if (op === 'lt') return diff < 0;
+    if (op === 'lte') return diff <= 0;
+    return true;
+  }
+
   function evalSingleClause(row, clause) {
-    const m = clause.match(/^([a-zA-Z0-9_]+)\.(eq|neq|ilike|like|is)\.(.+)$/);
+    const m = clause.match(/^([a-zA-Z0-9_]+)\.(eq|neq|gt|gte|lt|lte|cs|ilike|like|is)\.(.+)$/);
     if (!m) return true;
     const [, col, op, v] = m;
     const rawCell = row[col];
     if (op === 'is') {
       if (v === 'null') return rawCell === null || rawCell === undefined || rawCell === '';
       return true;
+    }
+    if (op === 'cs') return matchesJsonbContainsMock(rawCell, v);
+    if (op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte') {
+      return comparePostgrestScalar(rawCell, v, op);
     }
     const cell = String(rawCell ?? '');
     if (op === 'eq') return cell === v;
@@ -603,6 +658,16 @@ export function createLocalWorkerHarness() {
       } else if (rawVal.startsWith('neq.')) {
         const target = rawVal.slice(4);
         if (String(row[k] ?? '') === target) return false;
+      } else if (rawVal.startsWith('gte.')) {
+        if (!comparePostgrestScalar(row[k], rawVal.slice(4), 'gte')) return false;
+      } else if (rawVal.startsWith('gt.')) {
+        if (!comparePostgrestScalar(row[k], rawVal.slice(3), 'gt')) return false;
+      } else if (rawVal.startsWith('lte.')) {
+        if (!comparePostgrestScalar(row[k], rawVal.slice(4), 'lte')) return false;
+      } else if (rawVal.startsWith('lt.')) {
+        if (!comparePostgrestScalar(row[k], rawVal.slice(3), 'lt')) return false;
+      } else if (rawVal.startsWith('cs.')) {
+        if (!matchesJsonbContainsMock(row[k], rawVal.slice(3))) return false;
       } else if (rawVal.startsWith('is.')) {
         const target = rawVal.slice(3).toLowerCase();
         if (target === 'null' && row[k] !== null && row[k] !== undefined && row[k] !== '') return false;
@@ -1300,42 +1365,63 @@ export function createLocalWorkerHarness() {
         const rawLessons = allCoursesLessons[cid] || [];
         const units = [];
         let uIdx = 0;
+        const parseDurationSeconds = (durStr, fallbackSec = 600) => {
+          if (typeof durStr === 'number' && Number.isFinite(durStr) && durStr > 0) return Math.round(durStr);
+          const m = String(durStr || '').trim().match(/^(\d+):(\d{1,2})$/);
+          if (m) return Number(m[1]) * 60 + Number(m[2]);
+          return fallbackSec;
+        };
         for (let idx = 0; idx < rawLessons.length; idx++) {
           const lesson = rawLessons[idx];
-          const part0 = (Array.isArray(lesson.parts) && lesson.parts[0]) || {};
-          const videoUnitId = part0.videoUnitId || part0.unitId || `6adadbcaf75fe5000247ca${String(idx + 71).padStart(2, '0')}`;
-          const hwUnitId = part0.unitId || videoUnitId;
+          const partsList = Array.isArray(lesson.parts) && lesson.parts.length > 0 ? lesson.parts : [{}];
           const syllabus = (Array.isArray(lesson.docs) ? lesson.docs : []).map((d, dIdx) => ({
             _id: `${cid}-doc-${idx + 1}-${dIdx + 1}`,
             title: d.name || `Tài liệu Bài ${idx + 1}`,
             link: String(d.url || '').replace(/^https?:\/\/[^/]+\//, ''),
             origin: { link: String(d.url || '').replace(/^https?:\/\/[^/]+\//, '') }
           }));
-          units.push({
-            _id: videoUnitId,
-            id: videoUnitId,
-            index: uIdx++,
-            num: lesson.num || idx + 1,
-            course: cid,
-            title: lesson.titleZh || part0.title || `Bài ${idx + 1}`,
-            type: 'video',
-            video: part0.videoId || part0.streamUrl || '',
-            videoId: part0.videoId || '',
-            streamUrl: part0.streamUrl || '',
-            posterUrl: part0.posterUrl || '',
-            duration: lesson.duration || part0.duration || '12:00',
-            syllabus
-          });
-          if (hwUnitId !== videoUnitId) {
+          const isMultiPartLesson = partsList.length > 1;
+          for (let pIdx = 0; pIdx < partsList.length; pIdx++) {
+            const pt = partsList[pIdx] || {};
+            const videoUnitId = pt.videoUnitId || pt.unitId || `6adadbcaf75fe5000247ca${String(idx + 71).padStart(2, '0')}`;
+            const hwUnitId = pt.unitId || videoUnitId;
+            const lNum = lesson.num || idx + 1;
+            const partDuration = isMultiPartLesson ? (pt.duration || lesson.duration || '10:00') : (lesson.duration || pt.duration || '12:00');
+            const partDurationSeconds = pt.durationSeconds || parseDurationSeconds(partDuration, isMultiPartLesson ? 600 : 720);
+            const partNumber = isMultiPartLesson
+              ? `${lNum}.${pt.partNum || pt.part || (pIdx + 1)}`
+              : String(pt.partNum || pt.part || lNum);
+            const partTitle = isMultiPartLesson
+              ? (pt.partTitle || pt.title || `Bài ${partNumber}`)
+              : (lesson.titleZh || pt.title || `Bài ${idx + 1}`);
             units.push({
-              _id: hwUnitId,
-              id: hwUnitId,
+              _id: videoUnitId,
+              id: videoUnitId,
               index: uIdx++,
-              num: lesson.num || idx + 1,
+              num: lNum,
+              lessonNumber: lNum,
+              ...(isMultiPartLesson ? { partNumber, partTitle, durationSeconds: partDurationSeconds } : {}),
               course: cid,
-              title: `Assignment ${lesson.num || idx + 1}`,
-              type: 'homework'
+              title: partTitle,
+              type: 'video',
+              video: pt.videoId || pt.streamUrl || '',
+              videoId: pt.videoId || '',
+              streamUrl: pt.streamUrl || '',
+              posterUrl: pt.posterUrl || '',
+              duration: partDuration,
+              syllabus: pIdx === 0 ? syllabus : []
             });
+            if (hwUnitId !== videoUnitId) {
+              units.push({
+                _id: hwUnitId,
+                id: hwUnitId,
+                index: uIdx++,
+                num: lNum,
+                course: cid,
+                title: `Assignment ${lNum}`,
+                type: 'homework'
+              });
+            }
           }
         }
         return new Response(JSON.stringify(units), {
@@ -1748,7 +1834,13 @@ export function createLocalWorkerHarness() {
           body: rawBody
         });
 
-        const workerRes = await workerModule.fetch(workerReq, env);
+        const workerCtx = {
+          waitUntil(p) {
+            Promise.resolve(p).catch(() => {});
+          },
+          passThroughOnException() {}
+        };
+        const workerRes = await workerModule.fetch(workerReq, env, workerCtx);
         res.statusCode = workerRes.status;
         workerRes.headers.forEach((val, key) => {
           res.setHeader(key, val);

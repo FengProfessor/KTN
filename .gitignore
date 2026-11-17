@@ -21,6 +21,8 @@ __pycache__/
 *.jpg
 *.jpeg
 *.webp
+*.xlsx
+KTN_*.xlsx
 assets/
 assets_source/
 

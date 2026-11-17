@@ -16,9 +16,22 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import type { KtnLearningMaterial } from '@/types/ktn.types';
 import { buildLearnerWatermarkLines } from '../utils/watermark';
 
-const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-const PDFJS_WORKER_CDN_URL =
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const PDFJS_CDN_SOURCES = [
+  {
+    lib: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    worker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  },
+  {
+    lib: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+    worker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+  },
+  {
+    lib: 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
+    worker: 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+  },
+];
+
+const MAX_PDF_CANVAS_PIXELS = 12_582_912;
 
 interface PdfJsPageViewport {
   width: number;
@@ -31,6 +44,7 @@ interface PdfJsPage {
     canvasContext: CanvasRenderingContext2D;
     viewport: PdfJsPageViewport;
   }) => { promise: Promise<void>; cancel?: () => void };
+  cleanup?: () => void;
 }
 
 interface PdfJsDocument {
@@ -51,38 +65,51 @@ interface PdfJsLibGlobal {
 
 let pdfJsLoadPromise: Promise<PdfJsLibGlobal> | null = null;
 
+function loadPdfJsScript(libUrl: string, workerUrl: string): Promise<PdfJsLibGlobal> {
+  return new Promise<PdfJsLibGlobal>((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = libUrl;
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.onload = () => {
+      const loaded = (window as unknown as { pdfjsLib?: PdfJsLibGlobal }).pdfjsLib;
+      if (loaded) {
+        loaded.GlobalWorkerOptions.workerSrc = workerUrl;
+        resolve(loaded);
+      } else {
+        reject(new Error('pdfjsLib unavailable after script load'));
+      }
+    };
+    script.onerror = () => {
+      script.remove();
+      reject(new Error(`CDN failed: ${libUrl}`));
+    };
+    document.head.appendChild(script);
+  });
+}
+
 function loadPdfJsFromCdn(): Promise<PdfJsLibGlobal> {
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('PDF viewer requires browser environment'));
   }
   const existing = (window as unknown as { pdfjsLib?: PdfJsLibGlobal }).pdfjsLib;
   if (existing) {
-    existing.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN_URL;
+    existing.GlobalWorkerOptions.workerSrc = PDFJS_CDN_SOURCES[0].worker;
     return Promise.resolve(existing);
   }
   if (pdfJsLoadPromise) return pdfJsLoadPromise;
 
-  pdfJsLoadPromise = new Promise<PdfJsLibGlobal>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = PDFJS_CDN_URL;
-    script.async = true;
-    script.crossOrigin = 'anonymous';
-    script.onload = () => {
-      const loaded = (window as unknown as { pdfjsLib?: PdfJsLibGlobal }).pdfjsLib;
-      if (loaded) {
-        loaded.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN_URL;
-        resolve(loaded);
-      } else {
-        pdfJsLoadPromise = null;
-        reject(new Error('pdfjsLib unavailable after script load'));
+  pdfJsLoadPromise = (async () => {
+    for (const source of PDFJS_CDN_SOURCES) {
+      try {
+        return await loadPdfJsScript(source.lib, source.worker);
+      } catch {
+        // try next fallback CDN mirror
       }
-    };
-    script.onerror = () => {
-      pdfJsLoadPromise = null;
-      reject(new Error('Không tải được trình xem tài liệu từ CDN'));
-    };
-    document.head.appendChild(script);
-  });
+    }
+    pdfJsLoadPromise = null;
+    throw new Error('Không tải được trình xem tài liệu PDF từ các máy chủ CDN. Vui lòng thử lại.');
+  })();
   return pdfJsLoadPromise;
 }
 
@@ -139,7 +166,9 @@ export const ProtectedPdfModal: React.FC<ProtectedPdfModalProps> = ({
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(initialPage);
   const [pageInput, setPageInput] = useState<string>(String(initialPage));
-  const [zoom, setZoom] = useState<number>(1.2);
+  const [zoom, setZoom] = useState<number>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 1.0 : 1.2
+  );
   const [isLoadingDoc, setIsLoadingDoc] = useState<boolean>(true);
   const [isRenderingPage, setIsRenderingPage] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -210,6 +239,10 @@ export const ProtectedPdfModal: React.FC<ProtectedPdfModalProps> = ({
         // ignore
       }
       pdfDocRef.current = null;
+      if (canvasRef.current) {
+        canvasRef.current.width = 0;
+        canvasRef.current.height = 0;
+      }
     };
   }, [material, loadDocument]);
 
@@ -222,6 +255,7 @@ export const ProtectedPdfModal: React.FC<ProtectedPdfModalProps> = ({
     setIsRenderingPage(true);
 
     (async () => {
+      let page: PdfJsPage | null = null;
       try {
         try {
           renderTaskRef.current?.cancel?.();
@@ -229,14 +263,26 @@ export const ProtectedPdfModal: React.FC<ProtectedPdfModalProps> = ({
           // ignore
         }
         const safePage = Math.max(1, Math.min(numPages || 1, pageNumber));
-        const page = await doc.getPage(safePage);
+        page = await doc.getPage(safePage);
         if (cancelled) return;
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const viewport = page.getViewport({ scale: zoom * dpr });
+        const rawViewport = page.getViewport({ scale: zoom * dpr });
+        const rawArea = Math.max(1, rawViewport.width * rawViewport.height);
+        const areaClampScale =
+          rawArea > MAX_PDF_CANVAS_PIXELS ? Math.sqrt(MAX_PDF_CANVAS_PIXELS / rawArea) : 1;
+        const effectiveDpr = Math.max(1, dpr * areaClampScale);
+        const viewport =
+          areaClampScale < 1
+            ? page.getViewport({ scale: zoom * effectiveDpr })
+            : rawViewport;
         canvas.width = Math.max(1, Math.floor(viewport.width));
         canvas.height = Math.max(1, Math.floor(viewport.height));
-        canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
-        canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
+        const cssWidth = Math.round(viewport.width / effectiveDpr);
+        const cssHeight = Math.round(viewport.height / effectiveDpr);
+        canvas.style.width = `${cssWidth}px`;
+        canvas.style.height = `${cssHeight}px`;
+        canvas.style.maxWidth = '100%';
+        canvas.style.height = 'auto';
 
         let ctx: CanvasRenderingContext2D | null = null;
         try {
@@ -255,6 +301,11 @@ export const ProtectedPdfModal: React.FC<ProtectedPdfModalProps> = ({
       } catch {
         // ignore render cancellation errors during fast page switch
       } finally {
+        try {
+          page?.cleanup?.();
+        } catch {
+          // ignore cleanup failure
+        }
         if (!cancelled) setIsRenderingPage(false);
       }
     })();

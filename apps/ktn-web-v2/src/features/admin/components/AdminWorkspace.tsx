@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import {
   parseKtnCenterBulkCsv,
+  tokenizeMultilineCsv,
   KTN_CENTER_SAMPLE_CSV,
   type BulkImportParseResult,
 } from '@/lib/bulkImportParser';
@@ -57,11 +58,13 @@ import {
   getCourseDurationUnitOptions,
   addPresetToCalendarDate,
   buildCourseDurationPreset,
+  CANONICAL_IZTEACH_COURSE_TITLES,
   disambiguateCatalogCourses,
   extractCalendarDateFromLimitTime,
   formatCourseDurationPresetLabel,
   formatVnd,
   getHoChiMinhCalendarDateString,
+  normalizeVietnameseText,
   parseCourseDurationPreset,
   resolveStudentOnlineCourses,
   toIzTeachExpiresAtIso,
@@ -178,6 +181,8 @@ export const AdminWorkspace: React.FC = () => {
     return rawOrderId || null;
   });
   const [orderSearchInput, setOrderSearchInput] = useState('');
+  const [ordersPage, setOrdersPage] = useState(1);
+  const ordersPageSize = 50;
   const [orderFilter, setOrderFilter] = useState<AdminOrderFilterKey>('all');
   const [orderDrawerError, setOrderDrawerError] = useState<string | null>(null);
   const [orderEphemeralPasswords, setOrderEphemeralPasswords] = useState<
@@ -224,6 +229,12 @@ export const AdminWorkspace: React.FC = () => {
   const [bulkPreviewTab, setBulkPreviewTab] = useState<
     'classes' | 'teachers' | 'students' | 'warnings'
   >('classes');
+  const [bulkStudentsPage, setBulkStudentsPage] = useState(1);
+  const bulkStudentsPageSize = 50;
+  const [bulkImportProgress, setBulkImportProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [isAnalyzingBulk, setIsAnalyzingBulk] = useState(false);
   const [isExecutingBulk, setIsExecutingBulk] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
@@ -308,11 +319,108 @@ export const AdminWorkspace: React.FC = () => {
         setShowBulkImportModal(false);
         return;
       }
-      const res = await ktnApi.bulkImportCenterData({
-        csvText: raw,
-        dryRun: false,
-        defaultPassword: bulkDefaultPassword.trim() || '12345678',
-      });
+      const encodeCsvCell = (v: string) => {
+        const s = String(v ?? '');
+        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const splitBulkCsvIntoChunks = (rawCsv: string, maxRows = 200): string[] => {
+        const allRows = tokenizeMultilineCsv(rawCsv);
+        if (allRows.length <= maxRows + 1) return [rawCsv];
+
+        let headerRow: string[] | null = null;
+        const dataRowsWithContext: string[][] = [];
+        let activeCol0 = '';
+        let activeCol1 = '';
+
+        for (let i = 0; i < allRows.length; i++) {
+          const row = allRows[i];
+          const c0 = String(row[0] || '').trim();
+          const c1 = String(row[1] || '').trim();
+          const c2 = String(row[2] || '').trim();
+          const c3 = String(row[3] || '').trim();
+          const c4 = String(row[4] || '').trim();
+          if (!c0 && !c1 && !c2 && !c3 && !c4) continue;
+
+          const probe = normalizeVietnameseText(`${c0}|${c1}|${c2}`).toUpperCase();
+          const isHeader =
+            ((probe.includes('LOP') || probe.includes('KHOA HOC')) &&
+              (probe.includes('LICH') ||
+                probe.includes('GIAO VIEN') ||
+                probe.includes('GIANG VIEN') ||
+                probe.includes('HOC SINH') ||
+                probe.includes('HOC VIEN'))) ||
+            ((probe.includes('GIAO VIEN') || probe.includes('GIANG VIEN')) &&
+              (probe.includes('HOC SINH') || probe.includes('HOC VIEN')));
+
+          if (isHeader && dataRowsWithContext.length === 0 && !headerRow) {
+            headerRow = row.slice(0, 5);
+            continue;
+          }
+
+          if (c0) {
+            activeCol0 = String(row[0] || '');
+            if (!c1) activeCol1 = '';
+          }
+          if (c1) {
+            activeCol1 = String(row[1] || '');
+          }
+
+          dataRowsWithContext.push([
+            c0 ? String(row[0] || '') : activeCol0,
+            c1 ? String(row[1] || '') : c0 ? '' : activeCol1,
+            String(row[2] || ''),
+            String(row[3] || ''),
+            String(row[4] || ''),
+          ]);
+        }
+
+        if (dataRowsWithContext.length <= maxRows) return [rawCsv];
+        const headerLine = headerRow ? headerRow.map(encodeCsvCell).join(',') : '';
+        const batches: string[] = [];
+        for (let i = 0; i < dataRowsWithContext.length; i += maxRows) {
+          const slice = dataRowsWithContext.slice(i, i + maxRows);
+          const lines = slice.map((r) => r.map(encodeCsvCell).join(','));
+          batches.push(headerLine ? [headerLine, ...lines].join('\n') : lines.join('\n'));
+        }
+        return batches;
+      };
+
+      const defaultPw = bulkDefaultPassword.trim() || '12345678';
+      const chunks = splitBulkCsvIntoChunks(raw, 200);
+      let res: Awaited<ReturnType<typeof ktnApi.bulkImportCenterData>> | null = null;
+      let totalStudentCount = 0;
+      let maxClassCount = 0;
+      let maxTeacherCount = 0;
+
+      for (let i = 0; i < chunks.length; i++) {
+        if (chunks.length > 1) {
+          setBulkImportProgress({ current: i + 1, total: chunks.length });
+        }
+        const partRes = await ktnApi.bulkImportCenterData({
+          csvText: chunks[i],
+          dryRun: false,
+          defaultPassword: defaultPw,
+        });
+        res = partRes;
+        totalStudentCount += Number(partRes.summary?.studentCount || 0);
+        maxClassCount = Math.max(maxClassCount, Number(partRes.summary?.classCount || 0));
+        maxTeacherCount = Math.max(maxTeacherCount, Number(partRes.summary?.teacherCount || 0));
+      }
+
+      if (!res) {
+        throw new Error(tr('Không thể thực thi nhập hàng loạt.', 'Unable to run bulk import.'));
+      }
+
+      const displayClassCount =
+        chunks.length > 1
+          ? Math.max(maxClassCount, bulkPreviewResult?.summary?.classCount || 0)
+          : res.summary.classCount;
+      const displayTeacherCount =
+        chunks.length > 1
+          ? Math.max(maxTeacherCount, bulkPreviewResult?.summary?.teacherCount || 0)
+          : res.summary.teacherCount;
+      const displayStudentCount = chunks.length > 1 ? totalStudentCount : res.summary.studentCount;
+
       queryClient.invalidateQueries({ queryKey: ['ktn-classes'] });
       queryClient.invalidateQueries({ queryKey: ['chat-rooms'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-admin-teachers'] });
@@ -322,11 +430,12 @@ export const AdminWorkspace: React.FC = () => {
       addToast({
         title: tr('Đã nhập hàng loạt thành công!', 'Bulk import completed!'),
         description:
-          res.message ||
-          tr(
-            `Đã khởi tạo ${res.summary.classCount} lớp, ${res.summary.teacherCount} giáo viên và ${res.summary.studentCount} học sinh.`,
-            `Initialized ${res.summary.classCount} classes, ${res.summary.teacherCount} teachers, and ${res.summary.studentCount} students.`
-          ),
+          chunks.length === 1 && res.message
+            ? res.message
+            : tr(
+                `Đã khởi tạo ${displayClassCount} lớp, ${displayTeacherCount} giáo viên và ${displayStudentCount} học sinh.`,
+                `Initialized ${displayClassCount} classes, ${displayTeacherCount} teachers, and ${displayStudentCount} students.`
+              ),
         variant: 'success',
       });
       setShowBulkImportModal(false);
@@ -338,6 +447,7 @@ export const AdminWorkspace: React.FC = () => {
       );
     } finally {
       setIsExecutingBulk(false);
+      setBulkImportProgress(null);
     }
   };
 
@@ -380,20 +490,24 @@ export const AdminWorkspace: React.FC = () => {
   } | null>(null);
 
   useEffect(() => {
+    const nextQ = searchInput.trim();
+    if (nextQ === debouncedQ) return;
     const timer = setTimeout(() => {
-      setDebouncedQ(searchInput.trim());
+      setDebouncedQ(nextQ);
       setPageOffset(0);
     }, 250);
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, debouncedQ]);
 
   useEffect(() => {
+    const nextQ = teacherSearchInput.trim();
+    if (nextQ === debouncedTeacherQ) return;
     const timer = setTimeout(() => {
-      setDebouncedTeacherQ(teacherSearchInput.trim());
+      setDebouncedTeacherQ(nextQ);
       setTeacherPage(1);
     }, 220);
     return () => clearTimeout(timer);
-  }, [teacherSearchInput]);
+  }, [teacherSearchInput, debouncedTeacherQ]);
 
   useEffect(() => {
     const rawEmail = (searchParams.get('email') || '').trim().toLowerCase();
@@ -515,7 +629,12 @@ export const AdminWorkspace: React.FC = () => {
       }
       return ktnApi.getOrders();
     },
-    enabled: Boolean(user) || isDemoMode,
+    enabled:
+      (Boolean(user) || isDemoMode) &&
+      (activeTab === 'all' ||
+        activeTab === 'orders' ||
+        Boolean(selectedOrderId) ||
+        Boolean(selectedStudentEmail)),
   });
 
   const demoStudentOverridesRef = React.useRef<Record<string, KtnStudentRecord>>({});
@@ -719,10 +838,13 @@ export const AdminWorkspace: React.FC = () => {
       if (Array.isArray(seeded) && seeded.length > 0) {
         return seeded;
       }
-      const res = await ktnApi.searchAdminTeachers({ limit: 50, offset: 0 });
+      const res = await ktnApi.searchAdminTeachers({ limit: 500, offset: 0 });
       return res.items;
     },
-    enabled: isDemoMode,
+    enabled:
+      isDemoMode ||
+      (Boolean(user) &&
+        (scheduleModalOpen || activeTab === 'classes' || activeTab === 'teachers')),
   });
 
   const teacherSearchOffset = (teacherPage - 1) * teacherPageLimit;
@@ -771,7 +893,10 @@ export const AdminWorkspace: React.FC = () => {
             user?.email,
             isDemoMode,
           ]);
-          if (!Array.isArray(existing) || existing.length === 0) {
+          if (
+            (!Array.isArray(existing) || existing.length === 0) &&
+            res.items.length >= (res.totalCount ?? res.items.length)
+          ) {
             queryClient.setQueryData(
               ['ktn-admin-teachers', user?.email, isDemoMode],
               res.items
@@ -827,7 +952,7 @@ export const AdminWorkspace: React.FC = () => {
       const res = await ktnApi.getCourseGrantRequests();
       return res.requests || [];
     },
-    enabled: Boolean(user) || isDemoMode,
+    enabled: (Boolean(user) || isDemoMode) && (activeTab === 'all' || activeTab === 'more'),
   });
 
   const syncStatusQuery = useQuery<KtnSyncStatusResponse>({
@@ -849,7 +974,7 @@ export const AdminWorkspace: React.FC = () => {
       }
       return ktnApi.getSyncStatus();
     },
-    enabled: Boolean(user) || isDemoMode,
+    enabled: (Boolean(user) || isDemoMode) && (activeTab === 'all' || activeTab === 'more'),
   });
 
   const updateOrderMutation = useMutation({
@@ -1215,7 +1340,11 @@ export const AdminWorkspace: React.FC = () => {
   });
 
   const assignClassMutation = useMutation({
-    mutationFn: async (params: { email: string; classCode: string | null }) => {
+    mutationFn: async (params: {
+      email: string;
+      classCode: string | null;
+      enrolledClasses?: string[];
+    }) => {
       setDrawerActionError(null);
       const prevClassCode = selectedStudent?.class_code || null;
       if (isDemoMode) {
@@ -1224,7 +1353,13 @@ export const AdminWorkspace: React.FC = () => {
         const updatedStudent: KtnStudentRecord = {
           ...base,
           class_code: params.classCode,
-          has_live_class: Boolean(params.classCode),
+          ...(Array.isArray(params.enrolledClasses)
+            ? { enrolledClasses: params.enrolledClasses }
+            : {}),
+          has_live_class: Boolean(
+            params.classCode ||
+              (Array.isArray(params.enrolledClasses) && params.enrolledClasses.length > 0)
+          ),
         };
         return {
           message: params.classCode
@@ -1237,6 +1372,7 @@ export const AdminWorkspace: React.FC = () => {
       const res = await ktnApi.assignStudentClass({
         email: params.email,
         classCode: params.classCode,
+        enrolledClasses: params.enrolledClasses,
       });
       return { ...res, prevClassCode };
     },
@@ -2454,67 +2590,113 @@ export const AdminWorkspace: React.FC = () => {
     }
   };
 
-  const filteredOrdersList = useMemo(() => {
-    const q = orderSearchInput.trim().toLowerCase();
-    return ordersList.filter((o) => {
-      if (q) {
-        const hay = [
-          o.order_id,
-          o.student_name,
-          o.parent_name,
-          o.student_email,
-          o.phone,
-          o.parent_phone,
-          o.course_name,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-
-      const contactSt = o.contact_status || 'not_called';
-      const payDetSt =
-        o.payment_detailed_status ||
-        (o.payment_status === 'paid' ? 'verified_paid' : 'unpaid');
-      const accDetSt =
-        o.account_detailed_status ||
-        (o.approval_status === 'approved' ? 'activated' : 'no_account');
-
-      switch (orderFilter) {
-        case 'new':
-          return (
-            o.approval_status === 'pending' &&
-            contactSt === 'not_called' &&
-            payDetSt === 'unpaid'
-          );
-        case 'not_called':
-          return o.approval_status === 'pending' && contactSt === 'not_called';
-        case 'called_awaiting_payment':
-          return (
-            o.approval_status === 'pending' &&
-            contactSt !== 'not_called' &&
-            o.payment_status !== 'paid' &&
-            payDetSt !== 'refunded'
-          );
-        case 'paid_awaiting_approval':
-          return o.approval_status === 'pending' && o.payment_status === 'paid';
-        case 'activated':
-          return o.approval_status === 'approved' && accDetSt !== 'sync_error';
-        case 'needs_error_handling':
-          return (
-            accDetSt === 'sync_error' ||
-            payDetSt === 'amount_mismatch' ||
-            o.course_valid === false ||
-            o.amount_valid === false
-          );
-        case 'cancelled_refunded':
-          return o.approval_status === 'cancelled' || payDetSt === 'refunded';
-        default:
-          return true;
-      }
+  const indexedOrders = useMemo(() => {
+    const coursesById = new Map<string, KtnCourse>();
+    for (const c of coursesList) {
+      if (c?.id) coursesById.set(c.id, c);
+    }
+    return ordersList.map((o) => {
+      const matchedCourse = o.course_id ? coursesById.get(o.course_id) : undefined;
+      const canonicalMeta = o.course_id ? CANONICAL_IZTEACH_COURSE_TITLES[o.course_id] : undefined;
+      const rawHay = [
+        o.order_id,
+        o.student_name,
+        o.parent_name,
+        o.student_email,
+        o.phone,
+        o.parent_phone,
+        o.course_id,
+        o.course_name,
+        matchedCourse?.code,
+        matchedCourse?.shortTitle,
+        matchedCourse?.title,
+        canonicalMeta?.code,
+        canonicalMeta?.shortTitle,
+        canonicalMeta?.title,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const lowHay = rawHay.toLowerCase();
+      const normHay = normalizeVietnameseText(rawHay);
+      const compactNormHay = normHay.replace(/[\s\-_]+/g, '');
+      return { order: o, lowHay, normHay, compactNormHay };
     });
-  }, [ordersList, orderSearchInput, orderFilter]);
+  }, [ordersList, coursesList]);
+
+  const filteredOrdersList = useMemo(() => {
+    const rawQ = orderSearchInput.trim().toLowerCase();
+    const normQ = normalizeVietnameseText(orderSearchInput);
+    const compactQ = normQ.replace(/[\s\-_]+/g, '');
+    return indexedOrders
+      .filter(({ order: o, lowHay, normHay, compactNormHay }) => {
+        if (rawQ || normQ) {
+          const matchesRaw = Boolean(rawQ && lowHay.includes(rawQ));
+          const matchesNorm = Boolean(normQ && normHay.includes(normQ));
+          const matchesCompact = Boolean(compactQ && compactNormHay.includes(compactQ));
+          if (!matchesRaw && !matchesNorm && !matchesCompact) return false;
+        }
+
+        const contactSt = o.contact_status || 'not_called';
+        const payDetSt =
+          o.payment_detailed_status ||
+          (o.payment_status === 'paid' ? 'verified_paid' : 'unpaid');
+        const accDetSt =
+          o.account_detailed_status ||
+          (o.approval_status === 'approved' ? 'activated' : 'no_account');
+
+        switch (orderFilter) {
+          case 'new':
+            return (
+              o.approval_status === 'pending' &&
+              contactSt === 'not_called' &&
+              payDetSt === 'unpaid'
+            );
+          case 'not_called':
+            return o.approval_status === 'pending' && contactSt === 'not_called';
+          case 'called_awaiting_payment':
+            return (
+              o.approval_status === 'pending' &&
+              contactSt !== 'not_called' &&
+              o.payment_status !== 'paid' &&
+              payDetSt !== 'refunded'
+            );
+          case 'paid_awaiting_approval':
+            return o.approval_status === 'pending' && o.payment_status === 'paid';
+          case 'activated':
+            return o.approval_status === 'approved' && accDetSt !== 'sync_error';
+          case 'needs_error_handling':
+            return (
+              accDetSt === 'sync_error' ||
+              payDetSt === 'amount_mismatch' ||
+              o.course_valid === false ||
+              o.amount_valid === false
+            );
+          case 'cancelled_refunded':
+            return o.approval_status === 'cancelled' || payDetSt === 'refunded';
+          default:
+            return true;
+        }
+      })
+      .map((item) => item.order);
+  }, [indexedOrders, orderSearchInput, orderFilter]);
+
+  const ordersTotalPages = Math.max(1, Math.ceil(filteredOrdersList.length / ordersPageSize));
+  const safeOrdersPage = Math.min(ordersPage, ordersTotalPages);
+  const paginatedOrdersList = useMemo(() => {
+    const start = (safeOrdersPage - 1) * ordersPageSize;
+    return filteredOrdersList.slice(start, start + ordersPageSize);
+  }, [filteredOrdersList, safeOrdersPage, ordersPageSize]);
+
+  const bulkStudentsTotalPages = Math.max(
+    1,
+    Math.ceil((bulkPreviewResult?.students.length || 0) / bulkStudentsPageSize)
+  );
+  const safeBulkStudentsPage = Math.min(bulkStudentsPage, bulkStudentsTotalPages);
+  const paginatedBulkStudents = useMemo(() => {
+    if (!bulkPreviewResult?.students) return [];
+    const start = (safeBulkStudentsPage - 1) * bulkStudentsPageSize;
+    return bulkPreviewResult.students.slice(start, start + bulkStudentsPageSize);
+  }, [bulkPreviewResult, safeBulkStudentsPage, bulkStudentsPageSize]);
 
   const hasApiError =
     !isDemoMode &&
@@ -3018,52 +3200,84 @@ export const AdminWorkspace: React.FC = () => {
                     )}
 
                     {bulkPreviewTab === 'students' && (
-                      <table className="w-full text-left text-xs">
-                        <thead className="sticky top-0 bg-stone-100 text-[11px] font-bold uppercase text-stone-600">
-                          <tr>
-                            <th className="px-3 py-2">{tr('Mã HS', 'Student ID')}</th>
-                            <th className="px-3 py-2">{tr('Email đăng nhập', 'Login email')}</th>
-                            <th className="px-3 py-2">{tr('Họ tên học sinh', 'Student name')}</th>
-                            <th className="px-3 py-2">{tr('SĐT', 'Phone')}</th>
-                            <th className="px-3 py-2">{tr('Phụ huynh', 'Parent')}</th>
-                            <th className="px-3 py-2">{tr('Lớp', 'Class')}</th>
-                            <th className="px-3 py-2">{tr('Trạng thái', 'Status')}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-100">
-                          {bulkPreviewResult.students.map((s) => (
-                            <tr key={s.code} className="hover:bg-stone-50">
-                              <td className="px-3 py-2 font-mono font-bold text-red-900">
-                                {s.code}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-stone-700">{s.email}</td>
-                              <td className="px-3 py-2 font-semibold text-stone-900">
-                                {s.name}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-stone-700">
-                                {s.phone || '—'}
-                              </td>
-                              <td className="px-3 py-2 text-stone-600">
-                                {s.parentName || '—'}
-                              </td>
-                              <td className="px-3 py-2 font-mono font-bold text-stone-800">
-                                {s.classCode}
-                              </td>
-                              <td className="px-3 py-2">
-                                {s.status === 'archived' ? (
-                                  <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                                    {tr('Bảo lưu', 'Archived')}
-                                  </span>
-                                ) : (
-                                  <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
-                                    {tr('Đang học', 'Active')}
-                                  </span>
-                                )}
-                              </td>
+                      <div>
+                        <table className="w-full text-left text-xs">
+                          <thead className="sticky top-0 bg-stone-100 text-[11px] font-bold uppercase text-stone-600">
+                            <tr>
+                              <th className="px-3 py-2">{tr('Mã HS', 'Student ID')}</th>
+                              <th className="px-3 py-2">{tr('Email đăng nhập', 'Login email')}</th>
+                              <th className="px-3 py-2">{tr('Họ tên học sinh', 'Student name')}</th>
+                              <th className="px-3 py-2">{tr('SĐT', 'Phone')}</th>
+                              <th className="px-3 py-2">{tr('Phụ huynh', 'Parent')}</th>
+                              <th className="px-3 py-2">{tr('Lớp', 'Class')}</th>
+                              <th className="px-3 py-2">{tr('Trạng thái', 'Status')}</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-stone-100">
+                            {paginatedBulkStudents.map((s) => (
+                              <tr key={`${s.code}-${s.rowIndex}`} className="hover:bg-stone-50">
+                                <td className="px-3 py-2 font-mono font-bold text-red-900">
+                                  {s.code}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-stone-700">{s.email}</td>
+                                <td className="px-3 py-2 font-semibold text-stone-900">
+                                  {s.name}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-stone-700">
+                                  {s.phone || '—'}
+                                </td>
+                                <td className="px-3 py-2 text-stone-600">
+                                  {s.parentName || '—'}
+                                </td>
+                                <td className="px-3 py-2 font-mono font-bold text-stone-800">
+                                  {s.classCode}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {s.status === 'archived' ? (
+                                    <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                      {tr('Bảo lưu', 'Archived')}
+                                    </span>
+                                  ) : (
+                                    <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
+                                      {tr('Đang học', 'Active')}
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {bulkPreviewResult.students.length > bulkStudentsPageSize && (
+                          <div className="flex items-center justify-between border-t border-stone-200 bg-stone-50 px-3 py-2 text-[11px]">
+                            <span className="text-stone-600">
+                              {tr('Trang', 'Page')} {safeBulkStudentsPage}/{bulkStudentsTotalPages} (
+                              {bulkPreviewResult.students.length} {tr('học sinh', 'students')})
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={safeBulkStudentsPage <= 1}
+                                onClick={() => setBulkStudentsPage((p) => Math.max(1, p - 1))}
+                                className="rounded border border-stone-300 bg-white px-2 py-0.5 font-bold text-stone-700 disabled:opacity-40"
+                              >
+                                {tr('Trước', 'Prev')}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={safeBulkStudentsPage >= bulkStudentsTotalPages}
+                                onClick={() =>
+                                  setBulkStudentsPage((p) =>
+                                    Math.min(bulkStudentsTotalPages, p + 1)
+                                  )
+                                }
+                                className="rounded border border-stone-300 bg-white px-2 py-0.5 font-bold text-stone-700 disabled:opacity-40"
+                              >
+                                {tr('Sau', 'Next')}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {bulkPreviewTab === 'warnings' && (
@@ -3122,7 +3336,14 @@ export const AdminWorkspace: React.FC = () => {
                   className="inline-flex items-center gap-1.5 rounded-xl bg-red-800 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-900 disabled:opacity-50"
                 >
                   {isExecutingBulk && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  <span>{tr('Xác nhận tạo hàng loạt', 'Confirm Bulk Create')}</span>
+                  <span>
+                    {bulkImportProgress
+                      ? tr(
+                          `Đang nhập lô ${bulkImportProgress.current}/${bulkImportProgress.total}...`,
+                          `Importing batch ${bulkImportProgress.current}/${bulkImportProgress.total}...`
+                        )
+                      : tr('Xác nhận tạo hàng loạt', 'Confirm Bulk Create')}
+                  </span>
                 </button>
               </div>
             </div>
@@ -3241,12 +3462,14 @@ export const AdminWorkspace: React.FC = () => {
                 ):
               </label>
               <div className="mt-1 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-2">
-                {coursesList.length === 0 ? (
+                {coursesList.filter((c) => !c.isBundle).length === 0 ? (
                   <span className="text-[11px] font-medium text-stone-500">
                     {tr('— Chưa chọn khóa học —', '— No course selected —')}
                   </span>
                 ) : (
-                  coursesList.map((course) => {
+                  coursesList
+                    .filter((c) => !c.isBundle)
+                    .map((course) => {
                     const checked = newStuCourseIds.includes(course.id);
                     return (
                       <button
@@ -3742,7 +3965,10 @@ export const AdminWorkspace: React.FC = () => {
                     type="search"
                     data-testid="admin-order-search-input"
                     value={orderSearchInput}
-                    onChange={(e) => setOrderSearchInput(e.target.value)}
+                    onChange={(e) => {
+                      setOrderSearchInput(e.target.value);
+                      setOrdersPage(1);
+                    }}
                     placeholder={tr(
                       'Tìm mã đơn, tên HV, tên PH, SĐT, email...',
                       'Search order ID, student, parent, phone, email...'
@@ -3762,7 +3988,10 @@ export const AdminWorkspace: React.FC = () => {
                     key={flt.id}
                     type="button"
                     data-testid={`admin-order-filter-${flt.id}`}
-                    onClick={() => setOrderFilter(flt.id)}
+                    onClick={() => {
+                      setOrderFilter(flt.id);
+                      setOrdersPage(1);
+                    }}
                     className={`min-h-[30px] shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
                       orderFilter === flt.id
                         ? 'bg-red-800 text-white shadow-2xs'
@@ -3785,7 +4014,7 @@ export const AdminWorkspace: React.FC = () => {
                 <>
                   {/* Mobile Compact Order Cards (< sm) */}
                   <div className="mt-3 space-y-2.5 sm:hidden">
-                    {filteredOrdersList.map((ord) => {
+                    {paginatedOrdersList.map((ord) => {
                       const contactSt = ord.contact_status || 'not_called';
                       const payDetSt =
                         ord.payment_detailed_status ||
@@ -3907,7 +4136,7 @@ export const AdminWorkspace: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-100">
-                        {filteredOrdersList.map((ord) => {
+                        {paginatedOrdersList.map((ord) => {
                           const contactSt = ord.contact_status || 'not_called';
                           const payDetSt =
                             ord.payment_detailed_status ||
@@ -4027,6 +4256,37 @@ export const AdminWorkspace: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
+                  {filteredOrdersList.length > ordersPageSize && (
+                    <div
+                      data-testid="admin-orders-pagination"
+                      className="mt-3 flex items-center justify-between border-t border-stone-100 pt-2.5 text-xs"
+                    >
+                      <span className="text-stone-500">
+                        {tr('Trang', 'Page')} {safeOrdersPage}/{ordersTotalPages} (
+                        {filteredOrdersList.length} {tr('đơn', 'orders')})
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={safeOrdersPage <= 1}
+                          onClick={() => setOrdersPage((p) => Math.max(1, p - 1))}
+                          className="rounded-lg border border-stone-200 px-2.5 py-1 font-bold text-stone-700 disabled:opacity-40"
+                        >
+                          {tr('Trang trước', 'Previous')}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={safeOrdersPage >= ordersTotalPages}
+                          onClick={() =>
+                            setOrdersPage((p) => Math.min(ordersTotalPages, p + 1))
+                          }
+                          className="rounded-lg border border-stone-200 px-2.5 py-1 font-bold text-stone-700 disabled:opacity-40"
+                        >
+                          {tr('Trang sau', 'Next')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -5700,7 +5960,7 @@ export const AdminWorkspace: React.FC = () => {
                 className="rounded-xl border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-xs font-bold text-stone-700"
               >
                 <option value="ALL">{tr('Tất cả khóa học', 'All courses')}</option>
-                {disambiguateCatalogCourses(coursesList).map((course) => (
+                {disambiguateCatalogCourses(coursesList.filter((c) => !c.isBundle)).map((course) => (
                   <option key={course.id} value={course.id}>
                     {translateCourseTitle(course.displayLabel, lang)}
                   </option>

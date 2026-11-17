@@ -32,6 +32,14 @@ function getAudioContext(): AudioContext | null {
   return audioContext;
 }
 
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && audioContext && audioContext.state === 'running') {
+      audioContext.suspend().catch(() => null);
+    }
+  });
+}
+
 function attachNodeCleanup(osc: OscillatorNode, gain: GainNode): void {
   osc.onended = () => {
     try {

@@ -91,6 +91,21 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     }
   }, [isSending]);
 
+  useEffect(() => {
+    setStagedAttachment((prev) => {
+      if (prev?.url?.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(prev.url);
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    });
+    setShowVoiceRecorder(false);
+    setShowEmojiBar(false);
+  }, [roomId]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -322,13 +337,20 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               const cleanMime = normalizeAudioMimeType(blob.type);
               const ext = getAudioExtensionFromMime(cleanMime);
               const fileName = `${tr('Thu-am', 'Voice')}-${classCode || 'KTN'}-${Date.now()}.${ext}`;
-              const persistentUrl = await new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(String(reader.result || previewUrl));
-                reader.onerror = () => resolve(previewUrl);
-                reader.readAsDataURL(blob);
-              });
+              const host =
+                typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+              const isLocalTestHost =
+                host === 'localhost' || host === '127.0.0.1' || host === '';
               const audioFile = new File([blob], fileName, { type: cleanMime });
+              const shouldKeepInlineForLocalE2e = isLocalTestHost || useUiStore.getState().isDemoMode;
+              const persistentUrl = shouldKeepInlineForLocalE2e
+                ? await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(String(reader.result || previewUrl));
+                    reader.onerror = () => resolve(previewUrl);
+                    reader.readAsDataURL(blob);
+                  })
+                : previewUrl;
               await onSend({
                 roomId,
                 classCode,
@@ -340,7 +362,10 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
                   kind: 'audio',
                   name: fileName,
                   url: persistentUrl,
-                  file: persistentUrl.length > 180 * 1024 ? audioFile : undefined,
+                  file:
+                    !shouldKeepInlineForLocalE2e || persistentUrl.length > 180 * 1024
+                      ? audioFile
+                      : undefined,
                   mimeType: cleanMime,
                   sizeBytes: audioFile.size,
                   sizeLabel: formatFileSize(audioFile.size),

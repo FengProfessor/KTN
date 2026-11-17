@@ -278,6 +278,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 }));
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  let lastSessionExpiredToastAt = 0;
+  window.addEventListener('ktn:session-expired', () => {
+    if (useUiStore.getState().isDemoMode) return;
+    const hadSession = Boolean(useAuthStore.getState().user || useAuthStore.getState().authUser || getStoredSession());
+    ++authEpoch;
+    restoreInFlight = null;
+    clearStoredSession();
+    useUiStore.getState().resetSessionUiState();
+    useAuthStore.setState({
+      user: null,
+      authUser: null,
+      isLoading: false,
+      isRestoring: false,
+      error: null
+    });
+    const now = Date.now();
+    if (hadSession && now - lastSessionExpiredToastAt > 5000) {
+      lastSessionExpiredToastAt = now;
+      useUiStore.getState().addToast({
+        title: 'Phiên đăng nhập đã hết hạn',
+        description: 'Vui lòng đăng nhập lại để tiếp tục.',
+        variant: 'error'
+      });
+    }
+  });
+
   window.addEventListener('storage', (event: StorageEvent) => {
     const isAuthStorageKey =
       event.key === 'ktn_sll_persistent_auth_v2' || event.key === 'ktn_v2_auth_session';

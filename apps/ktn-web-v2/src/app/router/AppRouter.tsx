@@ -1,4 +1,4 @@
-import React, { useEffect, Suspense, lazy } from 'react';
+import React, { useEffect, Suspense } from 'react';
 import { Routes, Route, Navigate, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { ShieldAlert, ArrowLeft, Loader2 } from 'lucide-react';
 import { AppShell } from '../layouts/AppShell';
@@ -9,26 +9,27 @@ import { NotificationCenter } from '@/features/notifications/components/Notifica
 import { LoginPage } from '@/features/auth/components/LoginPage';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import { resolveNotificationLink } from '@/lib/utils';
 import { useI18n } from '@/i18n';
 import type { UserRole } from '@/types/ktn.types';
 
-const LearningPage = lazy(() =>
+const LearningPage = lazyWithRetry(() =>
   import('@/features/learning/components/LearningPage').then((m) => ({ default: m.LearningPage }))
 );
-const TeacherWorkspace = lazy(() =>
+const TeacherWorkspace = lazyWithRetry(() =>
   import('@/features/teacher/components/TeacherWorkspace').then((m) => ({ default: m.TeacherWorkspace }))
 );
-const AdminWorkspace = lazy(() =>
+const AdminWorkspace = lazyWithRetry(() =>
   import('@/features/admin/components/AdminWorkspace').then((m) => ({ default: m.AdminWorkspace }))
 );
-const FlashcardsPage = lazy(() =>
+const FlashcardsPage = lazyWithRetry(() =>
   import('@/features/flashcards/components/FlashcardsPage').then((m) => ({ default: m.FlashcardsPage }))
 );
-const GamesPage = lazy(() =>
+const GamesPage = lazyWithRetry(() =>
   import('@/features/games/components/GamesPage').then((m) => ({ default: m.GamesPage }))
 );
-const ProfilePage = lazy(() =>
+const ProfilePage = lazyWithRetry(() =>
   import('@/features/profile/components/ProfilePage').then((m) => ({ default: m.ProfilePage }))
 );
 

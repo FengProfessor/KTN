@@ -168,7 +168,11 @@ export const LearningPage: React.FC = () => {
     return 'overview';
   });
   const [forumDraftTimestamp, setForumDraftTimestamp] = useState<number | null>(null);
-  const [seekVideoTimestamp, setSeekVideoTimestamp] = useState<number | null>(null);
+  const [seekVideoTimestamp, setSeekVideoTimestamp] = useState<{
+    seconds: number;
+    nonce: number;
+  } | null>(null);
+  const highlightQuestionId = searchParams.get('questionId');
   const [mobileLessonDrawerOpen, setMobileLessonDrawerOpen] = useState(false);
   const [viewingMaterial, setViewingMaterial] = useState<KtnLearningMaterial | null>(null);
 
@@ -213,16 +217,17 @@ export const LearningPage: React.FC = () => {
     setSearchParams(next, { replace: true });
   };
 
-  // Sync deep-link query params (?courseId=...&lesson=...&tab=homework|forum)
+  // Sync deep-link query params (?courseId=...&lesson=...&tab=homework|forum&questionId=...)
   useEffect(() => {
     const cid = searchParams.get('courseId');
     const lnum = Number(searchParams.get('lesson'));
     const uid = searchParams.get('unitId');
     const tab = searchParams.get('tab');
+    const qId = searchParams.get('questionId');
     if (cid) setSelectedCourseId(cid);
     if (Number.isFinite(lnum) && lnum > 0) setSelectedLessonNum(lnum);
     if (uid !== null) setSelectedUnitId(uid || null);
-    if (tab === 'forum' || tab === 'qa') {
+    if (tab === 'forum' || tab === 'qa' || qId) {
       setActiveTab('forum');
     } else if (tab === 'homework') {
       setActiveTab('homework');
@@ -233,7 +238,7 @@ export const LearningPage: React.FC = () => {
     }
   }, [searchParams]);
 
-  // Sync default course to user's entitled course when logging in (unless explicitly specified via URL)
+  // Sync default course to user's first active entitled course when logging in (unless explicitly specified via URL)
   useEffect(() => {
     if (!searchParams.get('courseId') && !isDemoMode) {
       if (user?.role === 'teacher' && Array.isArray(user.assignedCourses) && user.assignedCourses.length > 0) {
@@ -246,7 +251,8 @@ export const LearningPage: React.FC = () => {
       } else if (user?.onlineCourses && user.onlineCourses.length > 0) {
         const hasCurrent = user.onlineCourses.some((c) => c.id === selectedCourseId);
         if (!hasCurrent) {
-          setSelectedCourseId(user.onlineCourses[0].id);
+          const firstActive = user.onlineCourses.find((c) => !c.isExpired) || user.onlineCourses[0];
+          setSelectedCourseId(firstActive.id);
         }
       }
     }
@@ -793,14 +799,16 @@ export const LearningPage: React.FC = () => {
     );
   }, [homeworksQuery.data, activeCourse.id, activeLesson, isDemoMode, videoDemoScenario, tr]);
 
-  // 4. Submit Homework Mutation (Presigned S3 Upload + POST /api/ktn/homeworks, or Text Answer)
+  // 4. Submit Homework Mutation (Presigned S3 Upload + POST /api/ktn/homeworks, or Text Answer, up to 3 files)
   const submitHomeworkMutation = useMutation({
     mutationFn: async (params: {
       file?: File | Blob | null;
       fileName?: string;
+      files?: Array<{ blob: File | Blob; name: string }>;
       note: string;
       submissionMode?: 'file' | 'text';
       textAnswer?: string;
+      onProgress?: (pct: number) => void;
     }) => {
       if (!activeLesson) throw new Error(tr('Chưa chọn bài học', 'No lesson selected'));
       const targetLessonNum = Number(activeLesson.lessonNumber || activeLesson.num);
@@ -821,7 +829,14 @@ export const LearningPage: React.FC = () => {
         };
       }
 
-      if (!params.file || params.submissionMode === 'text') {
+      const filesList =
+        Array.isArray(params.files) && params.files.length > 0
+          ? params.files.slice(0, 3)
+          : params.file
+          ? [{ blob: params.file, name: params.fileName || `btvn-bai-${targetLessonNum}.dat` }]
+          : [];
+
+      if (filesList.length === 0 || params.submissionMode === 'text') {
         return ktnApi.submitHomework({
           courseId: activeCourse.id,
           classCode: user?.classCode || '',
@@ -837,31 +852,39 @@ export const LearningPage: React.FC = () => {
         });
       }
 
-      const uploaded = await ktnApi.uploadHomeworkFile(
-        params.file,
-        params.fileName || `btvn-bai-${targetLessonNum}.dat`
-      );
+      const uploadedItems: Array<{ title: string; fileUrl: string; mediaType: string; size: number }> = [];
+      for (let i = 0; i < filesList.length; i++) {
+        const f = filesList[i];
+        const uploaded = await ktnApi.uploadHomeworkFile(
+          f.blob,
+          f.name || `btvn-bai-${targetLessonNum}-${i + 1}.dat`,
+          (pct) => {
+            const overallPct = Math.round(((i + pct / 100) / filesList.length) * 100);
+            params.onProgress?.(overallPct);
+          }
+        );
+        uploadedItems.push({
+          title:
+            f.name ||
+            tr(`Bài nộp Bài ${targetLessonNum} (${i + 1})`, `Lesson ${targetLessonNum} submission (${i + 1})`),
+          fileUrl: uploaded.fileUrl,
+          mediaType: uploaded.fileType,
+          size: uploaded.size,
+        });
+      }
 
+      const primary = uploadedItems[0];
       return ktnApi.submitHomework({
         courseId: activeCourse.id,
         classCode: user?.classCode || '',
         lessonNum: targetLessonNum,
         lessonTitle: activeLesson.title,
         unitId: activeLesson.unitId || activeLesson._id || activeLesson.id || null,
-        fileUrl: uploaded.fileUrl,
-        fileType: uploaded.fileType,
+        fileUrl: primary.fileUrl,
+        fileType: primary.mediaType,
         studentNote: params.note,
         submissionMode: 'file',
-        attachments: [
-          {
-            title:
-              params.fileName ||
-              tr(`Bài nộp Bài ${targetLessonNum}`, `Lesson ${targetLessonNum} submission`),
-            fileUrl: uploaded.fileUrl,
-            mediaType: uploaded.fileType,
-            size: uploaded.size,
-          },
-        ],
+        attachments: uploadedItems,
       });
     },
     onSuccess: () => {
@@ -999,21 +1022,29 @@ export const LearningPage: React.FC = () => {
 
   const handleToggleCompleted = () => {
     if (!activeLesson) return;
+    const willComplete = !isCurrentLessonCompleted;
     toggleLessonCompleted(activeCourse.id, activeLessonNumber);
+    if (willComplete && !isDemoMode && user?.email) {
+      void ktnApi
+        .saveLearningProgress({
+          lessonKey: `${activeCourse.id}-L${activeLessonNumber}`,
+          courseId: activeCourse.id,
+          lessonNum: activeLessonNumber,
+        })
+        .catch(() => null);
+    }
     addToast({
-      title: !isCurrentLessonCompleted
+      title: willComplete
         ? tr('Tuyệt vời! Đã hoàn thành bài học 🎉', 'Great! Lesson marked complete 🎉')
         : tr('Đã bỏ đánh dấu hoàn thành bài học', 'Unmarked lesson completion'),
       variant: 'success',
     });
   };
 
-  const totalCurriculumCount =
-    groupedMainLessons.length > 0
-      ? groupedMainLessons.length
-      : lessons.length > 0
-      ? lessons.length
-      : activeCourse.lessonsCount || 15;
+  const totalCurriculumCount = Math.max(
+    groupedMainLessons.length > 0 ? groupedMainLessons.length : lessons.length,
+    activeCourse.lessonsCount || 1
+  );
   const completedCount =
     groupedMainLessons.length > 0
       ? groupedMainLessons.filter(
@@ -1309,6 +1340,7 @@ export const LearningPage: React.FC = () => {
           )}
 
           <HlsVideoPlayer
+            unitId={activeDrmUnitId || `${activeCourse.id}-L${activeLessonNumber}`}
             lessonTitle={
               activeLesson?.title || tr('Bài giảng tiếng Trung KTN', 'KTN Chinese Lesson')
             }
@@ -1346,6 +1378,11 @@ export const LearningPage: React.FC = () => {
                   : tr('Không lấy được cấu hình DRM.', 'Unable to load DRM configuration.')
                 : null
             }
+            onRefreshDrmToken={() => {
+              if (isDrmLessonActive) {
+                void drmPlaybackQuery.refetch();
+              }
+            }}
             statusOverride={effectivePlayerStatusOverride}
             unentitledReason={
               unitsQuery.error instanceof Error
@@ -2105,10 +2142,15 @@ export const LearningPage: React.FC = () => {
                       )}
                       lessonNumber={activeLessonNumber}
                       lessonTitle={activeLesson.title}
+                      highlightQuestionId={highlightQuestionId}
                       initialTimestampSeconds={forumDraftTimestamp}
                       onClearInitialTimestamp={() => setForumDraftTimestamp(null)}
-                      onSeekVideoTimestamp={(seconds: number) => setSeekVideoTimestamp(seconds)}
-                      onSeekToTimestamp={(seconds: number) => setSeekVideoTimestamp(seconds)}
+                      onSeekVideoTimestamp={(seconds: number) =>
+                        setSeekVideoTimestamp({ seconds, nonce: Date.now() })
+                      }
+                      onSeekToTimestamp={(seconds: number) =>
+                        setSeekVideoTimestamp({ seconds, nonce: Date.now() })
+                      }
                     />
                   </div>
                 )}

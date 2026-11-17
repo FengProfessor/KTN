@@ -25,6 +25,7 @@ import { DEMO_HOMEWORKS, DEMO_NOTIFICATIONS } from '@/lib/demoData';
 import { formatRelativeTime, resolveNotificationLink } from '@/lib/utils';
 import { KtnHomework, KtnNotification, KtnOrder } from '@/types/ktn.types';
 import { ChatImageLightbox } from '@/features/chat/components/AttachmentPreview';
+import { RouteErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { translateNotificationItem, useI18n } from '@/i18n';
 
 export const AppShell: React.FC = () => {
@@ -145,6 +146,38 @@ export const AppShell: React.FC = () => {
       setPwdSubmitting(false);
     }
   };
+
+  // Redirect away from open-shell routes (e.g. /chat, /notifications) when session expires
+  useEffect(() => {
+    const onSessionExpired = () => {
+      if (useUiStore.getState().isDemoMode) return;
+      if (!location.pathname.startsWith('/login')) {
+        const redirect = encodeURIComponent(`${location.pathname}${location.search}`);
+        navigate(`/login?redirect=${redirect}`, { replace: true });
+      }
+    };
+    window.addEventListener('ktn:session-expired', onSessionExpired);
+    return () => window.removeEventListener('ktn:session-expired', onSessionExpired);
+  }, [location.pathname, location.search, navigate]);
+
+  // Scope and sync lesson completion progress per user (and hydrate from server)
+  useEffect(() => {
+    const cleanEmail = String(user?.email || '').trim().toLowerCase();
+    useUiStore.getState().setProgressUserEmail(cleanEmail || null);
+    if (!cleanEmail || isDemoMode) return;
+    let cancelled = false;
+    ktnApi
+      .getLearningProgress()
+      .then((res) => {
+        if (!cancelled && Array.isArray(res?.completedLessons) && res.completedLessons.length > 0) {
+          useUiStore.getState().mergeRemoteCompletedLessons(res.completedLessons);
+        }
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.email, isDemoMode]);
 
   // Close notification dropdown automatically when navigating to another page
   useEffect(() => {
@@ -950,7 +983,9 @@ export const AppShell: React.FC = () => {
                 : 'px-3 py-2.5 pb-16 sm:p-4 lg:pb-6'
             }`}
           >
-            <Outlet />
+            <RouteErrorBoundary key={location.pathname}>
+              <Outlet />
+            </RouteErrorBoundary>
           </main>
 
           {/* Purposeful Role-Based Mobile Bottom Navigation */}

@@ -26,6 +26,29 @@ export interface ToastItem {
 const DRAFT_STORAGE_PREFIX = 'ktn_v2_chat_draft_';
 const FAILED_QUEUE_STORAGE_KEY = 'ktn_v2_failed_messages';
 const COMPLETED_LESSONS_KEY = 'ktn_v2_completed_lessons';
+const COMPLETED_LESSONS_BY_USER_KEY = 'ktn_v2_completed_lessons_by_user';
+
+function normalizeEmailForStorage(email?: string | null): string {
+  return String(email || '').trim().toLowerCase();
+}
+
+function normalizeRemoteLessonKey(rawKey: string): string | null {
+  const s = String(rawKey || '').trim();
+  if (!s) return null;
+  if (s.includes(':')) return s;
+  const m = s.match(/^(.*)-L(\d+)$/);
+  if (m && m[1] && m[2]) return `${m[1]}:${m[2]}`;
+  return null;
+}
+
+function readCompletedLessonsByUserMap(): Record<string, Record<string, boolean>> {
+  try {
+    const raw = localStorage.getItem(COMPLETED_LESSONS_BY_USER_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, Record<string, boolean>>) : {};
+  } catch {
+    return {};
+  }
+}
 
 function readInitialFailedQueue(): Record<string, ChatMessage[]> {
   try {
@@ -108,6 +131,9 @@ interface UiState {
   toggleReaction: (messageId: string, emoji: string, userName: string) => void;
 
   completedLessons: Record<string, boolean>;
+  progressUserEmail: string | null;
+  setProgressUserEmail: (email: string | null | undefined) => void;
+  mergeRemoteCompletedLessons: (keys: string[]) => void;
   toggleLessonCompleted: (courseId: string, lessonNum: number, completed?: boolean) => void;
 
   chatDemoScenario: ChatDemoScenario;
@@ -297,6 +323,52 @@ export const useUiStore = create<UiState>((set, get) => ({
     }),
 
   completedLessons: readInitialCompletedLessons(),
+  progressUserEmail: null,
+  setProgressUserEmail: (email) =>
+    set((state) => {
+      const cleanEmail = normalizeEmailForStorage(email);
+      if (!cleanEmail) {
+        return { progressUserEmail: null, completedLessons: readInitialCompletedLessons() };
+      }
+      const byUser = readCompletedLessonsByUserMap();
+      const mergedForUser: Record<string, boolean> = {
+        ...(byUser[cleanEmail] || {}),
+        ...state.completedLessons,
+      };
+      byUser[cleanEmail] = mergedForUser;
+      try {
+        localStorage.setItem(COMPLETED_LESSONS_BY_USER_KEY, JSON.stringify(byUser));
+        localStorage.setItem(COMPLETED_LESSONS_KEY, JSON.stringify(mergedForUser));
+      } catch {
+        // Ignore storage quota error
+      }
+      return { progressUserEmail: cleanEmail, completedLessons: mergedForUser };
+    }),
+  mergeRemoteCompletedLessons: (keys) =>
+    set((state) => {
+      if (!Array.isArray(keys) || keys.length === 0) return {};
+      const nextMap = { ...state.completedLessons };
+      let changed = false;
+      for (const rawKey of keys) {
+        const normKey = normalizeRemoteLessonKey(rawKey);
+        if (normKey && !nextMap[normKey]) {
+          nextMap[normKey] = true;
+          changed = true;
+        }
+      }
+      if (!changed) return {};
+      try {
+        localStorage.setItem(COMPLETED_LESSONS_KEY, JSON.stringify(nextMap));
+        if (state.progressUserEmail) {
+          const byUser = readCompletedLessonsByUserMap();
+          byUser[state.progressUserEmail] = nextMap;
+          localStorage.setItem(COMPLETED_LESSONS_BY_USER_KEY, JSON.stringify(byUser));
+        }
+      } catch {
+        // Ignore
+      }
+      return { completedLessons: nextMap };
+    }),
   toggleLessonCompleted: (courseId, lessonNum, completed) =>
     set((state) => {
       const key = `${courseId}:${lessonNum}`;
@@ -304,6 +376,11 @@ export const useUiStore = create<UiState>((set, get) => ({
       const nextMap = { ...state.completedLessons, [key]: nextVal };
       try {
         localStorage.setItem(COMPLETED_LESSONS_KEY, JSON.stringify(nextMap));
+        if (state.progressUserEmail) {
+          const byUser = readCompletedLessonsByUserMap();
+          byUser[state.progressUserEmail] = nextMap;
+          localStorage.setItem(COMPLETED_LESSONS_BY_USER_KEY, JSON.stringify(byUser));
+        }
       } catch {
         // Ignore
       }
@@ -333,7 +410,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   resetSessionUiState: () => {
     try {
       localStorage.removeItem(FAILED_QUEUE_STORAGE_KEY);
-      localStorage.removeItem(COMPLETED_LESSONS_KEY);
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -356,7 +432,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       sendingMessagesByRoom: {},
       failedMessagesByRoom: {},
       reactionsByMessageId: {},
-      completedLessons: {},
+      progressUserEmail: null,
+      completedLessons: readInitialCompletedLessons(),
       isOfflineSimulated: false,
       lang: readInitialLanguage()
     });

@@ -39,6 +39,7 @@ export interface KtnUserSession {
   role: UserRole;
   roles: UserRole[];
   classCode: string | null;
+  enrolledClasses?: string[];
   assignedClasses?: string[];
   assignedCourses?: string[];
   hasLiveClass: boolean;
@@ -288,6 +289,7 @@ export interface ClassScheduleConfig {
   dayOfWeek?: string;
   startTime: string;
   endTime: string;
+  scheduleSlots?: Record<string, { startTime: string; endTime: string }>;
   timezone: string;
   effectiveFrom: string;
   effectiveUntil: string | null;
@@ -468,6 +470,7 @@ export interface KtnStudentRecord {
   cognito_user_id?: string | null;
   izteach_student_id?: string | null;
   class_code: string | null;
+  enrolledClasses?: string[];
   has_live_class: boolean;
   has_online_courses: boolean;
   online_courses: OnlineCourseEntitlement[];

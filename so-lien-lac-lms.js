@@ -65,6 +65,15 @@
       totalLessons: 15,
       badgeCls: 'r'
     },
+    '6af2d9719a8b000002ad4bc0': {
+      id: '6af2d9719a8b000002ad4bc0',
+      code: 'HSK2-30',
+      title: 'HSK2 3.0',
+      fullTitle: 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)',
+      icon: '📘',
+      totalLessons: 11,
+      badgeCls: 'r'
+    },
     '65e7704a9ea90c00080d5195': {
       id: '65e7704a9ea90c00080d5195',
       title: 'Chinese For Kids',
@@ -135,14 +144,15 @@
 
     if (!ONLINE_COURSES_CATALOG[cId] && uId) {
       for (const [k, lessonsArr] of Object.entries(allCoursesMap)) {
-        if (Array.isArray(lessonsArr) && lessonsArr.some(ls => ls && ls.parts && ls.parts[0] && ls.parts[0].unitId === uId)) {
+        if (Array.isArray(lessonsArr) && lessonsArr.some(ls => ls && Array.isArray(ls.parts) && ls.parts.some(p => p && p.unitId === uId))) {
           cId = k;
           break;
         }
       }
     }
     if (!ONLINE_COURSES_CATALOG[cId]) {
-      if (/chinese\s*for\s*kids/i.test(titleStr)) cId = '65e7704a9ea90c00080d5195';
+      if (/\bhsk\s*2(?:\b|_)|\bhsk2-?30\b|\bhsk2[-_\s.]*3\.?0\b/i.test(titleStr)) cId = '6af2d9719a8b000002ad4bc0';
+      else if (/chinese\s*for\s*kids/i.test(titleStr)) cId = '65e7704a9ea90c00080d5195';
       else if (/tiếng\s*trung\s*tổng\s*hợp|tong\s*hop/i.test(titleStr)) cId = '65e733b0e3317300084c5ce4';
       else cId = '6adadba969897b0002482ca5';
     }
@@ -151,7 +161,7 @@
     let lessonTitle = String(raw.lessonTitle || '').trim();
     const courseLessons = Array.isArray(allCoursesMap[cId]) ? allCoursesMap[cId] : [];
     if (uId && courseLessons.length) {
-      const hitLesson = courseLessons.find(ls => ls && ls.parts && ls.parts[0] && ls.parts[0].unitId === uId);
+      const hitLesson = courseLessons.find(ls => ls && Array.isArray(ls.parts) && ls.parts.some(p => p && p.unitId === uId));
       if (hitLesson) {
         if (!lessonNum) lessonNum = Number(hitLesson.num) || 1;
         if (!lessonTitle) lessonTitle = `${hitLesson.titleZh || ''}${hitLesson.titleVi ? ' (' + hitLesson.titleVi + ')' : ''}`;
@@ -175,6 +185,7 @@
       lessonTitle: lessonTitle
     };
   }
+  L.resolveCourseAndLessonFromRecord = resolveCourseAndLessonFromRecord;
 
   function normalizeIzTeachHwItem(raw) {
     if (!raw) return null;

@@ -229,6 +229,7 @@ export const SpeedBlitzGame: React.FC<SpeedBlitzGameProps> = ({ levelId, onBack 
 
     timerRef.current = setInterval(() => {
       if (isFinishedRef.current) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       const nextSec = Math.max(0, secondsLeftRef.current - 1);
       secondsLeftRef.current = nextSec;
       setSecondsLeft(nextSec);

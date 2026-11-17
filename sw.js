@@ -125,11 +125,13 @@ self.addEventListener('push', (event) => {
   }
   const notif = payload.notification || payload;
   const eventId = String(notif.eventId || notif.id || notif.tag || ('ktn-push-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)));
-  RECENT_PUSH_EVENT_IDS.set(eventId, Date.now());
-  if (RECENT_PUSH_EVENT_IDS.size > 100) {
-    const oldestKey = RECENT_PUSH_EVENT_IDS.keys().next().value;
-    if (oldestKey) RECENT_PUSH_EVENT_IDS.delete(oldestKey);
+  if (RECENT_PUSH_EVENT_IDS.size > 150) {
+    const cutoff = Date.now() - 300000;
+    for (const [eid, ts] of RECENT_PUSH_EVENT_IDS.entries()) {
+      if (ts < cutoff || RECENT_PUSH_EVENT_IDS.size > 150) RECENT_PUSH_EVENT_IDS.delete(eid);
+    }
   }
+  RECENT_PUSH_EVENT_IDS.set(eventId, Date.now());
   const title = notif.title || 'Học Viện Khổng Tử Nhí';
   const targetUrl =
     notif.action_url ||

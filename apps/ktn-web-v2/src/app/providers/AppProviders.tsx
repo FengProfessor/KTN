@@ -37,7 +37,13 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children
         defaultOptions: {
           queries: {
             refetchOnWindowFocus: false,
-            retry: 1,
+            retry: (failureCount, error) => {
+              const status = Number((error as { status?: number })?.status || 0);
+              if ([400, 401, 403, 404, 409, 422, 429].includes(status)) {
+                return false;
+              }
+              return failureCount < 1;
+            },
           },
         },
       })

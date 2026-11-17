@@ -177,16 +177,33 @@ export function deriveCanonicalClassCode(
   let prefix = '';
   const loMiniMatch = upperNoAccent.match(/LO\s*MINI\s*(\d+)/i);
   const loMatch = upperNoAccent.match(/\bLO\s*(\d+)/i);
+  const hskLevelMatch = upperNoAccent.match(/HSK\s*(\d+)\b/i);
   if (loMiniMatch) {
     prefix = `LOMINI${loMiniMatch[1]}`;
   } else if (loMatch) {
     prefix = `LO${loMatch[1]}`;
+  } else if (hskLevelMatch) {
+    prefix = `HSK${hskLevelMatch[1]}`;
   } else if (upperNoAccent.includes('HSK')) {
     prefix = 'HSK';
   } else if (upperNoAccent.includes('1 BUOI') || upperNoAccent.includes('1BT')) {
     prefix = '1BT';
   } else if (upperNoAccent.includes('1-1') || upperNoAccent.includes('1V1') || upperNoAccent.includes('1:1')) {
-    prefix = '1V1';
+    const clean1v1Slug = upperNoAccent
+      .replace(/1-1|1V1|1:1/g, ' ')
+      .replace(/\b(?:LOP|CLASS|NHOM\s*\d+|GIA\s*SU)\b/g, ' ')
+      .replace(/[^A-Z0-9]+/g, '')
+      .trim()
+      .slice(0, 12);
+    if (clean1v1Slug && !groupMatch && !isUnassignedGroup) {
+      return {
+        code: `1V1-${clean1v1Slug}`,
+        title: titleLine,
+        schedule: scheduleLine,
+        isArchived
+      };
+    }
+    prefix = (clean1v1Slug && !isUnassignedGroup) ? `1V1-${clean1v1Slug.slice(0, 6)}` : '1V1';
   } else if (isArchived) {
     prefix = 'BAOLUU';
   } else {
@@ -741,6 +758,17 @@ export function parseKtnCenterBulkCsv(
     }
   }
 
+  const candidatesByClassAndName = new Map<string, typeof existingStudentCandidates>();
+  for (const c of existingStudentCandidates) {
+    const mapKey = `${c.classCode}|${c.normName}`;
+    let list = candidatesByClassAndName.get(mapKey);
+    if (!list) {
+      list = [];
+      candidatesByClassAndName.set(mapKey, list);
+    }
+    list.push(c);
+  }
+
   let nextStudentSeq = maxStudentSeq + 1;
   const students: BulkImportParsedStudent[] = rawStudents.map((stu) => {
     const stuClass = String(stu.classCode || '').trim().toUpperCase();
@@ -749,13 +777,14 @@ export function parseKtnCenterBulkCsv(
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
     const stuPhone = String(stu.phone || '').trim();
+    const candidateBucket = candidatesByClassAndName.get(`${stuClass}|${stuNormName}`) || [];
 
-    let matchedCand = existingStudentCandidates.find(
-      (c) => !c.used && c.classCode === stuClass && c.normName === stuNormName && c.cleanPhone === stuPhone
+    let matchedCand = candidateBucket.find(
+      (c) => !c.used && c.cleanPhone === stuPhone
     );
     if (!matchedCand) {
-      matchedCand = existingStudentCandidates.find(
-        (c) => !c.used && c.classCode === stuClass && c.normName === stuNormName && (!c.cleanPhone || !stuPhone)
+      matchedCand = candidateBucket.find(
+        (c) => !c.used && (!c.cleanPhone || !stuPhone)
       );
     }
 

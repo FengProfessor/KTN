@@ -146,8 +146,24 @@
   // STORAGE & MIGRATION (Phase 2)
   // Lưu tối thiểu: cardId, level, reviewStep, nextReviewDate, lastReviewedAt
   // ==============================================================
+  function getActiveKtnUserId() {
+    try {
+      const raw =
+        localStorage.getItem('ktn_sll_persistent_auth_v2') ||
+        localStorage.getItem('ktn_user') ||
+        localStorage.getItem('user');
+      if (!raw) return '';
+      const u = JSON.parse(raw);
+      return String(u?.email || u?.id || u?.username || '').trim().toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+
   function getSrsStorageKey(level) {
-    return `ktn_flashcard_srs_v2_${level || state.activeLevel}`;
+    const lvl = level || state.activeLevel;
+    const uid = getActiveKtnUserId();
+    return uid ? `ktn_flashcard_user_${uid}_${lvl}` : `ktn_flashcard_srs_v2_${lvl}`;
   }
 
   function getLegacyStorageKey(level) {
@@ -198,7 +214,7 @@
 
       // Chuyển đổi có kiểm soát từ dữ liệu cũ "Cần ôn / Đã thuộc"
       const rawLegacy = localStorage.getItem(getLegacyStorageKey());
-      if (rawLegacy) {
+      if (rawLegacy && !getActiveKtnUserId()) {
         const leg = JSON.parse(rawLegacy);
         let migrated = false;
         if (leg && Array.isArray(leg.review)) {
@@ -626,6 +642,8 @@
 
   let scratchFrontCanvas = null;
   let scratchBackCanvas = null;
+  const illustrationCropCache = new Map();
+  const MAX_ILLUSTRATION_CROP_CACHE = 150;
 
   function syncFrontCardFullIllustration(card) {
     if (!dom.cardFrontCanvas || !dom.cardFrontImg || !dom.cardBackImg) return;
@@ -659,144 +677,188 @@
       }
 
       try {
-        if (!scratchFrontCanvas) {
-          scratchFrontCanvas = document.createElement('canvas');
-          scratchFrontCanvas.width = 660;
-          scratchFrontCanvas.height = 940;
-          scratchBackCanvas = document.createElement('canvas');
-          scratchBackCanvas.width = 660;
-          scratchBackCanvas.height = 940;
-        }
-        const fCtx = scratchFrontCanvas.getContext('2d', { willReadFrequently: true });
-        const bCtx = scratchBackCanvas.getContext('2d', { willReadFrequently: true });
-        fCtx.clearRect(0, 0, 660, 940);
-        bCtx.clearRect(0, 0, 660, 940);
-        fCtx.drawImage(imF, 0, 0, 660, 940);
-        bCtx.drawImage(imB, 0, 0, 660, 940);
+        const cacheKey = `${imF.currentSrc || imF.src}|${imB.currentSrc || imB.src}`;
+        let metrics = illustrationCropCache.get(cacheKey);
+        if (!metrics) {
+          if (!scratchFrontCanvas) {
+            scratchFrontCanvas = document.createElement('canvas');
+            scratchFrontCanvas.width = 660;
+            scratchFrontCanvas.height = 940;
+            scratchBackCanvas = document.createElement('canvas');
+            scratchBackCanvas.width = 660;
+            scratchBackCanvas.height = 940;
+          }
+          const fCtx = scratchFrontCanvas.getContext('2d', { willReadFrequently: true });
+          const bCtx = scratchBackCanvas.getContext('2d', { willReadFrequently: true });
+          fCtx.clearRect(0, 0, 660, 940);
+          bCtx.clearRect(0, 0, 660, 940);
+          fCtx.drawImage(imF, 0, 0, 660, 940);
+          bCtx.drawImage(imB, 0, 0, 660, 940);
 
-        const fData = fCtx.getImageData(0, 0, 660, 940).data;
-        const bData = bCtx.getImageData(0, 0, 660, 940).data;
+          const fData = fCtx.getImageData(0, 0, 660, 940).data;
+          const bData = bCtx.getImageData(0, 0, 660, 940).data;
 
-        const isNonWhite = (data, x, y) => {
-          const i = (y * 660 + x) * 4;
-          return data[i] < 242 || data[i + 1] < 242 || data[i + 2] < 242;
-        };
-
-        // 1. Find right character min_x in imF (y=150..840, x=260..360)
-        let charMinX = 310;
-        for (let x = 260; x < 360; x++) {
-          let hitRed = false;
-          for (let y = 150; y < 840; y++) {
+          const isNonWhite = (data, x, y) => {
             const i = (y * 660 + x) * 4;
-            if (fData[i] > 180 && fData[i + 1] < 100 && fData[i + 2] < 95) {
-              hitRed = true;
+            return data[i] < 242 || data[i + 1] < 242 || data[i + 2] < 242;
+          };
+
+          // 1. Find right character min_x in imF (y=150..840, x=260..360)
+          let charMinX = 310;
+          for (let x = 260; x < 360; x += 2) {
+            let hitRed = false;
+            for (let y = 150; y < 840; y += 2) {
+              const i = (y * 660 + x) * 4;
+              if (fData[i] > 180 && fData[i + 1] < 100 && fData[i + 2] < 95) {
+                hitRed = true;
+                break;
+              }
+            }
+            if (hitRed) {
+              charMinX = x;
               break;
             }
           }
-          if (hitRed) {
-            charMinX = x;
-            break;
-          }
-        }
-        const leftLimit = Math.max(255, charMinX - 6);
+          const leftLimit = Math.max(255, charMinX - 6);
 
-        // 2. Find front left illustration bbox in x=48..leftLimit, y=160..780
-        let fx0 = 660, fy0 = 940, fx1 = 0, fy1 = 0;
-        for (let y = 160; y < 780; y++) {
-          for (let x = 48; x < leftLimit; x++) {
-            if (isNonWhite(fData, x, y)) {
-              if (x < fx0) fx0 = x;
-              if (x > fx1) fx1 = x;
-              if (y < fy0) fy0 = y;
-              if (y > fy1) fy1 = y;
-            }
-          }
-        }
-
-        // Check for isolated stray red fragment near bottom-left (x=48..335, y=846..876 when y=838..844 is white)
-        let hasStrayBottomFragment = false;
-        let gapAboveBottom = true;
-        for (let y = 838; y <= 844; y++) {
-          for (let x = 48; x < 335; x++) {
-            if (isNonWhite(fData, x, y)) {
-              gapAboveBottom = false;
-              break;
-            }
-          }
-        }
-        if (gapAboveBottom) {
-          for (let y = 846; y <= 876; y++) {
-            for (let x = 48; x < 335; x++) {
+          // 2. Find front left illustration bbox in x=48..leftLimit, y=160..780
+          let fx0 = 660, fy0 = 940, fx1 = 0, fy1 = 0;
+          for (let y = 160; y < 780; y += 2) {
+            for (let x = 48; x < leftLimit; x += 2) {
               if (isNonWhite(fData, x, y)) {
-                hasStrayBottomFragment = true;
+                if (x < fx0) fx0 = x;
+                if (x > fx1) fx1 = x;
+                if (y < fy0) fy0 = y;
+                if (y > fy1) fy1 = y;
+              }
+            }
+          }
+
+          // Check for isolated stray red fragment near bottom-left (x=48..335, y=846..876 when y=838..844 is white)
+          let hasStrayBottomFragment = false;
+          let gapAboveBottom = true;
+          for (let y = 838; y <= 844; y += 2) {
+            for (let x = 48; x < 335; x += 2) {
+              if (isNonWhite(fData, x, y)) {
+                gapAboveBottom = false;
                 break;
               }
             }
           }
-        }
-
-        if (fx1 <= fx0 || fy1 <= fy0) {
-          dom.cardFrontCanvas.classList.remove('is-ready');
-          return;
-        }
-        const fw = Math.max(1, fx1 - fx0 + 1);
-        const fh = Math.max(1, fy1 - fy0 + 1);
-
-        let topEdgeCount = 0;
-        let botEdgeCount = 0;
-        for (let x = fx0; x <= fx1; x++) {
-          if (isNonWhite(fData, x, fy0) || isNonWhite(fData, x, Math.min(779, fy0 + 1))) topEdgeCount++;
-          if (isNonWhite(fData, x, fy1) || isNonWhite(fData, x, Math.max(160, fy1 - 1))) botEdgeCount++;
-        }
-
-        // 3. Find back top illustration bbox in x=62..598, y=68..gapY
-        let gapY = 490;
-        let run = 0;
-        for (let y = 220; y < 515; y++) {
-          let rowActive = false;
-          for (let x = 65; x < 595; x++) {
-            if (isNonWhite(bData, x, y)) {
-              rowActive = true;
-              break;
+          if (gapAboveBottom) {
+            for (let y = 846; y <= 876; y += 2) {
+              for (let x = 48; x < 335; x += 2) {
+                if (isNonWhite(fData, x, y)) {
+                  hasStrayBottomFragment = true;
+                  break;
+                }
+              }
             }
           }
-          if (!rowActive) {
-            run++;
-            if (run >= 8 && y > 250) {
-              gapY = y - 3;
-            }
+
+          if (fx1 <= fx0 || fy1 <= fy0) {
+            metrics = { noop: true };
           } else {
-            if (run >= 8 && y > 340) break;
-            run = 0;
-          }
-        }
+            const fw = Math.max(1, fx1 - fx0 + 1);
+            const fh = Math.max(1, fy1 - fy0 + 1);
 
-        let bx0 = 660, by0 = 940, bx1 = 0, by1 = 0;
-        for (let y = 68; y <= gapY; y++) {
-          for (let x = 62; x < 598; x++) {
-            if (isNonWhite(bData, x, y)) {
-              if (x < bx0) bx0 = x;
-              if (x > bx1) bx1 = x;
-              if (y < by0) by0 = y;
-              if (y > by1) by1 = y;
+            let topEdgeCount = 0;
+            let botEdgeCount = 0;
+            for (let x = fx0; x <= fx1; x++) {
+              if (isNonWhite(fData, x, fy0) || isNonWhite(fData, x, Math.min(779, fy0 + 1))) topEdgeCount++;
+              if (isNonWhite(fData, x, fy1) || isNonWhite(fData, x, Math.max(160, fy1 - 1))) botEdgeCount++;
+            }
+
+            // 3. Find back top illustration bbox in x=62..598, y=68..gapY
+            let gapY = 490;
+            let run = 0;
+            for (let y = 220; y < 515; y++) {
+              let rowActive = false;
+              for (let x = 65; x < 595; x += 2) {
+                if (isNonWhite(bData, x, y)) {
+                  rowActive = true;
+                  break;
+                }
+              }
+              if (!rowActive) {
+                run++;
+                if (run >= 8 && y > 250) {
+                  gapY = y - 3;
+                }
+              } else {
+                if (run >= 8 && y > 340) break;
+                run = 0;
+              }
+            }
+
+            let bx0 = 660, by0 = 940, bx1 = 0, by1 = 0;
+            for (let y = 68; y <= gapY; y += 2) {
+              for (let x = 62; x < 598; x += 2) {
+                if (isNonWhite(bData, x, y)) {
+                  if (x < bx0) bx0 = x;
+                  if (x > bx1) bx1 = x;
+                  if (y < by0) by0 = y;
+                  if (y > by1) by1 = y;
+                }
+              }
+            }
+            if (bx1 <= bx0 || by1 <= by0) {
+              metrics = { noop: true };
+            } else {
+              const bw = Math.max(1, bx1 - bx0 + 1);
+              const bh = Math.max(1, by1 - by0 + 1);
+              const hitsTopCropBox = fy0 >= 366 && fy0 <= 384 && topEdgeCount >= 8;
+              const hitsBotCropBox = fy1 >= 604 && fy1 <= 622 && botEdgeCount >= 8;
+              const isClippedVertically = (hitsTopCropBox || hitsBotCropBox) && (bh / bw > (fh / fw) * 1.06);
+
+              if (!isClippedVertically && !hasStrayBottomFragment) {
+                metrics = { noop: true };
+              } else {
+                metrics = {
+                  noop: false,
+                  fx0,
+                  fy0,
+                  fx1,
+                  fy1,
+                  leftLimit,
+                  hasStrayBottomFragment,
+                  isClippedVertically,
+                  gapY,
+                  bx0,
+                  by0,
+                  bx1,
+                  by1,
+                };
+              }
             }
           }
+
+          if (illustrationCropCache.size >= MAX_ILLUSTRATION_CROP_CACHE) {
+            const firstKey = illustrationCropCache.keys().next().value;
+            if (firstKey !== undefined) illustrationCropCache.delete(firstKey);
+          }
+          illustrationCropCache.set(cacheKey, metrics);
         }
-        if (bx1 <= bx0 || by1 <= by0) {
+
+        if (metrics.noop) {
           dom.cardFrontCanvas.classList.remove('is-ready');
           return;
         }
-        const bw = Math.max(1, bx1 - bx0 + 1);
-        const bh = Math.max(1, by1 - by0 + 1);
 
-        const hitsTopCropBox = fy0 >= 366 && fy0 <= 384 && topEdgeCount >= 8;
-        const hitsBotCropBox = fy1 >= 604 && fy1 <= 622 && botEdgeCount >= 8;
-        const isClippedVertically = (hitsTopCropBox || hitsBotCropBox) && (bh / bw > (fh / fw) * 1.06);
-
-        if (!isClippedVertically && !hasStrayBottomFragment) {
-          dom.cardFrontCanvas.classList.remove('is-ready');
-          return;
-        }
+        const {
+          fx0,
+          fy0,
+          fx1,
+          fy1,
+          leftLimit,
+          hasStrayBottomFragment,
+          isClippedVertically,
+          gapY,
+          bx0,
+          by0,
+          bx1,
+          by1,
+        } = metrics;
 
         const outCtx = dom.cardFrontCanvas.getContext('2d');
         outCtx.clearRect(0, 0, 660, 940);

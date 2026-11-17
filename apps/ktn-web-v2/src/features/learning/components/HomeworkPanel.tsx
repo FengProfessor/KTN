@@ -46,10 +46,59 @@ interface HomeworkPanelProps {
   onSubmitHomework: (params: {
     file?: File | Blob | null;
     fileName?: string;
+    files?: Array<{ blob: File | Blob; name: string }>;
     note: string;
     submissionMode?: 'file' | 'text';
     textAnswer?: string;
+    onProgress?: (pct: number) => void;
   }) => Promise<void>;
+}
+
+const MAX_HOMEWORK_DRAFT_LEN = 4000;
+
+function getHomeworkDraftKey(courseId: string, lessonNum: number): string {
+  return `ktn_hw_draft_${courseId}_L${lessonNum}`;
+}
+
+async function compressHomeworkImageIfNeeded(file: File): Promise<File> {
+  const mime = (file.type || '').toLowerCase();
+  if (
+    (mime !== 'image/jpeg' && mime !== 'image/png') ||
+    file.size <= 2 * 1024 * 1024 ||
+    typeof document === 'undefined' ||
+    typeof createImageBitmap !== 'function'
+  ) {
+    return file;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxDim = 1920;
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width || 1, bitmap.height || 1));
+    const targetW = Math.max(1, Math.round((bitmap.width || 1) * scale));
+    const targetH = Math.max(1, Math.round((bitmap.height || 1) * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close?.();
+      return file;
+    }
+    ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+    bitmap.close?.();
+    const outBlob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.82)
+    );
+    canvas.width = 0;
+    canvas.height = 0;
+    if (outBlob && outBlob.size > 0 && outBlob.size < file.size) {
+      const baseName = file.name.replace(/\.[^/.]+$/, '');
+      return new File([outBlob], `${baseName}.jpg`, { type: 'image/jpeg' });
+    }
+  } catch {
+    // fallback to original image
+  }
+  return file;
 }
 
 function getAllowedTypeLabels(lang: AppLanguage): Record<string, string> {
@@ -79,19 +128,33 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
   const allowedTypeLabels = getAllowedTypeLabels(lang);
   const setActiveLightboxAttachment = useUiStore((s) => s.setActiveLightboxAttachment);
   const isDemoMode = useUiStore((s) => s.isDemoMode);
-  const [note, setNote] = useState(existingSubmission?.student_note || '');
-  const [selectedFile, setSelectedFile] = useState<{
-    blob: File | Blob;
-    name: string;
-    size: number;
-    mimeType: string;
-    previewUrl?: string;
-  } | null>(null);
+  const draftStorageKey = getHomeworkDraftKey(courseId, lessonNum);
+  const [note, setNote] = useState(() => {
+    if (existingSubmission?.student_note) return existingSubmission.student_note;
+    try {
+      return localStorage.getItem(draftStorageKey) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [selectedFiles, setSelectedFiles] = useState<
+    Array<{
+      blob: File | Blob;
+      name: string;
+      size: number;
+      mimeType: string;
+      previewUrl?: string;
+    }>
+  >([]);
+  const selectedFile = selectedFiles[0] || null;
   const [showRecorder, setShowRecorder] = useState(false);
   const [isRecorderActive, setIsRecorderActive] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [uploadProgressPct, setUploadProgressPct] = useState<number | null>(null);
   const [isRevising, setIsRevising] = useState(false);
   const [voluntaryOpen, setVoluntaryOpen] = useState(false);
+  const isSubmittingRef = useRef(false);
+  const previewUrlsRef = useRef<Set<string>>(new Set());
 
   // Admin / Teacher Homework Config Editor State
   const [localAssignment, setLocalAssignment] = useState<KtnHomeworkAssignment | null>(null);
@@ -114,18 +177,72 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const clearPreviewUrls = () => {
+    for (const u of previewUrlsRef.current) {
+      if (u.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(u);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    previewUrlsRef.current.clear();
+  };
+
   useEffect(() => {
-    setNote(existingSubmission?.student_note || '');
-    setSelectedFile(null);
+    return () => {
+      clearPreviewUrls();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (existingSubmission?.student_note) {
+      setNote(existingSubmission.student_note);
+    } else {
+      try {
+        setNote(localStorage.getItem(draftStorageKey) || '');
+      } catch {
+        setNote('');
+      }
+    }
+    clearPreviewUrls();
+    setSelectedFiles([]);
     setShowRecorder(false);
     setIsRecorderActive(false);
     setSubmitError(null);
+    setUploadProgressPct(null);
     setIsRevising(false);
     setVoluntaryOpen(false);
     setLocalAssignment(null);
     setIsEditingConfig(false);
     setConfigError(null);
-  }, [courseId, unitId, lessonNum, existingSubmission?.id]);
+  }, [courseId, unitId, lessonNum, existingSubmission?.id, existingSubmission?.student_note, draftStorageKey]);
+
+  const updateNoteWithDraft = (nextNote: string) => {
+    setNote(nextNote);
+    if (!existingSubmission || isRevising) {
+      try {
+        if (nextNote.trim()) {
+          localStorage.setItem(draftStorageKey, nextNote.slice(0, MAX_HOMEWORK_DRAFT_LEN));
+        } else {
+          localStorage.removeItem(draftStorageKey);
+        }
+      } catch {
+        // ignore storage quota errors
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!isSubmitting && uploadProgressPct === null) return;
+    const onBeforeUnload = (ev: BeforeUnloadEvent) => {
+      ev.preventDefault();
+      ev.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isSubmitting, uploadProgressPct]);
 
   const effectiveAssignment: KtnHomeworkAssignment = localAssignment ||
     homeworkAssignment || {
@@ -231,54 +348,104 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     const cleanCoursePrefix = courseId.slice(0, 6);
     const fileName = `ThuAm-${cleanCoursePrefix}-Bai${lessonNum}-${durationSec}s.${ext}`;
     const normalizedFile = new File([blob], fileName, { type: cleanMime });
-    setSelectedFile({
-      blob: normalizedFile,
-      name: fileName,
-      size: normalizedFile.size,
-      mimeType: cleanMime,
-      previewUrl,
-    });
+    const maxAllowed = Math.min(3, Math.max(1, Number(effectiveAssignment.maxFiles || 3)));
+    if (previewUrl) previewUrlsRef.current.add(previewUrl);
+    setSelectedFiles((prev) => [
+      {
+        blob: normalizedFile,
+        name: fileName,
+        size: normalizedFile.size,
+        mimeType: cleanMime,
+        previewUrl,
+      },
+      ...prev.filter((f) => !f.mimeType.startsWith('audio/')).slice(0, maxAllowed - 1),
+    ]);
     setSubmitError(null);
   };
 
-  const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size <= 0) {
-      setSubmitError(
-        tr(
-          'Tệp vừa chọn bị rỗng (0 byte). Vui lòng chọn tệp hợp lệ.',
-          'The selected file is empty (0 bytes). Please choose a valid file.'
-        )
-      );
-      e.target.value = '';
-      return;
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      setSubmitError(
-        tr(
-          'Tệp vượt quá giới hạn 50MB. Vui lòng chọn tệp nhỏ hơn.',
-          'File exceeds the 50MB limit. Please choose a smaller file.'
-        )
-      );
-      e.target.value = '';
-      return;
-    }
-    const cleanMime = (file.type || 'application/octet-stream').split(';')[0].trim();
-    const isPreviewable = cleanMime.startsWith('audio/') || cleanMime.startsWith('image/');
-    setSelectedFile({
-      blob: file,
-      name: file.name,
-      size: file.size,
-      mimeType: cleanMime,
-      previewUrl: isPreviewable ? URL.createObjectURL(file) : undefined,
-    });
-    setSubmitError(null);
+  const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
     e.target.value = '';
+    if (picked.length === 0) return;
+
+    const maxAllowed = Math.min(3, Math.max(1, Number(effectiveAssignment.maxFiles || 3)));
+    const nextItems: Array<{
+      blob: File | Blob;
+      name: string;
+      size: number;
+      mimeType: string;
+      previewUrl?: string;
+    }> = [];
+
+    for (const rawFile of picked) {
+      if (rawFile.size <= 0) {
+        setSubmitError(
+          tr(
+            'Tệp vừa chọn bị rỗng (0 byte). Vui lòng chọn tệp hợp lệ.',
+            'The selected file is empty (0 bytes). Please choose a valid file.'
+          )
+        );
+        return;
+      }
+      if (rawFile.size > 50 * 1024 * 1024) {
+        setSubmitError(
+          tr(
+            'Tệp vượt quá giới hạn 50MB. Vui lòng chọn tệp nhỏ hơn.',
+            'File exceeds the 50MB limit. Please choose a smaller file.'
+          )
+        );
+        return;
+      }
+      const processedFile = await compressHomeworkImageIfNeeded(rawFile);
+      const cleanMime = (processedFile.type || 'application/octet-stream').split(';')[0].trim();
+      const isPreviewable = cleanMime.startsWith('audio/') || cleanMime.startsWith('image/');
+      const previewUrl = isPreviewable ? URL.createObjectURL(processedFile) : undefined;
+      if (previewUrl) previewUrlsRef.current.add(previewUrl);
+      nextItems.push({
+        blob: processedFile,
+        name: processedFile.name,
+        size: processedFile.size,
+        mimeType: cleanMime,
+        previewUrl,
+      });
+    }
+
+    setSelectedFiles((prev) => [...prev, ...nextItems].slice(0, maxAllowed));
+    setSubmitError(null);
+  };
+
+  const removeSelectedFileAt = (idx: number) => {
+    setSelectedFiles((prev) => {
+      const removed = prev[idx];
+      if (removed?.previewUrl && removed.previewUrl.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(removed.previewUrl);
+        } catch {
+          // ignore
+        }
+        previewUrlsRef.current.delete(removed.previewUrl);
+      }
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
+
+  const clearDraftAndSelectedFiles = () => {
+    try {
+      localStorage.removeItem(draftStorageKey);
+    } catch {
+      // ignore
+    }
+    clearPreviewUrls();
+    setSelectedFiles([]);
+    setShowRecorder(false);
+    setIsRecorderActive(false);
+    setIsRevising(false);
+    setVoluntaryOpen(false);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current || isSubmitting) return;
     setSubmitError(null);
 
     const fileToUpload = selectedFile?.blob || null;
@@ -298,19 +465,17 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
     // Phase 5.1: NEVER create fake WAV from text note!
     if (!fileToUpload) {
       if (allowsTextOnly && note.trim()) {
+        isSubmittingRef.current = true;
         try {
           await onSubmitHomework({
             file: null,
             fileName: '',
+            files: [],
             note: note.trim(),
             submissionMode: 'text',
             textAnswer: note.trim(),
           });
-          setSelectedFile(null);
-          setShowRecorder(false);
-          setIsRecorderActive(false);
-          setIsRevising(false);
-          setVoluntaryOpen(false);
+          clearDraftAndSelectedFiles();
         } catch (err) {
           setSubmitError(
             err instanceof Error
@@ -320,6 +485,9 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                   'Unable to submit your answer. Please check your connection and try again.'
                 )
           );
+        } finally {
+          isSubmittingRef.current = false;
+          setUploadProgressPct(null);
         }
         return;
       }
@@ -333,18 +501,18 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
       return;
     }
 
+    isSubmittingRef.current = true;
+    setUploadProgressPct(5);
     try {
       await onSubmitHomework({
         file: fileToUpload,
         fileName: fileNameToUpload,
+        files: selectedFiles.map((f) => ({ blob: f.blob, name: f.name })),
         note: note.trim() || tr(`Nộp bài tập ${lessonTitle}`, `Homework submission: ${lessonTitle}`),
         submissionMode: 'file',
+        onProgress: (pct) => setUploadProgressPct(pct),
       });
-      setSelectedFile(null);
-      setShowRecorder(false);
-      setIsRecorderActive(false);
-      setIsRevising(false);
-      setVoluntaryOpen(false);
+      clearDraftAndSelectedFiles();
     } catch (err) {
       setSubmitError(
         err instanceof Error
@@ -354,6 +522,9 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               'Could not submit homework due to a connection error. Your file/recording is preserved locally so you can retry.'
             )
       );
+    } finally {
+      isSubmittingRef.current = false;
+      setUploadProgressPct(null);
     }
   };
 
@@ -883,9 +1054,10 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               <VoiceRecorder
                 submitLabel={tr('Dùng bản thu này', 'Use This Recording')}
                 onRecordingStateChange={(active) => setIsRecorderActive(active)}
-                onClearRecording={() => setSelectedFile(null)}
+                onClearRecording={() => setSelectedFiles([])}
                 onCancel={() => {
-                  setSelectedFile(null);
+                  clearPreviewUrls();
+                  setSelectedFiles([]);
                   setIsRecorderActive(false);
                   setShowRecorder(false);
                 }}
@@ -921,6 +1093,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
+                  multiple
                   data-testid="homework-file-input"
                   accept="audio/*,video/*,image/*,.pdf"
                   onChange={handleFilePick}
@@ -935,71 +1108,95 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
                 >
                   <Upload className="h-4 w-4 shrink-0 text-stone-600" />
                   <span>
-                    {selectedFile
-                      ? tr('Đổi tệp / ảnh khác', 'Change File / Image')
-                      : tr('Chọn ảnh / PDF / audio', 'Choose Image / PDF / Audio')}
+                    {selectedFiles.length > 0
+                      ? tr(
+                          `Thêm tệp (${selectedFiles.length}/${Math.min(3, effectiveAssignment.maxFiles || 3)})`,
+                          `Add file (${selectedFiles.length}/${Math.min(3, effectiveAssignment.maxFiles || 3)})`
+                        )
+                      : tr('Chọn ảnh / PDF / audio (tối đa 3)', 'Choose Image / PDF / Audio (up to 3)')}
                   </span>
                 </button>
               </div>
             )}
 
-            {/* Selected File Preview */}
-            {selectedFile && (
-              <div
-                data-testid="homework-selected-file-card"
-                className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5"
-              >
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {selectedFile.mimeType.startsWith('image/') && selectedFile.previewUrl ? (
-                    <img
-                      src={selectedFile.previewUrl}
-                      alt={selectedFile.name}
-                      onClick={() =>
-                        setActiveLightboxAttachment({
-                          name: selectedFile.name,
-                          url: selectedFile.previewUrl!,
-                          kind: 'image',
-                        })
-                      }
-                      className="h-12 w-12 shrink-0 cursor-zoom-in rounded-lg border border-emerald-300 object-cover"
-                    />
-                  ) : selectedFile.mimeType.startsWith('audio/') ? (
-                    <FileAudio className="h-5 w-5 shrink-0 text-emerald-700" />
-                  ) : selectedFile.mimeType.includes('pdf') ? (
-                    <FileText className="h-5 w-5 shrink-0 text-red-800" />
-                  ) : (
-                    <ImageIcon className="h-5 w-5 shrink-0 text-emerald-700" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-bold text-stone-900">{selectedFile.name}</p>
-                    <p className="text-[11px] text-stone-600">
-                      {formatFileSize(selectedFile.size)} • {selectedFile.mimeType} • {tr('Sẵn sàng nộp', 'Ready to submit')}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  {selectedFile.previewUrl && selectedFile.mimeType.startsWith('audio/') && (
-                    <audio
-                      data-testid="homework-selected-audio-preview"
-                      controls
-                      src={selectedFile.previewUrl}
-                      className="h-8 max-w-[180px]"
-                    />
-                  )}
-                  <button
-                    type="button"
-                    data-testid="homework-remove-file-btn"
-                    onClick={() => setSelectedFile(null)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-100"
+            {/* Selected File Preview(s) */}
+            {selectedFiles.length > 0 && (
+              <div className="space-y-2">
+                {selectedFiles.map((fileItem, fIdx) => (
+                  <div
+                    key={`${fileItem.name}-${fIdx}`}
+                    data-testid={fIdx === 0 ? 'homework-selected-file-card' : `homework-selected-file-card-${fIdx}`}
+                    className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5"
                   >
-                    <Trash2 className="h-3 w-3 text-red-700" />
-                    {tr('Xóa tệp', 'Remove')}
-                  </button>
-                </div>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {fileItem.mimeType.startsWith('image/') && fileItem.previewUrl ? (
+                        <img
+                          src={fileItem.previewUrl}
+                          alt={fileItem.name}
+                          onClick={() =>
+                            setActiveLightboxAttachment({
+                              name: fileItem.name,
+                              url: fileItem.previewUrl!,
+                              kind: 'image',
+                            })
+                          }
+                          className="h-12 w-12 shrink-0 cursor-zoom-in rounded-lg border border-emerald-300 object-cover"
+                        />
+                      ) : fileItem.mimeType.startsWith('audio/') ? (
+                        <FileAudio className="h-5 w-5 shrink-0 text-emerald-700" />
+                      ) : fileItem.mimeType.includes('pdf') ? (
+                        <FileText className="h-5 w-5 shrink-0 text-red-800" />
+                      ) : (
+                        <ImageIcon className="h-5 w-5 shrink-0 text-emerald-700" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-bold text-stone-900">{fileItem.name}</p>
+                        <p className="text-[11px] text-stone-600">
+                          {formatFileSize(fileItem.size)} • {fileItem.mimeType} •{' '}
+                          {tr('Sẵn sàng nộp', 'Ready to submit')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {fileItem.previewUrl && fileItem.mimeType.startsWith('audio/') && (
+                        <audio
+                          data-testid={fIdx === 0 ? 'homework-selected-audio-preview' : `homework-selected-audio-preview-${fIdx}`}
+                          controls
+                          src={fileItem.previewUrl}
+                          className="h-8 max-w-[180px]"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        data-testid={fIdx === 0 ? 'homework-remove-file-btn' : `homework-remove-file-btn-${fIdx}`}
+                        onClick={() => removeSelectedFileAt(fIdx)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-100"
+                      >
+                        <Trash2 className="h-3 w-3 text-red-700" />
+                        {tr('Xóa tệp', 'Remove')}
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
+
+          {uploadProgressPct !== null && (
+            <div data-testid="homework-upload-progress" className="space-y-1">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-stone-200">
+                <div
+                  className="h-full rounded-full bg-red-800 transition-all duration-150"
+                  style={{ width: `${uploadProgressPct}%` }}
+                />
+              </div>
+              <p className="text-[11px] font-semibold text-red-900">
+                {tr('Đang tải tệp lên:', 'Uploading:')}{' '}
+                {uploadProgressPct}%
+              </p>
+            </div>
+          )}
 
           {/* Student Note */}
           <div>
@@ -1016,7 +1213,7 @@ export const HomeworkPanel: React.FC<HomeworkPanelProps> = ({
               data-testid="homework-note-input"
               rows={2}
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(e) => updateNoteWithDraft(e.target.value)}
               placeholder={tr(
                 'Ghi chú bài thu âm, trang vở viết hoặc câu hỏi cần Lão sư giải đáp...',
                 'Note on your recording, workbook pages, or questions for your teacher...'

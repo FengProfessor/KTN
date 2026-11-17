@@ -1,6 +1,6 @@
 import { consultationPage } from './consultation-page.mjs';
 import { draftConsultationExamples, draftConsultationPolicy } from './consultation-examples.mjs';
-import { consultationExample, consultationExampleLimit, retrieveConsultationExamples } from './consultation-retrieval.mjs';
+import { consultationExample, consultationExampleLimit, isAdultTutoringRequest, retrieveConsultationExamples } from './consultation-retrieval.mjs';
 
 const prefix = '/api/ktn/consultations/';
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
@@ -208,6 +208,10 @@ async function botReply(store, env, deps, conversation, customerMessage, base) {
   let reply;
   let recommendation;
   const after = { after_id: customerMessage.id };
+  if (isAdultTutoringRequest(customerMessage.body)) {
+    await handoffWithMessage(store, conversation, after, 'Dạ, em chuyển anh/chị tới tư vấn viên để kiểm tra lộ trình và lịch học phù hợp ạ.');
+    return;
+  }
   if (/\b(?:em|cháu) là (?:học sinh|trẻ em)|\b(?:em|cháu) (?:mới )?\d{1,2} tuổi|chưa đủ (?:18|mười tám)|không cần (?:ba mẹ|bố mẹ|phụ huynh)/iu.test(customerMessage.body)) {
     await handoffWithMessage(store, conversation, after, 'Nhờ phụ huynh hoặc người giám hộ liên hệ KTN để được hỗ trợ đăng ký nhé.');
     return;

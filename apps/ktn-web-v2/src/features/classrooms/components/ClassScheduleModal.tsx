@@ -101,6 +101,7 @@ export interface ClassScheduleModalProps {
       daysOfWeek: number[];
       startTime: string;
       endTime: string;
+      scheduleSlots?: Record<string, { startTime: string; endTime: string }>;
       timezone: string;
       effectiveFrom: string;
       effectiveUntil: string | null;
@@ -148,6 +149,9 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
   const [startTime, setStartTime] = useState<string>('');
   const [endTime, setEndTime] = useState<string>('');
+  const [scheduleSlots, setScheduleSlots] = useState<
+    Record<string, { startTime: string; endTime: string }>
+  >({});
   const [timezone] = useState<string>('Asia/Ho_Chi_Minh');
   const [effectiveFrom, setEffectiveFrom] = useState<string>(todayStr);
   const [effectiveUntil, setEffectiveUntil] = useState<string>('');
@@ -226,6 +230,9 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       setDaysOfWeek(Array.isArray(cfg.daysOfWeek) ? cfg.daysOfWeek : []);
       setStartTime(cfg.startTime || '');
       setEndTime(cfg.endTime || '');
+      setScheduleSlots(
+        cfg.scheduleSlots && typeof cfg.scheduleSlots === 'object' ? cfg.scheduleSlots : {}
+      );
       setEffectiveFrom(cfg.effectiveFrom || todayStr);
       setEffectiveUntil(cfg.effectiveUntil || '');
       setMeetingUrl(cfg.meetingUrl || '');
@@ -238,6 +245,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
       setDaysOfWeek([]);
       setStartTime('');
       setEndTime('');
+      setScheduleSlots({});
       setEffectiveFrom(todayStr);
       setEffectiveUntil('');
       setMeetingUrl('');
@@ -254,6 +262,14 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
   const toggleDayOfWeek = (day: number) => {
     setDaysOfWeek((prev) => {
+      if (prev.includes(day)) {
+        setScheduleSlots((slots) => {
+          if (!slots[String(day)]) return slots;
+          const copy = { ...slots };
+          delete copy[String(day)];
+          return copy;
+        });
+      }
       const next = prev.includes(day)
         ? prev.filter((d) => d !== day)
         : [...prev, day].sort((a, b) => (DAY_SORT_ORDER[a] || 9) - (DAY_SORT_ORDER[b] || 9));
@@ -383,11 +399,12 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
 
       const targetDate = dateStr;
       const targetIsoDay = getIsoDayFromDateStr(targetDate);
+      const daySlot = scheduleSlots[String(jsDay)];
       results.push({
         date: targetDate,
         dayLabel: formatDayLabelByLang(targetIsoDay, lang),
-        startTime: exc?.startTime || startTime,
-        endTime: exc?.endTime || endTime,
+        startTime: exc?.startTime || daySlot?.startTime || startTime,
+        endTime: exc?.endTime || daySlot?.endTime || endTime,
         status: exc ? exc.type : 'scheduled',
         note: exc?.note,
       });
@@ -400,6 +417,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
     daysOfWeek,
     startTime,
     endTime,
+    scheduleSlots,
     effectiveFrom,
     effectiveUntil,
     customSessions,
@@ -526,6 +544,21 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
         : ''
       : matchedTeacher?.email || cleanSelectedTeacher || classItem?.teacher_email;
 
+    const normalizedScheduleSlots: Record<string, { startTime: string; endTime: string }> = {};
+    if (scheduleMode === 'weekly') {
+      for (const d of daysOfWeek) {
+        const slot = scheduleSlots[String(d)];
+        if (slot && (/^\d{2}:\d{2}$/.test(slot.startTime) || /^\d{2}:\d{2}$/.test(slot.endTime))) {
+          normalizedScheduleSlots[String(d)] = {
+            startTime: /^\d{2}:\d{2}$/.test(slot.startTime)
+              ? slot.startTime
+              : startTime || '19:30',
+            endTime: /^\d{2}:\d{2}$/.test(slot.endTime) ? slot.endTime : endTime || '20:30',
+          };
+        }
+      }
+    }
+
     try {
       await onSaveClassAndSchedule({
         isCreateClass: isCreateMode,
@@ -540,6 +573,7 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
           daysOfWeek,
           startTime: startTime || '19:30',
           endTime: endTime || '20:30',
+          scheduleSlots: normalizedScheduleSlots,
           timezone,
           effectiveFrom: effectiveFrom || todayStr,
           effectiveUntil: effectiveUntil.trim() ? effectiveUntil.trim() : null,
@@ -847,6 +881,87 @@ export const ClassScheduleModal: React.FC<ClassScheduleModalProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* Optional Per-Weekday Time Slots (only when >1 weekday is active) */}
+                {daysOfWeek.length > 1 && (
+                  <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-2.5">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-stone-700">
+                        {tr(
+                          'Giờ riêng từng thứ (tùy chọn — bỏ trống để dùng giờ chung)',
+                          'Custom time per weekday (optional — leave blank for default time)'
+                        )}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {daysOfWeek.map((d) => {
+                        const dayLabel =
+                          dayOptions.find((opt) => opt.value === d)?.label || String(d);
+                        const slot = scheduleSlots[String(d)] || { startTime: '', endTime: '' };
+                        return (
+                          <div
+                            key={d}
+                            className="flex flex-wrap items-center gap-2 text-[11px]"
+                          >
+                            <span className="w-16 shrink-0 font-bold text-stone-800">
+                              {dayLabel}
+                            </span>
+                            <input
+                              type="time"
+                              data-testid={`schedule-slot-start-${d}`}
+                              aria-label={`${dayLabel} ${tr('bắt đầu', 'start')}`}
+                              value={slot.startTime}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setScheduleSlots((prev) => ({
+                                  ...prev,
+                                  [String(d)]: {
+                                    startTime: val,
+                                    endTime: prev[String(d)]?.endTime || endTime || '20:30',
+                                  },
+                                }));
+                              }}
+                              className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs font-semibold text-stone-900"
+                            />
+                            <span className="text-stone-400">→</span>
+                            <input
+                              type="time"
+                              data-testid={`schedule-slot-end-${d}`}
+                              aria-label={`${dayLabel} ${tr('kết thúc', 'end')}`}
+                              value={slot.endTime}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setScheduleSlots((prev) => ({
+                                  ...prev,
+                                  [String(d)]: {
+                                    startTime: prev[String(d)]?.startTime || startTime || '19:30',
+                                    endTime: val,
+                                  },
+                                }));
+                              }}
+                              className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs font-semibold text-stone-900"
+                            />
+                            {(slot.startTime || slot.endTime) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setScheduleSlots((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[String(d)];
+                                    return copy;
+                                  })
+                                }
+                                className="rounded px-1.5 py-0.5 text-[10px] font-bold text-stone-500 hover:bg-stone-200 hover:text-stone-800"
+                              >
+                                {tr('Mặc định', 'Reset')}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Effective From & Effective Until */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

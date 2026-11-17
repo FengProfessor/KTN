@@ -594,7 +594,7 @@ export const chatApi = {
 
   async getMessages(
     roomId: string,
-    options: { limit?: number; before?: string | null } = {}
+    options: { limit?: number; before?: string | null; after?: string | null } = {}
   ): Promise<{
     roomId: string;
     messages: ChatMessage[];
@@ -605,6 +605,7 @@ export const chatApi = {
     params.set('roomId', roomId);
     if (options.limit) params.set('limit', String(options.limit));
     if (options.before) params.set('before', options.before);
+    if (options.after) params.set('after', options.after);
 
     const res = await ktnRequest<{
       ok: boolean;

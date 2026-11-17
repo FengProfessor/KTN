@@ -325,7 +325,54 @@ export function useRoomMessages(roomId: string | null) {
         };
       }
 
-      const res = await chatApi.getMessages(roomId, { limit: 60 });
+      const existingRetained = roomScopeKey ? retainedServerByScopeRef.current[roomScopeKey] : undefined;
+      let latestCreatedAt: string | null = null;
+      if (existingRetained && existingRetained.size > 0) {
+        let maxTs = 0;
+        existingRetained.forEach((m) => {
+          const ts = Date.parse(m.created_at || '');
+          if (Number.isFinite(ts) && ts > maxTs) {
+            maxTs = ts;
+            latestCreatedAt = m.created_at;
+          }
+        });
+      }
+
+      const res = await chatApi.getMessages(
+        roomId,
+        latestCreatedAt ? { limit: 60, after: latestCreatedAt } : { limit: 60 }
+      );
+      if (latestCreatedAt) {
+        const prevPag = initialPaginationByScopeRef.current[roomScopeKey];
+        const retainedArr = existingRetained ? Array.from(existingRetained.values()) : [];
+        const mergedMap = new Map<string, ChatMessage>();
+        for (const m of retainedArr) mergedMap.set(String(m.id), m);
+        for (const m of res.messages || []) {
+          if (doesMessageBelongToRoom(m, roomId, false)) {
+            mergedMap.set(String(m.id), m);
+          }
+        }
+        return {
+          messages: Array.from(mergedMap.values()),
+          pinnedMessage: res.pinnedMessage || null,
+          pagination: prevPag
+            ? {
+                hasMore: prevPag.hasMore,
+                nextCursor: prevPag.cursor,
+                oldestCreatedAt: retainedArr[0]?.created_at || null,
+                limit: 60,
+                totalAvailable: mergedMap.size,
+              }
+            : res.pagination || {
+                hasMore: false,
+                nextCursor: null,
+                oldestCreatedAt: retainedArr[0]?.created_at || null,
+                limit: 60,
+                totalAvailable: mergedMap.size,
+              },
+        };
+      }
+
       return {
         messages: res.messages || [],
         pinnedMessage: res.pinnedMessage || null,
@@ -339,7 +386,12 @@ export function useRoomMessages(roomId: string | null) {
       };
     },
     enabled: Boolean(roomId) && (Boolean(user) || isDemoMode),
-    refetchInterval: isDemoMode ? false : 3000,
+    refetchInterval: isDemoMode
+      ? false
+      : () =>
+          typeof document !== 'undefined' && document.visibilityState === 'hidden'
+            ? false
+            : 3000,
     refetchIntervalInBackground: false,
     staleTime: 1000,
     retry: (failureCount, err) =>

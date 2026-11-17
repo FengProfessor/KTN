@@ -68,6 +68,19 @@
       ]),
       productIds: Object.freeze(['6adadba969897b0002482ca5'])
     }),
+    '6af2d9719a8b000002ad4bc0': Object.freeze({
+      id: '6af2d9719a8b000002ad4bc0',
+      code: 'HSK2-30',
+      title: 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)',
+      level: 'HSK 2 (3.0)',
+      productType: 'online-course',
+      aliases: Object.freeze([
+        'hsk2', 'hsk 2', 'hsk2 3.0', 'hsk 2 3.0', 'hsk2-3.0', 'hsk2-30',
+        'new hsk 2', 'new hsk 2 (3.0)', 'tieng trung hsk 2',
+        'khoa hoc tieu chuan new hsk 2 (3.0)'
+      ]),
+      productIds: Object.freeze(['6af2d9719a8b000002ad4bc0'])
+    }),
     '65e7704a9ea90c00080d5195': Object.freeze({
       id: '65e7704a9ea90c00080d5195',
       title: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)',

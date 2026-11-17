@@ -61,6 +61,7 @@ import {
   formatChatTimestamp,
   formatRelativeTime,
   formatExerciseDisplayTitle,
+  normalizeViSearchText,
 } from '@/lib/utils';
 
 export interface TeacherAttachmentUploadItem extends KtnExerciseAttachment {
@@ -156,6 +157,12 @@ export const TeacherWorkspace: React.FC = () => {
   const [scoreInput, setScoreInput] = useState<string>('');
   const [feedbackInput, setFeedbackInput] = useState<string>('');
   const [gradeStatusInput, setGradeStatusInput] = useState<'graded' | 'revision_requested'>('graded');
+  const [draftGradesByHwId, setDraftGradesByHwId] = useState<
+    Record<string, { score: string; feedback: string; status: 'graded' | 'revision_requested' }>
+  >({});
+  const [hwSearch, setHwSearch] = useState<string>('');
+  const [hwSortOrder, setHwSortOrder] = useState<'oldest' | 'newest'>('oldest');
+  const [hwDisplayLimit, setHwDisplayLimit] = useState<number>(60);
 
   const [sessionNum, setSessionNum] = useState<number | null>(() => {
     const raw = Number(searchParams.get('session'));
@@ -515,6 +522,8 @@ export const TeacherWorkspace: React.FC = () => {
       teacherFeedback: string;
       status: 'graded' | 'revision_requested';
       classCode?: string | null;
+      expectedFileUrl?: string | null;
+      saveAndNext?: boolean;
     }) => {
       if (isDemoMode) {
         await new Promise((r) => setTimeout(r, 400));
@@ -529,12 +538,29 @@ export const TeacherWorkspace: React.FC = () => {
           syncStatus: 'synced',
         };
       }
-      return ktnApi.gradeHomework(params);
+      const { saveAndNext: _ignoreSaveAndNext, ...payload } = params;
+      return ktnApi.gradeHomework(payload);
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['ktn-homeworks'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
-      setActiveHomeworkId(null);
+      setDraftGradesByHwId((prev) => {
+        const next = { ...prev };
+        delete next[vars.id];
+        return next;
+      });
+      if (vars.saveAndNext) {
+        const nextPending = filteredHomeworks.find(
+          (item) => String(item.id) !== vars.id && item.status === 'pending'
+        );
+        if (nextPending) {
+          openGradingForm(nextPending);
+        } else {
+          setActiveHomeworkId(null);
+        }
+      } else {
+        setActiveHomeworkId(null);
+      }
       addToast({
         title:
           vars.status === 'revision_requested'
@@ -545,6 +571,27 @@ export const TeacherWorkspace: React.FC = () => {
     },
     onError: (err: unknown) => {
       void handleRevokedClassAccess(err, effectiveClassId || undefined);
+      const isConflict = err instanceof KtnApiError && err.status === 409;
+      if (isConflict) {
+        queryClient.invalidateQueries({ queryKey: ['ktn-homeworks'] });
+        addToast({
+          title: tr('Học viên vừa nộp lại tệp bài mới', 'Student just re-submitted a newer file'),
+          description: tr(
+            'Danh sách đã được làm mới. Cô giáo vui lòng xem tệp mới nhất trước khi chấm điểm.',
+            'The list has been refreshed. Please review the latest file before saving the grade.'
+          ),
+          variant: 'warning',
+        });
+        return;
+      }
+      addToast({
+        title: tr('Chưa lưu được kết quả chấm bài', 'Could not save homework grade'),
+        description:
+          err instanceof Error
+            ? err.message
+            : tr('Lỗi kết nối khi lưu điểm. Vui lòng thử lại.', 'Network error while saving grade. Please try again.'),
+        variant: 'error',
+      });
     },
   });
 
@@ -959,6 +1006,17 @@ export const TeacherWorkspace: React.FC = () => {
         variant: 'success',
       });
     },
+    onError: (err: unknown) => {
+      void handleRevokedClassAccess(err, effectiveClassId || undefined);
+      addToast({
+        title: tr('Chưa lưu được điểm danh', 'Could not save attendance'),
+        description:
+          err instanceof Error
+            ? err.message
+            : tr('Lỗi kết nối khi lưu điểm danh. Vui lòng thử lại.', 'Network error while saving attendance.'),
+        variant: 'error',
+      });
+    },
   });
 
   // 8. Agent E: Courses catalog & Teacher Course Grant Requests + Student Creation
@@ -1349,22 +1407,64 @@ export const TeacherWorkspace: React.FC = () => {
 
   const homeworks = homeworksQuery.data || [];
   const filteredHomeworks = useMemo(() => {
-    return homeworks.filter((hw) => {
-      if (gradingFilter === 'pending') return hw.status === 'pending';
-      if (gradingFilter === 'graded') {
-        return hw.status === 'graded' || hw.status === 'revision_requested';
+    const qNorm = normalizeViSearchText(hwSearch);
+    const list = homeworks.filter((hw) => {
+      if (gradingFilter === 'pending' && hw.status !== 'pending') return false;
+      if (
+        gradingFilter === 'graded' &&
+        hw.status !== 'graded' &&
+        hw.status !== 'revision_requested'
+      ) {
+        return false;
+      }
+      if (qNorm) {
+        const hay = normalizeViSearchText(
+          `${hw.student_name || ''} ${hw.student_email || ''} ${hw.student_code || ''} ${hw.lesson_title || ''} Bài ${hw.lesson_num || ''}`
+        );
+        if (!hay.includes(qNorm)) return false;
       }
       return true;
     });
-  }, [homeworks, gradingFilter]);
+    return [...list].sort((a, b) => {
+      const ta = Date.parse(a.submitted_at || '') || 0;
+      const tb = Date.parse(b.submitted_at || '') || 0;
+      return hwSortOrder === 'oldest' ? ta - tb : tb - ta;
+    });
+  }, [homeworks, gradingFilter, hwSearch, hwSortOrder]);
+
+  const visibleHomeworks = useMemo(
+    () => filteredHomeworks.slice(0, hwDisplayLimit),
+    [filteredHomeworks, hwDisplayLimit]
+  );
 
   const pendingCount = homeworks.filter((h) => h.status === 'pending').length;
 
+  const persistActiveHomeworkDraft = () => {
+    if (!activeHomeworkId) return;
+    setDraftGradesByHwId((prev) => ({
+      ...prev,
+      [activeHomeworkId]: {
+        score: scoreInput,
+        feedback: feedbackInput,
+        status: gradeStatusInput,
+      },
+    }));
+  };
+
   const openGradingForm = (hw: KtnHomework) => {
-    setActiveHomeworkId(String(hw.id));
-    setScoreInput(hw.score !== null && hw.score !== undefined ? String(hw.score) : '');
-    setFeedbackInput(hw.teacher_feedback || '');
-    setGradeStatusInput(hw.status === 'revision_requested' ? 'revision_requested' : 'graded');
+    persistActiveHomeworkDraft();
+    const targetId = String(hw.id);
+    setActiveHomeworkId(targetId);
+    const savedDraft = draftGradesByHwId[targetId];
+    if (savedDraft) {
+      setScoreInput(savedDraft.score);
+      setFeedbackInput(savedDraft.feedback);
+      setGradeStatusInput(savedDraft.status);
+    } else {
+      setScoreInput(hw.score !== null && hw.score !== undefined ? String(hw.score) : '');
+      setFeedbackInput(hw.teacher_feedback || '');
+      setGradeStatusInput(hw.status === 'revision_requested' ? 'revision_requested' : 'graded');
+    }
   };
 
   const sessionsList = useMemo(() => {
@@ -1993,14 +2093,46 @@ export const TeacherWorkspace: React.FC = () => {
             </div>
           </div>
 
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+            <input
+              type="text"
+              data-testid="teacher-homework-search-input"
+              value={hwSearch}
+              onChange={(e) => {
+                setHwSearch(e.target.value);
+                setHwDisplayLimit(60);
+              }}
+              placeholder={tr(
+                'Tìm theo tên / mã HV / email / tên bài...',
+                'Search student name / code / email / lesson...'
+              )}
+              className="min-h-[34px] w-full max-w-xs rounded-xl border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs text-stone-900 placeholder:text-stone-400 focus:border-red-800 focus:bg-white focus:outline-none"
+            />
+            <button
+              type="button"
+              data-testid="teacher-homework-sort-toggle"
+              onClick={() => setHwSortOrder((prev) => (prev === 'oldest' ? 'newest' : 'oldest'))}
+              className="inline-flex min-h-[34px] items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-100"
+            >
+              <span>
+                {hwSortOrder === 'oldest'
+                  ? tr('Thứ tự: Nộp sớm nhất trước (FIFO)', 'Order: Oldest submitted first')
+                  : tr('Thứ tự: Mới nộp nhất trước', 'Order: Newest submitted first')}
+              </span>
+            </button>
+          </div>
+
           <div className="mt-3 space-y-2.5">
-            {filteredHomeworks.length === 0 ? (
+            {visibleHomeworks.length === 0 ? (
               <p className="py-6 text-center text-xs text-stone-500">
                 {tr('Chưa có bài nộp trong mục này.', 'No submissions in this category yet.')}
               </p>
             ) : (
-              filteredHomeworks.map((hw) => {
+              visibleHomeworks.map((hw) => {
                 const isEditing = activeHomeworkId === String(hw.id);
+                const rawExtraAttachments = Array.isArray(hw.attachments)
+                  ? hw.attachments.filter((att) => att?.fileUrl && att.fileUrl !== hw.file_url)
+                  : [];
                 return (
                   <div
                     key={hw.id}
@@ -2024,7 +2156,11 @@ export const TeacherWorkspace: React.FC = () => {
                         </div>
 
                         {hw.student_note && (
-                          <p className="mt-1 line-clamp-2 text-xs text-stone-600">
+                          <p
+                            className={`mt-1 text-xs text-stone-700 ${
+                              !hw.file_url ? 'whitespace-pre-wrap rounded-lg border border-stone-200 bg-white px-2.5 py-1.5' : 'line-clamp-2 text-stone-600'
+                            }`}
+                          >
                             {hw.student_note}
                           </p>
                         )}
@@ -2034,10 +2170,13 @@ export const TeacherWorkspace: React.FC = () => {
                           const isHwImage =
                             String(hw.file_type || '').startsWith('image/') ||
                             /\.(png|jpe?g|webp|gif)(\?|$)/i.test(hw.file_url);
+                          const isHwVideo =
+                            String(hw.file_type || '').startsWith('video/') ||
+                            /\.(mp4|mov|webm|m4v)(\?|$)/i.test(hw.file_url);
                           const isHwPdf =
                             String(hw.file_type || '').includes('pdf') ||
                             /\.pdf(\?|$)/i.test(hw.file_url);
-                          const isHwAudio = !isHwImage && !isHwPdf;
+                          const isHwAudio = !isHwImage && !isHwPdf && !isHwVideo;
 
                           return (
                             <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -2077,6 +2216,16 @@ export const TeacherWorkspace: React.FC = () => {
                                   </button>
                                 </>
                               )}
+                              {isHwVideo && (
+                                <video
+                                  controls
+                                  playsInline
+                                  preload="none"
+                                  src={resolvedHwUrl}
+                                  data-testid={`teacher-homework-video-${hw.id}`}
+                                  className="max-h-48 w-full max-w-xs rounded-lg border border-stone-300 bg-black"
+                                />
+                              )}
                               {isHwAudio && (
                                 <audio
                                   controls
@@ -2099,6 +2248,61 @@ export const TeacherWorkspace: React.FC = () => {
                             </div>
                           );
                         })()}
+
+                        {rawExtraAttachments.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            {rawExtraAttachments.map((att, attIdx) => {
+                              const resolvedAttUrl = resolveUploadedMediaUrl(att.fileUrl);
+                              const attIsImg =
+                                String(att.mediaType || '').startsWith('image/') ||
+                                /\.(png|jpe?g|webp|gif)(\?|$)/i.test(att.fileUrl);
+                              const attIsVid =
+                                String(att.mediaType || '').startsWith('video/') ||
+                                /\.(mp4|mov|webm|m4v)(\?|$)/i.test(att.fileUrl);
+                              if (attIsImg) {
+                                return (
+                                  <img
+                                    key={`${att.fileUrl}-${attIdx}`}
+                                    src={resolvedAttUrl}
+                                    alt={att.title || `Tệp ${attIdx + 2}`}
+                                    onClick={() =>
+                                      setActiveLightboxAttachment({
+                                        name: att.title || `${tr('Tệp đính kèm', 'Attachment')} ${attIdx + 2}`,
+                                        url: resolvedAttUrl,
+                                        kind: 'image',
+                                      })
+                                    }
+                                    className="h-12 w-16 cursor-zoom-in rounded-lg border border-stone-300 object-cover hover:opacity-90"
+                                  />
+                                );
+                              }
+                              if (attIsVid) {
+                                return (
+                                  <video
+                                    key={`${att.fileUrl}-${attIdx}`}
+                                    controls
+                                    playsInline
+                                    preload="none"
+                                    src={resolvedAttUrl}
+                                    className="max-h-40 w-full max-w-xs rounded-lg border border-stone-300 bg-black"
+                                  />
+                                );
+                              }
+                              return (
+                                <a
+                                  key={`${att.fileUrl}-${attIdx}`}
+                                  href={resolvedAttUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-800 hover:bg-red-50"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  <span>{att.title || `${tr('Tệp', 'File')} ${attIdx + 2}`}</span>
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex shrink-0 items-center gap-1.5">
@@ -2122,9 +2326,14 @@ export const TeacherWorkspace: React.FC = () => {
                         <button
                           type="button"
                           data-testid={`open-grade-form-btn-${hw.id}`}
-                          onClick={() =>
-                            isEditing ? setActiveHomeworkId(null) : openGradingForm(hw)
-                          }
+                          onClick={() => {
+                            if (isEditing) {
+                              persistActiveHomeworkDraft();
+                              setActiveHomeworkId(null);
+                            } else {
+                              openGradingForm(hw);
+                            }
+                          }}
                           className="min-h-[36px] rounded-xl bg-red-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-900"
                         >
                           {isEditing
@@ -2142,6 +2351,9 @@ export const TeacherWorkspace: React.FC = () => {
                         data-testid="teacher-grading-form"
                         onSubmit={(e) => {
                           e.preventDefault();
+                          const submitter = (e.nativeEvent as SubmitEvent | undefined)
+                            ?.submitter as HTMLButtonElement | null | undefined;
+                          const wantSaveAndNext = submitter?.dataset?.saveAndNext === 'true';
                           const trimmedScore = scoreInput.trim();
                           const parsedScore = trimmedScore === '' ? NaN : Number(trimmedScore);
                           if (gradeStatusInput === 'graded') {
@@ -2175,6 +2387,8 @@ export const TeacherWorkspace: React.FC = () => {
                             teacherFeedback: feedbackInput.trim(),
                             status: gradeStatusInput,
                             classCode: hw.class_code || effectiveClassId,
+                            expectedFileUrl: hw.file_url || null,
+                            saveAndNext: wantSaveAndNext,
                           });
                         }}
                         className="mt-3 space-y-2.5 rounded-xl border border-red-200 bg-white p-3 shadow-2xs"
@@ -2234,13 +2448,25 @@ export const TeacherWorkspace: React.FC = () => {
                           />
                         </div>
 
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => setActiveHomeworkId(null)}
+                            onClick={() => {
+                              persistActiveHomeworkDraft();
+                              setActiveHomeworkId(null);
+                            }}
                             className="min-h-[36px] rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700"
                           >
                             {tr('Hủy', 'Cancel')}
+                          </button>
+                          <button
+                            type="submit"
+                            data-save-and-next="true"
+                            data-testid="teacher-save-and-next-grade-btn"
+                            disabled={gradeMutation.isPending}
+                            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-emerald-700 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+                          >
+                            <span>{tr('Lưu & Chấm tiếp', 'Save & Next')}</span>
                           </button>
                           <button
                             type="submit"
@@ -2261,6 +2487,21 @@ export const TeacherWorkspace: React.FC = () => {
                   </div>
                 );
               })
+            )}
+            {filteredHomeworks.length > visibleHomeworks.length && (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  data-testid="teacher-homework-load-more-btn"
+                  onClick={() => setHwDisplayLimit((prev) => prev + 60)}
+                  className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50"
+                >
+                  {tr(
+                    `Hiển thị thêm (${filteredHomeworks.length - visibleHomeworks.length} bài còn lại)`,
+                    `Show more (${filteredHomeworks.length - visibleHomeworks.length} remaining)`
+                  )}
+                </button>
+              </div>
             )}
           </div>
         </div>

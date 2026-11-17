@@ -184,6 +184,7 @@ export function filterAndPaginateTeachersClientSide(
 
 const SESSION_STORAGE_KEY = 'ktn_sll_persistent_auth_v2';
 
+const MAX_LOCAL_BLOB_PREVIEWS = 20;
 const localUploadedBlobUrls = new Map<string, string>();
 
 export function registerLocalUploadedMediaPreview(remoteUrl: string, file: Blob): void {
@@ -191,6 +192,28 @@ export function registerLocalUploadedMediaPreview(remoteUrl: string, file: Blob)
     return;
   }
   try {
+    const prevUrl = localUploadedBlobUrls.get(remoteUrl);
+    if (prevUrl) {
+      localUploadedBlobUrls.delete(remoteUrl);
+      try {
+        URL.revokeObjectURL(prevUrl);
+      } catch {
+        // ignore revoke error
+      }
+    }
+    while (localUploadedBlobUrls.size >= MAX_LOCAL_BLOB_PREVIEWS) {
+      const oldestKey = localUploadedBlobUrls.keys().next().value;
+      if (!oldestKey) break;
+      const oldestUrl = localUploadedBlobUrls.get(oldestKey);
+      localUploadedBlobUrls.delete(oldestKey);
+      if (oldestUrl) {
+        try {
+          URL.revokeObjectURL(oldestUrl);
+        } catch {
+          // ignore revoke error
+        }
+      }
+    }
     const objectUrl = URL.createObjectURL(file);
     localUploadedBlobUrls.set(remoteUrl, objectUrl);
   } catch {
@@ -428,7 +451,11 @@ export async function ktnRequest<T>(
     headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${session.token}`));
   }
   if (typeof window !== 'undefined') {
-    const winSim = (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__;
+    const hn = (window.location?.hostname || '').toLowerCase();
+    const isProdSite = hn === 'khongtunhi.com' || hn.endsWith('.khongtunhi.com');
+    const winSim = !isProdSite
+      ? (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__
+      : undefined;
     if (typeof winSim === 'string' && winSim.trim() && !headers.has('X-KTN-QA-Simulated-Now')) {
       headers.set('X-KTN-QA-Simulated-Now', toHttpHeaderSafeValue(winSim));
     }
@@ -493,6 +520,18 @@ export async function ktnRequest<T>(
   }
 
   if (!res.ok || (data && data.ok === false)) {
+    if (
+      res.status === 401 &&
+      typeof window !== 'undefined' &&
+      !path.startsWith('/api/ktn/auth/login') &&
+      !path.startsWith('/api/ktn/auth/session')
+    ) {
+      try {
+        window.dispatchEvent(new CustomEvent('ktn:session-expired', { detail: { path } }));
+      } catch {
+        // ignore event dispatch errors
+      }
+    }
     const errCode =
       (typeof data?.code === 'string' && data.code) ||
       (typeof data?.error === 'string' && data.error) ||
@@ -1355,7 +1394,11 @@ export const ktnApi = {
     return Array.isArray(res.homeworks) ? res.homeworks : [];
   },
 
-  async uploadHomeworkFile(file: File | Blob, fileName: string): Promise<{ fileUrl: string; fileType: string; size: number }> {
+  async uploadHomeworkFile(
+    file: File | Blob,
+    fileName: string,
+    onProgress?: (percent: number) => void
+  ): Promise<{ fileUrl: string; fileType: string; size: number }> {
     const ext = (fileName.split('.').pop() || '').toLowerCase();
     const extMimeMap: Record<string, string> = {
       wav: 'audio/wav',
@@ -1373,7 +1416,7 @@ export const ktnApi = {
       mp4: 'video/mp4',
       mov: 'video/quicktime'
     };
-    const fileType = (file.type || extMimeMap[ext] || 'audio/wav').split(';')[0].trim() || 'audio/wav';
+    const fileType = (file.type || extMimeMap[ext] || 'application/octet-stream').split(';')[0].trim() || 'application/octet-stream';
     const fileSize = file.size || 2048;
     const presign = await ktnRequest<{
       ok: boolean;
@@ -1384,19 +1427,63 @@ export const ktnApi = {
       body: JSON.stringify({ fileName, fileType, fileSize })
     });
 
-    const uploadRes = await fetch(presign.signedUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': fileType },
-      body: file
-    });
-    if (!uploadRes.ok) {
-      throw new KtnApiError({
-        message: trStatic(
-          'Không thể tải tệp bài làm lên kho lưu trữ. Em vui lòng thử lại.',
-          'Unable to upload your homework file. Please try again.'
-        ),
-        status: uploadRes.status || 502
+    onProgress?.(5);
+    if (onProgress && typeof XMLHttpRequest !== 'undefined') {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', presign.signedUrl, true);
+        xhr.setRequestHeader('Content-Type', fileType);
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable && evt.total > 0) {
+            onProgress(Math.min(99, Math.max(5, Math.round((evt.loaded / evt.total) * 100))));
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            onProgress(100);
+            resolve();
+          } else {
+            reject(
+              new KtnApiError({
+                message: trStatic(
+                  'Không thể tải tệp bài làm lên kho lưu trữ. Em vui lòng thử lại.',
+                  'Unable to upload your homework file. Please try again.'
+                ),
+                status: xhr.status || 502
+              })
+            );
+          }
+        };
+        xhr.onerror = () => {
+          reject(
+            new KtnApiError({
+              message: trStatic(
+                'Lỗi kết nối mạng khi tải tệp bài làm lên kho lưu trữ.',
+                'Network error while uploading your homework file.'
+              ),
+              status: 0,
+              isNetworkError: true
+            })
+          );
+        };
+        xhr.send(file);
       });
+    } else {
+      const uploadRes = await fetch(presign.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': fileType },
+        body: file
+      });
+      if (!uploadRes.ok) {
+        throw new KtnApiError({
+          message: trStatic(
+            'Không thể tải tệp bài làm lên kho lưu trữ. Em vui lòng thử lại.',
+            'Unable to upload your homework file. Please try again.'
+          ),
+          status: uploadRes.status || 502
+        });
+      }
+      onProgress?.(100);
     }
     registerLocalUploadedMediaPreview(presign.fileUrl, file);
     return {
@@ -1603,6 +1690,7 @@ export const ktnApi = {
     status: 'graded' | 'revision_requested';
     teacherFeedback: string;
     classCode?: string | null;
+    expectedFileUrl?: string | null;
   }): Promise<{ homework: KtnHomework; syncStatus: string }> {
     const res = await ktnRequest<{
       ok: boolean;
@@ -1613,6 +1701,40 @@ export const ktnApi = {
       body: JSON.stringify(payload)
     });
     return res;
+  },
+
+  async getLearningProgress(): Promise<{ ok: boolean; email?: string; completedLessons: string[] }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      email?: string;
+      completedLessons: string[];
+    }>('/api/ktn/learning-progress');
+    return {
+      ok: Boolean(res?.ok),
+      email: res?.email,
+      completedLessons: Array.isArray(res?.completedLessons) ? res.completedLessons : []
+    };
+  },
+
+  async saveLearningProgress(payload: {
+    lessonKey?: string;
+    completedLessons?: string[];
+    courseId?: string;
+    lessonNum?: number;
+  }): Promise<{ ok: boolean; email?: string; completedLessons: string[] }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      email?: string;
+      completedLessons: string[];
+    }>('/api/ktn/learning-progress', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return {
+      ok: Boolean(res?.ok),
+      email: res?.email,
+      completedLessons: Array.isArray(res?.completedLessons) ? res.completedLessons : []
+    };
   },
 
   async getNotifications(params?: { limit?: number; offset?: number }): Promise<{
@@ -1842,6 +1964,7 @@ export const ktnApi = {
     parentName?: string;
     courseIds?: string[];
     classCode?: string | null;
+    enrolledClasses?: string[];
     durationPreset?: CourseDurationPreset;
     durationMode?: CourseDurationMode;
   }): Promise<{
@@ -1925,15 +2048,26 @@ export const ktnApi = {
   async assignStudentClass(params: {
     email: string;
     classCode: string | null;
+    enrolledClasses?: string[];
   }) {
     const normalizedClass =
       params.classCode && String(params.classCode).trim()
         ? String(params.classCode).trim().toUpperCase()
         : null;
+    const cleanEnrolled = Array.isArray(params.enrolledClasses)
+      ? Array.from(
+          new Set(
+            params.enrolledClasses
+              .map((c) => String(c || '').trim().toUpperCase())
+              .filter(Boolean)
+          )
+        )
+      : undefined;
     return this.manageStudentCourses({
       action: 'assign_class',
       email: params.email.trim(),
-      classCode: normalizedClass
+      classCode: normalizedClass,
+      ...(cleanEnrolled ? { enrolledClasses: cleanEnrolled } : {})
     });
   },
 
@@ -2285,6 +2419,7 @@ export const ktnApi = {
   async getForumQuestions(params?: {
     courseId?: string;
     unitId?: string;
+    lessonNum?: number;
     status?: string;
     q?: string;
     search?: string;
@@ -2304,6 +2439,9 @@ export const ktnApi = {
     const sp = new URLSearchParams();
     if (params?.courseId) sp.set('courseId', params.courseId);
     if (params?.unitId) sp.set('unitId', params.unitId);
+    if (typeof params?.lessonNum === 'number' && Number.isFinite(params.lessonNum)) {
+      sp.set('lessonNum', String(params.lessonNum));
+    }
     if (params?.status && params.status !== 'all') sp.set('status', params.status);
     const searchVal = params?.q || params?.search;
     if (searchVal) sp.set('q', searchVal);

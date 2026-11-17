@@ -23,8 +23,9 @@ CREATE TABLE IF NOT EXISTS public.ktn_payment_config (
   auto_approve_webhook BOOLEAN NOT NULL DEFAULT FALSE,
   course_prices JSONB NOT NULL DEFAULT '{
     "6adadba969897b0002482ca5": { "title": "Khóa học Tiêu Chuẩn New HSK 1 (3.0)", "price": 890000 },
+    "6af2d9719a8b000002ad4bc0": { "title": "Khóa học Tiêu Chuẩn New HSK 2 (3.0)", "price": 890000 },
     "65e7704a9ea90c00080d5195": { "title": "Chinese For Kids (Khóa học cho bé 5–6 tuổi)", "price": 890000 },
-    "678d14b960eae20002ddf8fe": { "title": "Tiếng Trung Trẻ Em 4 (Lộ trình 7–13 tuổi)", "price": 1290000 }
+    "678d14b960eae20002ddf8fe": { "title": "Tiếng Trung Trẻ Em 4 (Lộ trình 7–13 tuổi)", "price": 890000 }
   }'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by TEXT
@@ -126,15 +127,16 @@ CREATE TABLE IF NOT EXISTS public.ktn_courses (
 INSERT INTO public.ktn_courses (course_id, code, title, short_title, badge, age_group, lessons_count, price, old_price, is_bundle, bundle_course_ids, sort_order)
 VALUES
   ('6adadba969897b0002482ca5', 'HSK1-30', 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)', 'HSK1 3.0', 'TIÊU CHUẨN MỚI 3.0', 'Mọi lứa tuổi', 15, 890000, 1500000, FALSE, '[]'::jsonb, 1),
-  ('65e7704a9ea90c00080d5195', 'CFK-01', 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)', 'Chinese For Kids', 'SONG NGỮ MẦM NON', '5 – 6 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 2),
-  ('6638bd09a7367400085c7ab2', 'KIDS-03', 'Tiếng Trung Trẻ Em 3 (Mini vỡ lòng 5 – 6 tuổi)', 'Tiếng Trung Trẻ Em 3', 'CẤP ĐỘ 03', '5 – 6 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 3),
-  ('678d14b960eae20002ddf8fe', 'KIDS-04', 'Tiếng Trung Trẻ Em 4 (Lộ trình 7 – 13 tuổi)', 'Tiếng Trung Trẻ Em 4', 'CẤP ĐỘ 04', '7 – 13 tuổi', 18, 890000, 1500000, FALSE, '[]'::jsonb, 4),
-  ('67a7290a5fdc26000238b4e9', 'KIDS-05', 'Tiếng Trung Trẻ Em 5 (Lộ trình 8 – 14 tuổi)', 'Tiếng Trung Trẻ Em 5', 'CẤP ĐỘ 05', '8 – 14 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 5),
-  ('67a869302ecb9c000257d966', 'KIDS-06', 'Tiếng Trung Trẻ Em 6 (Lộ trình 9 – 15 tuổi)', 'Tiếng Trung Trẻ Em 6', 'CẤP ĐỘ 06', '9 – 15 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 6),
-  ('6983672f409cc20002e530b8', 'YCT-04', 'Khóa học Tiếng Trung Trẻ Em YCT 4', 'Tiếng Trung YCT 4', 'CHỨNG CHỈ YCT 4', '9 – 15 tuổi', 20, 1290000, 2000000, FALSE, '[]'::jsonb, 7),
-  ('65e76a533f5e7c00086715d7', 'PRON-01', 'Khóa học Phát Âm & Giao Tiếp Phản Xạ Cơ Bản', 'Phát Âm & Phản Xạ', 'GIAO TIẾP PHẢN XẠ', 'Mọi lứa tuổi', 19, 690000, 1200000, FALSE, '[]'::jsonb, 8),
-  ('67bebce067dba000027d8119', 'HANZI-01', 'Khóa học Hán Tự Tư Duy & Luyện Viết Chữ Hán', 'Hán Tự Tư Duy', 'HÁN TỰ TƯ DUY', '6 – 15 tuổi', 20, 690000, 1200000, FALSE, '[]'::jsonb, 9),
-  ('BUNDLE_YCT_ALL', 'COMBO-6', 'Trọn Bộ 6 Khóa Học Trực Tuyến (Lộ trình 5 – 15 tuổi)', 'Trọn Bộ 6 Khóa', 'COMBO ƯU ĐÃI 50%', '5 – 15 tuổi', 113, 2990000, 6000000, TRUE, '["6adadba969897b0002482ca5","65e7704a9ea90c00080d5195","6638bd09a7367400085c7ab2","678d14b960eae20002ddf8fe","67a7290a5fdc26000238b4e9","67a869302ecb9c000257d966"]'::jsonb, 0)
+  ('6af2d9719a8b000002ad4bc0', 'HSK2-30', 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)', 'HSK2 3.0', 'TIÊU CHUẨN MỚI 3.0', 'Mọi lứa tuổi', 11, 890000, 1500000, FALSE, '[]'::jsonb, 2),
+  ('65e7704a9ea90c00080d5195', 'CFK-01', 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)', 'Chinese For Kids', 'SONG NGỮ MẦM NON', '5 – 6 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 3),
+  ('6638bd09a7367400085c7ab2', 'KIDS-03', 'Tiếng Trung Trẻ Em 3 (Mini vỡ lòng 5 – 6 tuổi)', 'Tiếng Trung Trẻ Em 3', 'CẤP ĐỘ 03', '5 – 6 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 4),
+  ('678d14b960eae20002ddf8fe', 'KIDS-04', 'Tiếng Trung Trẻ Em 4 (Lộ trình 7 – 13 tuổi)', 'Tiếng Trung Trẻ Em 4', 'CẤP ĐỘ 04', '7 – 13 tuổi', 16, 890000, 1500000, FALSE, '[]'::jsonb, 5),
+  ('67a7290a5fdc26000238b4e9', 'KIDS-05', 'Tiếng Trung Trẻ Em 5 (Lộ trình 8 – 14 tuổi)', 'Tiếng Trung Trẻ Em 5', 'CẤP ĐỘ 05', '8 – 14 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 6),
+  ('67a869302ecb9c000257d966', 'KIDS-06', 'Tiếng Trung Trẻ Em 6 (Lộ trình 9 – 15 tuổi)', 'Tiếng Trung Trẻ Em 6', 'CẤP ĐỘ 06', '9 – 15 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 7),
+  ('6983672f409cc20002e530b8', 'YCT-04', 'Khóa học Tiếng Trung Trẻ Em YCT 4', 'Tiếng Trung YCT 4', 'CHỨNG CHỈ YCT 4', '9 – 15 tuổi', 20, 1290000, 2000000, FALSE, '[]'::jsonb, 8),
+  ('65e76a533f5e7c00086715d7', 'PRON-01', 'Khóa học Phát Âm & Giao Tiếp Phản Xạ Cơ Bản', 'Phát Âm & Phản Xạ', 'GIAO TIẾP PHẢN XẠ', 'Mọi lứa tuổi', 19, 690000, 1200000, FALSE, '[]'::jsonb, 9),
+  ('67bebce067dba000027d8119', 'HANZI-01', 'Khóa học Hán Tự Tư Duy & Luyện Viết Chữ Hán', 'Hán Tự Tư Duy', 'HÁN TỰ TƯ DUY', '6 – 15 tuổi', 20, 690000, 1200000, FALSE, '[]'::jsonb, 10),
+  ('BUNDLE_YCT_ALL', 'COMBO-6', 'Trọn Bộ 6 Khóa Học Trực Tuyến (Lộ trình 5 – 15 tuổi)', 'Trọn Bộ 6 Khóa', 'COMBO ƯU ĐÃI 50%', '5 – 15 tuổi', 113, 2990000, 6000000, TRUE, '["6adadba969897b0002482ca5","65e7704a9ea90c00080d5195","6638bd09a7367400085c7ab2","678d14b960eae20002ddf8fe","67a7290a5fdc26000238b4e9","67a869302ecb9c000257d966"]'::jsonb, 11)
 ON CONFLICT (course_id) DO NOTHING;
 
 -- 6. BẢNG HỌC VIÊN & QUYỀN KHÓA HỌC / XẾP LỚP (PHÂN QUYỀN TRANG sll-hocsinh)

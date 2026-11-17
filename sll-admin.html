@@ -162,7 +162,10 @@
             </label>
           </div>
 
-          <div style="margin-top:12px;font-size:12.5px;font-weight:800;color:#0F172A;">Khóa học Video:</div>
+          <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="font-size:12.5px;font-weight:800;color:#0F172A;">Khóa học Video:</div>
+            <input type="search" id="stu-course-search" oninput="filterStudentCourseCheckboxes(this.value)" placeholder="Tìm khóa học (tên, mã HSK2-30, ID)..." style="width:min(320px,100%);padding:6px 10px;border:1px solid #CBD5E1;border-radius:8px;font-size:12.5px;">
+          </div>
           <div id="stu-course-checkboxes" class="course-checkbox-grid"></div>
 
           <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:10px;">
@@ -258,6 +261,7 @@
     let currentAdminSession = null;
     let adminCourseCatalog = [
       { id: '6adadba969897b0002482ca5', code: 'HSK1-30', title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)', shortTitle: 'HSK1 3.0', badge: 'TIÊU CHUẨN MỚI 3.0', lessonsCount: 15, price: 890000 },
+      { id: '6af2d9719a8b000002ad4bc0', code: 'HSK2-30', title: 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)', shortTitle: 'HSK2 3.0', badge: 'TIÊU CHUẨN MỚI 3.0', lessonsCount: 11, partsCount: 22, thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1794357758090-hsk2_gemini_thumb.jpg', price: 890000 },
       { id: '65e7704a9ea90c00080d5195', code: 'CFK-01', title: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)', shortTitle: 'Chinese For Kids', badge: 'SONG NGỮ MẦM NON', lessonsCount: 20, price: 890000 },
       { id: '6638bd09a7367400085c7ab2', code: 'KIDS-03', title: 'Tiếng Trung Trẻ Em 3 (Mini vỡ lòng 5 – 6 tuổi)', shortTitle: 'Tiếng Trung Trẻ Em 3', badge: 'CẤP ĐỘ 03', lessonsCount: 20, price: 890000 },
       { id: '678d14b960eae20002ddf8fe', code: 'KIDS-04', title: 'Tiếng Trung Trẻ Em 4 (Lộ trình 7 – 13 tuổi)', shortTitle: 'Tiếng Trung Trẻ Em 4', badge: 'CẤP ĐỘ 04', lessonsCount: 18, price: 890000 },
@@ -294,16 +298,55 @@
       const checkGrid = document.getElementById('stu-course-checkboxes');
       if (checkGrid) {
         const singleCourses = adminCourseCatalog.filter(c => !c.isBundle && c.id !== 'BUNDLE_YCT_ALL');
-        checkGrid.innerHTML = singleCourses.map(c => `
-          <label class="course-check-item">
+        checkGrid.innerHTML = singleCourses.map(c => {
+          const searchBlob = [c.title, c.shortTitle, c.code, c.id].filter(Boolean).join(' ');
+          return `
+          <label class="course-check-item" data-course-search="${esc(searchBlob)}">
             <input type="checkbox" name="stu-course-chk" value="${esc(c.id)}" style="margin-top:3px;">
             <div>
               <div style="font-weight:800;color:#0F172A;">${esc(c.shortTitle || c.title)}</div>
-              <div style="font-size:11.5px;color:#64748B;">Mã: ${esc(c.code || String(c.id || '').slice(-6))} · ${esc(c.lessonsCount || 20)} bài học</div>
+              <div style="font-size:11.5px;color:#64748B;">Mã: ${esc(c.code || String(c.id || '').slice(-6))} · ${esc(c.lessonsCount || 20)} bài học${c.partsCount ? ` (${esc(c.partsCount)} phần)` : ''}</div>
             </div>
           </label>
-        `).join('');
+        `;
+        }).join('');
+        const searchEl = document.getElementById('stu-course-search');
+        if (searchEl && searchEl.value) {
+          filterStudentCourseCheckboxes(searchEl.value);
+        }
       }
+    }
+
+    function normalizeAdminCourseSearch(raw) {
+      return String(raw || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[đĐ]/g, 'd')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function filterStudentCourseCheckboxes(query) {
+      const checkGrid = document.getElementById('stu-course-checkboxes');
+      if (!checkGrid) return;
+      const rawQ = String(query || '').trim().toLowerCase();
+      const normQ = normalizeAdminCourseSearch(query);
+      const compactQ = normQ.replace(/[\s\-_]+/g, '');
+      checkGrid.querySelectorAll('.course-check-item').forEach(item => {
+        if (!rawQ && !normQ) {
+          item.style.display = '';
+          return;
+        }
+        const hay = item.getAttribute('data-course-search') || item.textContent || '';
+        const lowHay = hay.toLowerCase();
+        const normHay = normalizeAdminCourseSearch(hay);
+        const matched =
+          (rawQ && lowHay.includes(rawQ)) ||
+          (normQ && normHay.includes(normQ)) ||
+          (compactQ && normHay.replace(/[\s\-_]+/g, '').includes(compactQ));
+        item.style.display = matched ? '' : 'none';
+      });
     }
 
     function selectBundle6Courses() {

@@ -33,6 +33,7 @@ import {
   classifyDrmError,
   createFairPlayInitDataTransform,
   detectDrmCapabilities,
+  detectEmbeddedWebView,
   selectDrmPlaybackPlan,
 } from '../utils/drmCapability';
 import { loadShakaPlayer, type ShakaStatic } from '../utils/shakaLoader';
@@ -61,7 +62,14 @@ function formatVideoTime(totalSec: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+function stripVolatileMtParam(rawUrl?: string | null): string {
+  const s = String(rawUrl || '').trim();
+  if (!s) return '';
+  return s.replace(/([?&])mt=\d+(?:&|$)/gi, (_m, sep) => (sep === '?' ? '?' : '')).replace(/[?&]$/, '');
+}
+
 interface HlsVideoPlayerProps {
+  unitId?: string | null;
   lessonTitle: string;
   courseName: string;
   streamUrl: string | null;
@@ -71,6 +79,7 @@ interface HlsVideoPlayerProps {
   drmPlayback?: KtnDrmPlaybackInfo | null;
   isDrmLoading?: boolean;
   drmPlaybackError?: string | null;
+  onRefreshDrmToken?: () => void;
   onCapabilityChecked?: (report: DrmCapabilityReport) => void;
   statusOverride?: VideoPlayerStatus | null;
   unentitledReason?: string | null;
@@ -82,11 +91,12 @@ interface HlsVideoPlayerProps {
   maxDemoSeconds?: number;
   onDemoEnded?: () => void;
   onAskAtTimestamp?: (seconds: number) => void;
-  seekToTimestampSeconds?: number | null;
+  seekToTimestampSeconds?: number | { seconds: number; nonce?: number } | null;
   watermarkLabel?: string;
 }
 
 export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
+  unitId,
   lessonTitle,
   courseName,
   streamUrl,
@@ -96,6 +106,7 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   drmPlayback = null,
   isDrmLoading = false,
   drmPlaybackError = null,
+  onRefreshDrmToken,
   onCapabilityChecked,
   statusOverride,
   unentitledReason,
@@ -119,6 +130,20 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
   const hlsRef = useRef<Hls | null>(null);
   const shakaRef = useRef<InstanceType<ShakaStatic['Player']> | null>(null);
   const shakaErrorHandledRef = useRef<boolean>(false);
+  const latestStreamUrlRef = useRef<string | null>(streamUrl);
+  latestStreamUrlRef.current = streamUrl;
+  const latestFallbackUrlRef = useRef<string | null | undefined>(fallbackVideoUrl);
+  latestFallbackUrlRef.current = fallbackVideoUrl;
+  const drmTokenRef = useRef<string | null | undefined>(drmPlayback?.drmToken);
+  drmTokenRef.current = drmPlayback?.drmToken;
+  const lastSavedPosAtRef = useRef<number>(0);
+  const resumeAppliedForUnitRef = useRef<string>('');
+  const stableStreamKey = stripVolatileMtParam(streamUrl);
+  const stableFallbackKey = stripVolatileMtParam(fallbackVideoUrl);
+  const embeddedWebViewInfo =
+    typeof navigator !== 'undefined'
+      ? detectEmbeddedWebView(navigator.userAgent)
+      : { isEmbedded: false, appName: null };
 
   const [internalStatus, setInternalStatus] = useState<VideoPlayerStatus>('loading');
   const [playbackRate, setPlaybackRate] = useState<number>(1);
@@ -137,22 +162,43 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
 
   const isFullscreen = isNativeFullscreen || isPseudoFullscreen;
 
+  const seekTargetSeconds =
+    typeof seekToTimestampSeconds === 'number'
+      ? seekToTimestampSeconds
+      : seekToTimestampSeconds && typeof seekToTimestampSeconds === 'object'
+      ? seekToTimestampSeconds.seconds
+      : null;
+  const seekNonce =
+    seekToTimestampSeconds && typeof seekToTimestampSeconds === 'object'
+      ? seekToTimestampSeconds.nonce ?? 0
+      : seekTargetSeconds ?? null;
+
   useEffect(() => {
     if (
-      seekToTimestampSeconds !== null &&
-      seekToTimestampSeconds !== undefined &&
-      Number.isFinite(seekToTimestampSeconds) &&
-      seekToTimestampSeconds >= 0 &&
+      seekTargetSeconds !== null &&
+      seekTargetSeconds !== undefined &&
+      Number.isFinite(seekTargetSeconds) &&
+      seekTargetSeconds >= 0 &&
       videoRef.current
     ) {
       try {
-        videoRef.current.currentTime = seekToTimestampSeconds;
-        setCurrentTime(seekToTimestampSeconds);
+        videoRef.current.currentTime = seekTargetSeconds;
+        setCurrentTime(seekTargetSeconds);
       } catch {
         // Ignore seek errors before metadata is loaded
       }
     }
-  }, [seekToTimestampSeconds]);
+  }, [seekTargetSeconds, seekNonce]);
+
+  useEffect(() => {
+    if (!drmEnabled || !drmPlayback?.drmToken || !onRefreshDrmToken) return;
+    const ttlSec = Number(drmPlayback.expiresInSeconds || 0);
+    if (!Number.isFinite(ttlSec) || ttlSec <= 35) return;
+    const timer = window.setTimeout(() => {
+      onRefreshDrmToken();
+    }, Math.max(5000, (ttlSec - 30) * 1000));
+    return () => window.clearTimeout(timer);
+  }, [drmEnabled, drmPlayback?.drmToken, drmPlayback?.expiresInSeconds, onRefreshDrmToken]);
 
   const effectiveStatus = statusOverride || internalStatus;
   const showWatermark =
@@ -295,7 +341,11 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
     const observer = new MutationObserver(() => {
       checkAndEnforceWatermark();
     });
-    observer.observe(stageEl, {
+    const hostParent = hostEl.parentElement;
+    if (hostParent) {
+      observer.observe(hostParent, { childList: true, subtree: false });
+    }
+    observer.observe(hostEl, {
       childList: true,
       subtree: true,
       attributes: true,
@@ -441,7 +491,13 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
 
     const startHlsOrDirectPlayback = (targetUrl: string, allowRawFallback: boolean) => {
       const isM3u8 = /\.m3u8(\?|$)/i.test(targetUrl);
-      if (isM3u8) {
+      const uaStr = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+      const isSafariNativePreferred =
+        (/iPad|iPhone|iPod/i.test(uaStr) ||
+          (/Safari/i.test(uaStr) && !/Chrome|Chromium|Edg|Android/i.test(uaStr))) &&
+        Boolean(videoEl.canPlayType('application/vnd.apple.mpegurl'));
+
+      if (isM3u8 && !isSafariNativePreferred) {
         import('hls.js')
           .then(({ default: HlsLib }) => {
             if (cancelled) return;
@@ -480,15 +536,16 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               hls.on(HlsLib.Events.ERROR, (_event, data) => {
                 if (cancelled) return;
                 if (data.fatal) {
+                  const latestFallback = latestFallbackUrlRef.current;
                   switch (data.type) {
                     case HlsLib.ErrorTypes.NETWORK_ERROR:
                       if (
                         allowRawFallback &&
-                        fallbackVideoUrl &&
-                        fallbackVideoUrl !== targetUrl
+                        latestFallback &&
+                        latestFallback !== targetUrl
                       ) {
                         cleanupHls();
-                        videoEl.src = fallbackVideoUrl;
+                        videoEl.src = latestFallback;
                       } else {
                         cleanupHls();
                         setInternalStatus('error');
@@ -637,8 +694,9 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                 if (authHeaderValue) {
                   request.headers['Authorization'] = authHeaderValue;
                 }
-                if (drmPlayback.drmToken) {
-                  request.headers['X-KTN-DRM-Token'] = drmPlayback.drmToken;
+                const liveDrmToken = drmTokenRef.current || drmPlayback.drmToken;
+                if (liveDrmToken) {
+                  request.headers['X-KTN-DRM-Token'] = liveDrmToken;
                 }
               }
               if (
@@ -810,10 +868,17 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
         cancelled = true;
         cleanupHls();
         cleanupShaka();
+        try {
+          videoEl.pause();
+          videoEl.removeAttribute('src');
+          videoEl.load();
+        } catch {
+          // ignore media teardown error
+        }
       };
     }
 
-    const activeUrl = streamUrl || fallbackVideoUrl;
+    const activeUrl = latestStreamUrlRef.current || latestFallbackUrlRef.current;
     if (!activeUrl) {
       setInternalStatus('loading');
       return () => {
@@ -829,13 +894,26 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
       cancelled = true;
       cleanupHls();
       cleanupShaka();
+      try {
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        videoEl.load();
+      } catch {
+        // ignore media teardown error
+      }
     };
   }, [
-    streamUrl,
-    fallbackVideoUrl,
+    stableStreamKey,
+    stableFallbackKey,
     drmEnabled,
     drmPolicy,
-    drmPlayback,
+    drmPlayback?.unitId,
+    drmPlayback?.policy,
+    drmPlayback?.licenseStatus,
+    drmPlayback?.manifests?.packaged,
+    drmPlayback?.manifests?.dashUrl,
+    drmPlayback?.manifests?.hlsFairPlayUrl,
+    drmPlayback?.fallbackStreamUrl,
     isDrmLoading,
     drmPlaybackError,
     statusOverride,
@@ -1079,6 +1157,17 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                   {drmError.browserGuidance}
                 </p>
               )}
+              {embeddedWebViewInfo.isEmbedded && !drmError?.browserGuidance && (
+                <p
+                  data-testid="webview-video-guidance"
+                  className="mt-2 max-w-md rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-medium text-amber-200"
+                >
+                  {tr(
+                    `Bạn đang mở bằng trình duyệt ${embeddedWebViewInfo.appName}. Nếu video không phát được, hãy bấm biểu tượng ⋮ ở góc trên → "Mở bằng Safari / Chrome".`,
+                    `You are using ${embeddedWebViewInfo.appName}'s in-app browser. If video fails to play, tap ⋮ at the top corner → "Open in Safari / Chrome".`
+                  )}
+                </p>
+              )}
               <button
                 type="button"
                 data-testid="retry-video-stream-btn"
@@ -1124,7 +1213,19 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             onVolumeChange={(e) => setIsMuted(e.currentTarget.muted)}
             onTimeUpdate={(e) => {
               const cur = e.currentTarget.currentTime;
+              const dur = e.currentTarget.duration || duration || 0;
               setCurrentTime(cur);
+              if (unitId && cur >= 2 && (dur <= 0 || cur < dur - 3)) {
+                const now = Date.now();
+                if (now - lastSavedPosAtRef.current >= 2000) {
+                  lastSavedPosAtRef.current = now;
+                  try {
+                    sessionStorage.setItem(`ktn_vid_pos_${unitId}`, String(Math.floor(cur)));
+                  } catch {
+                    // ignore
+                  }
+                }
+              }
               if (maxDemoSeconds && maxDemoSeconds > 0 && cur >= maxDemoSeconds) {
                 e.currentTarget.pause();
                 setInternalStatus('paused');
@@ -1132,10 +1233,27 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
               }
             }}
             onLoadedMetadata={(e) => {
-              setDuration(e.currentTarget.duration || 0);
+              const dur = e.currentTarget.duration || 0;
+              setDuration(dur);
               setIsMuted(Boolean(e.currentTarget.muted));
               if (e.currentTarget.playbackRate !== playbackRate) {
                 e.currentTarget.playbackRate = playbackRate;
+              }
+              if (
+                unitId &&
+                seekTargetSeconds === null &&
+                resumeAppliedForUnitRef.current !== unitId
+              ) {
+                resumeAppliedForUnitRef.current = unitId;
+                try {
+                  const saved = Number(sessionStorage.getItem(`ktn_vid_pos_${unitId}`) || 0);
+                  if (Number.isFinite(saved) && saved >= 2 && (dur <= 0 || saved < dur - 3)) {
+                    e.currentTarget.currentTime = saved;
+                    setCurrentTime(saved);
+                  }
+                } catch {
+                  // ignore
+                }
               }
               setInternalStatus('ready');
             }}
@@ -1159,6 +1277,13 @@ export const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
             }}
             onEnded={() => {
               setInternalStatus('paused');
+              if (unitId) {
+                try {
+                  sessionStorage.removeItem(`ktn_vid_pos_${unitId}`);
+                } catch {
+                  // ignore
+                }
+              }
               if (maxDemoSeconds && maxDemoSeconds > 0) {
                 onDemoEnded?.();
                 return;

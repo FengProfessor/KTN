@@ -66,8 +66,17 @@ export const ChatLayout: React.FC = () => {
   const [studentResults, setStudentResults] = useState<KtnStudentProfile[]>([]);
   const [isSearchingStudents, setIsSearchingStudents] = useState(false);
 
+  const roomPollInterval = useMemo(() => {
+    if (isDemoMode) return false;
+    const host =
+      typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+    const isLocalTestHost = host === 'localhost' || host === '127.0.0.1';
+    if (isLocalTestHost) return 3500;
+    return 15000 + Math.floor(Math.random() * 5000);
+  }, [isDemoMode]);
+
   const { data: serverRooms = [], isLoading: isRoomsLoading } = useChatRooms({
-    refetchInterval: isDemoMode ? false : 3500,
+    refetchInterval: roomPollInterval,
   });
   const queryClient = useQueryClient();
   const addToast = useUiStore((s) => s.addToast);

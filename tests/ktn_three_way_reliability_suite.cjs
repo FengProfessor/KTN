@@ -341,6 +341,34 @@ function loadWorkerInstance(sharedState = null) {
         });
       }
 
+      if (table === 'rpc/ktn_get_rooms_latest_messages' && method === 'POST') {
+        const p = init.body ? JSON.parse(init.body) : {};
+        const roomIds = Array.isArray(p.p_room_ids) ? new Set(p.p_room_ids.map(String)) : null;
+        const prefix = typeof p.p_room_prefix === 'string' ? p.p_room_prefix : '';
+        const latestByRoom = new Map();
+        const msgs = (state.tables.ktn_messages || []).slice().sort(
+          (a, b) => (Date.parse(b.created_at || '') - Date.parse(a.created_at || '')) || String(b.id || '').localeCompare(String(a.id || ''))
+        );
+        for (const m of msgs) {
+          const rid = String(m?.room_id || '').trim();
+          if (!rid) continue;
+          if (roomIds && !roomIds.has(rid)) continue;
+          if (prefix && !rid.startsWith(prefix)) continue;
+          if (!latestByRoom.has(rid)) latestByRoom.set(rid, m);
+        }
+        return new Response(JSON.stringify(Array.from(latestByRoom.values())), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (table.startsWith('rpc/')) {
+        return new Response(JSON.stringify({ code: 'PGRST202', message: `RPC ${table} not mocked` }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       if (table === 'ktn_provisioning_jobs' && state.faults.simulateLegacyV2StudentSchema) {
         return new Response(
           JSON.stringify({ code: 'PGRST205', message: "Could not find the table 'public.ktn_provisioning_jobs' in the schema cache" }),
@@ -781,6 +809,7 @@ function loadWorkerInstance(sharedState = null) {
   const env = {
     SUPABASE_URL: 'https://mock-supabase.local',
     SUPABASE_SERVICE_ROLE_KEY: 'mock-service-role-secret-key-2026',
+    KTN_SESSION_SECRET: 'mock-reliability-session-secret-2026',
     KTN_STAFF_AND_TEST_PASSWORD: 'TestStrongPassword!2026',
     IZTEACH_ADMIN_EMAIL: 'hocvienkhongtunhi123@gmail.com',
     IZTEACH_ADMIN_PASSWORD: 'AdminStrongPassword!2026',
@@ -828,13 +857,13 @@ async function runSuite() {
   console.log('================================================================================\n');
 
   // ============================================================================
-  // GROUP A1: 17-COURSE / 346-LESSON CURRICULUM & UNIT MAP INTEGRITY
+  // GROUP A1: 18-COURSE / 357-LESSON CURRICULUM & UNIT MAP INTEGRITY
   // ============================================================================
   {
     const hsk1Lessons = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'clean_lessons_data.json'), 'utf8'));
     const allCourses = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'all_courses_lessons_data.json'), 'utf8'));
     const courseIds = ['6adadba969897b0002482ca5', ...Object.keys(allCourses)];
-    assert.strictEqual(courseIds.length, 17, 'Must have exactly 17 courses');
+    assert.strictEqual(courseIds.length, 18, 'Must have exactly 18 courses');
 
     const seenUnitIds = new Set();
     let totalLessons = 0;
@@ -858,10 +887,10 @@ async function runSuite() {
     }
 
     record(
-      'A1-CURRICULUM-346',
+      'A1-CURRICULUM-357',
       'GROUP_A',
-      '17 courses / 346 lessons unique 24-hex unitIds, 100% HLS streams, 0 fabricated exercises',
-      totalLessons === 346 && seenUnitIds.size === 346 && fabricatedCount === 0 && missingStreamCount === 0,
+      '18 courses / 357 lessons unique 24-hex unitIds, 100% HLS streams, 0 fabricated exercises',
+      totalLessons === 357 && seenUnitIds.size === 357 && fabricatedCount === 0 && missingStreamCount === 0,
       `courses=${courseIds.length}, lessons=${totalLessons}, uniqueUnits=${seenUnitIds.size}, fabricated=${fabricatedCount}`
     );
   }

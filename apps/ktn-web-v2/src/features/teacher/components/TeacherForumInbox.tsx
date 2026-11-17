@@ -310,15 +310,28 @@ export const TeacherForumInbox: React.FC = () => {
   );
   const [courseFilter, setCourseFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(() =>
     new Date().toISOString().slice(0, 7)
   );
 
-  // Active question being answered inline
+  // Active question being answered inline (drafts isolated per question ID)
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(() =>
     deepLinkedQuestionId || null
   );
-  const [answerContent, setAnswerContent] = useState<string>('');
+  const [answerContentByQid, setAnswerContentByQid] = useState<Record<string, string>>({});
+  const answerContent = activeQuestionId ? answerContentByQid[activeQuestionId] || '' : '';
+  const setAnswerContent = (nextVal: string) => {
+    if (!activeQuestionId) return;
+    setAnswerContentByQid((prev) => ({ ...prev, [activeQuestionId]: nextVal }));
+  };
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [searchQuery]);
   const [answerVideoUrl, setAnswerVideoUrl] = useState<string>('');
   const [answerVideoSize, setAnswerVideoSize] = useState<number | null>(null);
   const [answerAttachments, setAnswerAttachments] = useState<KtnForumAttachment[]>([]);
@@ -361,7 +374,7 @@ export const TeacherForumInbox: React.FC = () => {
       'ktn-teacher-forum-inbox',
       statusFilter,
       courseFilter,
-      searchQuery,
+      debouncedSearchQuery,
       isDemoMode,
       isDemoMode ? lang : 'live',
     ],
@@ -416,7 +429,7 @@ export const TeacherForumInbox: React.FC = () => {
             : statusFilter !== 'all'
             ? statusFilter
             : undefined,
-        search: searchQuery.trim() || undefined,
+        search: debouncedSearchQuery.trim() || undefined,
       });
     },
     staleTime: 10000,
@@ -689,8 +702,12 @@ export const TeacherForumInbox: React.FC = () => {
 
       queryClient.invalidateQueries({ queryKey: ['ktn-teacher-forum-inbox'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-forum-leaderboard'] });
+      setAnswerContentByQid((prev) => {
+        const next = { ...prev };
+        delete next[question.id];
+        return next;
+      });
       setActiveQuestionId(null);
-      setAnswerContent('');
       setAnswerVideoUrl('');
       setAnswerVideoSize(null);
       setAnswerAttachments([]);
@@ -1559,8 +1576,11 @@ export const TeacherForumInbox: React.FC = () => {
                         <textarea
                           rows={3}
                           data-testid="teacher-forum-answer-textarea"
-                          value={answerContent}
-                          onChange={(e) => setAnswerContent(e.target.value)}
+                          value={answerContentByQid[q.id] || ''}
+                          onChange={(e) => {
+                            const nextVal = e.target.value;
+                            setAnswerContentByQid((prev) => ({ ...prev, [q.id]: nextVal }));
+                          }}
                           placeholder={tr(
                             'Giải thích chi tiết ngữ pháp, cách phát âm hoặc hướng dẫn làm bài...',
                             'Explain grammar, pronunciation, or step-by-step instructions...'

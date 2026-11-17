@@ -205,13 +205,13 @@ export const DEMO_COURSES: KtnCourse[] = [
     shortTitle: 'HSK2 3.0',
     badge: 'TIÊU CHUẨN MỚI 3.0',
     ageGroup: 'Mọi lứa tuổi',
-    lessonsCount: 6,
+    lessonsCount: 11,
     price: 890000,
     oldPrice: 1500000,
     description:
-      'Chương trình HSK 2 (3.0) chuẩn 9 cấp mới nhất với giáo trình và luyện phát âm AI.',
+      '11 bài (22 phần) chuẩn New HSK 2 (3.0) 9 cấp mới nhất với giáo trình và luyện phát âm AI.',
     thumb:
-      'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1793019372729-hsk1_gemini_thumb.png',
+      'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1794357758090-hsk2_gemini_thumb.jpg',
     demoVideoUrl:
       'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6af2d9cda658a80002e1990d/playlist.m3u8',
     demoDurationSeconds: 90,

@@ -30286,7 +30286,7 @@ export default {
         lower.endsWith('.html');
       const vendorId = String(env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID).trim();
       const encodedRel = relPath.split('/').map(seg => encodeURIComponent(seg)).join('/');
-      const s3SubPrefix = isVersionedV4Shell ? 'flashcards/v4' : 'flashcards';
+      const s3SubPrefix = isVersionedV4Shell ? 'flashcards/v5' : 'flashcards';
       const cdnTarget = `https://d21acfi38wn3iy.cloudfront.net/resource/documents/${vendorId}/${s3SubPrefix}/${encodedRel}`;
       const cdnRes = await fetch(cdnTarget, {
         method: request.method,

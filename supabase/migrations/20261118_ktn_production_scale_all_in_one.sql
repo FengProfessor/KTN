@@ -131,13 +131,42 @@ END $$;
 ALTER TABLE IF EXISTS public.ktn_courses
   ADD COLUMN IF NOT EXISTS teacher_email TEXT;
 
--- Fix KIDS-04 catalog & default payment config price drift (890,000 VND / 16 lessons)
+-- Fix KIDS-04 catalog, seed HSK2-30 & sync default payment config prices (890,000 VND / 16 lessons)
 DO $$
 BEGIN
   IF to_regclass('public.ktn_courses') IS NOT NULL THEN
     UPDATE public.ktn_courses
     SET lessons_count = 16, price = 890000, updated_at = NOW()
     WHERE course_id = '678d14b960eae20002ddf8fe' AND (lessons_count <> 16 OR price <> 890000);
+
+    INSERT INTO public.ktn_courses (
+      course_id, code, title, short_title, badge, age_group,
+      lessons_count, price, old_price, thumb_url, is_bundle, bundle_course_ids, active, sort_order, updated_at
+    ) VALUES (
+      '6af2d9719a8b000002ad4bc0', 'HSK2-30', 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)', 'HSK2 3.0',
+      'TIÊU CHUẨN MỚI 3.0', 'Mọi lứa tuổi', 11, 890000, 1500000, '', FALSE, '[]'::jsonb, TRUE, 2, NOW()
+    )
+    ON CONFLICT (course_id) DO UPDATE SET
+      code = EXCLUDED.code,
+      title = EXCLUDED.title,
+      short_title = EXCLUDED.short_title,
+      badge = EXCLUDED.badge,
+      lessons_count = EXCLUDED.lessons_count,
+      price = EXCLUDED.price,
+      old_price = EXCLUDED.old_price,
+      active = TRUE,
+      updated_at = NOW();
+  END IF;
+
+  IF to_regclass('public.ktn_payment_config') IS NOT NULL THEN
+    UPDATE public.ktn_payment_config
+    SET
+      course_prices = COALESCE(course_prices, '{}'::jsonb) || jsonb_build_object(
+        '678d14b960eae20002ddf8fe', jsonb_build_object('price', 890000, 'title', 'Tiếng Trung Trẻ Em 4 (Lộ trình 7–13 tuổi)'),
+        '6af2d9719a8b000002ad4bc0', jsonb_build_object('price', 890000, 'title', 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)')
+      ),
+      updated_at = NOW()
+    WHERE id = 'default';
   END IF;
 END $$;
 
@@ -778,6 +807,10 @@ BEGIN
       FOR EACH ROW
       EXECUTE FUNCTION public.ktn_students_update_search_fields();
 
+    UPDATE public.ktn_students
+    SET search_text = ''
+    WHERE search_text IS NULL OR search_text = '';
+
     CREATE INDEX IF NOT EXISTS idx_ktn_students_search_text_trgm
       ON public.ktn_students USING GIN (search_text gin_trgm_ops) WITH (fastupdate = off);
   END IF;
@@ -814,6 +847,10 @@ BEGIN
       BEFORE INSERT OR UPDATE ON public.ktn_teachers
       FOR EACH ROW
       EXECUTE FUNCTION public.ktn_teachers_update_search_fields();
+
+    UPDATE public.ktn_teachers
+    SET search_text = ''
+    WHERE search_text IS NULL OR search_text = '' OR search_text_norm IS NULL OR search_text_norm = '';
 
     CREATE INDEX IF NOT EXISTS idx_ktn_teachers_search_trgm
       ON public.ktn_teachers USING GIN (search_text gin_trgm_ops) WITH (fastupdate = off);
@@ -879,7 +916,8 @@ BEGIN
     v_where_clauses := ARRAY_APPEND(
       v_where_clauses,
       FORMAT(
-        'LOWER(COALESCE(s.class_code, '''')) = ANY(SELECT LOWER(unnest(%L::text[])))',
+        '(LOWER(COALESCE(s.class_code, '''')) = ANY(SELECT LOWER(unnest(%L::text[]))) OR EXISTS (SELECT 1 FROM unnest(%L::text[]) AS ac WHERE COALESCE(s.enrolled_classes, ''[]''::jsonb) @> to_jsonb(UPPER(TRIM(ac))) OR COALESCE(s.aliases, ''[]''::jsonb) @> to_jsonb(''__class:'' || UPPER(TRIM(ac)))))',
+        p_allowed_classes,
         p_allowed_classes
       )
     );
@@ -894,7 +932,12 @@ BEGIN
     ELSE
       v_where_clauses := ARRAY_APPEND(
         v_where_clauses,
-        FORMAT('LOWER(COALESCE(s.class_code, '''')) = LOWER(%L)', TRIM(p_class_code))
+        FORMAT(
+          '(LOWER(COALESCE(s.class_code, '''')) = LOWER(%L) OR COALESCE(s.enrolled_classes, ''[]''::jsonb) @> to_jsonb(UPPER(TRIM(%L))) OR COALESCE(s.aliases, ''[]''::jsonb) @> to_jsonb(''__class:'' || UPPER(TRIM(%L))))',
+          TRIM(p_class_code),
+          TRIM(p_class_code),
+          TRIM(p_class_code)
+        )
       );
     END IF;
   END IF;

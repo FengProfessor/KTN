@@ -2865,14 +2865,43 @@ async function runClassScheduleReminders(env, options = {}) {
   const filterClassCode = String(options.classCode || '').trim().toUpperCase();
   const vnNow = getVnDateTimeParts(nowMs);
 
-  const [clsRes, scheduleMap, allStuRes, allTeaRes, stuLifecycleMap, recentReminderLogRes] = await Promise.all([
+  const scheduleMap = await loadAllClassScheduleConfigs(env, filterClassCode ? [filterClassCode] : null);
+  if (options.fromCron === true && !filterClassCode) {
+    let hasClassInReminderWindow = false;
+    for (const cfg of scheduleMap.values()) {
+      if (!cfg || cfg.status !== 'confirmed') continue;
+      const upcoming = computeUpcomingClassSessions(cfg, nowMs, 3);
+      if (
+        upcoming.some((sess) => {
+          if (!sess || sess.isCancelled) return false;
+          const mins = (sess.startEpochMs - nowMs) / 60000;
+          return mins >= 2 && mins <= 35;
+        })
+      ) {
+        hasClassInReminderWindow = true;
+        break;
+      }
+    }
+    if (!hasClassInReminderWindow) {
+      return {
+        ok: true,
+        fastExit: true,
+        checkedSchedules: scheduleMap.size,
+        dispatchedCount: 0,
+        dispatchedReminders: [],
+        skippedCount: 0,
+        skippedSessions: []
+      };
+    }
+  }
+
+  const [clsRes, allStuRes, allTeaRes, stuLifecycleMap, recentReminderLogRes] = await Promise.all([
     supabaseRequest(
       env,
       filterClassCode
         ? `ktn_classes?id=eq.${encodeURIComponent(filterClassCode)}&active=eq.true`
         : 'ktn_classes?active=eq.true&order=id.asc&limit=2000'
     ),
-    loadAllClassScheduleConfigs(env, filterClassCode ? [filterClassCode] : null),
     supabaseRequest(env, 'ktn_students?select=email,code,class_code,aliases&limit=5000').catch(() => ({ ok: false, data: [] })),
     supabaseRequest(env, 'ktn_teachers?select=*&limit=1000').catch(() => ({ ok: false, data: [] })),
     typeof loadAllStudentLifecycleStates === 'function'
@@ -12190,7 +12219,7 @@ export default {
         : Date.now();
 
       // 1. Luôn kiểm tra và gửi nhắc giờ học tự động (trước 30 phút / 10 phút) cho các lớp đã xác nhận lịch chính thức
-      const reminderResult = await runClassScheduleReminders(env, { nowMs: scheduledMs }).catch((err) => ({
+      const reminderResult = await runClassScheduleReminders(env, { nowMs: scheduledMs, fromCron: true }).catch((err) => ({
         ok: false,
         error: err?.message || 'REMINDER_CRON_ERROR'
       }));

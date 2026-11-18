@@ -764,7 +764,7 @@ export function consultationPublicWidgetScript() {
     var style = document.createElement('style');
     style.textContent =
       ':host{all:initial;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}' +
-      '.ktn-chat-wrap{position:fixed;right:18px;bottom:max(18px,env(safe-area-inset-bottom,18px));z-index:2147483000;display:flex;flex-direction:column;align-items:flex-end;gap:10px}' +
+      '.ktn-chat-wrap{position:fixed;right:84px;bottom:max(24px,env(safe-area-inset-bottom,24px));z-index:2147483000;display:flex;flex-direction:column;align-items:flex-end;gap:10px}' +
       '.ktn-chat-fab{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#991B1B,#7F1D1D);color:#fff;font:600 14px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;box-shadow:0 10px 28px rgba(127,29,29,.32);transition:transform .16s ease,box-shadow .16s ease}' +
       '.ktn-chat-fab:hover{transform:translateY(-1px);box-shadow:0 14px 32px rgba(127,29,29,.4)}' +
       '.ktn-chat-panel{display:none;flex-direction:column;width:390px;max-width:calc(100vw - 24px);height:min(600px,calc(100vh - 96px));background:#fff;border:1px solid #e7dad1;border-radius:18px;overflow:hidden;box-shadow:0 20px 48px rgba(28,25,23,.22)}' +
@@ -778,7 +778,7 @@ export function consultationPublicWidgetScript() {
       '.ktn-chat-close:hover{background:rgba(255,255,255,.28)}' +
       '.ktn-chat-body{flex:1 1 auto;min-height:0;background:#fbf7f0}' +
       '.ktn-chat-iframe{width:100%;height:100%;border:0;display:block;background:#fff}' +
-      '@media(max-width:640px){.ktn-chat-wrap{left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom,8px));align-items:flex-end}.ktn-chat-panel{width:100%;max-width:none;height:min(80vh,620px)}}';
+      '@media(max-width:640px){.ktn-chat-wrap{left:8px;right:8px;bottom:max(10px,env(safe-area-inset-bottom,10px));align-items:flex-end}.ktn-chat-fab{margin-right:48px;min-height:42px;padding:0 14px;font-size:13px}.ktn-chat-panel{width:100%;max-width:none;height:min(80vh,620px)}}';
 
     var wrap = document.createElement('div');
     wrap.className = 'ktn-chat-wrap';
@@ -791,7 +791,7 @@ export function consultationPublicWidgetScript() {
     head.className = 'ktn-chat-head';
     var title = document.createElement('p');
     title.className = 'ktn-chat-title';
-    title.textContent = 'Học Viện Khổng Tử Nhí · Tư vấn trực tuyến';
+    title.textContent = 'Khổng Tử Nhí · Tư vấn khóa học';
 
     var actions = document.createElement('div');
     actions.className = 'ktn-chat-actions';

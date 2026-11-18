@@ -629,6 +629,22 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
 
       {/* Messages */}
       <div className="flex-1 space-y-2.5 overflow-y-auto bg-[#FAF8F5] p-3 text-xs">
+        {messages.length === 0 && !activeOrder && !showNeedPhoneForm && !showOrderForm && (
+          <div className="flex justify-start" data-testid="web-chatbot-welcome">
+            <div className="max-w-[88%] rounded-2xl border border-stone-200 bg-white px-3 py-2 text-stone-900 shadow-2xs">
+              <div className="mb-1 flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-red-700" />
+                <span className="text-[10px] font-bold text-stone-600">KTN Bot</span>
+              </div>
+              <p className="leading-relaxed">
+                {tr(
+                  'Xin chào anh/chị! Anh/chị đang tìm khóa học tiếng Trung cho bé hay người đi làm ạ? Hãy chọn mục bên dưới hoặc đặt câu hỏi trực tiếp nhé.',
+                  'Hello! Are you looking for Chinese courses for kids or working adults? Pick an option below or type your question.'
+                )}
+              </p>
+            </div>
+          </div>
+        )}
         {messages.map((msg) => {
           const isCustomer = msg.sender === 'customer';
           return (

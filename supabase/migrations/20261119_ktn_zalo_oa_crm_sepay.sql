@@ -388,7 +388,7 @@ BEGIN
      OR c.channel = 'zalo_oa' THEN
     INSERT INTO public.ktn_consultation_messages (consultation_id, sender, body, delivery)
       VALUES (c.id, 'system', 'Đơn ' || o.order_id || ' · ' || o.course_name || E'\nVietQR: ' ||
-        replace(p_qr_base, 'ORDER_CODE', o.order_id), 'queued');
+        replace(coalesce(p_qr_base, ''), 'ORDER_CODE', o.order_id), 'queued');
   END IF;
   RETURN to_jsonb(o);
 END
@@ -424,7 +424,7 @@ DECLARE
   v_conv public.ktn_consultations;
   v_action_res jsonb;
   v_bot_enabled boolean := false;
-  v_is_echo boolean := coalesce((p_payload->>'is_echo')::boolean, false);
+  v_is_echo boolean := lower(coalesce(nullif(btrim(p_payload->>'is_echo'), ''), 'false')) IN ('true', 't', '1');
   v_body text := nullif(btrim(p_payload->>'body'), '');
   v_name text := nullif(btrim(p_payload->>'customer_name'), '');
   v_phone text := nullif(btrim(p_payload->>'customer_phone'), '');
@@ -456,7 +456,7 @@ BEGIN
     zalo_user_id = coalesce(public.ktn_consultations.zalo_user_id, EXCLUDED.zalo_user_id),
     customer_name = coalesce(nullif(EXCLUDED.customer_name, ''), public.ktn_consultations.customer_name),
     customer_phone = coalesce(nullif(EXCLUDED.customer_phone, ''), public.ktn_consultations.customer_phone),
-    source_tag = coalesce(nullif(EXCLUDED.source_tag, ''), public.ktn_consultations.source_tag, 'zalo_oa'),
+    source_tag = coalesce(v_source_tag, public.ktn_consultations.source_tag, 'zalo_oa'),
     lead_meta = coalesce(public.ktn_consultations.lead_meta, '{}'::jsonb) || EXCLUDED.lead_meta,
     updated_at = now()
   RETURNING * INTO v_conv;
@@ -466,8 +466,19 @@ BEGIN
   IF v_body IS NOT NULL THEN
     v_action_res := public.ktn_consultation_action(
       v_conv.id, CASE WHEN v_is_echo THEN 'external' ELSE 'customer' END, NULL, false,
-      jsonb_build_object('external_id', 'zalo:' || p_event_id, 'body', v_body, 'at', coalesce(p_payload->>'at', now()::text))
+      jsonb_build_object('external_id', 'zalo:' || p_event_id, 'body', v_body, 'at', coalesce(nullif(btrim(p_payload->>'at'), ''), now()::text))
     );
+    IF v_action_res ? 'error' THEN
+      UPDATE public.ktn_zalo_oa_events
+        SET status = 'failed', error = v_action_res->>'error'
+        WHERE event_id = p_event_id;
+      RETURN jsonb_build_object(
+        'ok', false,
+        'error', v_action_res->>'error',
+        'event_id', p_event_id,
+        'conversation', to_jsonb(v_conv)
+      );
+    END IF;
     IF (v_action_res->>'duplicate')::boolean IS TRUE THEN
       UPDATE public.ktn_zalo_oa_events SET status = 'duplicate' WHERE event_id = p_event_id;
       RETURN jsonb_build_object('ok', true, 'duplicate', true, 'event_id', p_event_id, 'conversation', to_jsonb(v_conv));
@@ -492,6 +503,9 @@ DECLARE
   v_row public.ktn_sepay_reconciliation_logs;
 BEGIN
   IF nullif(btrim(p_transaction_id), '') IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'invalid'); END IF;
+  IF coalesce(p_kind, '') NOT IN ('unmatched', 'unknown_order', 'account_mismatch', 'mismatch', 'duplicate', 'needs_review', 'accepted') THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid');
+  END IF;
 
   IF v_order_id_in IS NOT NULL THEN
     SELECT o.order_id, coalesce(o.consultation_id, l.consultation_id)
@@ -576,7 +590,7 @@ DECLARE
   v_actor text := nullif(btrim(p_actor), '');
   v_note text := nullif(btrim(p_note), '');
 BEGIN
-  IF p_resolution_status NOT IN ('open', 'resolved', 'ignored') THEN
+  IF coalesce(p_resolution_status, '') NOT IN ('open', 'resolved', 'ignored') THEN
     RETURN jsonb_build_object('ok', false, 'error', 'invalid');
   END IF;
   SELECT * INTO v_row FROM public.ktn_sepay_reconciliation_logs WHERE transaction_id = p_transaction_id FOR UPDATE;

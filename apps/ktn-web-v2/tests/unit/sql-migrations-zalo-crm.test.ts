@@ -2,9 +2,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
+
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -149,7 +151,7 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
       'ktn_consultation_resolve_sepay_reconciliation',
       'ktn_consultation_upsert_zalo_inbound'
     ]);
-  });
+  }, 30_000);
 
   it('applies full production migration chain cleanly without trigger or index conflicts', async () => {
     const db = await createMigratedDb({ includeFullProdChain: true });
@@ -166,7 +168,7 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
       'lead_source',
       'zalo_user_id'
     ]);
-  });
+  }, 30_000);
 
   it('is 100% idempotent when re-run after seeding representative rows', async () => {
     const db = await createMigratedDb({ includeFullProdChain: true });
@@ -211,7 +213,7 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
       `SELECT transaction_id FROM public.ktn_sepay_reconciliation_logs WHERE transaction_id = 'tx-seed-1'`
     );
     expect(preservedRecon.rows).toHaveLength(1);
-  });
+  }, 30_000);
 
   it('enforces channel/role/status checks, FK to ktn_students(code) ON DELETE SET NULL, and table columns', async () => {
     const db = await createMigratedDb();
@@ -312,7 +314,7 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
       assigned_advisor: 'def@khongtunhi.com',
       consultation_id: linked.rows[0].id
     });
-  });
+  }, 30_000);
 
   it('recreates ktn_consultation_inbox keeping 16 original columns first and appending 6 new columns', async () => {
     const db = await createMigratedDb();
@@ -384,7 +386,7 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
       lead_meta: { age: 7 },
       student_code: 'KTN-2026-089'
     });
-  });
+  }, 30_000);
 
   it('handles Zalo inbound upsert, deduplication, echo, action/outbox rules, and order protection', async () => {
     const db = await createMigratedDb();
@@ -567,7 +569,7 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
       db.query(`UPDATE public.ktn_orders SET note = 'overwritten' WHERE order_id = $1`, [createdOrder.order_id]),
       'P0001'
     );
-  });
+  }, 30_000);
 
   it('logs, lists, resolves SePay reconciliation and links students via RPCs', async () => {
     const db = await createMigratedDb();
@@ -657,7 +659,105 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
     expect(resolved[0].res.log.resolved_by).toBe('accountant@khongtunhi.com');
     expect(resolved[0].res.log.order_id).toBe(orderId);
     expect(resolved[0].res.log.consultation_id).toBe(convId);
-  });
+  }, 30_000);
+
+  it('preserves source_tag, propagates action errors, handles NULL status/kind, and survives empty/null coercions', async () => {
+    const db = await createMigratedDb();
+
+    // 1. Follow-up Zalo message omitting source_tag preserves 'ad_963k'
+    const adFirst = await runAsServiceRole<{ res: { ok: boolean; conversation: { id: string; source_tag: string } } }>(
+      db,
+      `SELECT public.ktn_consultation_upsert_zalo_inbound($1, $2, $3, $4::jsonb) AS res`,
+      [
+        'evt-ad-1',
+        'user_send_text',
+        'zalo-ad-user',
+        JSON.stringify({ body: 'Tư vấn gói 963k', source_tag: 'ad_963k', lead_meta: { ad: '963k' } })
+      ]
+    );
+    expect(adFirst[0].res.ok).toBe(true);
+    expect(adFirst[0].res.conversation.source_tag).toBe('ad_963k');
+
+    const adFollowup = await runAsServiceRole<{ res: { ok: boolean; conversation: { source_tag: string } } }>(
+      db,
+      `SELECT public.ktn_consultation_upsert_zalo_inbound($1, $2, $3, $4::jsonb) AS res`,
+      ['evt-ad-2', 'user_send_text', 'zalo-ad-user', JSON.stringify({ body: 'Em hỏi thêm lịch học' })]
+    );
+    expect(adFollowup[0].res.ok).toBe(true);
+    expect(adFollowup[0].res.conversation.source_tag).toBe('ad_963k');
+
+    // 2. 4001-char body returns { ok: false, error: 'invalid' } and marks event failed
+    const longRes = await runAsServiceRole<{ res: { ok: boolean; error?: string; event_id: string } }>(
+      db,
+      `SELECT public.ktn_consultation_upsert_zalo_inbound($1, $2, $3, $4::jsonb) AS res`,
+      ['evt-4001', 'user_send_text', 'zalo-long-user', JSON.stringify({ body: 'a'.repeat(4001) })]
+    );
+    expect(longRes[0].res.ok).toBe(false);
+    expect(longRes[0].res.error).toBe('invalid');
+
+    const longEvent = await db.query<{ status: string; error: string | null }>(
+      `SELECT status, error FROM public.ktn_zalo_oa_events WHERE event_id = 'evt-4001'`
+    );
+    expect(longEvent.rows[0]).toEqual({ status: 'failed', error: 'invalid' });
+
+    const longMsgs = await db.query<{ cnt: string }>(
+      `SELECT count(*)::text AS cnt FROM public.ktn_consultation_messages WHERE external_id = 'zalo:evt-4001'`
+    );
+    expect(longMsgs.rows[0].cnt).toBe('0');
+
+    // 3. NULL status/kind in SePay reconciliation RPCs return { ok: false, error: 'invalid' }
+    const nullKindLog = await runAsServiceRole<{ res: { ok: boolean; error?: string } }>(
+      db,
+      `SELECT public.ktn_consultation_log_sepay_reconciliation($1, $2, $3) AS res`,
+      ['TX-NULL-KIND', null, 500000]
+    );
+    expect(nullKindLog[0].res).toEqual({ ok: false, error: 'invalid' });
+
+    const nullStatusResolve = await runAsServiceRole<{ res: { ok: boolean; error?: string } }>(
+      db,
+      `SELECT public.ktn_consultation_resolve_sepay_reconciliation($1, $2, $3) AS res`,
+      ['TX-NULL-STATUS', null, 'acc@khongtunhi.com']
+    );
+    expect(nullStatusResolve[0].res).toEqual({ ok: false, error: 'invalid' });
+
+    // 4. Empty string 'at' / 'is_echo' and NULL p_qr_base do not throw SQLSTATE errors
+    const emptyCoerceRes = await runAsServiceRole<{
+      res: { ok: boolean; conversation: { id: string }; message: { sender: string } };
+    }>(
+      db,
+      `SELECT public.ktn_consultation_upsert_zalo_inbound($1, $2, $3, $4::jsonb) AS res`,
+      [
+        'evt-empty-coerce',
+        'user_send_text',
+        'zalo-coerce-user',
+        JSON.stringify({ body: 'Xin chào', at: '', is_echo: '' })
+      ]
+    );
+    expect(emptyCoerceRes[0].res.ok).toBe(true);
+    expect(emptyCoerceRes[0].res.message.sender).toBe('customer');
+
+    const nullQrOrder = await runAsServiceRole<{ res: { order_id: string; source: string } }>(
+      db,
+      `SELECT public.ktn_consultation_create_order($1, $2, $3::jsonb, $4) AS res`,
+      [
+        emptyCoerceRes[0].res.conversation.id,
+        '33333333-3333-4333-8333-333333333333',
+        JSON.stringify({
+          student_name: 'Khách QR Null',
+          student_email: 'qrnull@khongtunhi.com',
+          phone: '0901112233',
+          course_id: 'HSK1-30',
+          course_name: 'HSK 1 3.0',
+          amount: 890000,
+          note: '{"source":"consultation"}',
+          payment_info: {}
+        }),
+        null
+      ]
+    );
+    expect(nullQrOrder[0].res.order_id).toMatch(/^ORD-\d{6}$/);
+    expect(nullQrOrder[0].res.source).toBe('zalo_oa');
+  }, 30_000);
 
   it('denies anon and authenticated access (42501) on consultation tables, views, and RPCs while allowing service_role', async () => {
     const db = await createMigratedDb();
@@ -703,6 +803,53 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
       }
     }
 
+    // Explicit has_function_privilege assertions across ALL ktn_consultation_* functions
+    const allConsultationRpcSignatures = [
+      'public.ktn_consultation_action(uuid,text,text,boolean,jsonb)',
+      'public.ktn_consultation_create_order(uuid,uuid,jsonb,text)',
+      'public.ktn_consultation_record_payment(text,text,bigint)',
+      'public.ktn_consultation_take_payment(text)',
+      'public.ktn_consultation_auto_assign(uuid)',
+      'public.ktn_consultation_take_outbox(uuid)',
+      'public.ktn_consultation_complete_send(uuid,text,text)',
+      'public.ktn_consultation_review_flag(uuid,uuid,text,text,text)',
+      'public.ktn_consultation_retry_payment(text,text,text)',
+      'public.ktn_consultation_upsert_zalo_inbound(text,text,text,jsonb)',
+      'public.ktn_consultation_log_sepay_reconciliation(text,text,bigint,text,text,bigint,text,text,jsonb)',
+      'public.ktn_consultation_list_sepay_reconciliation(text,text,int,int)',
+      'public.ktn_consultation_resolve_sepay_reconciliation(text,text,text,text,text)',
+      'public.ktn_consultation_link_student(uuid,text,text)'
+    ];
+    const triggerSignatures = ['public.ktn_consultation_protect_order()'];
+
+    // Ensure our signature list covers every ktn_consultation_* function in pg_proc
+    const dbFuncCount = await db.query<{ cnt: string }>(
+      `SELECT count(*)::text AS cnt
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname LIKE 'ktn_consultation_%'`
+    );
+    expect(Number(dbFuncCount.rows[0].cnt)).toBe(
+      allConsultationRpcSignatures.length + triggerSignatures.length
+    );
+
+    for (const sig of [...allConsultationRpcSignatures, ...triggerSignatures]) {
+      for (const role of ['anon', 'authenticated'] as const) {
+        const priv = await db.query<{ allowed: boolean }>(
+          `SELECT has_function_privilege($1, $2, 'EXECUTE') AS allowed`,
+          [role, sig]
+        );
+        expect(priv.rows[0].allowed, `Expected EXECUTE=false for ${role} on ${sig}`).toBe(false);
+      }
+    }
+    for (const sig of allConsultationRpcSignatures) {
+      const srPriv = await db.query<{ allowed: boolean }>(
+        `SELECT has_function_privilege('service_role', $1, 'EXECUTE') AS allowed`,
+        [sig]
+      );
+      expect(srPriv.rows[0].allowed, `Expected EXECUTE=true for service_role on ${sig}`).toBe(true);
+    }
+
     // service_role can query tables, views, and execute RPCs cleanly
     const srInbox = await runAsServiceRole(db, `SELECT count(*)::int AS cnt FROM public.ktn_consultation_inbox`);
     expect(srInbox).toHaveLength(1);
@@ -711,5 +858,5 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
       `SELECT public.ktn_consultation_list_sepay_reconciliation(NULL, NULL, 10, 0) AS res`
     );
     expect(srRecon[0].res.ok).toBe(true);
-  });
+  }, 30_000);
 });

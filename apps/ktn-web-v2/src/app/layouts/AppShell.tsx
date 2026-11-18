@@ -224,9 +224,22 @@ export const AppShell: React.FC = () => {
   const isRestoringLiveSession = isRestoring && !isDemoMode && !user;
   const effectiveRole = user?.role || 'student';
   const onChatRoute = location.pathname === '/chat' || location.pathname.startsWith('/chat/');
+  const isLocalTestHost =
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location.hostname.toLowerCase());
+  const bustNextSummaryRef = useRef(false);
+  const summaryPollInterval = useMemo(
+    () =>
+      isDemoMode
+        ? false
+        : isLocalTestHost
+        ? 30000
+        : 90000 + Math.floor(Math.random() * 15000),
+    [isDemoMode, isLocalTestHost]
+  );
 
   const { data: chatRooms = [] } = useChatRooms({
-    refetchInterval: onChatRoute ? false : 60000,
+    refetchInterval: onChatRoute ? false : isLocalTestHost ? 60000 : 120000,
   });
   const totalUnreadChat = useMemo(
     () => chatRooms.reduce((sum, r) => sum + (Number(r.unreadCount) || 0), 0),
@@ -255,10 +268,14 @@ export const AppShell: React.FC = () => {
 
   const notificationsSummaryQuery = useQuery({
     queryKey: ['ktn-notifications-summary', user?.email, isDemoMode],
-    queryFn: async () => ktnApi.getNotificationsSummary(),
+    queryFn: async () => {
+      const bust = bustNextSummaryRef.current;
+      bustNextSummaryRef.current = false;
+      return ktnApi.getNotificationsSummary(bust ? { bust: true } : undefined);
+    },
     enabled: !isDemoMode && Boolean(user),
-    staleTime: 10000,
-    refetchInterval: isDemoMode ? false : 30000,
+    staleTime: isLocalTestHost ? 10000 : 30000,
+    refetchInterval: summaryPollInterval,
     refetchIntervalInBackground: false,
   });
 
@@ -479,6 +496,7 @@ export const AppShell: React.FC = () => {
             .catch(() => null);
         }
       } else if (payload.type === 'KTN_PUSH_RECEIVED') {
+        bustNextSummaryRef.current = true;
         queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
         queryClient.invalidateQueries({ queryKey: ['ktn-notifications-summary'] });
         queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
@@ -593,7 +611,25 @@ export const AppShell: React.FC = () => {
       if (unreadIds.length === 0) return { markedCount: 0 };
       return ktnApi.markNotificationsRead(unreadIds);
     },
+    onMutate: () => {
+      queryClient.setQueryData<{ unreadCount: number; totalCount: number; latestAt?: string | null }>(
+        ['ktn-notifications-summary', user?.email, isDemoMode],
+        (old) => (old ? { ...old, unreadCount: 0 } : old)
+      );
+      queryClient.setQueryData<{ notifications: KtnNotification[]; readIds: string[] }>(
+        ['ktn-notifications', user?.email, isDemoMode],
+        (old) =>
+          old
+            ? {
+                ...old,
+                notifications: old.notifications.map((n) => ({ ...n, read: true })),
+                readIds: Array.from(new Set([...(old.readIds || []), ...old.notifications.map((n) => n.id)])),
+              }
+            : old
+      );
+    },
     onSuccess: () => {
+      bustNextSummaryRef.current = true;
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications-summary'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -605,7 +641,33 @@ export const AppShell: React.FC = () => {
       if (isDemoMode) return { markedCount: 1 };
       return ktnApi.markNotificationsRead([notifId]);
     },
+    onMutate: (notifId: string) => {
+      let wasUnread = true;
+      queryClient.setQueryData<{ notifications: KtnNotification[]; readIds: string[] }>(
+        ['ktn-notifications', user?.email, isDemoMode],
+        (old) => {
+          if (!old) return old;
+          const target = old.notifications.find((n) => n.id === notifId);
+          if (target) wasUnread = !target.read;
+          return {
+            ...old,
+            notifications: old.notifications.map((n) => (n.id === notifId ? { ...n, read: true } : n)),
+            readIds: old.readIds.includes(notifId) ? old.readIds : [...old.readIds, notifId],
+          };
+        }
+      );
+      if (wasUnread) {
+        queryClient.setQueryData<{ unreadCount: number; totalCount: number; latestAt?: string | null }>(
+          ['ktn-notifications-summary', user?.email, isDemoMode],
+          (old) =>
+            old
+              ? { ...old, unreadCount: Math.max(0, Number(old.unreadCount || 0) - 1) }
+              : old
+        );
+      }
+    },
     onSuccess: () => {
+      bustNextSummaryRef.current = true;
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications'] });
       queryClient.invalidateQueries({ queryKey: ['ktn-notifications-summary'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });

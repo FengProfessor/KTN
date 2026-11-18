@@ -473,13 +473,29 @@ function chunkArray(items, size = 50) {
   return out;
 }
 
-function isSupabaseTableUnavailable(tableName) {
-  const until = __ktnMissingTableCooldown.get(tableName) || 0;
+function resolveMissingTableCooldownKey(envOrName, maybeName) {
+  if (typeof envOrName === 'string') return envOrName;
+  const tbl = String(maybeName || '');
+  if (!tbl) return '';
+  const sbUrl = String(envOrName?.SUPABASE_URL || '').trim();
+  return sbUrl ? `${sbUrl}|${tbl}` : tbl;
+}
+
+function isSupabaseTableUnavailable(envOrName, maybeName) {
+  const key = resolveMissingTableCooldownKey(envOrName, maybeName);
+  if (!key) return false;
+  const until = __ktnMissingTableCooldown.get(key) || 0;
   return Date.now() < until;
 }
 
-function markSupabaseTableUnavailable(tableName, ttlMs = 5 * 60 * 1000) {
-  __ktnMissingTableCooldown.set(tableName, Date.now() + ttlMs);
+function markSupabaseTableUnavailable(envOrName, maybeNameOrTtl = 5 * 60 * 1000, maybeTtl = 5 * 60 * 1000) {
+  const isOneArg = typeof envOrName === 'string';
+  const key = resolveMissingTableCooldownKey(envOrName, isOneArg ? undefined : maybeNameOrTtl);
+  if (!key) return;
+  const ttlMs = isOneArg
+    ? (typeof maybeNameOrTtl === 'number' ? maybeNameOrTtl : 5 * 60 * 1000)
+    : (typeof maybeTtl === 'number' ? maybeTtl : 5 * 60 * 1000);
+  __ktnMissingTableCooldown.set(key, Date.now() + ttlMs);
 }
 
 function generateHighEntropyOrderId(nowMs = Date.now()) {
@@ -570,6 +586,119 @@ async function putCachedEdgeResponse(cacheUrl, response, ctx = null) {
         ctx.waitUntil(p.catch(() => null));
       } else {
         await p.catch(() => null);
+      }
+    }
+  } catch {}
+}
+
+const NOTIF_SUMMARY_CACHE_TTL_MS = 30 * 1000;
+const MAX_NOTIF_SUMMARY_MEM_CACHE = 2000;
+const __ktnNotifSummaryMemCache = new Map();
+
+function isLocalOrTestRequestHost(request) {
+  try {
+    const host = new URL(request?.url || 'http://localhost').hostname.toLowerCase();
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '[::1]' ||
+      host === 'example.com' ||
+      host.endsWith('.local')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function shouldUseNotifSummaryCache(request) {
+  try {
+    if (request?.headers?.get?.('X-KTN-Enable-Summary-Cache') === '1') return true;
+    return Boolean(request?.cf && typeof request.cf === 'object' && !isLocalOrTestRequestHost(request));
+  } catch {
+    return false;
+  }
+}
+
+function buildNotifSummaryEdgeCacheUrl(email) {
+  return `https://edge-cache.khongtunhi.internal/notif-summary/v1/${encodeURIComponent(normalizeEmail(email || ''))}`;
+}
+
+function setNotifSummaryMemCacheEntry(normEmail, payload, expiresAt) {
+  if (!normEmail) return;
+  if (__ktnNotifSummaryMemCache.has(normEmail)) {
+    __ktnNotifSummaryMemCache.delete(normEmail);
+  } else if (__ktnNotifSummaryMemCache.size >= MAX_NOTIF_SUMMARY_MEM_CACHE) {
+    const oldest = __ktnNotifSummaryMemCache.keys().next().value;
+    if (oldest !== undefined) __ktnNotifSummaryMemCache.delete(oldest);
+  }
+  __ktnNotifSummaryMemCache.set(normEmail, { payload, expiresAt });
+}
+
+async function getNotifSummaryCachedPayload(request, email) {
+  const normEmail = normalizeEmail(email || '');
+  if (!normEmail || !shouldUseNotifSummaryCache(request)) return null;
+  const now = Date.now();
+  const mem = __ktnNotifSummaryMemCache.get(normEmail);
+  if (mem) {
+    if (now < mem.expiresAt && mem.payload) {
+      return mem.payload;
+    }
+    __ktnNotifSummaryMemCache.delete(normEmail);
+  }
+  try {
+    const cachedRes = await getCachedEdgeResponse(buildNotifSummaryEdgeCacheUrl(normEmail));
+    if (!cachedRes || !cachedRes.ok) return null;
+    const data = await cachedRes.json().catch(() => null);
+    if (!data || !data.ok) return null;
+    const { _cachedAtMs, ...publicPayload } = data;
+    const ttlRemaining = _cachedAtMs
+      ? Math.max(0, NOTIF_SUMMARY_CACHE_TTL_MS - (now - Number(_cachedAtMs)))
+      : NOTIF_SUMMARY_CACHE_TTL_MS;
+    if (ttlRemaining <= 0) return null;
+    setNotifSummaryMemCacheEntry(normEmail, publicPayload, now + ttlRemaining);
+    return publicPayload;
+  } catch {
+    return null;
+  }
+}
+
+async function putNotifSummaryCachedPayload(request, email, payload, ctx = null) {
+  const normEmail = normalizeEmail(email || '');
+  if (!normEmail || !payload || !shouldUseNotifSummaryCache(request)) return;
+  const now = Date.now();
+  const publicPayload = { ...payload };
+  delete publicPayload.cached;
+  delete publicPayload._cachedAtMs;
+  setNotifSummaryMemCacheEntry(normEmail, publicPayload, now + NOTIF_SUMMARY_CACHE_TTL_MS);
+  try {
+    if (typeof caches !== 'undefined' && caches.default) {
+      const edgePayload = { ...publicPayload, _cachedAtMs: now };
+      const resp = new Response(JSON.stringify(edgePayload), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'public, max-age=30'
+        }
+      });
+      await putCachedEdgeResponse(buildNotifSummaryEdgeCacheUrl(normEmail), resp, ctx);
+    }
+  } catch {}
+}
+
+async function invalidateUserNotifSummaryCache(email, ctx = null, skipEdgeDelete = false) {
+  const normEmail = normalizeEmail(email || '');
+  if (!normEmail) return;
+  __ktnNotifSummaryMemCache.delete(normEmail);
+  if (skipEdgeDelete) return;
+  try {
+    if (typeof caches !== 'undefined' && caches.default) {
+      const delPromise = caches.default
+        .delete(new Request(buildNotifSummaryEdgeCacheUrl(normEmail)))
+        .catch(() => false);
+      if (ctx && typeof ctx.waitUntil === 'function') {
+        ctx.waitUntil(delPromise);
+      } else {
+        await delPromise;
       }
     }
   } catch {}
@@ -2597,6 +2726,8 @@ async function emitTargetedLifecycleNotification(env, options = {}) {
     );
   }
 
+  await invalidateUserNotifSummaryCache(recipientEmail);
+
   return {
     ok: true,
     idempotent: false,
@@ -4514,14 +4645,19 @@ function invalidateActiveClassesCache() {
   __ktnActiveClassesCache = { key: '', data: null, expiresAt: 0 };
 }
 
-async function getTeacherAssignedClassCodes(env, teacherEmail, preloadedClassesRes = null) {
+async function getTeacherAssignedClassCodes(env, teacherEmail, preloadedClassesRes = null, preloadedTeacherRow = undefined) {
   const email = normalizeEmail(teacherEmail || '');
   if (!email) return [];
-  const tRes = await supabaseRequest(
-    env,
-    `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`
-  );
-  const tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
+  let tRow = null;
+  if (preloadedTeacherRow !== undefined) {
+    tRow = preloadedTeacherRow;
+  } else {
+    const tRes = await supabaseRequest(
+      env,
+      `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`
+    );
+    tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
+  }
   if (tRow && tRow.active === false) {
     return [];
   }
@@ -4574,25 +4710,34 @@ async function getTeacherAssignedClassCodes(env, teacherEmail, preloadedClassesR
   return Array.from(classSet);
 }
 
-async function getTeacherAssignedCourseIds(env, teacherEmail) {
+async function getTeacherAssignedCourseIds(env, teacherEmail, preloadedTeacherRow = undefined, preloadedCoursesRes = null) {
   const email = normalizeEmail(teacherEmail || '');
   if (!email) return [];
-  const tRes = await supabaseRequest(
-    env,
-    `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`
-  );
-  const tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
+  let tRow = null;
+  if (preloadedTeacherRow !== undefined) {
+    tRow = preloadedTeacherRow;
+  } else {
+    const tRes = await supabaseRequest(
+      env,
+      `ktn_teachers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`
+    );
+    tRow = (tRes.ok && Array.isArray(tRes.data) && tRes.data[0]) ? tRes.data[0] : null;
+  }
   if (!tRow || tRow.active === false) {
     return [];
   }
   const meta = extractTeacherMetaFromRow(tRow);
   const courseSet = new Set(meta.assignedCourses);
-  const cRes = await supabaseRequest(
-    env,
-    `ktn_courses?teacher_email=eq.${encodeURIComponent(email)}&active=eq.true&select=course_id`
-  );
+  const cRes = (preloadedCoursesRes && preloadedCoursesRes.ok && Array.isArray(preloadedCoursesRes.data))
+    ? preloadedCoursesRes
+    : await supabaseRequest(
+        env,
+        `ktn_courses?teacher_email=eq.${encodeURIComponent(email)}&active=eq.true&select=course_id`
+      );
   if (cRes.ok && Array.isArray(cRes.data)) {
     for (const c of cRes.data) {
+      if (c?.active === false) continue;
+      if (c?.teacher_email !== undefined && normalizeEmail(c.teacher_email || '') !== email) continue;
       const cid = String(c?.course_id || '').trim().toLowerCase();
       if (/^[0-9a-f]{24}$/i.test(cid)) courseSet.add(cid);
     }
@@ -4984,12 +5129,14 @@ async function isTeacherAllowedToAccessStudent(env, teacherEmail, stuRow, option
     stuRow.teacher_email || stuRow.assigned_teacher_email || ''
   );
   if (explicitTeacher && explicitTeacher === cleanTeacher) {
-    const tCheck = await supabaseRequest(
-      env,
-      `ktn_teachers?email=eq.${encodeURIComponent(cleanTeacher)}&select=email,active&limit=1`
-    ).catch(() => ({ ok: false, data: [] }));
-    const tCheckRow = (tCheck.ok && Array.isArray(tCheck.data) && tCheck.data[0]) ? tCheck.data[0] : null;
-    if (tCheckRow && tCheckRow.active === false) return false;
+    if (!options.teacherActiveVerified) {
+      const tCheck = await supabaseRequest(
+        env,
+        `ktn_teachers?email=eq.${encodeURIComponent(cleanTeacher)}&select=email,active&limit=1`
+      ).catch(() => ({ ok: false, data: [] }));
+      const tCheckRow = (tCheck.ok && Array.isArray(tCheck.data) && tCheck.data[0]) ? tCheck.data[0] : null;
+      if (tCheckRow && tCheckRow.active === false) return false;
+    }
     return true;
   }
 
@@ -5000,10 +5147,16 @@ async function isTeacherAllowedToAccessStudent(env, teacherEmail, stuRow, option
 
   if (options.teacherExplicitCourseSet instanceof Set) {
     const expSet = options.teacherExplicitCourseSet;
-    return stuCourses.some(cid => {
+    if (stuCourses.some(cid => {
       const normCid = COURSE_CHAT_ALIASES[cid.toLowerCase()] || cid.toLowerCase();
       return expSet.has(cid) || expSet.has(normCid);
-    });
+    })) {
+      return true;
+    }
+    if (options.teacherLegacyCourseFallback) {
+      return true;
+    }
+    return false;
   }
 
   const stuCourseSet = new Set();
@@ -10886,19 +11039,15 @@ function parseKtnCenterBulkCsv(csvText, options = {}) {
   };
 }
 
-async function loadAllCourseGrantRequests(env) {
+function mergeCourseGrantRequestsRows(tblRows = [], alertRows = []) {
   const byId = new Map();
-  const [tblRes, alertRes] = await Promise.all([
-    supabaseRequest(env, 'ktn_course_grant_requests?order=created_at.desc&limit=500').catch(() => ({ ok: false })),
-    supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.COURSE_GRANT_REQUEST&order=created_at.desc&limit=500')
-  ]);
-  if (tblRes && tblRes.ok && Array.isArray(tblRes.data)) {
-    for (const r of tblRes.data) {
+  if (Array.isArray(tblRows)) {
+    for (const r of tblRows) {
       if (r && r.id) byId.set(String(r.id), r);
     }
   }
-  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
-    for (const row of alertRes.data) {
+  if (Array.isArray(alertRows)) {
+    for (const row of alertRows) {
       try {
         const parsed = JSON.parse(row.blocked_content || '{}');
         const id = String(parsed.id || row.id || '').trim();
@@ -10915,6 +11064,17 @@ async function loadAllCourseGrantRequests(env) {
   }
   return Array.from(byId.values()).sort(
     (a, b) => (Date.parse(b.created_at || b.createdAt || '') || 0) - (Date.parse(a.created_at || a.createdAt || '') || 0)
+  );
+}
+
+async function loadAllCourseGrantRequests(env) {
+  const [tblRes, alertRes] = await Promise.all([
+    supabaseRequest(env, 'ktn_course_grant_requests?order=created_at.desc&limit=500').catch(() => ({ ok: false })),
+    supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.COURSE_GRANT_REQUEST&order=created_at.desc&limit=500')
+  ]);
+  return mergeCourseGrantRequestsRows(
+    tblRes && tblRes.ok ? tblRes.data : [],
+    alertRes && alertRes.ok ? alertRes.data : []
   );
 }
 
@@ -10958,30 +11118,15 @@ async function saveCourseGrantRequest(env, reqObj, actorSession) {
   return { ok: alertSave.ok, request: normalized };
 }
 
-async function loadAllForumQuestions(env, filters = {}) {
+function mergeForumQuestionsRows(tblRows = [], alertRows = [], filters = {}) {
   const byId = new Map();
-  const rawFilterCid = filters.courseId ? String(filters.courseId).trim().toLowerCase() : '';
-  const canonicalFilterCid = rawFilterCid ? (COURSE_CHAT_ALIASES[rawFilterCid] || rawFilterCid) : '';
-  let qTblPath = 'ktn_forum_questions?order=created_at.desc&limit=500';
-  if (canonicalFilterCid) {
-    qTblPath = `ktn_forum_questions?course_id=eq.${encodeURIComponent(canonicalFilterCid)}&order=created_at.desc&limit=500`;
-  }
-  const [tblRes, alertRes] = await Promise.all([
-    isSupabaseTableUnavailable(env, 'ktn_forum_questions')
-      ? Promise.resolve({ ok: false, status: 404 })
-      : supabaseRequest(env, qTblPath).catch(() => ({ ok: false })),
-    supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.FORUM_QUESTION&order=created_at.desc&limit=500')
-  ]);
-  if (tblRes && tblRes.status === 404) {
-    markSupabaseTableUnavailable(env, 'ktn_forum_questions');
-  }
-  if (tblRes && tblRes.ok && Array.isArray(tblRes.data)) {
-    for (const r of tblRes.data) {
+  if (Array.isArray(tblRows)) {
+    for (const r of tblRows) {
       if (r && r.id) byId.set(String(r.id), r);
     }
   }
-  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
-    for (const row of alertRes.data) {
+  if (Array.isArray(alertRows)) {
+    for (const row of alertRows) {
       try {
         const parsed = JSON.parse(row.blocked_content || '{}');
         const id = String(parsed.id || row.id || '').trim();
@@ -11029,6 +11174,29 @@ async function loadAllForumQuestions(env, filters = {}) {
   }
   list.sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
   return list;
+}
+
+async function loadAllForumQuestions(env, filters = {}) {
+  const rawFilterCid = filters.courseId ? String(filters.courseId).trim().toLowerCase() : '';
+  const canonicalFilterCid = rawFilterCid ? (COURSE_CHAT_ALIASES[rawFilterCid] || rawFilterCid) : '';
+  let qTblPath = 'ktn_forum_questions?order=created_at.desc&limit=500';
+  if (canonicalFilterCid) {
+    qTblPath = `ktn_forum_questions?course_id=eq.${encodeURIComponent(canonicalFilterCid)}&order=created_at.desc&limit=500`;
+  }
+  const [tblRes, alertRes] = await Promise.all([
+    isSupabaseTableUnavailable(env, 'ktn_forum_questions')
+      ? Promise.resolve({ ok: false, status: 404 })
+      : supabaseRequest(env, qTblPath).catch(() => ({ ok: false })),
+    supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.FORUM_QUESTION&order=created_at.desc&limit=500')
+  ]);
+  if (tblRes && tblRes.status === 404) {
+    markSupabaseTableUnavailable(env, 'ktn_forum_questions');
+  }
+  return mergeForumQuestionsRows(
+    tblRes && tblRes.ok ? tblRes.data : [],
+    alertRes && alertRes.ok ? alertRes.data : [],
+    filters
+  );
 }
 
 async function saveForumQuestion(env, qObj, actorSession) {
@@ -11104,8 +11272,36 @@ async function saveForumQuestion(env, qObj, actorSession) {
   return { ok: alertSave.ok, question: normalized };
 }
 
-async function loadAllForumAnswers(env, questionIds = null) {
+function mergeForumAnswersRows(tblRows = [], alertRows = [], questionIds = null) {
   const byId = new Map();
+  if (Array.isArray(tblRows)) {
+    for (const r of tblRows) {
+      if (r && r.id) byId.set(String(r.id), r);
+    }
+  }
+  if (Array.isArray(alertRows)) {
+    for (const row of alertRows) {
+      try {
+        const parsed = JSON.parse(row.blocked_content || '{}');
+        const id = String(parsed.id || row.id || '').trim();
+        if (!id) continue;
+        const prev = byId.get(id);
+        if (!prev || (Date.parse(parsed.updated_at || '') || 0) >= (Date.parse(prev.updated_at || '') || 0)) {
+          byId.set(id, { ...(prev || {}), ...parsed });
+        }
+      } catch {}
+    }
+  }
+  let list = Array.from(byId.values());
+  if (Array.isArray(questionIds) && questionIds.length > 0) {
+    const qSet = new Set(questionIds.map(id => String(id)));
+    list = list.filter(a => qSet.has(String(a.question_id || a.questionId || '')));
+  }
+  list.sort((a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0));
+  return list;
+}
+
+async function loadAllForumAnswers(env, questionIds = null) {
   const cleanQids = Array.isArray(questionIds) && questionIds.length > 0
     ? Array.from(new Set(questionIds.map((id) => String(id || '').trim()).filter(Boolean)))
     : null;
@@ -11135,31 +11331,11 @@ async function loadAllForumAnswers(env, questionIds = null) {
     fetchPrimaryAns(),
     supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.FORUM_ANSWER&order=created_at.desc&limit=1000')
   ]);
-  if (tblRes && tblRes.ok && Array.isArray(tblRes.data)) {
-    for (const r of tblRes.data) {
-      if (r && r.id) byId.set(String(r.id), r);
-    }
-  }
-  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
-    for (const row of alertRes.data) {
-      try {
-        const parsed = JSON.parse(row.blocked_content || '{}');
-        const id = String(parsed.id || row.id || '').trim();
-        if (!id) continue;
-        const prev = byId.get(id);
-        if (!prev || (Date.parse(parsed.updated_at || '') || 0) >= (Date.parse(prev.updated_at || '') || 0)) {
-          byId.set(id, { ...(prev || {}), ...parsed });
-        }
-      } catch {}
-    }
-  }
-  let list = Array.from(byId.values());
-  if (Array.isArray(questionIds) && questionIds.length > 0) {
-    const qSet = new Set(questionIds.map(id => String(id)));
-    list = list.filter(a => qSet.has(String(a.question_id || a.questionId || '')));
-  }
-  list.sort((a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0));
-  return list;
+  return mergeForumAnswersRows(
+    tblRes && tblRes.ok ? tblRes.data : [],
+    alertRes && alertRes.ok ? alertRes.data : [],
+    questionIds
+  );
 }
 
 async function saveForumAnswer(env, aObj, actorSession) {
@@ -11247,31 +11423,10 @@ function normalizeForumFollowRecord(raw, fallbackEmail = '') {
   };
 }
 
-async function loadAllForumFollows(env, questionId = null, options = {}) {
+function mergeForumFollowsRows(tblRows = [], alertRows = [], questionId = null, options = {}) {
   const byKey = new Map();
-  const userEmailFilter = normalizeEmail(options?.userEmail || '');
-  const cleanQid = questionId ? String(questionId).trim() : '';
-  const skipPrimaryFollows = isSupabaseTableUnavailable(env, 'ktn_forum_follows');
-  let tblPath = 'ktn_forum_follows?order=created_at.desc&limit=1000';
-  if (userEmailFilter && cleanQid) {
-    tblPath = `ktn_forum_follows?user_email=eq.${encodeURIComponent(userEmailFilter)}&question_id=eq.${encodeURIComponent(cleanQid)}&order=created_at.desc&limit=200`;
-  } else if (userEmailFilter) {
-    tblPath = `ktn_forum_follows?user_email=eq.${encodeURIComponent(userEmailFilter)}&order=created_at.desc&limit=500`;
-  } else if (cleanQid) {
-    tblPath = `ktn_forum_follows?question_id=eq.${encodeURIComponent(cleanQid)}&order=created_at.desc&limit=500`;
-  }
-  const alertPath = userEmailFilter
-    ? `ktn_dlp_alerts?room_id=eq.FORUM_FOLLOW&sender_email=eq.${encodeURIComponent(userEmailFilter)}&order=created_at.desc&limit=500`
-    : 'ktn_dlp_alerts?room_id=eq.FORUM_FOLLOW&order=created_at.desc&limit=1000';
-  const [tblRes, alertRes] = await Promise.all([
-    skipPrimaryFollows ? Promise.resolve({ ok: false, status: 404 }) : supabaseRequest(env, tblPath).catch(() => ({ ok: false })),
-    supabaseRequest(env, alertPath)
-  ]);
-  if (tblRes && tblRes.status === 404) {
-    markSupabaseTableUnavailable(env, 'ktn_forum_follows');
-  }
-  if (tblRes && tblRes.ok && Array.isArray(tblRes.data)) {
-    for (const row of tblRes.data) {
+  if (Array.isArray(tblRows)) {
+    for (const row of tblRows) {
       const norm = normalizeForumFollowRecord(row);
       if (!norm) continue;
       const k = `${norm.question_id}|${norm.user_email}`;
@@ -11281,8 +11436,8 @@ async function loadAllForumFollows(env, questionId = null, options = {}) {
       }
     }
   }
-  if (alertRes && alertRes.ok && Array.isArray(alertRes.data)) {
-    for (const row of alertRes.data) {
+  if (Array.isArray(alertRows)) {
+    for (const row of alertRows) {
       try {
         const parsed = JSON.parse(row.blocked_content || '{}');
         const norm = normalizeForumFollowRecord(
@@ -11306,6 +11461,36 @@ async function loadAllForumFollows(env, questionId = null, options = {}) {
     list = list.filter(f => String(f.question_id) === String(questionId));
   }
   return list;
+}
+
+async function loadAllForumFollows(env, questionId = null, options = {}) {
+  const userEmailFilter = normalizeEmail(options?.userEmail || '');
+  const cleanQid = questionId ? String(questionId).trim() : '';
+  const skipPrimaryFollows = isSupabaseTableUnavailable(env, 'ktn_forum_follows');
+  let tblPath = 'ktn_forum_follows?order=created_at.desc&limit=1000';
+  if (userEmailFilter && cleanQid) {
+    tblPath = `ktn_forum_follows?user_email=eq.${encodeURIComponent(userEmailFilter)}&question_id=eq.${encodeURIComponent(cleanQid)}&order=created_at.desc&limit=200`;
+  } else if (userEmailFilter) {
+    tblPath = `ktn_forum_follows?user_email=eq.${encodeURIComponent(userEmailFilter)}&order=created_at.desc&limit=500`;
+  } else if (cleanQid) {
+    tblPath = `ktn_forum_follows?question_id=eq.${encodeURIComponent(cleanQid)}&order=created_at.desc&limit=500`;
+  }
+  const alertPath = userEmailFilter
+    ? `ktn_dlp_alerts?room_id=eq.FORUM_FOLLOW&sender_email=eq.${encodeURIComponent(userEmailFilter)}&order=created_at.desc&limit=500`
+    : 'ktn_dlp_alerts?room_id=eq.FORUM_FOLLOW&order=created_at.desc&limit=1000';
+  const [tblRes, alertRes] = await Promise.all([
+    skipPrimaryFollows ? Promise.resolve({ ok: false, status: 404 }) : supabaseRequest(env, tblPath).catch(() => ({ ok: false })),
+    supabaseRequest(env, alertPath)
+  ]);
+  if (tblRes && tblRes.status === 404) {
+    markSupabaseTableUnavailable(env, 'ktn_forum_follows');
+  }
+  return mergeForumFollowsRows(
+    tblRes && tblRes.ok ? tblRes.data : [],
+    alertRes && alertRes.ok ? alertRes.data : [],
+    questionId,
+    options
+  );
 }
 
 async function saveForumFollow(env, params = {}) {
@@ -24275,6 +24460,10 @@ export default {
           }
         }
 
+        if (savedHw?.student_email) {
+          await invalidateUserNotifSummaryCache(savedHw.student_email, ctx);
+        }
+
         return jsonResponse({
           ok: true,
           syncStatus: finalSyncStatus,
@@ -24390,6 +24579,7 @@ export default {
             const isImmediateDoubleClick = Number.isFinite(lastGradedMs) && Math.abs(Date.now() - lastGradedMs) <= 3000;
             let replayPushDispatch = null;
             if (!isImmediateDoubleClick && existingHw.student_email) {
+              await invalidateUserNotifSummaryCache(existingHw.student_email, ctx);
               const regradeNowIso = new Date().toISOString();
               existingHw.graded_at = regradeNowIso;
               const regradePatchPromise = supabaseRequest(
@@ -24705,6 +24895,10 @@ export default {
               ? await pushPromise
               : { queued: true, async: true, eventId: gradeEventId };
           }
+        }
+
+        if (savedHw?.student_email) {
+          await invalidateUserNotifSummaryCache(savedHw.student_email, ctx);
         }
 
         return jsonResponse({
@@ -25737,21 +25931,34 @@ export default {
       }
 
       // Teacher hoặc Admin: lấy danh sách lớp thực tế đang hoạt động từ ktn_classes (không hardcode 3 lớp)
-      const [activeClsRes, activeTeaRes, crsTeacherRes, isTeacherActive] = await Promise.all([
+      const [activeClsRes, activeTeaRes, crsTeacherRes] = await Promise.all([
         supabaseRequest(env, 'ktn_classes?active=eq.true&order=created_at.asc,id.asc').catch(() => ({ ok: false, data: [] })),
         supabaseRequest(env, 'ktn_teachers?active=eq.true').catch(() => ({ ok: false, data: [] })),
         session.role === 'teacher'
           ? supabaseRequest(env, 'ktn_courses?select=*').catch(() => ({ ok: false, data: [] }))
-          : Promise.resolve({ ok: false, data: [] }),
-        session.role === 'teacher'
-          ? isActiveTeacherSession(env, session)
-          : Promise.resolve(true)
+          : Promise.resolve({ ok: false, data: [] })
       ]);
       const allActiveClasses = (activeClsRes.ok && Array.isArray(activeClsRes.data))
         ? activeClsRes.data.filter(c => c && c.active !== false && String(c.id || '').trim())
         : [];
       const activeTeacherLookup = new Map();
       const teacherExplicitCourseSet = new Set();
+      let preloadedMyTeacherRow = undefined;
+      let isTeacherActive = session.role !== 'teacher';
+      if (session.role === 'teacher') {
+        if (activeTeaRes.ok && Array.isArray(activeTeaRes.data)) {
+          const foundTeacher = activeTeaRes.data.find(
+            (t) => t && t.active !== false && normalizeEmail(t.email || '') === myEmail
+          ) || null;
+          preloadedMyTeacherRow = foundTeacher;
+          isTeacherActive = Boolean(foundTeacher) &&
+            !revokedTokenMemorySet.has(`REVOKED_EMAIL_${myEmail}`) &&
+            !revokedTokenMemorySet.has(`EMAIL_${myEmail}`) &&
+            !revokedTokenMemorySet.has(myEmail);
+        } else {
+          isTeacherActive = await isActiveTeacherSession(env, session);
+        }
+      }
       if (activeTeaRes.ok && Array.isArray(activeTeaRes.data)) {
         for (const t of activeTeaRes.data) {
           if (t?.active === false) continue;
@@ -25804,7 +26011,7 @@ export default {
 
       const assignedClasses = session.role === 'admin'
         ? Array.from(activeClassMetaMap.keys())
-        : (isTeacherActive ? await getTeacherAssignedClassCodes(env, session.email) : []);
+        : (isTeacherActive ? await getTeacherAssignedClassCodes(env, session.email, activeClsRes, preloadedMyTeacherRow) : []);
       const rawGroupRooms = [];
       const seenGroupIds = new Set();
       for (const rawCls of assignedClasses) {
@@ -25833,7 +26040,7 @@ export default {
             '65e7704a9ea90c00080d5195',
             '65e769bd637339000870618f'
           ]
-        : (isTeacherActive ? await getTeacherAssignedCourseIds(env, session.email) : []);
+        : (isTeacherActive ? await getTeacherAssignedCourseIds(env, session.email, preloadedMyTeacherRow, crsTeacherRes) : []);
       for (const cid of primaryCourseIds) {
         const meta = MASTER_PRODUCT_MAPPING[cid];
         if (!meta) continue;
@@ -26521,6 +26728,7 @@ export default {
         }
 
         let pushDispatch = null;
+        let resolvedRecipientEmails = [];
         try {
           let recipientEmails = [];
           let msgEventId = `NOTIF-MSG-${savedRow.id}`;
@@ -26615,6 +26823,8 @@ export default {
             recipientEmails = Array.from(courseRecipSet);
           }
 
+          resolvedRecipientEmails = Array.isArray(recipientEmails) ? recipientEmails : [];
+
           const pushPromise = dispatchWebPushForQuery(
             env,
             '',
@@ -26656,6 +26866,25 @@ export default {
             skipped: true,
             reason: pushErr?.message || 'PUSH_DISPATCH_NON_FATAL_ERROR'
           };
+        }
+
+        await invalidateUserNotifSummaryCache(session.email, ctx);
+        const targetInvalidateEmails = new Set(
+          (Array.isArray(resolvedRecipientEmails) ? resolvedRecipientEmails : [])
+            .map((e) => normalizeEmail(e || ''))
+            .filter(Boolean)
+        );
+        if (access.type === 'student' || /^(?:direct:)?student:/i.test(targetRoomKey)) {
+          const privStuEmail = normalizeEmail(
+            access.studentEmail || targetRoomKey.replace(/^(?:direct:)?student:/i, '')
+          );
+          if (privStuEmail) targetInvalidateEmails.add(privStuEmail);
+        }
+        let edgeDeleteCount = 0;
+        for (const tEm of targetInvalidateEmails) {
+          const skipEdge = edgeDeleteCount >= 40;
+          if (!skipEdge) edgeDeleteCount += 1;
+          await invalidateUserNotifSummaryCache(tEm, ctx, skipEdge);
         }
 
         return jsonResponse({
@@ -26730,6 +26959,8 @@ export default {
           }
         ).catch(() => null);
 
+        await invalidateUserNotifSummaryCache(myEmail, ctx);
+
         return jsonResponse({
           ok: true,
           settings: nextPrefs
@@ -26744,9 +26975,17 @@ export default {
       }
 
       const isSummaryOnly = path === '/api/ktn/notifications/summary' || url.searchParams.get('summary') === '1';
+      const bustCache = url.searchParams.get('bust') === '1';
       const limitParam = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 20) || 20));
       const offsetParam = Math.max(0, Number(url.searchParams.get('offset') || 0) || 0);
       const myEmail = normalizeEmail(session.email);
+
+      if (isSummaryOnly && !bustCache && shouldUseNotifSummaryCache(request)) {
+        const cachedSummary = await getNotifSummaryCachedPayload(request, myEmail);
+        if (cachedSummary) {
+          return jsonResponse({ ...cachedSummary, cached: true });
+        }
+      }
 
       const parseUserCombinedAlerts = (res) => {
         let userPrefs = { ...DEFAULT_USER_NOTIFICATION_PREFS };
@@ -26795,7 +27034,40 @@ export default {
       let preloadedScheduleEvtRes = null;
       let preloadedForumQs = null;
       let preloadedForumFollows = null;
+      let preloadedForumAns = null;
+      let preloadedCourseReqs = null;
       let teacherSessionActive = false;
+
+      const sessionFallbackClasses = Array.isArray(session.enrolledClasses) && session.enrolledClasses.length > 0
+        ? session.enrolledClasses.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
+        : (session.classCode ? [String(session.classCode).trim().toUpperCase()] : []);
+      const sessionFallbackCourses = Array.isArray(session.onlineCourses)
+        ? session.onlineCourses.map(c => String(c?.id || c?._id || c || '').trim().toLowerCase()).filter(Boolean)
+        : [];
+
+      let bundle = null;
+      if (!isSupabaseTableUnavailable(env, 'rpc:ktn_get_notification_bundle')) {
+        const bundleRes = await supabaseRequest(env, 'rpc/ktn_get_notification_bundle', {
+          method: 'POST',
+          body: {
+            p_email: myEmail,
+            p_role: session.role || 'student',
+            p_session_classes: sessionFallbackClasses,
+            p_session_courses: sessionFallbackCourses
+          }
+        }).catch(() => ({ ok: false, data: null }));
+        if (
+          bundleRes?.ok &&
+          bundleRes.data &&
+          typeof bundleRes.data === 'object' &&
+          !Array.isArray(bundleRes.data) &&
+          bundleRes.data.version === 1
+        ) {
+          bundle = bundleRes.data;
+        } else {
+          markSupabaseTableUnavailable(env, 'rpc:ktn_get_notification_bundle', 60 * 1000);
+        }
+      }
 
       const items = [];
       let scopedClassesForScheduleEvents = new Set();
@@ -26824,10 +27096,15 @@ export default {
         `ktn_dlp_alerts?room_id=in.(NOTIF_PREFS,KTN_LIFECYCLE_NOTIFICATION,CLASS_REMINDER_LOG,NOTIF_READ_STATE)&sender_email=eq.${encodeURIComponent(myEmail)}&order=created_at.desc&limit=200`;
 
       if (session.role === 'student') {
-        const [stuRes, userAlertsRes] = await Promise.all([
-          supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(myEmail)}&limit=1`),
-          supabaseRequest(env, userCombinedAlertsUrl).catch(() => ({ ok: false, data: [] }))
-        ]);
+        const [stuRes, userAlertsRes] = bundle
+          ? [
+              { ok: true, data: bundle.student ? [bundle.student] : [] },
+              { ok: true, data: Array.isArray(bundle.user_alerts) ? bundle.user_alerts : [] }
+            ]
+          : await Promise.all([
+              supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(myEmail)}&limit=1`),
+              supabaseRequest(env, userCombinedAlertsUrl).catch(() => ({ ok: false, data: [] }))
+            ]);
         const parsedAlerts = parseUserCombinedAlerts(userAlertsRes);
         userPrefs = parsedAlerts.userPrefs;
         lifecycleNotifRes = { ok: userAlertsRes.ok, data: parsedAlerts.lifecycleRows };
@@ -26839,14 +27116,16 @@ export default {
         const isStuInactive = stuRes.ok && (!stu || ['deleted', 'archived', 'suspended', 'locked'].includes(stuAccStatus));
         if (isStuInactive) {
           if (isSummaryOnly) {
-            return jsonResponse({
+            const emptySummaryPayload = {
               ok: true,
               summaryOnly: true,
               unreadCount: 0,
               totalCount: 0,
               latestAt: null,
               settings: userPrefs
-            });
+            };
+            await putNotifSummaryCachedPayload(request, myEmail, emptySummaryPayload, ctx);
+            return jsonResponse(emptySummaryPayload);
           }
           return jsonResponse({
             ok: true,
@@ -26860,9 +27139,7 @@ export default {
         studentDbChecked = Boolean(stuRes.ok);
         const rawEnrolledClassList = stuRes.ok
           ? (stu ? extractStudentEnrolledClasses(stu) : [])
-          : (Array.isArray(session.enrolledClasses) && session.enrolledClasses.length > 0
-              ? session.enrolledClasses.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)
-              : (session.classCode ? [String(session.classCode).trim().toUpperCase()] : []));
+          : sessionFallbackClasses;
         const rawClassCode =
           (stuRes.ok
             ? (stu ? String(stu.class_code || '').trim().toUpperCase() : '')
@@ -26898,6 +27175,13 @@ export default {
         const hwSelectParam = isSummaryOnly
           ? '&select=id,student_email,student_name,class_code,course_id,lesson_num,lesson_title,status,score,graded_at,submitted_at,updated_at'
           : '';
+        const preloadedStudentTeachersRes = bundle && Array.isArray(bundle.teachers)
+          ? { ok: true, data: bundle.teachers }
+          : null;
+        const preloadedStudentCoursesRes = bundle && Array.isArray(bundle.courses)
+          ? { ok: true, data: bundle.courses }
+          : null;
+
         const [
           clsSingleRes,
           hwRes,
@@ -26906,55 +27190,72 @@ export default {
           schedEvtWaveRes,
           loadedForumQs,
           loadedForumFollows
-        ] = await Promise.all([
-          rawEnrolledClassList.length === 1
-            ? supabaseRequest(
+        ] = bundle
+          ? [
+              { ok: true, data: Array.isArray(bundle.classes) ? bundle.classes : [] },
+              needStuHomeworks ? { ok: true, data: Array.isArray(bundle.homeworks) ? bundle.homeworks : [] } : { ok: true, data: [] },
+              needStuSessions ? { ok: true, data: Array.isArray(bundle.class_sessions) ? bundle.class_sessions : [] } : { ok: true, data: [] },
+              { ok: true, data: Array.isArray(bundle.messages) ? bundle.messages : [] },
+              needStuSchedule ? { ok: true, data: Array.isArray(bundle.schedule_events) ? bundle.schedule_events : [] } : { ok: true, data: [] },
+              enrolledCourseSet.size > 0
+                ? mergeForumQuestionsRows(bundle.forum_questions_tbl || [], bundle.forum_questions_alerts || [])
+                : [],
+              enrolledCourseSet.size > 0
+                ? mergeForumFollowsRows(bundle.forum_follows_tbl || [], bundle.forum_follows_alerts || [], null, { includeAll: true, userEmail: myEmail })
+                : []
+            ]
+          : await Promise.all([
+              rawEnrolledClassList.length === 1
+                ? supabaseRequest(
+                    env,
+                    `ktn_classes?id=eq.${encodeURIComponent(rawEnrolledClassList[0])}&select=id,active,teacher_email,teacher_code&limit=1`
+                  ).catch(() => ({ ok: false, data: [] }))
+                : rawEnrolledClassList.length > 1
+                  ? supabaseRequest(
+                      env,
+                      `ktn_classes?id=in.(${rawEnrolledClassList.map(c => encodeURIComponent(c)).join(',')})&select=id,active,teacher_email,teacher_code`
+                    ).catch(() => ({ ok: false, data: [] }))
+                  : Promise.resolve({ ok: true, data: [] }),
+              needStuHomeworks
+                ? supabaseRequest(
+                    env,
+                    `ktn_homeworks?student_email=eq.${encodeURIComponent(session.email)}&order=updated_at.desc&limit=20${hwSelectParam}`
+                  )
+                : Promise.resolve({ ok: true, data: [] }),
+              needStuSessions
+                ? supabaseRequest(
+                    env,
+                    rawEnrolledClassList.length === 1
+                      ? `ktn_class_sessions?class_code=eq.${encodeURIComponent(rawEnrolledClassList[0])}&order=updated_at.desc&limit=5`
+                      : `ktn_class_sessions?class_code=in.(${rawEnrolledClassList.map(c => encodeURIComponent(c)).join(',')})&order=updated_at.desc&limit=10`
+                  )
+                : Promise.resolve({ ok: true, data: [] }),
+              supabaseRequest(
                 env,
-                `ktn_classes?id=eq.${encodeURIComponent(rawEnrolledClassList[0])}&select=id,active,teacher_email,teacher_code&limit=1`
-              ).catch(() => ({ ok: false, data: [] }))
-            : rawEnrolledClassList.length > 1
-              ? supabaseRequest(
-                  env,
-                  `ktn_classes?id=in.(${rawEnrolledClassList.map(c => encodeURIComponent(c)).join(',')})&select=id,active,teacher_email,teacher_code`
-                ).catch(() => ({ ok: false, data: [] }))
-              : Promise.resolve({ ok: true, data: [] }),
-          needStuHomeworks
-            ? supabaseRequest(
-                env,
-                `ktn_homeworks?student_email=eq.${encodeURIComponent(session.email)}&order=updated_at.desc&limit=20${hwSelectParam}`
-              )
-            : Promise.resolve({ ok: true, data: [] }),
-          needStuSessions
-            ? supabaseRequest(
-                env,
-                rawEnrolledClassList.length === 1
-                  ? `ktn_class_sessions?class_code=eq.${encodeURIComponent(rawEnrolledClassList[0])}&order=updated_at.desc&limit=5`
-                  : `ktn_class_sessions?class_code=in.(${rawEnrolledClassList.map(c => encodeURIComponent(c)).join(',')})&order=updated_at.desc&limit=10`
-              )
-            : Promise.resolve({ ok: true, data: [] }),
-          supabaseRequest(
-            env,
-            `ktn_messages?room_id=in.(${roomInParam})&sender_email=neq.${encodeURIComponent(myEmail)}&order=created_at.desc&limit=10`
-          ),
-          needStuSchedule
-            ? supabaseRequest(
-                env,
-                'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20'
-              ).catch(() => ({ ok: false, data: [] }))
-            : Promise.resolve({ ok: true, data: [] }),
-          enrolledCourseSet.size > 0
-            ? loadAllForumQuestions(env).catch(() => [])
-            : Promise.resolve([]),
-          enrolledCourseSet.size > 0
-            ? loadAllForumFollows(env, null, { includeAll: true, userEmail: myEmail }).catch(() => [])
-            : Promise.resolve([])
-        ]);
+                `ktn_messages?room_id=in.(${roomInParam})&sender_email=neq.${encodeURIComponent(myEmail)}&order=created_at.desc&limit=10`
+              ),
+              needStuSchedule
+                ? supabaseRequest(
+                    env,
+                    'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20'
+                  ).catch(() => ({ ok: false, data: [] }))
+                : Promise.resolve({ ok: true, data: [] }),
+              enrolledCourseSet.size > 0
+                ? loadAllForumQuestions(env).catch(() => [])
+                : Promise.resolve([]),
+              enrolledCourseSet.size > 0
+                ? loadAllForumFollows(env, null, { includeAll: true, userEmail: myEmail }).catch(() => [])
+                : Promise.resolve([])
+            ]);
 
         clsActiveRes = clsSingleRes;
         registerClassRows(clsActiveRes);
         preloadedScheduleEvtRes = schedEvtWaveRes;
         preloadedForumQs = loadedForumQs;
         preloadedForumFollows = loadedForumFollows;
+        if (bundle && enrolledCourseSet.size > 0) {
+          preloadedForumAns = mergeForumAnswersRows(bundle.forum_answers_tbl || [], bundle.forum_answers_alerts || []);
+        }
 
         const activeEnrolledClasses = rawEnrolledClassList.filter((cCode) =>
           Boolean(
@@ -27059,7 +27360,8 @@ export default {
             }
           }
           if (teacherEmailsToVerify.size > 0 || teacherCodesToLookup.size > 0) {
-            const teaRes = await supabaseRequest(env, 'ktn_teachers?select=code,email,active&limit=1000').catch(() => ({ ok: false, data: [] }));
+            const teaRes = preloadedStudentTeachersRes ||
+              await supabaseRequest(env, 'ktn_teachers?select=code,email,active&limit=1000').catch(() => ({ ok: false, data: [] }));
             const teaRows = teaRes.ok && Array.isArray(teaRes.data) ? teaRes.data : [];
             for (const t of teaRows) {
               if (t?.active === false) continue;
@@ -27078,8 +27380,12 @@ export default {
           enrolledCourseTeacherEmails = new Set();
           if (enrolledCourseSet.size === 0) return enrolledCourseTeacherEmails;
           const [tAllRes, crsRes] = await Promise.all([
-            supabaseRequest(env, 'ktn_teachers?active=eq.true&select=*').catch(() => ({ ok: false, data: [] })),
-            supabaseRequest(env, 'ktn_courses?select=*').catch(() => ({ ok: false, data: [] }))
+            preloadedStudentTeachersRes
+              ? Promise.resolve(preloadedStudentTeachersRes)
+              : supabaseRequest(env, 'ktn_teachers?active=eq.true&select=*').catch(() => ({ ok: false, data: [] })),
+            preloadedStudentCoursesRes
+              ? Promise.resolve(preloadedStudentCoursesRes)
+              : supabaseRequest(env, 'ktn_courses?select=*').catch(() => ({ ok: false, data: [] }))
           ]);
           if (tAllRes.ok && Array.isArray(tAllRes.data)) {
             for (const t of tAllRes.data) {
@@ -27192,12 +27498,40 @@ export default {
         }
 
       } else if (session.role === 'teacher') {
-        const [userAlertsRes, nonStuClsRes, schedEvtWaveRes, isTeacherActive] = await Promise.all([
-          supabaseRequest(env, userCombinedAlertsUrl).catch(() => ({ ok: false, data: [] })),
-          supabaseRequest(env, 'ktn_classes?select=id,active,teacher_email,teacher_code').catch(() => ({ ok: false, data: [] })),
-          supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20').catch(() => ({ ok: false, data: [] })),
-          isActiveTeacherSession(env, session)
-        ]);
+        const preloadedTeacherCoursesRes = bundle && Array.isArray(bundle.courses)
+          ? { ok: true, data: bundle.courses }
+          : null;
+        const isTeacherMemRevoked =
+          revokedTokenMemorySet.has(`REVOKED_EMAIL_${myEmail}`) ||
+          revokedTokenMemorySet.has(`EMAIL_${myEmail}`) ||
+          revokedTokenMemorySet.has(myEmail);
+        const [userAlertsRes, nonStuClsRes, schedEvtWaveRes, fallbackTeacherRes] = bundle
+          ? [
+              { ok: true, data: Array.isArray(bundle.user_alerts) ? bundle.user_alerts : [] },
+              { ok: true, data: Array.isArray(bundle.classes) ? bundle.classes : [] },
+              { ok: true, data: Array.isArray(bundle.schedule_events) ? bundle.schedule_events : [] },
+              null
+            ]
+          : await Promise.all([
+              supabaseRequest(env, userCombinedAlertsUrl).catch(() => ({ ok: false, data: [] })),
+              supabaseRequest(env, 'ktn_classes?select=id,active,teacher_email,teacher_code').catch(() => ({ ok: false, data: [] })),
+              supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20').catch(() => ({ ok: false, data: [] })),
+              isTeacherMemRevoked
+                ? Promise.resolve({ ok: true, data: [] })
+                : supabaseRequest(env, `ktn_teachers?email=ilike.${encodeURIComponent(myEmail)}&limit=1`).catch(() => ({ ok: false, data: [] }))
+            ]);
+        const resolvedTeacherRow = bundle
+          ? (bundle.teacher ?? null)
+          : ((fallbackTeacherRes?.ok && Array.isArray(fallbackTeacherRes.data) && fallbackTeacherRes.data[0])
+              ? fallbackTeacherRes.data[0]
+              : null);
+        const isTeacherActive = !isTeacherMemRevoked && (
+          bundle
+            ? (bundle.teacher_active !== undefined
+                ? Boolean(bundle.teacher_active)
+                : Boolean(resolvedTeacherRow && resolvedTeacherRow.active !== false))
+            : Boolean(resolvedTeacherRow && resolvedTeacherRow.active !== false)
+        );
         const parsedAlerts = parseUserCombinedAlerts(userAlertsRes);
         userPrefs = parsedAlerts.userPrefs;
         lifecycleNotifRes = { ok: userAlertsRes.ok, data: parsedAlerts.lifecycleRows };
@@ -27207,12 +27541,32 @@ export default {
         registerClassRows(clsActiveRes);
         preloadedScheduleEvtRes = schedEvtWaveRes;
         teacherSessionActive = Boolean(isTeacherActive);
+        if (bundle && teacherSessionActive) {
+          preloadedForumQs = mergeForumQuestionsRows(bundle.forum_questions_tbl || [], bundle.forum_questions_alerts || []);
+          preloadedCourseReqs = mergeCourseGrantRequestsRows(bundle.course_grant_requests_tbl || [], bundle.course_grant_requests_alerts || []);
+        } else if (bundle) {
+          preloadedForumQs = [];
+          preloadedCourseReqs = [];
+        }
         const [assignedClasses, assignedCourseIds] = isTeacherActive
           ? await Promise.all([
-              getTeacherAssignedClassCodes(env, session.email, nonStuClsRes),
-              getTeacherAssignedCourseIds(env, session.email)
+              getTeacherAssignedClassCodes(env, session.email, nonStuClsRes, resolvedTeacherRow),
+              getTeacherAssignedCourseIds(env, session.email, resolvedTeacherRow, preloadedTeacherCoursesRes)
             ])
           : [[], []];
+        const teacherExplicitCourseSet = new Set();
+        for (const cid of assignedCourseIds) {
+          const cleanCid = String(cid || '').trim();
+          if (!cleanCid) continue;
+          teacherExplicitCourseSet.add(cleanCid);
+          teacherExplicitCourseSet.add(COURSE_CHAT_ALIASES[cleanCid.toLowerCase()] || cleanCid.toLowerCase());
+        }
+        const teacherLegacyCourseFallback = Boolean(
+          resolvedTeacherRow &&
+          myEmail === 'linh.lam@khongtunhi.com' &&
+          resolvedTeacherRow.assigned_courses === undefined &&
+          resolvedTeacherRow.aliases === undefined
+        );
         assignedClasses.forEach(c => {
           const clean = String(c || '').trim().toUpperCase();
           if (clean) scopedClassesForScheduleEvents.add(clean);
@@ -27231,20 +27585,27 @@ export default {
           : '';
         const needTeacherMsgs = isTeacherActive && userPrefs.chat !== false;
 
-        const [hwRes, groupMsgRes, classStudentsRes, coursePrivMsgRes] = await Promise.all([
-          needTeacherHws
-            ? supabaseRequest(env, `ktn_homeworks?class_code=in.(${teacherClassListParam})&status=eq.pending&order=submitted_at.desc&limit=15${teacherHwSelectParam}`)
-            : Promise.resolve({ ok: true, data: [] }),
-          needTeacherMsgs && roomListParam
-            ? supabaseRequest(env, `ktn_messages?room_id=in.(${roomListParam})&order=created_at.desc&limit=15`)
-            : Promise.resolve({ ok: true, data: [] }),
-          needTeacherMsgs && assignedClasses.length > 0
-            ? supabaseRequest(env, `ktn_students?class_code=in.(${teacherClassListParam})&limit=500`).catch(() => ({ ok: false, data: [] }))
-            : Promise.resolve({ ok: true, data: [] }),
-          needTeacherMsgs
-            ? supabaseRequest(env, 'ktn_messages?room_id=like.student:*&sender_role=eq.student&order=created_at.desc&limit=50')
-            : Promise.resolve({ ok: true, data: [] })
-        ]);
+        const [hwRes, groupMsgRes, classStudentsRes, coursePrivMsgRes] = bundle
+          ? [
+              needTeacherHws ? { ok: true, data: Array.isArray(bundle.homeworks) ? bundle.homeworks : [] } : { ok: true, data: [] },
+              needTeacherMsgs && roomListParam ? { ok: true, data: Array.isArray(bundle.group_messages) ? bundle.group_messages : [] } : { ok: true, data: [] },
+              needTeacherMsgs && assignedClasses.length > 0 ? { ok: true, data: Array.isArray(bundle.class_students) ? bundle.class_students : [] } : { ok: true, data: [] },
+              needTeacherMsgs ? { ok: true, data: Array.isArray(bundle.course_priv_messages) ? bundle.course_priv_messages : [] } : { ok: true, data: [] }
+            ]
+          : await Promise.all([
+              needTeacherHws
+                ? supabaseRequest(env, `ktn_homeworks?class_code=in.(${teacherClassListParam})&status=eq.pending&order=submitted_at.desc&limit=15${teacherHwSelectParam}`)
+                : Promise.resolve({ ok: true, data: [] }),
+              needTeacherMsgs && roomListParam
+                ? supabaseRequest(env, `ktn_messages?room_id=in.(${roomListParam})&order=created_at.desc&limit=15`)
+                : Promise.resolve({ ok: true, data: [] }),
+              needTeacherMsgs && assignedClasses.length > 0
+                ? supabaseRequest(env, `ktn_students?class_code=in.(${teacherClassListParam})&limit=500`).catch(() => ({ ok: false, data: [] }))
+                : Promise.resolve({ ok: true, data: [] }),
+              needTeacherMsgs
+                ? supabaseRequest(env, 'ktn_messages?room_id=like.student:*&sender_role=eq.student&order=created_at.desc&limit=50')
+                : Promise.resolve({ ok: true, data: [] })
+            ]);
 
         if (needTeacherHws) {
           const pendingHws = Array.isArray(hwRes.data) ? hwRes.data : [];
@@ -27277,7 +27638,11 @@ export default {
         }
 
         let classPrivMsgs = [];
-        if (needTeacherMsgs && classStudentRoomKeys.length > 0) {
+        if (bundle) {
+          classPrivMsgs = (needTeacherMsgs && classStudentRoomKeys.length > 0 && Array.isArray(bundle.class_priv_messages))
+            ? bundle.class_priv_messages
+            : [];
+        } else if (needTeacherMsgs && classStudentRoomKeys.length > 0) {
           const roomChunks = [];
           for (let i = 0; i < classStudentRoomKeys.length; i += 40) {
             roomChunks.push(classStudentRoomKeys.slice(i, i + 40));
@@ -27321,19 +27686,35 @@ export default {
             })
             .filter(Boolean)
         ));
+        const extraPrivStudentByEmail = new Map();
+        if (bundle && Array.isArray(bundle.extra_priv_students)) {
+          for (const s of bundle.extra_priv_students) {
+            const em = normalizeEmail(s?.email || '');
+            if (em) extraPrivStudentByEmail.set(em, s);
+          }
+        }
         const allowedPrivStudents = new Set();
         if (isTeacherActive && privStudentEmails.length > 0) {
+          const accessCheckOpts = {
+            assignedClasses,
+            teacherExplicitCourseSet,
+            teacherLegacyCourseFallback,
+            teacherActiveVerified: isTeacherActive
+          };
           const missingStudentEmails = [];
           for (const em of privStudentEmails) {
             const cachedStu = classStudentByEmail.get(em);
             if (cachedStu) {
-              const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, cachedStu, { assignedClasses });
+              const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, cachedStu, accessCheckOpts);
               if (isAllowed) allowedPrivStudents.add(em);
-            } else {
+            } else if (bundle && extraPrivStudentByEmail.has(em)) {
+              const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, extraPrivStudentByEmail.get(em), accessCheckOpts);
+              if (isAllowed) allowedPrivStudents.add(em);
+            } else if (!bundle) {
               missingStudentEmails.push(em);
             }
           }
-          if (missingStudentEmails.length > 0) {
+          if (!bundle && missingStudentEmails.length > 0) {
             const stuClsRes = await supabaseRequest(
               env,
               `ktn_students?email=in.(${missingStudentEmails.map(e => encodeURIComponent(e)).join(',')})&select=*`
@@ -27342,7 +27723,7 @@ export default {
               for (const s of stuClsRes.data) {
                 const em = normalizeEmail(s?.email || '');
                 if (!em) continue;
-                const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, s, { assignedClasses });
+                const isAllowed = await isTeacherAllowedToAccessStudent(env, myEmail, s, accessCheckOpts);
                 if (isAllowed) {
                   allowedPrivStudents.add(em);
                 }
@@ -27392,14 +27773,23 @@ export default {
         const admHwUrl = isSummaryOnly
           ? 'ktn_homeworks?order=updated_at.desc&limit=5&select=id,student_email,student_name,class_code,lesson_num,lesson_title,status,graded_at,submitted_at,updated_at'
           : 'ktn_homeworks?order=updated_at.desc&limit=5';
-        const [userAlertsRes, nonStuClsRes, schedEvtWaveRes, ordRes, hwRes, msgRes] = await Promise.all([
-          supabaseRequest(env, userCombinedAlertsUrl).catch(() => ({ ok: false, data: [] })),
-          supabaseRequest(env, 'ktn_classes?select=id,active,teacher_email,teacher_code').catch(() => ({ ok: false, data: [] })),
-          supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20').catch(() => ({ ok: false, data: [] })),
-          supabaseRequest(env, admOrdUrl),
-          supabaseRequest(env, admHwUrl),
-          supabaseRequest(env, 'ktn_messages?order=created_at.desc&limit=5')
-        ]);
+        const [userAlertsRes, nonStuClsRes, schedEvtWaveRes, ordRes, hwRes, msgRes] = bundle
+          ? [
+              { ok: true, data: Array.isArray(bundle.user_alerts) ? bundle.user_alerts : [] },
+              { ok: true, data: Array.isArray(bundle.classes) ? bundle.classes : [] },
+              { ok: true, data: Array.isArray(bundle.schedule_events) ? bundle.schedule_events : [] },
+              { ok: true, data: Array.isArray(bundle.orders) ? bundle.orders : [] },
+              { ok: true, data: Array.isArray(bundle.homeworks) ? bundle.homeworks : [] },
+              { ok: true, data: Array.isArray(bundle.messages) ? bundle.messages : [] }
+            ]
+          : await Promise.all([
+              supabaseRequest(env, userCombinedAlertsUrl).catch(() => ({ ok: false, data: [] })),
+              supabaseRequest(env, 'ktn_classes?select=id,active,teacher_email,teacher_code').catch(() => ({ ok: false, data: [] })),
+              supabaseRequest(env, 'ktn_dlp_alerts?room_id=eq.CLASS_SCHEDULE_EVENT&order=created_at.desc&limit=20').catch(() => ({ ok: false, data: [] })),
+              supabaseRequest(env, admOrdUrl),
+              supabaseRequest(env, admHwUrl),
+              supabaseRequest(env, 'ktn_messages?order=created_at.desc&limit=5')
+            ]);
         const parsedAlerts = parseUserCombinedAlerts(userAlertsRes);
         userPrefs = parsedAlerts.userPrefs;
         lifecycleNotifRes = { ok: userAlertsRes.ok, data: parsedAlerts.lifecycleRows };
@@ -27408,6 +27798,10 @@ export default {
         clsActiveRes = nonStuClsRes;
         registerClassRows(clsActiveRes);
         preloadedScheduleEvtRes = schedEvtWaveRes;
+        if (bundle) {
+          preloadedForumQs = mergeForumQuestionsRows(bundle.forum_questions_tbl || [], bundle.forum_questions_alerts || []);
+          preloadedCourseReqs = mergeCourseGrantRequestsRows(bundle.course_grant_requests_tbl || [], bundle.course_grant_requests_alerts || []);
+        }
         for (const ord of (Array.isArray(ordRes.data) ? ordRes.data : [])) {
           const isPending = ord.approval_status === 'pending';
           items.push({
@@ -27491,14 +27885,21 @@ export default {
             .map(q => q.id);
 
           if (relevantQIds.length > 0) {
-            forumAns = await loadAllForumAnswers(env, relevantQIds).catch(() => []);
+            if (Array.isArray(preloadedForumAns)) {
+              const qSet = new Set(relevantQIds.map(id => String(id)));
+              forumAns = preloadedForumAns.filter(a => qSet.has(String(a.question_id || a.questionId || '')));
+            } else {
+              forumAns = await loadAllForumAnswers(env, relevantQIds).catch(() => []);
+            }
           }
         }
       } else if (session.role === 'admin' || teacherSessionActive) {
-        const [loadedQs, loadedReqs] = await Promise.all([
-          loadAllForumQuestions(env).catch(() => []),
-          loadAllCourseGrantRequests(env).catch(() => [])
-        ]);
+        const [loadedQs, loadedReqs] = (Array.isArray(preloadedForumQs) && Array.isArray(preloadedCourseReqs))
+          ? [preloadedForumQs, preloadedCourseReqs]
+          : await Promise.all([
+              loadAllForumQuestions(env).catch(() => []),
+              loadAllCourseGrantRequests(env).catch(() => [])
+            ]);
         forumQs = loadedQs;
         courseReqs = loadedReqs;
       }
@@ -27767,14 +28168,16 @@ export default {
       }));
 
       if (isSummaryOnly) {
-        return jsonResponse({
+        const summaryPayload = {
           ok: true,
           summaryOnly: true,
           unreadCount,
           totalCount,
           latestAt: filteredItems[0]?.createdAt || null,
           settings: userPrefs
-        });
+        };
+        await putNotifSummaryCachedPayload(request, myEmail, summaryPayload, ctx);
+        return jsonResponse(summaryPayload);
       }
 
       return jsonResponse({
@@ -27844,6 +28247,7 @@ export default {
       if (!sbRes.ok) {
         return jsonResponse({ ok: false, message: 'Chưa lưu được trạng thái đã đọc thông báo.' }, sbRes.status || 500);
       }
+      await invalidateUserNotifSummaryCache(myEmail, ctx);
       return jsonResponse({ ok: true, markedCount: ids.length, totalReadCount: mergedIds.length, ids });
     }
 

@@ -1769,19 +1769,22 @@ export const ktnApi = {
     };
   },
 
-  async getNotificationsSummary(): Promise<{
+  async getNotificationsSummary(options?: { bust?: boolean }): Promise<{
     unreadCount: number;
     totalCount: number;
     latestAt?: string | null;
     settings?: UserNotificationSettings;
   }> {
+    const endpoint = options?.bust
+      ? '/api/ktn/notifications/summary?bust=1'
+      : '/api/ktn/notifications/summary';
     const res = await ktnRequest<{
       ok: boolean;
       unreadCount?: number;
       totalCount?: number;
       latestAt?: string | null;
       settings?: UserNotificationSettings;
-    }>('/api/ktn/notifications/summary');
+    }>(endpoint);
     return {
       unreadCount: Number(res.unreadCount || 0),
       totalCount: Number(res.totalCount || 0),

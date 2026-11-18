@@ -913,6 +913,13 @@ export function createLocalWorkerHarness() {
         });
       }
 
+      if (table.startsWith('rpc/')) {
+        return new Response(JSON.stringify({ message: `Unmocked RPC ${table}` }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       if (table === 'ktn_messages' && method === 'POST' && state.faults.failMessagesPost) {
         return new Response(JSON.stringify({ message: 'Simulated database error' }), {
           status: 503,

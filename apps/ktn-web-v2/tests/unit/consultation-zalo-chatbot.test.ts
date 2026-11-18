@@ -9,7 +9,7 @@ import { isAdultTutoringRequest } from '../../../../consultation-retrieval.mjs';
 // @ts-ignore Root ESM worker modules do not carry TypeScript declarations
 import { computeZaloSignature, fetchZaloUserProfile, handleZaloWebhook, normalizeZaloTimestamp, normalizeZaloWebhookEvent, sendZaloMessage, verifyZaloWebhookSignature } from '../../../../consultation-zalo.mjs';
 // @ts-ignore Root ESM worker modules do not carry TypeScript declarations
-import { extractLeadMetadata, hasForbiddenAiOutput, redactForLlm, resolveScriptedMenu, runHybridChatbot, simulateAiReply } from '../../../../consultation-chatbot.mjs';
+import { extractLeadMetadata, FAQ_QUICK_REPLIES, hasForbiddenAiOutput, redactForLlm, resolveScriptedMenu, ROOT_QUICK_REPLIES, runHybridChatbot, simulateAiReply } from '../../../../consultation-chatbot.mjs';
 // @ts-ignore Root ESM worker modules do not carry TypeScript declarations
 import { handleConsultation } from '../../../../consultation-worker.mjs';
 // @ts-ignore Root ESM worker modules do not carry TypeScript declarations
@@ -994,16 +994,22 @@ describe('M2 Retrieval & Hybrid Chatbot Engine (consultation-retrieval.mjs & con
     expect(hasForbiddenAiOutput('MB Bank 0123456789')).toBe(true);
     expect(hasForbiddenAiOutput('Vietin Bank 1020030040')).toBe(true);
     expect(hasForbiddenAiOutput('Anh chuyển vào tài khoản 0123456789 giúp em')).toBe(true);
+    expect(hasForbiddenAiOutput('STK: 0123 456 789')).toBe(true);
+    expect(hasForbiddenAiOutput('MB Bank: 0123-456-789')).toBe(true);
+    expect(hasForbiddenAiOutput('MB Bank số 0123456789')).toBe(true);
 
     // Broadened www. redaction
     expect(redactForLlm('xem www.evil.example/pay nhé')).toBe('xem [liên kết] nhé');
 
-    // Child 1:1 & Adult accountant comparison regressions
+    // Child 1:1 & Adult accountant comparison regressions (incl. gendered child + 'còn' vs 'con')
     expect(isAdultTutoringRequest('Con mình 8 tuổi cần lớp 1 kèm 1 gói 963k')).toBe(false);
+    expect(isAdultTutoringRequest('Con gái mình 8 tuổi cần lớp 1 kèm 1 gói 963k')).toBe(false);
     expect(isAdultTutoringRequest('Con muốn học 1 kèm 1 gói 963k')).toBe(false);
     expect(isAdultTutoringRequest('Bé nhà tôi 7 tuổi muốn học 1 kèm 1 buổi tối')).toBe(false);
+    expect(isAdultTutoringRequest('Bé gái nhà tôi 7 tuổi muốn học 1 kèm 1 buổi tối')).toBe(false);
     expect(isAdultTutoringRequest('Hai gói video cho bé 7 tuổi khác gì?')).toBe(false);
     expect(isAdultTutoringRequest('Hai gói khác gì, mình làm kế toán nhưng mới bắt đầu?')).toBe(true);
+    expect(isAdultTutoringRequest('Hai gói khác gì, còn mình làm kế toán nhưng mới bắt đầu?')).toBe(true);
 
     const child7Lead = extractLeadMetadata('Bé nhà tôi 7 tuổi muốn học 1 kèm 1 buổi tối');
     expect(child7Lead.child11).toBe(true);
@@ -1014,6 +1020,15 @@ describe('M2 Retrieval & Hybrid Chatbot Engine (consultation-retrieval.mjs & con
       target_group: 'parent_child',
       child_age: 7,
       timeslot: 'buổi tối'
+    });
+
+    const childGirl7Lead = extractLeadMetadata('Bé gái nhà tôi 7 tuổi muốn học 1 kèm 1 buổi tối');
+    expect(childGirl7Lead.child11).toBe(true);
+    expect(childGirl7Lead.childAge).toBe(7);
+    expect(childGirl7Lead.patch).toMatchObject({
+      flow: 'parent_child',
+      target_group: 'parent_child',
+      child_age: 7
     });
 
     const accountantLead = extractLeadMetadata('Hai gói khác gì, mình làm kế toán nhưng mới bắt đầu?');
@@ -1669,5 +1684,160 @@ describe('M2 Consultation Web Page CSP & Quick-Reply Menu UI (consultation-page.
     const quickBar = dom.window.document.querySelector('.quick-replies') as HTMLElement;
     expect(quickBar.hidden).toBe(true);
     expect(quickBar.querySelectorAll('button.chip')).toHaveLength(0);
+  });
+
+  it('prevents underage false positives on parent "nhà em" / "gái nhà em" phrases, blocks grouped bank digits in AI replies, and sends distinct FAQ payloads on Zalo OA', async () => {
+    const makeStore = (harness: ReturnType<typeof createInMemoryConsultationHarness>, env: Record<string, unknown>) => ({
+      query: (p: string, o: any) => harness.deps.supabaseRequest(env, p, o).then(r => r.data),
+      one: (p: string) => harness.deps.supabaseRequest(env, p).then(r => (r.data as any[])[0] || null),
+      rpc: (n: string, b: any) => harness.deps.supabaseRequest(env, 'rpc/ktn_consultation_' + n, { method: 'POST', body: b }).then(r => r.data),
+      patch: (p: string, b: any) => harness.deps.supabaseRequest(env, p, { method: 'PATCH', body: b }).then(r => r.data)
+    });
+
+    const parentCases = [
+      { text: 'Bé nhà em 7 tuổi chưa học bao giờ, tìm khóa video', expectedMode: 'ai', expectedAge: 7 },
+      { text: 'Bé nhà em 7 tuổi muốn tìm khóa video nghe nói.', expectedMode: 'ai', expectedAge: 7 },
+      { text: 'Con nhà em 8 tuổi muốn học tiếng Trung', expectedMode: 'ai', expectedAge: 8 },
+      { text: 'Con nhà em 8 tuổi cần lớp 1 kèm 1', expectedMode: 'handoff', expectedReason: 'child_1_1', expectedAge: 8 },
+      { text: 'Bé gái nhà em 7 tuổi muốn học', expectedMode: 'ai', expectedAge: 7 }
+    ];
+
+    for (const tc of parentCases) {
+      const h = createInMemoryConsultationHarness();
+      const env = createBaseEnv({ KTN_AI_SANDBOX: 'true', KTN_GEMINI_KEYS: '' });
+      const conv = { id: crypto.randomUUID(), channel: 'zalo_oa', status: 'bot', lead_meta: {}, owner_email: null };
+      h.state.consultations.push(conv);
+      const msg = { id: crypto.randomUUID(), consultation_id: conv.id, sender: 'customer', body: tc.text, delivery: 'sent' };
+      h.state.messages.push(msg);
+
+      const res = await runHybridChatbot({
+        store: makeStore(h, env),
+        env,
+        deps: h.deps,
+        conversation: conv,
+        customerMessage: msg,
+        base: env.KTN_CONSULTATION_PUBLIC_URL,
+        callAi: async () => ({ reply: '', course_id: '', handoff: false }),
+        createTicket: async (id: string, scope: string) => `${scope}.${id}.9999999999999.sig`,
+        guidance: async () => h.state.guidance,
+        catalog: async () => SAMPLE_COURSES.map(c => ({ id: c.course_id, title: c.title, price: c.price, duration: '3 tháng', ageGroup: c.age_group })),
+        action: async (_store: any, id: string, verb: string, payload: any) =>
+          h.deps.supabaseRequest(env, 'rpc/ktn_consultation_action', { method: 'POST', body: { p_id: id, p_action: verb, p_payload: payload } }).then(r => r.data),
+        handoffWithMessage: async () => {}
+      });
+
+      expect(res.mode, `"${tc.text}" mode`).toBe(tc.expectedMode);
+      if (tc.expectedReason) {
+        expect(res.reason, `"${tc.text}" reason`).toBe(tc.expectedReason);
+      } else {
+        expect(res.reason).not.toBe('underage');
+      }
+      expect((conv.lead_meta as any).child_age, `"${tc.text}" child_age`).toBe(tc.expectedAge);
+    }
+
+    const underageCases = [
+      'Em mới 14 tuổi muốn tự mua khóa học không cần ba mẹ.',
+      'Em 12 tuổi muốn tự đăng ký khóa học',
+      'Cháu 13 tuổi muốn tự chuyển khoản mua khóa'
+    ];
+    for (const phrase of underageCases) {
+      const h = createInMemoryConsultationHarness();
+      const env = createBaseEnv({ KTN_AI_SANDBOX: 'true', KTN_GEMINI_KEYS: '' });
+      const conv = { id: crypto.randomUUID(), channel: 'web', status: 'bot', lead_meta: {}, owner_email: null };
+      h.state.consultations.push(conv);
+      const msg = { id: crypto.randomUUID(), consultation_id: conv.id, sender: 'customer', body: phrase, delivery: 'sent' };
+      h.state.messages.push(msg);
+      const res = await runHybridChatbot({
+        store: makeStore(h, env),
+        env,
+        deps: h.deps,
+        conversation: conv,
+        customerMessage: msg,
+        base: env.KTN_CONSULTATION_PUBLIC_URL,
+        callAi: async () => ({ reply: 'never', course_id: '', handoff: false }),
+        createTicket: async (id: string, scope: string) => `${scope}.${id}.9999999999999.sig`,
+        guidance: async () => h.state.guidance,
+        catalog: async () => SAMPLE_COURSES.map(c => ({ id: c.course_id, title: c.title, price: c.price, duration: '3 tháng', ageGroup: c.age_group })),
+        action: async (_store: any, id: string, verb: string, payload: any) =>
+          h.deps.supabaseRequest(env, 'rpc/ktn_consultation_action', { method: 'POST', body: { p_id: id, p_action: verb, p_payload: payload } }).then(r => r.data),
+        handoffWithMessage: async () => {}
+      });
+      expect(res).toEqual({ handled: true, mode: 'handoff', reason: 'underage' });
+    }
+
+    // Spaced/hyphenated bank digits in AI response fail closed
+    const hBank = createInMemoryConsultationHarness();
+    const envLiveAi = createBaseEnv({ KTN_AI_SANDBOX: 'false', KTN_GEMINI_KEYS: 'fake-gemini-key' });
+    const convBank = { id: crypto.randomUUID(), channel: 'web', status: 'bot', lead_meta: {}, owner_email: null };
+    hBank.state.consultations.push(convBank);
+    const msgBank = { id: crypto.randomUUID(), consultation_id: convBank.id, sender: 'customer', body: 'Bé 7 tuổi muốn tìm khóa video nghe nói.', delivery: 'sent' };
+    hBank.state.messages.push(msgBank);
+    const bankRes = await runHybridChatbot({
+      store: makeStore(hBank, envLiveAi),
+      env: envLiveAi,
+      deps: hBank.deps,
+      conversation: convBank,
+      customerMessage: msgBank,
+      base: envLiveAi.KTN_CONSULTATION_PUBLIC_URL,
+      callAi: async () => ({ reply: 'Anh chuyển khoản vào STK: 0123 456 789 giúp em ạ.', course_id: '', handoff: false }),
+      createTicket: async (id: string, scope: string) => `${scope}.${id}.9999999999999.sig`,
+      guidance: async () => hBank.state.guidance,
+      catalog: async () => SAMPLE_COURSES.map(c => ({ id: c.course_id, title: c.title, price: c.price, duration: '3 tháng', ageGroup: c.age_group })),
+      action: async (_store: any, id: string, verb: string, payload: any) =>
+        hBank.deps.supabaseRequest(envLiveAi, 'rpc/ktn_consultation_action', { method: 'POST', body: { p_id: id, p_action: verb, p_payload: payload } }).then(r => r.data),
+      handoffWithMessage: async () => {}
+    });
+    expect(bankRes).toEqual({ handled: true, mode: 'handoff', reason: 'ai_guardrail_or_error' });
+
+    // FAQ_QUICK_REPLIES distinct payloads & Zalo OA live quick-reply round-trip
+    expect(ROOT_QUICK_REPLIES.map((item: any) => item.payload)).toContain('MENU_FAQ');
+    const faqTopicItems = FAQ_QUICK_REPLIES.filter((item: any) => item.id.startsWith('FAQ_'));
+    expect(faqTopicItems).toHaveLength(4);
+    expect(new Set(faqTopicItems.map((item: any) => item.payload)).size).toBe(4);
+    for (const item of faqTopicItems) {
+      expect(item.payload).toBe(item.label);
+    }
+
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 0, data: { message_id: 'zalo-faq-buttons-1' } }), { status: 200 })
+    );
+    globalThis.fetch = fetchSpy;
+    const sentFaq = await sendZaloMessage(createBaseEnv({ KTN_ZALO_SANDBOX: 'false' }), {
+      userId: 'zalo-faq-user',
+      message: { id: 'm-faq', body: 'Chọn chủ đề FAQ' },
+      quickReplies: FAQ_QUICK_REPLIES
+    });
+    expect(sentFaq).toEqual({ ok: true, externalId: 'zalo:zalo-faq-buttons-1' });
+    const sentBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    const sentButtons = sentBody.message.attachment.payload.buttons;
+    expect(sentButtons[1]).toMatchObject({
+      title: 'Tiếng Trung người đi làm 1:1',
+      type: 'oa.query.show',
+      payload: 'Tiếng Trung người đi làm 1:1'
+    });
+
+    // Tapping that Zalo OA button payload triggers the exact adult 1:1 FAQ topic
+    const hFaq = createInMemoryConsultationHarness();
+    const envFaq = createBaseEnv({ KTN_ZALO_SANDBOX: 'true', KTN_AI_SANDBOX: 'true', KTN_GEMINI_KEYS: '' });
+    const cFaq = hFaq.createCtx();
+    const resFaq = await handleConsultation(
+      new Request('https://mock-ktn.local/api/ktn/consultations/zalo/sandbox/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_name: 'user_send_text',
+          timestamp: '1763400000000',
+          sender: { id: 'zalo-faq-tap' },
+          message: { msg_id: 'zmsg-faq-tap-1', text: sentButtons[1].payload }
+        })
+      }),
+      envFaq,
+      cFaq.ctx,
+      hFaq.deps
+    );
+    await cFaq.drain();
+    expect(resFaq.status).toBe(200);
+    const botFaqMsg = hFaq.state.messages.find(m => m.sender === 'bot');
+    expect(botFaqMsg?.body).toContain('người đi làm 1:1');
   });
 });

@@ -11,10 +11,12 @@ function normalize(value = '') {
 }
 
 export function isAdultTutoringRequest(question) {
-  const text = normalize(question).replace(/\b1 500\s?k\b/g, '1500k');
+  const safeQuestion = String(question || '').replace(/(?<=^|[^\p{L}\p{N}_])còn(?=$|[^\p{L}\p{N}_])/giu, 'conx');
+  const text = normalize(safeQuestion).replace(/\b1 500\s?k\b/g, '1500k');
+  const childNoun = '(?:be|con|chau)(?: (?:trai|gai|nho|lon))?';
   const possessor = '(?:(?:nha )?(?:toi|minh|chi|anh|em) )?';
-  if (new RegExp(`\\b(?:cho (?:be|con|chau)|(?:be|con|chau) ${possessor}(?:\\d{1,2} tuoi)|tre em|thieu nhi)\\b`).test(text)) return false;
-  if (new RegExp(`\\b(?:be|con|chau) ${possessor}(?:can|muon|hoc)\\b`).test(text)) return false;
+  if (new RegExp(`\\b(?:cho ${childNoun}|${childNoun} ${possessor}(?:\\d{1,2} tuoi)|tre em|thieu nhi)\\b`).test(text)) return false;
+  if (new RegExp(`\\b${childNoun} ${possessor}(?:can|muon|hoc)\\b`).test(text)) return false;
   if (/\bnguoi di lam\b/.test(text)) return true;
   if (/\b(?:tieng trung cong so|giao tiep (?:trong )?cong viec|tieng trung thuong mai|cong so|thuong mai|963\s?k|1500\s?k|1\s?tr\s?5|963\s?k (?:va|voi|vs) 1500\s?k)\b/.test(text)) {
     return true;

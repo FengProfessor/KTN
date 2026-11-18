@@ -15,13 +15,13 @@ export const UNVERIFIED_ADULT_CLAIMS_RE =
   /80%\s*thực\s*hành|đầu\s*ra\s*sau\s*8\s*buổi|rút\s*ngắn\s*một\s*nửa\s*thời\s*gian|cam\s*kết\s*đỗ|đảm\s*bảo\s*đầu\s*ra/i;
 
 export const FORBIDDEN_BANK_INFO_RE =
-  /(?<=^|[^\p{L}\p{N}_])(?:stk|(?:số\s*)?tài\s*khoản|account\s*no|mb\s*bank|vietcom\s*bank|vietin\s*bank|techcom\s*bank|sacom\s*bank|agri\s*bank|bidv|acb|vp\s*bank|tp\s*bank|hd\s*bank|shb|msb)\s*:?\s*\d{6,}/iu;
+  /(?<=^|[^\p{L}\p{N}_])(?:stk|(?:số\s*)?tài\s*khoản|account\s*no|mb\s*bank|vietcom\s*bank|vietin\s*bank|techcom\s*bank|sacom\s*bank|agri\s*bank|bidv|acb|vp\s*bank|tp\s*bank|hd\s*bank|shb|msb)(?:\s*số)?\s*:?\s*(?:\d[\s.-]*){6,}/iu;
 
 const PROMPT_INJECTION_RE =
   /bỏ\s*(?:qua\s*)?(?:toàn\s*bộ\s*)?quy\s*định|ignore\s+(?:all\s+)?(?:previous\s+)?instructions|system\s+prompt|mã\s*(?:ưu\s*đãi|khuyến\s*mãi)\s*nội\s*bộ|đơn\s+của\s+bạn\s+tôi|thông\s*tin\s+(?:khách|người)\s+khác|KTN_GEMINI_KEYS|SUPABASE_SERVICE_ROLE_KEY|KTN_ZALO_APP_SECRET|reveal\s+.*(?:prompt|db|database|key|secret|internal)/iu;
 
 const UNDERAGE_SELF_BUY_RE =
-  uRegex('(?:em|cháu)\\s+là\\s+(?:học\\s+sinh|trẻ\\s+em)|(?<!(?:con|bé)\\s+)(?:em|cháu)\\s+(?:mới\\s+)?\\d{1,2}\\s+tuổi|chưa\\s+đủ\\s+(?:18|mười\\s+tám)|không\\s+cần\\s+(?:ba\\s+mẹ|bố\\s+mẹ|phụ\\s+huynh)|tự\\s+(?:mua|chuyển\\s+(?:khoản|tiền))');
+  uRegex('(?:em|cháu)\\s+là\\s+(?:học\\s+sinh|trẻ\\s+em)|(?<!(?:con|bé|cháu)(?:\\s+(?:gái|trai|nhỏ|lớn))?(?:\\s+nhà)?\\s+)(?:em|cháu)\\s+(?:mới\\s+)?\\d{1,2}\\s+tuổi|chưa\\s+đủ\\s+(?:18|mười\\s+tám)|không\\s+cần\\s+(?:ba\\s+mẹ|bố\\s+mẹ|phụ\\s+huynh)|tự\\s+(?:mua|chuyển\\s+(?:khoản|tiền))');
 
 const EXPLICIT_HUMAN_RE =
   uRegex('gặp\\s+(?:người|tư\\s*vấn|quản\\s*lý|cô\\s*tư\\s*vấn)|nhân\\s*viên|tư\\s*vấn\\s*viên|người\\s*thật|hẹn\\s*gọi\\s*lại|gọi\\s*lại');
@@ -46,10 +46,10 @@ export const ROOT_QUICK_REPLIES = [
 ];
 
 export const FAQ_QUICK_REPLIES = [
-  { id: 'FAQ_KIDS', label: 'Lộ trình trẻ em (4–15 tuổi)', payload: 'MENU_FAQ' },
-  { id: 'FAQ_ADULT', label: 'Tiếng Trung người đi làm 1:1', payload: 'MENU_FAQ' },
-  { id: 'FAQ_FORMAT', label: 'Hình thức học & thiết bị', payload: 'MENU_FAQ' },
-  { id: 'FAQ_EXAM', label: 'Lịch thi HSK / YCT', payload: 'MENU_FAQ' },
+  { id: 'FAQ_KIDS', label: 'Lộ trình trẻ em (4–15 tuổi)', payload: 'Lộ trình trẻ em (4–15 tuổi)' },
+  { id: 'FAQ_ADULT', label: 'Tiếng Trung người đi làm 1:1', payload: 'Tiếng Trung người đi làm 1:1' },
+  { id: 'FAQ_FORMAT', label: 'Hình thức học & thiết bị', payload: 'Hình thức học & thiết bị' },
+  { id: 'FAQ_EXAM', label: 'Lịch thi HSK / YCT', payload: 'Lịch thi HSK / YCT' },
   { id: 'MENU_ROOT', label: 'Menu chính', payload: 'MENU_ROOT' }
 ];
 
@@ -120,11 +120,14 @@ function extractTimeslot(text, norm) {
 
 export function extractLeadMetadata(text, currentMeta = {}) {
   const input = tidy(text, 4000);
-  const norm = normalizeText(input);
+  const norm = normalizeText(
+    input.replace(/(?<=^|[^\p{L}\p{N}_])còn(?=$|[^\p{L}\p{N}_])/giu, 'conx')
+  );
   const adult11 = isAdultTutoringRequest(input);
+  const childNoun = '(?:be|con|chau)(?:\\s+(?:trai|gai|nho|lon))?';
   const possessor = '(?:(?:nha\\s+)?(?:toi|minh|chi|anh|em)\\s+)?';
   const hasChildKeywords = new RegExp(
-    `\\b(?:cho\\s+(?:be|con|chau)|(?:be|con|chau)\\s+${possessor}\\d{1,2}\\s*(?:tuoi|t\\b)|(?:be|con|chau)\\s+${possessor}(?:can|muon|hoc)|tre\\s+em|thieu\\s+nhi)\\b`
+    `\\b(?:cho\\s+${childNoun}|${childNoun}\\s+${possessor}\\d{1,2}\\s*(?:tuoi|t\\b)|${childNoun}\\s+${possessor}(?:can|muon|hoc)|tre\\s+em|thieu\\s+nhi)\\b`
   ).test(norm);
   const child11 = !adult11 && hasChildKeywords && /\b(?:1\s*kem\s*1|1\s*:\s*1|1\s*1|gia\s*su)\b/.test(norm);
 
@@ -150,7 +153,7 @@ export function extractLeadMetadata(text, currentMeta = {}) {
 
   let childAge;
   if (!UNDERAGE_SELF_BUY_RE.test(input)) {
-    const ageMatch = norm.match(/(?:be|con|chau)(?:\s+(?:nha\s+)?(?:toi|minh|chi|anh|em))?\s+(\d{1,2})\s*(?:tuoi|t\b)/) ||
+    const ageMatch = norm.match(new RegExp(`${childNoun}(?:\\s+(?:nha\\s+)?(?:toi|minh|chi|anh|em))?\\s+(\\d{1,2})\\s*(?:tuoi|t\\b)`)) ||
       (hasChildKeywords ? norm.match(/\b(\d{1,2})\s*(?:tuoi|t\b)/) : null);
     if (ageMatch) {
       const parsedAge = Number(ageMatch[1]);
@@ -228,7 +231,7 @@ function detectExplicitMenuCommand(text, explicitCommand, leadPayload, conversat
   if (['MENU_ROOT', 'MENU_FAQ', 'MENU_NEED_PHONE', 'MENU_PAYMENT', 'MENU_HANDOFF'].includes(cmd)) {
     return cmd;
   }
-  const clean = tidy(text, 200).toLowerCase();
+  const clean = tidy(text, 200).toLowerCase() || tidy(explicitCommand, 200).toLowerCase();
   if (conversation?.lead_meta?.menu_state === 'MENU_NEED_PHONE' && leadPayload && Object.keys(leadPayload).length > 0) {
     return 'MENU_NEED_PHONE';
   }
@@ -275,7 +278,7 @@ export function resolveScriptedMenu({
   const command = detectMenuCommand(text, menuCommand, conversation, leadPayload);
   if (!command) return { handled: false };
 
-  const clean = tidy(text, 400).toLowerCase();
+  const clean = tidy(text, 400).toLowerCase() || tidy(menuCommand, 400).toLowerCase();
 
   if (command === 'MENU_ROOT') {
     return {

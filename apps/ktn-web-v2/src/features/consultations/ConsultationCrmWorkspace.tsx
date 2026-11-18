@@ -408,13 +408,17 @@ export const ConsultationCrmWorkspace: React.FC = () => {
       typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `req-${Date.now()}`;
-    await opMutation.mutateAsync({
-      op: composerMode,
-      payload:
-        composerMode === 'reply'
-          ? { body: clean, request_id: requestId }
-          : { body: clean },
-    });
+    try {
+      await opMutation.mutateAsync({
+        op: composerMode,
+        payload:
+          composerMode === 'reply'
+            ? { body: clean, request_id: requestId }
+            : { body: clean },
+      });
+    } catch {
+      // handled by opMutation onError toast; draftText preserved
+    }
   };
 
   const catalogCourses: ConsultationCatalogCourse[] = (coursesQuery.data || []).map((c) => ({
@@ -610,7 +614,11 @@ export const ConsultationCrmWorkspace: React.FC = () => {
                 setThreadOffset(0);
               }}
               onClaim={async (id) => {
-                await claimMutation.mutateAsync(id);
+                try {
+                  await claimMutation.mutateAsync(id);
+                } catch {
+                  // handled by claimMutation onError toast
+                }
               }}
               claimingId={claimMutation.isPending ? claimMutation.variables : null}
             />
@@ -638,16 +646,32 @@ export const ConsultationCrmWorkspace: React.FC = () => {
               onLoadEarlier={() => setThreadOffset((p) => p + 40)}
               onSendMessage={handleSendMessage}
               onAssign={async (ownerEmail) => {
-                await opMutation.mutateAsync({ op: 'assign', payload: { email: ownerEmail } });
+                try {
+                  await opMutation.mutateAsync({ op: 'assign', payload: { email: ownerEmail } });
+                } catch {
+                  // handled by opMutation onError toast
+                }
               }}
               onFollowUp={async (iso) => {
-                await opMutation.mutateAsync({ op: 'follow_up', payload: { at: iso } });
+                try {
+                  await opMutation.mutateAsync({ op: 'follow_up', payload: { at: iso } });
+                } catch {
+                  // handled by opMutation onError toast
+                }
               }}
               onCloseThread={async (outcome) => {
-                await opMutation.mutateAsync({ op: 'close', payload: { outcome } });
+                try {
+                  await opMutation.mutateAsync({ op: 'close', payload: { outcome } });
+                } catch {
+                  // handled by opMutation onError toast
+                }
               }}
               onReopenThread={async () => {
-                await opMutation.mutateAsync({ op: 'reopen' });
+                try {
+                  await opMutation.mutateAsync({ op: 'reopen' });
+                } catch {
+                  // handled by opMutation onError toast
+                }
               }}
               onCreateCheckoutLink={async () => {
                 if (!selectedId) return;
@@ -657,10 +681,18 @@ export const ConsultationCrmWorkspace: React.FC = () => {
                   );
                   return;
                 }
-                const res = await ktnApi.createConsultationCheckoutLink(selectedId);
-                if (res?.url) {
-                  setDraftText((prev) => (prev ? `${prev}\n${res.url}` : res.url));
-                  addToast({ title: tr('Đã chèn link thanh toán', 'Checkout link inserted'), variant: 'success' });
+                try {
+                  const res = await ktnApi.createConsultationCheckoutLink(selectedId);
+                  if (res?.url) {
+                    setDraftText((prev) => (prev ? `${prev}\n${res.url}` : res.url));
+                    addToast({ title: tr('Đã chèn link thanh toán', 'Checkout link inserted'), variant: 'success' });
+                  }
+                } catch (err) {
+                  addToast({
+                    title: tr('Không thể tạo link thanh toán', 'Failed to create checkout link'),
+                    description: err instanceof Error ? err.message : undefined,
+                    variant: 'error',
+                  });
                 }
               }}
               onOpenCreateOrder={() => setCreateOrderOpen(true)}
@@ -683,10 +715,14 @@ export const ConsultationCrmWorkspace: React.FC = () => {
                 }
               }}
               onSaveTimeslotNote={async (timeslot) => {
-                await opMutation.mutateAsync({
-                  op: 'note',
-                  payload: { body: `[Khung giờ rảnh Người đi làm 1:1]: ${timeslot}` },
-                });
+                try {
+                  await opMutation.mutateAsync({
+                    op: 'note',
+                    payload: { body: `[Khung giờ rảnh Người đi làm 1:1]: ${timeslot}` },
+                  });
+                } catch {
+                  // handled by opMutation onError toast
+                }
               }}
               onReviewFlag={handleReviewFlag}
               isMutating={opMutation.isPending}

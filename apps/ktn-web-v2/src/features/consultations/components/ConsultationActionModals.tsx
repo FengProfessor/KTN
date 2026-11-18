@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { QrCode, Link2, X, Copy, Send, Search, Loader2, CheckCircle2 } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { ktnApi } from '@/services/api/ktnApiClient';
@@ -41,6 +41,7 @@ export const CreateConsultationOrderModal: React.FC<CreateOrderModalProps> = ({
   const [durationPreset, setDurationPreset] = useState<CourseDurationPreset>('1m');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [createdResult, setCreatedResult] = useState<{
     id: string;
@@ -49,6 +50,7 @@ export const CreateConsultationOrderModal: React.FC<CreateOrderModalProps> = ({
   } | null>(null);
 
   useEffect(() => {
+    submittingRef.current = false;
     if (open) {
       setCourseId(courses[0]?.id || '6adadba969897b0002482ca5');
       setName(thread.customer_name || '');
@@ -72,6 +74,7 @@ export const CreateConsultationOrderModal: React.FC<CreateOrderModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || submitting) return;
     setError(null);
     if (!name.trim()) {
       setError(tr('Vui lòng nhập tên học viên / phụ huynh.', 'Please enter customer name.'));
@@ -84,6 +87,7 @@ export const CreateConsultationOrderModal: React.FC<CreateOrderModalProps> = ({
       return;
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const requestId =
@@ -136,6 +140,7 @@ export const CreateConsultationOrderModal: React.FC<CreateOrderModalProps> = ({
           : tr('Không thể tạo đơn hàng.', 'Failed to create order.')
       );
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };

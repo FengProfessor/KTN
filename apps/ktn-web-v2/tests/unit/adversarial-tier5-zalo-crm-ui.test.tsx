@@ -8,6 +8,7 @@ import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { useUiStore } from '@/stores/useUiStore';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { WebChatbotWidget } from '@/features/consultations/WebChatbotWidget';
+import { CreateConsultationOrderModal } from '@/features/consultations/components/ConsultationActionModals';
 import { OrderDetailDrawer } from '@/features/admin/components/OrderDetailDrawer';
 import { ConsultationCrmWorkspace } from '@/features/consultations/ConsultationCrmWorkspace';
 import { buildQuickReplyMenu } from '@/features/consultations/utils/consultationHelpers';
@@ -389,6 +390,262 @@ describe('Tier 5 Adversarial Hardening — Domain 2 (Frontend UI & Security)', (
         const toasts = useUiStore.getState().toasts;
         expect(toasts.some((t) => t.variant === 'error')).toBe(true);
       });
+      expect(unhandled.length).toBe(0);
+    } finally {
+      window.removeEventListener('unhandledrejection', onUnhandled);
+    }
+  });
+
+  it('D2-Gap 1b: MENU_NEED_PHONE retains optimistic need_kids chips over stale ROOT_QUICK_REPLIES containing MENU_HANDOFF and clears guard on phone submit', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    const serverRootMenu = [
+      { id: 'MENU_FAQ', label: 'Khóa học & lộ trình', payload: 'Cho tôi xem các khóa học', action: 'MENU_FAQ' },
+      { id: 'MENU_PAYMENT', label: 'Học phí & VietQR', payload: 'Hướng dẫn thanh toán', action: 'MENU_PAYMENT' },
+      { id: 'MENU_NEED_PHONE', label: 'Để lại nhu cầu & SĐT', payload: 'Để lại nhu cầu & SĐT', action: 'MENU_NEED_PHONE' },
+      { id: 'MENU_HANDOFF', label: 'Gặp tư vấn viên', payload: 'Tôi muốn gặp tư vấn viên', action: 'MENU_HANDOFF' },
+    ];
+    const serverNeedPhoneMenu = [
+      { id: 'MENU_HANDOFF', label: 'Gặp tư vấn viên', payload: 'Tôi muốn gặp tư vấn viên', action: 'MENU_HANDOFF' },
+      { id: 'MENU_ROOT', label: 'Menu chính', payload: 'MENU_ROOT', action: 'MENU_ROOT' },
+    ];
+
+    vi.spyOn(ktnApi, 'startWebConsultation').mockResolvedValue({ token: 'web-tok-need-1' });
+    vi.spyOn(ktnApi, 'getWebConsultationCatalog').mockResolvedValue({
+      courses: [{ id: 'c1', title: 'New HSK 1', price: 963000 }],
+      checkoutEnabled: true,
+    });
+    vi.spyOn(ktnApi, 'sendWebConsultationMessage').mockResolvedValue({ accepted: true });
+
+    let threadCalls = 0;
+    const getThreadSpy = vi.spyOn(ktnApi, 'getWebConsultationThread').mockImplementation(async () => {
+      threadCalls++;
+      if (threadCalls <= 2) {
+        // Initial load + immediate stale fetch after clicking MENU_NEED_PHONE
+        return {
+          status: 'bot' as const,
+          messages: [],
+          lead_meta: {},
+          menu: serverRootMenu,
+        };
+      }
+      if (threadCalls === 3) {
+        // 350ms retry returns caught-up MENU_NEED_PHONE state
+        return {
+          status: 'bot' as const,
+          messages: [
+            {
+              id: 'bot-need-1',
+              sender: 'bot' as const,
+              bot_mode: 'scripted' as const,
+              body: 'Anh/chị vui lòng để lại nhu cầu & SĐT.',
+              created_at: '2026-11-18T03:00:00Z',
+            },
+          ],
+          lead_meta: { menu_state: 'MENU_NEED_PHONE' },
+          menu: serverNeedPhoneMenu,
+        };
+      }
+      // After submitting phone -> server returns ROOT menu
+      return {
+        status: 'bot' as const,
+        messages: [
+          {
+            id: 'bot-need-done',
+            sender: 'bot' as const,
+            bot_mode: 'scripted' as const,
+            body: 'Đã ghi nhận SĐT của anh/chị.',
+            created_at: '2026-11-18T03:01:00Z',
+          },
+        ],
+        lead_meta: {},
+        menu: serverRootMenu,
+      };
+    });
+
+    render(<WebChatbotWidget mode="page" />);
+
+    const needMenuBtn = await screen.findByTestId('web-chatbot-qr-MENU_NEED_PHONE');
+    await act(async () => {
+      fireEvent.click(needMenuBtn);
+    });
+
+    // Immediate stale ROOT_QUICK_REPLIES (which includes MENU_HANDOFF + MENU_PAYMENT) must NOT overwrite need_kids
+    await waitFor(() => expect(getThreadSpy).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('web-chatbot-qr-need_kids')).toBeInTheDocument();
+
+    // 350ms retry fetches caught-up MENU_NEED_PHONE state
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    await waitFor(() => expect(getThreadSpy).toHaveBeenCalledTimes(3));
+    expect(screen.getByText('Anh/chị vui lòng để lại nhu cầu & SĐT.')).toBeInTheDocument();
+    expect(screen.getByTestId('web-chatbot-qr-MENU_ROOT')).toBeInTheDocument();
+
+    // Submitting valid phone clears pendingMenuGuardRef so server ROOT menu applies immediately
+    fireEvent.change(screen.getByTestId('web-chatbot-phone-input'), {
+      target: { value: '0901234567' },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId('web-chatbot-need-phone-form'));
+    });
+
+    await waitFor(() => expect(getThreadSpy).toHaveBeenCalledTimes(4));
+    expect(screen.getByTestId('web-chatbot-qr-MENU_PAYMENT')).toBeInTheDocument();
+  });
+
+  it('D2-Gap 2b: prevents synchronous double-submit in CreateConsultationOrderModal', async () => {
+    let resolveCreate: (v: any) => void;
+    const createOrderSpy = vi.spyOn(ktnApi, 'createConsultationOrder').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        })
+    );
+
+    const onOrderCreated = vi.fn();
+    render(
+      <CreateConsultationOrderModal
+        open={true}
+        thread={{
+          id: 'thread-order-double',
+          channel: 'zalo_oa',
+          owner_email: 'tvv@khongtunhi.com',
+          status: 'open',
+          created_at: '2026-11-18T01:00:00Z',
+          updated_at: '2026-11-18T02:00:00Z',
+          customer_name: 'Phụ huynh Hoa',
+          customer_phone: '0909888777',
+          lead_meta: {},
+        }}
+        courses={[{ id: 'c1', title: 'New HSK 1', price: 963000 }]}
+        isDemoMode={false}
+        onClose={vi.fn()}
+        onOrderCreated={onOrderCreated}
+      />
+    );
+
+    const submitBtn = screen.getByTestId('crm-create-order-submit-btn') as HTMLButtonElement;
+    const form = submitBtn.closest('form')!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    expect(createOrderSpy).toHaveBeenCalledTimes(1);
+    expect(submitBtn.disabled).toBe(true);
+
+    await act(async () => {
+      resolveCreate!({
+        id: 'ORD-112233',
+        amount: 963000,
+        payment: null,
+      });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByTestId('crm-created-order-result')).toBeInTheDocument();
+    expect(onOrderCreated).toHaveBeenCalledTimes(1);
+  });
+
+  it('D2-Gap 3b: shows error toast on onCreateCheckoutLink failure and emits zero unhandledRejections on send/action failures', async () => {
+    useAuthStore.setState({ user: DEMO_USERS.admin, authUser: DEMO_USERS.admin });
+
+    const threadItem: ConsultationInboxItem = {
+      id: 'thread-gap3',
+      channel: 'zalo_oa',
+      owner_email: 'quanly@khongtunhi.com',
+      status: 'open',
+      created_at: '2026-11-18T01:00:00Z',
+      updated_at: '2026-11-18T02:00:00Z',
+      reply_pending: false,
+      has_paid_pending: false,
+      customer_name: 'Chị Mai',
+      customer_phone: '0909333444',
+      zalo_user_id: 'zu-gap3',
+      source_tag: 'zalo_oa',
+      lead_meta: {},
+    };
+
+    vi.spyOn(ktnApi, 'getConsultationStaffProfile').mockResolvedValue({
+      actor: { email: 'quanly@khongtunhi.com', name: 'Manager', admin: true, role: 'manager' },
+    });
+    vi.spyOn(ktnApi, 'getConsultationAdvisors').mockResolvedValue({ advisors: [] });
+    vi.spyOn(ktnApi, 'getCourses').mockResolvedValue([]);
+    vi.spyOn(ktnApi, 'getConsultationInbox').mockResolvedValue({
+      conversations: [threadItem],
+      hasMore: false,
+    });
+    vi.spyOn(ktnApi, 'getConsultationThread').mockResolvedValue({
+      conversation: threadItem,
+      messages: [],
+      hasEarlier: false,
+      events: [],
+      flags: [],
+      orders: [],
+    });
+
+    const checkoutSpy = vi
+      .spyOn(ktnApi, 'createConsultationCheckoutLink')
+      .mockRejectedValue(new Error('Checkout link service down'));
+    const operateSpy = vi
+      .spyOn(ktnApi, 'operateConsultationThread')
+      .mockRejectedValue(new Error('Network timeout'));
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (event: PromiseRejectionEvent) => unhandled.push(event.reason);
+    window.addEventListener('unhandledrejection', onUnhandled);
+
+    try {
+      const qc = makeQueryClient();
+      render(
+        <QueryClientProvider client={qc}>
+          <MemoryRouter initialEntries={[`/admin/consultations?thread=${threadItem.id}`]}>
+            <ConsultationCrmWorkspace />
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+
+      const checkoutBtn = await screen.findByTestId('crm-checkout-link-btn');
+      await act(async () => {
+        fireEvent.click(checkoutBtn);
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(checkoutSpy).toHaveBeenCalledTimes(1);
+        const toasts = useUiStore.getState().toasts;
+        expect(
+          toasts.some(
+            (t) =>
+              t.variant === 'error' &&
+              t.title.includes('Không thể tạo link thanh toán')
+          )
+        ).toBe(true);
+      });
+
+      const textarea = screen.getByTestId('crm-composer-textarea') as HTMLTextAreaElement;
+      fireEvent.change(textarea, { target: { value: 'Xin chào phụ huynh' } });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('crm-send-btn'));
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(operateSpy).toHaveBeenCalledTimes(1);
+        const toasts = useUiStore.getState().toasts;
+        expect(
+          toasts.some((t) => t.variant === 'error' && t.title.includes('Thao tác thất bại'))
+        ).toBe(true);
+      });
+      // Draft text must be preserved on send failure
+      expect(textarea.value).toBe('Xin chào phụ huynh');
+
+      // Fire-and-forget thread action (close) failure must not emit unhandledRejection
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('crm-close-btn'));
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(operateSpy).toHaveBeenCalledTimes(2));
+
       expect(unhandled.length).toBe(0);
     } finally {
       window.removeEventListener('unhandledrejection', onUnhandled);

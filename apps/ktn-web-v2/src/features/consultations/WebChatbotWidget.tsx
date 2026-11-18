@@ -161,7 +161,16 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
                 (expected === 'MENU_PAYMENT' &&
                   (m.action === 'OPEN_ORDER_FORM' || m.id === 'OPEN_ORDER_FORM' || m.id === 'pay_guide')) ||
                 (expected === 'MENU_FAQ' && (m.id === 'FAQ_KIDS' || m.id === 'faq_kids')) ||
-                (expected === 'MENU_NEED_PHONE' && m.id === 'MENU_HANDOFF')
+                (expected === 'MENU_NEED_PHONE' &&
+                  (m.id === 'need_kids' ||
+                    (m.id === 'MENU_HANDOFF' &&
+                      !menu.some(
+                        (item) =>
+                          item.id === 'MENU_PAYMENT' ||
+                          item.id === 'root_payment' ||
+                          item.id === 'OPEN_ORDER_FORM' ||
+                          item.id === 'pay_guide'
+                      ))))
             ));
 
       if (!caughtUp) {
@@ -329,7 +338,7 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
     const clean = body.trim();
     if (!clean) return;
 
-    if (!menuAction || menuAction === 'MENU_HANDOFF') {
+    if (!menuAction || menuAction === 'MENU_HANDOFF' || Boolean(lead?.phone)) {
       pendingMenuGuardRef.current = null;
     }
     if (retryTimerRef.current) {

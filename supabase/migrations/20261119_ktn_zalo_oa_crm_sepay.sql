@@ -67,6 +67,13 @@ CREATE INDEX IF NOT EXISTS ktn_consultations_customer_phone_idx
 CREATE INDEX IF NOT EXISTS ktn_consultations_student_code_idx
   ON public.ktn_consultations (student_code) WHERE student_code IS NOT NULL;
 
+ALTER TABLE IF EXISTS public.ktn_consultation_messages
+  ADD COLUMN IF NOT EXISTS client_request_id text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ktn_consultation_messages_client_req_uidx
+  ON public.ktn_consultation_messages (consultation_id, client_request_id)
+  WHERE client_request_id IS NOT NULL;
+
 -- 3. EXTEND ktn_orders & ktn_students
 ALTER TABLE IF EXISTS public.ktn_orders
   ADD COLUMN IF NOT EXISTS source text DEFAULT 'website',
@@ -203,6 +210,8 @@ DECLARE
   text_body text := nullif(btrim(p_payload->>'body'), '');
   sender_type text;
   delivery_state text;
+  v_client_req_id text;
+  v_msg_ext_id text;
   clock_time timestamptz := now();
 BEGIN
   SELECT * INTO c FROM public.ktn_consultations WHERE id = p_id FOR UPDATE;
@@ -312,9 +321,18 @@ BEGIN
     delivery_state := 'sent';
   END IF;
 
-  INSERT INTO public.ktn_consultation_messages (consultation_id, sender, actor_email, body, external_id, delivery)
-  VALUES (c.id, sender_type, p_actor, text_body, p_payload->>'external_id', delivery_state)
-  ON CONFLICT (external_id) DO NOTHING RETURNING * INTO m;
+  v_client_req_id := coalesce(
+    nullif(btrim(p_payload->>'client_request_id'), ''),
+    CASE WHEN coalesce(p_payload->>'external_id', '') LIKE 'staff:%' THEN p_payload->>'external_id' ELSE NULL END
+  );
+  v_msg_ext_id := CASE
+    WHEN v_client_req_id IS NOT NULL AND delivery_state = 'queued' THEN NULL
+    ELSE nullif(p_payload->>'external_id', '')
+  END;
+
+  INSERT INTO public.ktn_consultation_messages (consultation_id, sender, actor_email, body, external_id, client_request_id, delivery)
+  VALUES (c.id, sender_type, p_actor, text_body, v_msg_ext_id, v_client_req_id, delivery_state)
+  ON CONFLICT DO NOTHING RETURNING * INTO m;
   IF m.id IS NULL THEN RETURN jsonb_build_object('duplicate', true); END IF;
 
   UPDATE public.ktn_consultations SET
@@ -682,6 +700,56 @@ BEGIN
       EXECUTE 'GRANT EXECUTE ON FUNCTION public.' || signature || ' TO service_role';
     END IF;
   END LOOP;
+END $$;
+
+-- 11. HARDEN ktn_consultation_protect_order FOR LEGITIMATE PROVISIONING UPDATES
+CREATE OR REPLACE FUNCTION public.ktn_consultation_protect_order() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+DECLARE
+  v_is_legit_provisioning boolean := false;
+BEGIN
+  IF old.note LIKE '%"source":"consultation"%'
+     AND (new.note IS NULL OR new.note NOT LIKE '%"source":"consultation"%')
+     AND exists (SELECT 1 FROM public.ktn_consultation_orders l WHERE l.order_id = old.order_id)
+  THEN
+    v_is_legit_provisioning :=
+      exists (
+        SELECT 1 FROM public.ktn_consultation_orders l
+        WHERE l.order_id = old.order_id
+          AND (old.consultation_id IS NULL OR new.consultation_id IS NOT DISTINCT FROM old.consultation_id)
+      )
+      AND coalesce(new.source, '') IN ('zalo_oa', 'web_chat', 'messenger', 'consultation')
+      AND new.note LIKE '%<!--KTN_ORDER_META:%'
+      AND (
+        new.note LIKE '%"source":"zalo_oa"%'
+        OR new.note LIKE '%"source":"web_chat"%'
+        OR new.note LIKE '%"source":"messenger"%'
+      )
+      AND lower(coalesce(new.student_email, '')) = lower(coalesce(old.student_email, ''))
+      AND (
+        new.approval_status IS DISTINCT FROM old.approval_status
+        OR new.payment_status IS DISTINCT FROM old.payment_status
+        OR new.assigned_user_id IS DISTINCT FROM old.assigned_user_id
+        OR new.assigned_student_id IS DISTINCT FROM old.assigned_student_id
+      );
+
+    IF NOT v_is_legit_provisioning THEN
+      RAISE EXCEPTION 'Consultation order cannot be replaced';
+    END IF;
+  END IF;
+  RETURN new;
+END
+$$;
+
+REVOKE ALL ON FUNCTION public.ktn_consultation_protect_order() FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON FUNCTION public.ktn_consultation_protect_order() FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON FUNCTION public.ktn_consultation_protect_order() FROM authenticated;
+  END IF;
 END $$;
 
 COMMIT;

@@ -3,6 +3,18 @@ import { draftConsultationExamples, draftConsultationPolicy } from './consultati
 import { consultationExample, consultationExampleLimit } from './consultation-retrieval.mjs';
 import { handleZaloWebhook, sendZaloMessage } from './consultation-zalo.mjs';
 import { FAQ_QUICK_REPLIES, NEED_PHONE_QUICK_REPLIES, ROOT_QUICK_REPLIES, runHybridChatbot } from './consultation-chatbot.mjs';
+import {
+  createConsultationOrder,
+  handleSepayWebhook,
+  hasSepayReadyConfig,
+  isRealProductionHost,
+  isSepaySandbox,
+  listSepayReconciliation,
+  paymentInfoFromLink,
+  processPayments,
+  resolveSepayReconciliation,
+  retryConsultationPayment
+} from './consultation-sepay.mjs';
 
 const prefix = '/api/ktn/consultations/';
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
@@ -106,6 +118,20 @@ async function authRequest(env, path, options = {}) {
   });
 }
 
+async function lookupActiveAdvisor(store, email, userId = '') {
+  const cleanEmail = tidy(email, 254).toLowerCase();
+  if (cleanEmail) {
+    const byEmail = await store.one('ktn_advisors?email=eq.' + eq(cleanEmail) + '&active=eq.true&limit=1');
+    if (byEmail) return byEmail;
+  }
+  const cleanUid = tidy(String(userId || ''), 120);
+  if (cleanUid) {
+    const byUid = await store.one('ktn_advisors?ktn_user_id=eq.' + eq(cleanUid) + '&active=eq.true&limit=1');
+    if (byUid) return byUid;
+  }
+  return null;
+}
+
 async function staff(request, env, deps, store) {
   const header = tokenHeader(request);
   // JWT Supabase có ba thành phần; phiên KTN có hai. Với cookie dùng phiên KTN hiện tại.
@@ -113,11 +139,37 @@ async function staff(request, env, deps, store) {
     const response = await authRequest(env, 'user', { headers: { Authorization: header } });
     if (!response.ok) throw new RequestError('Phiên tư vấn viên đã hết hạn.', 401);
     const user = await response.json();
-    const advisor = user.email_confirmed_at && await store.one('ktn_advisors?email=eq.' + eq(tidy(user.email, 254).toLowerCase()) + '&active=eq.true&limit=1');
-    if (advisor) return { email: advisor.email, name: advisor.name, admin: false };
+    const advisor = user.email_confirmed_at && await lookupActiveAdvisor(store, user.email, user.id);
+    if (advisor) {
+      const isManager = advisor.role === 'manager';
+      return { email: advisor.email, name: advisor.name, admin: isManager, role: isManager ? 'manager' : 'advisor' };
+    }
   } else {
     const session = await deps.extractSessionFromRequest(request, env);
-    if (session?.role === 'admin' && session.email) return { email: session.email, name: session.name, admin: true };
+    if (session?.role === 'admin' && session.email) {
+      return {
+        email: tidy(session.email, 254).toLowerCase(),
+        name: session.name || session.email,
+        admin: true,
+        role: 'manager'
+      };
+    }
+    const hasAdvisorRole =
+      session?.role === 'advisor' ||
+      (Array.isArray(session?.roles) && session.roles.includes('advisor'));
+    if (hasAdvisorRole && session.email) {
+      const advisor = await lookupActiveAdvisor(store, session.email, session.id || session.userId);
+      if (!advisor) {
+        throw new RequestError('Tài khoản tư vấn viên đã ngừng hoạt động hoặc chưa được phân quyền.', 403);
+      }
+      const isManager = advisor.role === 'manager';
+      return {
+        email: advisor.email,
+        name: advisor.name || session.name || advisor.email,
+        admin: isManager,
+        role: isManager ? 'manager' : 'advisor'
+      };
+    }
   }
   throw new RequestError('Bạn cần tài khoản quản lý hoặc tư vấn viên.', 403);
 }
@@ -150,10 +202,19 @@ async function catalog(config, env, deps) {
   if (!config.course_ids.length) return [];
   const courseIds = config.course_ids.slice(0, 10);
   const store = db(env, deps);
-  const [paymentConfig, catalogRows] = await Promise.all([
+  const [rawPaymentConfig, catalogRows] = await Promise.all([
     store.one('ktn_payment_config?id=eq.default&limit=1'),
     store.query('ktn_courses?active=eq.true&course_id=in.(' + courseIds.map(eq).join(',') + ')')
   ]);
+  const paymentConfig = rawPaymentConfig || (isSepaySandbox(env)
+    ? {
+        id: 'default',
+        bank_id: env.KTN_SEPAY_BANK_ID || 'MB',
+        bank_name: env.KTN_SEPAY_BANK_ID || 'MBBank',
+        account_no: env.KTN_SEPAY_ACCOUNT_NO || '0987654321',
+        account_name: env.KTN_SEPAY_ACCOUNT_NAME || 'HOC VIEN KHONG TU NHI'
+      }
+    : null);
   if (!paymentConfig) return [];
   const prices = await Promise.all(courseIds.map(id => deps.resolveServerCoursePrice(env, id, {
     requireActive: true, paymentConfig, catalogRows: rows(catalogRows)
@@ -165,8 +226,9 @@ async function catalog(config, env, deps) {
 }
 
 function redact(value) {
-  return value.replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, '[email]')
-    .replace(/(?:\+?84|0)(?:[ .-]*\d){8,11}\b/g, '[số điện thoại]')
+  return String(value || '')
+    .replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, '[email]')
+    .replace(/(?<![\d.])(?:\(?\s*(?:\+?84|0)\s*\)?(?:[ .()-]*\d){8,11}|\(\s*(?:\+?84|0)\d{1,3}\s*\)(?:[ .()-]*\d){6,9})\b(?!\s*(?:đ|vnđ|vnd)\b)/gi, '[số điện thoại]')
     .replace(/(?:https?:\/\/|www\.)\S+/gi, '[liên kết]');
 }
 
@@ -251,7 +313,8 @@ async function customerRoute(suffix, request, env, ctx, deps, store) {
   }
   if (suffix === 'web/catalog' && method === 'GET') {
     const config = await guidance(store);
-    return { courses: fullMode(env) ? await catalog(config, env, deps) : [], checkoutEnabled: fullMode(env) && config.checkout_enabled };
+    const active = fullMode(env) || isSepaySandbox(env);
+    return { courses: active ? await catalog(config, env, deps) : [], checkoutEnabled: active && config.checkout_enabled };
   }
   const id = await ticket(request, env, ['web/thread', 'web/message'].includes(suffix) ? ['web'] : ['web', 'checkout']);
   const conversation = await store.one('ktn_consultations?id=eq.' + id);
@@ -294,33 +357,22 @@ async function customerRoute(suffix, request, env, ctx, deps, store) {
       throw new RequestError('Vui lòng thử lại sau.', 429);
     }
     const data = parse(await bodyOf(request, 10000));
-    const config = await guidance(store);
-    const courseId = tidy(data.courseId, 80);
-    const name = tidy(data.name, 120);
-    const email = tidy(data.email, 254).toLowerCase();
-    const phone = tidy(data.phone, 30).replace(/[ .-]/g, '');
-    if (!uuid.test(data.requestId || '') || !name || !emailPattern.test(email) ||
-        /^(hv_\d+@gmail\.com|.+@pending\.khongtunhi\.local)$/.test(email) || !/^(0|\+84)[35789]\d{8}$/.test(phone)) {
-      throw new RequestError('Nhập họ tên học viên, email nhận hướng dẫn và số điện thoại hợp lệ.');
-    }
-    if (!config.course_ids.includes(courseId)) throw new RequestError('Khóa học chưa mở bán qua tư vấn.');
-    const course = await deps.resolveServerCoursePrice(env, courseId, { requireActive: true });
-    const duration = config.duration_presets?.[courseId];
-    if (!config.checkout_enabled || !course.validCourse || !Object.hasOwn(durations, duration || '') || !course.paymentConfig?.bank_id || !/^\d{5,24}$/.test(course.paymentConfig.account_no || '') ||
-        !env.KTN_SEPAY_API_KEY || !env.KTN_CONSULTATION_MAIL_KEY || !env.KTN_CONSULTATION_MAIL_FROM) {
-      throw new RequestError('Thanh toán đang tạm ngưng. Vui lòng gặp tư vấn viên.', 503);
-    }
-    const qr = deps.buildVietQrPaymentInfo(course.paymentConfig, 'ORDER_CODE', course.price);
-    const order = await store.rpc('create_order', { p_id: id, p_request_id: data.requestId, p_qr_base: qr.qrUrl,
-      p_order: { student_name: name, student_email: email, phone, course_id: courseId, course_name: course.title,
-        amount: course.price, payment_info: qr, note: deps.serializeOrderNoteWithMeta('', { source: 'consultation', v2_managed: true,
-          payment_sub_status: 'unpaid', duration_preset: duration }) } });
-    if (!order?.order_id) throw new RequestError('Chưa tạo được đơn.', 503);
-    if (['messenger', 'zalo_oa'].includes(conversation.channel)) task(ctx, sendOutbox(env, store, id), 'Outbox QR failed');
-    // QR được ghim theo cấu hình tại lúc tạo đơn để retry không đổi tài khoản nhận tiền.
-    const link = await store.one('ktn_consultation_orders?order_id=eq.' + order.order_id + '&select=payment_info');
-    const payment = paymentInfoFromLink(link, order.order_id);
-    return { id: order.order_id, amount: order.amount, payment };
+    return createConsultationOrder({
+      env,
+      deps,
+      store,
+      ctx,
+      guidance,
+      conversation,
+      input: data,
+      durations,
+      emailPattern,
+      uuid,
+      tidy,
+      sendOutbox,
+      RequestError,
+      isStaffOrder: false
+    });
   }
   if (suffix === 'web/status' && method === 'GET') {
     const orderId = new URL(request.url).searchParams.get('id') || '';
@@ -331,13 +383,6 @@ async function customerRoute(suffix, request, env, ctx, deps, store) {
     return { id: orderId, amount: order.amount, paymentStatus: order.payment_status, accessStatus: order.approval_status, payment: paymentInfoFromLink(link, orderId) };
   }
   throw new RequestError('Không tìm thấy chức năng.', 404);
-}
-
-function paymentInfoFromLink(link, orderId) {
-  const payment = link?.payment_info;
-  if (!payment?.qrUrl) return null;
-  return { ...payment, transferContent: payment.transferContent.replace('ORDER_CODE', orderId),
-    qrUrl: payment.qrUrl.replace('ORDER_CODE', orderId) };
 }
 
 async function messenger(request, env, ctx, deps, store) {
@@ -433,78 +478,6 @@ async function sendOutbox(env, store, id = null, quickReplies = null) {
   }
 }
 
-async function sepay(request, env, deps, ctx, store) {
-  if (request.method !== 'POST' || !env.KTN_SEPAY_API_KEY ||
-      !same(tokenHeader(request), 'Apikey ' + env.KTN_SEPAY_API_KEY)) {
-    throw new RequestError('Webhook SePay chưa được xác thực.', 401);
-  }
-  const payload = parse(await bodyOf(request, 15000));
-  const codes = [payload.code, payload.content, payload.description].join(' ').match(/ORD[- .]?\d{6}(?!\d)/gi) || [];
-  const matched = [...new Set(codes.map(value => 'ORD-' + value.slice(-6)))];
-  const txId = String(payload.id ?? '');
-  const amount = Number(payload.transferAmount);
-  if (matched.length !== 1 || payload.transferType !== 'in' || !/^\d{1,32}$/.test(txId) ||
-      !Number.isSafeInteger(amount) || amount <= 0) return deps.jsonResponse({ success: true, ignored: true }, 201);
-  const link = await store.one('ktn_consultation_orders?order_id=eq.' + matched[0]);
-  if (!link) return deps.jsonResponse({ success: true, ignored: true }, 201);
-  const account = link.payment_info?.accountNo;
-  const sourceAccounts = [payload.accountNumber, payload.subAccount].map(value => String(value || '').replace(/[\s.-]/g, ''));
-  if (!account || !sourceAccounts.includes(account)) return deps.jsonResponse({ success: true, ignored: true }, 201);
-  const payment = await store.rpc('record_payment', { p_order: matched[0], p_transaction: 'sepay:' + txId, p_amount: amount });
-  if (payment.status === 'accepted') task(ctx, processPayments(env, deps, store, matched[0]), 'Payment provisioning failed');
-  return deps.jsonResponse({ success: true }, 201);
-}
-
-async function notifyOrder(env, order, result) {
-  const base = (env.KTN_CONSULTATION_PUBLIC_URL || 'https://khongtunhi.com').replace(/\/$/, '');
-  const password = result.accountCreated ? result.initialPassword : '';
-  if (result.accountCreated && !password) throw new Error('Thiếu thông tin khởi tạo tài khoản');
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + env.KTN_CONSULTATION_MAIL_KEY, 'Content-Type': 'application/json',
-      'Idempotency-Key': 'ktn-order-' + order.order_id },
-    body: JSON.stringify({
-      from: env.KTN_CONSULTATION_MAIL_FROM, to: [order.student_email],
-      subject: 'KTN đã mở khóa học cho đơn ' + order.order_id,
-      text: 'Khóa học: ' + order.course_name + '\nĐăng nhập: ' + base + '/?login=1\nEmail: ' + order.student_email +
-        (password ? '\nMật khẩu khởi tạo: ' + password + '\nVui lòng đổi mật khẩu sau khi đăng nhập.' : '\nSử dụng mật khẩu tài khoản KTN hiện tại.')
-    }),
-    signal: AbortSignal.timeout(9000)
-  });
-  if (!response.ok) throw new Error('Không gửi được email');
-}
-
-async function processPayments(env, deps, store, orderId = null) {
-  const payments = rows(await store.rpc('take_payment', { p_order: orderId }));
-  for (const payment of payments) {
-    const updatePath = 'ktn_consultation_payments?transaction_id=eq.' + eq(payment.transaction_id) + '&attempts=eq.' + payment.attempts;
-    try {
-      const order = await store.one('ktn_orders?order_id=eq.' + payment.order_id);
-      if (order?.payment_status !== 'paid' || order.approval_status === 'rejected') {
-        await store.patch(updatePath, { status: 'needs_review', error: 'Đơn đã thay đổi trạng thái' });
-        continue;
-      }
-      const operationId = 'PROV-CONSULT-' + order.order_id;
-      const result = await deps.approveAndProvisionOrder(env, {
-        orderId: order.order_id, approvedBy: 'webhook:consultation', paymentStatusOverride: 'paid', operationId
-      });
-      if (!result.ok) {
-        await store.patch(updatePath, { status: result.retryable === false || payment.attempts >= 6 ? 'needs_review' : 'accepted',
-          error: 'Chưa đồng bộ được tài khoản hoặc khóa học' });
-        continue;
-      }
-      if (result.accountCreated && !result.initialPassword) {
-        result.initialPassword = await deps.deriveDeterministicInitialPassword(env, result.operationId || operationId, order.student_email);
-      }
-      await notifyOrder(env, order, result);
-      await store.patch(updatePath, { status: 'done', error: null });
-    } catch {
-      await store.patch(updatePath, { status: payment.attempts >= 6 ? 'needs_review' : 'accepted',
-        error: 'Lỗi cấp quyền hoặc gửi email. Cần kiểm tra chi tiết đơn.' });
-    }
-  }
-}
-
 async function flagThread(env, store, deps, conversation) {
   const reviewAt = conversation.next_review_at;
   const messages = rows(await store.query('ktn_consultation_messages?consultation_id=eq.' + conversation.id +
@@ -532,16 +505,27 @@ async function flagThread(env, store, deps, conversation) {
 }
 
 export async function runConsultationJobs(env, deps) {
-  if (!fullMode(env)) return;
+  const full = fullMode(env);
+  const sepaySandbox = isSepaySandbox(env);
+  if (!full && !sepaySandbox) return;
   const store = db(env, deps);
   const oldestSend = new Date(Date.now() - 10 * 60000).toISOString();
   await Promise.allSettled([
     processPayments(env, deps, store),
-    store.patch('ktn_consultation_messages?delivery=eq.sending&claimed_at=lt.' + eq(oldestSend), {
-      delivery: 'failed', delivery_note: 'Chưa có xác nhận gửi. Kiểm tra lại trên kênh.'
-    }).then(() => sendOutbox(env, store)),
-    env.KTN_GEMINI_KEYS && store.query('ktn_consultations?next_review_at=not.is.null&order=next_review_at&limit=4')
-      .then(conversations => Promise.allSettled(rows(conversations).map(conversation => flagThread(env, store, deps, conversation))))
+    full &&
+      store
+        .patch('ktn_consultation_messages?delivery=eq.sending&claimed_at=lt.' + eq(oldestSend), {
+          delivery: 'failed',
+          delivery_note: 'Chưa có xác nhận gửi. Kiểm tra lại trên kênh.'
+        })
+        .then(() => sendOutbox(env, store)),
+    full &&
+      env.KTN_GEMINI_KEYS &&
+      store
+        .query('ktn_consultations?next_review_at=not.is.null&order=next_review_at&limit=4')
+        .then(conversations =>
+          Promise.allSettled(rows(conversations).map(conversation => flagThread(env, store, deps, conversation)))
+        )
   ]);
 }
 
@@ -552,6 +536,41 @@ async function all(store, path) {
     output.push(...page);
     if (page.length < 500) return output;
   }
+}
+
+function escapeCsvCell(value) {
+  let str = value === null || value === undefined ? '' : String(value);
+  if (/^[\t\r ]*[=+\-@]|^[\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+  return '"' + str.replace(/"/g, '""') + '"';
+}
+
+function buildReportCsv(data) {
+  const headers = [
+    'id',
+    'channel',
+    'source_tag',
+    'customer_name',
+    'customer_phone',
+    'zalo_user_id',
+    'owner_email',
+    'status',
+    'outcome',
+    'reply_pending',
+    'created_at',
+    'queued_at',
+    'first_reply_at',
+    'last_customer_at',
+    'last_reply_at',
+    'follow_up_at',
+    'updated_at'
+  ];
+  const lines = [headers.map(escapeCsvCell).join(',')];
+  for (const row of rows(data?.conversations)) {
+    lines.push(headers.map(col => escapeCsvCell(row?.[col] ?? '')).join(','));
+  }
+  return '\uFEFF' + lines.join('\r\n');
 }
 
 async function report(store, params, full) {
@@ -569,7 +588,7 @@ async function report(store, params, full) {
   const channel = params.get('channel');
   const owner = params.get('owner');
   const [conversations, assigned, overdue, paid, flags] = await Promise.all([
-    all(store, 'ktn_consultation_inbox?select=id,channel,owner_email,status,outcome,reply_pending,created_at,queued_at,last_customer_at,last_reply_at,first_reply_at,follow_up_at&created_at=gte.' +
+    all(store, 'ktn_consultation_inbox?select=id,channel,owner_email,status,outcome,reply_pending,created_at,queued_at,last_customer_at,last_reply_at,first_reply_at,follow_up_at,customer_name,customer_phone,zalo_user_id,source_tag,updated_at&created_at=gte.' +
       from + '&created_at=lt.' + to + '&order=created_at,id' + filters),
     all(store, 'ktn_consultation_assignment_report?select=*&assigned_at=gte.' + from + '&assigned_at=lt.' + to +
       '&order=assigned_at,consultation_id,owner_email' + filters),
@@ -599,6 +618,12 @@ function inboxFilters(params) {
   return where.length ? '&' + where.join('&') : '';
 }
 
+function sanitizeConversation(conversation) {
+  if (!conversation || typeof conversation !== 'object') return conversation;
+  const { external_id, ...safeConversation } = conversation;
+  return safeConversation;
+}
+
 async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
   const url = new URL(request.url);
   const { method } = request;
@@ -608,6 +633,130 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
   if (suffix === 'report' && method === 'GET') {
     requireManager(actor);
     return report(store, url.searchParams, full);
+  }
+  if (suffix === 'report.csv' && method === 'GET') {
+    requireManager(actor);
+    const data = await report(store, url.searchParams, full);
+    const csv = buildReportCsv(data);
+    return new Response(csv, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="ktn-consultation-report.csv"',
+        'Cache-Control': 'no-store'
+      }
+    });
+  }
+  if (suffix === 'reconciliation' && method === 'GET') {
+    requireManager(actor);
+    return listSepayReconciliation({ store, searchParams: url.searchParams, RequestError });
+  }
+  const reconResolveMatch = /^reconciliation\/([^/]+)\/resolve$/i.exec(suffix);
+  if (reconResolveMatch && method === 'POST') {
+    requireManager(actor);
+    let txId = reconResolveMatch[1];
+    try {
+      txId = decodeURIComponent(txId);
+    } catch {
+      throw new RequestError('Mã giao dịch đối soát không hợp lệ.', 400);
+    }
+    const input = parse(await bodyOf(request, 10000));
+    return resolveSepayReconciliation({
+      store,
+      ctx,
+      env,
+      deps,
+      txId: tidy(txId, 120),
+      input,
+      actor,
+      tidy,
+      eq,
+      RequestError
+    });
+  }
+  if (suffix === 'sepay/sandbox' && method === 'POST') {
+    requireManager(actor);
+    return handleSepayWebhook({
+      request,
+      env,
+      deps,
+      ctx,
+      store,
+      isSandboxRoute: true,
+      preAuthenticatedActor: actor,
+      bodyOf,
+      parseJson: parse,
+      tokenHeader,
+      same,
+      tidy,
+      eq,
+      RequestError
+    });
+  }
+  if (suffix === 'zalo/sandbox' && method === 'POST') {
+    requireManager(actor);
+    if (env.KTN_ZALO_SANDBOX !== 'true' || isRealProductionHost(request)) {
+      throw new RequestError('Chế độ Zalo Sandbox chưa được bật.', 403);
+    }
+    const input = parse(await bodyOf(request, 16000));
+    const eventName = tidy(input.event_name || 'user_send_text', 80) || 'user_send_text';
+    const zaloUserId = tidy(input.zalo_user_id || input.sender_id, 128);
+    if (!zaloUserId) throw new RequestError('Thiếu mã người dùng Zalo.', 400);
+    const eventId = tidy(input.event_id, 200) || ('sbx_' + crypto.randomUUID());
+    const zaloPayload = {
+      app_id: env.KTN_ZALO_APP_ID || '1000000000000000001',
+      oa_id: env.KTN_ZALO_OA_ID || '2000000000000000001',
+      event_name: eventName,
+      event_id: eventId,
+      timestamp: String(Date.now()),
+      sender: { id: zaloUserId, ...(input.customer_name ? { name: tidy(input.customer_name, 120) } : {}) },
+      recipient: { id: env.KTN_ZALO_OA_ID || '2000000000000000001' },
+      follower: { id: zaloUserId, ...(input.customer_name ? { display_name: tidy(input.customer_name, 120) } : {}) },
+      info: {
+        ...(input.customer_name ? { name: tidy(input.customer_name, 120) } : {}),
+        ...(input.customer_phone ? { phone: tidy(input.customer_phone, 30) } : {})
+      },
+      message: {
+        msg_id: eventId,
+        ...(input.body ? { text: tidy(input.body, 4000) } : {})
+      },
+      ...(input.source_tag ? { source_tag: tidy(input.source_tag, 40) } : {})
+    };
+    const sandboxRequest = new Request(url.origin + '/api/ktn/consultations/zalo/sandbox/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-KTN-Sandbox': 'true' },
+      body: JSON.stringify(zaloPayload)
+    });
+    const res = await handleZaloWebhook({
+      request: sandboxRequest,
+      env,
+      ctx,
+      store,
+      isSandboxRoute: true,
+      parseJson: parse,
+      bodyOf,
+      RequestError,
+      onCustomerMessage: async (conversation, message) => {
+        if (conversation.status === 'bot') {
+          const botResult = await botReply(store, env, deps, conversation, message, publicBase(env, request));
+          await sendOutbox(env, store, conversation.id, botResult?.quickReplies);
+        } else {
+          await botReply(store, env, deps, conversation, message, publicBase(env, request));
+          if (conversation.status === 'waiting') {
+            await store.rpc('auto_assign', { p_id: conversation.id });
+          }
+        }
+      }
+    });
+    const conv = res?.consultation_id
+      ? await store.one('ktn_consultations?id=eq.' + eq(res.consultation_id))
+      : await store.one('ktn_consultations?channel=eq.zalo_oa&zalo_user_id=eq.' + eq(zaloUserId) + '&limit=1');
+    return {
+      ok: true,
+      duplicate: Boolean(res?.duplicate),
+      event_id: res?.event_id || eventId,
+      conversation: sanitizeConversation(conv)
+    };
   }
   if (suffix === 'guidance/draft' && method === 'GET') {
     requireManager(actor);
@@ -619,30 +768,52 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
     if (method === 'PUT') {
       const input = parse(await bodyOf(request, 2000000));
       const current = full ? null : await guidance(store);
-      const courseIds = full ? [...new Set(rows(input.course_ids).map(value => tidy(value, 80)).filter(Boolean))] : current.course_ids;
+      const courseIds = full
+        ? [...new Set(rows(input.course_ids).map(value => tidy(value, 80)).filter(Boolean))]
+        : rows(current?.course_ids);
       if (courseIds.some(id => !/^[a-zA-Z0-9_-]{1,80}$/.test(id))) throw new RequestError('Mã khóa học không hợp lệ.');
-      const presets = full ? Object.fromEntries(courseIds.map(id => [id, input.duration_presets?.[id]])) : current.duration_presets;
+      const presets = full
+        ? Object.fromEntries(courseIds.map(id => [id, input.duration_presets?.[id]]))
+        : (current?.duration_presets || {});
       const examples = rows(input.examples).map(consultationExample);
       const policy = tidy(input.policy, 14000);
-      if (!full && (input.bot_enabled || input.checkout_enabled)) throw new RequestError('Bot và thanh toán chưa mở trong pilot web.', 409);
+      const sepaySandbox = isSepaySandbox(env);
+      const aiSandbox = env.KTN_AI_SANDBOX === 'true';
+      if (!full && ((input.bot_enabled && !aiSandbox) || (input.checkout_enabled && !sepaySandbox))) {
+        throw new RequestError('Bot và thanh toán chưa mở trong pilot web.', 409);
+      }
       if (courseIds.length > 10 || (full && courseIds.some(id => !Object.hasOwn(durations, presets[id] || ''))) ||
         examples.length > consultationExampleLimit || examples.some(item => !item.question || !item.answer ||
         [item.question, item.answer, ...item.hints].some(text => redact(text) !== text))) {
         throw new RequestError('Tối đa 10 khóa có thời hạn hợp lệ và ' + consultationExampleLimit + ' ví dụ đã ẩn email, số điện thoại, link.');
       }
-      const courses = full ? await catalog({ course_ids: courseIds }, env, deps) : [];
-      const hasAiConfig = Boolean(env.KTN_GEMINI_KEYS) || env.KTN_AI_SANDBOX === 'true';
+      const needCatalog = full || (sepaySandbox && input.checkout_enabled === true);
+      const courses = needCatalog ? await catalog({ course_ids: courseIds }, env, deps) : [];
+      const hasAiConfig = Boolean(env.KTN_GEMINI_KEYS) || aiSandbox;
       if (full && (courses.length !== courseIds.length || (input.bot_enabled && (!courses.length || !policy || !examples.length || !hasAiConfig)))) {
         throw new RequestError('Kiểm tra mã khóa. Để bật bot cần chính sách, ví dụ đã duyệt và cấu hình AI.');
       }
-      if (input.checkout_enabled === true && (!courses.length || !env.KTN_SEPAY_API_KEY || !env.KTN_CONSULTATION_MAIL_KEY || !env.KTN_CONSULTATION_MAIL_FROM)) {
+      if (input.checkout_enabled === true && (!courses.length || !hasSepayReadyConfig(env))) {
         throw new RequestError('Để bật thanh toán cần danh mục, cấu hình SePay và email.');
       }
-      const updated = await store.patch('ktn_consultation_guidance?id=eq.default', {
-        examples, policy, updated_by: actor.email, updated_at: now(),
-        ...(full ? { course_ids: courseIds, duration_presets: presets, bot_enabled: input.bot_enabled === true,
-          checkout_enabled: input.checkout_enabled === true } : {})
-      });
+      const patchBody = {
+        examples,
+        policy,
+        updated_by: actor.email,
+        updated_at: now(),
+        ...(full
+          ? {
+              course_ids: courseIds,
+              duration_presets: presets,
+              bot_enabled: input.bot_enabled === true,
+              checkout_enabled: input.checkout_enabled === true
+            }
+          : {
+              ...(aiSandbox && input.bot_enabled !== undefined ? { bot_enabled: input.bot_enabled === true } : {}),
+              ...(sepaySandbox && input.checkout_enabled !== undefined ? { checkout_enabled: input.checkout_enabled === true } : {})
+            })
+      };
+      const updated = await store.patch('ktn_consultation_guidance?id=eq.default', patchBody);
       return { config: rows(updated)[0] };
     }
   }
@@ -656,30 +827,63 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
     const email = tidy(input.email, 254).toLowerCase();
     const name = tidy(input.name, 120);
     if (!emailPattern.test(email) || !name) throw new RequestError('Nhập tên và email của tư vấn viên.');
+    let role = 'advisor';
+    if (input.role !== undefined && input.role !== null && String(input.role).trim() !== '') {
+      const cleanRole = tidy(String(input.role), 20).toLowerCase();
+      if (!['advisor', 'manager'].includes(cleanRole)) {
+        throw new RequestError('Vai trò tư vấn viên không hợp lệ (advisor hoặc manager).', 400);
+      }
+      role = cleanRole;
+    }
+    const advisorRow = {
+      email,
+      name,
+      active: input.active !== false,
+      role,
+      updated_at: now(),
+      ...(input.ktn_user_id !== undefined
+        ? { ktn_user_id: tidy(String(input.ktn_user_id || ''), 120) || null }
+        : {})
+    };
     const saved = await store.query('ktn_advisors?on_conflict=email', {
       method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
-      body: { email, name, active: input.active !== false }
+      body: advisorRow
     });
     return { advisor: rows(saved)[0] };
   }
   if (suffix === 'inbox' && method === 'GET') {
     const offset = Math.min(100000, Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0)));
     const status = url.searchParams.get('status');
-    const visibility = actor.admin ? '' : '&or=(owner_email.eq.' + eq('"' + actor.email.replace(/["\\]/g, '') + '"') + ',owner_email.is.null)';
+    const searchRaw = tidy(url.searchParams.get('search') || url.searchParams.get('q') || '', 120);
+    const searchClean = searchRaw.replace(/[,()*%\\"]/g, ' ').replace(/\s+/g, ' ').trim();
+    const visInner = actor.admin ? '' : 'owner_email.eq.' + eq('"' + actor.email.replace(/["\\]/g, '') + '"') + ',owner_email.is.null';
+    const searchInner = searchClean
+      ? ['customer_name', 'customer_phone', 'zalo_user_id', 'student_code', 'source_tag', 'owner_email']
+          .map(col => col + '.ilike.*' + eq(searchClean) + '*')
+          .join(',')
+      : '';
+    const logicFilter =
+      visInner && searchInner
+        ? '&and=(or(' + visInner + '),or(' + searchInner + '))'
+        : visInner
+          ? '&or=(' + visInner + ')'
+          : searchInner
+            ? '&or=(' + searchInner + ')'
+            : '';
     const allowedStates = full ? ['waiting', 'open', 'closed', 'bot'] : ['waiting', 'open', 'closed'];
     const condition = allowedStates.includes(status) ? '&status=eq.' + status :
       status === 'overdue' ? '&status=neq.closed&follow_up_at=lt.' + eq(now()) :
       status === 'unanswered' ? '&status=in.(waiting,open)&reply_pending=eq.true' :
       full && status === 'paid_pending' ? '&has_paid_pending=eq.true' : '';
     const conversations = rows(await store.query('ktn_consultation_inbox?select=id,channel,status,outcome,owner_email,follow_up_at,queued_at,first_reply_at,last_customer_at,last_reply_at,created_at,updated_at,reply_pending,has_paid_pending,customer_name,customer_phone,zalo_user_id,source_tag,lead_meta,student_code' +
-      visibility + condition + inboxFilters(url.searchParams) + '&order=updated_at.desc,id&limit=51&offset=' + offset));
+      logicFilter + condition + inboxFilters(url.searchParams) + '&order=updated_at.desc,id&limit=51&offset=' + offset));
     return { conversations: conversations.slice(0, 50), hasMore: conversations.length > 50 };
   }
   const match = /^thread\/([a-f0-9-]+)(?:\/([a-z_]+))?$/i.exec(suffix);
   if (match && uuid.test(match[1])) {
     const [, id, operation] = match;
     if (!full) {
-      if (['review','checkout_link','retry_payment'].includes(operation)) throw new RequestError('Chức năng chưa mở trong pilot web.', 404);
+      if (['review', 'checkout_link', 'retry_payment'].includes(operation)) throw new RequestError('Chức năng chưa mở trong pilot web.', 404);
       if (!await store.one('ktn_consultations?id=eq.' + id + '&channel=eq.web&select=id')) throw new RequestError('Không tìm thấy cuộc tư vấn.', 404);
     }
     if (!operation && method === 'GET') {
@@ -691,17 +895,40 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
         store.query('ktn_consultation_messages?consultation_id=eq.' + id + '&order=created_at.desc,id.desc&limit=51&offset=' + offset),
         all(store, 'ktn_consultation_events?consultation_id=eq.' + id + '&order=created_at.desc,id.desc'),
         full && actor.admin ? all(store, 'ktn_consultation_flags?consultation_id=eq.' + id + '&order=created_at.desc,message_id') : [],
-        full ? all(store, 'ktn_consultation_orders?consultation_id=eq.' + id +
-          '&select=order_id,owner_email,ktn_orders(course_name,amount,payment_status,approval_status,ktn_consultation_payments(transaction_id,amount,status,error))&order=created_at.desc,order_id') : []
+        (full || isSepaySandbox(env))
+          ? all(store, 'ktn_consultation_orders?consultation_id=eq.' + id +
+              '&select=order_id,owner_email,payment_info,ktn_orders(course_name,amount,payment_status,approval_status,ktn_consultation_payments(transaction_id,amount,status,error))&order=created_at.desc,order_id')
+          : []
       ]);
-      const { external_id, ...safeConversation } = conversation;
-      return { conversation: safeConversation, messages: rows(messages).slice(0, 50).reverse(), hasEarlier: rows(messages).length > 50, events, flags, orders };
+      const rawMessages = rows(messages);
+      const hasEarlier = rawMessages.length > 50;
+      const pageMessages = rawMessages.slice(0, 50).reverse();
+      if (offset === 0) {
+        const earliestMsgTs = pageMessages[0] ? Date.parse(pageMessages[0].created_at || '') : 0;
+        const noteMessages = rows(events)
+          .filter(ev => ev?.kind === 'note' && ev?.detail?.body)
+          .filter(ev => !hasEarlier || !earliestMsgTs || Date.parse(ev.created_at || '') >= earliestMsgTs)
+          .map(ev => ({
+            id: 'note-' + String(ev.id),
+            consultation_id: id,
+            sender: 'note',
+            actor_email: ev.actor_email || null,
+            body: String(ev.detail.body),
+            delivery: 'sent',
+            created_at: ev.created_at
+          }));
+        if (noteMessages.length) {
+          pageMessages.push(...noteMessages);
+          pageMessages.sort((a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0));
+        }
+      }
+      return { conversation: sanitizeConversation(conversation), messages: pageMessages, hasEarlier, events, flags, orders };
     }
     if (method === 'POST') {
       const input = parse(await bodyOf(request, 16000));
       if (operation === 'review') {
         requireManager(actor);
-        if (!uuid.test(input.message_id || '') || !['confirmed','dismissed'].includes(input.status)) throw new RequestError('Kết quả duyệt không hợp lệ.');
+        if (!uuid.test(input.message_id || '') || !['confirmed', 'dismissed'].includes(input.status)) throw new RequestError('Kết quả duyệt không hợp lệ.');
         const updated = await store.rpc('review_flag', { p_id: id, p_message: input.message_id, p_actor: actor.email,
           p_status: input.status, p_note: tidy(input.note, 2000) });
         if (!updated) throw new RequestError('Cờ đã được xử lý hoặc không tồn tại.', 409);
@@ -712,6 +939,54 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
         if (!conversation || (!actor.admin && conversation.owner_email !== actor.email)) throw new RequestError('Bạn không phụ trách cuộc tư vấn này.', 403);
         return { url: publicBase(env, request) + '/tu-van#checkout=' + await createTicket(env, id, 'checkout') };
       }
+      if (operation === 'create_order') {
+        const conversation = await store.one('ktn_consultations?id=eq.' + id);
+        if (!conversation) throw new RequestError('Không tìm thấy cuộc tư vấn.', 404);
+        if (!actor.admin && conversation.owner_email !== actor.email) {
+          throw new RequestError('Bạn không phụ trách cuộc tư vấn này.', 403);
+        }
+        return createConsultationOrder({
+          env,
+          deps,
+          store,
+          ctx,
+          guidance,
+          conversation,
+          input,
+          durations,
+          emailPattern,
+          uuid,
+          tidy,
+          sendOutbox,
+          RequestError,
+          isStaffOrder: true,
+          actor
+        });
+      }
+      if (operation === 'link_student') {
+        const conversation = await store.one('ktn_consultations?id=eq.' + id);
+        if (!conversation) throw new RequestError('Không tìm thấy cuộc tư vấn.', 404);
+        if (!actor.admin && conversation.owner_email !== actor.email) {
+          throw new RequestError('Bạn không phụ trách cuộc tư vấn này.', 403);
+        }
+        const studentCode = tidy(input.student_code || input.studentCode, 64);
+        if (!studentCode) throw new RequestError('Nhập mã học viên hợp lệ.', 400);
+        const linked = await store.rpc('link_student', {
+          p_consultation_id: id,
+          p_student_code: studentCode,
+          p_actor: actor.email
+        });
+        if (!linked || linked.ok === false) {
+          if (linked?.error === 'not_found') throw new RequestError('Không tìm thấy cuộc tư vấn.', 404);
+          if (linked?.error === 'student_not_found') throw new RequestError('Không tìm thấy mã học viên.', 404);
+          throw new RequestError('Không thể liên kết mã học viên.', 400);
+        }
+        return {
+          ok: true,
+          conversation: sanitizeConversation(linked.conversation),
+          student_code: linked.student_code || studentCode
+        };
+      }
       if (operation === 'retry_payment') {
         requireManager(actor);
         const orderId = tidy(input.order_id, 20);
@@ -719,16 +994,23 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
         const link = await store.one('ktn_consultation_orders?consultation_id=eq.' + id + '&order_id=eq.' + orderId);
         if (!link) throw new RequestError('Không tìm thấy đơn.', 404);
         const transaction = tidy(input.transaction_id, 80);
-        if (!/^sepay:\d{1,32}$/.test(transaction)) throw new RequestError('Mã giao dịch không hợp lệ.');
-        const resumed = await store.rpc('retry_payment', { p_order: orderId, p_transaction: transaction, p_actor: actor.email });
-        if (!resumed) throw new RequestError('Giao dịch cần đối soát kế toán.', 409);
-        task(ctx, processPayments(env, deps, store, orderId), 'Manual payment retry failed');
-        return { updated: true };
+        return retryConsultationPayment({
+          store,
+          ctx,
+          env,
+          deps,
+          orderId,
+          transactionId: transaction,
+          actor,
+          eq,
+          RequestError
+        });
       }
-      if (!['claim','assign','reply','note','follow_up','close','reopen'].includes(operation)) throw new RequestError('Thao tác không hợp lệ.');
+      if (!['claim', 'assign', 'reply', 'note', 'follow_up', 'close', 'reopen'].includes(operation)) throw new RequestError('Thao tác không hợp lệ.');
+      if (operation === 'assign') requireManager(actor);
       const payload = {};
       if (operation === 'assign') payload.email = tidy(input.email, 254).toLowerCase();
-      if (['reply','note'].includes(operation)) payload.body = tidy(input.body, 1900);
+      if (['reply', 'note'].includes(operation)) payload.body = tidy(input.body, 1900);
       if (operation === 'reply') {
         if (!uuid.test(input.request_id || '')) throw new RequestError('Thiếu mã gửi tin.');
         payload.external_id = 'staff:' + id + ':' + input.request_id;
@@ -741,7 +1023,7 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
       if (operation === 'close') payload.outcome = tidy(input.outcome, 30);
       const result = await action(store, id, operation, payload, actor);
       if (result.message?.delivery === 'queued') task(ctx, sendOutbox(env, store, id), 'Messenger send failed');
-      return { updated: true };
+      return { updated: true, conversation: sanitizeConversation(result.conversation), message: result.message };
     }
   }
   throw new RequestError('Không tìm thấy chức năng.', 404);
@@ -750,16 +1032,20 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
 export async function handleConsultation(request, env, ctx, deps) {
   const store = db(env, deps);
   const url = new URL(request.url);
+  const normPath = url.pathname.replace(/\/+$/, '') || '/';
   const reply = (data, status) => deps.jsonResponse(data, status, { 'Cache-Control': 'no-store' });
-  const suffix = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : '';
+  const suffix = normPath.startsWith(prefix) ? normPath.slice(prefix.length) : '';
   const zaloRoutes = ['/api/ktn/consultations/zalo', '/api/ktn/consultations/zalo/webhook', '/api/ktn/consultations/zalo/sandbox/event', '/api/ktn/zalo', '/api/ktn/zalo/webhook', '/api/ktn/zalo/sandbox/event'];
-  const isZaloRoute = zaloRoutes.includes(url.pathname) || url.pathname.startsWith('/api/ktn/zalo/');
-  const isZaloSandboxRoute = url.pathname === '/api/ktn/consultations/zalo/sandbox/event' || url.pathname === '/api/ktn/zalo/sandbox/event';
+  const isZaloRoute = zaloRoutes.includes(normPath) || normPath.startsWith('/api/ktn/zalo/');
+  const isZaloSandboxRoute = normPath === '/api/ktn/consultations/zalo/sandbox/event' || normPath === '/api/ktn/zalo/sandbox/event';
   try {
-    if (request.method === 'GET' && ['/tu-van', '/tu-van/nhan-vien'].includes(url.pathname)) {
-      return consultationPage(url.pathname.endsWith('/nhan-vien'), fullMode(env));
+    if (request.method === 'GET' && ['/tu-van', '/tu-van/nhan-vien'].includes(normPath)) {
+      return consultationPage(normPath.endsWith('/nhan-vien'), fullMode(env));
     }
-    if (!fullMode(env) && (['meta', 'sepay', 'web/order', 'web/status'].includes(suffix) || (isZaloRoute && env.KTN_ZALO_SANDBOX !== 'true'))) {
+    const sepayPilotBlocked = !fullMode(env) && !isSepaySandbox(env) && ['sepay', 'sepay/sandbox', 'web/order', 'web/status'].includes(suffix);
+    const metaPilotBlocked = !fullMode(env) && suffix === 'meta';
+    const zaloPilotBlocked = !fullMode(env) && isZaloRoute && env.KTN_ZALO_SANDBOX !== 'true';
+    if (sepayPilotBlocked || metaPilotBlocked || zaloPilotBlocked) {
       throw new RequestError('Chức năng chưa mở trong pilot web.', 404);
     }
     if (isZaloRoute) {
@@ -791,7 +1077,40 @@ export async function handleConsultation(request, env, ctx, deps) {
       const result = await messenger(request, env, ctx, deps, store);
       return result instanceof Response ? result : reply(result);
     }
-    if (suffix === 'sepay') return await sepay(request, env, deps, ctx, store);
+    if (suffix === 'sepay') {
+      return await handleSepayWebhook({
+        request,
+        env,
+        deps,
+        ctx,
+        store,
+        isSandboxRoute: false,
+        bodyOf,
+        parseJson: parse,
+        tokenHeader,
+        same,
+        tidy,
+        eq,
+        RequestError
+      });
+    }
+    if (suffix === 'sepay/sandbox') {
+      return await handleSepayWebhook({
+        request,
+        env,
+        deps,
+        ctx,
+        store,
+        isSandboxRoute: true,
+        bodyOf,
+        parseJson: parse,
+        tokenHeader,
+        same,
+        tidy,
+        eq,
+        RequestError
+      });
+    }
     if (suffix === 'staff/login' && request.method === 'POST') {
       const credentials = parse(await bodyOf(request, 8000));
       const email = tidy(credentials.email, 254).toLowerCase();
@@ -806,17 +1125,27 @@ export async function handleConsultation(request, env, ctx, deps) {
         throw new RequestError('Tài khoản chưa xác nhận email.', 403);
       }
       const token = auth.access_token;
-      const advisor = await store.one('ktn_advisors?email=eq.' + eq(email) + '&active=eq.true&limit=1');
+      const advisor = await lookupActiveAdvisor(store, email, auth.user?.id);
       if (!advisor) throw new RequestError('Tài khoản chưa được phân quyền tư vấn.', 403);
-      return reply({ token, actor: { email, name: advisor.name, admin: false } });
+      const isManager = advisor.role === 'manager';
+      return reply({
+        token,
+        actor: {
+          email: advisor.email,
+          name: advisor.name,
+          admin: isManager,
+          role: isManager ? 'manager' : 'advisor'
+        }
+      });
     }
     if (suffix.startsWith('web/')) return reply(await customerRoute(suffix, request, env, ctx, deps, store));
     if (suffix.startsWith('staff/')) {
-      return reply(await managerRoute(suffix.slice(6), request, env, ctx, deps, store, await staff(request, env, deps, store)));
+      const result = await managerRoute(suffix.slice(6), request, env, ctx, deps, store, await staff(request, env, deps, store));
+      return result instanceof Response ? result : reply(result);
     }
     throw new RequestError('Không tìm thấy chức năng.', 404);
   } catch (error) {
-    if (!(error instanceof RequestError)) console.error('[Consultation] Request failed', (suffix || url.pathname).split('/')[0]);
+    if (!(error instanceof RequestError)) console.error('[Consultation] Request failed', (suffix || normPath).split('/')[0]);
     return reply({ ok: false, message: error instanceof RequestError ? error.message : 'Hệ thống tư vấn đang gián đoạn.' },
       error instanceof RequestError ? error.status : 502);
   }

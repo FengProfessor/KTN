@@ -2,8 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { TextEncoder as NodeTextEncoder, TextDecoder as NodeTextDecoder } from 'node:util';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { draftConsultationExamples, draftConsultationPolicy } from '../../../consultation-examples.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +14,222 @@ const WORKER_PATH = path.join(REPO_ROOT, 'cloudflare-worker-sw-proxy.js');
 const HSK1_LESSONS_PATH = path.join(REPO_ROOT, 'clean_lessons_data.json');
 const HSK1_MAPPING_PATH = path.join(REPO_ROOT, 'hsk1_33_units_mapping.json');
 const ALL_COURSES_LESSONS_PATH = path.join(REPO_ROOT, 'all_courses_lessons_data.json');
+
+const workerFetchAls = new AsyncLocalStorage();
+let activeHostFetchDispatcher = null;
+let previousHostFetch = null;
+
+function ensureHostFetchDispatcher() {
+  if (typeof globalThis.fetch !== 'function') return;
+  if (globalThis.fetch === activeHostFetchDispatcher) return;
+  previousHostFetch = globalThis.fetch;
+  activeHostFetchDispatcher = function ktnLocalMiddlewareFetchDispatcher(input, init) {
+    const activeMockFetch = workerFetchAls.getStore();
+    if (typeof activeMockFetch === 'function') {
+      return activeMockFetch(input, init);
+    }
+    return previousHostFetch.call(globalThis, input, init);
+  };
+  globalThis.fetch = activeHostFetchDispatcher;
+}
+
+const DEFAULT_LOCAL_CATALOG_COURSES = [
+  {
+    course_id: '6adadba969897b0002482ca5',
+    code: 'HSK1-30',
+    title: 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)',
+    short_title: 'HSK1 3.0',
+    badge: 'TIÊU CHUẨN MỚI 3.0',
+    age_group: 'Mọi lứa tuổi',
+    lessons_count: 15,
+    price: 890000,
+    old_price: 1500000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 1
+  },
+  {
+    course_id: '6af2d9719a8b000002ad4bc0',
+    code: 'HSK2-30',
+    title: 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)',
+    short_title: 'HSK2 3.0',
+    badge: 'TIÊU CHUẨN MỚI 3.0',
+    age_group: 'Mọi lứa tuổi',
+    lessons_count: 11,
+    price: 890000,
+    old_price: 1500000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 2
+  },
+  {
+    course_id: '65e7704a9ea90c00080d5195',
+    code: 'CFK-01',
+    title: 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)',
+    short_title: 'Chinese For Kids',
+    badge: 'SONG NGỮ MẦM NON',
+    age_group: '5 – 6 tuổi',
+    lessons_count: 20,
+    price: 890000,
+    old_price: 1500000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 3
+  },
+  {
+    course_id: '6638bd09a7367400085c7ab2',
+    code: 'KIDS-03',
+    title: 'Tiếng Trung Trẻ Em 3 (Mini vỡ lòng 5 – 6 tuổi)',
+    short_title: 'Tiếng Trung Trẻ Em 3',
+    badge: 'CẤP ĐỘ 03',
+    age_group: '5 – 6 tuổi',
+    lessons_count: 20,
+    price: 890000,
+    old_price: 1500000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 4
+  },
+  {
+    course_id: '678d14b960eae20002ddf8fe',
+    code: 'KIDS-04',
+    title: 'Tiếng Trung Trẻ Em 4 (Lộ trình 7 – 13 tuổi)',
+    short_title: 'Tiếng Trung Trẻ Em 4',
+    badge: 'CẤP ĐỘ 04',
+    age_group: '7 – 13 tuổi',
+    lessons_count: 16,
+    price: 890000,
+    old_price: 1500000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 5
+  },
+  {
+    course_id: '67a7290a5fdc26000238b4e9',
+    code: 'KIDS-05',
+    title: 'Tiếng Trung Trẻ Em 5 (Lộ trình 8 – 14 tuổi)',
+    short_title: 'Tiếng Trung Trẻ Em 5',
+    badge: 'CẤP ĐỘ 05',
+    age_group: '8 – 14 tuổi',
+    lessons_count: 20,
+    price: 890000,
+    old_price: 1500000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 6
+  },
+  {
+    course_id: '67a869302ecb9c000257d966',
+    code: 'KIDS-06',
+    title: 'Tiếng Trung Trẻ Em 6 (Lộ trình 9 – 15 tuổi)',
+    short_title: 'Tiếng Trung Trẻ Em 6',
+    badge: 'CẤP ĐỘ 06',
+    age_group: '9 – 15 tuổi',
+    lessons_count: 20,
+    price: 890000,
+    old_price: 1500000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 7
+  },
+  {
+    course_id: '6983672f409cc20002e530b8',
+    code: 'YCT-04',
+    title: 'Khóa học Tiếng Trung Trẻ Em YCT 4',
+    short_title: 'Tiếng Trung YCT 4',
+    badge: 'CHỨNG CHỈ YCT 4',
+    age_group: '9 – 15 tuổi',
+    lessons_count: 20,
+    price: 1290000,
+    old_price: 2000000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 8
+  },
+  {
+    course_id: '65e76a533f5e7c00086715d7',
+    code: 'PRON-01',
+    title: 'Khóa học Phát Âm & Giao Tiếp Phản Xạ Cơ Bản',
+    short_title: 'Phát Âm & Phản Xạ',
+    badge: 'GIAO TIẾP PHẢN XẠ',
+    age_group: 'Mọi lứa tuổi',
+    lessons_count: 19,
+    price: 690000,
+    old_price: 1200000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 9
+  },
+  {
+    course_id: '67bebce067dba000027d8119',
+    code: 'HANZI-01',
+    title: 'Khóa học Hán Tự Tư Duy & Luyện Viết Chữ Hán',
+    short_title: 'Hán Tự Tư Duy',
+    badge: 'HÁN TỰ TƯ DUY',
+    age_group: '6 – 15 tuổi',
+    lessons_count: 20,
+    price: 690000,
+    old_price: 1200000,
+    is_bundle: false,
+    bundle_course_ids: [],
+    active: true,
+    sort_order: 10
+  },
+  {
+    course_id: 'BUNDLE_YCT_ALL',
+    code: 'COMBO-6',
+    title: 'Trọn Bộ 6 Khóa Học Trực Tuyến (Lộ trình 5 – 15 tuổi)',
+    short_title: 'Trọn Bộ 6 Khóa',
+    badge: 'COMBO ƯU ĐÃI 50%',
+    age_group: '5 – 15 tuổi',
+    lessons_count: 113,
+    price: 2990000,
+    old_price: 6000000,
+    is_bundle: true,
+    bundle_course_ids: [
+      '6adadba969897b0002482ca5',
+      '65e7704a9ea90c00080d5195',
+      '6638bd09a7367400085c7ab2',
+      '678d14b960eae20002ddf8fe',
+      '67a7290a5fdc26000238b4e9',
+      '67a869302ecb9c000257d966'
+    ],
+    active: true,
+    sort_order: 11
+  }
+];
+
+const DEFAULT_LOCAL_GUIDANCE_CONFIG = {
+  id: 'default',
+  course_ids: DEFAULT_LOCAL_CATALOG_COURSES.slice(0, 10).map(c => c.course_id),
+  duration_presets: {
+    '6adadba969897b0002482ca5': '3m',
+    '6af2d9719a8b000002ad4bc0': '3m',
+    '65e7704a9ea90c00080d5195': '3m',
+    '6638bd09a7367400085c7ab2': '3m',
+    '678d14b960eae20002ddf8fe': '3m',
+    '67a7290a5fdc26000238b4e9': '3m',
+    '67a869302ecb9c000257d966': '3m',
+    '6983672f409cc20002e530b8': 'unlimited',
+    '65e76a533f5e7c00086715d7': '2m',
+    '67bebce067dba000027d8119': '2m'
+  },
+  policy: draftConsultationPolicy,
+  examples: draftConsultationExamples,
+  bot_enabled: true,
+  checkout_enabled: true,
+  updated_by: 'system',
+  updated_at: new Date().toISOString()
+};
 
 export function createLocalWorkerHarness() {
   let hsk1Lessons = [];
@@ -285,6 +503,42 @@ export function createLocalWorkerHarness() {
         }
       ],
       ktn_courses: [],
+      ktn_advisors: [
+        {
+          email: 'quanly@khongtunhi.com',
+          name: 'Quản Lý KTN',
+          active: true,
+          role: 'manager',
+          ktn_user_id: '2c01e488-d866-4341-a0db-644fe6ba1202',
+          updated_at: new Date().toISOString()
+        },
+        {
+          email: 'advisor1@khongtunhi.com',
+          name: 'Tư vấn viên Minh Anh',
+          active: true,
+          role: 'advisor',
+          ktn_user_id: 'ADV-KTN-01',
+          updated_at: new Date().toISOString()
+        },
+        {
+          email: 'advisor.an@khongtunhi.com',
+          name: 'Tư Vấn An',
+          active: true,
+          role: 'advisor',
+          ktn_user_id: 'ADV-KTN-02',
+          updated_at: new Date().toISOString()
+        }
+      ],
+      ktn_consultation_guidance: [{ ...DEFAULT_LOCAL_GUIDANCE_CONFIG }],
+      ktn_consultations: [],
+      ktn_consultation_messages: [],
+      ktn_consultation_events: [],
+      ktn_consultation_flags: [],
+      ktn_consultation_orders: [],
+      ktn_consultation_payments: [],
+      ktn_consultation_advisor_counters: [],
+      ktn_zalo_oa_events: [],
+      ktn_sepay_reconciliation_logs: [],
       ktn_homeworks: [
         {
           id: 'HW-hoangngan@khongtunhi.com-6adadba969897b0002482ca5-L1',
@@ -613,26 +867,105 @@ export function createLocalWorkerHarness() {
     return true;
   }
 
+  function splitTopLevelClause(input) {
+    const parts = [];
+    let depth = 0;
+    let inQuotes = false;
+    let escaped = false;
+    let current = '';
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i];
+      if (escaped) {
+        current += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        current += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+        current += ch;
+        continue;
+      }
+      if (!inQuotes) {
+        if (ch === '(') depth++;
+        else if (ch === ')') depth = Math.max(0, depth - 1);
+        else if (ch === ',' && depth === 0) {
+          parts.push(current.trim());
+          current = '';
+          continue;
+        }
+      }
+      current += ch;
+    }
+    if (current.trim()) parts.push(current.trim());
+    return parts;
+  }
+
+  function stripQuotes(val) {
+    const s = String(val ?? '').trim();
+    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+      return s.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+    return s;
+  }
+
+  function resolveDottedField(row, colPath) {
+    if (!row || typeof row !== 'object') return undefined;
+    if (Object.prototype.hasOwnProperty.call(row, colPath)) return row[colPath];
+    const parts = colPath.split('.');
+    let cur = row;
+    for (const p of parts) {
+      if (cur === null || cur === undefined || typeof cur !== 'object') return undefined;
+      cur = cur[p];
+    }
+    return cur;
+  }
+
   function evalSingleClause(row, clause) {
-    const m = clause.match(/^([a-zA-Z0-9_]+)\.(eq|neq|gt|gte|lt|lte|cs|ilike|like|is)\.(.+)$/);
+    const logicMatch = /^(not\.)?(or|and)\(([\s\S]*)\)$/i.exec(clause.trim());
+    if (logicMatch) {
+      const inner = logicMatch[3];
+      const subClauses = splitTopLevelClause(inner);
+      const isAnd = logicMatch[2].toLowerCase() === 'and';
+      const res = isAnd
+        ? subClauses.every(c => evalSingleClause(row, c))
+        : subClauses.some(c => evalSingleClause(row, c));
+      return logicMatch[1] ? !res : res;
+    }
+    const m = clause.trim().match(/^([a-zA-Z0-9_.]+)\.(not\.)?(eq|neq|gt|gte|lt|lte|cs|ilike|like|is|in)\.([\s\S]+)$/);
     if (!m) return true;
-    const [, col, op, v] = m;
-    const rawCell = row[col];
+    const [, col, neg, op, rawV] = m;
+    const v = stripQuotes(rawV);
+    const rawCell = resolveDottedField(row, col);
+    let matched = true;
     if (op === 'is') {
-      if (v === 'null') return rawCell === null || rawCell === undefined || rawCell === '';
-      return true;
+      if (v.toLowerCase() === 'null') matched = rawCell === null || rawCell === undefined || rawCell === '';
+      else if (v.toLowerCase() === 'true') matched = rawCell === true;
+      else if (v.toLowerCase() === 'false') matched = rawCell === false;
+    } else if (op === 'cs') {
+      matched = matchesJsonbContainsMock(rawCell, rawV);
+    } else if (op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte') {
+      matched = comparePostgrestScalar(rawCell, v, op);
+    } else if (op === 'in') {
+      const inner = rawV.replace(/^\(/, '').replace(/\)$/, '');
+      const list = splitTopLevelClause(inner).map(stripQuotes);
+      matched = list.includes(String(rawCell ?? ''));
+    } else {
+      const cell = String(rawCell ?? '');
+      if (op === 'eq') matched = cell === v;
+      else if (op === 'neq') matched = cell !== v;
+      else {
+        const isCaseInsensitive = op === 'ilike';
+        const regexStr = '^' + v.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/[*%]/g, '.*') + '$';
+        const re = new RegExp(regexStr, isCaseInsensitive ? 'i' : '');
+        matched = re.test(cell);
+      }
     }
-    if (op === 'cs') return matchesJsonbContainsMock(rawCell, v);
-    if (op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte') {
-      return comparePostgrestScalar(rawCell, v, op);
-    }
-    const cell = String(rawCell ?? '');
-    if (op === 'eq') return cell === v;
-    if (op === 'neq') return cell !== v;
-    const isCaseInsensitive = op === 'ilike';
-    const regexStr = '^' + v.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/[*%]/g, '.*') + '$';
-    const re = new RegExp(regexStr, isCaseInsensitive ? 'i' : '');
-    return re.test(cell);
+    return neg ? !matched : matched;
   }
 
   function matchQueryFilters(row, searchParams) {
@@ -640,47 +973,52 @@ export function createLocalWorkerHarness() {
       if (k === 'select' || k === 'order' || k === 'limit' || k === 'offset' || k === 'on_conflict') continue;
       if (k === 'or') {
         const inner = rawVal.replace(/^\(/, '').replace(/\)$/, '');
-        const clauses = inner.split(',');
+        const clauses = splitTopLevelClause(inner);
         const anyMatch = clauses.some(c => evalSingleClause(row, c));
         if (!anyMatch) return false;
         continue;
       }
       if (k === 'and') {
         const inner = rawVal.replace(/^\(/, '').replace(/\)$/, '');
-        const clauses = inner.split(',');
+        const clauses = splitTopLevelClause(inner);
         const allMatch = clauses.every(c => evalSingleClause(row, c));
         if (!allMatch) return false;
         continue;
       }
-      if (rawVal.startsWith('eq.')) {
-        const target = rawVal.slice(3);
-        if (String(row[k] ?? '') !== target) return false;
-      } else if (rawVal.startsWith('neq.')) {
-        const target = rawVal.slice(4);
-        if (String(row[k] ?? '') === target) return false;
-      } else if (rawVal.startsWith('gte.')) {
-        if (!comparePostgrestScalar(row[k], rawVal.slice(4), 'gte')) return false;
-      } else if (rawVal.startsWith('gt.')) {
-        if (!comparePostgrestScalar(row[k], rawVal.slice(3), 'gt')) return false;
-      } else if (rawVal.startsWith('lte.')) {
-        if (!comparePostgrestScalar(row[k], rawVal.slice(4), 'lte')) return false;
-      } else if (rawVal.startsWith('lt.')) {
-        if (!comparePostgrestScalar(row[k], rawVal.slice(3), 'lt')) return false;
-      } else if (rawVal.startsWith('cs.')) {
-        if (!matchesJsonbContainsMock(row[k], rawVal.slice(3))) return false;
-      } else if (rawVal.startsWith('is.')) {
-        const target = rawVal.slice(3).toLowerCase();
-        if (target === 'null' && row[k] !== null && row[k] !== undefined && row[k] !== '') return false;
-      } else if (rawVal.startsWith('ilike.') || rawVal.startsWith('like.')) {
-        const isCaseInsensitive = rawVal.startsWith('ilike.');
-        const pattern = rawVal.slice(isCaseInsensitive ? 6 : 5);
+      const cell = resolveDottedField(row, k);
+      const neg = rawVal.startsWith('not.');
+      const val = neg ? rawVal.slice(4) : rawVal;
+      let ok = true;
+      if (val.startsWith('eq.')) {
+        ok = String(cell ?? '') === stripQuotes(val.slice(3));
+      } else if (val.startsWith('neq.')) {
+        ok = String(cell ?? '') !== stripQuotes(val.slice(4));
+      } else if (val.startsWith('gte.')) {
+        ok = comparePostgrestScalar(cell, stripQuotes(val.slice(4)), 'gte');
+      } else if (val.startsWith('gt.')) {
+        ok = comparePostgrestScalar(cell, stripQuotes(val.slice(3)), 'gt');
+      } else if (val.startsWith('lte.')) {
+        ok = comparePostgrestScalar(cell, stripQuotes(val.slice(4)), 'lte');
+      } else if (val.startsWith('lt.')) {
+        ok = comparePostgrestScalar(cell, stripQuotes(val.slice(3)), 'lt');
+      } else if (val.startsWith('cs.')) {
+        ok = matchesJsonbContainsMock(cell, val.slice(3));
+      } else if (val.startsWith('is.')) {
+        const target = val.slice(3).toLowerCase();
+        if (target === 'null') ok = cell === null || cell === undefined || cell === '';
+        else if (target === 'true') ok = cell === true;
+        else if (target === 'false') ok = cell === false;
+      } else if (val.startsWith('ilike.') || val.startsWith('like.')) {
+        const isCaseInsensitive = val.startsWith('ilike.');
+        const pattern = stripQuotes(val.slice(isCaseInsensitive ? 6 : 5));
         const regexStr = '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/[*%]/g, '.*') + '$';
         const re = new RegExp(regexStr, isCaseInsensitive ? 'i' : '');
-        if (!re.test(String(row[k] ?? ''))) return false;
-      } else if (rawVal.startsWith('in.(')) {
-        const list = rawVal.slice(4, -1).split(',').map(s => s.replace(/^"|"$/g, ''));
-        if (!list.includes(String(row[k] ?? ''))) return false;
+        ok = re.test(String(cell ?? ''));
+      } else if (val.startsWith('in.(')) {
+        const list = splitTopLevelClause(val.slice(4, -1)).map(stripQuotes);
+        ok = list.includes(String(cell ?? ''));
       }
+      if (neg ? ok : !ok) return false;
     }
     return true;
   }
@@ -689,6 +1027,64 @@ export function createLocalWorkerHarness() {
     const urlStr = typeof input === 'string' ? input : input.url;
     const method = String(init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
     const u = new URL(urlStr, 'http://localhost');
+
+    if (u.hostname === 'mock-supabase.local' && u.pathname.startsWith('/auth/v1/')) {
+      const authPath = u.pathname.slice('/auth/v1/'.length);
+      const reqHeaders = new Headers(init.headers || {});
+      if (authPath === 'token' && method === 'POST') {
+        const body = init.body ? JSON.parse(init.body) : {};
+        const email = String(body.email || '').trim().toLowerCase();
+        const adv = (state.tables.ktn_advisors || []).find(
+          a => String(a.email || '').toLowerCase() === email && a.active !== false
+        );
+        if (!adv || String(body.password || '') !== (env.KTN_STAFF_AND_TEST_PASSWORD || 'Ktn@2026!')) {
+          return new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'Invalid login credentials' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            access_token: 'mock-supabase-jwt-' + adv.email,
+            token_type: 'bearer',
+            expires_in: 3600,
+            user: {
+              id: adv.ktn_user_id || adv.email,
+              email: adv.email,
+              email_confirmed_at: new Date().toISOString()
+            }
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (authPath === 'user' && method === 'GET') {
+        const bearer = String(reqHeaders.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+        if (bearer.startsWith('mock-supabase-jwt-')) {
+          const email = bearer.slice('mock-supabase-jwt-'.length).trim().toLowerCase();
+          const adv = (state.tables.ktn_advisors || []).find(
+            a => String(a.email || '').toLowerCase() === email && a.active !== false
+          );
+          if (adv) {
+            return new Response(
+              JSON.stringify({
+                id: adv.ktn_user_id || adv.email,
+                email: adv.email,
+                email_confirmed_at: new Date().toISOString()
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+        }
+        return new Response(JSON.stringify({ message: 'Invalid JWT' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify({ message: 'Unmocked auth path' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
     if (u.hostname === 'mock-supabase.local') {
       const table = u.pathname.replace(/^\/rest\/v1\//, '');
@@ -913,6 +1309,760 @@ export function createLocalWorkerHarness() {
         });
       }
 
+      const buildInboxRows = () => {
+        const orders = state.tables.ktn_orders || [];
+        const links = state.tables.ktn_consultation_orders || [];
+        return (state.tables.ktn_consultations || [])
+          .filter(c => {
+            if (c.last_customer_at !== null && c.last_customer_at !== undefined) return true;
+            if (c.last_reply_at !== null && c.last_reply_at !== undefined) return true;
+            return links.some(l => l.consultation_id === c.id);
+          })
+          .map(c => {
+            const lastCust = c.last_customer_at ? Date.parse(c.last_customer_at) : null;
+            const lastReply = c.last_reply_at ? Date.parse(c.last_reply_at) : -Infinity;
+            const replyPending = lastCust !== null ? lastCust > lastReply : false;
+            const hasPaidPending = links.some(l => {
+              if (l.consultation_id !== c.id) return false;
+              const ord = orders.find(o => o.order_id === l.order_id);
+              return ord && ord.payment_status === 'paid' && ord.approval_status !== 'approved';
+            });
+            return {
+              ...c,
+              reply_pending: replyPending,
+              has_paid_pending: hasPaidPending
+            };
+          });
+      };
+
+      const buildPaidReportRows = () => {
+        const out = [];
+        for (const l of state.tables.ktn_consultation_orders || []) {
+          const ord = (state.tables.ktn_orders || []).find(o => o.order_id === l.order_id);
+          if (!ord || ord.payment_status !== 'paid') continue;
+          const conv = (state.tables.ktn_consultations || []).find(c => c.id === l.consultation_id);
+          const payments = (state.tables.ktn_consultation_payments || [])
+            .filter(p => p.order_id === ord.order_id && Number(p.amount) === Number(ord.amount) && ['accepted', 'done', 'needs_review'].includes(p.status))
+            .sort((a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0));
+          const p = payments[0];
+          if (!p) continue;
+          out.push({
+            order_id: ord.order_id,
+            consultation_id: l.consultation_id,
+            owner_email: l.owner_email ?? conv?.owner_email ?? null,
+            channel: conv?.channel || 'web',
+            course_name: ord.course_name,
+            amount: ord.amount,
+            approval_status: ord.approval_status,
+            paid_at: p.created_at
+          });
+        }
+        return out;
+      };
+
+      const buildAssignmentReportRows = () => {
+        const seen = new Set();
+        const out = [];
+        const events = [...(state.tables.ktn_consultation_events || [])].sort(
+          (a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0)
+        );
+        for (const ev of events) {
+          if (ev.kind !== 'assigned' || !ev.detail?.to) continue;
+          const key = `${ev.consultation_id}::${ev.detail.to}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const conv = (state.tables.ktn_consultations || []).find(c => c.id === ev.consultation_id);
+          out.push({
+            consultation_id: ev.consultation_id,
+            owner_email: ev.detail.to,
+            channel: conv?.channel || 'web',
+            assigned_at: ev.created_at
+          });
+        }
+        return out;
+      };
+
+      const runConsultationActionMock = (p_id, p_action, p_actor = null, p_admin = false, p_payload = {}) => {
+        const consultations = state.tables.ktn_consultations || (state.tables.ktn_consultations = []);
+        const messages = state.tables.ktn_consultation_messages || (state.tables.ktn_consultation_messages = []);
+        const events = state.tables.ktn_consultation_events || (state.tables.ktn_consultation_events = []);
+        const advisors = state.tables.ktn_advisors || [];
+        const conv = consultations.find(c => c.id === p_id);
+        if (!conv) return { error: 'not_found' };
+
+        const nowIso = new Date().toISOString();
+        const textBody = typeof p_payload?.body === 'string' ? p_payload.body.trim() : '';
+        let senderType = null;
+        let deliveryState = 'sent';
+
+        if (p_action === 'customer') {
+          if (['messenger', 'zalo_oa'].includes(conv.channel) && !p_payload?.external_id) {
+            return { error: 'invalid' };
+          }
+          senderType = 'customer';
+        } else if (p_action === 'external') {
+          if (!['messenger', 'zalo_oa'].includes(conv.channel) || !p_payload?.external_id) {
+            return { error: 'invalid' };
+          }
+          senderType = 'external';
+          const noteTxt = conv.channel === 'zalo_oa' ? 'Đã có phản hồi từ Zalo OA' : 'Đã có phản hồi từ Fanpage';
+          for (const m of messages) {
+            if (m.consultation_id === conv.id && m.sender === 'bot' && m.delivery === 'queued') {
+              m.delivery = 'failed';
+              m.delivery_note = noteTxt;
+            }
+          }
+        } else if (p_action === 'bot') {
+          const convMsgs = messages
+            .filter(m => m.consultation_id === conv.id)
+            .sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0) || String(b.id).localeCompare(String(a.id)));
+          const latest = convMsgs[0] || null;
+          if (conv.status !== 'bot' || conv.owner_email !== null || (p_payload?.after_id ?? null) !== (latest?.id ?? null)) {
+            return { error: 'conflict' };
+          }
+          senderType = 'bot';
+        } else if (p_action === 'queue') {
+          const convMsgs = messages
+            .filter(m => m.consultation_id === conv.id)
+            .sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0) || String(b.id).localeCompare(String(a.id)));
+          const latest = convMsgs[0] || null;
+          if (conv.status !== 'bot' || conv.owner_email !== null || (p_payload?.after_id ?? null) !== (latest?.id ?? null)) {
+            return { error: 'conflict' };
+          }
+          conv.status = 'waiting';
+          conv.queued_at = conv.queued_at || nowIso;
+          conv.updated_at = nowIso;
+          if (textBody) {
+            messages.push({
+              id: crypto.randomUUID(),
+              consultation_id: conv.id,
+              sender: 'system',
+              actor_email: null,
+              body: textBody,
+              external_id: null,
+              client_request_id: null,
+              delivery: ['messenger', 'zalo_oa'].includes(conv.channel) ? 'queued' : 'sent',
+              delivery_note: null,
+              claimed_at: null,
+              created_at: nowIso
+            });
+          }
+          events.push({ id: ++state.autoId, consultation_id: conv.id, actor_email: null, kind: 'queued', detail: {}, created_at: nowIso });
+          return { conversation: { ...conv } };
+        } else {
+          if (!p_admin && (!p_actor || !advisors.some(a => a.email === p_actor && a.active !== false))) {
+            return { error: 'forbidden' };
+          }
+          if (p_action === 'claim' || p_action === 'assign') {
+            if ((p_action === 'assign' && !p_admin) || conv.status === 'closed' || (p_action === 'claim' && conv.owner_email !== null)) {
+              return { error: 'conflict' };
+            }
+            const target = p_action === 'claim' ? p_actor : (p_payload?.email ? String(p_payload.email).trim() : null);
+            if (target && !advisors.some(a => a.email === target && a.active !== false)) {
+              return { error: 'invalid' };
+            }
+            events.push({
+              id: ++state.autoId,
+              consultation_id: conv.id,
+              actor_email: p_actor,
+              kind: 'assigned',
+              detail: { from: conv.owner_email, to: target },
+              created_at: nowIso
+            });
+            for (const m of messages) {
+              if (m.consultation_id === conv.id && m.sender === 'bot' && m.delivery === 'queued') {
+                m.delivery = 'failed';
+                m.delivery_note = 'Đã chuyển cho tư vấn viên';
+              }
+            }
+            conv.owner_email = target;
+            conv.status = target ? 'open' : 'waiting';
+            conv.queued_at = conv.queued_at || nowIso;
+            conv.updated_at = nowIso;
+            return { conversation: { ...conv } };
+          }
+          if (!p_admin && conv.owner_email !== p_actor) {
+            return { error: 'forbidden' };
+          }
+          if (['note', 'follow_up', 'close', 'reopen'].includes(p_action)) {
+            if (p_action === 'note' && !textBody) return { error: 'invalid' };
+            if (p_action === 'close' && !['registered', 'declined', 'no_response', 'other'].includes(p_payload?.outcome || '')) {
+              return { error: 'invalid' };
+            }
+            if (p_action === 'close') {
+              for (const m of messages) {
+                if (m.consultation_id === conv.id && m.sender === 'bot' && m.delivery === 'queued') {
+                  m.delivery = 'failed';
+                  m.delivery_note = 'Đã đóng ca';
+                }
+              }
+            }
+            if (p_action === 'follow_up' && conv.status === 'closed') {
+              return { error: 'conflict' };
+            }
+            if (p_action === 'follow_up') conv.follow_up_at = p_payload?.at || null;
+            if (p_action === 'close') {
+              conv.follow_up_at = null;
+              conv.outcome = p_payload.outcome;
+              conv.status = 'closed';
+            } else if (p_action === 'reopen') {
+              conv.outcome = null;
+              conv.status = conv.owner_email ? 'open' : 'waiting';
+            }
+            conv.updated_at = nowIso;
+            events.push({ id: ++state.autoId, consultation_id: conv.id, actor_email: p_actor, kind: p_action, detail: p_payload || {}, created_at: nowIso });
+            return { conversation: { ...conv } };
+          }
+          if (p_action !== 'reply' || conv.status === 'closed' || conv.status === 'bot') {
+            return { error: 'conflict' };
+          }
+          senderType = p_admin ? 'manager' : 'advisor';
+        }
+
+        if (!textBody || textBody.length > 4000) return { error: 'invalid' };
+        if (conv.channel === 'messenger' && ['advisor', 'manager', 'bot'].includes(senderType)) {
+          const lastCust = conv.last_customer_at ? Date.parse(conv.last_customer_at) : 0;
+          if (!lastCust || lastCust < Date.now() - 24 * 3600 * 1000) {
+            return { error: 'window_closed' };
+          }
+          deliveryState = 'queued';
+        } else if (conv.channel === 'zalo_oa' && ['advisor', 'manager', 'bot'].includes(senderType)) {
+          deliveryState = 'queued';
+        } else {
+          deliveryState = 'sent';
+        }
+
+        const rawExtId = p_payload?.external_id ? String(p_payload.external_id) : null;
+        const clientReqId =
+          (p_payload?.client_request_id && String(p_payload.client_request_id).trim()) ||
+          (rawExtId && rawExtId.startsWith('staff:') ? rawExtId : null);
+        const msgExtId = clientReqId && deliveryState === 'queued' ? null : rawExtId;
+
+        if (msgExtId && messages.some(m => m.external_id === msgExtId)) {
+          return { duplicate: true };
+        }
+        if (clientReqId && messages.some(m => m.consultation_id === conv.id && m.client_request_id === clientReqId)) {
+          return { duplicate: true };
+        }
+
+        const msgRow = {
+          id: crypto.randomUUID(),
+          consultation_id: conv.id,
+          sender: senderType,
+          actor_email: p_actor,
+          body: textBody,
+          external_id: msgExtId,
+          client_request_id: clientReqId,
+          delivery: deliveryState,
+          delivery_note: null,
+          claimed_at: null,
+          created_at: nowIso
+        };
+        messages.push(msgRow);
+
+        if (senderType === 'customer') {
+          const atTs = p_payload?.at ? Math.min(Date.now(), Date.parse(p_payload.at) || Date.now()) : Date.now();
+          const prevTs = conv.last_customer_at ? Date.parse(conv.last_customer_at) : 0;
+          conv.last_customer_at = new Date(Math.max(prevTs, atTs)).toISOString();
+          if (conv.status === 'closed') {
+            conv.status = conv.owner_email ? 'open' : 'waiting';
+            conv.outcome = null;
+            conv.queued_at = conv.queued_at || nowIso;
+          }
+        } else if (senderType === 'external' && conv.status === 'bot') {
+          conv.status = 'waiting';
+          conv.queued_at = conv.queued_at || nowIso;
+        }
+        if (conv.status === 'waiting') {
+          conv.queued_at = conv.queued_at || nowIso;
+        }
+        if (['advisor', 'manager'].includes(senderType) && deliveryState === 'sent') {
+          conv.first_reply_at = conv.first_reply_at || nowIso;
+          conv.next_review_at = nowIso;
+        }
+        if (deliveryState === 'sent' && ['advisor', 'manager', 'bot', 'external'].includes(senderType)) {
+          conv.last_reply_at = nowIso;
+        }
+        conv.updated_at = nowIso;
+        return { conversation: { ...conv }, message: { ...msgRow } };
+      };
+
+      if (table === 'rpc/ktn_consultation_action' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        return new Response(JSON.stringify(runConsultationActionMock(b.p_id, b.p_action, b.p_actor, Boolean(b.p_admin), b.p_payload || {})), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (table === 'rpc/ktn_consultation_auto_assign' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const conv = (state.tables.ktn_consultations || []).find(c => c.id === b.p_id);
+        const advisors = (state.tables.ktn_advisors || []).filter(a => a.active !== false);
+        if (!conv || conv.status !== 'waiting' || conv.owner_email !== null || advisors.length === 0) {
+          return new Response(JSON.stringify(false), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const counters = state.tables.ktn_consultation_advisor_counters || (state.tables.ktn_consultation_advisor_counters = []);
+        const sorted = [...advisors].sort((a, c) => {
+          const ca = counters.find(x => x.email === a.email)?.last_assigned_at || '';
+          const cb = counters.find(x => x.email === c.email)?.last_assigned_at || '';
+          if (ca !== cb) return ca < cb ? -1 : 1;
+          return a.email.localeCompare(c.email);
+        });
+        const chosenAdv = sorted[0];
+        const nowIso = new Date().toISOString();
+        const existingCounter = counters.find(x => x.email === chosenAdv.email);
+        if (existingCounter) existingCounter.last_assigned_at = nowIso;
+        else counters.push({ email: chosenAdv.email, last_assigned_at: nowIso });
+        conv.owner_email = chosenAdv.email;
+        conv.status = 'open';
+        conv.updated_at = nowIso;
+        (state.tables.ktn_consultation_events || (state.tables.ktn_consultation_events = [])).push({
+          id: ++state.autoId,
+          consultation_id: conv.id,
+          actor_email: null,
+          kind: 'assigned',
+          detail: { from: null, to: chosenAdv.email, mode: 'auto' },
+          created_at: nowIso
+        });
+        return new Response(JSON.stringify(true), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_create_order' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const conv = (state.tables.ktn_consultations || []).find(c => c.id === b.p_id);
+        if (!conv) return new Response(JSON.stringify({ error: 'not_found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const links = state.tables.ktn_consultation_orders || (state.tables.ktn_consultation_orders = []);
+        const orders = state.tables.ktn_orders || (state.tables.ktn_orders = []);
+        const existingLink = links.find(l => l.consultation_id === b.p_id && l.request_id === b.p_request_id);
+        if (existingLink) {
+          const existingOrd = orders.find(o => o.order_id === existingLink.order_id);
+          if (existingOrd) return new Response(JSON.stringify(existingOrd), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        let candidate = '';
+        for (let i = 0; i < 10; i++) {
+          const tryId = 'ORD-' + String(100000 + Math.floor(Math.random() * 900000));
+          if (!orders.some(o => o.order_id === tryId)) {
+            candidate = tryId;
+            break;
+          }
+        }
+        const nowIso = new Date().toISOString();
+        const po = b.p_order || {};
+        const vSource = po.source || (conv.channel === 'zalo_oa' ? 'zalo_oa' : conv.channel === 'web' ? 'web_chat' : 'messenger');
+        const vAdvisor = po.assigned_advisor || conv.owner_email || null;
+        const createdOrder = {
+          order_id: candidate,
+          student_name: po.student_name || '',
+          student_email: po.student_email || '',
+          phone: po.phone || '',
+          course_id: po.course_id || '',
+          course_name: po.course_name || '',
+          amount: Number(po.amount || 0),
+          payment_method: 'VietQR',
+          payment_status: 'pending_verification',
+          approval_status: 'pending',
+          note: po.note || '',
+          source: vSource,
+          assigned_advisor: vAdvisor,
+          consultation_id: conv.id,
+          created_at: nowIso,
+          updated_at: nowIso
+        };
+        orders.unshift(createdOrder);
+        links.push({
+          order_id: candidate,
+          consultation_id: conv.id,
+          request_id: b.p_request_id,
+          owner_email: conv.owner_email || null,
+          payment_info: po.payment_info || {},
+          created_at: nowIso
+        });
+        (state.tables.ktn_consultation_events || (state.tables.ktn_consultation_events = [])).push({
+          id: ++state.autoId,
+          consultation_id: conv.id,
+          actor_email: vAdvisor,
+          kind: 'order',
+          detail: { order_id: candidate, source: vSource },
+          created_at: nowIso
+        });
+        conv.updated_at = nowIso;
+        if (conv.channel === 'zalo_oa' || (conv.channel === 'messenger' && conv.last_customer_at && Date.parse(conv.last_customer_at) > Date.now() - 86400000)) {
+          (state.tables.ktn_consultation_messages || (state.tables.ktn_consultation_messages = [])).push({
+            id: crypto.randomUUID(),
+            consultation_id: conv.id,
+            sender: 'system',
+            actor_email: null,
+            body: `Đơn ${candidate} · ${createdOrder.course_name}\nVietQR: ${String(b.p_qr_base || '').replace('ORDER_CODE', candidate)}`,
+            external_id: null,
+            client_request_id: null,
+            delivery: 'queued',
+            created_at: nowIso
+          });
+        }
+        return new Response(JSON.stringify(createdOrder), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_record_payment' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const payments = state.tables.ktn_consultation_payments || (state.tables.ktn_consultation_payments = []);
+        const orders = state.tables.ktn_orders || [];
+        const links = state.tables.ktn_consultation_orders || [];
+        const existingTx = payments.find(p => p.transaction_id === b.p_transaction);
+        if (existingTx) {
+          return new Response(JSON.stringify({ status: existingTx.status }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const ord = orders.find(o => o.order_id === b.p_order);
+        const link = links.find(l => l.order_id === b.p_order);
+        if (!ord || !link) {
+          return new Response(JSON.stringify({ status: 'unknown' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const nowIso = new Date().toISOString();
+        let nextStatus = 'accepted';
+        if (Number(b.p_amount) !== Number(ord.amount)) nextStatus = 'mismatch';
+        else if (ord.payment_status === 'paid') nextStatus = 'duplicate';
+        const row = {
+          transaction_id: b.p_transaction,
+          order_id: b.p_order,
+          amount: Number(b.p_amount),
+          status: nextStatus,
+          attempts: 0,
+          next_attempt_at: nowIso,
+          error: null,
+          created_at: nowIso
+        };
+        payments.push(row);
+        if (nextStatus === 'accepted') {
+          ord.payment_status = 'paid';
+          ord.updated_at = nowIso;
+          return new Response(JSON.stringify({ status: 'accepted', amount: ord.amount }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return new Response(JSON.stringify({ status: nextStatus, conflict: true, expected: ord.amount }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_take_payment' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const payments = state.tables.ktn_consultation_payments || [];
+        const nowMs = Date.now();
+        const claimed = [];
+        for (const p of payments) {
+          if (claimed.length >= 10) break;
+          if (p.status !== 'accepted') continue;
+          if (Number(p.attempts || 0) >= 6) continue;
+          if (b.p_order && p.order_id !== b.p_order) continue;
+          if (p.next_attempt_at && Date.parse(p.next_attempt_at) > nowMs) continue;
+          p.attempts = Number(p.attempts || 0) + 1;
+          p.next_attempt_at = new Date(nowMs + 5 * 60000).toISOString();
+          claimed.push({ ...p });
+        }
+        return new Response(JSON.stringify(claimed), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_retry_payment' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const payments = state.tables.ktn_consultation_payments || [];
+        const orders = state.tables.ktn_orders || [];
+        const links = state.tables.ktn_consultation_orders || [];
+        const payment = payments.find(p => p.transaction_id === b.p_transaction && p.order_id === b.p_order);
+        const ord = orders.find(o => o.order_id === b.p_order);
+        if (
+          !payment ||
+          !ord ||
+          payment.status !== 'needs_review' ||
+          Number(payment.attempts || 0) <= 0 ||
+          ord.payment_status !== 'paid' ||
+          ord.approval_status === 'rejected' ||
+          Number(payment.amount) !== Number(ord.amount)
+        ) {
+          return new Response(JSON.stringify(false), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        payment.status = 'accepted';
+        payment.next_attempt_at = new Date().toISOString();
+        payment.error = null;
+        const link = links.find(l => l.order_id === b.p_order);
+        if (link?.consultation_id) {
+          (state.tables.ktn_consultation_events || (state.tables.ktn_consultation_events = [])).push({
+            id: ++state.autoId,
+            consultation_id: link.consultation_id,
+            actor_email: b.p_actor || null,
+            kind: 'payment_retry',
+            detail: { order_id: b.p_order, transaction_id: b.p_transaction },
+            created_at: new Date().toISOString()
+          });
+        }
+        return new Response(JSON.stringify(true), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_take_outbox' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const messages = state.tables.ktn_consultation_messages || [];
+        const consultations = state.tables.ktn_consultations || [];
+        const claimed = [];
+        const nowIso = new Date().toISOString();
+        for (const m of messages) {
+          if (claimed.length >= 10) break;
+          if (m.delivery !== 'queued') continue;
+          if (b.p_id && m.consultation_id !== b.p_id) continue;
+          const conv = consultations.find(c => c.id === m.consultation_id);
+          if (!conv) continue;
+          const withinMessengerWindow = conv.channel !== 'messenger' || (conv.last_customer_at && Date.parse(conv.last_customer_at) > Date.now() - 86400000);
+          const validBotState = m.sender !== 'bot' || conv.status === 'bot';
+          m.claimed_at = nowIso;
+          if (withinMessengerWindow && validBotState) {
+            m.delivery = 'sending';
+            m.delivery_note = null;
+          } else {
+            m.delivery = 'failed';
+            m.delivery_note = !withinMessengerWindow ? 'Ngoài cửa sổ Messenger' : 'Đã chuyển cho tư vấn viên';
+          }
+          claimed.push({ ...m });
+        }
+        return new Response(JSON.stringify(claimed), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_complete_send' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const messages = state.tables.ktn_consultation_messages || [];
+        const consultations = state.tables.ktn_consultations || [];
+        const msg = messages.find(m => m.id === b.p_id && m.delivery === 'sending');
+        if (b.p_external_id && msg) {
+          state.tables.ktn_consultation_messages = messages.filter(
+            m => !(m.external_id === b.p_external_id && m.sender === 'external' && m.consultation_id === msg.consultation_id)
+          );
+        }
+        if (msg) {
+          msg.delivery = b.p_error ? 'failed' : 'sent';
+          msg.delivery_note = b.p_error || null;
+          if (b.p_external_id) msg.external_id = b.p_external_id;
+          if (!b.p_error) {
+            const conv = consultations.find(c => c.id === msg.consultation_id);
+            if (conv) {
+              conv.last_reply_at = msg.created_at;
+              if (['advisor', 'manager'].includes(msg.sender)) {
+                conv.first_reply_at = conv.first_reply_at || msg.created_at;
+                conv.next_review_at = new Date().toISOString();
+              }
+            }
+          }
+        }
+        return new Response(JSON.stringify(null), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_review_flag' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const flags = state.tables.ktn_consultation_flags || [];
+        const flag = flags.find(f => f.consultation_id === b.p_id && f.message_id === b.p_message && f.status === 'pending');
+        if (!flag) return new Response(JSON.stringify(false), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        flag.status = b.p_status;
+        flag.reviewed_by = b.p_actor;
+        flag.review_note = b.p_note || null;
+        flag.reviewed_at = new Date().toISOString();
+        (state.tables.ktn_consultation_events || (state.tables.ktn_consultation_events = [])).push({
+          id: ++state.autoId,
+          consultation_id: b.p_id,
+          actor_email: b.p_actor,
+          kind: 'review',
+          detail: { message_id: b.p_message, decision: b.p_status },
+          created_at: new Date().toISOString()
+        });
+        return new Response(JSON.stringify(true), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_upsert_zalo_inbound' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const pEventId = String(b.p_event_id || '').trim();
+        const pEventName = String(b.p_event_name || '').trim() || 'unknown';
+        const pZaloUserId = String(b.p_zalo_user_id || '').trim();
+        const pPayload = b.p_payload && typeof b.p_payload === 'object' ? b.p_payload : {};
+        if (!pEventId || !pZaloUserId) {
+          return new Response(JSON.stringify({ ok: false, error: 'invalid' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const zEvents = state.tables.ktn_zalo_oa_events || (state.tables.ktn_zalo_oa_events = []);
+        if (zEvents.some(e => e.event_id === pEventId)) {
+          return new Response(JSON.stringify({ ok: true, duplicate: true, event_id: pEventId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const nowIso = new Date().toISOString();
+        const zEvent = { event_id: pEventId, event_name: pEventName, zalo_user_id: pZaloUserId, consultation_id: null, payload: pPayload, status: 'received', error: null, created_at: nowIso };
+        zEvents.push(zEvent);
+        const isEcho = ['true', 't', '1'].includes(String(pPayload.is_echo ?? 'false').toLowerCase());
+        const botEnabled = Boolean((state.tables.ktn_consultation_guidance || [])[0]?.bot_enabled);
+        const consultations = state.tables.ktn_consultations || (state.tables.ktn_consultations = []);
+        let conv = consultations.find(c => c.channel === 'zalo_oa' && c.external_id === pZaloUserId);
+        if (!conv) {
+          conv = {
+            id: crypto.randomUUID(),
+            channel: 'zalo_oa',
+            external_id: pZaloUserId,
+            zalo_user_id: pZaloUserId,
+            owner_email: null,
+            status: botEnabled && !isEcho ? 'bot' : 'waiting',
+            outcome: null,
+            follow_up_at: null,
+            queued_at: null,
+            first_reply_at: null,
+            last_customer_at: null,
+            last_reply_at: null,
+            next_review_at: null,
+            customer_name: pPayload.customer_name || null,
+            customer_phone: pPayload.customer_phone || null,
+            source_tag: pPayload.source_tag || 'zalo_oa',
+            lead_meta: pPayload.lead_meta && typeof pPayload.lead_meta === 'object' ? { ...pPayload.lead_meta } : {},
+            student_code: null,
+            created_at: nowIso,
+            updated_at: nowIso
+          };
+          consultations.push(conv);
+        } else {
+          if (pPayload.customer_name) conv.customer_name = pPayload.customer_name;
+          if (pPayload.customer_phone) conv.customer_phone = pPayload.customer_phone;
+          if (pPayload.source_tag) conv.source_tag = pPayload.source_tag;
+          if (pPayload.lead_meta && typeof pPayload.lead_meta === 'object') {
+            conv.lead_meta = { ...(conv.lead_meta || {}), ...pPayload.lead_meta };
+          }
+          conv.updated_at = nowIso;
+        }
+        zEvent.consultation_id = conv.id;
+        zEvent.status = 'processed';
+        const vBody = typeof pPayload.body === 'string' ? pPayload.body.trim() : '';
+        if (vBody) {
+          const actionRes = runConsultationActionMock(conv.id, isEcho ? 'external' : 'customer', null, false, {
+            external_id: 'zalo:' + pEventId,
+            body: vBody,
+            at: pPayload.at || nowIso
+          });
+          if (actionRes.error) {
+            zEvent.status = 'failed';
+            zEvent.error = actionRes.error;
+            return new Response(JSON.stringify({ ok: false, error: actionRes.error, event_id: pEventId, conversation: { ...conv } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (actionRes.duplicate) {
+            zEvent.status = 'duplicate';
+            return new Response(JSON.stringify({ ok: true, duplicate: true, event_id: pEventId, conversation: { ...conv } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          return new Response(JSON.stringify({ ok: true, duplicate: false, event_id: pEventId, conversation: actionRes.conversation, message: actionRes.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return new Response(JSON.stringify({ ok: true, duplicate: false, event_id: pEventId, conversation: { ...conv } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_log_sepay_reconciliation' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const validKinds = ['unmatched', 'unknown_order', 'account_mismatch', 'mismatch', 'duplicate', 'needs_review', 'accepted'];
+        if (!b.p_transaction_id || !validKinds.includes(b.p_kind)) {
+          return new Response(JSON.stringify({ ok: false, error: 'invalid' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const logs = state.tables.ktn_sepay_reconciliation_logs || (state.tables.ktn_sepay_reconciliation_logs = []);
+        const existing = logs.find(l => l.transaction_id === b.p_transaction_id);
+        if (existing) {
+          return new Response(JSON.stringify({ ok: true, duplicate: true, log: existing }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const ord = b.p_order_id ? (state.tables.ktn_orders || []).find(o => o.order_id === b.p_order_id) : null;
+        const link = b.p_order_id ? (state.tables.ktn_consultation_orders || []).find(l => l.order_id === b.p_order_id) : null;
+        const nowIso = new Date().toISOString();
+        const created = {
+          id: crypto.randomUUID(),
+          transaction_id: b.p_transaction_id,
+          order_id: ord?.order_id || null,
+          claimed_order_code: b.p_claimed_order_code || b.p_order_id || null,
+          consultation_id: ord?.consultation_id || link?.consultation_id || null,
+          kind: b.p_kind,
+          amount: Number(b.p_amount || 0),
+          expected_amount: b.p_expected_amount ?? null,
+          account_number: b.p_account_number || null,
+          transfer_content: b.p_transfer_content || null,
+          raw_payload: b.p_raw_payload || {},
+          resolution_status: 'open',
+          resolved_by: null,
+          resolved_at: null,
+          resolution_note: null,
+          created_at: nowIso,
+          updated_at: nowIso
+        };
+        logs.unshift(created);
+        return new Response(JSON.stringify({ ok: true, duplicate: false, log: created }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_list_sepay_reconciliation' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const limit = Math.max(1, Math.min(200, Number(b.p_limit || 50)));
+        const offset = Math.max(0, Number(b.p_offset || 0));
+        if (b.p_resolution_status && !['open', 'resolved', 'ignored'].includes(b.p_resolution_status)) {
+          return new Response(JSON.stringify({ ok: false, error: 'invalid' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (b.p_kind && !['unmatched', 'unknown_order', 'account_mismatch', 'mismatch', 'duplicate', 'needs_review', 'accepted'].includes(b.p_kind)) {
+          return new Response(JSON.stringify({ ok: false, error: 'invalid' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const filtered = (state.tables.ktn_sepay_reconciliation_logs || []).filter(r => {
+          if (b.p_resolution_status && r.resolution_status !== b.p_resolution_status) return false;
+          if (b.p_kind && r.kind !== b.p_kind) return false;
+          return true;
+        });
+        return new Response(
+          JSON.stringify({ ok: true, items: filtered.slice(offset, offset + limit), total: filtered.length, limit, offset }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (table === 'rpc/ktn_consultation_resolve_sepay_reconciliation' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        if (!['open', 'resolved', 'ignored'].includes(b.p_resolution_status || '')) {
+          return new Response(JSON.stringify({ ok: false, error: 'invalid' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const logs = state.tables.ktn_sepay_reconciliation_logs || [];
+        const row = logs.find(r => r.transaction_id === b.p_transaction_id);
+        if (!row) return new Response(JSON.stringify({ ok: false, error: 'not_found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        let linkedConsult = row.consultation_id;
+        if (b.p_order_id) {
+          const ord = (state.tables.ktn_orders || []).find(o => o.order_id === b.p_order_id);
+          if (!ord) return new Response(JSON.stringify({ ok: false, error: 'order_not_found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          linkedConsult = ord.consultation_id || (state.tables.ktn_consultation_orders || []).find(l => l.order_id === b.p_order_id)?.consultation_id || linkedConsult;
+          row.order_id = b.p_order_id;
+        }
+        const nowIso = new Date().toISOString();
+        row.resolution_status = b.p_resolution_status;
+        row.resolved_by = b.p_resolution_status === 'open' ? null : (b.p_actor || null);
+        row.resolved_at = b.p_resolution_status === 'open' ? null : nowIso;
+        if (b.p_note) row.resolution_note = b.p_note;
+        row.consultation_id = linkedConsult || null;
+        row.updated_at = nowIso;
+        if (row.consultation_id) {
+          (state.tables.ktn_consultation_events || (state.tables.ktn_consultation_events = [])).push({
+            id: ++state.autoId,
+            consultation_id: row.consultation_id,
+            actor_email: b.p_actor || null,
+            kind: 'sepay_reconciliation',
+            detail: { transaction_id: b.p_transaction_id, resolution_status: b.p_resolution_status, order_id: row.order_id },
+            created_at: nowIso
+          });
+        }
+        return new Response(JSON.stringify({ ok: true, log: row }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (table === 'rpc/ktn_consultation_link_student' && method === 'POST') {
+        const b = init.body ? JSON.parse(init.body) : {};
+        const conv = (state.tables.ktn_consultations || []).find(c => c.id === b.p_consultation_id);
+        if (!conv) return new Response(JSON.stringify({ ok: false, error: 'not_found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const stu = (state.tables.ktn_students || []).find(s => s.code === b.p_student_code);
+        if (!stu) return new Response(JSON.stringify({ ok: false, error: 'student_not_found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const nowIso = new Date().toISOString();
+        conv.student_code = stu.code;
+        if (!conv.customer_name && stu.name) conv.customer_name = stu.name;
+        if (!conv.customer_phone && stu.phone) conv.customer_phone = stu.phone;
+        conv.updated_at = nowIso;
+        stu.consultation_id = conv.id;
+        if (!stu.zalo_user_id && conv.zalo_user_id) stu.zalo_user_id = conv.zalo_user_id;
+        if (!stu.lead_source) stu.lead_source = conv.source_tag || conv.channel;
+        stu.updated_at = nowIso;
+        (state.tables.ktn_consultation_events || (state.tables.ktn_consultation_events = [])).push({
+          id: ++state.autoId,
+          consultation_id: conv.id,
+          actor_email: b.p_actor || null,
+          kind: 'student_linked',
+          detail: { student_code: stu.code },
+          created_at: nowIso
+        });
+        return new Response(JSON.stringify({ ok: true, conversation: { ...conv }, student_code: stu.code }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
       if (table.startsWith('rpc/')) {
         return new Response(JSON.stringify({ message: `Unmocked RPC ${table}` }), {
           status: 404,
@@ -962,19 +2112,67 @@ export function createLocalWorkerHarness() {
         });
       }
 
-      const rows = state.tables[table] || (state.tables[table] = []);
+      let rows;
+      if (table === 'ktn_consultation_inbox') rows = buildInboxRows();
+      else if (table === 'ktn_consultation_paid_report') rows = buildPaidReportRows();
+      else if (table === 'ktn_consultation_assignment_report') rows = buildAssignmentReportRows();
+      else rows = state.tables[table] || (state.tables[table] = []);
 
       if (method === 'GET') {
-        const matched = rows.filter(r => matchQueryFilters(r, u.searchParams));
+        let sourceRows = rows;
+        if (table === 'ktn_consultation_flags') {
+          sourceRows = rows.map(f => ({
+            ...f,
+            ktn_consultations: (state.tables.ktn_consultations || []).find(c => c.id === f.consultation_id) || null,
+            ktn_consultation_messages: (state.tables.ktn_consultation_messages || []).find(m => m.id === f.message_id) || null
+          }));
+        } else if (table === 'ktn_consultation_orders') {
+          sourceRows = rows.map(l => {
+            const ord = (state.tables.ktn_orders || []).find(o => o.order_id === l.order_id) || null;
+            const pays = (state.tables.ktn_consultation_payments || []).filter(p => p.order_id === l.order_id);
+            return {
+              ...l,
+              ktn_orders: ord ? { ...ord, ktn_consultation_payments: pays } : null
+            };
+          });
+        } else if (table === 'ktn_courses') {
+          const explicitIds = new Set(rows.map(c => String(c.course_id || '').trim()).filter(Boolean));
+          sourceRows = [
+            ...rows,
+            ...DEFAULT_LOCAL_CATALOG_COURSES.filter(c => !explicitIds.has(String(c.course_id || '').trim())).map(c => ({ ...c }))
+          ];
+        }
+        const matched = sourceRows.filter(r => matchQueryFilters(r, u.searchParams));
         const orderParam = String(u.searchParams.get('order') || '');
-        if (orderParam.includes('created_at.desc')) {
-          matched.sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
-        } else if (orderParam.includes('created_at.asc')) {
-          matched.sort((a, b) => (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0));
-        } else if (orderParam.includes('updated_at.desc')) {
-          matched.sort((a, b) => (Date.parse(b.updated_at || '') || 0) - (Date.parse(a.updated_at || '') || 0));
-        } else if (orderParam.includes('code.asc')) {
-          matched.sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
+        if (orderParam) {
+          const orderCols = orderParam
+            .split(',')
+            .map(seg => seg.trim())
+            .filter(Boolean)
+            .map(seg => {
+              const parts = seg.split('.');
+              return { col: parts[0], desc: parts[1] === 'desc' };
+            });
+          matched.sort((a, b) => {
+            for (const { col, desc } of orderCols) {
+              const av = a[col];
+              const bv = b[col];
+              let cmp = 0;
+              if (av === bv) cmp = 0;
+              else if (av === null || av === undefined) cmp = 1;
+              else if (bv === null || bv === undefined) cmp = -1;
+              else if (typeof av === 'boolean' && typeof bv === 'boolean') cmp = av === bv ? 0 : (av ? -1 : 1);
+              else if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
+              else {
+                const ats = col.endsWith('_at') ? Date.parse(String(av)) : NaN;
+                const bts = col.endsWith('_at') ? Date.parse(String(bv)) : NaN;
+                if (Number.isFinite(ats) && Number.isFinite(bts)) cmp = ats - bts;
+                else cmp = String(av).localeCompare(String(bv));
+              }
+              if (cmp !== 0) return desc ? -cmp : cmp;
+            }
+            return 0;
+          });
         }
         const totalMatched = matched.length;
         const offset = Math.max(0, Number(u.searchParams.get('offset') || 0));
@@ -994,7 +2192,8 @@ export function createLocalWorkerHarness() {
         const items = Array.isArray(body) ? body : [body];
         const onConflict = u.searchParams.get('on_conflict');
         const prefer = String((init.headers && (init.headers.Prefer || init.headers.prefer)) || '');
-        const isUpsert = Boolean(onConflict || prefer.includes('resolution=merge-duplicates'));
+        const ignoreDup = prefer.includes('resolution=ignore-duplicates');
+        const isUpsert = Boolean(onConflict || prefer.includes('resolution=merge-duplicates') || ignoreDup);
         const pkByTable = {
           ktn_students: 'email',
           ktn_orders: 'order_id',
@@ -1002,7 +2201,17 @@ export function createLocalWorkerHarness() {
           ktn_classes: 'id',
           ktn_attendance: 'id',
           ktn_provisioning_jobs: 'operation_id',
-          ktn_payment_config: 'id'
+          ktn_payment_config: 'id',
+          ktn_advisors: 'email',
+          ktn_courses: 'course_id',
+          ktn_consultations: 'id',
+          ktn_consultation_messages: 'id',
+          ktn_consultation_flags: 'message_id',
+          ktn_consultation_guidance: 'id',
+          ktn_consultation_orders: 'order_id',
+          ktn_consultation_payments: 'transaction_id',
+          ktn_zalo_oa_events: 'event_id',
+          ktn_sepay_reconciliation_logs: 'transaction_id'
         };
         const defaultPk = pkByTable[table] || 'id';
         const out = [];
@@ -1031,17 +2240,25 @@ export function createLocalWorkerHarness() {
           if (onConflict) {
             const keys = onConflict.split(',').map(s => s.trim());
             existingIdx = rows.findIndex(r => keys.every(k => String(r[k] ?? '').toLowerCase() === String(item[k] ?? '').toLowerCase()));
-          } else if (isUpsert && item[defaultPk]) {
+          } else if (item[defaultPk]) {
             existingIdx = rows.findIndex(r => String(r[defaultPk] || '').toLowerCase() === String(item[defaultPk] || '').toLowerCase());
           } else if (item.id) {
             existingIdx = rows.findIndex(r => r.id === item.id);
           }
+          if (existingIdx >= 0 && !isUpsert) {
+            return new Response(
+              JSON.stringify({ code: '23505', message: `duplicate key value violates unique constraint on "${table}"` }),
+              { status: 409, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
           if (existingIdx >= 0) {
-            rows[existingIdx] = { ...rows[existingIdx], ...item };
-            out.push(rows[existingIdx]);
+            if (!ignoreDup) {
+              rows[existingIdx] = { ...rows[existingIdx], ...item };
+              out.push(rows[existingIdx]);
+            }
           } else {
             const created = {
-              id: item.id || ('SB-' + (++state.autoId) + '-' + Date.now()),
+              id: item.id || (table.startsWith('ktn_consultation') || table === 'ktn_zalo_oa_events' || table === 'ktn_sepay_reconciliation_logs' ? crypto.randomUUID() : ('SB-' + (++state.autoId) + '-' + Date.now())),
               created_at: item.created_at || new Date().toISOString(),
               updated_at: item.updated_at || new Date().toISOString(),
               ...item
@@ -1465,6 +2682,49 @@ export function createLocalWorkerHarness() {
       }
     }
 
+    if (u.hostname === 'api.resend.com') {
+      return new Response(JSON.stringify({ id: 'mock-resend-' + (++state.autoId) }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (u.hostname === 'openapi.zalo.me' || u.hostname === 'oauth.zaloapp.com') {
+      if (u.hostname === 'oauth.zaloapp.com') {
+        return new Response(JSON.stringify({ access_token: 'mock-zalo-access-token', refresh_token: 'mock-zalo-refresh', expires_in: 3600 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify({ error: 0, message: 'Success', data: { message_id: 'mock_zalo_' + (++state.autoId) } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (u.hostname === 'generativelanguage.googleapis.com') {
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      reply: 'Bé nhà mình đang ở độ tuổi nào để cô gợi ý lộ trình phù hợp ạ?',
+                      course_id: '',
+                      handoff: false
+                    })
+                  }
+                ]
+              }
+            }
+          ]
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (
       u.hostname === 'media.izteach.vn' ||
       u.hostname.endsWith('.test') ||
@@ -1475,7 +2735,7 @@ export function createLocalWorkerHarness() {
       if (cleanInit.headers && typeof cleanInit.headers.entries === 'function') {
         cleanInit.headers = Object.fromEntries(cleanInit.headers.entries());
       }
-      return globalThis.fetch(u.toString(), cleanInit);
+      return workerFetchAls.run(null, () => globalThis.fetch(u.toString(), cleanInit));
     }
 
     return new Response(JSON.stringify({ ok: true }), {
@@ -1489,6 +2749,10 @@ export function createLocalWorkerHarness() {
 
   let workerCode = fs.readFileSync(WORKER_PATH, 'utf8');
   workerCode = workerCode.replace(/export\s+default\s+\{/, 'module.exports = {');
+  workerCode = workerCode.replace(
+    /\bimport\s*\(\s*(['"]\.\/[^'"]+\.m?js['"])\s*\)/g,
+    '__ktnDynamicImport($1)'
+  );
 
   const NativeUint8Array = Object.getPrototypeOf(Buffer);
   const NativeArrayBuffer = new NativeUint8Array(0).buffer.constructor;
@@ -1504,6 +2768,8 @@ export function createLocalWorkerHarness() {
     URL,
     URLSearchParams,
     crypto: crypto.webcrypto || globalThis.crypto,
+    AbortController,
+    AbortSignal,
     TextEncoder: NodeTextEncoder,
     TextDecoder: NodeTextDecoder,
     atob: globalThis.atob || (str => Buffer.from(str, 'base64').toString('binary')),
@@ -1517,6 +2783,8 @@ export function createLocalWorkerHarness() {
     Array,
     ArrayBuffer: NativeArrayBuffer,
     Uint8Array: NativeUint8Array,
+    Uint32Array,
+    Int32Array,
     DataView: NativeDataView,
     Object,
     String,
@@ -1535,11 +2803,23 @@ export function createLocalWorkerHarness() {
     parseInt,
     parseFloat,
     isNaN,
-    isFinite
+    isFinite,
+    __ktnDynamicImport: (specifier) => {
+      const target = path.resolve(REPO_ROOT, specifier);
+      if (!target.startsWith(REPO_ROOT + path.sep)) {
+        throw new Error(`Disallowed dynamic import: ${specifier}`);
+      }
+      return import(pathToFileURL(target).href);
+    }
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext(workerCode, sandbox);
+  vm.runInContext(workerCode, sandbox, {
+    filename: WORKER_PATH,
+    ...(vm.constants?.USE_MAIN_CONTEXT_DEFAULT_LOADER
+      ? { importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER }
+      : {})
+  });
 
   const workerModule = sandbox.module.exports;
   const env = {
@@ -1550,7 +2830,27 @@ export function createLocalWorkerHarness() {
     IZTEACH_ADMIN_PASSWORD: 'Ktn@2026!AdminPassword',
     KTN_STAFF_AND_TEST_PASSWORD: 'Ktn@2026!',
     KTN_SESSION_SECRET: 'ktn-v2-local-hmac-secret-2026',
-    KTN_WEBHOOK_SECRET: 'mock-webhook-secret-2026'
+    KTN_WEBHOOK_SECRET: 'mock-webhook-secret-2026',
+    KTN_CONSULTATIONS_ENABLED: 'true',
+    KTN_CONSULTATION_MODE: 'full',
+    KTN_CONSULTATION_SECRET: 'ktn-local-consultation-secret-2026',
+    KTN_CONSULTATION_AUTH_KEY: 'mock-consultation-auth-key',
+    KTN_CONSULTATION_PUBLIC_URL: 'http://localhost:5173',
+    KTN_ZALO_SANDBOX: 'true',
+    KTN_AI_SANDBOX: 'true',
+    KTN_SEPAY_SANDBOX: 'true',
+    KTN_ZALO_APP_ID: '1000000000000000001',
+    KTN_ZALO_APP_SECRET: 'mock-zalo-app-secret-2026',
+    KTN_ZALO_OA_ID: '2000000000000000001',
+    KTN_SEPAY_API_KEY: 'mock-sepay-apikey-2026',
+    KTN_SEPAY_BANK_ID: 'MB',
+    KTN_SEPAY_ACCOUNT_NO: '0988888888',
+    KTN_SEPAY_ACCOUNT_NAME: 'HOC VIEN KHONG TU NHI',
+    KTN_CONSULTATION_MAIL_KEY: 'mock-resend-key-2026',
+    KTN_CONSULTATION_MAIL_FROM: 'KTN <noreply@khongtunhi.local>',
+    KTN_GEMINI_MODEL: 'gemini-2.5-flash',
+    KTN_GEMINI_KEYS: '',
+    KTN_CONSULTATION_LIMIT: { limit: async () => ({ success: true }) }
   };
 
   return {
@@ -1818,7 +3118,12 @@ export function createLocalWorkerHarness() {
         return;
       }
 
-      if (!url.startsWith('/api/ktn/')) {
+      const reqPathname = new URL(url, 'http://localhost').pathname;
+      const isConsultationPage =
+        reqPathname === '/tu-van' ||
+        reqPathname === '/tu-van/' ||
+        reqPathname.startsWith('/tu-van/');
+      if (!isConsultationPage && !reqPathname.startsWith('/api/ktn/')) {
         return next();
       }
 
@@ -1847,7 +3152,10 @@ export function createLocalWorkerHarness() {
           },
           passThroughOnException() {}
         };
-        const workerRes = await workerModule.fetch(workerReq, env, workerCtx);
+        ensureHostFetchDispatcher();
+        const workerRes = await workerFetchAls.run(mockFetch, () =>
+          workerModule.fetch(workerReq, env, workerCtx)
+        );
         res.statusCode = workerRes.status;
         workerRes.headers.forEach((val, key) => {
           res.setHeader(key, val);

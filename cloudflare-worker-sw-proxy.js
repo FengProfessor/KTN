@@ -3497,6 +3497,7 @@ function normalizeEmail(raw) {
 function getRoleTargetPage(role) {
   if (role === 'admin') return '/sll-admin.html';
   if (role === 'teacher') return '/sll-teacher.html';
+  if (role === 'advisor') return '/';
   return '/sll-hocsinh.html';
 }
 
@@ -7647,6 +7648,9 @@ async function mergeAndUpsertStudentCourses(env, {
   phone,
   parentName = undefined,
   parentPhone = undefined,
+  leadSource = undefined,
+  zaloUserId = undefined,
+  consultationId = undefined,
   cognitoUserId,
   izteachStudentId,
   addCourseIds = [],
@@ -7817,6 +7821,18 @@ async function mergeAndUpsertStudentCourses(env, {
   if (mergedInternalNote) {
     v3PayloadWithoutParentPhoneCol.internal_note = mergedInternalNote;
   }
+  const resolvedLeadSource = leadSource !== undefined
+    ? (String(leadSource).trim() || null)
+    : (existingRow?.lead_source ?? null);
+  const resolvedZaloUserId = zaloUserId !== undefined
+    ? (String(zaloUserId).trim() || null)
+    : (existingRow?.zalo_user_id ?? null);
+  const resolvedConsultationId = consultationId !== undefined
+    ? (String(consultationId).trim() || null)
+    : (existingRow?.consultation_id ?? null);
+  if (resolvedLeadSource !== null) v3PayloadWithoutParentPhoneCol.lead_source = resolvedLeadSource;
+  if (resolvedZaloUserId !== null) v3PayloadWithoutParentPhoneCol.zalo_user_id = resolvedZaloUserId;
+  if (resolvedConsultationId !== null) v3PayloadWithoutParentPhoneCol.consultation_id = resolvedConsultationId;
   v3PayloadWithoutParentPhoneCol.search_text = buildStudentSearchText({
     ...v3PayloadWithoutParentPhoneCol,
     parent_phone: resolvedParentPhone
@@ -7836,6 +7852,25 @@ async function mergeAndUpsertStudentCourses(env, {
       method: 'POST',
       prefer: 'resolution=merge-duplicates,return=representation',
       body: v3PayloadWithoutParentPhoneCol
+    });
+  }
+  if (
+    (!sbRes || !sbRes.ok) &&
+    sbRes?.status === 400 &&
+    (v3PayloadWithoutParentPhoneCol.lead_source !== undefined ||
+      v3PayloadWithoutParentPhoneCol.zalo_user_id !== undefined ||
+      v3PayloadWithoutParentPhoneCol.consultation_id !== undefined)
+  ) {
+    const {
+      lead_source: _omitLeadSource,
+      zalo_user_id: _omitZaloUserId,
+      consultation_id: _omitConsultationId,
+      ...v3PreCrmPayload
+    } = v3PayloadWithoutParentPhoneCol;
+    sbRes = await supabaseRequest(env, 'ktn_students', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=representation',
+      body: v3PreCrmPayload
     });
   }
   // Fallback an toàn nếu bảng ktn_students chưa chạy kịp migration V3 (tránh lỗi 400 column does not exist nhưng vẫn giữ parent_name)
@@ -8469,6 +8504,17 @@ function extractOrderMetaFromRow(ord = {}) {
       embedded = {};
     }
   }
+  const embeddedSource = String(embedded.source || '').trim();
+  const rowSource = String(ord.source || '').trim();
+  const channelSource = String(
+    (rowSource && rowSource !== 'consultation' ? rowSource : '') ||
+    embedded.channel_source ||
+    embedded.lead_source ||
+    rowSource ||
+    embeddedSource ||
+    'website'
+  ).trim();
+
   return {
     customerNote,
     meta: {
@@ -8488,7 +8534,17 @@ function extractOrderMetaFromRow(ord = {}) {
       processed_tx_ids: Array.isArray(ord.processed_tx_ids ?? embedded.processed_tx_ids)
         ? (ord.processed_tx_ids ?? embedded.processed_tx_ids)
         : [],
-      source: String(ord.source ?? embedded.source ?? 'website').trim(),
+      source: embeddedSource === 'consultation'
+        ? 'consultation'
+        : (rowSource || embeddedSource || 'website'),
+      channel_source: channelSource,
+      lead_source: String(ord.lead_source ?? embedded.lead_source ?? channelSource ?? '').trim(),
+      assigned_advisor: ord.assigned_advisor ?? embedded.assigned_advisor ?? null,
+      consultation_id: ord.consultation_id ?? embedded.consultation_id ?? null,
+      ...(embedded.duration_preset !== undefined ? { duration_preset: embedded.duration_preset } : {}),
+      ...(embedded.duration_mode !== undefined ? { duration_mode: embedded.duration_mode } : {}),
+      ...(embedded.limit_time !== undefined ? { limit_time: embedded.limit_time } : {}),
+      ...(embedded.expires_at !== undefined ? { expires_at: embedded.expires_at } : {}),
       account_created: (ord.account_created ?? embedded.account_created) !== undefined
         ? Boolean(ord.account_created ?? embedded.account_created)
         : null,
@@ -8597,7 +8653,7 @@ function buildVietQrPaymentInfo(paymentConfig, orderId, amount) {
   };
 }
 
-function enrichOrderForResponse(ord, existingStudentMap = null) {
+function enrichOrderForResponse(ord, existingStudentMap = null, consultationMap = null) {
   const { customerNote, meta } = extractOrderMetaFromRow(ord);
   const isApproved = ord.approval_status === 'approved';
   const hasAssigned = Boolean(ord.assigned_user_id);
@@ -8693,7 +8749,28 @@ function enrichOrderForResponse(ord, existingStudentMap = null) {
   const masterCourse = MASTER_PRODUCT_MAPPING[ord.course_id] || null;
   const serverCoursePrice = Number(masterCourse?.price || ord.amount) || 890000;
   const amountValid = Number(ord.amount) > 0 && (!masterCourse || Number(ord.amount) === Number(masterCourse.price));
-  const sourceVal = meta.source || 'website';
+  const resolvedConsultId = ord.consultation_id || meta.consultation_id || null;
+  const linkedConsult = (consultationMap && resolvedConsultId) ? consultationMap.get(String(resolvedConsultId)) : null;
+  const consultChannelFallback = linkedConsult?.channel === 'zalo_oa'
+    ? 'zalo_oa'
+    : (linkedConsult?.channel === 'web' ? 'web_chat' : (linkedConsult?.channel === 'messenger' ? 'messenger' : ''));
+  const rawChannelSource = String(
+    (ord.source && ord.source !== 'consultation' ? ord.source : '') ||
+    (meta.channel_source && meta.channel_source !== 'consultation' ? meta.channel_source : '') ||
+    (meta.lead_source && meta.lead_source !== 'consultation' ? meta.lead_source : '') ||
+    consultChannelFallback ||
+    ''
+  ).trim();
+  const sourceVal = rawChannelSource || ord.source || meta.source || 'website';
+  const SOURCE_LABELS = {
+    authenticated_student: 'Học viên đang đăng nhập',
+    zalo_oa: 'Zalo OA',
+    web_chat: 'Web Chat',
+    messenger: 'Messenger',
+    consultation: 'Tư vấn',
+    website: 'Website'
+  };
+  const resolvedAdvisor = ord.assigned_advisor || linkedConsult?.owner_email || meta.assigned_advisor || null;
 
   return {
     ...ord,
@@ -8722,7 +8799,13 @@ function enrichOrderForResponse(ord, existingStudentMap = null) {
       ? 'webhook_auto'
       : (meta.payment_verified_by ? 'admin_manual' : null),
     source: sourceVal,
-    source_label: sourceVal === 'authenticated_student' ? 'Học viên đang đăng nhập' : 'Website',
+    channel_source: rawChannelSource || sourceVal,
+    lead_source: meta.lead_source || sourceVal,
+    source_label: SOURCE_LABELS[sourceVal] || 'Website',
+    assigned_advisor: resolvedAdvisor,
+    owner_email: resolvedAdvisor,
+    consultation_id: resolvedConsultId,
+    zalo_user_id: linkedConsult?.zalo_user_id || ord.zalo_user_id || null,
     course_valid: Boolean(masterCourse || ord.course_id),
     amount_valid: amountValid,
     server_course_price: serverCoursePrice,
@@ -9041,8 +9124,14 @@ async function approveAndProvisionOrder(env, {
       updated_at: nowIso
     };
 
+    const resolvedSourceCol = order.source || (orderMeta.channel_source && orderMeta.source === 'consultation' ? orderMeta.channel_source : undefined);
+    const resolvedAdvisorCol = order.assigned_advisor || orderMeta.assigned_advisor || undefined;
+    const resolvedConsultId = order.consultation_id || orderMeta.consultation_id || undefined;
     const extOrderUpdatePayload = {
       ...baseOrderUpdatePayload,
+      ...(resolvedSourceCol ? { source: resolvedSourceCol } : {}),
+      ...(resolvedAdvisorCol ? { assigned_advisor: resolvedAdvisorCol } : {}),
+      ...(resolvedConsultId ? { consultation_id: resolvedConsultId } : {}),
       provisioning_status: 'synced',
       sync_status: 'synced',
       operation_id: opId
@@ -9073,11 +9162,33 @@ async function approveAndProvisionOrder(env, {
       ? classCode
       : (order.class_code || order.classCode || undefined);
     const studentCode = 'KTN-' + cleanOrderId.replace(/^ORD-/, '');
+    let linkedConsultForStudent = null;
+    if (resolvedConsultId) {
+      try {
+        const cRes = await supabaseRequest(
+          env,
+          `ktn_consultations?id=eq.${encodeURIComponent(resolvedConsultId)}&select=id,channel,source_tag,zalo_user_id,owner_email&limit=1`
+        );
+        if (cRes.ok && Array.isArray(cRes.data) && cRes.data[0]) {
+          linkedConsultForStudent = cRes.data[0];
+        }
+      } catch {}
+    }
+    const resolvedLeadSource =
+      linkedConsultForStudent?.source_tag ||
+      (order.source && order.source !== 'consultation' ? order.source : '') ||
+      orderMeta.lead_source ||
+      orderMeta.channel_source ||
+      undefined;
+    const resolvedZaloUserId = linkedConsultForStudent?.zalo_user_id || undefined;
     const updatedStu = await mergeAndUpsertStudentCourses(env, {
       email: prov.email,
       name: prov.name,
       phone: shouldPreserveProfilePhone ? undefined : (order.phone || ''),
       parentName: orderMeta.parent_name ? orderMeta.parent_name : undefined,
+      leadSource: resolvedLeadSource,
+      zaloUserId: resolvedZaloUserId,
+      consultationId: resolvedConsultId || undefined,
       cognitoUserId: prov.cognitoUserId,
       izteachStudentId: prov.izteachStudentId,
       addCourseIds: prov.allCourseIds || prov.grantedCourseIds || [prov.courseId],
@@ -12470,7 +12581,15 @@ export default {
       return Response.redirect(`https://khongtunhi.com${url.pathname}${url.search}`, 301);
     }
 
-    if (path === '/tu-van' || path === '/tu-van/nhan-vien' || path.startsWith('/api/ktn/consultations/')) {
+    if (
+      path === '/tu-van' ||
+      path === '/tu-van/' ||
+      path.startsWith('/tu-van/') ||
+      path === '/api/ktn/consultations' ||
+      path.startsWith('/api/ktn/consultations/') ||
+      path === '/api/ktn/zalo' ||
+      path.startsWith('/api/ktn/zalo/')
+    ) {
       if (env.KTN_CONSULTATIONS_ENABLED !== 'true') return jsonResponse({ ok: false, message: 'Tư vấn trực tuyến chưa mở.' }, 404);
       const { handleConsultation } = await import('./consultation-worker.mjs');
       return handleConsultation(request, env, ctx, consultationDependencies);
@@ -12609,16 +12728,18 @@ export default {
       const matchesRotated = rotatedSecret.length >= 8 && password === rotatedSecret;
       const matchesAdminSecret = isRotAdmin && adminSecret.length >= 8 && adminSecret !== '123456' && password === adminSecret;
 
-      const [tRes, existingStuLoginRes, stuCredMeta, admCredMeta] = await Promise.all([
+      const [tRes, existingStuLoginRes, stuCredMeta, admCredMeta, advRes] = await Promise.all([
         supabaseRequest(env, `ktn_teachers?email=eq.${encodeURIComponent(email)}&limit=1`),
         supabaseRequest(env, `ktn_students?email=eq.${encodeURIComponent(email)}&limit=1`),
         getStudentCredentialMeta(env, email).catch(() => null),
-        getAdminCredentialMeta(env, email).catch(() => null)
+        getAdminCredentialMeta(env, email).catch(() => null),
+        supabaseRequest(env, `ktn_advisors?email=eq.${encodeURIComponent(email)}&limit=1`).catch(() => ({ ok: false, data: [] }))
       ]);
       const preloadedStuRow =
         existingStuLoginRes.ok && Array.isArray(existingStuLoginRes.data) && existingStuLoginRes.data[0]
           ? existingStuLoginRes.data[0]
           : null;
+      const rawAdvisorRow = advRes?.ok && Array.isArray(advRes.data) && advRes.data[0] ? advRes.data[0] : null;
       let sbTeacher = null;
       if (tRes.ok && Array.isArray(tRes.data) && tRes.data.length > 0) {
         const teacherRow = tRes.data[0];
@@ -12631,6 +12752,14 @@ export default {
         }
         sbTeacher = teacherRow;
       }
+      if (rawAdvisorRow && rawAdvisorRow.active === false && !sbTeacher && !isRotAdmin) {
+        return jsonResponse({
+          ok: false,
+          error: 'ADVISOR_INACTIVE',
+          message: 'Tài khoản tư vấn viên này đã ngừng hoạt động. Vui lòng liên hệ Quản lý học vụ.'
+        }, 403);
+      }
+      const sbAdvisor = rawAdvisorRow && rawAdvisorRow.active !== false ? rawAdvisorRow : null;
       const preloadedTeacherMeta = sbTeacher ? extractTeacherMetaFromRow(sbTeacher) : null;
       const hasAnyCustomPassword = Boolean(
         stuCredMeta?.customPassword || preloadedTeacherMeta?.customPassword || admCredMeta?.customPassword
@@ -12784,6 +12913,7 @@ export default {
         (localStuMatched && !isValidCognitoUuid(preloadedStuRow?.cognito_user_id)) ||
         (sbTeacher && !isValidCognitoUuid(preloadedTeacherMeta?.cognitoUserId) && !localTeacherMatched && Boolean(preloadedTeacherMeta?.passwordHmac || isKtnGvCodeFast)) ||
         (!sbTeacher && !isRotAdmin && preloadedStuRow && !isValidCognitoUuid(preloadedStuRow?.cognito_user_id) && !localStuMatched && Boolean(stuCredMeta?.passwordHmac || isKtn2026StudentFast) && !matchesRotated) ||
+        (sbAdvisor && !sbTeacher && !isRotAdmin) ||
         localAdminMatched
       );
 
@@ -12879,8 +13009,53 @@ export default {
         }
       }
 
+      // Cho phép tư vấn viên / quản lý trong ktn_advisors đăng nhập bằng HMAC, mật khẩu nhân viên, hoặc Supabase Auth
+      if (!sbTeacher && !isRotAdmin && sbAdvisor && !chosen) {
+        const advisorIsManager = sbAdvisor.role === 'manager';
+        const advTargetRole = advisorIsManager ? 'admin' : 'advisor';
+        const allowAdvisorRotated = !admCredMeta?.customPassword && matchesRotated;
+        const allowNonProdQaPass =
+          !isRealProductionHost(request) &&
+          Boolean(String(env.KTN_QA_PASS || '').trim()) &&
+          password === String(env.KTN_QA_PASS || '').trim();
+        if (allowAdvisorRotated || allowNonProdQaPass) {
+          chosen = {
+            id: sbAdvisor.ktn_user_id || sbAdvisor.email,
+            userId: sbAdvisor.ktn_user_id || sbAdvisor.email,
+            email: sbAdvisor.email,
+            name: sbAdvisor.name,
+            roles: [advTargetRole],
+            type: advTargetRole
+          };
+        } else if (env.KTN_CONSULTATION_AUTH_KEY && env.SUPABASE_URL) {
+          try {
+            const sbAuthRes = await fetch(`${String(env.SUPABASE_URL).replace(/\/$/, '')}/auth/v1/token?grant_type=password`, {
+              method: 'POST',
+              headers: { apikey: env.KTN_CONSULTATION_AUTH_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password })
+            });
+            const sbAuthData = await sbAuthRes.json().catch(() => null);
+            if (
+              sbAuthRes.ok &&
+              sbAuthData?.access_token &&
+              sbAuthData?.user?.email_confirmed_at &&
+              normalizeEmail(sbAuthData.user.email) === email
+            ) {
+              chosen = {
+                id: sbAuthData.user.id || sbAdvisor.ktn_user_id || sbAdvisor.email,
+                userId: sbAuthData.user.id || sbAdvisor.ktn_user_id || sbAdvisor.email,
+                email: sbAdvisor.email,
+                name: sbAdvisor.name,
+                roles: [advTargetRole],
+                type: advTargetRole
+              };
+            }
+          } catch {}
+        }
+      }
+
       // Cho phép học sinh có STUDENT_CREDENTIAL_META (hoặc học sinh KTN 2026xxxx với mật khẩu mặc định 12345678) đăng nhập trực tiếp qua HMAC
-      if (!sbTeacher && !isRotAdmin && !admCredMeta?.passwordHmac && (stuCredMeta || preloadedStuRow)) {
+      if (!sbTeacher && !sbAdvisor && !isRotAdmin && !admCredMeta?.passwordHmac && (stuCredMeta || preloadedStuRow)) {
         const isKtn2026Student =
           /^2026\d{4,}$/i.test(String(preloadedStuRow?.code || '').trim()) ||
           /^2026\d{4,}@khongtunhi\.com$/i.test(email);
@@ -12929,7 +13104,8 @@ export default {
 
       const upstreamRoles = Array.isArray(chosen.roles) ? chosen.roles : [];
       const isAdminCandidate = Boolean(
-        (staffHit || chosen.type === 'admin') && (upstreamRoles.includes('root') || upstreamRoles.includes('admin') || isRotAdmin)
+        (staffHit || chosen.type === 'admin' || (sbAdvisor && sbAdvisor.role === 'manager')) &&
+        (upstreamRoles.includes('root') || upstreamRoles.includes('admin') || isRotAdmin || (sbAdvisor && sbAdvisor.role === 'manager'))
       );
       if (isAdminCandidate && password.length < 8 && !matchesAdminSecret) {
         return jsonResponse({ ok: false, message: 'Tài khoản quản trị yêu cầu mật khẩu bảo mật tối thiểu 8 ký tự.' }, 401);
@@ -12940,6 +13116,10 @@ export default {
         role = 'admin';
       } else if (upstreamRoles.includes('teacher') || chosen.type === 'teacher' || Boolean(sbTeacher)) {
         role = 'teacher';
+      } else if (sbAdvisor && sbAdvisor.active !== false) {
+        role = sbAdvisor.role === 'manager' ? 'admin' : 'advisor';
+      } else if (upstreamRoles.includes('advisor') || chosen.type === 'advisor') {
+        role = 'advisor';
       }
 
       // Nếu là học viên: đồng bộ danh sách khóa học thật từ izTeach và lưu ngay vào Supabase ktn_students
@@ -13042,17 +13222,18 @@ export default {
 
       // Không trả izteachAccessToken về trình duyệt (P1.1)
       const sessionObj = {
-        id: sbStudent?.cognito_user_id || chosen.id || chosen.userId || sbTeacher?.code || email,
+        id: sbStudent?.cognito_user_id || chosen.id || chosen.userId || sbTeacher?.code || sbAdvisor?.ktn_user_id || email,
         userId: sbStudent?.cognito_user_id || chosen.id || chosen.userId || email,
         studentId: sbStudent?.code || chosen.studentId || chosen.id || email,
         code: sbStudent?.code || sbTeacher?.code || undefined,
         email,
-        name: sbTeacher?.name || sbStudent?.name || chosen.name || email.split('@')[0],
+        name: sbTeacher?.name || sbAdvisor?.name || sbStudent?.name || chosen.name || email.split('@')[0],
         role,
         roles: [role],
         classCode,
         enrolledClasses,
         ...(role === 'teacher' ? { assignedClasses, assignedCourses } : {}),
+        ...(sbAdvisor ? { advisorRole: sbAdvisor.role === 'manager' ? 'manager' : 'advisor' } : {}),
         hasLiveClass: Boolean(classCode || enrolledClasses.length > 0),
         hasOnlineCourses: onlineCourses.length > 0,
         onlineCourses,
@@ -13194,7 +13375,36 @@ export default {
           }
           cleanSession.hasLiveClass = Boolean(cleanSession.classCode);
         } catch {}
+      } else if (effectiveRole === 'advisor' && cleanSession.email) {
+        try {
+          const advSessRes = await supabaseRequest(
+            env,
+            `ktn_advisors?email=eq.${encodeURIComponent(normalizeEmail(cleanSession.email))}&limit=1`
+          );
+          const advRow = (advSessRes.ok && Array.isArray(advSessRes.data) && advSessRes.data[0]) || null;
+          if (!advRow || advRow.active === false) {
+            return jsonResponse({
+              ok: false,
+              authenticated: false,
+              error: 'ADVISOR_ACCOUNT_LOCKED',
+              message: 'Tài khoản tư vấn viên đang tạm khóa hoặc chưa được phân quyền.'
+            }, 403);
+          }
+          if (advRow.name) {
+            cleanSession.name = String(advRow.name).trim();
+          }
+          if (advRow.role === 'manager') {
+            cleanSession.role = 'admin';
+            cleanSession.roles = ['admin'];
+            cleanSession.advisorRole = 'manager';
+          } else {
+            cleanSession.role = 'advisor';
+            cleanSession.roles = ['advisor'];
+            cleanSession.advisorRole = 'advisor';
+          }
+        } catch {}
       }
+      const resolvedSessionRole = cleanSession.role || effectiveRole;
       const refreshedToken = await signSessionToken(cleanSession, env.KTN_SESSION_SECRET);
       const cookieVal = encodeURIComponent(refreshedToken);
       return jsonResponse({
@@ -13204,7 +13414,7 @@ export default {
         user: cleanSession,
         token: refreshedToken,
         serverNow: sessNowIso,
-        redirectUrl: getRoleTargetPage(effectiveRole)
+        redirectUrl: getRoleTargetPage(resolvedSessionRole)
       }, 200, {
         'Set-Cookie': `ktn_webapp_token=${cookieVal}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`
       });
@@ -16831,7 +17041,8 @@ export default {
     if ((path === '/api/ktn/students' || path === '/api/ktn/admin/students/search') && request.method === 'GET') {
       const startedMs = Date.now();
       const session = await extractSessionFromRequest(request, env);
-      if (!session || (session.role !== 'admin' && session.role !== 'teacher')) {
+      const isAllowedAdvisorSearch = path === '/api/ktn/admin/students/search' && session?.role === 'advisor';
+      if (!session || (session.role !== 'admin' && session.role !== 'teacher' && !isAllowedAdvisorSearch)) {
         return jsonResponse({ ok: false, message: 'Chỉ Quản lý hoặc Giáo viên mới được xem hoặc tìm kiếm danh sách học viên.' }, 403);
       }
 
@@ -16877,8 +17088,34 @@ export default {
       }
 
       const sanitizeForRole = (rows) => {
-        if (session.role !== 'teacher') return rows;
+        if (session.role === 'admin') return rows;
         return rows.map(({ internal_note, last_sync_error, ...safeRow }) => safeRow);
+      };
+
+      const enrichStudentsWithAdvisor = async (studentRows) => {
+        if (!Array.isArray(studentRows) || studentRows.length === 0 || session.role === 'teacher') {
+          return studentRows;
+        }
+        const consultIds = Array.from(
+          new Set(studentRows.map(r => r?.consultation_id).filter(Boolean).map(String))
+        );
+        if (consultIds.length === 0) return studentRows;
+        const cRes = await supabaseRequest(
+          env,
+          `ktn_consultations?id=in.(${consultIds.map(id => encodeURIComponent(id)).join(',')})&select=id,owner_email,zalo_user_id,source_tag`
+        ).catch(() => null);
+        if (!cRes?.ok || !Array.isArray(cRes.data)) return studentRows;
+        const cMap = new Map(cRes.data.map(c => [String(c.id), c]));
+        return studentRows.map(row => {
+          const linked = row?.consultation_id ? cMap.get(String(row.consultation_id)) : null;
+          if (!linked) return row;
+          return {
+            ...row,
+            assigned_advisor: row.assigned_advisor ?? linked.owner_email ?? null,
+            lead_source: row.lead_source || linked.source_tag || null,
+            zalo_user_id: row.zalo_user_id || linked.zalo_user_id || null
+          };
+        });
       };
 
       const lifecycleMap = await loadAllStudentLifecycleStates(env).catch(() => new Map());
@@ -16957,7 +17194,7 @@ export default {
           return enriched;
         }).filter(shouldIncludeByLifecycle));
         const filteredOutInWindow = Math.max(0, rpcRows.length - filteredRows.length);
-        const enrichedPage = filteredRows.slice(0, pageLimit);
+        const enrichedPage = await enrichStudentsWithAdvisor(filteredRows.slice(0, pageLimit));
         const totalCount = Math.max(
           enrichedPage.length,
           rawRpcTotalCount - Math.max(filteredOutInWindow, pageOffset === 0 && rpcRows.length < rpcLimit ? filteredOutInWindow : 0)
@@ -17197,6 +17434,7 @@ export default {
         totalCount = rankedList.length;
         pageItems = sanitizeForRole(rankedList.slice(pageOffset, pageOffset + pageLimit));
       }
+      pageItems = await enrichStudentsWithAdvisor(pageItems);
 
       const hasMore = pageOffset + pageItems.length < totalCount;
       const nextCursor = hasMore ? String(pageOffset + pageItems.length) : null;
@@ -17456,6 +17694,9 @@ export default {
           phone,
           parentName,
           parentPhone,
+          leadSource: body.leadSource ?? body.lead_source,
+          zaloUserId: body.zaloUserId ?? body.zalo_user_id,
+          consultationId: body.consultationId ?? body.consultation_id,
           cognitoUserId: prov.cognitoUserId,
           izteachStudentId: prov.izteachStudentId,
           addCourseIds: body.replaceCourses ? [] : (Array.isArray(prov.allCourseIds) ? prov.allCourseIds : resolvedCourseIds),
@@ -18422,6 +18663,9 @@ export default {
         phone: body.phone,
         parentName: body.parentName ?? body.parent_name,
         parentPhone: body.parentPhone ?? body.parent_phone,
+        leadSource: body.leadSource ?? body.lead_source,
+        zaloUserId: body.zaloUserId ?? body.zalo_user_id,
+        consultationId: body.consultationId ?? body.consultation_id,
         cognitoUserId,
         izteachStudentId,
         addCourseIds: action === 'grant' ? resolvedIds : [],
@@ -21867,6 +22111,13 @@ export default {
         nextMeta.credential_handed_off_by = body.credentialHandedOff ? session.email : null;
       }
 
+      const rawAssignedAdvisor = body.assignedAdvisor !== undefined ? body.assignedAdvisor : body.assigned_advisor;
+      if (rawAssignedAdvisor !== undefined) {
+        const cleanAdv = rawAssignedAdvisor === null ? null : (String(rawAssignedAdvisor).trim().toLowerCase() || null);
+        patchPayload.assigned_advisor = cleanAdv;
+        nextMeta.assigned_advisor = cleanAdv;
+      }
+
       if (body.durationPreset !== undefined || body.preset !== undefined) {
         const parsedDurPreset = normalizeCourseDurationPreset(body.durationPreset ?? body.preset, null);
         if (parsedDurPreset && existingOrd.approval_status !== 'approved') {
@@ -21884,11 +22135,19 @@ export default {
       const nextCustomerNote = body.customerNote !== undefined ? String(body.customerNote).trim() : prevCustomerNote;
       patchPayload.note = serializeOrderNoteWithMeta(nextCustomerNote, nextMeta);
 
-      const patchRes = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
+      let patchRes = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
         method: 'PATCH',
         prefer: 'return=representation',
         body: patchPayload
       });
+      if ((!patchRes || !patchRes.ok) && patchRes?.status === 400 && Object.prototype.hasOwnProperty.call(patchPayload, 'assigned_advisor')) {
+        const { assigned_advisor: _omitAdv, ...legacyPatchPayload } = patchPayload;
+        patchRes = await supabaseRequest(env, `ktn_orders?order_id=eq.${encodeURIComponent(orderId)}`, {
+          method: 'PATCH',
+          prefer: 'return=representation',
+          body: legacyPatchPayload
+        });
+      }
 
       if (!patchRes || !patchRes.ok || !Array.isArray(patchRes.data) || !patchRes.data[0]) {
         return jsonResponse({
@@ -21905,7 +22164,7 @@ export default {
       });
     }
 
-    if (path === '/api/ktn/orders' && request.method === 'GET') {
+    if ((path === '/api/ktn/orders' || path === '/api/ktn/admin/orders') && request.method === 'GET') {
       const session = await extractSessionFromRequest(request, env);
       if (!session || session.role !== 'admin') {
         return jsonResponse({ ok: false, message: 'Chỉ Quản lý (Admin) mới được xem danh sách đơn hàng.' }, 403);
@@ -21935,7 +22194,24 @@ export default {
         });
       }
 
-      let orders = (Array.isArray(sbRes.data) ? sbRes.data : []).map(ord => enrichOrderForResponse(ord, existingStudentMap));
+      const rawOrders = Array.isArray(sbRes.data) ? sbRes.data : [];
+      const consultationIds = Array.from(
+        new Set(rawOrders.map(ord => ord?.consultation_id).filter(Boolean).map(String))
+      );
+      const consultationMap = new Map();
+      if (consultationIds.length > 0) {
+        const cRes = await supabaseRequest(
+          env,
+          `ktn_consultations?id=in.(${consultationIds.map(id => encodeURIComponent(id)).join(',')})&select=id,channel,owner_email,zalo_user_id,source_tag`
+        ).catch(() => null);
+        if (cRes?.ok && Array.isArray(cRes.data)) {
+          for (const c of cRes.data) {
+            if (c?.id) consultationMap.set(String(c.id), c);
+          }
+        }
+      }
+
+      let orders = rawOrders.map(ord => enrichOrderForResponse(ord, existingStudentMap, consultationMap));
 
       if (paymentFilter && paymentFilter !== 'ALL') {
         orders = orders.filter(o => o.payment_status === paymentFilter);
@@ -21983,7 +22259,13 @@ export default {
             o.raw_student_email,
             o.phone,
             o.course_name,
-            o.payment_tx_ref
+            o.payment_tx_ref,
+            o.source,
+            o.source_label,
+            o.assigned_advisor,
+            o.owner_email,
+            o.consultation_id,
+            o.zalo_user_id
           ].join(' '));
           return tokens.every(tok => hay.includes(tok));
         });

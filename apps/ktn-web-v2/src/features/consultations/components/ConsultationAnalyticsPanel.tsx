@@ -4,7 +4,7 @@ import { Download, BarChart3, ExternalLink } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useUiStore } from '@/stores/useUiStore';
-import { formatVnd } from '@/lib/utils';
+import { formatVnd, getHoChiMinhCalendarDateString } from '@/lib/utils';
 import type {
   ConsultationAdvisor,
   ConsultationChannel,
@@ -70,8 +70,9 @@ export const ConsultationAnalyticsPanel: React.FC<ConsultationAnalyticsPanelProp
 }) => {
   const { lang, tr } = useI18n();
   const addToast = useUiStore((s) => s.addToast);
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+  const nowMs = Date.now();
+  const today = getHoChiMinhCalendarDateString(nowMs);
+  const weekAgo = getHoChiMinhCalendarDateString(nowMs - 6 * 86400_000);
 
   const [fromDate, setFromDate] = useState(weekAgo);
   const [toDate, setToDate] = useState(today);

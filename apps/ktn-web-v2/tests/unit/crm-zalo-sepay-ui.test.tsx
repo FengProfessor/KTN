@@ -16,6 +16,7 @@ import { AppRouter } from '@/app/router/AppRouter';
 import { getRoleNavigation } from '@/app/navigation/navigationConfig';
 import { detectDlpViolation, resolveNotificationLink, sanitizePostLoginRedirect } from '@/lib/utils';
 import { ConsultationCrmWorkspace } from '@/features/consultations/ConsultationCrmWorkspace';
+import { ConsultationAnalyticsPanel } from '@/features/consultations/components/ConsultationAnalyticsPanel';
 import { CreateConsultationOrderModal } from '@/features/consultations/components/ConsultationActionModals';
 import { WebChatbotWidget } from '@/features/consultations/WebChatbotWidget';
 import {
@@ -2161,6 +2162,52 @@ describe('Milestone M4 — KTN Zalo OA CRM, Hybrid Chatbot UI & SePay Reconcilia
       await waitFor(() => {
         expect(screen.queryByTestId(/^web-chatbot-qr-/)).not.toBeInTheDocument();
       });
+    });
+
+    it('initializes ConsultationAnalyticsPanel default dates in Vietnam +07:00 during the 17:00-23:59 UTC window', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        // 2026-11-18T18:30:00.000Z === 2026-11-19 01:30:00 +07:00
+        vi.setSystemTime(new Date('2026-11-18T18:30:00.000Z'));
+
+        const reportSpy = vi.spyOn(ktnApi, 'getConsultationReport').mockResolvedValue({
+          start: '2026-11-13T00:00:00+07:00',
+          end: '2026-11-19T23:59:59+07:00',
+          responseMinutes: 2.0,
+          conversations: [],
+          assigned: [],
+          overdue: [],
+          flags: [],
+          paid: [],
+          revenue: 0,
+        });
+
+        render(
+          <QueryClientProvider client={makeQueryClient()}>
+            <ConsultationAnalyticsPanel
+              isDemoMode={false}
+              advisors={SAMPLE_ADVISORS}
+              onOpenThread={vi.fn()}
+            />
+          </QueryClientProvider>
+        );
+
+        await waitFor(() => {
+          expect(reportSpy).toHaveBeenCalledWith({
+            from: '2026-11-13',
+            to: '2026-11-19',
+            channel: undefined,
+            owner: undefined,
+          });
+        });
+
+        const dateInputs = Array.from(
+          document.querySelectorAll('input[type="date"]')
+        ) as HTMLInputElement[];
+        expect(dateInputs.map((el) => el.value)).toEqual(['2026-11-13', '2026-11-19']);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

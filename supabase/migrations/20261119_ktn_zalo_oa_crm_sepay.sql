@@ -325,10 +325,7 @@ BEGIN
     nullif(btrim(p_payload->>'client_request_id'), ''),
     CASE WHEN coalesce(p_payload->>'external_id', '') LIKE 'staff:%' THEN p_payload->>'external_id' ELSE NULL END
   );
-  v_msg_ext_id := CASE
-    WHEN v_client_req_id IS NOT NULL AND delivery_state = 'queued' THEN NULL
-    ELSE nullif(p_payload->>'external_id', '')
-  END;
+  v_msg_ext_id := nullif(p_payload->>'external_id', '');
 
   INSERT INTO public.ktn_consultation_messages (consultation_id, sender, actor_email, body, external_id, client_request_id, delivery)
   VALUES (c.id, sender_type, p_actor, text_body, v_msg_ext_id, v_client_req_id, delivery_state)

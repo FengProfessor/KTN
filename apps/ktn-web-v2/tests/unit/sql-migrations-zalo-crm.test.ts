@@ -859,4 +859,83 @@ describe('SQL Migration 20261119_ktn_zalo_oa_crm_sepay (Offline PGlite)', () => 
     );
     expect(srRecon[0].res.ok).toBe(true);
   }, 30_000);
+
+  it('preserves staff:... external_id on failed Zalo outbox complete_send while retaining replay dedup', async () => {
+    const db = await createMigratedDb();
+
+    await db.query(`INSERT INTO public.ktn_advisors (email, name, active) VALUES ('adv@khongtunhi.com', 'Adv', true)`);
+
+    const first = await runAsServiceRole<{ res: { conversation: { id: string } } }>(
+      db,
+      `SELECT public.ktn_consultation_upsert_zalo_inbound($1, $2, $3, $4::jsonb) AS res`,
+      ['zmsg-fail-ext-1', 'user_send_text', 'zalo-fail-ext-user', JSON.stringify({ body: 'Tư vấn giúp mình' })]
+    );
+    const convId = first[0].res.conversation.id;
+
+    await runAsServiceRole(
+      db,
+      `SELECT public.ktn_consultation_action($1, 'assign', 'mgr@khongtunhi.com', true, $2::jsonb)`,
+      [convId, JSON.stringify({ email: 'adv@khongtunhi.com' })]
+    );
+
+    const extId = `staff:${convId}:44444444-4444-4444-8444-444444444444`;
+    const replyRes = await runAsServiceRole<{
+      res: {
+        error?: string;
+        message?: { id: string; delivery: string; external_id: string | null; client_request_id: string | null };
+      };
+    }>(
+      db,
+      `SELECT public.ktn_consultation_action($1, 'reply', 'adv@khongtunhi.com', false, $2::jsonb) AS res`,
+      [convId, JSON.stringify({ body: 'Tin nhắn gửi thử', external_id: extId })]
+    );
+    expect(replyRes[0].res.error).toBeUndefined();
+    expect(replyRes[0].res.message?.delivery).toBe('queued');
+    expect(replyRes[0].res.message?.external_id).toBe(extId);
+    expect(replyRes[0].res.message?.client_request_id).toBe(extId);
+
+    const outbox = await runAsServiceRole<{ id: string; delivery: string }>(
+      db,
+      `SELECT id, delivery FROM public.ktn_consultation_take_outbox($1)`,
+      [convId]
+    );
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0].delivery).toBe('sending');
+
+    await runAsServiceRole(
+      db,
+      `SELECT public.ktn_consultation_complete_send($1, NULL, $2)`,
+      [outbox[0].id, 'Zalo OA chưa xác nhận gửi. Kiểm tra trước khi gửi lại.']
+    );
+
+    const msgCheck = await db.query<{
+      delivery: string;
+      delivery_note: string | null;
+      external_id: string | null;
+      client_request_id: string | null;
+    }>(
+      `SELECT delivery, delivery_note, external_id, client_request_id FROM public.ktn_consultation_messages WHERE external_id = $1`,
+      [extId]
+    );
+    expect(msgCheck.rows).toHaveLength(1);
+    expect(msgCheck.rows[0]).toEqual({
+      delivery: 'failed',
+      delivery_note: 'Zalo OA chưa xác nhận gửi. Kiểm tra trước khi gửi lại.',
+      external_id: extId,
+      client_request_id: extId
+    });
+
+    const convCheck = await db.query<{ first_reply_at: string | null }>(
+      `SELECT first_reply_at FROM public.ktn_consultations WHERE id = $1`,
+      [convId]
+    );
+    expect(convCheck.rows[0].first_reply_at).toBeNull();
+
+    const replay = await runAsServiceRole<{ res: { duplicate?: boolean } }>(
+      db,
+      `SELECT public.ktn_consultation_action($1, 'reply', 'adv@khongtunhi.com', false, $2::jsonb) AS res`,
+      [convId, JSON.stringify({ body: 'Tin nhắn gửi thử', external_id: extId })]
+    );
+    expect(replay[0].res.duplicate).toBe(true);
+  }, 30_000);
 });

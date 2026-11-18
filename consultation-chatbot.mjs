@@ -15,7 +15,7 @@ export const UNVERIFIED_ADULT_CLAIMS_RE =
   /80%\s*thực\s*hành|đầu\s*ra\s*sau\s*8\s*buổi|rút\s*ngắn\s*một\s*nửa\s*thời\s*gian|cam\s*kết\s*đỗ|đảm\s*bảo\s*đầu\s*ra/i;
 
 const BANK_NAME_PATTERN =
-  'mb\\s*bank|mbb|vietcom\\s*bank|vcb|vietin\\s*bank|techcom\\s*bank|tcb|sacom\\s*bank|agri\\s*bank|bidv|acb|vp\\s*bank|vpb|tp\\s*bank|hd\\s*bank|shb|msb';
+  'mbb|mb\\s*bank|mb|vietcom\\s*bank|vcb|vietin\\s*bank|techcom\\s*bank|tcb|sacom\\s*bank|agri\\s*bank|bidv|acb|vp\\s*bank|vpb|tp\\s*bank|hd\\s*bank|shb|msb';
 
 export const FORBIDDEN_BANK_INFO_RE = new RegExp(
   `(?<=^|[^\\p{L}\\p{N}_])(?:(?:stk|tk|(?:số\\s*)?tài\\s*khoản|account\\s*(?:no|number)|${BANK_NAME_PATTERN})(?:[\\s:–-]+(?:ngân\\s*hàng|của(?:\\s+[^\\d\\s:–.,!?-]+){1,3}|số|là|${BANK_NAME_PATTERN})){0,4}[\\s:–-]+(?:\\d[\\s.-]*){6,}|(?:\\d[\\s.-]*){6,}\\s*\\(?\\s*(?:${BANK_NAME_PATTERN})(?=$|[^\\p{L}\\p{N}_]))`,
@@ -35,7 +35,7 @@ const LIVE_OR_SCHEDULE_HANDOFF_RE =
   uRegex('1\\s*kèm\\s*1|1\\s*:\\s*1|1-1|gia\\s*sư|lớp\\s*live|học\\s*trực\\s*tiếp\\s*với|học\\s*thử|giữ\\s*lịch|có\\s*cô\\s*không|lịch\\s*học|tăng\\s*ca|bù\\s*buổi|học\\s*bù|bảo\\s*lưu|chọn\\s*giáo\\s*viên|chuyển\\s*ca|đổi\\s*lịch');
 
 const PAYMENT_ABNORMAL_HANDOFF_RE =
-  uRegex('chuyển\\s*(?:nhầm|thiếu|thừa|hai\\s*lần|2\\s*lần)|đã\\s*chuyển\\s*(?:tiền|khoản).*(?:chưa|không)\\s*(?:mở|thấy)|hoàn\\s*tiền|trả\\s*góp|hóa\\s*đơn\\s*vat|giảm\\s*giá|khuyến\\s*mãi|sai\\s*số\\s*tiền|bị\\s*trừ\\s*tiền|chưa\\s*thấy\\s*mở\\s*khóa');
+  uRegex('chuyển\\s*(?:nhầm|thiếu|thừa|hai\\s*lần|2\\s*lần)|(?:đã\\s*(?:chuyển\\s*(?:tiền|khoản)|thanh\\s*toán)|(?:chuyển\\s*(?:tiền|khoản)|thanh\\s*toán)\\s*(?:rồi|xong|nhưng|mà)).*(?:chưa|không)\\s*(?:mở|thấy|nhận|kích\\s*hoạt|vào)|hoàn\\s*tiền|trả\\s*góp|hóa\\s*đơn\\s*vat|giảm\\s*giá|khuyến\\s*mãi|sai\\s*số\\s*tiền|bị\\s*trừ\\s*tiền|chưa\\s*(?:thấy\\s*)?(?:mở\\s*(?:khóa|video|lớp)|kích\\s*hoạt)');
 
 const EXAM_OR_EXCEPTION_HANDOFF_RE =
   uRegex('lịch\\s*thi|ngày\\s*thi|lệ\\s*phí\\s*thi|thi\\s*hộ|đăng\\s*ký\\s*thi|khiếu\\s*nại|phản\\s*ánh|xóa\\s*thông\\s*tin|dữ\\s*liệu\\s*cá\\s*nhân|kiểm\\s*tra\\s*đầu\\s*vào|nhảy\\s*cấp');
@@ -103,7 +103,8 @@ function hasPhoneLikeSequence(value) {
 }
 
 function extractPhoneFromText(text) {
-  const matches = String(text || '').match(/(?:\+?84|0)(?:[ .-]*\d){8,11}\b/g) || [];
+  const matches =
+    String(text || '').match(/(?<=^|[^\p{L}\p{N}_])(?:\+?84|0)(?:[ .-]*\d){8,11}(?=$|[^\p{L}\p{N}_])/gu) || [];
   for (const raw of matches) {
     const valid = normalizeVnPhone(raw);
     if (valid) return valid;
@@ -111,14 +112,21 @@ function extractPhoneFromText(text) {
   return undefined;
 }
 
+const SLOT_TOD = '(?:buổi\\s*)?(?:tối|sáng|chiều|trưa)';
+const SLOT_DAY = '(?:cuối\\s*tuần|thứ\\s*[2-7]|chủ\\s*nhật|mai|hôm\\s*nay|tuần\\s*(?:sau|này)|hàng\\s*tuần)';
+const SLOT_CLOCK = '\\d{1,2}\\s*(?:h(?:\\d{2})?|giờ(?:\\s*\\d{1,2})?|:\\d{2})';
+const SLOT_PART = `(?:${SLOT_TOD}|${SLOT_DAY}|${SLOT_CLOCK})`;
+const TIMESLOT_RE = new RegExp(
+  `(?<=^|[^\\p{L}\\p{N}_])${SLOT_PART}(?:\\s+(?:lúc\\s+)?${SLOT_PART}){0,3}(?=$|[^\\p{L}\\p{N}_])`,
+  'giu'
+);
+
 function extractTimeslot(text, norm) {
-  const rawMatch = String(text || '').match(
-    /(?:(?:buổi\s*)?(?:tối|sáng|chiều|trưa)|cuối\s*tuần|thứ\s*[2-7]|chủ\s*nhật)\s*(?:\d{1,2}\s*(?:h|giờ|:?\d{2})?)?(?:\s*(?:mai|hôm\s*nay|tuần\s*sau|hàng\s*tuần))?/iu
-  );
-  if (rawMatch) {
-    const candidate = tidy(rawMatch[0], 60);
+  const matches = String(text || '').match(TIMESLOT_RE) || [];
+  for (const raw of matches) {
+    const candidate = tidy(raw, 60);
     if (/\d|cuối\s*tuần|thứ|chủ\s*nhật|tối|sáng|chiều/iu.test(candidate) &&
-        /(?:mai|tuần|giờ|\d+h|\d+:\d+|tối|cuối\s*tuần|buổi\s*(?:sáng|chiều|tối))/iu.test(candidate)) {
+        /(?:mai|tuần|giờ|\d+\s*h|\d+:\d+|tối|cuối\s*tuần|buổi\s*(?:sáng|chiều|tối))/iu.test(candidate)) {
       return candidate;
     }
   }

@@ -290,6 +290,38 @@ export async function notifyOrder(env, store, order, result) {
   throw new Error('Thiếu cấu hình gửi email xác nhận đơn hàng');
 }
 
+async function escalateReconciliationNeedsReview(store, payment, order = null) {
+  const nowIso = new Date().toISOString();
+  const patched = await store
+    .patch('ktn_sepay_reconciliation_logs?transaction_id=eq.' + defaultEq(payment.transaction_id), {
+      kind: 'needs_review',
+      resolution_status: 'open',
+      resolved_by: null,
+      resolved_at: null,
+      updated_at: nowIso
+    })
+    .catch(() => null);
+  if (Array.isArray(patched) && patched.length > 0) {
+    return patched[0];
+  }
+  return store
+    .rpc('log_sepay_reconciliation', {
+      p_transaction_id: payment.transaction_id,
+      p_kind: 'needs_review',
+      p_amount: Number(payment.amount || 0),
+      p_order_id: payment.order_id || order?.order_id || null,
+      p_claimed_order_code: payment.order_id || order?.order_id || null,
+      p_expected_amount: order?.amount ?? null,
+      p_account_number: null,
+      p_transfer_content: payment.order_id ? 'KTN ' + payment.order_id : null,
+      p_raw_payload: {
+        source: 'processPayments',
+        attempts: Number(payment.attempts || 0)
+      }
+    })
+    .catch(() => null);
+}
+
 export async function processPayments(env, deps, store, orderId = null) {
   const payments = rows(await store.rpc('take_payment', { p_order: orderId }));
   for (const payment of payments) {
@@ -298,10 +330,12 @@ export async function processPayments(env, deps, store, orderId = null) {
       defaultEq(payment.transaction_id) +
       '&attempts=eq.' +
       payment.attempts;
+    let order = null;
     try {
-      const order = await store.one('ktn_orders?order_id=eq.' + defaultEq(payment.order_id));
+      order = await store.one('ktn_orders?order_id=eq.' + defaultEq(payment.order_id));
       if (order?.payment_status !== 'paid' || order.approval_status === 'rejected') {
         await store.patch(updatePath, { status: 'needs_review', error: 'Đơn đã thay đổi trạng thái' });
+        await escalateReconciliationNeedsReview(store, payment, order);
         continue;
       }
 
@@ -311,6 +345,7 @@ export async function processPayments(env, deps, store, orderId = null) {
           status: 'needs_review',
           error: 'Đơn thiếu email học viên để cấp quyền'
         });
+        await escalateReconciliationNeedsReview(store, payment, order);
         continue;
       }
 
@@ -347,10 +382,14 @@ export async function processPayments(env, deps, store, orderId = null) {
       });
 
       if (!result?.ok) {
+        const nextStatus = result?.retryable === false || payment.attempts >= 6 ? 'needs_review' : 'accepted';
         await store.patch(updatePath, {
-          status: result?.retryable === false || payment.attempts >= 6 ? 'needs_review' : 'accepted',
+          status: nextStatus,
           error: 'Chưa đồng bộ được tài khoản hoặc khóa học'
         });
+        if (nextStatus === 'needs_review') {
+          await escalateReconciliationNeedsReview(store, payment, order);
+        }
         continue;
       }
 
@@ -388,10 +427,14 @@ export async function processPayments(env, deps, store, orderId = null) {
         })
         .catch(() => null);
     } catch {
+      const nextStatus = payment.attempts >= 6 ? 'needs_review' : 'accepted';
       await store.patch(updatePath, {
-        status: payment.attempts >= 6 ? 'needs_review' : 'accepted',
+        status: nextStatus,
         error: 'Lỗi cấp quyền hoặc gửi email. Cần kiểm tra chi tiết đơn.'
       });
+      if (nextStatus === 'needs_review') {
+        await escalateReconciliationNeedsReview(store, payment, order);
+      }
     }
   }
 }

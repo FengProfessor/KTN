@@ -503,6 +503,10 @@ describe('M3 SePay, Unified CRM, RBAC, P0001 Fix & Middleware Integration', () =
     expect(noEmailOrdDb.rows[0]).toEqual({ payment_status: 'paid', approval_status: 'pending' });
     const noEmailPayDb = await world.db.query("SELECT status, error FROM public.ktn_consultation_payments WHERE transaction_id = 'sepay:77702'");
     expect(noEmailPayDb.rows[0].status).toBe('needs_review');
+    const noEmailReconDb = await world.db.query(
+      "SELECT kind, resolution_status FROM public.ktn_sepay_reconciliation_logs WHERE transaction_id = 'sepay:77702'"
+    );
+    expect(noEmailReconDb.rows[0]).toEqual({ kind: 'needs_review', resolution_status: 'open' });
   });
 
   it('4. supports unified KTN Session + Supabase JWT RBAC, assign 403, link_student, inbox?search=, report.csv escaping, advisors role, guidance PII/sandbox, and T2-ZALO-F12-01 reply replay', async () => {
@@ -1528,5 +1532,179 @@ describe('M3 SePay, Unified CRM, RBAC, P0001 Fix & Middleware Integration', () =
     expect(payRow?.status).toBe('done');
     expect(payRow?.attempts).toBe(1);
     expect(updatedOrd?.approval_status).toBe('approved');
+  });
+
+  it('12. preserves staff:... external_id and first_reply_at=null on live Zalo outbox failure (missing token and 502)', async () => {
+    const adminToken = mintKtnSession({ email: 'quanly@khongtunhi.com', name: 'Quản Lý KTN', role: 'admin' });
+    const advAnToken = mintKtnSession({ email: 'advisor.an@khongtunhi.com', name: 'Tư Vấn An', role: 'advisor' });
+
+    Object.assign(world.env, { KTN_ZALO_SANDBOX: 'false' });
+    const zRes = await world.postZaloEvent({
+      event_name: 'user_send_text',
+      sender: { id: 'zalo-outbox-fail-1', name: 'Phụ Huynh Fail' },
+      message: { msg_id: 'msg-outbox-fail-1', text: 'Gặp tư vấn viên' }
+    });
+    expect(zRes.status).toBe(200);
+    const convId = zRes.json.consultation_id;
+
+    await world.request(`/api/ktn/consultations/staff/thread/${convId}/assign`, {
+      method: 'POST',
+      token: adminToken,
+      json: { email: 'advisor.an@khongtunhi.com' }
+    });
+
+    // (a) Missing KTN_ZALO_OA_ACCESS_TOKEN -> 0 new /oa/message/cs calls, preserves external_id='staff:...'
+    const savedToken = world.env.KTN_ZALO_OA_ACCESS_TOKEN;
+    const csCallsBefore = world.mocks.upstreamCalls.zalo.filter((c: any) =>
+      String(c.url || '').includes('/oa/message/cs')
+    ).length;
+    world.env.KTN_ZALO_OA_ACCESS_TOKEN = '';
+    const reqIdNoTok = crypto.randomUUID();
+    const resNoTok = await world.request(`/api/ktn/consultations/staff/thread/${convId}/reply`, {
+      method: 'POST',
+      token: advAnToken,
+      json: { request_id: reqIdNoTok, body: 'Gửi khi thiếu access token' }
+    });
+    expect(resNoTok.status).toBe(200);
+    expect(
+      world.mocks.upstreamCalls.zalo.filter((c: any) => String(c.url || '').includes('/oa/message/cs'))
+    ).toHaveLength(csCallsBefore);
+
+    const noTokRow = await world.db.query(
+      'SELECT delivery, delivery_note, external_id FROM public.ktn_consultation_messages WHERE external_id = $1',
+      [`staff:${convId}:${reqIdNoTok}`]
+    );
+    expect(noTokRow.rows).toHaveLength(1);
+    expect(noTokRow.rows[0].delivery).toBe('failed');
+    expect(noTokRow.rows[0].delivery_note).toMatch(/access token/i);
+
+    // (b) Zalo Send API 502 (failZaloSend) -> preserves external_id='staff:...' and first_reply_at=null
+    world.env.KTN_ZALO_OA_ACCESS_TOKEN = savedToken;
+    world.mocks.setFaults({ failZaloSend: true });
+    const reqId502 = crypto.randomUUID();
+    const res502 = await world.request(`/api/ktn/consultations/staff/thread/${convId}/reply`, {
+      method: 'POST',
+      token: advAnToken,
+      json: { request_id: reqId502, body: 'Gửi khi Zalo OA 502' }
+    });
+    expect(res502.status).toBe(200);
+
+    const fail502Row = await world.db.query(
+      'SELECT delivery, delivery_note, external_id FROM public.ktn_consultation_messages WHERE external_id = $1',
+      [`staff:${convId}:${reqId502}`]
+    );
+    expect(fail502Row.rows).toHaveLength(1);
+    expect(fail502Row.rows[0].delivery).toBe('failed');
+    expect(fail502Row.rows[0].delivery_note).toBe('Zalo OA chưa xác nhận gửi. Kiểm tra trước khi gửi lại.');
+
+    const convRow = await world.db.query('SELECT first_reply_at FROM public.ktn_consultations WHERE id = $1', [convId]);
+    expect(convRow.rows[0].first_reply_at).toBeNull();
+  });
+
+  it('13. escalates ktn_sepay_reconciliation_logs.kind to needs_review on 6x provisioning/catch failures and recovers via resolve retry_payment', async () => {
+    const adminToken = mintKtnSession({ email: 'quanly@khongtunhi.com', name: 'Quản Lý KTN', role: 'admin' });
+
+    // (a) 6x izTeach provisioning failure -> reconciliation log escalates to needs_review, then resolve + retry_payment recovers
+    const startWeb = await world.request('/api/ktn/consultations/web/start', { method: 'POST' });
+    const ordRes = await world.request('/api/ktn/consultations/web/order', {
+      method: 'POST',
+      token: startWeb.json.token,
+      json: {
+        requestId: crypto.randomUUID(),
+        courseId: '6adadba969897b0002482ca5',
+        name: 'Bé Esc Six',
+        email: 'escsix@example.com',
+        phone: '0908887766'
+      }
+    });
+    expect(ordRes.status).toBe(200);
+    const orderId = ordRes.json.id;
+
+    world.pgliteSupabase.setFaults({ failIzTeachAddProducts: true });
+    const payRes = await world.postSepay({
+      id: 905101,
+      transferType: 'in',
+      transferAmount: 890000,
+      content: `KTN ${orderId}`,
+      accountNumber: '0987654321'
+    });
+    expect(payRes.status).toBe(201);
+
+    for (let i = 0; i < 6; i += 1) {
+      await world.db.query(
+        "UPDATE public.ktn_consultation_payments SET next_attempt_at = now() - interval '1 minute' WHERE transaction_id = 'sepay:905101'"
+      );
+      await world.scheduled();
+    }
+
+    const payDb = await world.db.query(
+      "SELECT status, attempts FROM public.ktn_consultation_payments WHERE transaction_id = 'sepay:905101'"
+    );
+    expect(payDb.rows[0].status).toBe('needs_review');
+    expect(payDb.rows[0].attempts).toBeGreaterThanOrEqual(6);
+
+    const reconNeedsReview = await world.request(
+      '/api/ktn/consultations/staff/reconciliation?kind=needs_review&resolution_status=open',
+      { token: adminToken }
+    );
+    expect(reconNeedsReview.status).toBe(200);
+    expect(reconNeedsReview.json.items.some((x: any) => x.transaction_id === 'sepay:905101' && x.kind === 'needs_review')).toBe(true);
+
+    const reconAccepted = await world.request(
+      '/api/ktn/consultations/staff/reconciliation?kind=accepted&resolution_status=open',
+      { token: adminToken }
+    );
+    expect(reconAccepted.json.items.some((x: any) => x.transaction_id === 'sepay:905101')).toBe(false);
+
+    world.pgliteSupabase.setFaults({ failIzTeachAddProducts: false });
+    const resolveRes = await world.request('/api/ktn/consultations/staff/reconciliation/sepay%3A905101/resolve', {
+      method: 'POST',
+      token: adminToken,
+      json: { resolution_status: 'resolved', order_id: orderId, retry_payment: true, note: 'Recovered izTeach' }
+    });
+    expect(resolveRes.status).toBe(200);
+    expect(resolveRes.json.log.resolution_status).toBe('resolved');
+
+    const payDone = await world.db.query("SELECT status FROM public.ktn_consultation_payments WHERE transaction_id = 'sepay:905101'");
+    expect(payDone.rows[0].status).toBe('done');
+    const ordApproved = await world.db.query('SELECT approval_status, payment_status FROM public.ktn_orders WHERE order_id = $1', [orderId]);
+    expect(ordApproved.rows[0]).toEqual({ approval_status: 'approved', payment_status: 'paid' });
+
+    // (b) Catch-path 6x failure (notifyOrder throws in live mode with missing mail key) also escalates log to needs_review
+    const startCatch = await world.request('/api/ktn/consultations/web/start', { method: 'POST' });
+    const catchOrd = await world.request('/api/ktn/consultations/web/order', {
+      method: 'POST',
+      token: startCatch.json.token,
+      json: {
+        requestId: crypto.randomUUID(),
+        courseId: '6adadba969897b0002482ca5',
+        name: 'Bé Catch Six',
+        email: 'catchsix@example.com',
+        phone: '0908887755'
+      }
+    });
+    expect(catchOrd.status).toBe(200);
+
+    Object.assign(world.env, { KTN_SEPAY_SANDBOX: 'false', KTN_CONSULTATION_MAIL_KEY: '' });
+    const catchPay = await world.postSepay({
+      id: 905102,
+      transferType: 'in',
+      transferAmount: 890000,
+      content: `KTN ${catchOrd.json.id}`,
+      accountNumber: '0987654321'
+    });
+    expect(catchPay.status).toBe(201);
+
+    for (let i = 0; i < 6; i += 1) {
+      await world.db.query(
+        "UPDATE public.ktn_consultation_payments SET next_attempt_at = now() - interval '1 minute' WHERE transaction_id = 'sepay:905102'"
+      );
+      await world.scheduled();
+    }
+
+    const catchRecon = await world.db.query(
+      "SELECT kind, resolution_status FROM public.ktn_sepay_reconciliation_logs WHERE transaction_id = 'sepay:905102'"
+    );
+    expect(catchRecon.rows[0]).toEqual({ kind: 'needs_review', resolution_status: 'open' });
   });
 });

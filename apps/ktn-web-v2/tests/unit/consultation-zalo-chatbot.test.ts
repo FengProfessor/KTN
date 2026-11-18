@@ -2052,4 +2052,103 @@ describe('M2 Consultation Web Page CSP & Quick-Reply Menu UI (consultation-page.
     expect(resolveScriptedMenu({ menuCommand: 'OPEN_ORDER_FORM', courses: mappedCourses })).toEqual({ handled: false });
     expect(resolveScriptedMenu({ menuCommand: 'UNKNOWN_CMD', courses: mappedCourses })).toEqual({ handled: false });
   });
+
+  it('enforces Tier 2 B1 phone boundaries, B2 standalone MB bank leaks, B3 CA 08 payment-without-unlock handoffs, and multi-token extractTimeslot', async () => {
+    const makeStore = (harness: ReturnType<typeof createInMemoryConsultationHarness>, env: Record<string, unknown>) => ({
+      query: (p: string, o: any) => harness.deps.supabaseRequest(env, p, o).then(r => r.data),
+      one: (p: string) => harness.deps.supabaseRequest(env, p).then(r => (r.data as any[])[0] || null),
+      rpc: (n: string, b: any) => harness.deps.supabaseRequest(env, 'rpc/ktn_consultation_' + n, { method: 'POST', body: b }).then(r => r.data),
+      patch: (p: string, b: any) => harness.deps.supabaseRequest(env, p, { method: 'PATCH', body: b }).then(r => r.data)
+    });
+
+    const runOneTurn = async (text: string, opts: { menuState?: string; leadPayload?: Record<string, unknown> } = {}) => {
+      const h = createInMemoryConsultationHarness();
+      const env = createBaseEnv({ KTN_AI_SANDBOX: 'true', KTN_GEMINI_KEYS: '' });
+      const conv = {
+        id: crypto.randomUUID(),
+        channel: 'web',
+        status: 'bot',
+        lead_meta: opts.menuState ? { menu_state: opts.menuState } : {},
+        owner_email: null
+      };
+      h.state.consultations.push(conv);
+      const msg = { id: crypto.randomUUID(), consultation_id: conv.id, sender: 'customer', body: text, delivery: 'sent' };
+      h.state.messages.push(msg);
+      const aiSpy = vi.fn(async () => ({ reply: '', course_id: '', handoff: false }));
+      const res = await runHybridChatbot({
+        store: makeStore(h, env),
+        env,
+        deps: h.deps,
+        conversation: conv,
+        customerMessage: msg,
+        base: env.KTN_CONSULTATION_PUBLIC_URL,
+        leadPayload: opts.leadPayload,
+        callAi: aiSpy,
+        createTicket: async (id: string, scope: string) => `${scope}.${id}.9999999999999.sig`,
+        guidance: async () => h.state.guidance,
+        catalog: async () => SAMPLE_COURSES.map(c => ({ id: c.course_id, title: c.title, price: c.price, duration: '3 tháng', ageGroup: c.age_group })),
+        action: async (_store: any, id: string, verb: string, payload: any) =>
+          h.deps.supabaseRequest(env, 'rpc/ktn_consultation_action', { method: 'POST', body: { p_id: id, p_action: verb, p_payload: payload } }).then(r => r.data),
+        handoffWithMessage: async () => {}
+      });
+      return { res, conv, aiSpy, messages: h.state.messages };
+    };
+
+    // B1: Reject concatenated fake phone sequences while keeping valid bounded phones
+    for (const badText of [
+      'Mã tham chiếu 1230901234567',
+      'Mã 10901234567',
+      'SĐT của chị là abc0901234567',
+      '0901234567đ'
+    ]) {
+      expect(extractLeadMetadata(badText).phone, `Should reject "${badText}"`).toBeUndefined();
+    }
+    expect(extractLeadMetadata('SĐT:0901234567').phone).toBe('0901234567');
+    expect(extractLeadMetadata('Liên hệ +84912345678').phone).toBe('+84912345678');
+    expect(extractLeadMetadata('Gọi 0901 234 567.').phone).toBe('0901234567');
+
+    const badNeedPhone = await runOneTurn('SĐT của chị là abc0901234567', {
+      menuState: 'MENU_NEED_PHONE',
+      leadPayload: { phone: 'abc0901234567' }
+    });
+    expect(badNeedPhone.res).toMatchObject({ handled: true, mode: 'scripted', menuCommand: 'MENU_NEED_PHONE' });
+    expect((badNeedPhone.conv.lead_meta as any).menu_state).toBe('MENU_NEED_PHONE');
+    expect((badNeedPhone.conv as any).customer_phone).toBeFalsy();
+
+    // B2: Standalone MB bank leaks rejected while safe strings pass
+    expect(hasForbiddenAiOutput('Chuyển khoản STK MB 1234567890')).toBe(true);
+    expect(hasForbiddenAiOutput('Anh chị chuyển khoản MB 0987654321 giúp em')).toBe(true);
+    expect(hasForbiddenAiOutput('Chuyển vào 0123456789 (MB)')).toBe(true);
+    expect(hasForbiddenAiOutput('Tài khoản học được kích hoạt trong 3 tháng')).toBe(false);
+    expect(hasForbiddenAiOutput('File 10MB 123456')).toBe(false);
+
+    // B3: CA 08 payment-without-unlock phrasings force immediate handoff with 0 AI calls
+    for (const ca08Phrase of [
+      'Chị chuyển tiền rồi mà chưa thấy mở video',
+      'Chị đã thanh toán rồi mà học viên chưa thấy bài học',
+      'Chuyển khoản rồi nhưng chưa thấy mở khóa học'
+    ]) {
+      const turn = await runOneTurn(ca08Phrase);
+      expect(turn.res, `"${ca08Phrase}"`).toEqual({ handled: true, mode: 'handoff', reason: 'policy_exception' });
+      expect(turn.aiSpy).not.toHaveBeenCalled();
+    }
+    for (const safePrePurchase of [
+      'Thanh toán xong bao lâu thì nhận email?',
+      'Chị muốn tự mua khóa video cho bé 7 tuổi trên web được không?'
+    ]) {
+      const turn = await runOneTurn(safePrePurchase);
+      expect(turn.res.reason, `"${safePrePurchase}"`).not.toBe('policy_exception');
+    }
+
+    // extractTimeslot: multi-token composable slots
+    const adultSlot = extractLeadMetadata('Chủ yếu nhắn tin WeChat, rảnh tối thứ 3 20h, SĐT 0987654322');
+    expect(adultSlot.timeslot).toBe('tối thứ 3 20h');
+    expect(adultSlot.phone).toBe('0987654322');
+
+    const childOrdinalSlot = extractLeadMetadata('Bé thứ 2 nhà chị rảnh tối thứ 3 lúc 20h');
+    expect(childOrdinalSlot.timeslot).toBe('tối thứ 3 lúc 20h');
+
+    expect(extractLeadMetadata('Hôm nào rảnh thì mình học').timeslot).toBeUndefined();
+    expect(extractLeadMetadata('bé thứ 2 nhà chị').timeslot).toBeUndefined();
+  });
 });

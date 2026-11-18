@@ -1536,7 +1536,7 @@ export function createLocalWorkerHarness() {
         const clientReqId =
           (p_payload?.client_request_id && String(p_payload.client_request_id).trim()) ||
           (rawExtId && rawExtId.startsWith('staff:') ? rawExtId : null);
-        const msgExtId = clientReqId && deliveryState === 'queued' ? null : rawExtId;
+        const msgExtId = rawExtId;
 
         if (msgExtId && messages.some(m => m.external_id === msgExtId)) {
           return { duplicate: true };

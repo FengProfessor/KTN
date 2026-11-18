@@ -31,14 +31,16 @@ export function normalizeVnPhone(raw) {
 
 export function normalizeZaloTimestamp(ts) {
   if (ts === null || ts === undefined || ts === '') return undefined;
-  if (typeof ts === 'number' || /^\d+$/.test(String(ts).trim())) {
-    const raw = Number(String(ts).trim());
+  const trimmed = String(ts).trim();
+  if (!trimmed) return undefined;
+  if (typeof ts === 'number' || /^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+    const raw = Number(trimmed);
     if (!Number.isFinite(raw) || raw <= 0) return undefined;
     const ms = raw < 1e11 ? raw * 1000 : raw;
     const date = new Date(ms);
     return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
   }
-  const date = new Date(String(ts).trim());
+  const date = new Date(trimmed);
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 }
 
@@ -58,10 +60,10 @@ export async function verifyZaloWebhookSignature({ rawBody = '', headers, payloa
     if (!sandboxEnabled) {
       return { ok: false, status: 403, mode: 'sandbox', reason: 'sandbox_disabled' };
     }
-    if (!providedSig) {
+    if (!rawSig) {
       return { ok: true, mode: 'sandbox' };
     }
-  } else if (sandboxHeader && sandboxEnabled && !providedSig) {
+  } else if (sandboxHeader && sandboxEnabled && !rawSig) {
     return { ok: true, mode: 'sandbox' };
   }
 
@@ -91,8 +93,12 @@ function detectZaloSourceTag(body, payload) {
   if (!body) return undefined;
   if (isAdultTutoringRequest(body)) {
     const normalized = body.toLowerCase().replace(/\s+/g, '');
-    if (/1[.,]?500k|1tr5/.test(normalized)) return 'ad_1500k';
-    if (/963k/.test(normalized)) return 'ad_963k';
+    const has1500 = /1[.,]?500k|1tr5/.test(normalized);
+    const has963 = /963k/.test(normalized);
+    if (has963 && has1500) return 'ad_compare';
+    if (has1500) return 'ad_1500k';
+    if (has963) return 'ad_963k';
+    if (/haigóikhácgì|sosánh.*gói/.test(normalized)) return 'ad_compare';
   }
   return undefined;
 }
@@ -135,6 +141,9 @@ export function normalizeZaloWebhookEvent(payload, env = {}) {
   }
   if (sourceTag === 'ad_963k' || sourceTag === 'ad_1500k') {
     leadMeta.ad_package = sourceTag;
+  } else if (sourceTag === 'ad_compare') {
+    leadMeta.ad_package = 'compare_963k_1500k';
+    leadMeta.compared_packages = ['ad_963k', 'ad_1500k'];
   }
 
   const at = normalizeZaloTimestamp(payload.timestamp);

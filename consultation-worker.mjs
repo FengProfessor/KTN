@@ -2,7 +2,7 @@ import { consultationPage } from './consultation-page.mjs';
 import { draftConsultationExamples, draftConsultationPolicy } from './consultation-examples.mjs';
 import { consultationExample, consultationExampleLimit } from './consultation-retrieval.mjs';
 import { handleZaloWebhook, sendZaloMessage } from './consultation-zalo.mjs';
-import { NEED_PHONE_QUICK_REPLIES, ROOT_QUICK_REPLIES, runHybridChatbot } from './consultation-chatbot.mjs';
+import { FAQ_QUICK_REPLIES, NEED_PHONE_QUICK_REPLIES, ROOT_QUICK_REPLIES, runHybridChatbot } from './consultation-chatbot.mjs';
 
 const prefix = '/api/ktn/consultations/';
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
@@ -167,7 +167,7 @@ async function catalog(config, env, deps) {
 function redact(value) {
   return value.replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, '[email]')
     .replace(/(?:\+?84|0)(?:[ .-]*\d){8,11}\b/g, '[số điện thoại]')
-    .replace(/https?:\/\/\S+/g, '[liên kết]');
+    .replace(/(?:https?:\/\/|www\.)\S+/gi, '[liên kết]');
 }
 
 async function ai(env, task, data, schema) {
@@ -198,12 +198,6 @@ async function ai(env, task, data, schema) {
   }
   throw new Error('AI không phản hồi');
 }
-
-const botSchema = {
-  type: 'object', properties: {
-    reply: { type: 'string' }, course_id: { type: 'string' }, handoff: { type: 'boolean' }
-  }, required: ['reply', 'course_id', 'handoff']
-};
 
 async function botReply(store, env, deps, conversation, customerMessage, base, options = {}) {
   return runHybridChatbot({
@@ -266,7 +260,11 @@ async function customerRoute(suffix, request, env, ctx, deps, store) {
     const messages = rows(await store.query('ktn_consultation_messages?consultation_id=eq.' + id +
       '&select=id,sender,body,created_at&delivery=eq.sent&order=created_at.desc,id.desc&limit=100')).reverse();
     const quickReplies = conversation.status === 'bot'
-      ? (conversation.lead_meta?.menu_state === 'MENU_NEED_PHONE' ? NEED_PHONE_QUICK_REPLIES : ROOT_QUICK_REPLIES)
+      ? (conversation.lead_meta?.menu_state === 'MENU_NEED_PHONE'
+        ? NEED_PHONE_QUICK_REPLIES
+        : conversation.lead_meta?.menu_state === 'MENU_FAQ'
+          ? FAQ_QUICK_REPLIES
+          : ROOT_QUICK_REPLIES)
       : [];
     return { status: conversation.status, messages, leadMeta: conversation.lead_meta || {}, quickReplies };
   }
@@ -286,7 +284,7 @@ async function customerRoute(suffix, request, env, ctx, deps, store) {
     } else if (result.message && result.conversation.status === 'waiting') {
       task(ctx, botReply(store, env, deps, result.conversation, result.message, publicBase(env, request), { menuCommand, leadPayload })
         .then(() => store.rpc('auto_assign', { p_id: id })), 'Auto assignment failed');
-    } else if (result.message && (leadPayload || menuCommand)) {
+    } else if (result.message) {
       task(ctx, botReply(store, env, deps, result.conversation, result.message, publicBase(env, request), { menuCommand, leadPayload }), 'Lead sync failed');
     }
     return { accepted: true };
@@ -392,7 +390,7 @@ async function messenger(request, env, ctx, deps, store) {
   return { accepted: true };
 }
 
-async function sendOutbox(env, store, id = null) {
+async function sendOutbox(env, store, id = null, quickReplies = null) {
   for (const message of rows(await store.rpc('take_outbox', { p_id: id }))) {
     if (message.delivery !== 'sending') continue;
     const conversation = await store.one('ktn_consultations?id=eq.' + message.consultation_id);
@@ -405,7 +403,8 @@ async function sendOutbox(env, store, id = null) {
         const sent = await sendZaloMessage(env, {
           userId: conversation.zalo_user_id || conversation.external_id,
           message,
-          conversation
+          conversation,
+          quickReplies: message.sender === 'bot' ? quickReplies : undefined
         });
         if (!sent.ok) throw new RequestError(sent.error || 'Zalo OA chưa xác nhận gửi. Kiểm tra trước khi gửi lại.');
         messageId = sent.externalId;
@@ -776,8 +775,8 @@ export async function handleConsultation(request, env, ctx, deps) {
         RequestError,
         onCustomerMessage: async (conversation, message) => {
           if (conversation.status === 'bot') {
-            await botReply(store, env, deps, conversation, message, publicBase(env, request));
-            await sendOutbox(env, store, conversation.id);
+            const botResult = await botReply(store, env, deps, conversation, message, publicBase(env, request));
+            await sendOutbox(env, store, conversation.id, botResult?.quickReplies);
           } else {
             await botReply(store, env, deps, conversation, message, publicBase(env, request));
             if (conversation.status === 'waiting') {

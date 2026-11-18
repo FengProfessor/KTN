@@ -4,32 +4,38 @@ import { normalizeVnPhone } from './consultation-zalo.mjs';
 const tidy = (input, limit = 4000) => (typeof input === 'string' ? input.trim().slice(0, limit) : '');
 const rows = data => (Array.isArray(data) ? data : []);
 
+const WB_START = '(?<=^|[^\\p{L}\\p{N}_])';
+const WB_END = '(?=$|[^\\p{L}\\p{N}_])';
+const uRegex = (body, flags = 'iu') => new RegExp(`${WB_START}(?:${body})${WB_END}`, flags);
+
 export const FORBIDDEN_AI_OUTPUT_RE =
-  /https?:|www\.|(?:\d[\d., ]*)\s*(?:đồng|vnd|vnđ|₫|đ(?=\W|$)|k\b|triệu|nghìn)|giảm\s+\d|\d\s*%/i;
+  /https?:|www\.|(?:\d[\d., ]*)\s*(?:đồng|vnd|vnđ|₫|đ(?=$|[^\p{L}\p{N}_])|k(?=$|[^\p{L}\p{N}_])|triệu|nghìn|ngàn(?=$|[^\p{L}\p{N}_])|tr(?:\s*\d+)?(?=$|[^\p{L}\p{N}_]))|(?<=^|[^\p{L}\p{N}_])\d{1,3}(?:[.,]\d{3})+(?=$|[^\p{L}\p{N}_])|giảm\s+\d|\d\s*%|(?<=^|[^\p{L}\p{N}_])(?:giảm\s*giá|khuyến\s*mãi|miễn\s*phí|chiết\s*khấu|voucher)(?=$|[^\p{L}\p{N}_])/iu;
 
 export const UNVERIFIED_ADULT_CLAIMS_RE =
   /80%\s*thực\s*hành|đầu\s*ra\s*sau\s*8\s*buổi|rút\s*ngắn\s*một\s*nửa\s*thời\s*gian|cam\s*kết\s*đỗ|đảm\s*bảo\s*đầu\s*ra/i;
 
 export const FORBIDDEN_BANK_INFO_RE =
-  /\b(?:stk|số\s*tài\s*khoản|account\s*no)\s*:?\s*\d{6,}|\b(?:mbbank|vietcombank|techcombank|bidv|acb|vpbank|tpbank)\s*:?\s*\d{6,}/i;
+  /(?<=^|[^\p{L}\p{N}_])(?:stk|(?:số\s*)?tài\s*khoản|account\s*no|mb\s*bank|vietcom\s*bank|vietin\s*bank|techcom\s*bank|sacom\s*bank|agri\s*bank|bidv|acb|vp\s*bank|tp\s*bank|hd\s*bank|shb|msb)\s*:?\s*\d{6,}/iu;
 
 const PROMPT_INJECTION_RE =
-  /bỏ\s*(?:qua\s*)?(?:toàn\s*bộ\s*)?quy\s*định|ignore\s+previous\s+instructions|system\s+prompt|mã\s*(?:ưu\s*đãi|khuyến\s*mãi)\s*nội\s*bộ|đơn\s+của\s+bạn\s+tôi|thông\s*tin\s+(?:khách|người)\s+khác|KTN_GEMINI_KEYS|SUPABASE_SERVICE_ROLE_KEY|KTN_ZALO_APP_SECRET|reveal\s+.*key/iu;
+  /bỏ\s*(?:qua\s*)?(?:toàn\s*bộ\s*)?quy\s*định|ignore\s+(?:all\s+)?(?:previous\s+)?instructions|system\s+prompt|mã\s*(?:ưu\s*đãi|khuyến\s*mãi)\s*nội\s*bộ|đơn\s+của\s+bạn\s+tôi|thông\s*tin\s+(?:khách|người)\s+khác|KTN_GEMINI_KEYS|SUPABASE_SERVICE_ROLE_KEY|KTN_ZALO_APP_SECRET|reveal\s+.*(?:prompt|db|database|key|secret|internal)/iu;
 
 const UNDERAGE_SELF_BUY_RE =
-  /\b(?:em|cháu)\s+là\s+(?:học\s+sinh|trẻ\s+em)|\b(?:em|cháu)\s+(?:mới\s+)?\d{1,2}\s+tuổi|chưa\s+đủ\s+(?:18|mười\s+tám)|không\s+cần\s+(?:ba\s+mẹ|bố\s+mẹ|phụ\s+huynh)|tự\s+(?:mua|chuyển\s+(?:khoản|tiền))/iu;
+  uRegex('(?:em|cháu)\\s+là\\s+(?:học\\s+sinh|trẻ\\s+em)|(?<!(?:con|bé)\\s+)(?:em|cháu)\\s+(?:mới\\s+)?\\d{1,2}\\s+tuổi|chưa\\s+đủ\\s+(?:18|mười\\s+tám)|không\\s+cần\\s+(?:ba\\s+mẹ|bố\\s+mẹ|phụ\\s+huynh)|tự\\s+(?:mua|chuyển\\s+(?:khoản|tiền))');
 
 const EXPLICIT_HUMAN_RE =
-  /\b(?:gặp\s+(?:người|tư\s*vấn|quản\s*lý|cô\s*tư\s*vấn)|nhân\s*viên|tư\s*vấn\s*viên|người\s*thật|hẹn\s*gọi\s*lại|gọi\s*lại)\b/iu;
+  uRegex('gặp\\s+(?:người|tư\\s*vấn|quản\\s*lý|cô\\s*tư\\s*vấn)|nhân\\s*viên|tư\\s*vấn\\s*viên|người\\s*thật|hẹn\\s*gọi\\s*lại|gọi\\s*lại');
 
 const LIVE_OR_SCHEDULE_HANDOFF_RE =
-  /\b(?:1\s*kèm\s*1|1\s*:\s*1|1-1|gia\s*sư|lớp\s*live|học\s*trực\s*tiếp\s*với|học\s*thử|giữ\s*lịch|có\s*cô\s*không|lịch\s*học|tăng\s*ca|bù\s*buổi|học\s*bù|bảo\s*lưu|chọn\s*giáo\s*viên|chuyển\s*ca|đổi\s*lịch)\b/iu;
+  uRegex('1\\s*kèm\\s*1|1\\s*:\\s*1|1-1|gia\\s*sư|lớp\\s*live|học\\s*trực\\s*tiếp\\s*với|học\\s*thử|giữ\\s*lịch|có\\s*cô\\s*không|lịch\\s*học|tăng\\s*ca|bù\\s*buổi|học\\s*bù|bảo\\s*lưu|chọn\\s*giáo\\s*viên|chuyển\\s*ca|đổi\\s*lịch');
 
 const PAYMENT_ABNORMAL_HANDOFF_RE =
-  /\b(?:chuyển\s*(?:nhầm|thiếu|thừa|hai\s*lần|2\s*lần)|đã\s*chuyển\s*(?:tiền|khoản).*(?:chưa|không)\s*(?:mở|thấy)|hoàn\s*tiền|trả\s*góp|hóa\s*đơn\s*vat|giảm\s*giá|khuyến\s*mãi|sai\s*số\s*tiền|bị\s*trừ\s*tiền|chưa\s*thấy\s*mở\s*khóa)\b/iu;
+  uRegex('chuyển\\s*(?:nhầm|thiếu|thừa|hai\\s*lần|2\\s*lần)|đã\\s*chuyển\\s*(?:tiền|khoản).*(?:chưa|không)\\s*(?:mở|thấy)|hoàn\\s*tiền|trả\\s*góp|hóa\\s*đơn\\s*vat|giảm\\s*giá|khuyến\\s*mãi|sai\\s*số\\s*tiền|bị\\s*trừ\\s*tiền|chưa\\s*thấy\\s*mở\\s*khóa');
 
 const EXAM_OR_EXCEPTION_HANDOFF_RE =
-  /\b(?:lịch\s*thi|ngày\s*thi|lệ\s*phí\s*thi|thi\s*hộ|đăng\s*ký\s*thi|khiếu\s*nại|phản\s*ánh|xóa\s*thông\s*tin|dữ\s*liệu\s*cá\s*nhân|kiểm\s*tra\s*đầu\s*vào|nhảy\s*cấp)\b/iu;
+  uRegex('lịch\\s*thi|ngày\\s*thi|lệ\\s*phí\\s*thi|thi\\s*hộ|đăng\\s*ký\\s*thi|khiếu\\s*nại|phản\\s*ánh|xóa\\s*thông\\s*tin|dữ\\s*liệu\\s*cá\\s*nhân|kiểm\\s*tra\\s*đầu\\s*vào|nhảy\\s*cấp');
+
+const ATTACHMENT_ONLY_RE = /^\[Tệp đính kèm[^\]]*\]$/i;
 
 export const ROOT_QUICK_REPLIES = [
   { id: 'MENU_FAQ', label: 'Chọn khóa học', payload: 'MENU_FAQ' },
@@ -77,7 +83,12 @@ export function redactForLlm(value) {
   return String(value || '')
     .replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, '[email]')
     .replace(/(?:\+?84|0)(?:[ .-]*\d){8,11}\b/g, '[số điện thoại]')
-    .replace(/https?:\/\/\S+/g, '[liên kết]');
+    .replace(/(?:https?:\/\/|www\.)\S+/gi, '[liên kết]');
+}
+
+function hasPhoneLikeSequence(value) {
+  const collapsed = String(value || '').replace(/(\d)[\s.-]+(?=\d)/g, '$1');
+  return /(?<=^|[^\p{L}\p{N}_])\+?\d{5,13}(?=$|[^\p{L}\p{N}_])/u.test(collapsed);
 }
 
 function extractPhoneFromText(text) {
@@ -91,12 +102,12 @@ function extractPhoneFromText(text) {
 
 function extractTimeslot(text, norm) {
   const rawMatch = String(text || '').match(
-    /(?:tối|sáng|chiều|trưa|cuối\s*tuần|thứ\s*[2-7]|chủ\s*nhật)\s*(?:\d{1,2}\s*(?:h|giờ|:?\d{2})?)?(?:\s*(?:mai|hôm\s*nay|tuần\s*sau|hàng\s*tuần))?/iu
+    /(?:(?:buổi\s*)?(?:tối|sáng|chiều|trưa)|cuối\s*tuần|thứ\s*[2-7]|chủ\s*nhật)\s*(?:\d{1,2}\s*(?:h|giờ|:?\d{2})?)?(?:\s*(?:mai|hôm\s*nay|tuần\s*sau|hàng\s*tuần))?/iu
   );
   if (rawMatch) {
     const candidate = tidy(rawMatch[0], 60);
     if (/\d|cuối\s*tuần|thứ|chủ\s*nhật|tối|sáng|chiều/iu.test(candidate) &&
-        /(?:mai|tuần|giờ|\d+h|\d+:\d+|tối|cuối\s*tuần)/iu.test(candidate)) {
+        /(?:mai|tuần|giờ|\d+h|\d+:\d+|tối|cuối\s*tuần|buổi\s*(?:sáng|chiều|tối))/iu.test(candidate)) {
       return candidate;
     }
   }
@@ -111,16 +122,27 @@ export function extractLeadMetadata(text, currentMeta = {}) {
   const input = tidy(text, 4000);
   const norm = normalizeText(input);
   const adult11 = isAdultTutoringRequest(input);
-  const hasChildKeywords = /\b(?:cho\s+(?:be|con|chau)|(?:be|con|chau)\s+(?:nha\s+|toi\s+|chi\s+|anh\s+)?\d{1,2}\s*(?:tuoi|t\b)|tre\s+em|thieu\s+nhi)\b/.test(norm);
+  const possessor = '(?:(?:nha\\s+)?(?:toi|minh|chi|anh|em)\\s+)?';
+  const hasChildKeywords = new RegExp(
+    `\\b(?:cho\\s+(?:be|con|chau)|(?:be|con|chau)\\s+${possessor}\\d{1,2}\\s*(?:tuoi|t\\b)|(?:be|con|chau)\\s+${possessor}(?:can|muon|hoc)|tre\\s+em|thieu\\s+nhi)\\b`
+  ).test(norm);
   const child11 = !adult11 && hasChildKeywords && /\b(?:1\s*kem\s*1|1\s*:\s*1|1\s*1|gia\s*su)\b/.test(norm);
 
   let adPackage;
   let sourceTag;
+  let comparedPackages;
   if (adult11) {
-    if (/\b(?:1500\s?k|1\s?tr\s?5)\b/.test(norm)) {
+    const has963 = /\b963\s?k\b/.test(norm);
+    const has1500 = /\b(?:1500\s?k|1\s?tr\s?5)\b/.test(norm);
+    const isComparison = /\b(?:(?:hai|2)\s+goi\s+(?:nay\s+)?khac\s+(?:gi|nhau)|so\s+sanh\s+(?:hai\s+|2\s+)?goi|goi\s+co\s+ban\s+(?:va|voi)\s+goi\s+chuyen\s+sau)\b/.test(norm);
+    if ((has963 && has1500) || isComparison) {
+      adPackage = 'compare_963k_1500k';
+      sourceTag = 'ad_compare';
+      comparedPackages = ['ad_963k', 'ad_1500k'];
+    } else if (has1500) {
       adPackage = 'ad_1500k';
       sourceTag = 'ad_1500k';
-    } else if (/\b963\s?k\b/.test(norm)) {
+    } else if (has963) {
       adPackage = 'ad_963k';
       sourceTag = 'ad_963k';
     }
@@ -128,7 +150,7 @@ export function extractLeadMetadata(text, currentMeta = {}) {
 
   let childAge;
   if (!UNDERAGE_SELF_BUY_RE.test(input)) {
-    const ageMatch = norm.match(/(?:be|con|chau)(?:\s+(?:nha|toi|chi|anh|em))?\s+(\d{1,2})\s*(?:tuoi|t\b)/) ||
+    const ageMatch = norm.match(/(?:be|con|chau)(?:\s+(?:nha\s+)?(?:toi|minh|chi|anh|em))?\s+(\d{1,2})\s*(?:tuoi|t\b)/) ||
       (hasChildKeywords ? norm.match(/\b(\d{1,2})\s*(?:tuoi|t\b)/) : null);
     if (ageMatch) {
       const parsedAge = Number(ageMatch[1]);
@@ -156,7 +178,9 @@ export function extractLeadMetadata(text, currentMeta = {}) {
 
   const flow = adult11
     ? 'adult_1_1'
-    : (child11 || hasChildKeywords || currentMeta?.flow === 'parent_child' ? 'parent_child' : currentMeta?.flow);
+    : (child11 || hasChildKeywords || currentMeta?.flow === 'parent_child'
+      ? 'parent_child'
+      : (currentMeta?.flow === 'adult_1_1' ? 'adult_1_1' : currentMeta?.flow));
 
   const targetGroup = adult11 || flow === 'adult_1_1'
     ? 'adult_working'
@@ -164,6 +188,7 @@ export function extractLeadMetadata(text, currentMeta = {}) {
 
   const patch = {};
   if (adPackage) patch.ad_package = adPackage;
+  if (comparedPackages) patch.compared_packages = comparedPackages;
   if (goal) patch.goal = goal;
   if (background) patch.background = background;
   if (timeslot) patch.timeslot = timeslot;
@@ -179,9 +204,9 @@ export function extractLeadMetadata(text, currentMeta = {}) {
     if (mergedGoal) patch.step_1_goal = mergedGoal;
     if (mergedBg) patch.step_2_background = mergedBg;
     if (mergedPkg) {
-      patch.step_3_recommendation = mergedPkg === 'ad_1500k'
-        ? 'So sánh gói 963k & Chuyên sâu 1.500k'
-        : 'Gói Cơ bản 963k';
+      patch.step_3_recommendation = mergedPkg === 'ad_963k'
+        ? 'Gói Cơ bản 963k'
+        : 'So sánh gói 963k & Chuyên sâu 1.500k';
     }
     if (mergedTime) patch.step_4_timeslot = mergedTime;
     patch.script_step = !mergedGoal
@@ -198,12 +223,15 @@ export function extractLeadMetadata(text, currentMeta = {}) {
   return { patch, sourceTag, phone, adult11, child11, timeslot, goal, background, childAge };
 }
 
-function detectMenuCommand(text, explicitCommand, conversation) {
+function detectExplicitMenuCommand(text, explicitCommand, leadPayload, conversation) {
   const cmd = tidy(explicitCommand, 40).toUpperCase();
   if (['MENU_ROOT', 'MENU_FAQ', 'MENU_NEED_PHONE', 'MENU_PAYMENT', 'MENU_HANDOFF'].includes(cmd)) {
     return cmd;
   }
   const clean = tidy(text, 200).toLowerCase();
+  if (conversation?.lead_meta?.menu_state === 'MENU_NEED_PHONE' && leadPayload && Object.keys(leadPayload).length > 0) {
+    return 'MENU_NEED_PHONE';
+  }
   if (!clean) return null;
   if (['menu_root', 'menu chính', '← menu chính', 'quay lại menu chính'].includes(clean)) return 'MENU_ROOT';
   if ([
@@ -211,6 +239,7 @@ function detectMenuCommand(text, explicitCommand, conversation) {
     'chọn khóa học',
     'học phí & ưu đãi',
     'lộ trình trẻ em (4–15 tuổi)',
+    'lộ trình trẻ em (4-15 tuổi)',
     'lộ trình trẻ em',
     'tiếng trung người đi làm 1:1',
     'hình thức học & thiết bị',
@@ -223,7 +252,15 @@ function detectMenuCommand(text, explicitCommand, conversation) {
   if (['menu_need_phone', 'để lại nhu cầu & sđt', 'để lại nhu cầu'].includes(clean)) return 'MENU_NEED_PHONE';
   if (['menu_payment', 'hướng dẫn thanh toán vietqr', 'thanh toán vietqr'].includes(clean)) return 'MENU_PAYMENT';
   if (['menu_handoff', 'gặp tư vấn viên'].includes(clean)) return 'MENU_HANDOFF';
-  if (conversation?.lead_meta?.menu_state === 'MENU_NEED_PHONE') return 'MENU_NEED_PHONE';
+  return null;
+}
+
+function detectMenuCommand(text, explicitCommand, conversation, leadPayload) {
+  const explicit = detectExplicitMenuCommand(text, explicitCommand, leadPayload, conversation);
+  if (explicit) return explicit;
+  if (conversation?.lead_meta?.menu_state === 'MENU_NEED_PHONE') {
+    if (extractPhoneFromText(text) || hasPhoneLikeSequence(text)) return 'MENU_NEED_PHONE';
+  }
   return null;
 }
 
@@ -235,7 +272,7 @@ export function resolveScriptedMenu({
   courses = [],
   leadPayload
 } = {}) {
-  const command = detectMenuCommand(text, menuCommand, conversation);
+  const command = detectMenuCommand(text, menuCommand, conversation, leadPayload);
   if (!command) return { handled: false };
 
   const clean = tidy(text, 400).toLowerCase();
@@ -290,7 +327,7 @@ export function resolveScriptedMenu({
     const submittedPhone = normalizeVnPhone(leadPayload?.phone) || extractPhoneFromText(text);
     const hasInvalidPhoneAttempt = Boolean(
       (leadPayload && tidy(String(leadPayload.phone || ''), 30) && !normalizeVnPhone(leadPayload.phone)) ||
-      (!submittedPhone && /\b\d{5,12}\b/.test(clean))
+      (!submittedPhone && hasPhoneLikeSequence(text))
     );
 
     if (submittedPhone) {
@@ -357,7 +394,7 @@ export function resolveScriptedMenu({
   return {
     handled: true,
     menuCommand: 'MENU_FAQ',
-    nextMenuState: null,
+    nextMenuState: 'MENU_FAQ',
     quickReplies: FAQ_QUICK_REPLIES,
     reply
   };
@@ -489,6 +526,7 @@ async function syncLeadToConversation(store, conversation, lead, menuResult, lea
   if (Object.keys(patchBody).length) {
     await store.patch('ktn_consultations?id=eq.' + conversation.id, patchBody);
   }
+  conversation.lead_meta = nextMeta;
   return nextMeta;
 }
 
@@ -509,20 +547,23 @@ export async function runHybridChatbot({
   handoffWithMessage
 }) {
   const text = tidy(customerMessage?.body, 4000);
-  const existingMeta = (conversation.lead_meta && typeof conversation.lead_meta === 'object') ? conversation.lead_meta : {};
+  const existingMeta = (conversation.lead_meta && typeof conversation.lead_meta === 'object' && !Array.isArray(conversation.lead_meta))
+    ? conversation.lead_meta
+    : {};
   const lead = extractLeadMetadata(text, existingMeta);
 
-  // Sync extracted lead_meta / phone / source_tag even on waiting/open follow-up turns (e.g. CA03).
-  await syncLeadToConversation(store, conversation, lead, null, leadPayload);
-
   if (conversation.status !== 'bot') {
+    // Sync extracted lead_meta / phone / source_tag even on waiting/open follow-up turns (e.g. CA03).
+    await syncLeadToConversation(store, conversation, lead, null, leadPayload);
     return { handled: false, status: conversation.status };
   }
 
   const after = { after_id: customerMessage.id };
+  const clearMenu = existingMeta.menu_state ? { nextMenuState: null } : null;
 
-  // 1. Mandatory pre-AI handoffs (F08, F10)
+  // 1. Highest-priority safety & explicit human handoffs (F08)
   if (PROMPT_INJECTION_RE.test(text)) {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     await handoffWithMessage(
       store,
       conversation,
@@ -533,6 +574,7 @@ export async function runHybridChatbot({
   }
 
   if (UNDERAGE_SELF_BUY_RE.test(text)) {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     await handoffWithMessage(
       store,
       conversation,
@@ -542,10 +584,10 @@ export async function runHybridChatbot({
     return { handled: true, mode: 'handoff', reason: 'underage' };
   }
 
-  const explicitMenu = tidy(menuCommand, 40).toUpperCase();
-  const isExplicitNonHandoffMenu = ['MENU_ROOT', 'MENU_FAQ', 'MENU_NEED_PHONE', 'MENU_PAYMENT'].includes(explicitMenu);
+  const explicitMenuCmd = detectExplicitMenuCommand(text, menuCommand, leadPayload, conversation);
 
-  if (EXPLICIT_HUMAN_RE.test(text) || explicitMenu === 'MENU_HANDOFF') {
+  if (EXPLICIT_HUMAN_RE.test(text) || explicitMenuCmd === 'MENU_HANDOFF') {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     await handoffWithMessage(
       store,
       conversation,
@@ -555,36 +597,6 @@ export async function runHybridChatbot({
     return { handled: true, mode: 'handoff', reason: 'explicit_human' };
   }
 
-  if (!isExplicitNonHandoffMenu) {
-    if (lead.adult11) {
-      await handoffWithMessage(
-        store,
-        conversation,
-        after,
-        'Dạ, em đã ghi nhận nhu cầu học 1 kèm 1 cho người đi làm và chuyển anh/chị tới tư vấn viên KTN để kiểm tra lộ trình và khung giờ học phù hợp ạ.'
-      );
-      return { handled: true, mode: 'handoff', reason: 'adult_1_1' };
-    }
-
-    if (lead.child11 || LIVE_OR_SCHEDULE_HANDOFF_RE.test(text)) {
-      const msg = lead.child11
-        ? 'Dạ, em đã ghi nhận nhu cầu lớp 1 kèm 1 cho bé và chuyển tư vấn viên KTN kiểm tra lịch học phù hợp cho gia đình mình ạ.'
-        : 'Dạ, em chuyển tư vấn viên KTN kiểm tra lịch học trực tiếp và thông tin lớp phù hợp cho anh/chị ạ.';
-      await handoffWithMessage(store, conversation, after, msg);
-      return { handled: true, mode: 'handoff', reason: lead.child11 ? 'child_1_1' : 'live_or_schedule' };
-    }
-
-    if (PAYMENT_ABNORMAL_HANDOFF_RE.test(text) || EXAM_OR_EXCEPTION_HANDOFF_RE.test(text)) {
-      await handoffWithMessage(
-        store,
-        conversation,
-        after,
-        'Dạ, em chuyển thông tin sang tư vấn viên và bộ phận phụ trách KTN kiểm tra và phản hồi chính xác cho anh/chị ạ.'
-      );
-      return { handled: true, mode: 'handoff', reason: 'policy_exception' };
-    }
-  }
-
   // 2. Load config + catalog
   let config;
   let courses = [];
@@ -592,37 +604,105 @@ export async function runHybridChatbot({
   try {
     config = await guidance(store);
     if (!config?.bot_enabled || !config?.policy) {
+      await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
       await handoffWithMessage(store, conversation, after, 'Mình đã chuyển câu hỏi cho tư vấn viên KTN.');
       return { handled: true, mode: 'handoff', reason: 'bot_disabled' };
     }
     courses = await catalog(config, env, deps);
     paymentConfig = await store.one('ktn_payment_config?id=eq.default&limit=1').catch(() => null);
   } catch {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     await handoffWithMessage(store, conversation, after, 'Mình đã chuyển câu hỏi cho tư vấn viên KTN.');
     return { handled: true, mode: 'handoff', reason: 'config_unavailable' };
   }
 
-  // 3. Deterministic Scripted / Menu Layer (F06)
-  const menuResult = resolveScriptedMenu({
-    text,
-    menuCommand,
-    conversation,
-    paymentConfig,
-    courses,
-    leadPayload
-  });
-
-  if (menuResult.handled) {
-    await syncLeadToConversation(store, conversation, lead, menuResult, leadPayload);
-    if (menuResult.handoff) {
-      await handoffWithMessage(store, conversation, after, menuResult.handoffMessage);
-      return { handled: true, mode: 'handoff', reason: 'menu_handoff' };
-    }
-    await action(store, conversation.id, 'bot', { ...after, body: menuResult.reply }).catch(error => {
-      if (error.status !== 409) throw error;
+  // 3. Deterministic Explicit Scripted / Menu Layer (F06) — runs BEFORE adult11 / live / exam regexes
+  if (explicitMenuCmd) {
+    const menuResult = resolveScriptedMenu({
+      text,
+      menuCommand: explicitMenuCmd,
+      conversation,
+      paymentConfig,
+      courses,
+      leadPayload
     });
-    return { handled: true, mode: 'scripted', menuCommand: menuResult.menuCommand, quickReplies: menuResult.quickReplies };
+    if (menuResult.handled) {
+      await syncLeadToConversation(store, conversation, lead, menuResult, leadPayload);
+      if (menuResult.handoff) {
+        await handoffWithMessage(store, conversation, after, menuResult.handoffMessage);
+        return { handled: true, mode: 'handoff', reason: 'menu_handoff' };
+      }
+      await action(store, conversation.id, 'bot', { ...after, body: menuResult.reply }).catch(error => {
+        if (error.status !== 409) throw error;
+      });
+      return { handled: true, mode: 'scripted', menuCommand: menuResult.menuCommand, quickReplies: menuResult.quickReplies };
+    }
   }
+
+  // 4. Attachment-only messages & mandatory pre-AI handoffs (F08, F10)
+  if (ATTACHMENT_ONLY_RE.test(text)) {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
+    await handoffWithMessage(
+      store,
+      conversation,
+      after,
+      'Dạ, em đã nhận tệp đính kèm của anh/chị và chuyển tư vấn viên KTN kiểm tra, hỗ trợ mình ngay ạ.'
+    );
+    return { handled: true, mode: 'handoff', reason: 'attachment' };
+  }
+
+  if (lead.adult11) {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
+    await handoffWithMessage(
+      store,
+      conversation,
+      after,
+      'Dạ, em đã ghi nhận nhu cầu học 1 kèm 1 cho người đi làm và chuyển anh/chị tới tư vấn viên KTN để kiểm tra lộ trình và khung giờ học phù hợp ạ.'
+    );
+    return { handled: true, mode: 'handoff', reason: 'adult_1_1' };
+  }
+
+  if (lead.child11 || LIVE_OR_SCHEDULE_HANDOFF_RE.test(text)) {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
+    const msg = lead.child11
+      ? 'Dạ, em đã ghi nhận nhu cầu lớp 1 kèm 1 cho bé và chuyển tư vấn viên KTN kiểm tra lịch học phù hợp cho gia đình mình ạ.'
+      : 'Dạ, em chuyển tư vấn viên KTN kiểm tra lịch học trực tiếp và thông tin lớp phù hợp cho anh/chị ạ.';
+    await handoffWithMessage(store, conversation, after, msg);
+    return { handled: true, mode: 'handoff', reason: lead.child11 ? 'child_1_1' : 'live_or_schedule' };
+  }
+
+  if (PAYMENT_ABNORMAL_HANDOFF_RE.test(text) || EXAM_OR_EXCEPTION_HANDOFF_RE.test(text)) {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
+    await handoffWithMessage(
+      store,
+      conversation,
+      after,
+      'Dạ, em chuyển thông tin sang tư vấn viên và bộ phận phụ trách KTN kiểm tra và phản hồi chính xác cho anh/chị ạ.'
+    );
+    return { handled: true, mode: 'handoff', reason: 'policy_exception' };
+  }
+
+  // 5. Implicit MENU_NEED_PHONE continuation (only if input looks like a phone/contact attempt)
+  if (existingMeta.menu_state === 'MENU_NEED_PHONE' && (extractPhoneFromText(text) || hasPhoneLikeSequence(text))) {
+    const menuResult = resolveScriptedMenu({
+      text,
+      menuCommand: 'MENU_NEED_PHONE',
+      conversation,
+      paymentConfig,
+      courses,
+      leadPayload
+    });
+    if (menuResult.handled) {
+      await syncLeadToConversation(store, conversation, lead, menuResult, leadPayload);
+      await action(store, conversation.id, 'bot', { ...after, body: menuResult.reply }).catch(error => {
+        if (error.status !== 409) throw error;
+      });
+      return { handled: true, mode: 'scripted', menuCommand: menuResult.menuCommand, quickReplies: menuResult.quickReplies };
+    }
+  }
+
+  // Free-form question (or escaping sticky MENU_NEED_PHONE / MENU_FAQ): clear stale menu_state before AI
+  await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
 
   // 4. AI LLM Layer or AI Sandbox Mode (F07 + F08)
   let reply = '';

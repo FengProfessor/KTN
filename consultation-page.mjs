@@ -175,6 +175,38 @@ function browser(staffMode, full) {
     const registration = node('section', '', { class: 'panel' });
     const stateBadge = node('p', '', { class: 'status-badge' });
     const messages = node('div', '', { class: 'messages', 'aria-live': 'polite' });
+    const quickBar = node('div', '', { class: 'quick-replies', role: 'group', 'aria-label': 'Menu tư vấn nhanh' });
+    let quickSignature = '';
+    let sendQuickHandler = null;
+    const syncQuickBar = data => {
+      if (data?.status && data.status !== 'bot') {
+        quickBar.hidden = true;
+        if (quickSignature !== 'hidden') {
+          quickSignature = 'hidden';
+          quickBar.replaceChildren();
+        }
+        return;
+      }
+      quickBar.hidden = false;
+      if (!Array.isArray(data?.quickReplies)) return;
+      if (!data.quickReplies.length) {
+        quickBar.hidden = true;
+        if (quickSignature !== 'empty') {
+          quickSignature = 'empty';
+          quickBar.replaceChildren();
+        }
+        return;
+      }
+      const sig = JSON.stringify(data.quickReplies);
+      if (sig === quickSignature) return;
+      quickSignature = sig;
+      quickBar.replaceChildren(...data.quickReplies.map(item => {
+        const label = item.label || item.title || '';
+        const cmd = item.payload || item.id || 'MENU_ROOT';
+        const next = cmd === 'MENU_FAQ' ? 'MENU_FAQ' : cmd === 'MENU_ROOT' ? 'MENU_ROOT' : null;
+        return button(label, () => sendQuickHandler && sendQuickHandler(label, cmd, next), { class: 'chip', 'data-menu': cmd });
+      }));
+    };
     let snapshot = '';
     const begin = async () => {
       const result = await call('web/start', 'POST');
@@ -184,6 +216,7 @@ function browser(staffMode, full) {
     const refresh = async () => {
       const data = await call('web/thread');
       stateBadge.textContent = states[data.status] || '';
+      syncQuickBar(data);
       const next = JSON.stringify(data.messages);
       if (next !== snapshot) {
         snapshot = next;
@@ -195,13 +228,6 @@ function browser(staffMode, full) {
     };
     if (!consultOnly) {
       root.replaceChildren(chat);
-      if (!token) await begin();
-      try { await refresh(); } catch (error) {
-        if (![401,404].includes(error.status)) throw error;
-        await begin();
-        await refresh();
-      }
-      const quickBar = node('div', '', { class: 'quick-replies', role: 'group', 'aria-label': 'Menu tư vấn nhanh' });
       const leadDetails = node('details', '', { class: 'lead-capture' });
       const phoneInput = input('phone', 'tel', 'Số điện thoại (VD: 0901234567)', { required: '', maxlength: 30 });
       const leadForm = form('Gửi thông tin liên hệ', [
@@ -245,10 +271,11 @@ function browser(staffMode, full) {
         await call('web/message', 'POST', { body: label, requestId: crypto.randomUUID(), menuCommand });
         await refresh();
       };
+      sendQuickHandler = sendQuick;
       const menuItems = {
         MENU_ROOT: [
           ['Chọn khóa học', 'MENU_FAQ', 'MENU_FAQ'],
-          ['Học phí & Ưu đãi', 'MENU_FAQ', null],
+          ['Học phí & Ưu đãi', 'MENU_FAQ', 'MENU_FAQ'],
           ['Hướng dẫn thanh toán VietQR', 'MENU_PAYMENT', null],
           ['Để lại nhu cầu & SĐT', 'MENU_NEED_PHONE', null],
           ['Gặp tư vấn viên', 'MENU_HANDOFF', null]
@@ -263,10 +290,18 @@ function browser(staffMode, full) {
       };
       function renderQuickMenu(mode) {
         const entries = menuItems[mode] || menuItems.MENU_ROOT;
+        quickSignature = mode;
+        quickBar.hidden = false;
         quickBar.replaceChildren(...entries.map(([label, cmd, next]) =>
           button(label, () => sendQuick(label, cmd, next), { class: 'chip', 'data-menu': cmd })));
       }
       renderQuickMenu('MENU_ROOT');
+      if (!token) await begin();
+      try { await refresh(); } catch (error) {
+        if (![401,404].includes(error.status)) throw error;
+        await begin();
+        await refresh();
+      }
       let messageId = '';
       let lastBody = '';
       const composer = form('Gửi', [node('textarea','',{ name:'body', 'aria-label':'Nội dung tư vấn', placeholder:'Nhập câu hỏi', maxlength:4000, required:'' })], async (data, element) => {
@@ -671,7 +706,7 @@ form textarea{flex-basis:100%}.panel{border:1px solid #e7dad1;border-radius:12px
 .workspace{display:grid;grid-template-columns:minmax(228px,32%) minmax(0,1fr);gap:12px}.list-row,.record{border-bottom:1px solid #eee3dc;padding:7px 0}
 .messages{max-height:52vh;overflow:auto;min-height:80px;margin:8px 0}.message{padding:7px 9px;background:#f7f0e9;border-radius:8px;margin:6px 0;overflow-wrap:anywhere}
 .status-badge{display:inline-block;padding:2px 9px;border-radius:999px;background:#f7f0e9;color:#781f25;font-size:.82rem;font-weight:600;margin:0 0 8px}
-.quick-replies{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.chip{background:#f7f0e9;color:#781f25;border:1px solid #d9c5b8;border-radius:999px;padding:6px 12px;min-height:36px;font-size:.9rem}.chip:hover{background:#efe2d7}
+.quick-replies{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.quick-replies[hidden]{display:none}.chip{background:#f7f0e9;color:#781f25;border:1px solid #d9c5b8;border-radius:999px;padding:6px 12px;min-height:36px;font-size:.9rem}.chip:hover{background:#efe2d7}
 .lead-capture{background:#fbf7f0;border:1px solid #e7dad1;border-radius:10px;padding:8px 10px;margin:8px 0}
 .message.customer{background:#edf3ee}.message p{margin:3px 0;white-space:pre-wrap}.message small{font-size:.78rem}.list-row button{max-width:100%;margin:0 4px 3px 0}
 details{margin:8px 0}summary{cursor:pointer;font-weight:650;color:#781f25}details button{margin:4px 5px 4px 0}

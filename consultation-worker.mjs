@@ -2,7 +2,7 @@ import { consultationPage } from './consultation-page.mjs';
 import { draftConsultationExamples, draftConsultationPolicy } from './consultation-examples.mjs';
 import { consultationExample, consultationExampleLimit } from './consultation-retrieval.mjs';
 import { handleZaloWebhook, sendZaloMessage } from './consultation-zalo.mjs';
-import { FAQ_QUICK_REPLIES, NEED_PHONE_QUICK_REPLIES, ROOT_QUICK_REPLIES, runHybridChatbot } from './consultation-chatbot.mjs';
+import { FAQ_QUICK_REPLIES, NEED_PHONE_QUICK_REPLIES, PAYMENT_QUICK_REPLIES, ROOT_QUICK_REPLIES, runHybridChatbot } from './consultation-chatbot.mjs';
 import {
   createConsultationOrder,
   handleSepayWebhook,
@@ -340,7 +340,9 @@ async function customerRoute(suffix, request, env, ctx, deps, store) {
         ? NEED_PHONE_QUICK_REPLIES
         : conversation.lead_meta?.menu_state === 'MENU_FAQ'
           ? FAQ_QUICK_REPLIES
-          : ROOT_QUICK_REPLIES)
+          : conversation.lead_meta?.menu_state === 'MENU_PAYMENT'
+            ? PAYMENT_QUICK_REPLIES
+            : ROOT_QUICK_REPLIES)
       : [];
     return { status: conversation.status, messages, leadMeta: conversation.lead_meta || {}, quickReplies };
   }

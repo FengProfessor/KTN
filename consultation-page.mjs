@@ -263,6 +263,14 @@ function browser(staffMode, full) {
       });
       leadDetails.append(node('summary', 'Để lại nhu cầu & số điện thoại'), leadForm);
       const sendQuick = async (label, menuCommand, nextMenu) => {
+        if (menuCommand === 'OPEN_ORDER_FORM') {
+          const orderDetails = registration.querySelector('details');
+          if (orderDetails) {
+            orderDetails.open = true;
+            orderDetails.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+          return;
+        }
         if (nextMenu) renderQuickMenu(nextMenu);
         if (menuCommand === 'MENU_NEED_PHONE') {
           leadDetails.open = true;

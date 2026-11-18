@@ -323,23 +323,24 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
   };
 
   const handleQuickReply = (qr: ConsultationQuickReply) => {
-    if (qr.action === 'OPEN_ORDER_FORM') {
+    const action = qr.action ?? (qr.id.startsWith('MENU_FAQ') ? 'MENU_FAQ' : qr.id);
+    if (action === 'OPEN_ORDER_FORM') {
       setShowOrderForm(true);
       return;
     }
-    if (qr.action === 'MENU_NEED_PHONE') {
+    if (action === 'MENU_NEED_PHONE') {
       setShowNeedPhoneForm(true);
     }
     if (
-      qr.action === 'MENU_ROOT' ||
-      qr.action === 'MENU_FAQ' ||
-      qr.action === 'MENU_NEED_PHONE' ||
-      qr.action === 'MENU_PAYMENT'
+      action === 'MENU_ROOT' ||
+      action === 'MENU_FAQ' ||
+      action === 'MENU_NEED_PHONE' ||
+      action === 'MENU_PAYMENT'
     ) {
-      setQuickReplies(buildQuickReplyMenu(qr.action as WebChatbotMenuKey, lang));
+      setQuickReplies(buildQuickReplyMenu(action as WebChatbotMenuKey, lang));
     }
-    if (qr.payload && qr.payload !== 'MENU_ROOT') {
-      void sendMessage(qr.payload, qr.action);
+    if (qr.payload && (qr.payload !== 'MENU_ROOT' || (!isDemoMode && action === 'MENU_ROOT'))) {
+      void sendMessage(qr.payload, action);
     }
   };
 

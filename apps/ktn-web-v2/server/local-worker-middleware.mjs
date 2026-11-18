@@ -1417,7 +1417,7 @@ export function createLocalWorkerHarness() {
             .filter(m => m.consultation_id === conv.id)
             .sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0) || String(b.id).localeCompare(String(a.id)));
           const latest = convMsgs[0] || null;
-          if (conv.status !== 'bot' || conv.owner_email !== null || (p_payload?.after_id ?? null) !== (latest?.id ?? null)) {
+          if (conv.status !== 'bot' || (conv.owner_email ?? null) !== null || (p_payload?.after_id ?? null) !== (latest?.id ?? null)) {
             return { error: 'conflict' };
           }
           senderType = 'bot';
@@ -1426,7 +1426,7 @@ export function createLocalWorkerHarness() {
             .filter(m => m.consultation_id === conv.id)
             .sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0) || String(b.id).localeCompare(String(a.id)));
           const latest = convMsgs[0] || null;
-          if (conv.status !== 'bot' || conv.owner_email !== null || (p_payload?.after_id ?? null) !== (latest?.id ?? null)) {
+          if (conv.status !== 'bot' || (conv.owner_email ?? null) !== null || (p_payload?.after_id ?? null) !== (latest?.id ?? null)) {
             return { error: 'conflict' };
           }
           conv.status = 'waiting';
@@ -1454,7 +1454,7 @@ export function createLocalWorkerHarness() {
             return { error: 'forbidden' };
           }
           if (p_action === 'claim' || p_action === 'assign') {
-            if ((p_action === 'assign' && !p_admin) || conv.status === 'closed' || (p_action === 'claim' && conv.owner_email !== null)) {
+            if ((p_action === 'assign' && !p_admin) || conv.status === 'closed' || (p_action === 'claim' && (conv.owner_email ?? null) !== null)) {
               return { error: 'conflict' };
             }
             const target = p_action === 'claim' ? p_actor : (p_payload?.email ? String(p_payload.email).trim() : null);
@@ -1599,7 +1599,7 @@ export function createLocalWorkerHarness() {
         const b = init.body ? JSON.parse(init.body) : {};
         const conv = (state.tables.ktn_consultations || []).find(c => c.id === b.p_id);
         const advisors = (state.tables.ktn_advisors || []).filter(a => a.active !== false);
-        if (!conv || conv.status !== 'waiting' || conv.owner_email !== null || advisors.length === 0) {
+        if (!conv || conv.status !== 'waiting' || (conv.owner_email ?? null) !== null || advisors.length === 0) {
           return new Response(JSON.stringify(false), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         const counters = state.tables.ktn_consultation_advisor_counters || (state.tables.ktn_consultation_advisor_counters = []);
@@ -2262,7 +2262,20 @@ export function createLocalWorkerHarness() {
               out.push(rows[existingIdx]);
             }
           } else {
+            const tableDefaults = table === 'ktn_consultations'
+              ? {
+                  owner_email: null,
+                  external_id: null,
+                  lead_meta: {},
+                  customer_name: null,
+                  customer_phone: null,
+                  zalo_user_id: null,
+                  student_code: null,
+                  source_tag: item.channel === 'web' ? 'web_chat' : null
+                }
+              : {};
             const created = {
+              ...tableDefaults,
               id: item.id || (table.startsWith('ktn_consultation') || table === 'ktn_zalo_oa_events' || table === 'ktn_sepay_reconciliation_logs' ? crypto.randomUUID() : ('SB-' + (++state.autoId) + '-' + Date.now())),
               created_at: item.created_at || new Date().toISOString(),
               updated_at: item.updated_at || new Date().toISOString(),

@@ -43,24 +43,30 @@ const EXAM_OR_EXCEPTION_HANDOFF_RE =
 const ATTACHMENT_ONLY_RE = /^\[Tệp đính kèm[^\]]*\]$/i;
 
 export const ROOT_QUICK_REPLIES = [
-  { id: 'MENU_FAQ', label: 'Chọn khóa học', payload: 'MENU_FAQ' },
-  { id: 'MENU_FAQ_TUITION', label: 'Học phí & Ưu đãi', payload: 'Học phí & Ưu đãi' },
-  { id: 'MENU_PAYMENT', label: 'Hướng dẫn thanh toán VietQR', payload: 'MENU_PAYMENT' },
-  { id: 'MENU_NEED_PHONE', label: 'Để lại nhu cầu & SĐT', payload: 'MENU_NEED_PHONE' },
-  { id: 'MENU_HANDOFF', label: 'Gặp tư vấn viên', payload: 'MENU_HANDOFF' }
+  { id: 'MENU_FAQ', label: 'Chọn khóa học', payload: 'MENU_FAQ', action: 'MENU_FAQ' },
+  { id: 'MENU_FAQ_TUITION', label: 'Học phí & Ưu đãi', payload: 'Học phí & Ưu đãi', action: 'MENU_FAQ' },
+  { id: 'MENU_PAYMENT', label: 'Hướng dẫn thanh toán VietQR', payload: 'MENU_PAYMENT', action: 'MENU_PAYMENT' },
+  { id: 'MENU_NEED_PHONE', label: 'Để lại nhu cầu & SĐT', payload: 'MENU_NEED_PHONE', action: 'MENU_NEED_PHONE' },
+  { id: 'MENU_HANDOFF', label: 'Gặp tư vấn viên', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' }
 ];
 
 export const FAQ_QUICK_REPLIES = [
-  { id: 'FAQ_KIDS', label: 'Lộ trình trẻ em (4–15 tuổi)', payload: 'Lộ trình trẻ em (4–15 tuổi)' },
-  { id: 'FAQ_ADULT', label: 'Tiếng Trung người đi làm 1:1', payload: 'Tiếng Trung người đi làm 1:1' },
-  { id: 'FAQ_FORMAT', label: 'Hình thức học & thiết bị', payload: 'Hình thức học & thiết bị' },
-  { id: 'FAQ_EXAM', label: 'Lịch thi HSK / YCT', payload: 'Lịch thi HSK / YCT' },
-  { id: 'MENU_ROOT', label: 'Menu chính', payload: 'MENU_ROOT' }
+  { id: 'FAQ_KIDS', label: 'Lộ trình trẻ em (4–15 tuổi)', payload: 'Lộ trình trẻ em (4–15 tuổi)', action: 'MENU_FAQ' },
+  { id: 'FAQ_ADULT', label: 'Tiếng Trung người đi làm 1:1', payload: 'Tiếng Trung người đi làm 1:1', action: 'MENU_FAQ' },
+  { id: 'FAQ_FORMAT', label: 'Hình thức học & thiết bị', payload: 'Hình thức học & thiết bị', action: 'MENU_FAQ' },
+  { id: 'FAQ_EXAM', label: 'Lịch thi HSK / YCT', payload: 'Lịch thi HSK / YCT', action: 'MENU_FAQ' },
+  { id: 'MENU_ROOT', label: 'Menu chính', payload: 'MENU_ROOT', action: 'MENU_ROOT' }
 ];
 
 export const NEED_PHONE_QUICK_REPLIES = [
-  { id: 'MENU_HANDOFF', label: 'Gặp tư vấn viên', payload: 'MENU_HANDOFF' },
-  { id: 'MENU_ROOT', label: 'Menu chính', payload: 'MENU_ROOT' }
+  { id: 'MENU_HANDOFF', label: 'Gặp tư vấn viên', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' },
+  { id: 'MENU_ROOT', label: 'Menu chính', payload: 'MENU_ROOT', action: 'MENU_ROOT' }
+];
+
+export const PAYMENT_QUICK_REPLIES = [
+  { id: 'OPEN_ORDER_FORM', label: 'Tạo đơn & mã VietQR ngay', payload: 'OPEN_ORDER_FORM', action: 'OPEN_ORDER_FORM' },
+  { id: 'MENU_HANDOFF', label: 'Gặp tư vấn viên', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' },
+  { id: 'MENU_ROOT', label: 'Menu chính', payload: 'MENU_ROOT', action: 'MENU_ROOT' }
 ];
 
 function normalizeText(value = '') {
@@ -319,8 +325,8 @@ export function resolveScriptedMenu({
     return {
       handled: true,
       menuCommand: 'MENU_PAYMENT',
-      nextMenuState: null,
-      quickReplies: ROOT_QUICK_REPLIES,
+      nextMenuState: 'MENU_PAYMENT',
+      quickReplies: PAYMENT_QUICK_REPLIES,
       reply: [
         'Hướng dẫn thanh toán VietQR chính thức tại KTN:',
         `1. ${bankLine}`,

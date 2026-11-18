@@ -1840,4 +1840,185 @@ describe('M2 Consultation Web Page CSP & Quick-Reply Menu UI (consultation-page.
     const botFaqMsg = hFaq.state.messages.find(m => m.sender === 'bot');
     expect(botFaqMsg?.body).toContain('người đi làm 1:1');
   });
+
+  it('handles Iteration 4 regressions: adult 18+ ages, 2-modifier/"của" child phrases, age 11 vs 1-1, ROOT_QUICK_REPLIES tuition Zalo round-trip, bank leak variants, MENU_NEED_PHONE price escape, and empty-text menuCommand', async () => {
+    const makeStore = (harness: ReturnType<typeof createInMemoryConsultationHarness>, env: Record<string, unknown>) => ({
+      query: (p: string, o: any) => harness.deps.supabaseRequest(env, p, o).then(r => r.data),
+      one: (p: string) => harness.deps.supabaseRequest(env, p).then(r => (r.data as any[])[0] || null),
+      rpc: (n: string, b: any) => harness.deps.supabaseRequest(env, 'rpc/ktn_consultation_' + n, { method: 'POST', body: b }).then(r => r.data),
+      patch: (p: string, b: any) => harness.deps.supabaseRequest(env, p, { method: 'PATCH', body: b }).then(r => r.data)
+    });
+
+    const runOneTurn = async (text: string, opts: { menuState?: string; menuCommand?: string } = {}) => {
+      const h = createInMemoryConsultationHarness();
+      const env = createBaseEnv({ KTN_AI_SANDBOX: 'true', KTN_GEMINI_KEYS: '' });
+      const conv = {
+        id: crypto.randomUUID(),
+        channel: 'web',
+        status: 'bot',
+        lead_meta: opts.menuState ? { menu_state: opts.menuState } : {},
+        owner_email: null
+      };
+      h.state.consultations.push(conv);
+      const msg = { id: crypto.randomUUID(), consultation_id: conv.id, sender: 'customer', body: text, delivery: 'sent' };
+      h.state.messages.push(msg);
+      const res = await runHybridChatbot({
+        store: makeStore(h, env),
+        env,
+        deps: h.deps,
+        conversation: conv,
+        customerMessage: msg,
+        base: env.KTN_CONSULTATION_PUBLIC_URL,
+        menuCommand: opts.menuCommand,
+        callAi: async () => ({ reply: '', course_id: '', handoff: false }),
+        createTicket: async (id: string, scope: string) => `${scope}.${id}.9999999999999.sig`,
+        guidance: async () => h.state.guidance,
+        catalog: async () => SAMPLE_COURSES.map(c => ({ id: c.course_id, title: c.title, price: c.price, duration: '3 tháng', ageGroup: c.age_group })),
+        action: async (_store: any, id: string, verb: string, payload: any) =>
+          h.deps.supabaseRequest(env, 'rpc/ktn_consultation_action', { method: 'POST', body: { p_id: id, p_action: verb, p_payload: payload } }).then(r => r.data),
+        handoffWithMessage: async () => {}
+      });
+      return { res, conv, messages: h.state.messages };
+    };
+
+    // 1. Adult learners (18+), 2-modifier child phrases, and adult/parent self-checkout do NOT trigger underage
+    for (const adultPhrase of [
+      'Em 18 tuổi muốn hỏi khóa học tiếng Trung',
+      'Em 19 tuổi đang đi làm muốn tìm khóa video giao tiếp.',
+      'Em 25 tuổi đi làm muốn hỏi khóa học tiếng Trung',
+      'Con gái lớn em 19 tuổi muốn tìm khóa video giao tiếp.',
+      'Chị muốn tự mua khóa video cho bé 7 tuổi trên web được không?',
+      'Em tự chuyển khoản qua VietQR được không ạ?'
+    ]) {
+      const { res } = await runOneTurn(adultPhrase);
+      expect(res.mode, `"${adultPhrase}" mode`).toBe('ai');
+      expect(res.reason, `"${adultPhrase}" reason`).not.toBe('underage');
+    }
+
+    const adult963k = await runOneTurn('Em 30 tuổi muốn hỏi gói 963k cho người đi làm');
+    expect(adult963k.res).toEqual({ handled: true, mode: 'handoff', reason: 'adult_1_1' });
+
+    const twoModChild = await runOneTurn('Con trai út nhà em 7 tuổi muốn tìm khóa video nghe nói.');
+    expect(twoModChild.res.mode).toBe('ai');
+    expect(twoModChild.res.reason).not.toBe('underage');
+    expect((twoModChild.conv.lead_meta as any).child_age).toBe(7);
+
+    // True underage cues (< 18 / học sinh) still hand off as 'underage'
+    for (const minorPhrase of [
+      'Em mới 14 tuổi muốn tự mua khóa học không cần ba mẹ.',
+      'Em 12 tuổi muốn tự đăng ký khóa học',
+      'Cháu 13 tuổi muốn tự chuyển khoản mua khóa',
+      'Em 16 tuổi muốn tìm khóa video.',
+      'Em 17 tuổi muốn học tiếng Trung',
+      'Em là học sinh lớp 8 muốn mua khóa học'
+    ]) {
+      const { res } = await runOneTurn(minorPhrase);
+      expect(res, `"${minorPhrase}"`).toEqual({ handled: true, mode: 'handoff', reason: 'underage' });
+    }
+
+    // 2. Age '11' is NOT misclassified as child11, while '1-1' / '1 1' / '1:1' / '1 kèm 1' / 'gia sư' still set child11: true
+    for (const age11Video of [
+      'Bé 11 tuổi chưa học bao giờ, tìm khóa video',
+      'Bé nhà em 11 tuổi muốn tìm khóa video cho bé',
+      'Con lớn nhà em 11 tuổi muốn thi YCT'
+    ]) {
+      const lead11 = extractLeadMetadata(age11Video);
+      expect(lead11.child11, `"${age11Video}" child11`).toBe(false);
+      expect(lead11.childAge, `"${age11Video}" childAge`).toBe(11);
+      const { res } = await runOneTurn(age11Video);
+      expect(res.mode, `"${age11Video}" mode`).toBe('ai');
+    }
+    const age11OneOnOne = extractLeadMetadata('Bé 11 tuổi học 1-1');
+    expect(age11OneOnOne.child11).toBe(true);
+    expect(age11OneOnOne.childAge).toBe(11);
+    const age11OneOnOneTurn = await runOneTurn('Bé 11 tuổi học 1-1');
+    expect(age11OneOnOneTurn.res).toEqual({ handled: true, mode: 'handoff', reason: 'child_1_1' });
+
+    // 3. ROOT_QUICK_REPLIES[1] 'Học phí & Ưu đãi' Zalo OA round-trip returns tuition catalog
+    expect(ROOT_QUICK_REPLIES[1]).toMatchObject({
+      id: 'MENU_FAQ_TUITION',
+      label: 'Học phí & Ưu đãi',
+      payload: 'Học phí & Ưu đãi'
+    });
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 0, data: { message_id: 'zalo-root-buttons-1' } }), { status: 200 })
+    );
+    globalThis.fetch = fetchSpy;
+    await sendZaloMessage(createBaseEnv({ KTN_ZALO_SANDBOX: 'false' }), {
+      userId: 'zalo-root-user',
+      message: { id: 'm-root', body: 'Menu chính' },
+      quickReplies: ROOT_QUICK_REPLIES
+    });
+    const rootButtons = JSON.parse(fetchSpy.mock.calls[0][1].body).message.attachment.payload.buttons;
+    expect(rootButtons[1]).toMatchObject({
+      title: 'Học phí & Ưu đãi',
+      type: 'oa.query.show',
+      payload: 'Học phí & Ưu đãi'
+    });
+    const hTuition = createInMemoryConsultationHarness();
+    const envTuition = createBaseEnv({ KTN_ZALO_SANDBOX: 'true', KTN_AI_SANDBOX: 'true', KTN_GEMINI_KEYS: '' });
+    const cTuition = hTuition.createCtx();
+    const resTuition = await handleConsultation(
+      new Request('https://mock-ktn.local/api/ktn/consultations/zalo/sandbox/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_name: 'user_send_text',
+          timestamp: '1763400000000',
+          sender: { id: 'zalo-tuition-tap' },
+          message: { msg_id: 'zmsg-tuition-tap-1', text: rootButtons[1].payload }
+        })
+      }),
+      envTuition,
+      cTuition.ctx,
+      hTuition.deps
+    );
+    await cTuition.drain();
+    expect(resTuition.status).toBe(200);
+    const botTuitionMsg = hTuition.state.messages.find(m => m.sender === 'bot');
+    expect(botTuitionMsg?.body).toContain('Học phí và thời hạn');
+
+    // 4. FORBIDDEN_BANK_INFO_RE blocks VN bank abbreviations + connectors, preserves normal advice
+    for (const bankLeak of [
+      'Anh chuyển khoản Techcombank - 0123456789 giúp em ạ',
+      'BIDV - 1234567890',
+      'STK của KTN là 0123456789',
+      'Số tài khoản ngân hàng: 0123 456 789',
+      'Chuyển vào VCB 0123456789 giúp em',
+      'TK: 0123 456 789',
+      'Anh chuyển vào 0123 456 789 (MB Bank) nhé'
+    ]) {
+      expect(hasForbiddenAiOutput(bankLeak), `"${bankLeak}" should be blocked`).toBe(true);
+    }
+    for (const safeReply of [
+      'Lộ trình gồm 6 buổi học số lượng từ vựng 300 từ',
+      'Tài khoản học được kích hoạt trong 3 tháng',
+      'Mã khóa học trên tài khoản 12345 đã sẵn sàng.'
+    ]) {
+      expect(hasForbiddenAiOutput(safeReply), `"${safeReply}" should be allowed`).toBe(false);
+    }
+
+    // 5a. 2-modifier & 'của' child phrases stay in parent_child flow
+    for (const childPhrase of [
+      'Con gái lớn nhà mình 8 tuổi cần lớp 1 kèm 1 gói 963k',
+      'Con của mình 8 tuổi cần lớp 1 kèm 1 gói 963k'
+    ]) {
+      expect(isAdultTutoringRequest(childPhrase), `"${childPhrase}" isAdult`).toBe(false);
+      const lead = extractLeadMetadata(childPhrase);
+      expect(lead.adult11, `"${childPhrase}" adult11`).toBe(false);
+      expect(lead.child11, `"${childPhrase}" child11`).toBe(true);
+      expect(lead.childAge, `"${childPhrase}" childAge`).toBe(8);
+    }
+
+    // 5b. Price digits in MENU_NEED_PHONE escape to AI instead of failing phone validation
+    const priceInMenuNeedPhone = await runOneTurn('Khóa 890000 đồng có hợp bé 7 tuổi không?', { menuState: 'MENU_NEED_PHONE' });
+    expect(priceInMenuNeedPhone.res.mode).toBe('ai');
+    expect((priceInMenuNeedPhone.conv.lead_meta as any).menu_state).toBeUndefined();
+    expect(priceInMenuNeedPhone.messages.at(-1)?.body).not.toContain('chưa đúng định dạng');
+
+    // 5c. Empty-text menuCommand topic label resolves exact FAQ topic
+    const emptyTextFaq = await runOneTurn('', { menuCommand: 'Lộ trình trẻ em (4–15 tuổi)' });
+    expect(emptyTextFaq.res).toMatchObject({ handled: true, mode: 'scripted', menuCommand: 'MENU_FAQ' });
+    expect(emptyTextFaq.messages.at(-1)?.body).toContain('Lộ trình trẻ em (4–15 tuổi) tại KTN');
+  });
 });

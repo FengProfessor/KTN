@@ -7,7 +7,7 @@ import { JSDOM } from 'jsdom';
 // @ts-ignore Root ESM worker modules do not carry TypeScript declarations
 import { isAdultTutoringRequest } from '../../../../consultation-retrieval.mjs';
 // @ts-ignore Root ESM worker modules do not carry TypeScript declarations
-import { computeZaloSignature, fetchZaloUserProfile, handleZaloWebhook, normalizeZaloTimestamp, normalizeZaloWebhookEvent, sendZaloMessage, verifyZaloWebhookSignature } from '../../../../consultation-zalo.mjs';
+import { computeZaloSignature, fetchZaloUserProfile, handleZaloWebhook, normalizeVnPhone, normalizeZaloTimestamp, normalizeZaloWebhookEvent, sendZaloMessage, verifyZaloWebhookSignature } from '../../../../consultation-zalo.mjs';
 // @ts-ignore Root ESM worker modules do not carry TypeScript declarations
 import { extractLeadMetadata, FAQ_QUICK_REPLIES, hasForbiddenAiOutput, redactForLlm, resolveScriptedMenu, ROOT_QUICK_REPLIES, runHybridChatbot, simulateAiReply } from '../../../../consultation-chatbot.mjs';
 // @ts-ignore Root ESM worker modules do not carry TypeScript declarations
@@ -2094,18 +2094,28 @@ describe('M2 Consultation Web Page CSP & Quick-Reply Menu UI (consultation-page.
       return { res, conv, aiSpy, messages: h.state.messages };
     };
 
-    // B1: Reject concatenated fake phone sequences while keeping valid bounded phones
+    // B1: Reject concatenated fake phone sequences while keeping valid bounded & parenthesized +84 phones
     for (const badText of [
       'Mã tham chiếu 1230901234567',
       'Mã 10901234567',
       'SĐT của chị là abc0901234567',
-      '0901234567đ'
+      '0901234567đ',
+      '0901234567abc',
+      '0123-456-789',
+      '09012345',
+      '0123456789'
     ]) {
       expect(extractLeadMetadata(badText).phone, `Should reject "${badText}"`).toBeUndefined();
+      expect(normalizeVnPhone(badText), `normalizeVnPhone should reject "${badText}"`).toBeUndefined();
     }
+    expect(normalizeVnPhone('(+84) 912.345.678')).toBe('+84912345678');
+    expect(normalizeVnPhone('(+84)912345678')).toBe('+84912345678');
     expect(extractLeadMetadata('SĐT:0901234567').phone).toBe('0901234567');
     expect(extractLeadMetadata('Liên hệ +84912345678').phone).toBe('+84912345678');
+    expect(extractLeadMetadata('Gọi (+84) 912.345.678 nhé').phone).toBe('+84912345678');
+    expect(extractLeadMetadata('Gọi (+84)912345678 nhé').phone).toBe('+84912345678');
     expect(extractLeadMetadata('Gọi 0901 234 567.').phone).toBe('0901234567');
+    expect(redactForLlm('Gọi (+84) 912.345.678 nhé')).toBe('Gọi [số điện thoại] nhé');
 
     const badNeedPhone = await runOneTurn('SĐT của chị là abc0901234567', {
       menuState: 'MENU_NEED_PHONE',
@@ -2115,6 +2125,51 @@ describe('M2 Consultation Web Page CSP & Quick-Reply Menu UI (consultation-page.
     expect((badNeedPhone.conv.lead_meta as any).menu_state).toBe('MENU_NEED_PHONE');
     expect((badNeedPhone.conv as any).customer_phone).toBeFalsy();
 
+    // Plain-text MENU_NEED_PHONE (no leadPayload) retains state on malformed phone attempts and captures valid (+84) phones
+    for (const plainBad of [
+      'abc0901234567',
+      'SĐT của chị là abc0901234567',
+      '0901234567đ',
+      '0901234567abc',
+      '10901234567',
+      '1230901234567',
+      '0123456789',
+      '09012345',
+      '12345'
+    ]) {
+      const turn = await runOneTurn(plainBad, { menuState: 'MENU_NEED_PHONE' });
+      expect(turn.res, `Plain-text MENU_NEED_PHONE "${plainBad}"`).toMatchObject({
+        handled: true,
+        mode: 'scripted',
+        menuCommand: 'MENU_NEED_PHONE'
+      });
+      expect((turn.conv.lead_meta as any).menu_state, `"${plainBad}" keeps menu_state`).toBe('MENU_NEED_PHONE');
+      expect((turn.conv as any).customer_phone, `"${plainBad}" customer_phone`).toBeFalsy();
+      expect(turn.aiSpy, `"${plainBad}" aiSpy`).not.toHaveBeenCalled();
+    }
+
+    const parenCapture = await runOneTurn('Gọi (+84) 912.345.678 nhé', { menuState: 'MENU_NEED_PHONE' });
+    expect(parenCapture.res).toMatchObject({ handled: true, mode: 'scripted', menuCommand: 'MENU_NEED_PHONE' });
+    expect((parenCapture.conv.lead_meta as any).menu_state).toBeUndefined();
+    expect((parenCapture.conv as any).customer_phone).toBe('+84912345678');
+
+    // Legitimate non-phone escapes in MENU_NEED_PHONE still clear menu_state and route appropriately
+    for (const escapeQuestion of [
+      'Học phí bao nhiêu?',
+      'Bé 8 tuổi học lớp nào?',
+      'Khóa 890.000đ có hợp bé 7 tuổi không?'
+    ]) {
+      const escTurn = await runOneTurn(escapeQuestion, { menuState: 'MENU_NEED_PHONE' });
+      expect(escTurn.res.mode, `"${escapeQuestion}" escapes to AI`).toBe('ai');
+      expect((escTurn.conv.lead_meta as any).menu_state, `"${escapeQuestion}" clears menu_state`).toBeUndefined();
+    }
+    const adult963Escape = await runOneTurn('Khóa 963k', { menuState: 'MENU_NEED_PHONE' });
+    expect(adult963Escape.res).toMatchObject({ handled: true, mode: 'handoff', reason: 'adult_1_1' });
+    expect((adult963Escape.conv.lead_meta as any).menu_state).toBeUndefined();
+    const menuFaqEscape = await runOneTurn('Học phí & Ưu đãi', { menuState: 'MENU_NEED_PHONE' });
+    expect(menuFaqEscape.res).toMatchObject({ handled: true, mode: 'scripted', menuCommand: 'MENU_FAQ' });
+    expect((menuFaqEscape.conv.lead_meta as any).menu_state).toBe('MENU_FAQ');
+
     // B2: Standalone MB bank leaks rejected while safe strings pass
     expect(hasForbiddenAiOutput('Chuyển khoản STK MB 1234567890')).toBe(true);
     expect(hasForbiddenAiOutput('Anh chị chuyển khoản MB 0987654321 giúp em')).toBe(true);
@@ -2122,17 +2177,19 @@ describe('M2 Consultation Web Page CSP & Quick-Reply Menu UI (consultation-page.
     expect(hasForbiddenAiOutput('Tài khoản học được kích hoạt trong 3 tháng')).toBe(false);
     expect(hasForbiddenAiOutput('File 10MB 123456')).toBe(false);
 
-    // B3: CA 08 payment-without-unlock phrasings force immediate handoff with 0 AI calls
+    // B3: CA 08 payment-without-unlock phrasings (incl. VietQR token gap) force immediate handoff with 0 AI calls
     for (const ca08Phrase of [
       'Chị chuyển tiền rồi mà chưa thấy mở video',
       'Chị đã thanh toán rồi mà học viên chưa thấy bài học',
-      'Chuyển khoản rồi nhưng chưa thấy mở khóa học'
+      'Chuyển khoản rồi nhưng chưa thấy mở khóa học',
+      'Thanh toán VietQR xong rồi mà không vào học được'
     ]) {
       const turn = await runOneTurn(ca08Phrase);
       expect(turn.res, `"${ca08Phrase}"`).toEqual({ handled: true, mode: 'handoff', reason: 'policy_exception' });
       expect(turn.aiSpy).not.toHaveBeenCalled();
     }
     for (const safePrePurchase of [
+      'Hướng dẫn thanh toán VietQR',
       'Thanh toán xong bao lâu thì nhận email?',
       'Chị muốn tự mua khóa video cho bé 7 tuổi trên web được không?'
     ]) {
@@ -2140,13 +2197,16 @@ describe('M2 Consultation Web Page CSP & Quick-Reply Menu UI (consultation-page.
       expect(turn.res.reason, `"${safePrePurchase}"`).not.toBe('policy_exception');
     }
 
-    // extractTimeslot: multi-token composable slots
+    // extractTimeslot: multi-token composable slots (incl. chủ nhật)
     const adultSlot = extractLeadMetadata('Chủ yếu nhắn tin WeChat, rảnh tối thứ 3 20h, SĐT 0987654322');
     expect(adultSlot.timeslot).toBe('tối thứ 3 20h');
     expect(adultSlot.phone).toBe('0987654322');
 
     const childOrdinalSlot = extractLeadMetadata('Bé thứ 2 nhà chị rảnh tối thứ 3 lúc 20h');
     expect(childOrdinalSlot.timeslot).toBe('tối thứ 3 lúc 20h');
+
+    const childSundaySlot = extractLeadMetadata('Bé thứ 2 nhà chị rảnh sáng chủ nhật');
+    expect(childSundaySlot.timeslot).toBe('sáng chủ nhật');
 
     expect(extractLeadMetadata('Hôm nào rảnh thì mình học').timeslot).toBeUndefined();
     expect(extractLeadMetadata('bé thứ 2 nhà chị').timeslot).toBeUndefined();

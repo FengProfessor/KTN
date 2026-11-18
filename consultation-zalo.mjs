@@ -22,7 +22,9 @@ function getHeader(headers, name) {
 }
 
 export function normalizeVnPhone(raw) {
-  const cleaned = tidy(String(raw ?? ''), 30).replace(/[ .-]/g, '');
+  const cleaned = tidy(String(raw ?? ''), 30)
+    .replace(/^\(\s*(\+?84)\s*\)/, '$1')
+    .replace(/[ .-]/g, '');
   if (!cleaned) return undefined;
   if (/^84[35789]\d{8}$/.test(cleaned)) return '0' + cleaned.slice(2);
   if (/^(0|\+84)[35789]\d{8}$/.test(cleaned)) return cleaned;

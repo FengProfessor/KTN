@@ -35,7 +35,7 @@ const LIVE_OR_SCHEDULE_HANDOFF_RE =
   uRegex('1\\s*kèm\\s*1|1\\s*:\\s*1|1-1|gia\\s*sư|lớp\\s*live|học\\s*trực\\s*tiếp\\s*với|học\\s*thử|giữ\\s*lịch|có\\s*cô\\s*không|lịch\\s*học|tăng\\s*ca|bù\\s*buổi|học\\s*bù|bảo\\s*lưu|chọn\\s*giáo\\s*viên|chuyển\\s*ca|đổi\\s*lịch');
 
 const PAYMENT_ABNORMAL_HANDOFF_RE =
-  uRegex('chuyển\\s*(?:nhầm|thiếu|thừa|hai\\s*lần|2\\s*lần)|(?:đã\\s*(?:chuyển\\s*(?:tiền|khoản)|thanh\\s*toán)|(?:chuyển\\s*(?:tiền|khoản)|thanh\\s*toán)\\s*(?:rồi|xong|nhưng|mà)).*(?:chưa|không)\\s*(?:mở|thấy|nhận|kích\\s*hoạt|vào)|hoàn\\s*tiền|trả\\s*góp|hóa\\s*đơn\\s*vat|giảm\\s*giá|khuyến\\s*mãi|sai\\s*số\\s*tiền|bị\\s*trừ\\s*tiền|chưa\\s*(?:thấy\\s*)?(?:mở\\s*(?:khóa|video|lớp)|kích\\s*hoạt)');
+  uRegex('chuyển\\s*(?:nhầm|thiếu|thừa|hai\\s*lần|2\\s*lần)|(?:đã\\s*(?:chuyển\\s*(?:tiền|khoản)|thanh\\s*toán)|(?:chuyển\\s*(?:tiền|khoản)|thanh\\s*toán)(?:\\s+\\S+){0,2}\\s+(?:rồi|xong|nhưng|mà)).*(?:chưa|không)\\s*(?:mở|thấy|nhận|kích\\s*hoạt|vào)|hoàn\\s*tiền|trả\\s*góp|hóa\\s*đơn\\s*vat|giảm\\s*giá|khuyến\\s*mãi|sai\\s*số\\s*tiền|bị\\s*trừ\\s*tiền|chưa\\s*(?:thấy\\s*)?(?:mở\\s*(?:khóa|video|lớp)|kích\\s*hoạt)');
 
 const EXAM_OR_EXCEPTION_HANDOFF_RE =
   uRegex('lịch\\s*thi|ngày\\s*thi|lệ\\s*phí\\s*thi|thi\\s*hộ|đăng\\s*ký\\s*thi|khiếu\\s*nại|phản\\s*ánh|xóa\\s*thông\\s*tin|dữ\\s*liệu\\s*cá\\s*nhân|kiểm\\s*tra\\s*đầu\\s*vào|nhảy\\s*cấp');
@@ -93,18 +93,21 @@ export function hasForbiddenAiOutput(reply) {
 export function redactForLlm(value) {
   return String(value || '')
     .replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, '[email]')
-    .replace(/(?:\+?84|0)(?:[ .-]*\d){8,11}\b/g, '[số điện thoại]')
+    .replace(/(?<=^|[^\p{L}\p{N}_])(?:\(\s*\+?84\s*\)|(?:\+?84|0))(?:[ .-]*\d){8,11}(?=$|[^\p{L}\p{N}_])/gu, '[số điện thoại]')
     .replace(/(?:https?:\/\/|www\.)\S+/gi, '[liên kết]');
 }
 
 function hasPhoneLikeSequence(value) {
   const collapsed = String(value || '').replace(/(\d)[\s.-]+(?=\d)/g, '$1');
-  return /(?<=^|[^\p{L}\p{N}_])\+?\d{5,13}(?!\s*(?:đồng|vnđ|vnd|đ|k)(?=$|[^\p{L}\p{N}_]))(?=$|[^\p{L}\p{N}_])/iu.test(collapsed);
+  if (/(?<=^|[^\p{L}\p{N}_])\+?\d{5,13}(?!\s*(?:đồng|vnđ|vnd|đ|k)(?=$|[^\p{L}\p{N}_]))(?=$|[^\p{L}\p{N}_])/iu.test(collapsed)) {
+    return true;
+  }
+  return /(?:(?:\+?84|0)\d{7,12}|[\p{L}_]\d{8,12}|\d{8,12}(?!\s*(?:đồng|vnđ|vnd|đ|k)(?=$|[^\p{L}\p{N}_]))[\p{L}_])/iu.test(collapsed);
 }
 
 function extractPhoneFromText(text) {
   const matches =
-    String(text || '').match(/(?<=^|[^\p{L}\p{N}_])(?:\+?84|0)(?:[ .-]*\d){8,11}(?=$|[^\p{L}\p{N}_])/gu) || [];
+    String(text || '').match(/(?<=^|[^\p{L}\p{N}_])(?:\(\s*\+?84\s*\)|(?:\+?84|0))(?:[ .-]*\d){8,11}(?=$|[^\p{L}\p{N}_])/gu) || [];
   for (const raw of matches) {
     const valid = normalizeVnPhone(raw);
     if (valid) return valid;
@@ -126,7 +129,7 @@ function extractTimeslot(text, norm) {
   for (const raw of matches) {
     const candidate = tidy(raw, 60);
     if (/\d|cuối\s*tuần|thứ|chủ\s*nhật|tối|sáng|chiều/iu.test(candidate) &&
-        /(?:mai|tuần|giờ|\d+\s*h|\d+:\d+|tối|cuối\s*tuần|buổi\s*(?:sáng|chiều|tối))/iu.test(candidate)) {
+        /(?:mai|tuần|giờ|\d+\s*h|\d+:\d+|tối|cuối\s*tuần|chủ\s*nhật|buổi\s*(?:sáng|chiều|tối))/iu.test(candidate)) {
       return candidate;
     }
   }

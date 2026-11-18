@@ -2097,5 +2097,70 @@ describe('Milestone M4 — KTN Zalo OA CRM, Hybrid Chatbot UI & SePay Reconcilia
         process.off('unhandledRejection', onUnhandled);
       }
     });
+
+    it('normalizes omitted qr.action on pay_guide/back_root and hides quick-reply chips when status !== bot and menu is []', async () => {
+      vi.spyOn(ktnApi, 'startWebConsultation').mockResolvedValue({ token: 'web-qr-fallback-token' });
+      vi.spyOn(ktnApi, 'getWebConsultationCatalog').mockResolvedValue({
+        courses: [{ id: '6adadba969897b0002482ca5', title: 'New HSK 1 (3.0)', price: 963000 }],
+        checkoutEnabled: true,
+      });
+      const threadSpy = vi
+        .spyOn(ktnApi, 'getWebConsultationThread')
+        .mockResolvedValueOnce({
+          status: 'bot',
+          messages: [],
+          menu: [
+            { id: 'pay_guide', label: 'Tạo đơn & mã VietQR ngay', payload: 'OPEN_ORDER_FORM' },
+            { id: 'back_root', label: 'Menu chính', payload: 'MENU_ROOT' },
+          ],
+        })
+        .mockResolvedValueOnce({
+          status: 'waiting',
+          messages: [
+            {
+              id: 'handoff-1',
+              sender: 'bot',
+              bot_mode: 'handoff',
+              body: 'Đã chuyển tư vấn viên.',
+              created_at: '2026-11-18T03:00:00Z',
+            },
+          ],
+          menu: [],
+        });
+      const sendMsgSpy = vi.spyOn(ktnApi, 'sendWebConsultationMessage').mockResolvedValue({
+        accepted: true,
+      });
+
+      render(
+        <QueryClientProvider client={makeQueryClient()}>
+          <MemoryRouter>
+            <WebChatbotWidget mode="page" />
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('web-chatbot-qr-pay_guide')).toBeInTheDocument();
+      });
+
+      // Omitted qr.action on pay_guide opens order form with 0 sendWebConsultationMessage calls
+      fireEvent.click(screen.getByTestId('web-chatbot-qr-pay_guide'));
+      expect(screen.getByTestId('web-chatbot-order-form')).toBeInTheDocument();
+      expect(sendMsgSpy).not.toHaveBeenCalled();
+
+      // Omitted qr.action on back_root sends MENU_ROOT and refreshes thread -> waiting + menu:[] hides chips
+      fireEvent.click(screen.getByTestId('web-chatbot-qr-back_root'));
+      await waitFor(() => {
+        expect(sendMsgSpy).toHaveBeenCalledWith(
+          'web-qr-fallback-token',
+          expect.objectContaining({ body: 'MENU_ROOT', menuAction: 'MENU_ROOT' })
+        );
+        expect(threadSpy).toHaveBeenCalledTimes(2);
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId(/^web-chatbot-qr-/)).not.toBeInTheDocument();
+      });
+    });
   });
 });

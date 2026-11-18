@@ -172,7 +172,9 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
         if (threadRes) {
           setStatus(threadRes.status);
           setMessages(dedupeMessagesById(threadRes.messages));
-          if (threadRes.menu?.length) {
+          if (threadRes.status !== 'bot') {
+            setQuickReplies([]);
+          } else if (Array.isArray(threadRes.menu) && threadRes.menu.length > 0) {
             setQuickReplies(threadRes.menu);
           }
         }
@@ -199,7 +201,11 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
           if (cancelled) return;
           setStatus(res.status);
           setMessages(dedupeMessagesById(res.messages));
-          if (res.menu?.length) setQuickReplies(res.menu);
+          if (res.status !== 'bot') {
+            setQuickReplies([]);
+          } else if (Array.isArray(res.menu) && res.menu.length > 0) {
+            setQuickReplies(res.menu);
+          }
         })
         .catch(() => {
           // ignore transient poll failure
@@ -261,7 +267,10 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
     try {
       if (isDemoMode) {
         const isHandoff = menuAction === 'MENU_HANDOFF';
-        if (isHandoff) setStatus('waiting');
+        if (isHandoff) {
+          setStatus('waiting');
+          setQuickReplies([]);
+        }
         const botMsg: ConsultationMessage = {
           id: nextSyntheticId('demo-bot'),
           sender: 'bot',
@@ -302,14 +311,22 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
       });
 
       if (res.status) setStatus(res.status);
-      if (res.menu?.length) setQuickReplies(res.menu);
+      if (res.status && res.status !== 'bot') {
+        setQuickReplies([]);
+      } else if (Array.isArray(res.menu) && res.menu.length > 0) {
+        setQuickReplies(res.menu);
+      }
       if (res.reply) {
         setMessages((prev) => appendUniqueMessage(prev, res.reply!));
       } else {
         const threadRes = await ktnApi.getWebConsultationThread(token);
         setStatus(threadRes.status);
         setMessages(dedupeMessagesById(threadRes.messages));
-        if (threadRes.menu?.length) setQuickReplies(threadRes.menu);
+        if (threadRes.status !== 'bot') {
+          setQuickReplies([]);
+        } else if (Array.isArray(threadRes.menu) && threadRes.menu.length > 0) {
+          setQuickReplies(threadRes.menu);
+        }
       }
     } catch (err) {
       addToast({
@@ -323,7 +340,15 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
   };
 
   const handleQuickReply = (qr: ConsultationQuickReply) => {
-    const action = qr.action ?? (qr.id.startsWith('MENU_FAQ') ? 'MENU_FAQ' : qr.id);
+    const action =
+      qr.action ||
+      (qr.payload === 'OPEN_ORDER_FORM' || qr.id === 'pay_guide'
+        ? 'OPEN_ORDER_FORM'
+        : qr.payload === 'MENU_ROOT' || qr.id === 'back_root'
+          ? 'MENU_ROOT'
+          : qr.id.startsWith('MENU_FAQ') || qr.id.startsWith('FAQ_')
+            ? 'MENU_FAQ'
+            : qr.id);
     if (action === 'OPEN_ORDER_FORM') {
       setShowOrderForm(true);
       return;
@@ -718,19 +743,21 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
       </div>
 
       {/* Scripted Quick-Reply Menu */}
-      <div className="flex flex-wrap gap-1 border-t border-stone-200 bg-stone-50 px-3 py-2">
-        {quickReplies.map((qr) => (
-          <button
-            key={qr.id}
-            type="button"
-            data-testid={`web-chatbot-qr-${qr.id}`}
-            onClick={() => handleQuickReply(qr)}
-            className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-900 hover:bg-red-50"
-          >
-            {qr.label}
-          </button>
-        ))}
-      </div>
+      {status === 'bot' && quickReplies.length > 0 && (
+        <div className="flex flex-wrap gap-1 border-t border-stone-200 bg-stone-50 px-3 py-2">
+          {quickReplies.map((qr) => (
+            <button
+              key={qr.id}
+              type="button"
+              data-testid={`web-chatbot-qr-${qr.id}`}
+              onClick={() => handleQuickReply(qr)}
+              className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-900 hover:bg-red-50"
+            >
+              {qr.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Free-text Input */}
       <form

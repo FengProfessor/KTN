@@ -2020,5 +2020,36 @@ describe('M2 Consultation Web Page CSP & Quick-Reply Menu UI (consultation-page.
     const emptyTextFaq = await runOneTurn('', { menuCommand: 'Lộ trình trẻ em (4–15 tuổi)' });
     expect(emptyTextFaq.res).toMatchObject({ handled: true, mode: 'scripted', menuCommand: 'MENU_FAQ' });
     expect(emptyTextFaq.messages.at(-1)?.body).toContain('Lộ trình trẻ em (4–15 tuổi) tại KTN');
+
+    // 5d. MENU_FAQ_* subcommands & consultationHelpers.ts FAQ payloads hit exact scripted FAQ branches without handoff
+    const mappedCourses = SAMPLE_COURSES.map(c => ({ id: c.course_id, title: c.title, price: c.price, duration: '3 tháng', ageGroup: c.age_group }));
+    const faqSubCases = [
+      { cmd: 'MENU_FAQ_TUITION', payload: '', expectedText: 'Học phí và thời hạn' },
+      { cmd: 'MENU_FAQ_KIDS', payload: 'Lộ trình học cho trẻ em như thế nào?', expectedText: 'Lộ trình trẻ em (4–15 tuổi) tại KTN' },
+      { cmd: 'MENU_FAQ_ADULT', payload: 'Tư vấn gói học 1 kèm 1 cho người đi làm', expectedText: 'người đi làm 1:1' },
+      { cmd: 'MENU_FAQ_EXAM', payload: 'Lịch thi và lộ trình ôn thi HSK/YCT như thế nào?', expectedText: 'YCT đánh giá năng lực' },
+      { cmd: 'MENU_FAQ_FORMAT', payload: '', expectedText: 'khóa video tự học' }
+    ];
+    for (const tc of faqSubCases) {
+      const directCmdOnly = resolveScriptedMenu({ menuCommand: tc.cmd, courses: mappedCourses });
+      expect(directCmdOnly, `${tc.cmd} without text`).toMatchObject({ handled: true, menuCommand: 'MENU_FAQ', nextMenuState: 'MENU_FAQ' });
+      expect(directCmdOnly.reply).toContain(tc.expectedText);
+
+      const hybridWithCmd = await runOneTurn(tc.payload || tc.cmd, { menuCommand: tc.cmd });
+      expect(hybridWithCmd.res, `runHybridChatbot ${tc.cmd}`).toMatchObject({ handled: true, mode: 'scripted', menuCommand: 'MENU_FAQ' });
+      expect(hybridWithCmd.messages.at(-1)?.body).toContain(tc.expectedText);
+
+      if (tc.payload) {
+        const directPayloadOnly = resolveScriptedMenu({ text: tc.payload, courses: mappedCourses });
+        expect(directPayloadOnly, `payload-only ${tc.payload}`).toMatchObject({ handled: true, menuCommand: 'MENU_FAQ', nextMenuState: 'MENU_FAQ' });
+        expect(directPayloadOnly.reply).toContain(tc.expectedText);
+
+        const hybridPayloadOnly = await runOneTurn(tc.payload);
+        expect(hybridPayloadOnly.res, `runHybridChatbot payload-only ${tc.payload}`).toMatchObject({ handled: true, mode: 'scripted', menuCommand: 'MENU_FAQ' });
+        expect(hybridPayloadOnly.messages.at(-1)?.body).toContain(tc.expectedText);
+      }
+    }
+    expect(resolveScriptedMenu({ menuCommand: 'OPEN_ORDER_FORM', courses: mappedCourses })).toEqual({ handled: false });
+    expect(resolveScriptedMenu({ menuCommand: 'UNKNOWN_CMD', courses: mappedCourses })).toEqual({ handled: false });
   });
 });

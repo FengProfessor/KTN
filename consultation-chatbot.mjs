@@ -237,10 +237,21 @@ export function extractLeadMetadata(text, currentMeta = {}) {
   return { patch, sourceTag, phone, adult11, child11, timeslot, goal, background, childAge };
 }
 
+const MENU_FAQ_SUBCOMMANDS = [
+  'MENU_FAQ_TUITION',
+  'MENU_FAQ_KIDS',
+  'MENU_FAQ_ADULT',
+  'MENU_FAQ_EXAM',
+  'MENU_FAQ_FORMAT'
+];
+
 function detectExplicitMenuCommand(text, explicitCommand, leadPayload, conversation) {
   const cmd = tidy(explicitCommand, 40).toUpperCase();
   if (['MENU_ROOT', 'MENU_FAQ', 'MENU_NEED_PHONE', 'MENU_PAYMENT', 'MENU_HANDOFF'].includes(cmd)) {
     return cmd;
+  }
+  if (MENU_FAQ_SUBCOMMANDS.includes(cmd)) {
+    return 'MENU_FAQ';
   }
   const clean = tidy(text, 200).toLowerCase() || tidy(explicitCommand, 200).toLowerCase();
   if (conversation?.lead_meta?.menu_state === 'MENU_NEED_PHONE' && leadPayload && Object.keys(leadPayload).length > 0) {
@@ -250,16 +261,26 @@ function detectExplicitMenuCommand(text, explicitCommand, leadPayload, conversat
   if (['menu_root', 'menu chính', '← menu chính', 'quay lại menu chính'].includes(clean)) return 'MENU_ROOT';
   if ([
     'menu_faq',
+    'menu_faq_tuition',
+    'menu_faq_kids',
+    'menu_faq_adult',
+    'menu_faq_exam',
+    'menu_faq_format',
     'chọn khóa học',
+    'chọn khóa học & faq',
+    'cho tôi xem các khóa học và lộ trình phù hợp',
     'học phí & ưu đãi',
     'lộ trình trẻ em (4–15 tuổi)',
     'lộ trình trẻ em (4-15 tuổi)',
     'lộ trình trẻ em',
+    'lộ trình học cho trẻ em như thế nào?',
     'tiếng trung người đi làm 1:1',
+    'tư vấn gói học 1 kèm 1 cho người đi làm',
     'hình thức học & thiết bị',
     'hình thức học',
     'lịch thi hsk / yct',
-    'lịch thi hsk/yct'
+    'lịch thi hsk/yct',
+    'lịch thi và lộ trình ôn thi hsk/yct như thế nào?'
   ].includes(clean)) {
     return 'MENU_FAQ';
   }
@@ -289,6 +310,7 @@ export function resolveScriptedMenu({
   const command = detectMenuCommand(text, menuCommand, conversation, leadPayload);
   if (!command) return { handled: false };
 
+  const cmd = tidy(menuCommand, 40).toUpperCase();
   const clean = tidy(text, 400).toLowerCase() || tidy(menuCommand, 400).toLowerCase();
 
   if (command === 'MENU_ROOT') {
@@ -383,15 +405,15 @@ export function resolveScriptedMenu({
 
   // MENU_FAQ
   let reply;
-  if (clean.includes('trẻ em')) {
+  if (cmd === 'MENU_FAQ_KIDS' || clean === 'menu_faq_kids' || clean.includes('trẻ em')) {
     reply = 'Lộ trình trẻ em (4–15 tuổi) tại KTN chia theo độ tuổi và nền tảng: Mầm non (5–6 tuổi làm quen nghe nói), Tiểu học (7–13 tuổi nghe nói + nhận mặt chữ) và Thiếu niên / YCT. Anh/chị nhắn độ tuổi và việc bé đã học chưa để em gợi ý đúng khóa video nhé.';
-  } else if (clean.includes('người đi làm')) {
+  } else if (cmd === 'MENU_FAQ_ADULT' || clean === 'menu_faq_adult' || clean.includes('người đi làm')) {
     reply = 'Với nhu cầu tiếng Trung người đi làm 1:1 (giao tiếp công việc, thương mại, xếp lịch linh hoạt), tư vấn viên KTN sẽ trực tiếp trao đổi mục tiêu, nền tảng và kiểm tra khung giờ trống cho anh/chị. Anh/chị bấm "Gặp tư vấn viên" hoặc nhắn mục tiêu + khung giờ rảnh giúp em ạ.';
-  } else if (clean.includes('hình thức') || clean.includes('thiết bị')) {
+  } else if (cmd === 'MENU_FAQ_FORMAT' || clean === 'menu_faq_format' || clean.includes('hình thức') || clean.includes('thiết bị')) {
     reply = 'KTN có khóa video tự học linh hoạt theo nhịp cá nhân (xem được trên điện thoại, iPad, máy tính) và lớp có giáo viên theo lịch. Nếu anh/chị cần lớp học trực tiếp có lịch cố định hoặc muốn học thử với cô, chọn "Gặp tư vấn viên" để bên em kiểm tra lịch ạ.';
-  } else if (clean.includes('hsk') || clean.includes('yct')) {
+  } else if (cmd === 'MENU_FAQ_EXAM' || clean === 'menu_faq_exam' || clean.includes('hsk') || clean.includes('yct')) {
     reply = 'YCT đánh giá năng lực tiếng Trung thiếu nhi, còn HSK đánh giá theo cấp độ chuẩn. Các thông tin ngày thi, lệ phí và đăng ký dự thi theo thông báo từng điểm thi sẽ do tư vấn viên KTN kiểm tra và xác nhận trực tiếp giúp gia đình ạ.';
-  } else if (clean.includes('học phí') || clean.includes('ưu đãi')) {
+  } else if (cmd === 'MENU_FAQ_TUITION' || clean === 'menu_faq_tuition' || clean.includes('học phí') || clean.includes('ưu đãi')) {
     const sample = courses.slice(0, 3).map(c => {
       const price = new Intl.NumberFormat('vi-VN').format(c.price);
       return `• ${c.title}: ${price} ₫${c.duration ? ' · ' + c.duration : ''}`;

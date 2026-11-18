@@ -1301,4 +1301,232 @@ describe('M3 SePay, Unified CRM, RBAC, P0001 Fix & Middleware Integration', () =
     expect(csvRes.status).toBe(200);
     expect(csvRes.text).toContain('"\'\n=CMD|\'/C calc\'!A0"');
   });
+
+  it('10. enforces advisor ktn_advisors re-validation & fail-closed checks across /api/ktn/admin/*, /api/ktn/orders/*, /api/ktn/students*, and /api/ktn/auth/session', async () => {
+    const adminToken = mintKtnSession({ email: 'quanly@khongtunhi.com', name: 'Quản Lý KTN', role: 'admin' });
+
+    // Seed a paid order to verify deactivated/demoted manager cannot approve it
+    const webStart = await world.request('/api/ktn/consultations/web/start', { method: 'POST' });
+    expect(webStart.status).toBe(200);
+    const ordRes = await world.request('/api/ktn/consultations/web/order', {
+      method: 'POST',
+      token: webStart.json.token,
+      json: {
+        requestId: crypto.randomUUID(),
+        courseId: '6adadba969897b0002482ca5',
+        name: 'Bé Bảo Mật',
+        email: 'baomat.order@example.com',
+        phone: '0901239988'
+      }
+    });
+    expect(ordRes.status).toBe(200);
+    const paidOrderId = ordRes.json.id;
+    await world.db.query("UPDATE public.ktn_orders SET payment_status = 'paid' WHERE order_id = $1", [paidOrderId]);
+
+    // Create manager-role advisor and regular advisor, log both in
+    const createMgr = await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'mgr.admincheck@khongtunhi.com', name: 'Quản lý AdminCheck', active: true, role: 'manager', ktn_user_id: 'KTN-MGR-ADM' }
+    });
+    expect(createMgr.status).toBe(200);
+
+    const createAdv = await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'adv.lockcheck@khongtunhi.com', name: 'Tư vấn LockCheck', active: true, role: 'advisor', ktn_user_id: 'KTN-ADV-LCK' }
+    });
+    expect(createAdv.status).toBe(200);
+
+    const mgrLogin = await world.request('/api/ktn/auth/login', {
+      method: 'POST',
+      json: { email: 'mgr.admincheck@khongtunhi.com', password: world.env.KTN_STAFF_AND_TEST_PASSWORD }
+    });
+    expect(mgrLogin.status).toBe(200);
+    const mgrTok = mgrLogin.json.token;
+
+    const advLogin = await world.request('/api/ktn/auth/login', {
+      method: 'POST',
+      json: { email: 'adv.lockcheck@khongtunhi.com', password: world.env.KTN_STAFF_AND_TEST_PASSWORD }
+    });
+    expect(advLogin.status).toBe(200);
+    const advTok = advLogin.json.token;
+
+    // Active manager-advisor has full admin access before demotion/deactivation
+    expect((await world.request('/api/ktn/admin/orders', { token: mgrTok })).status).toBe(200);
+    expect((await world.request('/api/ktn/students', { token: mgrTok })).status).toBe(200);
+    expect((await world.request('/api/ktn/admin/audit-logs', { token: mgrTok })).status).toBe(200);
+
+    // Demote manager -> advisor: existing token must immediately lose admin routes (403)
+    const demoteRes = await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'mgr.admincheck@khongtunhi.com', name: 'Quản lý AdminCheck', active: true, role: 'advisor', ktn_user_id: 'KTN-MGR-ADM' }
+    });
+    expect(demoteRes.status).toBe(200);
+
+    expect((await world.request('/api/ktn/admin/orders', { token: mgrTok })).status).toBe(403);
+    expect(
+      (await world.request('/api/ktn/orders/approve', {
+        method: 'POST',
+        token: mgrTok,
+        json: { orderId: paidOrderId }
+      })).status
+    ).toBe(403);
+    expect((await world.request('/api/ktn/students', { token: mgrTok })).status).toBe(403);
+    expect((await world.request('/api/ktn/admin/audit-logs', { token: mgrTok })).status).toBe(403);
+
+    // Re-promote to manager then deactivate (active: false): existing token rejected everywhere + 403 ADVISOR_ACCOUNT_LOCKED on auth/session
+    await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'mgr.admincheck@khongtunhi.com', name: 'Quản lý AdminCheck', active: false, role: 'manager', ktn_user_id: 'KTN-MGR-ADM' }
+    });
+
+    const mgrSessLocked = await world.request('/api/ktn/auth/session', { token: mgrTok });
+    expect(mgrSessLocked.status).toBe(403);
+    expect(mgrSessLocked.json.error).toBe('ADVISOR_ACCOUNT_LOCKED');
+
+    expect((await world.request('/api/ktn/admin/orders', { token: mgrTok })).status).toBe(403);
+    expect(
+      (await world.request('/api/ktn/orders/approve', {
+        method: 'POST',
+        token: mgrTok,
+        json: { orderId: paidOrderId }
+      })).status
+    ).toBe(403);
+    expect((await world.request('/api/ktn/admin/students/search?q=a', { token: mgrTok })).status).toBe(403);
+    expect((await world.request('/api/ktn/admin/audit-logs', { token: mgrTok })).status).toBe(403);
+
+    // Deactivate regular advisor: existing token rejected on /api/ktn/admin/students/search
+    expect((await world.request('/api/ktn/admin/students/search?q=a', { token: advTok })).status).toBe(200);
+    await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'adv.lockcheck@khongtunhi.com', name: 'Tư vấn LockCheck', active: false, role: 'advisor', ktn_user_id: 'KTN-ADV-LCK' }
+    });
+    expect((await world.request('/api/ktn/admin/students/search?q=a', { token: advTok })).status).toBe(403);
+    const advSessLocked = await world.request('/api/ktn/auth/session', { token: advTok });
+    expect(advSessLocked.status).toBe(403);
+    expect(advSessLocked.json.error).toBe('ADVISOR_ACCOUNT_LOCKED');
+
+    // Re-activate manager-advisor and verify fail-closed 503 / 403 when ktn_advisors lookup fails
+    await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'mgr.admincheck@khongtunhi.com', name: 'Quản lý AdminCheck', active: true, role: 'manager', ktn_user_id: 'KTN-MGR-ADM' }
+    });
+    // @ts-ignore Root E2E harness ESM module
+    const { loadWorkerInstance } = await import('../../../../tests/e2e-zalo-crm/harness/worker-client.mjs');
+    const failingAdvisorFetch = async (input: any, init?: any) => {
+      const urlStr = typeof input === 'string' ? input : input?.url || '';
+      if (urlStr.includes('/rest/v1/ktn_advisors')) {
+        throw new Error('simulated_ktn_advisors_outage');
+      }
+      return world.pgliteSupabase.fetch(input, init);
+    };
+    const outageWorker = loadWorkerInstance({ fetchImpl: failingAdvisorFetch });
+    const outageCtx = { waitUntil() {}, passThroughOnException() {} };
+    const failClosedSess = await outageWorker.fetch(
+      new Request('https://khongtunhi.com/api/ktn/auth/session', {
+        headers: { Authorization: `Bearer ${mgrTok}` }
+      }),
+      world.env,
+      outageCtx
+    );
+    expect(failClosedSess.status).toBe(503);
+    const failClosedOrders = await outageWorker.fetch(
+      new Request('https://khongtunhi.com/api/ktn/admin/orders', {
+        headers: { Authorization: `Bearer ${mgrTok}` }
+      }),
+      world.env,
+      outageCtx
+    );
+    expect(failClosedOrders.status).toBe(403);
+
+    // Root/static admin token (no advisorRole) continues returning 200 on admin/orders and auth/session
+    const rootOrders = await world.request('/api/ktn/admin/orders', { token: adminToken });
+    expect(rootOrders.status).toBe(200);
+    const rootSess = await world.request('/api/ktn/auth/session', { token: adminToken });
+    expect(rootSess.status).toBe(200);
+    expect(rootSess.json.user.role).toBe('admin');
+  });
+
+  it('11. resets payment.attempts to 0 in local-worker-middleware rpc/ktn_consultation_retry_payment so attempts=6 needs_review recovers to done', async () => {
+    const localHarness = createLocalWorkerHarness();
+    const mgrLogin = await invokeMiddleware(localHarness, '/api/ktn/auth/login', {
+      method: 'POST',
+      json: { email: 'quanly@khongtunhi.com', password: localHarness.env.KTN_STAFF_AND_TEST_PASSWORD }
+    });
+    expect(mgrLogin.status).toBe(200);
+    const mgrBearer = mgrLogin.json.token;
+
+    const webStart = await invokeMiddleware(localHarness, '/api/ktn/consultations/web/start', { method: 'POST' });
+    expect(webStart.status).toBe(200);
+    const webOrd = await invokeMiddleware(localHarness, '/api/ktn/consultations/web/order', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${webStart.json.token}` },
+      json: {
+        requestId: crypto.randomUUID(),
+        courseId: '6adadba969897b0002482ca5',
+        name: 'Bé Retry Six',
+        email: 'retry.six@example.com',
+        phone: '0907778899'
+      }
+    });
+    expect(webOrd.status).toBe(200);
+    const orderId = webOrd.json.id;
+
+    // Seed attempts=6 needs_review payment + open reconciliation log + paid order
+    const ordRow = localHarness.state.tables.ktn_orders.find((o: any) => o.order_id === orderId);
+    expect(ordRow).toBeTruthy();
+    ordRow.payment_status = 'paid';
+
+    const txId = 'sepay:666999';
+    localHarness.state.tables.ktn_consultation_payments.push({
+      transaction_id: txId,
+      order_id: orderId,
+      amount: 890000,
+      status: 'needs_review',
+      attempts: 6,
+      next_attempt_at: new Date().toISOString(),
+      error: 'izteach_500',
+      created_at: new Date().toISOString()
+    });
+    localHarness.state.tables.ktn_sepay_reconciliation_logs.push({
+      transaction_id: txId,
+      kind: 'needs_review',
+      order_id: orderId,
+      amount: 890000,
+      account_number: localHarness.env.KTN_SEPAY_ACCOUNT_NO,
+      transfer_content: `KTN ${orderId}`,
+      resolution_status: 'open',
+      raw_payload: {},
+      created_at: new Date().toISOString()
+    });
+
+    const resolveRes = await invokeMiddleware(
+      localHarness,
+      `/api/ktn/consultations/staff/reconciliation/${encodeURIComponent(txId)}/resolve`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${mgrBearer}` },
+        json: { resolution_status: 'resolved', order_id: orderId, retry_payment: true, note: 'Retry after fixing upstream' }
+      }
+    );
+    expect(resolveRes.status).toBe(200);
+    expect(resolveRes.json.ok).toBe(true);
+    expect(resolveRes.json.log?.resolution_status).toBe('resolved');
+
+    let payRow: any;
+    for (let i = 0; i < 40; i++) {
+      payRow = localHarness.state.tables.ktn_consultation_payments.find((p: any) => p.transaction_id === txId);
+      if (payRow?.status === 'done') break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    const updatedOrd = localHarness.state.tables.ktn_orders.find((o: any) => o.order_id === orderId);
+    expect(payRow?.status).toBe('done');
+    expect(payRow?.attempts).toBe(1);
+    expect(updatedOrd?.approval_status).toBe('approved');
+  });
 });

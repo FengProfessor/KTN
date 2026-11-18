@@ -4532,20 +4532,101 @@ async function verifyIzTeachAccessToken(tok, env) {
   }
 }
 
-async function extractSessionFromRequest(request, env) {
+async function revalidateAdvisorSession(verified, env) {
+  if (!verified || typeof verified !== 'object') {
+    return { ok: true, session: verified };
+  }
+  const isAdvisorClaim = Boolean(
+    verified.advisorRole ||
+    verified.role === 'advisor' ||
+    (Array.isArray(verified.roles) && verified.roles.includes('advisor'))
+  );
+  if (!isAdvisorClaim) {
+    return { ok: true, session: verified };
+  }
+  const normalizedEmail = normalizeEmail(verified.email || '');
+  if (!normalizedEmail) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'ADVISOR_ACCOUNT_LOCKED',
+      message: 'Tài khoản tư vấn viên đang tạm khóa hoặc chưa được phân quyền.'
+    };
+  }
+  let advRes;
+  try {
+    advRes = await supabaseRequest(
+      env,
+      `ktn_advisors?email=eq.${encodeURIComponent(normalizedEmail)}&limit=1`
+    );
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      error: 'ADVISOR_LOOKUP_FAILED',
+      message: 'Không thể xác minh trạng thái tài khoản tư vấn viên lúc này.'
+    };
+  }
+  if (!advRes || !advRes.ok) {
+    return {
+      ok: false,
+      status: 503,
+      error: 'ADVISOR_LOOKUP_FAILED',
+      message: 'Không thể xác minh trạng thái tài khoản tư vấn viên lúc này.'
+    };
+  }
+  const advRow = Array.isArray(advRes.data) && advRes.data[0] ? advRes.data[0] : null;
+  if (!advRow || advRow.active === false) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'ADVISOR_ACCOUNT_LOCKED',
+      message: 'Tài khoản tư vấn viên đang tạm khóa hoặc chưa được phân quyền.'
+    };
+  }
+  const isManager = advRow.role === 'manager';
+  const syncedRole = isManager ? 'admin' : 'advisor';
+  return {
+    ok: true,
+    session: {
+      ...verified,
+      role: syncedRole,
+      roles: [syncedRole],
+      advisorRole: isManager ? 'manager' : 'advisor',
+      ...(advRow.name ? { name: String(advRow.name).trim() } : {})
+    }
+  };
+}
+
+async function extractSessionFromRequest(request, env, options = {}) {
+  const returnAdvisorError = Boolean(options && options.returnAdvisorError);
+  const resolveVerified = async (verified) => {
+    const check = await revalidateAdvisorSession(verified, env);
+    if (!check.ok) {
+      return returnAdvisorError
+        ? {
+            __advisorAuthFailure: true,
+            status: check.status,
+            error: check.error,
+            message: check.message
+          }
+        : null;
+    }
+    return check.session;
+  };
   const authHeader = request.headers.get('Authorization') || '';
   if (authHeader.startsWith('Bearer ')) {
     const tok = authHeader.slice(7).trim();
     const verified = await verifySessionToken(tok, env.KTN_SESSION_SECRET);
     if (verified) {
       if (await isTokenRevoked(env, tok, verified.jti, verified.email)) return null;
-      return verified;
+      return resolveVerified(verified);
     }
     if (await isTokenRevoked(env, tok, null)) return null;
     const verifiedIz = await verifyIzTeachAccessToken(tok, env);
     if (verifiedIz) {
       if (await isTokenRevoked(env, tok, verifiedIz.jti || null, verifiedIz.email)) return null;
-      return verifiedIz;
+      return resolveVerified(verifiedIz);
     }
   }
   const cookieHeader = request.headers.get('Cookie') || '';
@@ -4555,13 +4636,13 @@ async function extractSessionFromRequest(request, env) {
     const verified = await verifySessionToken(rawCookieTok, env.KTN_SESSION_SECRET);
     if (verified) {
       if (await isTokenRevoked(env, rawCookieTok, verified.jti, verified.email)) return null;
-      return verified;
+      return resolveVerified(verified);
     }
     if (await isTokenRevoked(env, rawCookieTok, null)) return null;
     const verifiedIz = await verifyIzTeachAccessToken(rawCookieTok, env);
     if (verifiedIz) {
       if (await isTokenRevoked(env, rawCookieTok, verifiedIz.jti || null, verifiedIz.email)) return null;
-      return verifiedIz;
+      return resolveVerified(verifiedIz);
     }
   }
   return null;
@@ -13274,10 +13355,19 @@ export default {
     // B. KIỂM TRA PHIÊN LÀM VIỆC & ĐĂNG XUẤT (THU HỒI TOKEN TRÊN SERVER)
     // ------------------------------------------------------------------------
     if (path === '/api/ktn/auth/session' && request.method === 'GET') {
-      const session = await extractSessionFromRequest(request, env);
-      if (!session) {
+      const sessionResult = await extractSessionFromRequest(request, env, { returnAdvisorError: true });
+      if (!sessionResult) {
         return jsonResponse({ ok: false, authenticated: false }, 401);
       }
+      if (sessionResult.__advisorAuthFailure) {
+        return jsonResponse({
+          ok: false,
+          authenticated: false,
+          error: sessionResult.error || 'ADVISOR_ACCOUNT_LOCKED',
+          message: sessionResult.message || 'Tài khoản tư vấn viên đang tạm khóa hoặc chưa được phân quyền.'
+        }, sessionResult.status || 403);
+      }
+      const session = sessionResult;
       const sessNowMs = resolveEffectiveRequestNowMs(request, session);
       const sessNowIso = new Date(sessNowMs).toISOString();
       const cleanSession = {
@@ -13381,7 +13471,15 @@ export default {
             env,
             `ktn_advisors?email=eq.${encodeURIComponent(normalizeEmail(cleanSession.email))}&limit=1`
           );
-          const advRow = (advSessRes.ok && Array.isArray(advSessRes.data) && advSessRes.data[0]) || null;
+          if (!advSessRes || !advSessRes.ok) {
+            return jsonResponse({
+              ok: false,
+              authenticated: false,
+              error: 'ADVISOR_LOOKUP_FAILED',
+              message: 'Không thể xác minh trạng thái tài khoản tư vấn viên lúc này.'
+            }, 503);
+          }
+          const advRow = (Array.isArray(advSessRes.data) && advSessRes.data[0]) || null;
           if (!advRow || advRow.active === false) {
             return jsonResponse({
               ok: false,
@@ -13402,7 +13500,14 @@ export default {
             cleanSession.roles = ['advisor'];
             cleanSession.advisorRole = 'advisor';
           }
-        } catch {}
+        } catch {
+          return jsonResponse({
+            ok: false,
+            authenticated: false,
+            error: 'ADVISOR_LOOKUP_FAILED',
+            message: 'Không thể xác minh trạng thái tài khoản tư vấn viên lúc này.'
+          }, 503);
+        }
       }
       const resolvedSessionRole = cleanSession.role || effectiveRole;
       const refreshedToken = await signSessionToken(cleanSession, env.KTN_SESSION_SECRET);

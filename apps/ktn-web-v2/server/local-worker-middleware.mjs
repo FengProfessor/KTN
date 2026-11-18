@@ -1781,6 +1781,7 @@ export function createLocalWorkerHarness() {
           return new Response(JSON.stringify(false), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         payment.status = 'accepted';
+        payment.attempts = 0;
         payment.next_attempt_at = new Date().toISOString();
         payment.error = null;
         const link = links.find(l => l.order_id === b.p_order);

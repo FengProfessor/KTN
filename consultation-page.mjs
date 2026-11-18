@@ -5,7 +5,7 @@ function browser(staffMode, full) {
   const dollars = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
   const dates = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Ho_Chi_Minh' });
   const fmt = value => value ? dates.format(new Date(value)) : '—';
-  const channels = { web: 'Web', messenger: 'Messenger' };
+  const channels = { web: 'Web', messenger: 'Messenger', zalo_oa: 'Zalo OA' };
   const states = { bot: 'Bot đang hỗ trợ', waiting: 'Chờ nhận', open: 'Đang tư vấn', closed: 'Đã đóng' };
   const outcomes = { registered:'Đã đăng ký', declined:'Từ chối', no_response:'Không phản hồi', other:'Khác' };
   const senders = { customer: 'Khách', advisor: 'Tư vấn viên', manager: 'Quản lý', bot: 'Bot', system: 'KTN', external: 'Fanpage' };
@@ -86,16 +86,26 @@ function browser(staffMode, full) {
     return element;
   }
 
-  function showMessages(target, messages) {
+  function showMessages(target, messages, channel = 'web') {
     target.replaceChildren(...messages.map(message => {
       const item = node('article', '', { class: 'message ' + message.sender });
       if (message.id) item.id = 'message-' + message.id;
-      item.append(node('small', [senders[message.sender], message.actor_email, fmt(message.created_at),
+      const senderLabel = message.sender === 'external' ? (channel === 'zalo_oa' ? 'Zalo OA' : 'Fanpage') : senders[message.sender];
+      item.append(node('small', [senderLabel, message.actor_email, fmt(message.created_at),
         message.delivery && message.delivery !== 'sent' ? (message.delivery_note || 'Đang gửi') : ''].filter(Boolean).join(' · ')),
       node('p', message.body));
       // QR có thể mở lại từ lịch sử hội thoại phía quản lý.
       const qr = message.sender === 'system' && /\nVietQR: (https:\/\/img\.vietqr\.io\/\S+)$/.exec(message.body);
       if (qr) item.append(link('Xem mã VietQR', qr[1]));
+      const checkoutMatch = /(?:https?:\/\/[^\s]+)?(\/tu-van#checkout=[^\s]+)/.exec(message.body || '');
+      if (checkoutMatch) {
+        try {
+          const parsed = new URL(checkoutMatch[0], location.origin);
+          if (parsed.origin === location.origin && parsed.pathname === '/tu-van') {
+            item.append(link('Mở trang thanh toán VietQR', parsed.pathname + parsed.hash));
+          }
+        } catch { /* Bỏ qua URL không hợp lệ. */ }
+      }
       return item;
     }));
   }
@@ -163,6 +173,7 @@ function browser(staffMode, full) {
     token = (consultOnly ? nonce.get('checkout') : localStorage.getItem('ktn_consult_web')) || '';
     const chat = node('section', '', { class: 'panel' });
     const registration = node('section', '', { class: 'panel' });
+    const stateBadge = node('p', '', { class: 'status-badge' });
     const messages = node('div', '', { class: 'messages', 'aria-live': 'polite' });
     let snapshot = '';
     const begin = async () => {
@@ -172,10 +183,11 @@ function browser(staffMode, full) {
     };
     const refresh = async () => {
       const data = await call('web/thread');
+      stateBadge.textContent = states[data.status] || '';
       const next = JSON.stringify(data.messages);
       if (next !== snapshot) {
         snapshot = next;
-        showMessages(messages, data.messages);
+        showMessages(messages, data.messages, 'web');
         if (!data.messages.length) messages.append(node('p','Bạn muốn tìm khóa học nào cho con?'));
         messages.scrollTop = messages.scrollHeight;
       }
@@ -189,6 +201,72 @@ function browser(staffMode, full) {
         await begin();
         await refresh();
       }
+      const quickBar = node('div', '', { class: 'quick-replies', role: 'group', 'aria-label': 'Menu tư vấn nhanh' });
+      const leadDetails = node('details', '', { class: 'lead-capture' });
+      const phoneInput = input('phone', 'tel', 'Số điện thoại (VD: 0901234567)', { required: '', maxlength: 30 });
+      const leadForm = form('Gửi thông tin liên hệ', [
+        input('name', 'text', 'Họ tên phụ huynh / học viên', { maxlength: 120 }),
+        phoneInput,
+        options([
+          ['Mầm non (4–6 tuổi)', 'Mầm non (4–6 tuổi)'],
+          ['Tiểu học (7–11 tuổi)', 'Tiểu học (7–11 tuổi)'],
+          ['Thiếu niên (12–17 tuổi)', 'Thiếu niên (12–17 tuổi)'],
+          ['Người đi làm 1:1', 'Người đi làm 1:1']
+        ], 'Đối tượng học', 'targetGroup'),
+        input('goal', 'text', 'Mục tiêu học (giao tiếp, HSK/YCT, công việc...)', { maxlength: 200 }),
+        input('timeslot', 'text', 'Khung giờ tiện liên hệ / học thử', { maxlength: 100 })
+      ], async (data, element) => {
+        const cleanedPhone = String(data.phone || '').trim().replace(/[ .-]/g, '');
+        if (!/^(0|\+84)[35789]\d{8}$/.test(cleanedPhone)) {
+          throw new Error('Nhập số điện thoại Việt Nam hợp lệ (10 số bắt đầu bằng 03, 05, 07, 08, 09 hoặc +84).');
+        }
+        const summary = ['Nhu cầu: ' + (data.targetGroup || 'Tư vấn khóa học'),
+          data.name && 'Họ tên: ' + data.name,
+          'SĐT: ' + cleanedPhone,
+          data.goal && 'Mục tiêu: ' + data.goal,
+          data.timeslot && 'Khung giờ: ' + data.timeslot].filter(Boolean).join(' · ');
+        await call('web/message', 'POST', {
+          body: summary,
+          requestId: crypto.randomUUID(),
+          menuCommand: 'MENU_NEED_PHONE',
+          lead: { name: data.name || '', phone: cleanedPhone, targetGroup: data.targetGroup || '', goal: data.goal || '', timeslot: data.timeslot || '' }
+        });
+        element.reset();
+        leadDetails.open = false;
+        await refresh();
+      });
+      leadDetails.append(node('summary', 'Để lại nhu cầu & số điện thoại'), leadForm);
+      const sendQuick = async (label, menuCommand, nextMenu) => {
+        if (nextMenu) renderQuickMenu(nextMenu);
+        if (menuCommand === 'MENU_NEED_PHONE') {
+          leadDetails.open = true;
+          phoneInput.focus();
+        }
+        await call('web/message', 'POST', { body: label, requestId: crypto.randomUUID(), menuCommand });
+        await refresh();
+      };
+      const menuItems = {
+        MENU_ROOT: [
+          ['Chọn khóa học', 'MENU_FAQ', 'MENU_FAQ'],
+          ['Học phí & Ưu đãi', 'MENU_FAQ', null],
+          ['Hướng dẫn thanh toán VietQR', 'MENU_PAYMENT', null],
+          ['Để lại nhu cầu & SĐT', 'MENU_NEED_PHONE', null],
+          ['Gặp tư vấn viên', 'MENU_HANDOFF', null]
+        ],
+        MENU_FAQ: [
+          ['Lộ trình trẻ em (4–15 tuổi)', 'MENU_FAQ', null],
+          ['Tiếng Trung người đi làm 1:1', 'MENU_FAQ', null],
+          ['Hình thức học & thiết bị', 'MENU_FAQ', null],
+          ['Lịch thi HSK / YCT', 'MENU_FAQ', null],
+          ['← Menu chính', 'MENU_ROOT', 'MENU_ROOT']
+        ]
+      };
+      function renderQuickMenu(mode) {
+        const entries = menuItems[mode] || menuItems.MENU_ROOT;
+        quickBar.replaceChildren(...entries.map(([label, cmd, next]) =>
+          button(label, () => sendQuick(label, cmd, next), { class: 'chip', 'data-menu': cmd })));
+      }
+      renderQuickMenu('MENU_ROOT');
       let messageId = '';
       let lastBody = '';
       const composer = form('Gửi', [node('textarea','',{ name:'body', 'aria-label':'Nội dung tư vấn', placeholder:'Nhập câu hỏi', maxlength:4000, required:'' })], async (data, element) => {
@@ -199,7 +277,7 @@ function browser(staffMode, full) {
         messageId = '';
         await refresh();
       });
-      chat.append(messages, composer);
+      chat.append(stateBadge, messages, quickBar, leadDetails, composer);
       setInterval(() => { if (!document.hidden) void refresh().catch(() => {}); }, 4500);
       root.append(registration);
     } else {
@@ -346,7 +424,7 @@ function browser(staffMode, full) {
         header.append(form('Giao ca',[picker],data => changed('assign',data)));
       }
       const messages = node('div','',{ class:'messages' });
-      showMessages(messages,result.messages);
+      showMessages(messages,result.messages,c.channel);
       target.replaceChildren(header);
       if (result.hasEarlier) target.append(button('Tin cũ hơn', async () => showThread(target,id,version,true,offset+50)));
       if (offset) target.append(button('Tin mới hơn', async () => showThread(target,id,version,true,offset-50)));
@@ -592,6 +670,9 @@ small{color:#6a5750;display:block;overflow-wrap:anywhere}nav,.controls,form{disp
 form textarea{flex-basis:100%}.panel{border:1px solid #e7dad1;border-radius:12px;background:#fff;padding:13px;margin-bottom:12px;min-width:0}
 .workspace{display:grid;grid-template-columns:minmax(228px,32%) minmax(0,1fr);gap:12px}.list-row,.record{border-bottom:1px solid #eee3dc;padding:7px 0}
 .messages{max-height:52vh;overflow:auto;min-height:80px;margin:8px 0}.message{padding:7px 9px;background:#f7f0e9;border-radius:8px;margin:6px 0;overflow-wrap:anywhere}
+.status-badge{display:inline-block;padding:2px 9px;border-radius:999px;background:#f7f0e9;color:#781f25;font-size:.82rem;font-weight:600;margin:0 0 8px}
+.quick-replies{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.chip{background:#f7f0e9;color:#781f25;border:1px solid #d9c5b8;border-radius:999px;padding:6px 12px;min-height:36px;font-size:.9rem}.chip:hover{background:#efe2d7}
+.lead-capture{background:#fbf7f0;border:1px solid #e7dad1;border-radius:10px;padding:8px 10px;margin:8px 0}
 .message.customer{background:#edf3ee}.message p{margin:3px 0;white-space:pre-wrap}.message small{font-size:.78rem}.list-row button{max-width:100%;margin:0 4px 3px 0}
 details{margin:8px 0}summary{cursor:pointer;font-weight:650;color:#781f25}details button{margin:4px 5px 4px 0}
 blockquote{margin:4px 0;border-left:3px solid #d0a4a5;padding-left:10px}img{max-width:100%;height:auto}#status{color:#8b2424;margin:0 0 8px}

@@ -1,4 +1,4 @@
-export type UserRole = 'student' | 'teacher' | 'admin';
+export type UserRole = 'student' | 'teacher' | 'admin' | 'advisor';
 export type StudentCase = 'both' | 'online_only' | 'sll_only' | 'unassigned';
 export type CourseDurationUnit = 'd' | 'w' | 'm' | 'unlimited';
 export type CourseDurationPreset =
@@ -487,6 +487,10 @@ export interface KtnStudentRecord {
   fullySynced?: boolean;
   last_sync_error?: string | null;
   internal_note?: string | null;
+  lead_source?: string | null;
+  zalo_user_id?: string | null;
+  consultation_id?: string | null;
+  assigned_advisor?: string | null;
   updated_at?: string;
 }
 
@@ -808,8 +812,19 @@ export interface KtnOrder {
   payment_tx_ref?: string;
   payment_received_amount?: number | null;
   payment_proof_auto?: boolean;
-  source?: 'website' | 'authenticated_student' | string;
+  source?:
+    | 'website'
+    | 'authenticated_student'
+    | 'zalo_oa'
+    | 'web_chat'
+    | 'messenger'
+    | 'consultation'
+    | string;
   source_label?: string;
+  assigned_advisor?: string | null;
+  owner_email?: string | null;
+  consultation_id?: string | null;
+  zalo_user_id?: string | null;
   can_activate?: boolean;
   activation_block_reasons?: string[];
   account_detailed_status?: OrderAccountDetailedStatus;
@@ -920,4 +935,242 @@ export interface KtnAttendanceResponse {
     absentUnexcused: number;
   };
 }
+
+export type ConsultationChannel = 'web' | 'messenger' | 'zalo_oa';
+export type ConsultationStatus = 'bot' | 'waiting' | 'open' | 'closed';
+export type ConsultationOutcome = 'registered' | 'declined' | 'no_response' | 'other';
+export type ConsultationSender =
+  | 'customer'
+  | 'bot'
+  | 'advisor'
+  | 'manager'
+  | 'external'
+  | 'system'
+  | 'note';
+export type ConsultationDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed';
+export type ConsultationFlagCategory = 'price' | 'promotion' | 'fit';
+export type ConsultationFlagStatus = 'pending' | 'confirmed' | 'dismissed';
+export type ConsultationAdvisorRole = 'advisor' | 'manager';
+export type SepayReconciliationKind =
+  | 'unmatched'
+  | 'unknown_order'
+  | 'account_mismatch'
+  | 'mismatch'
+  | 'duplicate'
+  | 'needs_review'
+  | 'accepted';
+export type SepayReconciliationResolutionStatus = 'open' | 'resolved' | 'ignored';
+
+export interface ConsultationActor {
+  email: string;
+  name: string;
+  admin: boolean;
+  role?: ConsultationAdvisorRole;
+}
+
+export interface ConsultationAdvisor {
+  email: string;
+  name: string;
+  active: boolean;
+  role?: ConsultationAdvisorRole;
+  ktn_user_id?: string | null;
+  updated_at?: string;
+}
+
+export interface ConsultationLeadMeta {
+  target_learner?: string;
+  age?: number | string;
+  goal?: string;
+  background?: string;
+  timeslot?: string;
+  ad_source?: string;
+  menu_state?: string;
+  [key: string]: unknown;
+}
+
+export interface ConsultationQuickReply {
+  id: string;
+  label: string;
+  payload?: string;
+  action?: string;
+}
+
+export interface ConsultationInboxItem {
+  id: string;
+  channel: ConsultationChannel;
+  external_id?: string | null;
+  owner_email?: string | null;
+  status: ConsultationStatus;
+  outcome?: ConsultationOutcome | null;
+  follow_up_at?: string | null;
+  queued_at?: string | null;
+  first_reply_at?: string | null;
+  last_customer_at?: string | null;
+  last_reply_at?: string | null;
+  next_review_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  reply_pending: boolean;
+  has_paid_pending: boolean;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  zalo_user_id?: string | null;
+  source_tag?: string | null;
+  lead_meta?: ConsultationLeadMeta | null;
+  student_code?: string | null;
+}
+
+export type ConsultationThread = Omit<
+  ConsultationInboxItem,
+  'reply_pending' | 'has_paid_pending'
+> & {
+  reply_pending?: boolean;
+  has_paid_pending?: boolean;
+};
+
+export interface ConsultationMessage {
+  id: string;
+  consultation_id?: string;
+  sender: ConsultationSender;
+  actor_email?: string | null;
+  body: string;
+  external_id?: string | null;
+  delivery?: ConsultationDeliveryStatus;
+  delivery_note?: string | null;
+  claimed_at?: string | null;
+  created_at: string;
+  ai_mode?: 'live' | 'simulated' | 'scripted' | string;
+  bot_mode?: 'scripted' | 'ai' | 'simulated' | 'handoff' | string;
+  menu_options?: ConsultationQuickReply[];
+  quick_replies?: ConsultationQuickReply[];
+}
+
+export interface ConsultationEvent {
+  id: number | string;
+  consultation_id: string;
+  actor_email?: string | null;
+  kind: string;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ConsultationFlag {
+  message_id: string;
+  consultation_id: string;
+  category: ConsultationFlagCategory;
+  reason: string;
+  excerpt: string;
+  status: ConsultationFlagStatus;
+  reviewed_by?: string | null;
+  review_note?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+}
+
+export interface ConsultationThreadOrderLink {
+  order_id: string;
+  owner_email?: string | null;
+  payment_info?: KtnVietQrPaymentInfo | null;
+  paymentInfo?: KtnVietQrPaymentInfo | null;
+  ktn_orders?: {
+    course_name: string;
+    amount: number;
+    payment_status: string;
+    approval_status: string;
+    ktn_consultation_payments?: Array<{
+      transaction_id: string;
+      amount: number;
+      status: string;
+      error?: string | null;
+    }>;
+  };
+}
+
+export interface ConsultationExample {
+  question: string;
+  answer: string;
+  hints: string[];
+}
+
+export interface ConsultationGuidanceConfig {
+  id?: string;
+  course_ids: string[];
+  duration_presets: Record<string, CourseDurationPreset>;
+  policy: string;
+  examples: ConsultationExample[];
+  bot_enabled: boolean;
+  checkout_enabled: boolean;
+  updated_by?: string | null;
+  updated_at?: string;
+}
+
+export interface ConsultationCatalogCourse {
+  id: string;
+  title: string;
+  price: number;
+  duration?: string;
+  ageGroup?: string;
+  description?: string;
+}
+
+export interface ConsultationReportResponse {
+  start: string;
+  end: string;
+  responseMinutes: number | null;
+  conversations: ConsultationInboxItem[];
+  assigned: Array<{
+    consultation_id: string;
+    owner_email: string;
+    channel: ConsultationChannel;
+    assigned_at: string;
+  }>;
+  overdue: Array<{
+    id: string;
+    channel: ConsultationChannel;
+    owner_email?: string | null;
+    follow_up_at: string;
+  }>;
+  flags: Array<{
+    message_id: string;
+    consultation_id: string;
+    category: ConsultationFlagCategory;
+    reviewed_at: string;
+    ktn_consultations?: { channel: ConsultationChannel };
+    ktn_consultation_messages?: { actor_email?: string | null };
+  }>;
+  paid: Array<{
+    order_id: string;
+    consultation_id: string;
+    owner_email?: string | null;
+    channel: ConsultationChannel;
+    course_name: string;
+    amount: number;
+    approval_status: string;
+    paid_at: string;
+  }>;
+  revenue: number;
+}
+
+export interface SepayReconciliationLog {
+  id: string;
+  transaction_id: string;
+  order_id?: string | null;
+  claimed_order_code?: string | null;
+  consultation_id?: string | null;
+  kind: SepayReconciliationKind;
+  amount: number;
+  expected_amount?: number | null;
+  account_number?: string | null;
+  transfer_content?: string | null;
+  raw_payload?: Record<string, unknown>;
+  resolution_status: SepayReconciliationResolutionStatus;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  resolution_note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type KtnSepayReconciliationLog = SepayReconciliationLog;
+
 

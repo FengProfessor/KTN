@@ -272,6 +272,13 @@ export function resolveNotificationLink(
           ? `/teacher/classes?class=${encodeURIComponent(fallbackCls)}`
           : '/teacher/classes';
       }
+    } else if (effectiveRole === 'advisor') {
+      if (
+        targetRoute.startsWith('/teacher') ||
+        (targetRoute.startsWith('/admin') && !targetRoute.startsWith('/admin/consultations'))
+      ) {
+        return '/admin/consultations';
+      }
     }
     return targetRoute;
   };
@@ -554,6 +561,13 @@ export function sanitizePostLoginRedirect(
   }
   if (role === 'teacher' && cleaned.startsWith('/admin')) {
     return resolveNotificationLink({ actionUrl: cleaned }, 'teacher');
+  }
+  if (
+    role === 'advisor' &&
+    (cleaned.startsWith('/teacher') ||
+      (cleaned.startsWith('/admin') && !cleaned.startsWith('/admin/consultations')))
+  ) {
+    return '/admin/consultations';
   }
   return cleaned || '/';
 }

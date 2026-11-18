@@ -1,6 +1,23 @@
 import type {
   ClassScheduleConfig,
   ClassScheduleException,
+  ConsultationActor,
+  ConsultationAdvisor,
+  ConsultationAdvisorRole,
+  ConsultationCatalogCourse,
+  ConsultationChannel,
+  ConsultationExample,
+  ConsultationEvent,
+  ConsultationFlag,
+  ConsultationGuidanceConfig,
+  ConsultationInboxItem,
+  ConsultationLeadMeta,
+  ConsultationMessage,
+  ConsultationQuickReply,
+  ConsultationReportResponse,
+  ConsultationStatus,
+  ConsultationThread,
+  ConsultationThreadOrderLink,
   CourseDurationMode,
   CourseDurationPreset,
   CustomClassSession,
@@ -35,6 +52,9 @@ import type {
   OnlineCourseEntitlement,
   OrderContactStatus,
   OrderPaymentDetailedStatus,
+  SepayReconciliationKind,
+  SepayReconciliationLog,
+  SepayReconciliationResolutionStatus,
   UpcomingClassSession,
   UserNotificationSettings
 } from '@/types/ktn.types';
@@ -183,6 +203,41 @@ export function filterAndPaginateTeachersClientSide(
 }
 
 const SESSION_STORAGE_KEY = 'ktn_sll_persistent_auth_v2';
+const CONSULT_STAFF_TOKEN_KEY = 'ktn_consult_staff';
+let inMemoryConsultStaffToken = '';
+
+export function getConsultationStaffToken(): string {
+  try {
+    const stored = sessionStorage.getItem(CONSULT_STAFF_TOKEN_KEY);
+    if (stored && stored !== 'DEMO-MODE-ONLY') {
+      inMemoryConsultStaffToken = stored;
+      return stored;
+    }
+  } catch {
+    // Ignore sessionStorage access error
+  }
+  return inMemoryConsultStaffToken;
+}
+
+export function setConsultationStaffToken(token?: string | null): void {
+  const clean = String(token || '').trim();
+  if (!clean || clean === 'DEMO-MODE-ONLY') return;
+  inMemoryConsultStaffToken = clean;
+  try {
+    sessionStorage.setItem(CONSULT_STAFF_TOKEN_KEY, clean);
+  } catch {
+    // Ignore sessionStorage quota/privacy error
+  }
+}
+
+export function clearConsultationStaffToken(): void {
+  inMemoryConsultStaffToken = '';
+  try {
+    sessionStorage.removeItem(CONSULT_STAFF_TOKEN_KEY);
+  } catch {
+    // Ignore sessionStorage error
+  }
+}
 
 const MAX_LOCAL_BLOB_PREVIEWS = 20;
 const localUploadedBlobUrls = new Map<string, string>();
@@ -336,6 +391,8 @@ export function getStoredSession(): KtnUserSession | null {
       const roles = Array.isArray(parsed.roles) ? parsed.roles : [];
       if (roles.includes('admin') || roles.includes('root') || parsed.type === 'admin') {
         parsed.role = 'admin';
+      } else if (roles.includes('advisor') || parsed.type === 'advisor') {
+        parsed.role = 'advisor';
       } else if (roles.includes('teacher') || parsed.type === 'teacher') {
         parsed.role = 'teacher';
       } else {
@@ -377,6 +434,7 @@ export function saveStoredSession(session: KtnUserSession, token?: string): KtnU
 
 export function clearStoredSession(): void {
   inMemorySession = null;
+  clearConsultationStaffToken();
   try {
     localStorage.removeItem(SESSION_STORAGE_KEY);
     localStorage.removeItem('ol-credentials-auth-user');
@@ -578,6 +636,222 @@ export async function ktnRequest<T>(
   return (data ?? {}) as T;
 }
 
+function resolveConsultationStaffBearer(): string {
+  const session = getStoredSession();
+  if (session) {
+    if (
+      session.token &&
+      session.token !== 'DEMO-MODE-ONLY' &&
+      !session.token.startsWith('KTN-') &&
+      (session.role === 'admin' || session.role === 'advisor')
+    ) {
+      return session.token;
+    }
+    return '';
+  }
+  const staffToken = getConsultationStaffToken();
+  if (staffToken && staffToken !== 'DEMO-MODE-ONLY') {
+    return staffToken;
+  }
+  return '';
+}
+
+export async function consultationStaffRequest<T>(
+  path: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const headers = new Headers();
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        headers.set(key, toHttpHeaderSafeValue(value));
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    }
+  }
+  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+    headers.set('Content-Type', 'application/json');
+  }
+  const bearer = resolveConsultationStaffBearer();
+  if (bearer && !headers.has('Authorization')) {
+    headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${bearer}`));
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 12000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      ...options,
+      headers,
+      credentials: 'same-origin',
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (options.signal?.aborted) {
+      throw err instanceof Error && err.name === 'AbortError'
+        ? err
+        : new DOMException(trStatic('Yêu cầu đã bị hủy.', 'Request was cancelled.'), 'AbortError');
+    }
+    throw new KtnApiError({
+      message: trStatic(
+        'Mất kết nối mạng hoặc máy chủ không phản hồi.',
+        'Network connection lost or server is unreachable.'
+      ),
+      status: 0,
+      code: 'NETWORK_ERROR',
+      isNetworkError: true
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = (await res.json()) as Record<string, unknown>;
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok || (data && data.ok === false)) {
+    throw new KtnApiError({
+      message:
+        (typeof data?.message === 'string' && data.message) ||
+        trStatic(`Yêu cầu không thành công (HTTP ${res.status})`, `Request failed (HTTP ${res.status})`),
+      status: res.status || 500,
+      code:
+        (typeof data?.code === 'string' && data.code) ||
+        (typeof data?.error === 'string' && data.error) ||
+        undefined
+    });
+  }
+
+  return (data ?? {}) as T;
+}
+
+export async function consultationWebRequest<T>(
+  path: string,
+  webToken?: string | null,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const headers = new Headers();
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        headers.set(key, toHttpHeaderSafeValue(value));
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    }
+  }
+  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+    headers.set('Content-Type', 'application/json');
+  }
+  let resolvedWebToken = String(webToken || '').trim();
+  if (!resolvedWebToken) {
+    try {
+      resolvedWebToken = String(localStorage.getItem('ktn_consult_web') || '').trim();
+    } catch {
+      resolvedWebToken = '';
+    }
+  }
+  if (resolvedWebToken && !headers.has('Authorization')) {
+    headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${resolvedWebToken}`));
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 12000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      ...options,
+      headers,
+      credentials: 'omit',
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (options.signal?.aborted) {
+      throw err instanceof Error && err.name === 'AbortError'
+        ? err
+        : new DOMException(trStatic('Yêu cầu đã bị hủy.', 'Request was cancelled.'), 'AbortError');
+    }
+    throw new KtnApiError({
+      message: trStatic(
+        'Mất kết nối mạng hoặc máy chủ không phản hồi.',
+        'Network connection lost or server is unreachable.'
+      ),
+      status: 0,
+      code: 'NETWORK_ERROR',
+      isNetworkError: true
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = (await res.json()) as Record<string, unknown>;
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok || (data && data.ok === false)) {
+    throw new KtnApiError({
+      message:
+        (typeof data?.message === 'string' && data.message) ||
+        trStatic(`Yêu cầu không thành công (HTTP ${res.status})`, `Request failed (HTTP ${res.status})`),
+      status: res.status || 500,
+      code:
+        (typeof data?.code === 'string' && data.code) ||
+        (typeof data?.error === 'string' && data.error) ||
+        undefined
+    });
+  }
+
+  return (data ?? {}) as T;
+}
+
 export const ktnApi = {
   async login(email: string, password: string): Promise<{ session: KtnUserSession; token: string }> {
     const res = await ktnRequest<{
@@ -588,6 +862,7 @@ export const ktnApi = {
       method: 'POST',
       body: JSON.stringify({ email, password })
     });
+    clearConsultationStaffToken();
     const saved = saveStoredSession(res.session, res.token);
     return { session: saved, token: res.token };
   },
@@ -628,6 +903,7 @@ export const ktnApi = {
   async logout(tokenOverride?: string): Promise<void> {
     const tokenToRevoke = String(tokenOverride || getStoredSession()?.token || '').trim();
     clearStoredSession();
+    clearConsultationStaffToken();
     const collectedSubs: PushSubscription[] = [];
     try {
       let unsubscribeEndpoint = '';
@@ -681,6 +957,7 @@ export const ktnApi = {
         await sub.unsubscribe().catch(() => false);
       }
       clearStoredSession();
+      clearConsultationStaffToken();
     }
   },
 
@@ -1962,9 +2239,13 @@ export const ktnApi = {
   async manageStudentCourses(payload: {
     action: 'grant' | 'revoke' | 'set' | 'assign_class';
     email: string;
+    code?: string;
     name?: string;
     phone?: string;
     parentName?: string;
+    leadSource?: string;
+    zaloUserId?: string;
+    consultationId?: string;
     courseIds?: string[];
     classCode?: string | null;
     enrolledClasses?: string[];
@@ -2093,13 +2374,23 @@ export const ktnApi = {
     name: string;
     phone?: string;
     parentName?: string;
+    code?: string;
+    leadSource?: string;
+    zaloUserId?: string;
+    consultationId?: string;
   }) {
     return this.manageStudentCourses({
       action: 'assign_class',
       email: params.email.trim(),
       name: params.name.trim(),
       phone: params.phone !== undefined ? params.phone.trim() : undefined,
-      parentName: params.parentName !== undefined ? params.parentName.trim() : undefined
+      parentName: params.parentName !== undefined ? params.parentName.trim() : undefined,
+      ...(params.code !== undefined ? { code: params.code.trim() } : {}),
+      ...(params.leadSource !== undefined ? { leadSource: params.leadSource.trim() } : {}),
+      ...(params.zaloUserId !== undefined ? { zaloUserId: params.zaloUserId.trim() } : {}),
+      ...(params.consultationId !== undefined
+        ? { consultationId: params.consultationId.trim() }
+        : {})
     });
   },
 
@@ -2652,6 +2943,7 @@ export const ktnApi = {
     credentialHandedOff?: boolean;
     cancelOrder?: boolean;
     restoreOrder?: boolean;
+    assignedAdvisor?: string | null;
     durationPreset?: CourseDurationPreset;
     durationMode?: CourseDurationMode;
   }): Promise<{ ok: boolean; order: KtnOrder; message: string }> {
@@ -2924,6 +3216,704 @@ export const ktnApi = {
       method: 'POST',
       body: JSON.stringify(payload),
       timeoutMs: 30000
+    });
+  },
+
+  // --- Customer Web Consultation Chatbot (/api/ktn/consultations/web/*) ---
+
+  async startWebConsultation(): Promise<{ token: string }> {
+    return consultationWebRequest<{ token: string }>(
+      '/api/ktn/consultations/web/start',
+      null,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+  },
+
+  async getWebConsultationCatalog(): Promise<{
+    courses: ConsultationCatalogCourse[];
+    checkoutEnabled: boolean;
+  }> {
+    const res = await consultationWebRequest<{
+      courses?: ConsultationCatalogCourse[];
+      checkoutEnabled?: boolean;
+    }>('/api/ktn/consultations/web/catalog');
+    return {
+      courses: Array.isArray(res.courses) ? res.courses : [],
+      checkoutEnabled: Boolean(res.checkoutEnabled)
+    };
+  },
+
+  async getWebConsultationThread(webToken: string): Promise<{
+    status: ConsultationStatus;
+    messages: ConsultationMessage[];
+    lead_meta?: ConsultationLeadMeta;
+    menu?: ConsultationQuickReply[];
+  }> {
+    const res = await consultationWebRequest<{
+      status?: ConsultationStatus;
+      messages?: ConsultationMessage[];
+      lead_meta?: ConsultationLeadMeta;
+      leadMeta?: ConsultationLeadMeta;
+      menu?: ConsultationQuickReply[];
+      quickReplies?: ConsultationQuickReply[];
+    }>('/api/ktn/consultations/web/thread', webToken);
+    const normalizedMenu = Array.isArray(res.menu)
+      ? res.menu
+      : Array.isArray(res.quickReplies)
+      ? res.quickReplies
+      : undefined;
+    return {
+      status: res.status || 'bot',
+      messages: Array.isArray(res.messages) ? res.messages : [],
+      lead_meta: res.lead_meta || res.leadMeta,
+      menu: normalizedMenu
+    };
+  },
+
+  async sendWebConsultationMessage(
+    webToken: string,
+    payload: {
+      body: string;
+      requestId: string;
+      menuAction?: string;
+      lead?: {
+        targetGroup?: string;
+        phone?: string;
+        goal?: string;
+        timeslot?: string;
+        name?: string;
+      };
+      payload?: Record<string, unknown>;
+    }
+  ): Promise<{
+    accepted: boolean;
+    reply?: ConsultationMessage;
+    menu?: ConsultationQuickReply[];
+    quickReplies?: ConsultationQuickReply[];
+    status?: ConsultationStatus;
+  }> {
+    const leadObj =
+      payload.lead ||
+      (payload.payload
+        ? {
+            targetGroup:
+              typeof payload.payload.targetGroup === 'string'
+                ? payload.payload.targetGroup
+                : typeof payload.payload.target_learner === 'string'
+                ? payload.payload.target_learner
+                : undefined,
+            phone:
+              typeof payload.payload.phone === 'string' ? payload.payload.phone : undefined,
+            goal:
+              typeof payload.payload.goal === 'string'
+                ? payload.payload.goal
+                : typeof payload.payload.note === 'string'
+                ? payload.payload.note
+                : undefined,
+            timeslot:
+              typeof payload.payload.timeslot === 'string'
+                ? payload.payload.timeslot
+                : undefined,
+            name: typeof payload.payload.name === 'string' ? payload.payload.name : undefined,
+          }
+        : undefined);
+    const requestBody: Record<string, unknown> = {
+      body: payload.body,
+      requestId: payload.requestId,
+      ...(payload.menuAction ? { menuAction: payload.menuAction } : {}),
+      ...(leadObj ? { lead: leadObj } : {}),
+    };
+    const res = await consultationWebRequest<{
+      accepted: boolean;
+      reply?: ConsultationMessage;
+      menu?: ConsultationQuickReply[];
+      quickReplies?: ConsultationQuickReply[];
+      status?: ConsultationStatus;
+    }>('/api/ktn/consultations/web/message', webToken, {
+      method: 'POST',
+      body: JSON.stringify(requestBody)
+    });
+    return {
+      ...res,
+      menu: Array.isArray(res.menu)
+        ? res.menu
+        : Array.isArray(res.quickReplies)
+        ? res.quickReplies
+        : undefined,
+    };
+  },
+
+  async createWebConsultationOrder(
+    webToken: string,
+    payload: {
+      courseId: string;
+      name: string;
+      email: string;
+      phone: string;
+      requestId: string;
+    }
+  ): Promise<{
+    id: string;
+    amount: number;
+    payment: KtnVietQrPaymentInfo | null;
+  }> {
+    const res = await consultationWebRequest<{
+      id?: string;
+      order_id?: string;
+      amount?: number;
+      payment?: KtnVietQrPaymentInfo | null;
+      paymentInfo?: KtnVietQrPaymentInfo | null;
+      payment_info?: KtnVietQrPaymentInfo | null;
+    }>('/api/ktn/consultations/web/order', webToken, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return {
+      id: String(res.id || res.order_id || ''),
+      amount: Number(res.amount || 0),
+      payment: res.payment || res.paymentInfo || res.payment_info || null
+    };
+  },
+
+  async getWebConsultationOrderStatus(
+    webToken: string,
+    orderId: string
+  ): Promise<{
+    id: string;
+    amount: number;
+    paymentStatus: string;
+    accessStatus: string;
+    payment: KtnVietQrPaymentInfo | null;
+  }> {
+    const sp = new URLSearchParams({ id: orderId });
+    const res = await consultationWebRequest<{
+      id?: string;
+      order_id?: string;
+      amount?: number;
+      paymentStatus?: string;
+      payment_status?: string;
+      accessStatus?: string;
+      approval_status?: string;
+      payment?: KtnVietQrPaymentInfo | null;
+      paymentInfo?: KtnVietQrPaymentInfo | null;
+      payment_info?: KtnVietQrPaymentInfo | null;
+    }>(`/api/ktn/consultations/web/status?${sp.toString()}`, webToken);
+    return {
+      id: String(res.id || res.order_id || orderId),
+      amount: Number(res.amount || 0),
+      paymentStatus: String(res.paymentStatus || res.payment_status || 'pending_verification'),
+      accessStatus: String(res.accessStatus || res.approval_status || 'pending'),
+      payment: res.payment || res.paymentInfo || res.payment_info || null
+    };
+  },
+
+  // --- Consultation Staff & Zalo OA CRM (/api/ktn/consultations/staff/*) ---
+
+  async staffConsultationLogin(
+    email: string,
+    password: string
+  ): Promise<{ token: string; actor: ConsultationActor }> {
+    const res = await consultationStaffRequest<{ token: string; actor: ConsultationActor }>(
+      '/api/ktn/consultations/staff/login',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), password })
+      }
+    );
+    if (res.token) {
+      setConsultationStaffToken(res.token);
+    }
+    return res;
+  },
+
+  async getConsultationStaffProfile(): Promise<{ actor: ConsultationActor }> {
+    return consultationStaffRequest<{ actor: ConsultationActor }>(
+      '/api/ktn/consultations/staff/profile'
+    );
+  },
+
+  async getConsultationInbox(params?: {
+    status?: string;
+    channel?: ConsultationChannel | '';
+    owner?: string;
+    search?: string;
+    offset?: number;
+  }): Promise<{ conversations: ConsultationInboxItem[]; hasMore: boolean }> {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set('status', params.status);
+    if (params?.channel) sp.set('channel', params.channel);
+    if (params?.owner) sp.set('owner', params.owner);
+    if (params?.search) sp.set('search', params.search);
+    if (typeof params?.offset === 'number' && params.offset > 0) {
+      sp.set('offset', String(params.offset));
+    }
+    const qs = sp.toString();
+    const res = await consultationStaffRequest<{
+      conversations?: ConsultationInboxItem[];
+      hasMore?: boolean;
+    }>(`/api/ktn/consultations/staff/inbox${qs ? `?${qs}` : ''}`);
+    return {
+      conversations: Array.isArray(res.conversations) ? res.conversations : [],
+      hasMore: Boolean(res.hasMore)
+    };
+  },
+
+  async getConsultationThread(
+    id: string,
+    offset?: number
+  ): Promise<{
+    conversation: ConsultationThread;
+    messages: ConsultationMessage[];
+    hasEarlier: boolean;
+    events: ConsultationEvent[];
+    flags: ConsultationFlag[];
+    orders: ConsultationThreadOrderLink[];
+  }> {
+    const sp = new URLSearchParams();
+    if (typeof offset === 'number' && offset > 0) {
+      sp.set('offset', String(offset));
+    }
+    const qs = sp.toString();
+    const res = await consultationStaffRequest<{
+      conversation: ConsultationThread;
+      messages?: ConsultationMessage[];
+      hasEarlier?: boolean;
+      events?: ConsultationEvent[];
+      flags?: ConsultationFlag[];
+      orders?: ConsultationThreadOrderLink[];
+    }>(`/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`);
+    return {
+      conversation: res.conversation,
+      messages: Array.isArray(res.messages) ? res.messages : [],
+      hasEarlier: Boolean(res.hasEarlier),
+      events: Array.isArray(res.events) ? res.events : [],
+      flags: Array.isArray(res.flags) ? res.flags : [],
+      orders: Array.isArray(res.orders) ? res.orders : []
+    };
+  },
+
+  async operateConsultationThread(
+    id: string,
+    op: 'claim' | 'assign' | 'reply' | 'note' | 'follow_up' | 'close' | 'reopen',
+    payload?: Record<string, unknown>
+  ): Promise<{
+    updated?: boolean;
+    conversation?: ConsultationThread;
+    message?: ConsultationMessage;
+  }> {
+    return consultationStaffRequest(
+      `/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/${op}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {})
+      }
+    );
+  },
+
+  async sendConsultationThreadReply(payload: {
+    consultationId: string;
+    requestId: string;
+    body: string;
+  }): Promise<{
+    updated?: boolean;
+    conversation?: ConsultationThread;
+    message?: ConsultationMessage;
+  }> {
+    return this.operateConsultationThread(payload.consultationId, 'reply', {
+      request_id: payload.requestId,
+      body: payload.body
+    });
+  },
+
+  async createConsultationCheckoutLink(id: string): Promise<{ url: string }> {
+    return consultationStaffRequest<{ url: string }>(
+      `/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/checkout_link`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+  },
+
+  async createConsultationOrder(
+    id: string,
+    payload: {
+      courseId: string;
+      name: string;
+      email: string;
+      phone: string;
+      requestId: string;
+      note?: string;
+      durationPreset?: CourseDurationPreset;
+    }
+  ): Promise<{
+    ok?: boolean;
+    id: string;
+    order_id?: string;
+    amount: number;
+    payment: KtnVietQrPaymentInfo | null;
+    order?: KtnOrder;
+  }> {
+    const res = await consultationStaffRequest<{
+      ok?: boolean;
+      id?: string;
+      order_id?: string;
+      amount?: number;
+      payment?: KtnVietQrPaymentInfo | null;
+      paymentInfo?: KtnVietQrPaymentInfo | null;
+      payment_info?: KtnVietQrPaymentInfo | null;
+      order?: KtnOrder;
+    }>(`/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/create_order`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const orderId = String(res.id || res.order_id || res.order?.order_id || '');
+    return {
+      ok: res.ok ?? true,
+      id: orderId,
+      order_id: orderId,
+      amount: Number(res.amount || res.order?.amount || 0),
+      payment:
+        res.payment ||
+        res.paymentInfo ||
+        res.payment_info ||
+        res.order?.paymentInfo ||
+        res.order?.payment_info ||
+        null,
+      order: res.order
+    };
+  },
+
+  async linkConsultationStudent(
+    id: string,
+    studentCode: string
+  ): Promise<{
+    ok: boolean;
+    conversation?: ConsultationThread;
+    student_code: string;
+  }> {
+    const res = await consultationStaffRequest<{
+      ok?: boolean;
+      conversation?: ConsultationThread;
+      student_code?: string;
+    }>(`/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/link_student`, {
+      method: 'POST',
+      body: JSON.stringify({ student_code: studentCode.trim() })
+    });
+    return {
+      ok: res.ok ?? true,
+      conversation: res.conversation,
+      student_code: String(res.student_code || studentCode.trim())
+    };
+  },
+
+  async linkStudentConsultation(payload: {
+    consultationId: string;
+    studentCode: string;
+  }): Promise<{
+    ok: boolean;
+    conversation?: ConsultationThread;
+    student_code: string;
+  }> {
+    return this.linkConsultationStudent(payload.consultationId, payload.studentCode);
+  },
+
+  async reviewConsultationFlag(
+    id: string,
+    payload: {
+      message_id: string;
+      status: 'confirmed' | 'dismissed';
+      note?: string;
+    }
+  ): Promise<{ updated: boolean }> {
+    return consultationStaffRequest<{ updated: boolean }>(
+      `/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/review`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async retryConsultationPayment(
+    idOrPayload:
+      | string
+      | {
+          consultationId: string;
+          orderId: string;
+          transactionId: string;
+        },
+    maybePayload?: { order_id: string; transaction_id: string }
+  ): Promise<{ updated: boolean }> {
+    const consultationId =
+      typeof idOrPayload === 'string' ? idOrPayload : idOrPayload.consultationId;
+    const bodyPayload =
+      typeof idOrPayload === 'string'
+        ? maybePayload || { order_id: '', transaction_id: '' }
+        : {
+            order_id: idOrPayload.orderId,
+            transaction_id: idOrPayload.transactionId
+          };
+    return consultationStaffRequest<{ updated: boolean }>(
+      `/api/ktn/consultations/staff/thread/${encodeURIComponent(consultationId)}/retry_payment`,
+      {
+        method: 'POST',
+        body: JSON.stringify(bodyPayload)
+      }
+    );
+  },
+
+  async getConsultationAdvisors(): Promise<{ advisors: ConsultationAdvisor[] }> {
+    const res = await consultationStaffRequest<{ advisors?: ConsultationAdvisor[] }>(
+      '/api/ktn/consultations/staff/advisors'
+    );
+    return { advisors: Array.isArray(res.advisors) ? res.advisors : [] };
+  },
+
+  async saveConsultationAdvisor(payload: {
+    email: string;
+    name: string;
+    active?: boolean;
+    role?: ConsultationAdvisorRole;
+  }): Promise<{ advisor: ConsultationAdvisor }> {
+    return consultationStaffRequest<{ advisor: ConsultationAdvisor }>(
+      '/api/ktn/consultations/staff/advisors',
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async getConsultationGuidance(): Promise<{ config: ConsultationGuidanceConfig }> {
+    return consultationStaffRequest<{ config: ConsultationGuidanceConfig }>(
+      '/api/ktn/consultations/staff/guidance'
+    );
+  },
+
+  async getConsultationGuidanceDraft(): Promise<{
+    policy: string;
+    examples: ConsultationExample[];
+    maxExamples: number;
+  }> {
+    return consultationStaffRequest<{
+      policy: string;
+      examples: ConsultationExample[];
+      maxExamples: number;
+    }>('/api/ktn/consultations/staff/guidance/draft');
+  },
+
+  async saveConsultationGuidance(payload: {
+    policy: string;
+    examples: ConsultationExample[];
+    course_ids: string[];
+    duration_presets: Record<string, CourseDurationPreset>;
+    bot_enabled: boolean;
+    checkout_enabled: boolean;
+  }): Promise<{ config: ConsultationGuidanceConfig }> {
+    return consultationStaffRequest<{ config: ConsultationGuidanceConfig }>(
+      '/api/ktn/consultations/staff/guidance',
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async getConsultationReport(params?: {
+    from?: string;
+    to?: string;
+    channel?: string;
+    owner?: string;
+  }): Promise<ConsultationReportResponse> {
+    const sp = new URLSearchParams();
+    if (params?.from) sp.set('from', params.from);
+    if (params?.to) sp.set('to', params.to);
+    if (params?.channel) sp.set('channel', params.channel);
+    if (params?.owner) sp.set('owner', params.owner);
+    const qs = sp.toString();
+    return consultationStaffRequest<ConsultationReportResponse>(
+      `/api/ktn/consultations/staff/report${qs ? `?${qs}` : ''}`
+    );
+  },
+
+  async downloadConsultationReportCsv(params?: {
+    from?: string;
+    to?: string;
+    channel?: string;
+    owner?: string;
+  }): Promise<Blob> {
+    const sp = new URLSearchParams();
+    if (params?.from) sp.set('from', params.from);
+    if (params?.to) sp.set('to', params.to);
+    if (params?.channel) sp.set('channel', params.channel);
+    if (params?.owner) sp.set('owner', params.owner);
+    const qs = sp.toString();
+    const headers = new Headers();
+    const bearer = resolveConsultationStaffBearer();
+    if (bearer) {
+      headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${bearer}`));
+    }
+    const res = await fetch(
+      `${getApiBase()}/api/ktn/consultations/staff/report.csv${qs ? `?${qs}` : ''}`,
+      {
+        method: 'GET',
+        headers,
+        credentials: 'same-origin'
+      }
+    );
+    if (!res.ok) {
+      throw new KtnApiError({
+        message: trStatic(
+          `Không thể tải báo cáo CSV (HTTP ${res.status})`,
+          `Failed to download CSV report (HTTP ${res.status})`
+        ),
+        status: res.status
+      });
+    }
+    return res.blob();
+  },
+
+  // --- SePay Reconciliation & Sandbox Simulators ---
+
+  async listSepayReconciliation(params?: {
+    resolutionStatus?: SepayReconciliationResolutionStatus | '';
+    resolution_status?: SepayReconciliationResolutionStatus | '';
+    kind?: SepayReconciliationKind | '';
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    ok: boolean;
+    items: SepayReconciliationLog[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const sp = new URLSearchParams();
+    const resStatus = params?.resolutionStatus ?? params?.resolution_status;
+    if (resStatus) sp.set('resolution_status', resStatus);
+    if (params?.kind) sp.set('kind', params.kind);
+    if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+    const qs = sp.toString();
+    const res = await consultationStaffRequest<{
+      ok?: boolean;
+      items?: SepayReconciliationLog[];
+      logs?: SepayReconciliationLog[];
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }>(`/api/ktn/consultations/staff/reconciliation${qs ? `?${qs}` : ''}`);
+    const items = Array.isArray(res.items)
+      ? res.items
+      : Array.isArray(res.logs)
+      ? res.logs
+      : [];
+    return {
+      ok: res.ok ?? true,
+      items,
+      total: Number(res.total ?? items.length),
+      limit: Number(res.limit ?? params?.limit ?? 50),
+      offset: Number(res.offset ?? params?.offset ?? 0)
+    };
+  },
+
+  async getSepayReconciliationLogs(params?: {
+    resolution_status?: SepayReconciliationResolutionStatus | '';
+    resolutionStatus?: SepayReconciliationResolutionStatus | '';
+    kind?: SepayReconciliationKind | '';
+    limit?: number;
+    offset?: number;
+  }) {
+    return this.listSepayReconciliation(params);
+  },
+
+  async resolveSepayReconciliation(
+    txIdOrPayload:
+      | string
+      | {
+          transactionId: string;
+          resolutionStatus: SepayReconciliationResolutionStatus;
+          note?: string;
+          orderId?: string;
+        },
+    maybePayload?: {
+      resolution_status: SepayReconciliationResolutionStatus;
+      note?: string;
+      order_id?: string;
+    }
+  ): Promise<{ ok: boolean; log: SepayReconciliationLog }> {
+    const txId =
+      typeof txIdOrPayload === 'string' ? txIdOrPayload : txIdOrPayload.transactionId;
+    const bodyPayload =
+      typeof txIdOrPayload === 'string'
+        ? maybePayload || { resolution_status: 'resolved' }
+        : {
+            resolution_status: txIdOrPayload.resolutionStatus,
+            note: txIdOrPayload.note,
+            order_id: txIdOrPayload.orderId
+          };
+    const res = await consultationStaffRequest<{ ok?: boolean; log: SepayReconciliationLog }>(
+      `/api/ktn/consultations/staff/reconciliation/${encodeURIComponent(txId)}/resolve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(bodyPayload)
+      }
+    );
+    return { ok: res.ok ?? true, log: res.log };
+  },
+
+  async triggerSepaySandbox(payload: {
+    order_id?: string;
+    transferAmount: number;
+    transferContent?: string;
+    accountNumber?: string;
+    transaction_id?: string;
+    transferType?: 'in' | 'out';
+    kind?: string;
+  }): Promise<{
+    ok?: boolean;
+    success?: boolean;
+    status?: string;
+    reconciliation?: SepayReconciliationLog;
+  }> {
+    return consultationStaffRequest('/api/ktn/consultations/staff/sepay/sandbox', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async simulateSepaySandboxEvent(payload: {
+    orderId?: string;
+    transferContent?: string;
+    transferAmount: number;
+    transactionId?: string;
+    accountNumber?: string;
+    kind?: string;
+  }) {
+    return this.triggerSepaySandbox({
+      order_id: payload.orderId,
+      transferContent: payload.transferContent,
+      transferAmount: payload.transferAmount,
+      transaction_id: payload.transactionId,
+      accountNumber: payload.accountNumber,
+      kind: payload.kind
+    });
+  },
+
+  async triggerZaloSandboxEvent(payload: {
+    event_name: string;
+    zalo_user_id: string;
+    customer_name?: string;
+    customer_phone?: string;
+    body?: string;
+    source_tag?: string;
+    event_id?: string;
+  }): Promise<{
+    ok: boolean;
+    duplicate?: boolean;
+    conversation?: ConsultationThread;
+  }> {
+    return consultationStaffRequest('/api/ktn/consultations/staff/zalo/sandbox', {
+      method: 'POST',
+      body: JSON.stringify(payload)
     });
   }
 };

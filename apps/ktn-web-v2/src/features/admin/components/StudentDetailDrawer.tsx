@@ -24,7 +24,10 @@ import {
   RotateCcw,
   Clock,
   KeyRound,
+  Link2,
+  MessageSquare,
 } from 'lucide-react';
+import { getLeadSourceBadgeMeta } from './leadSourceMeta';
 import {
   buildCourseDurationPreset,
   computeCourseExpirationInfo,
@@ -39,6 +42,7 @@ import {
 } from '@/lib/utils';
 import { translateCourseTitle, useI18n } from '@/i18n';
 import { getServerNowMs, ktnApi } from '@/services/api/ktnApiClient';
+import { useUiStore } from '@/stores/useUiStore';
 import type {
   CourseDurationMode,
   CourseDurationPreset,
@@ -90,7 +94,16 @@ export interface StudentDetailDrawerProps {
     name: string;
     phone?: string;
     parentName?: string;
+    code?: string;
+    leadSource?: string;
+    zaloUserId?: string;
+    consultationId?: string;
   }) => Promise<unknown>;
+  onLinkConsultation?: (params: {
+    consultationId: string;
+    studentCode: string;
+  }) => Promise<unknown>;
+  onOpenConsultation?: (consultationId: string) => void;
   onResyncStudent: (student: KtnStudentRecord) => void;
   onManageLifecycle?: (params: {
     email: string;
@@ -127,6 +140,8 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   onAssignClass,
   onReplaceAllCourses,
   onUpdateProfile,
+  onLinkConsultation,
+  onOpenConsultation,
   onResyncStudent,
   onManageLifecycle,
   hasExistingOrders = false,
@@ -141,6 +156,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editParent, setEditParent] = useState('');
+  const [editLeadSource, setEditLeadSource] = useState('');
+  const [editZaloUserId, setEditZaloUserId] = useState('');
+  const [editConsultationId, setEditConsultationId] = useState('');
+  const [isLinkingConsultation, setIsLinkingConsultation] = useState(false);
+  const [localActionError, setLocalActionError] = useState<string | null>(null);
 
   // Section B: Course Grant / Revoke / Replace / Duration state (Always starts neutral!)
   const [courseDropdownId, setCourseDropdownId] = useState('');
@@ -191,6 +211,11 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     setEditName(student.name || '');
     setEditPhone(student.phone || '');
     setEditParent(student.parent_name || '');
+    setEditLeadSource(student.lead_source || '');
+    setEditZaloUserId(student.zalo_user_id || '');
+    setEditConsultationId(student.consultation_id || '');
+    setIsLinkingConsultation(false);
+    setLocalActionError(null);
     setCourseDropdownId('');
     setSelectedGrantCourseIds([]);
     setGrantDurationPreset('unlimited');
@@ -613,15 +638,62 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     if (!editName.trim() || isUpdatingProfile) return;
     onClearError();
     try {
+      const crmChanged =
+        editLeadSource.trim() !== String(student.lead_source || '').trim() ||
+        editZaloUserId.trim() !== String(student.zalo_user_id || '').trim() ||
+        editConsultationId.trim() !== String(student.consultation_id || '').trim();
       await onUpdateProfile({
         email: student.email,
         name: editName.trim(),
         phone: editPhone.trim(),
         parentName: editParent.trim(),
+        ...(crmChanged
+          ? {
+              code: student.code,
+              leadSource: editLeadSource.trim(),
+              zaloUserId: editZaloUserId.trim(),
+              consultationId: editConsultationId.trim(),
+            }
+          : {}),
       });
       setIsEditingProfile(false);
     } catch {
       // Error is displayed via actionError prop
+    }
+  };
+
+  const handleLinkConsultationClick = async () => {
+    const cleanConsultationId = editConsultationId.trim();
+    const cleanStudentCode = String(student.code || '').trim();
+    if (!cleanConsultationId || !cleanStudentCode || isLinkingConsultation) return;
+    setLocalActionError(null);
+    onClearError();
+    setIsLinkingConsultation(true);
+    try {
+      if (onLinkConsultation) {
+        await onLinkConsultation({
+          consultationId: cleanConsultationId,
+          studentCode: cleanStudentCode,
+        });
+      } else {
+        await ktnApi.linkStudentConsultation({
+          consultationId: cleanConsultationId,
+          studentCode: cleanStudentCode,
+        });
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : tr('Không thể liên kết hội thoại tư vấn.', 'Failed to link consultation thread.');
+      setLocalActionError(msg);
+      useUiStore.getState().addToast({
+        title: tr('Liên kết hội thoại thất bại', 'Failed to link consultation'),
+        description: msg,
+        variant: 'error',
+      });
+    } finally {
+      setIsLinkingConsultation(false);
     }
   };
 
@@ -731,7 +803,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
         {/* Scrollable Body with 4 Sections (A, B, C, D) */}
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {/* Real Backend Error Alert */}
-          {actionError && (
+          {(actionError || localActionError) && (
             <div
               role="alert"
               data-testid="drawer-action-error-alert"
@@ -746,13 +818,16 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       'Action incomplete — Data was not overwritten'
                     )}
                   </p>
-                  <p className="mt-0.5 text-red-800">{actionError}</p>
+                  <p className="mt-0.5 text-red-800">{actionError || localActionError}</p>
                 </div>
               </div>
               <button
                 type="button"
                 aria-label={tr('Đóng thông báo lỗi', 'Dismiss error')}
-                onClick={onClearError}
+                onClick={() => {
+                  setLocalActionError(null);
+                  onClearError();
+                }}
                 className="rounded-lg p-1 text-red-800 hover:bg-red-100"
               >
                 <X className="h-3.5 w-3.5" />
@@ -779,6 +854,9 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                   setEditName(student.name || '');
                   setEditPhone(student.phone || '');
                   setEditParent(student.parent_name || '');
+                  setEditLeadSource(student.lead_source || '');
+                  setEditZaloUserId(student.zalo_user_id || '');
+                  setEditConsultationId(student.consultation_id || '');
                   setIsEditingProfile((v) => !v);
                 }}
                 className="inline-flex min-h-[28px] items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-100"
@@ -864,6 +942,59 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     {student.parent_name || tr('Chưa cập nhật', 'Not updated')}
                   </span>
                 </div>
+
+                {/* CRM & Zalo OA Metadata */}
+                <div
+                  data-testid="drawer-crm-sync-card"
+                  className="col-span-2 rounded-lg border border-sky-200/80 bg-sky-50/50 p-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      <span className="font-bold text-stone-600">
+                        {tr('Nguồn CRM:', 'Lead source:')}
+                      </span>
+                      <span
+                        data-testid="drawer-info-lead-source"
+                        className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+                          getLeadSourceBadgeMeta(student.lead_source, null, lang).badgeClass
+                        }`}
+                      >
+                        {student.lead_source
+                          ? getLeadSourceBadgeMeta(student.lead_source, null, lang).label
+                          : tr('Chưa gắn nguồn', 'Unset')}
+                      </span>
+                      <span className="text-stone-600">
+                        Zalo ID:{' '}
+                        <strong
+                          data-testid="drawer-info-zalo-user-id"
+                          className="font-mono text-stone-900"
+                        >
+                          {student.zalo_user_id || '—'}
+                        </strong>
+                      </span>
+                      <span className="text-stone-600">
+                        {tr('Hội thoại:', 'Thread:')}{' '}
+                        <strong
+                          data-testid="drawer-info-consultation-id"
+                          className="font-mono text-stone-900"
+                        >
+                          {student.consultation_id || '—'}
+                        </strong>
+                      </span>
+                    </div>
+                    {student.consultation_id && onOpenConsultation && (
+                      <button
+                        type="button"
+                        data-testid="drawer-open-consultation-btn"
+                        onClick={() => onOpenConsultation(student.consultation_id!)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-white px-2 py-0.5 text-[11px] font-bold text-sky-900 hover:bg-sky-100"
+                      >
+                        <MessageSquare className="h-3 w-3" />
+                        <span>{tr('Mở hội thoại tư vấn', 'Open consultation')}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : (
               <form
@@ -926,6 +1057,68 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                       placeholder={tr('Tên phụ huynh', 'Parent name')}
                       className="mt-1 w-full rounded-lg border border-stone-300 px-2.5 py-1.5 text-xs font-semibold"
                     />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-2 rounded-lg border border-sky-200 bg-sky-50/40 p-2.5 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700">
+                      {tr('Nguồn khách (Lead Source)', 'Lead Source')}
+                    </label>
+                    <select
+                      data-testid="drawer-profile-lead-source-select"
+                      value={editLeadSource}
+                      onChange={(e) => setEditLeadSource(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2 py-1.5 text-xs font-semibold"
+                    >
+                      <option value="">{tr('-- Chưa chọn --', '-- Unset --')}</option>
+                      <option value="zalo_oa">Zalo OA</option>
+                      <option value="web_chat">Web Chat</option>
+                      <option value="messenger">Messenger</option>
+                      <option value="website">Website</option>
+                      <option value="authenticated_student">authenticated_student</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700">
+                      Zalo User ID
+                    </label>
+                    <input
+                      type="text"
+                      data-testid="drawer-profile-zalo-id-input"
+                      value={editZaloUserId}
+                      onChange={(e) => setEditZaloUserId(e.target.value)}
+                      placeholder="zalo-u-..."
+                      className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 font-mono text-xs font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700">
+                      {tr('ID Hội thoại tư vấn', 'Consultation ID')}
+                    </label>
+                    <div className="mt-1 flex gap-1">
+                      <input
+                        type="text"
+                        data-testid="drawer-profile-consultation-id-input"
+                        value={editConsultationId}
+                        onChange={(e) => setEditConsultationId(e.target.value)}
+                        placeholder="uuid..."
+                        className="min-w-0 flex-1 rounded-lg border border-stone-300 bg-white px-2 py-1.5 font-mono text-xs font-semibold"
+                      />
+                      <button
+                        type="button"
+                        data-testid="drawer-link-consultation-btn"
+                        disabled={
+                          !editConsultationId.trim() ||
+                          !String(student.code || '').trim() ||
+                          isLinkingConsultation
+                        }
+                        onClick={() => void handleLinkConsultationClick()}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-sky-300 bg-sky-100 px-2 py-1 text-[11px] font-bold text-sky-950 hover:bg-sky-200 disabled:opacity-40"
+                      >
+                        <Link2 className="h-3 w-3" />
+                        <span>{tr('Liên kết hội thoại', 'Link thread')}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div className="flex justify-end gap-2">

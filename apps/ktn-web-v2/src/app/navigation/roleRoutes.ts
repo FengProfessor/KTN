@@ -80,12 +80,21 @@ export function resolveHeaderTitle(
     }
     if (pathname.includes('/orders')) return { title: trStatic('Đơn hàng', 'Orders', lang) };
     if (pathname.includes('/consultations')) {
-      return { title: trStatic('Tư vấn', 'Consultations', lang) };
+      return {
+        title: trStatic('Tư vấn', 'Consultations', lang),
+        subtitle: trStatic('Zalo OA, Web Chat & SePay', 'Zalo OA, Web Chat & SePay', lang),
+      };
     }
     if (pathname.includes('/more')) {
       return { title: trStatic('Đối soát & Đồng bộ', 'Reconciliation & Sync', lang) };
     }
     return { title: trStatic('Tổng quan học vụ', 'Academic Overview', lang) };
+  }
+  if (pathname.startsWith('/consultations')) {
+    return {
+      title: trStatic('Tư vấn', 'Consultations', lang),
+      subtitle: trStatic('Zalo OA, Web Chat & SePay', 'Zalo OA, Web Chat & SePay', lang),
+    };
   }
 
   // Home route '/'
@@ -100,6 +109,16 @@ export function resolveHeaderTitle(
     return {
       title: trStatic('Quản lý học vụ', 'Academic Operations', lang),
       subtitle: trStatic('Việc cần xử lý hôm nay', 'Tasks for today', lang),
+    };
+  }
+  if (role === 'advisor') {
+    return {
+      title: trStatic(
+        `Chào ${user?.name || 'Tư vấn viên'}`,
+        `Hi, ${user?.name || 'Advisor'}`,
+        lang
+      ),
+      subtitle: trStatic('Hộp thư tư vấn KTN', 'KTN Consultation Desk', lang),
     };
   }
 

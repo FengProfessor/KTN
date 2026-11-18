@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useMemo, useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -26,7 +26,14 @@ import { formatRelativeTime, resolveNotificationLink } from '@/lib/utils';
 import { KtnHomework, KtnNotification, KtnOrder } from '@/types/ktn.types';
 import { ChatImageLightbox } from '@/features/chat/components/AttachmentPreview';
 import { RouteErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import { translateNotificationItem, useI18n } from '@/i18n';
+
+const WebChatbotWidget = lazyWithRetry(() =>
+  import('@/features/consultations/WebChatbotWidget').then((m) => ({
+    default: m.WebChatbotWidget,
+  }))
+);
 
 export const AppShell: React.FC = () => {
   const navigate = useNavigate();
@@ -1057,6 +1064,16 @@ export const AppShell: React.FC = () => {
 
           {/* Global Full-Screen Image Lightbox Portal */}
           <ChatImageLightbox />
+
+          {/* Floating Web Consultation Chatbot for student non-chat/non-admin views */}
+          {!isRestoringLiveSession &&
+            effectiveRole === 'student' &&
+            !isChatRoute &&
+            !location.pathname.startsWith('/admin') && (
+              <Suspense fallback={null}>
+                <WebChatbotWidget mode="floating" />
+              </Suspense>
+            )}
 
           {/* Change Password Modal */}
           {changePwdModalOpen && (

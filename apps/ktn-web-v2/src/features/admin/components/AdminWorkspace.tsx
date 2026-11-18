@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
@@ -73,12 +73,20 @@ import {
 import { ClassScheduleModal } from '@/features/classrooms/components/ClassScheduleModal';
 import { StudentDetailDrawer } from '@/features/admin/components/StudentDetailDrawer';
 import { TeacherDetailDrawer } from '@/features/admin/components/TeacherDetailDrawer';
+import { getLeadSourceBadgeMeta } from '@/features/admin/components/leadSourceMeta';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import {
   OrderDetailDrawer,
   getAccountStatusMeta,
   getContactStatusMeta,
   getPaymentStatusMeta,
 } from '@/features/admin/components/OrderDetailDrawer';
+
+const SepayReconciliationPanel = lazyWithRetry(() =>
+  import('@/features/admin/components/SepayReconciliationPanel').then((m) => ({
+    default: m.SepayReconciliationPanel,
+  }))
+);
 import {
   CourseDurationMode,
   CourseDurationPreset,
@@ -188,6 +196,7 @@ export const AdminWorkspace: React.FC = () => {
   const [orderEphemeralPasswords, setOrderEphemeralPasswords] = useState<
     Record<string, string>
   >({});
+  const [showOrdersRecon, setShowOrdersRecon] = useState(false);
 
   // Server-side Student Search state (250ms debounce + pagination + filters)
   const [searchInput, setSearchInput] = useState('');
@@ -1507,6 +1516,10 @@ export const AdminWorkspace: React.FC = () => {
       name: string;
       phone?: string;
       parentName?: string;
+      code?: string;
+      leadSource?: string;
+      zaloUserId?: string;
+      consultationId?: string;
     }) => {
       setDrawerActionError(null);
       if (isDemoMode) {
@@ -1517,6 +1530,11 @@ export const AdminWorkspace: React.FC = () => {
           name: params.name,
           phone: params.phone || '',
           parent_name: params.parentName || '',
+          ...(params.leadSource !== undefined ? { lead_source: params.leadSource } : {}),
+          ...(params.zaloUserId !== undefined ? { zalo_user_id: params.zaloUserId } : {}),
+          ...(params.consultationId !== undefined
+            ? { consultation_id: params.consultationId }
+            : {}),
         };
         return {
           message: tr('Đã lưu thông tin hồ sơ học viên!', 'Saved student profile!'),
@@ -2607,6 +2625,11 @@ export const AdminWorkspace: React.FC = () => {
         o.parent_phone,
         o.course_id,
         o.course_name,
+        o.source,
+        o.source_label,
+        o.assigned_advisor,
+        o.owner_email,
+        o.consultation_id,
         matchedCourse?.code,
         matchedCourse?.shortTitle,
         matchedCourse?.title,
@@ -2668,6 +2691,7 @@ export const AdminWorkspace: React.FC = () => {
             return (
               accDetSt === 'sync_error' ||
               payDetSt === 'amount_mismatch' ||
+              payDetSt === 'mismatch' ||
               o.course_valid === false ||
               o.amount_valid === false
             );
@@ -3922,24 +3946,39 @@ export const AdminWorkspace: React.FC = () => {
               )}
 
               {activeTab === 'more' && (
-                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-100 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/chat')}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 py-2 text-xs font-bold text-stone-800 hover:bg-stone-100"
+                <>
+                  <Suspense
+                    fallback={
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 text-center text-xs text-stone-500">
+                        {tr('Đang tải đối soát SePay...', 'Loading SePay reconciliation...')}
+                      </div>
+                    }
                   >
-                    <MessageSquare className="h-3.5 w-3.5 text-red-800" />
-                    <span>{tr('Tin nhắn hỗ trợ', 'Support chat')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/notifications')}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 py-2 text-xs font-bold text-stone-800 hover:bg-stone-100"
-                  >
-                    <Bell className="h-3.5 w-3.5 text-amber-700" />
-                    <span>{tr('Thông báo', 'Notifications')}</span>
-                  </button>
-                </div>
+                    <SepayReconciliationPanel
+                      isDemoMode={isDemoMode}
+                      ordersList={ordersList}
+                      onOpenOrder={(orderId) => openOrderDrawer(orderId)}
+                    />
+                  </Suspense>
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/chat')}
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 py-2 text-xs font-bold text-stone-800 hover:bg-stone-100"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5 text-red-800" />
+                      <span>{tr('Tin nhắn hỗ trợ', 'Support chat')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/notifications')}
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 py-2 text-xs font-bold text-stone-800 hover:bg-stone-100"
+                    >
+                      <Bell className="h-3.5 w-3.5 text-amber-700" />
+                      <span>{tr('Thông báo', 'Notifications')}</span>
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -3953,10 +3992,24 @@ export const AdminWorkspace: React.FC = () => {
               }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2.5">
-                <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
-                  <ClipboardList className="h-4 w-4 text-amber-700" />
-                  {tr('Quản lý đơn hàng', 'Order Management')} ({filteredOrdersList.length}/{ordersList.length})
-                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="flex items-center gap-2 font-display text-sm font-bold text-stone-900">
+                    <ClipboardList className="h-4 w-4 text-amber-700" />
+                    {tr('Quản lý đơn hàng', 'Order Management')} ({filteredOrdersList.length}/{ordersList.length})
+                  </h2>
+                  <button
+                    type="button"
+                    data-testid="admin-orders-toggle-recon-btn"
+                    onClick={() => setShowOrdersRecon((prev) => !prev)}
+                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                      showOrdersRecon
+                        ? 'border-red-800 bg-red-800 text-white'
+                        : 'border-stone-300 bg-stone-50 text-stone-800 hover:bg-stone-100'
+                    }`}
+                  >
+                    {tr('Đối soát SePay', 'SePay Reconciliation')}
+                  </button>
+                </div>
 
                 {/* Quick Search by Name, Parent, Email, Phone, Order ID */}
                 <div className="relative min-w-[230px] flex-1 sm:max-w-sm">
@@ -3977,6 +4030,24 @@ export const AdminWorkspace: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {showOrdersRecon && (
+                <div className="mt-3">
+                  <Suspense
+                    fallback={
+                      <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 text-center text-xs text-stone-500">
+                        {tr('Đang tải đối soát SePay...', 'Loading SePay reconciliation...')}
+                      </div>
+                    }
+                  >
+                    <SepayReconciliationPanel
+                      isDemoMode={isDemoMode}
+                      ordersList={ordersList}
+                      onOpenOrder={(orderId) => openOrderDrawer(orderId)}
+                    />
+                  </Suspense>
+                </div>
+              )}
 
               {/* 7 Filter Presets (+ Tất cả) */}
               <div
@@ -4047,9 +4118,22 @@ export const AdminWorkspace: React.FC = () => {
                           className="cursor-pointer space-y-2 rounded-xl border border-stone-200 bg-stone-50 p-3 transition-colors hover:border-red-300"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono text-xs font-extrabold text-red-900">
-                              {ord.order_id}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono text-xs font-extrabold text-red-900">
+                                {ord.order_id}
+                              </span>
+                              <span
+                                className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+                                  getLeadSourceBadgeMeta(ord.source, ord.source_label, lang, 'short')
+                                    .badgeClass
+                                }`}
+                              >
+                                {
+                                  getLeadSourceBadgeMeta(ord.source, ord.source_label, lang, 'short')
+                                    .label
+                                }
+                              </span>
+                            </div>
                             <span className="font-display text-xs font-extrabold text-stone-900">
                               {formatVnd(ord.amount)}
                             </span>
@@ -4170,14 +4254,35 @@ export const AdminWorkspace: React.FC = () => {
                             >
                               <td className="whitespace-nowrap py-2.5 pr-2 font-mono font-bold text-red-900">
                                 <div>{ord.order_id}</div>
-                                <div className="font-sans text-[10px] font-medium text-stone-400">
-                                  {ord.source_label
-                                    ? ord.source_label === 'HV đăng nhập'
-                                      ? tr('HV đăng nhập', 'Logged-in student')
-                                      : ord.source_label
-                                    : ord.source === 'authenticated_student'
-                                      ? tr('HV đăng nhập', 'Logged-in student')
-                                      : 'Website'}
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1 font-sans">
+                                  <span
+                                    data-testid={`admin-order-source-badge-${ord.order_id}`}
+                                    className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+                                      getLeadSourceBadgeMeta(
+                                        ord.source,
+                                        ord.source_label,
+                                        lang,
+                                        'short'
+                                      ).badgeClass
+                                    }`}
+                                  >
+                                    {
+                                      getLeadSourceBadgeMeta(
+                                        ord.source,
+                                        ord.source_label,
+                                        lang,
+                                        'short'
+                                      ).label
+                                    }
+                                  </span>
+                                  {(ord.assigned_advisor || ord.owner_email) && (
+                                    <span
+                                      data-testid={`admin-order-advisor-${ord.order_id}`}
+                                      className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700"
+                                    >
+                                      {ord.assigned_advisor || ord.owner_email}
+                                    </span>
+                                  )}
                                 </div>
                               </td>
                               <td className="py-2.5 pr-2">
@@ -6093,6 +6198,16 @@ export const AdminWorkspace: React.FC = () => {
                           {stu.phone ? ` · ${stu.phone}` : ''}
                         </p>
                         <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {stu.lead_source && (
+                            <span
+                              className={`inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+                                getLeadSourceBadgeMeta(stu.lead_source, null, lang, 'short')
+                                  .badgeClass
+                              }`}
+                            >
+                              {getLeadSourceBadgeMeta(stu.lead_source, null, lang, 'short').label}
+                            </span>
+                          )}
                           {(isSuspended || isArchived || isDeleted) && (
                             <span
                               data-testid={`student-mobile-lifecycle-badge-${stu.email}`}
@@ -6248,8 +6363,27 @@ export const AdminWorkspace: React.FC = () => {
                         >
                           <td className="py-2.5 pr-2 font-bold text-stone-900">
                             <div className="group-hover:text-red-800">{stu.name}</div>
-                            <div className="font-mono text-[10px] font-normal text-stone-400">
-                              {stu.code}
+                            <div className="flex flex-wrap items-center gap-1 font-mono text-[10px] font-normal text-stone-400">
+                              <span>{stu.code}</span>
+                              {stu.lead_source && (
+                                <span
+                                  data-testid={`student-lead-source-badge-${stu.email}`}
+                                  className={`rounded border px-1.5 py-0.5 font-sans text-[10px] font-bold ${
+                                    getLeadSourceBadgeMeta(stu.lead_source, null, lang, 'short')
+                                      .badgeClass
+                                  }`}
+                                >
+                                  {
+                                    getLeadSourceBadgeMeta(stu.lead_source, null, lang, 'short')
+                                      .label
+                                  }
+                                </span>
+                              )}
+                              {stu.assigned_advisor && (
+                                <span className="rounded bg-stone-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-stone-600">
+                                  {stu.assigned_advisor}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="py-2.5 pr-2 text-stone-600">
@@ -6467,6 +6601,35 @@ export const AdminWorkspace: React.FC = () => {
         onAssignClass={(params) => assignClassMutation.mutateAsync(params)}
         onReplaceAllCourses={(params) => replaceAllCoursesMutation.mutateAsync(params)}
         onUpdateProfile={(params) => updateProfileMutation.mutateAsync(params)}
+        onLinkConsultation={async ({ consultationId, studentCode }) => {
+          setDrawerActionError(null);
+          try {
+            if (!isDemoMode) {
+              await ktnApi.linkStudentConsultation({ consultationId, studentCode });
+            }
+            await queryClient.invalidateQueries({ queryKey: ['ktn-admin-students'] });
+            addToast({
+              title: tr(`Đã liên kết hội thoại với ${studentCode}`, `Linked thread to ${studentCode}`),
+              variant: 'success',
+            });
+          } catch (err) {
+            const msg =
+              err instanceof Error
+                ? err.message
+                : tr('Không thể liên kết hội thoại.', 'Failed to link consultation thread.');
+            setDrawerActionError(msg);
+            addToast({
+              title: tr('Liên kết hội thoại thất bại', 'Failed to link consultation'),
+              description: msg,
+              variant: 'error',
+            });
+            throw err;
+          }
+        }}
+        onOpenConsultation={(consultationId) => {
+          closeStudentDrawer();
+          navigate(`/admin/consultations?thread=${encodeURIComponent(consultationId)}`);
+        }}
         onManageLifecycle={(params) => manageLifecycleMutation.mutateAsync(params)}
         onResyncStudent={(stu) => {
           const rawAcc = String(stu.accountStatus || stu.account_status || '').toLowerCase();
@@ -6527,6 +6690,63 @@ export const AdminWorkspace: React.FC = () => {
         onOpenStudentProfile={(email) => {
           closeOrderDrawer();
           setSelectedStudentEmail(email.trim().toLowerCase());
+        }}
+        onOpenConsultation={(consultationId) => {
+          closeOrderDrawer();
+          navigate(`/admin/consultations?thread=${encodeURIComponent(consultationId)}`);
+        }}
+        onSendQrToThread={async (payload) => {
+          setOrderDrawerError(null);
+          try {
+            if (!isDemoMode) {
+              await ktnApi.sendConsultationThreadReply(payload);
+            }
+            addToast({
+              title: tr('Đã gửi thông tin VietQR vào hội thoại', 'Sent VietQR to thread'),
+              variant: 'success',
+            });
+          } catch (err) {
+            const msg =
+              err instanceof Error
+                ? err.message
+                : tr('Không thể gửi VietQR vào hội thoại.', 'Failed to send VietQR to thread.');
+            setOrderDrawerError(msg);
+            addToast({
+              title: tr('Gửi QR thất bại', 'Failed to send QR'),
+              description: msg,
+              variant: 'error',
+            });
+            throw err;
+          }
+        }}
+        onRetryPayment={async (payload) => {
+          setOrderDrawerError(null);
+          try {
+            if (!isDemoMode) {
+              await ktnApi.retryConsultationPayment(payload);
+            }
+            await queryClient.invalidateQueries({ queryKey: ['ktn-admin-orders'] });
+            await queryClient.invalidateQueries({ queryKey: ['ktn-admin-sepay-reconciliation'] });
+            addToast({
+              title: tr('Đã kích hoạt thử lại SePay', 'Retried SePay provisioning'),
+              variant: 'success',
+            });
+          } catch (err) {
+            const msg =
+              err instanceof Error
+                ? err.message
+                : tr(
+                    'Không thể thử lại SePay provisioning.',
+                    'Failed to retry SePay provisioning.'
+                  );
+            setOrderDrawerError(msg);
+            addToast({
+              title: tr('Thử lại thất bại', 'Retry failed'),
+              description: msg,
+              variant: 'error',
+            });
+            throw err;
+          }
         }}
       />
     </div>

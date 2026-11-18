@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -6,7 +6,14 @@ import { useUiStore } from '@/stores/useUiStore';
 import { StudentHome } from '@/features/dashboard/components/StudentHome';
 import { TeacherHome } from '@/features/teacher/components/TeacherHome';
 import { AdminHome } from '@/features/admin/components/AdminHome';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import { useI18n } from '@/i18n';
+
+const ConsultationCrmWorkspace = lazyWithRetry(() =>
+  import('@/features/consultations/ConsultationCrmWorkspace').then((m) => ({
+    default: m.ConsultationCrmWorkspace,
+  }))
+);
 
 export const RoleHome: React.FC = () => {
   const user = useAuthStore((s) => s.user);
@@ -39,6 +46,18 @@ export const RoleHome: React.FC = () => {
       return <TeacherHome />;
     case 'admin':
       return <AdminHome />;
+    case 'advisor':
+      return (
+        <Suspense
+          fallback={
+            <div className="flex min-h-[200px] items-center justify-center p-6">
+              <Loader2 className="h-6 w-6 animate-spin text-red-800" />
+            </div>
+          }
+        >
+          <ConsultationCrmWorkspace />
+        </Suspense>
+      );
     case 'student':
       return <StudentHome />;
     default:

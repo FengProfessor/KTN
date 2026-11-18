@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { KtnUserSession } from '@/types/ktn.types';
 import {
+  clearConsultationStaffToken,
   clearStoredSession,
   getStoredSession,
   ktnApi,
@@ -93,6 +94,19 @@ export const DEMO_USERS: Record<string, KtnUserSession> = {
     hasOnlineCourses: true,
     onlineCourses: [],
     studentCase: 'admin'
+  },
+  advisor: {
+    id: 'ADV-KTN-01',
+    code: 'ADV-KTN-01',
+    email: 'advisor1@khongtunhi.com',
+    name: 'Tư vấn viên Minh Anh',
+    role: 'advisor',
+    roles: ['advisor'],
+    classCode: null,
+    hasLiveClass: false,
+    hasOnlineCourses: false,
+    onlineCourses: [],
+    studentCase: 'advisor'
   }
 };
 
@@ -121,6 +135,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true, isRestoring: false, error: null });
     try {
       const { session } = await ktnApi.login(email, password);
+      clearConsultationStaffToken();
       if (loginEpoch !== authEpoch) {
         return session;
       }
@@ -147,6 +162,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const tokenToRevoke =
       getStoredSession()?.token || get().authUser?.token || get().user?.token || '';
     clearStoredSession();
+    clearConsultationStaffToken();
     useUiStore.getState().resetSessionUiState();
     try {
       sessionStorage.removeItem('ktn_post_login_redirect');
@@ -164,6 +180,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await ktnApi.logout(tokenToRevoke || undefined);
     } finally {
       clearStoredSession();
+      clearConsultationStaffToken();
       useUiStore.getState().resetSessionUiState();
       try {
         sessionStorage.removeItem('ktn_post_login_redirect');
@@ -285,6 +302,7 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
     ++authEpoch;
     restoreInFlight = null;
     clearStoredSession();
+    clearConsultationStaffToken();
     useUiStore.getState().resetSessionUiState();
     useAuthStore.setState({
       user: null,
@@ -311,6 +329,7 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
       ++authEpoch;
       restoreInFlight = null;
       clearStoredSession();
+      clearConsultationStaffToken();
       useUiStore.getState().resetSessionUiState();
       useAuthStore.setState({
         user: null,
@@ -332,6 +351,7 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
           ++authEpoch;
           restoreInFlight = null;
           clearStoredSession();
+          clearConsultationStaffToken();
           useUiStore.getState().resetSessionUiState();
           useAuthStore.setState({
             user: null,
@@ -343,6 +363,7 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
         } else if (currentEmail !== nextEmail) {
           ++authEpoch;
           restoreInFlight = null;
+          clearConsultationStaffToken();
           useUiStore.getState().resetSessionUiState();
           void useAuthStore.getState().restoreSession();
         }

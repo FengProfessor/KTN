@@ -122,6 +122,19 @@ export const DemoControlBar: React.FC = () => {
           >
             {tr('Quản lý', 'Admin')}
           </button>
+          <button
+            type="button"
+            data-testid="switch-role-advisor"
+            onClick={() => handleDemoRoleSwitch('advisor')}
+            className={cn(
+              'rounded px-2 py-0.5 font-bold transition-colors',
+              user?.role === 'advisor'
+                ? 'bg-red-800 text-white'
+                : 'bg-white text-stone-800 border border-amber-300'
+            )}
+          >
+            {tr('Tư vấn viên', 'Advisor')}
+          </button>
 
           <button
             type="button"

@@ -20,7 +20,12 @@ import {
   RefreshCw,
   FileText,
   Sparkles,
+  QrCode,
+  Send,
 } from 'lucide-react';
+import { getLeadSourceBadgeMeta } from './leadSourceMeta';
+import { isSafeVietQrUrl } from '@/features/consultations/utils/consultationHelpers';
+import { useUiStore } from '@/stores/useUiStore';
 import {
   buildCourseDurationPreset,
   formatCourseDurationPresetLabel,
@@ -71,6 +76,7 @@ export interface OrderDetailDrawerProps {
     paymentReceivedAmount?: number;
     credentialHandedOff?: boolean;
     cancelOrder?: boolean;
+    assignedAdvisor?: string | null;
   }) => Promise<unknown>;
   onApproveOrder: (params: {
     orderId: string;
@@ -79,6 +85,17 @@ export interface OrderDetailDrawerProps {
     durationPreset?: CourseDurationPreset;
   }) => Promise<unknown>;
   onOpenStudentProfile: (email: string) => void;
+  onOpenConsultation?: (consultationId: string) => void;
+  onSendQrToThread?: (payload: {
+    consultationId: string;
+    requestId: string;
+    body: string;
+  }) => Promise<unknown>;
+  onRetryPayment?: (payload: {
+    consultationId: string;
+    orderId: string;
+    transactionId: string;
+  }) => Promise<unknown>;
 }
 
 export const CONTACT_STATUS_META: Record<
@@ -304,8 +321,15 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
   onUpdateOrder,
   onApproveOrder,
   onOpenStudentProfile,
+  onOpenConsultation,
+  onSendQrToThread,
+  onRetryPayment,
 }) => {
   const { lang, tr } = useI18n();
+  const [qrCopied, setQrCopied] = useState(false);
+  const [sendingQr, setSendingQr] = useState(false);
+  const [retryingPayment, setRetryingPayment] = useState(false);
+  const [localActionError, setLocalActionError] = useState<string | null>(null);
   const [trackedOrderId, setTrackedOrderId] = useState<string | null>(
     () => order?.order_id || null
   );
@@ -358,6 +382,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     setSelectedClassCode(order?.existing_student?.class_code || '');
     setSelectedDurationPreset(order?.duration_preset || order?.durationPreset || 'unlimited');
     setShowConfirmApproveModal(false);
+    setLocalActionError(null);
   }
 
   useEffect(() => {
@@ -372,8 +397,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
       setSelectedClassCode('');
       setSelectedDurationPreset('unlimited');
       setShowConfirmApproveModal(false);
+      setLocalActionError(null);
       return;
     }
+    setLocalActionError(null);
     setEditEmail(order.student_email || '');
     setEditParentName(order.parent_name || '');
     setEditPhone(order.parent_phone || order.phone || '');
@@ -457,6 +484,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     return /^0\d{9}$/.test(digits) ? `https://zalo.me/${digits}` : null;
   }, [order?.zalo_url, contactPhone]);
 
+  const isPartialProvisioningFailure =
+    order?.provisioning_status === 'partial_failure' ||
+    order?.provisioningStatus === 'partial_failure';
+
   // Compute live activation readiness and block reasons
   const activationCheck = useMemo(() => {
     if (!order) {
@@ -465,7 +496,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     if (
       order.approval_status === 'approved' &&
       accountDetailedStatus !== 'sync_error' &&
-      order.provisioning_status !== 'partial_failure'
+      !isPartialProvisioningFailure
     ) {
       return {
         canActivate: false,
@@ -638,14 +669,17 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 >
                   {order.order_id}
                 </span>
-                <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold text-stone-700">
-                  {order.source_label
-                    ? order.source_label === 'Học viên đang đăng nhập'
-                      ? tr('Học viên đang đăng nhập', 'Logged-in student')
-                      : order.source_label
-                    : order.source === 'authenticated_student'
-                      ? tr('Học viên đang đăng nhập', 'Logged-in student')
-                      : 'Website'}
+                <span
+                  data-testid="order-drawer-source-badge"
+                  className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+                    getLeadSourceBadgeMeta(order.source, order.source_label, lang, 'drawer')
+                      .badgeClass
+                  }`}
+                >
+                  {
+                    getLeadSourceBadgeMeta(order.source, order.source_label, lang, 'drawer')
+                      .label
+                  }
                 </span>
                 <span
                   data-testid="order-drawer-payment-badge"
@@ -673,7 +707,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
         {/* Body Content */}
         <div className="flex-1 space-y-3.5 overflow-y-auto p-3.5 sm:p-4">
-          {actionError && (
+          {(actionError || localActionError) && (
             <div
               role="alert"
               data-testid="order-drawer-error-banner"
@@ -681,11 +715,14 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
             >
               <div className="flex items-start gap-2">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
-                <span>{actionError}</span>
+                <span>{actionError || localActionError}</span>
               </div>
               <button
                 type="button"
-                onClick={onClearError}
+                onClick={() => {
+                  setLocalActionError(null);
+                  onClearError();
+                }}
                 className="rounded px-1.5 py-0.5 text-[11px] font-bold text-red-800 hover:bg-red-100"
               >
                 {tr('Đóng', 'Close')}
@@ -806,15 +843,31 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                   <span>
                     {tr('Nguồn đơn:', 'Source:')}{' '}
                     <strong data-testid="order-detail-source">
-                      {order.source_label
-                        ? order.source_label === 'Học viên đang đăng nhập'
-                          ? tr('Học viên đang đăng nhập', 'Logged-in student')
-                          : order.source_label
-                        : order.source === 'authenticated_student'
-                          ? tr('Học viên đang đăng nhập', 'Logged-in student')
-                          : 'Website'}
+                      {
+                        getLeadSourceBadgeMeta(order.source, order.source_label, lang, 'drawer')
+                          .label
+                      }
                     </strong>
                   </span>
+                  {(order.assigned_advisor || order.owner_email) && (
+                    <span>
+                      {tr('Tư vấn viên:', 'Advisor:')}{' '}
+                      <strong data-testid="order-detail-advisor">
+                        {order.assigned_advisor || order.owner_email}
+                      </strong>
+                    </span>
+                  )}
+                  {order.consultation_id && (
+                    <button
+                      type="button"
+                      data-testid="order-open-consultation-btn"
+                      onClick={() => onOpenConsultation?.(order.consultation_id!)}
+                      className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 font-mono text-[10px] font-bold text-sky-900 hover:bg-sky-100"
+                    >
+                      <MessageSquare className="h-3 w-3" />
+                      <span>{order.consultation_id}</span>
+                    </button>
+                  )}
                   <span>
                     {tr('Ngày tạo:', 'Created:')}{' '}
                     <strong>
@@ -1042,6 +1095,202 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 {paymentMeta.label}
               </span>
             </div>
+
+            {(() => {
+              const paymentInfo = order.paymentInfo || order.payment_info || null;
+              const accountNo = paymentInfo?.accountNo || paymentInfo?.accountNumber || '';
+              const safeQrUrl =
+                paymentInfo?.qrUrl && isSafeVietQrUrl(paymentInfo.qrUrl)
+                  ? paymentInfo.qrUrl
+                  : '';
+              const qrSummary = paymentInfo
+                ? [
+                    `Mã đơn: ${order.order_id}`,
+                    `Số tiền: ${formatVnd(paymentInfo.amount || order.amount)}`,
+                    `Ngân hàng: ${paymentInfo.bankName || paymentInfo.bankId} - STK: ${accountNo}`,
+                    `Nội dung CK: ${paymentInfo.transferContent}`,
+                    safeQrUrl ? `VietQR: ${safeQrUrl}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join('\n')
+                : '';
+
+              const sepayTxRef = String(order.payment_tx_ref || '').trim();
+              const hasValidSepayTxRef = /^sepay:\d{1,32}$/.test(sepayTxRef);
+
+              const showRetryBtn =
+                order.payment_status === 'paid' &&
+                (isPartialProvisioningFailure ||
+                  accountDetailedStatus === 'sync_error') &&
+                Boolean(order.consultation_id) &&
+                Boolean(onRetryPayment);
+
+              if (!paymentInfo && !showRetryBtn) return null;
+
+              return (
+                <div className="mt-2.5 space-y-2">
+                  {paymentInfo && (
+                    <div
+                      data-testid="order-vietqr-preview-card"
+                      className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        {safeQrUrl && (
+                          <img
+                            src={safeQrUrl}
+                            alt={`VietQR ${order.order_id}`}
+                            className="h-28 w-28 shrink-0 rounded-xl border border-stone-200 bg-white object-contain p-1"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1 space-y-1 text-[11px] text-stone-700">
+                          <p className="flex items-center gap-1 font-bold text-stone-900">
+                            <QrCode className="h-3.5 w-3.5 text-red-800" />
+                            <span>
+                              {paymentInfo.bankName || paymentInfo.bankId} ·{' '}
+                              <span className="font-mono">{accountNo}</span>
+                            </span>
+                          </p>
+                          <p>{paymentInfo.accountName}</p>
+                          <p className="font-bold text-red-900">
+                            {formatVnd(paymentInfo.amount || order.amount)}
+                          </p>
+                          <p className="inline-block rounded bg-amber-100 px-2 py-0.5 font-mono font-bold text-amber-950">
+                            {paymentInfo.transferContent}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-2.5 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid="order-copy-vietqr-btn"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard?.writeText(qrSummary);
+                              setQrCopied(true);
+                              setTimeout(() => setQrCopied(false), 2000);
+                            } catch {
+                              // ignore clipboard errors
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-bold text-stone-800 hover:bg-stone-100"
+                        >
+                          <Copy className="h-3 w-3" />
+                          <span>
+                            {qrCopied
+                              ? tr('Đã sao chép QR', 'Copied QR')
+                              : tr('Sao chép thông tin VietQR', 'Copy VietQR Info')}
+                          </span>
+                        </button>
+
+                        {order.consultation_id && onSendQrToThread && (
+                          <button
+                            type="button"
+                            data-testid="order-send-qr-thread-btn"
+                            disabled={sendingQr}
+                            onClick={async () => {
+                              setLocalActionError(null);
+                              onClearError();
+                              setSendingQr(true);
+                              try {
+                                const requestId =
+                                  typeof crypto !== 'undefined' &&
+                                  typeof crypto.randomUUID === 'function'
+                                    ? crypto.randomUUID()
+                                    : `req-${Date.now()}`;
+                                await onSendQrToThread({
+                                  consultationId: order.consultation_id!,
+                                  requestId,
+                                  body: qrSummary,
+                                });
+                              } catch (err) {
+                                const msg =
+                                  err instanceof Error
+                                    ? err.message
+                                    : tr(
+                                        'Không thể gửi VietQR vào hội thoại.',
+                                        'Failed to send VietQR to thread.'
+                                      );
+                                setLocalActionError(msg);
+                                useUiStore.getState().addToast({
+                                  title: tr('Gửi QR thất bại', 'Failed to send QR'),
+                                  description: msg,
+                                  variant: 'error',
+                                });
+                              } finally {
+                                setSendingQr(false);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-red-800 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-red-900 disabled:opacity-50"
+                          >
+                            <Send className="h-3 w-3" />
+                            <span>
+                              {tr('Gửi QR qua Zalo OA / Web Chat', 'Send QR to Zalo OA / Web')}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {showRetryBtn && (
+                    <div className="space-y-1">
+                      <button
+                        type="button"
+                        data-testid="order-retry-payment-btn"
+                        disabled={retryingPayment || !hasValidSepayTxRef}
+                        onClick={async () => {
+                          if (!hasValidSepayTxRef) return;
+                          setLocalActionError(null);
+                          onClearError();
+                          setRetryingPayment(true);
+                          try {
+                            await onRetryPayment!({
+                              consultationId: order.consultation_id!,
+                              orderId: order.order_id,
+                              transactionId: sepayTxRef,
+                            });
+                          } catch (err) {
+                            const msg =
+                              err instanceof Error
+                                ? err.message
+                                : tr(
+                                    'Không thể thử lại SePay provisioning.',
+                                    'Failed to retry SePay provisioning.'
+                                  );
+                            setLocalActionError(msg);
+                            useUiStore.getState().addToast({
+                              title: tr('Thử lại thất bại', 'Retry failed'),
+                              description: msg,
+                              variant: 'error',
+                            });
+                          } finally {
+                            setRetryingPayment(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${retryingPayment ? 'animate-spin' : ''}`} />
+                        <span>
+                          {tr('Thử kích hoạt lại SePay Provisioning', 'Retry SePay Provisioning')}
+                        </span>
+                      </button>
+                      {!hasValidSepayTxRef && (
+                        <p
+                          data-testid="order-retry-payment-hint"
+                          className="text-[11px] font-medium text-amber-800"
+                        >
+                          {tr(
+                            'Cần mã giao dịch SePay hợp lệ (định dạng sepay:<số>) trên đơn hoặc xử lý từ hàng đợi Đối soát SePay.',
+                            'Requires a valid SePay transaction reference (sepay:<id>) on the order, or retry via the SePay Reconciliation queue.'
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Automatic Webhook Proof OR Manual Verification Proof */}
             {order.payment_status === 'paid' && order.payment_proof_auto && (
@@ -1341,7 +1590,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                 <div
                   data-testid="order-post-activation-status"
                   className={`space-y-2 rounded-xl border p-3 ${
-                    order.provisioning_status === 'partial_failure' ||
+                    isPartialProvisioningFailure ||
                     accountDetailedStatus === 'sync_error'
                       ? 'border-amber-300 bg-amber-50/70'
                       : 'border-emerald-200 bg-emerald-50/60'
@@ -1351,13 +1600,13 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     <span
                       data-testid="order-grant-sync-status-badge"
                       className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-extrabold ${
-                        order.provisioning_status === 'partial_failure' ||
+                        isPartialProvisioningFailure ||
                         accountDetailedStatus === 'sync_error'
                           ? 'bg-amber-600 text-white'
                           : 'bg-emerald-700 text-white'
                       }`}
                     >
-                      {order.provisioning_status === 'partial_failure' ||
+                      {isPartialProvisioningFailure ||
                       accountDetailedStatus === 'sync_error'
                         ? tr('Cần hoàn tất đồng bộ thời hạn', 'Duration sync required')
                         : tr('Đã cấp thành công', 'Provisioned successfully')}
@@ -1408,7 +1657,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                         {tr('3. Trạng thái học tập', '3. Learning Status')}
                       </span>
                       <p className="mt-0.5 font-bold text-emerald-900">
-                        {order.provisioning_status === 'partial_failure' ||
+                        {isPartialProvisioningFailure ||
                         accountDetailedStatus === 'sync_error'
                           ? tr('Cần hoàn tất đồng bộ thời hạn', 'Duration sync required')
                           : tr('Học viên có thể đăng nhập', 'Student can sign in')}
@@ -1500,7 +1749,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
               {/* Course Duration Preset & Optional Live Class Assignment on Activation */}
               {(order.approval_status !== 'approved' ||
-                order.provisioning_status === 'partial_failure' ||
+                isPartialProvisioningFailure ||
                 accountDetailedStatus === 'sync_error') && (
                 <div className="space-y-2.5">
                   {(() => {
@@ -1621,7 +1870,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
 
           {/* SECTION 5: KÍCH HOẠT KHÓA HỌC (PHASE 2.3) */}
           {(order.approval_status !== 'approved' ||
-            order.provisioning_status === 'partial_failure' ||
+            isPartialProvisioningFailure ||
             accountDetailedStatus === 'sync_error') && (
             <section
               data-testid="order-section-activation"
@@ -1674,7 +1923,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
                     <CheckCircle2 className="h-4 w-4" />
                   )}
                   <span>
-                    {order.provisioning_status === 'partial_failure' ||
+                    {isPartialProvisioningFailure ||
                     accountDetailedStatus === 'sync_error'
                       ? tr('Đồng bộ lại quyền & thời hạn', 'Re-sync access & duration')
                       : tr('Xác nhận & Kích hoạt khóa học', 'Confirm & Activate Course')}

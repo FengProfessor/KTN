@@ -32,22 +32,16 @@ const GamesPage = lazyWithRetry(() =>
 const ProfilePage = lazyWithRetry(() =>
   import('@/features/profile/components/ProfilePage').then((m) => ({ default: m.ProfilePage }))
 );
-
-function AdminConsultations() {
-  const { tr } = useI18n();
-  return (
-    <section className="p-3 sm:p-5">
-      <iframe
-        title={tr('Hộp thư tư vấn KTN', 'KTN Consultation Inbox')}
-        src="/tu-van/nhan-vien"
-        className="min-h-[76vh] w-full rounded-xl border border-stone-200"
-      />
-      <a href="/tu-van/nhan-vien" className="mt-2 inline-block text-sm font-semibold text-red-800">
-        {tr('Mở hộp thư toàn màn hình', 'Open inbox in full screen')}
-      </a>
-    </section>
-  );
-}
+const ConsultationCrmWorkspace = lazyWithRetry(() =>
+  import('@/features/consultations/ConsultationCrmWorkspace').then((m) => ({
+    default: m.ConsultationCrmWorkspace,
+  }))
+);
+const WebChatbotPage = lazyWithRetry(() =>
+  import('@/features/consultations/WebChatbotWidget').then((m) => ({
+    default: m.WebChatbotPage,
+  }))
+);
 
 const RouteLoadingFallback: React.FC = () => (
   <div className="flex min-h-[200px] items-center justify-center p-6">
@@ -197,6 +191,7 @@ export const AppRouter: React.FC = () => {
     <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/chatbot" element={<WebChatbotPage />} />
         <Route
           path="/"
           element={
@@ -256,7 +251,7 @@ export const AppRouter: React.FC = () => {
           <Route
             path="profile"
             element={
-              <RequireRole allowed={['student', 'teacher', 'admin']}>
+              <RequireRole allowed={['student', 'teacher', 'admin', 'advisor']}>
                 <ProfilePage />
               </RequireRole>
             }
@@ -288,8 +283,16 @@ export const AppRouter: React.FC = () => {
           <Route
             path="admin/consultations"
             element={
-              <RequireRole allowed={['admin']}>
-                <AdminConsultations />
+              <RequireRole allowed={['admin', 'advisor']}>
+                <ConsultationCrmWorkspace />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="consultations"
+            element={
+              <RequireRole allowed={['admin', 'advisor']}>
+                <ConsultationCrmWorkspace />
               </RequireRole>
             }
           />

@@ -31,6 +31,8 @@ export const RoleDesktopNavigation: React.FC<RoleDesktopNavigationProps> = ({
       ? tr('Giáo viên chủ nhiệm', 'Homeroom Teacher')
       : role === 'admin'
       ? tr('Quản lý Học vụ', 'Academic Admin')
+      : role === 'advisor'
+      ? tr('Chuyên viên tư vấn', 'Consultation Advisor')
       : user?.classCode
       ? tr(`Lớp ${user.classCode}`, `Class ${user.classCode}`)
       : isDemoMode

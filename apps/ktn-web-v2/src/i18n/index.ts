@@ -93,6 +93,7 @@ export function translateRoleLabel(role?: string | null, langOverride?: AppLangu
   const r = String(role || '').toLowerCase();
   if (r === 'teacher') return lang === 'en' ? 'Teacher' : 'Giáo viên';
   if (r === 'admin') return lang === 'en' ? 'Admin' : 'Quản lý';
+  if (r === 'advisor') return lang === 'en' ? 'Advisor' : 'Tư vấn viên';
   return lang === 'en' ? 'Student' : 'Học viên';
 }
 

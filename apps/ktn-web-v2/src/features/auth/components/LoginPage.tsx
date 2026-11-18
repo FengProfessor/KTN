@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -13,10 +13,19 @@ import {
   AlertCircle,
   Loader2,
   Eye,
+  Headset,
 } from 'lucide-react';
 import { useAuthStore, DEMO_USERS } from '@/stores/useAuthStore';
 import { useUiStore, isDemoAllowedInEnv } from '@/stores/useUiStore';
 import { sanitizePostLoginRedirect } from '@/lib/utils';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
+import type { UserRole } from '@/types/ktn.types';
+
+const WebChatbotWidget = lazyWithRetry(() =>
+  import('@/features/consultations/WebChatbotWidget').then((m) => ({
+    default: m.WebChatbotWidget,
+  }))
+);
 
 const loginSchema = z.object({
   email: z.string().trim().min(1, 'Vui lòng nhập email hoặc mã học viên'),
@@ -58,6 +67,14 @@ const DEV_TEST_ACCOUNTS = [
     icon: ShieldCheck,
     badgeColor: 'bg-stone-200 text-stone-900',
   },
+  {
+    label: 'Tư vấn viên (Minh Anh)',
+    sub: 'Hộp thư Zalo OA, Web & đơn hàng',
+    email: 'advisor1@khongtunhi.com',
+    role: 'advisor' as const,
+    icon: Headset,
+    badgeColor: 'bg-sky-100 text-sky-900',
+  },
 ];
 
 export const LoginPage: React.FC = () => {
@@ -77,7 +94,7 @@ export const LoginPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const consumeRedirectTarget = React.useCallback(
-    (role?: 'student' | 'teacher' | 'admin' | string | null) => {
+    (role?: UserRole | string | null) => {
       const fromQuery = searchParams.get('redirect') || searchParams.get('next') || '';
       let fromStorage = '';
       try {
@@ -307,6 +324,10 @@ export const LoginPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      <Suspense fallback={null}>
+        <WebChatbotWidget mode="floating" />
+      </Suspense>
     </div>
   );
 };

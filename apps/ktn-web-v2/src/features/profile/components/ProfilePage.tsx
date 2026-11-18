@@ -51,6 +51,8 @@ export const ProfilePage: React.FC = () => {
   const roleBadgeLabel =
     effectiveRole === 'admin'
       ? tr('Quản lý học vụ', 'Academic Admin')
+      : effectiveRole === 'advisor'
+      ? tr('Chuyên viên tư vấn', 'Consultation Advisor')
       : effectiveRole === 'teacher'
       ? tr('Giáo viên', 'Teacher')
       : tr('Học viên', 'Student');
@@ -62,6 +64,8 @@ export const ProfilePage: React.FC = () => {
         : user?.classCode || tr('Chưa phân công lớp', 'No classes assigned')
       : effectiveRole === 'admin'
       ? tr('Toàn hệ thống', 'All classes & courses')
+      : effectiveRole === 'advisor'
+      ? tr('Hộp thư tư vấn Zalo OA & Web', 'Zalo OA & Web Consultation Desk')
       : user?.classCode || tr('Chưa xếp lớp trực tiếp', 'Not assigned to a live class');
 
   const onlineCoursesCount = Array.isArray(user?.onlineCourses) ? user.onlineCourses.length : 0;

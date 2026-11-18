@@ -22,7 +22,7 @@ function browser(staffMode, full) {
   if (nonce.get('checkout')) sessionStorage.setItem('ktn_consult_checkout', nonce.get('checkout'));
   else if (sessionStorage.getItem('ktn_consult_checkout')) nonce.set('checkout', sessionStorage.getItem('ktn_consult_checkout'));
   const consultOnly = full && Boolean(nonce.get('checkout'));
-  if (consultOnly) history.replaceState(null, '', location.pathname);
+  if (consultOnly) history.replaceState(null, '', location.pathname + location.search);
   let generation = 0;
 
   function node(tag, text = '', attrs = {}) {
@@ -720,17 +720,162 @@ form textarea{flex-basis:100%}.panel{border:1px solid #e7dad1;border-radius:12px
 details{margin:8px 0}summary{cursor:pointer;font-weight:650;color:#781f25}details button{margin:4px 5px 4px 0}
 blockquote{margin:4px 0;border-left:3px solid #d0a4a5;padding-left:10px}img{max-width:100%;height:auto}#status{color:#8b2424;margin:0 0 8px}
 @media(max-width:690px){.workspace{grid-template-columns:minmax(0,1fr)}.list{max-height:43vh;overflow:auto}main{padding:12px}nav{gap:6px}}
+body.embed{background:#fff}body.embed header{display:none}body.embed main{max-width:none;padding:10px 12px}body.embed .messages{max-height:52vh}
 `;
 
-export function consultationPage(staff, full) {
+export function consultationPage(staff, full, embed = false) {
   const nonce = crypto.randomUUID().replace(/-/g,'');
   const title = staff ? 'Hộp thư tư vấn' : 'Tư vấn khóa học';
+  const bodyAttr = embed ? ' class="embed"' : '';
   return new Response(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="robots" content="noindex"><title>${title} · KTN</title><style nonce="${nonce}">${styles}</style></head><body>
+  <meta name="robots" content="noindex"><title>${title} · KTN</title><style nonce="${nonce}">${styles}</style></head><body${bodyAttr}>
   <header><div><a href="/">Học Viện Khổng Tử Nhí</a><h1>${title}</h1></div></header>
   <main><p id="status" role="status"></p><div id="content"></div></main>
   <script nonce="${nonce}">(${browser.toString()})(${staff},${full});</script></body></html>`, { headers: {
     'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'Referrer-Policy':'no-referrer',
     'Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src https://img.vietqr.io; base-uri 'none'; frame-ancestors 'self'; form-action 'self'`
   } });
+}
+
+export function consultationPublicWidgetScript() {
+  return `(function(){
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (window.__ktnPublicChatWidgetLoaded) return;
+  window.__ktnPublicChatWidgetLoaded = true;
+
+  var DISALLOWED_PREFIXES = ['/custom-page/so-lien-lac', '/so-lien-lac', '/sll-', '/flashcards', '/tu-van', '/api/'];
+  function isAllowedPath(pathname) {
+    var p = String(pathname || '/').toLowerCase();
+    for (var i = 0; i < DISALLOWED_PREFIXES.length; i++) {
+      if (p.indexOf(DISALLOWED_PREFIXES[i]) === 0) return false;
+    }
+    return true;
+  }
+
+  function mountWidget() {
+    if (!document.body || document.getElementById('ktn-public-chat-host')) return;
+
+    var host = document.createElement('div');
+    host.id = 'ktn-public-chat-host';
+    host.setAttribute('data-ktn-public-chat', '1');
+    host.style.display = isAllowedPath(window.location.pathname) ? '' : 'none';
+
+    var shadow = host.attachShadow({ mode: 'open' });
+    var style = document.createElement('style');
+    style.textContent =
+      ':host{all:initial;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}' +
+      '.ktn-chat-wrap{position:fixed;right:18px;bottom:max(18px,env(safe-area-inset-bottom,18px));z-index:2147483000;display:flex;flex-direction:column;align-items:flex-end;gap:10px}' +
+      '.ktn-chat-fab{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#991B1B,#7F1D1D);color:#fff;font:600 14px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;box-shadow:0 10px 28px rgba(127,29,29,.32);transition:transform .16s ease,box-shadow .16s ease}' +
+      '.ktn-chat-fab:hover{transform:translateY(-1px);box-shadow:0 14px 32px rgba(127,29,29,.4)}' +
+      '.ktn-chat-panel{display:none;flex-direction:column;width:390px;max-width:calc(100vw - 24px);height:min(600px,calc(100vh - 96px));background:#fff;border:1px solid #e7dad1;border-radius:18px;overflow:hidden;box-shadow:0 20px 48px rgba(28,25,23,.22)}' +
+      '.ktn-chat-panel.open{display:flex}' +
+      '.ktn-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:linear-gradient(135deg,#991B1B,#7F1D1D);color:#fff}' +
+      '.ktn-chat-title{font:700 13.5px/1.25 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.ktn-chat-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}' +
+      '.ktn-chat-expand{color:#fef2f2;text-decoration:none;font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:5px 8px;border-radius:8px;background:rgba(255,255,255,.14)}' +
+      '.ktn-chat-expand:hover{background:rgba(255,255,255,.24)}' +
+      '.ktn-chat-close{border:0;background:rgba(255,255,255,.16);color:#fff;width:28px;height:28px;border-radius:8px;font-size:15px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}' +
+      '.ktn-chat-close:hover{background:rgba(255,255,255,.28)}' +
+      '.ktn-chat-body{flex:1 1 auto;min-height:0;background:#fbf7f0}' +
+      '.ktn-chat-iframe{width:100%;height:100%;border:0;display:block;background:#fff}' +
+      '@media(max-width:640px){.ktn-chat-wrap{left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom,8px));align-items:flex-end}.ktn-chat-panel{width:100%;max-width:none;height:min(80vh,620px)}}';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'ktn-chat-wrap';
+
+    var panel = document.createElement('section');
+    panel.className = 'ktn-chat-panel';
+    panel.setAttribute('aria-label', 'Tư vấn khóa học Khổng Tử Nhí');
+
+    var head = document.createElement('div');
+    head.className = 'ktn-chat-head';
+    var title = document.createElement('p');
+    title.className = 'ktn-chat-title';
+    title.textContent = 'Học Viện Khổng Tử Nhí · Tư vấn trực tuyến';
+
+    var actions = document.createElement('div');
+    actions.className = 'ktn-chat-actions';
+
+    var expand = document.createElement('a');
+    expand.className = 'ktn-chat-expand';
+    expand.href = '/tu-van';
+    expand.target = '_blank';
+    expand.rel = 'noopener noreferrer';
+    expand.textContent = 'Mở rộng ↗';
+
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'ktn-chat-close';
+    closeBtn.setAttribute('aria-label', 'Đóng hộp chat');
+    closeBtn.textContent = '✕';
+
+    var body = document.createElement('div');
+    body.className = 'ktn-chat-body';
+
+    var fab = document.createElement('button');
+    fab.type = 'button';
+    fab.className = 'ktn-chat-fab';
+    fab.setAttribute('aria-expanded', 'false');
+    fab.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span>Tư vấn khóa học</span>';
+
+    var isOpen = false;
+    var iframeMounted = false;
+
+    function setOpen(next) {
+      isOpen = Boolean(next);
+      panel.classList.toggle('open', isOpen);
+      fab.style.display = isOpen ? 'none' : 'inline-flex';
+      fab.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      if (isOpen && !iframeMounted) {
+        iframeMounted = true;
+        var frame = document.createElement('iframe');
+        frame.className = 'ktn-chat-iframe';
+        frame.src = '/tu-van?embed=1';
+        frame.title = 'Tư vấn khóa học Khổng Tử Nhí';
+        frame.setAttribute('allow', 'clipboard-write');
+        body.appendChild(frame);
+      }
+    }
+
+    fab.addEventListener('click', function(){ setOpen(true); });
+    closeBtn.addEventListener('click', function(){ setOpen(false); });
+
+    actions.appendChild(expand);
+    actions.appendChild(closeBtn);
+    head.appendChild(title);
+    head.appendChild(actions);
+    panel.appendChild(head);
+    panel.appendChild(body);
+    wrap.appendChild(panel);
+    wrap.appendChild(fab);
+    shadow.appendChild(style);
+    shadow.appendChild(wrap);
+    document.body.appendChild(host);
+
+    var lastPath = window.location.pathname;
+    function syncVisibility() {
+      var curPath = window.location.pathname;
+      if (curPath === lastPath) return;
+      lastPath = curPath;
+      var allowed = isAllowedPath(curPath);
+      host.style.display = allowed ? '' : 'none';
+      if (!allowed && isOpen) setOpen(false);
+    }
+
+    window.addEventListener('popstate', syncVisibility);
+    window.addEventListener('hashchange', syncVisibility);
+    window.setInterval(syncVisibility, 1000);
+  }
+
+  function scheduleMount() {
+    window.setTimeout(mountWidget, 350);
+  }
+
+  if (document.readyState === 'complete') {
+    scheduleMount();
+  } else {
+    window.addEventListener('load', scheduleMount, { once: true });
+  }
+})();
+`;
 }

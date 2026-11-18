@@ -1,4 +1,4 @@
-import { consultationPage } from './consultation-page.mjs';
+import { consultationPage, consultationPublicWidgetScript } from './consultation-page.mjs';
 import { draftConsultationExamples, draftConsultationPolicy } from './consultation-examples.mjs';
 import { consultationExample, consultationExampleLimit } from './consultation-retrieval.mjs';
 import { handleZaloWebhook, sendZaloMessage } from './consultation-zalo.mjs';
@@ -1054,8 +1054,19 @@ export async function handleConsultation(request, env, ctx, deps) {
   const isZaloRoute = zaloRoutes.includes(normPath) || normPath.startsWith('/api/ktn/zalo/');
   const isZaloSandboxRoute = normPath === '/api/ktn/consultations/zalo/sandbox/event' || normPath === '/api/ktn/zalo/sandbox/event';
   try {
+    if (request.method === 'GET' && suffix === 'widget.js') {
+      return new Response(consultationPublicWidgetScript(), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'public, max-age=300'
+        }
+      });
+    }
     if (request.method === 'GET' && ['/tu-van', '/tu-van/nhan-vien'].includes(normPath)) {
-      return consultationPage(normPath.endsWith('/nhan-vien'), fullMode(env));
+      const isStaffPage = normPath.endsWith('/nhan-vien');
+      const isEmbed = !isStaffPage && url.searchParams.get('embed') === '1';
+      return consultationPage(isStaffPage, fullMode(env), isEmbed);
     }
     const sepayPilotBlocked = !fullMode(env) && !isSepaySandbox(env) && ['sepay', 'sepay/sandbox', 'web/order', 'web/status'].includes(suffix);
     const metaPilotBlocked = !fullMode(env) && suffix === 'meta';

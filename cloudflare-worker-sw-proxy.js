@@ -12221,7 +12221,37 @@ function buildSllHeadInjection(includePwaTags = true) {
   ].join('\n');
 }
 
-function renderCustomPageHtmlResponse(request, target, sections, vendorSetting, url) {
+const KTN_PUBLIC_CHAT_SCRIPT_TAG = '<script defer src="/api/ktn/consultations/widget.js"></script>';
+
+function isPublicWebChatInjectablePath(pathname) {
+  const clean = String(pathname || '/').toLowerCase().trim() || '/';
+  const blockedPrefixes = [
+    '/custom-page/so-lien-lac',
+    '/so-lien-lac',
+    '/sll-',
+    '/flashcards',
+    '/tu-van',
+    '/api/'
+  ];
+  for (const prefix of blockedPrefixes) {
+    if (clean.startsWith(prefix)) return false;
+  }
+  if (clean === '/sw.js' || clean === '/firebase-messaging-sw.js' || clean === '/manifest.json') {
+    return false;
+  }
+  return true;
+}
+
+function injectPublicChatScriptIntoHtml(html) {
+  const source = String(html || '');
+  if (!source || source.includes('/api/ktn/consultations/widget.js')) return source;
+  if (/<\/body>/i.test(source)) {
+    return source.replace(/<\/body>/i, `${KTN_PUBLIC_CHAT_SCRIPT_TAG}\n</body>`);
+  }
+  return `${source}\n${KTN_PUBLIC_CHAT_SCRIPT_TAG}`;
+}
+
+function renderCustomPageHtmlResponse(request, target, sections, vendorSetting, url, env = null) {
   const rawSections = Array.isArray(sections) ? sections : [];
   const validSections = rawSections
     .filter((s) => s && s.element === 'SectionHtml' && s.props)
@@ -12300,6 +12330,10 @@ function renderCustomPageHtmlResponse(request, target, sections, vendorSetting, 
   }
 
   const canonicalUrl = `${url.origin}${url.pathname}`;
+  const shouldInjectPublicChat =
+    !target.isSoLienLac &&
+    env?.KTN_CONSULTATIONS_ENABLED === 'true' &&
+    isPublicWebChatInjectablePath(url?.pathname);
   const fullHtml = `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -12324,6 +12358,7 @@ ${sectionStyles.join('\n')}
 ${bodyPrefixHtml}
 <div id="__next"><main>${sectionBodies.join('\n')}</main></div>
 ${sectionScripts.join('\n')}
+${shouldInjectPublicChat ? KTN_PUBLIC_CHAT_SCRIPT_TAG : ''}
 </body>
 </html>`;
 
@@ -12371,7 +12406,7 @@ function rewriteSecondaryHtmlSeo(html, url, vendorSetting) {
   return out;
 }
 
-async function proxySecondaryOrigin(request, url, vendorSetting) {
+async function proxySecondaryOrigin(request, url, vendorSetting, env = null) {
   const targetUrl = `${IZTEACH_SECONDARY_ORIGIN}${url.pathname}${url.search}`;
   const fwdHeaders = new Headers();
   for (const hName of ['accept', 'accept-language', 'user-agent', 'range', 'if-none-match', 'if-modified-since']) {
@@ -12395,7 +12430,10 @@ async function proxySecondaryOrigin(request, url, vendorSetting) {
   const cType = String(outHeaders.get('content-type') || '').toLowerCase();
   if (cType.includes('text/html') && request.method === 'GET' && secRes.ok) {
     const rawHtml = await secRes.text();
-    const patchedHtml = rewriteSecondaryHtmlSeo(rawHtml, url, vendorSetting);
+    let patchedHtml = rewriteSecondaryHtmlSeo(rawHtml, url, vendorSetting);
+    if (env?.KTN_CONSULTATIONS_ENABLED === 'true' && isPublicWebChatInjectablePath(url.pathname)) {
+      patchedHtml = injectPublicChatScriptIntoHtml(patchedHtml);
+    }
     outHeaders.delete('content-length');
     outHeaders.set('Content-Type', 'text/html; charset=utf-8');
     outHeaders.set('Cache-Control', 'no-cache, must-revalidate');
@@ -12429,7 +12467,7 @@ async function handleKtnEdgeFailover(request, env, url) {
   const target = resolveCustomPageTarget(normPath, vendorSetting, customPages);
   if (target) {
     const sections = await getCachedCustomPageData(target.pageId, vendorId, nocache);
-    const rendered = renderCustomPageHtmlResponse(request, target, sections, vendorSetting, url);
+    const rendered = renderCustomPageHtmlResponse(request, target, sections, vendorSetting, url, env);
     if (rendered) return rendered;
     if (target.isSoLienLac) {
       return new Response('Tạm thời chưa tải được dữ liệu Sổ Liên Lạc. Vui lòng thử lại sau ít giây.', {
@@ -12443,7 +12481,7 @@ async function handleKtnEdgeFailover(request, env, url) {
     }
   }
 
-  return proxySecondaryOrigin(request, url, vendorSetting);
+  return proxySecondaryOrigin(request, url, vendorSetting, env);
 }
 
 const KTN_SLL_PAGE_ID = '6adff7ba36309b0002b6e659';
@@ -12573,6 +12611,36 @@ async function handleKtnOriginWithFailover(request, env, url) {
           headers: newHeaders
         });
       }
+      if (
+        originRes.ok &&
+        request.method === 'GET' &&
+        cType.includes('text/html') &&
+        env?.KTN_CONSULTATIONS_ENABLED === 'true' &&
+        isPublicWebChatInjectablePath(path)
+      ) {
+        const injectHeaders = new Headers(originRes.headers);
+        injectHeaders.delete('content-length');
+        injectHeaders.set('X-KTN-Edge-Mode', 'vercel-origin');
+        if (typeof HTMLRewriter === 'function') {
+          return new HTMLRewriter()
+            .on('body', {
+              element(el) {
+                el.append(KTN_PUBLIC_CHAT_SCRIPT_TAG, { html: true });
+              }
+            })
+            .transform(
+              new Response(originRes.body, {
+                status: originRes.status,
+                headers: injectHeaders
+              })
+            );
+        }
+        const rawHtml = await originRes.text();
+        return new Response(injectPublicChatScriptIntoHtml(rawHtml), {
+          status: originRes.status,
+          headers: injectHeaders
+        });
+      }
       const passthroughHeaders = new Headers(originRes.headers);
       passthroughHeaders.set('X-KTN-Edge-Mode', 'vercel-origin');
       return new Response(request.method === 'HEAD' ? null : originRes.body, {
@@ -12680,7 +12748,18 @@ export default {
       path === '/api/ktn/zalo' ||
       path.startsWith('/api/ktn/zalo/')
     ) {
-      if (env.KTN_CONSULTATIONS_ENABLED !== 'true') return jsonResponse({ ok: false, message: 'Tư vấn trực tuyến chưa mở.' }, 404);
+      if (env.KTN_CONSULTATIONS_ENABLED !== 'true') {
+        if (path === '/api/ktn/consultations/widget.js') {
+          return new Response('/* consultation disabled */\n', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/javascript; charset=utf-8',
+              'Cache-Control': 'no-store'
+            }
+          });
+        }
+        return jsonResponse({ ok: false, message: 'Tư vấn trực tuyến chưa mở.' }, 404);
+      }
       const { handleConsultation } = await import('./consultation-worker.mjs');
       return handleConsultation(request, env, ctx, consultationDependencies);
     }

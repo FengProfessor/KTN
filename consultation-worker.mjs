@@ -245,30 +245,118 @@ function redact(value) {
     .replace(/(?:https?:\/\/|www\.)\S+/gi, '[liên kết]');
 }
 
+export async function handleGeminiRelayRequest(request) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  const model = typeof body?.model === 'string' ? body.model.trim() : '';
+  const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
+  const payload = body?.payload;
+  if (!/^[a-z0-9.-]+$/.test(model) || !apiKey || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return new Response(JSON.stringify({ error: 'Invalid Gemini relay payload' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  try {
+    const upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(14000)
+    });
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: { 'Content-Type': upstream.headers.get('Content-Type') || 'application/json' }
+    });
+  } catch (err) {
+    console.warn('[Consultation] Gemini DO upstream error model=' + model + ' err=' + (err?.name || 'Error'));
+    return new Response(JSON.stringify({ error: 'Relay upstream error' }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function fetchGeminiWithRelay(env, model, apiKey, payload) {
+  if (env.KTN_AI_RELAY && typeof env.KTN_AI_RELAY.idFromName === 'function') {
+    const regionHints = ['wnam', 'enam', 'oc'];
+    for (const hint of regionHints) {
+      const id = env.KTN_AI_RELAY.idFromName('ktn-gemini-relay-v1-' + hint);
+      const stub = env.KTN_AI_RELAY.get(id, { locationHint: hint });
+      const response = await stub.fetch(new Request('https://do.internal/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, apiKey, payload }),
+        signal: AbortSignal.timeout(15000)
+      }));
+      if (response.status === 400) {
+        const txt = await response.text().catch(() => '');
+        if (/location is not supported/i.test(txt) && hint !== 'oc') {
+          console.warn('[Consultation] DO region hint=' + hint + ' unsupported by Gemini, trying next');
+          continue;
+        }
+        return new Response(txt, {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return response;
+    }
+  }
+  return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000)
+  });
+}
+
 async function ai(env, task, data, schema) {
   const keys = (env.KTN_GEMINI_KEYS || '').split(',').map(key => key.trim()).filter(Boolean);
   if (!keys.length || !/^[a-z0-9.-]+$/.test(env.KTN_GEMINI_MODEL || '')) throw new Error('AI chưa cấu hình');
+  const fallbacks = (env.KTN_GEMINI_FALLBACK_MODELS || '')
+    .split(',')
+    .map(m => m.trim())
+    .filter(m => /^[a-z0-9.-]+$/.test(m) && m !== env.KTN_GEMINI_MODEL);
+  const models = [env.KTN_GEMINI_MODEL, ...fallbacks];
+  const payload = {
+    systemInstruction: { parts: [{ text: task }] },
+    contents: [{ role: 'user', parts: [{ text: JSON.stringify(data) }] }],
+    generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, maxOutputTokens: 850 }
+  };
   const start = crypto.getRandomValues(new Uint32Array(1))[0] % keys.length;
-  for (let offset = 0; offset < keys.length; offset++) {
-    try {
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + env.KTN_GEMINI_MODEL + ':generateContent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keys[(start + offset) % keys.length] },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: task }] },
-          contents: [{ role: 'user', parts: [{ text: JSON.stringify(data) }] }],
-          generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, maxOutputTokens: 850 }
-        }),
-        signal: AbortSignal.timeout(6500)
-      });
-      if (!response.ok) {
-        if ([401, 403, 429].includes(response.status) || response.status >= 500) continue;
-        break;
+  for (const model of models) {
+    for (let offset = 0; offset < keys.length; offset++) {
+      try {
+        const response = await fetchGeminiWithRelay(env, model, keys[(start + offset) % keys.length], payload);
+        if (!response.ok) {
+          const errSnippet = (await response.text().catch(() => ''))
+            .replace(/\s+/g, ' ')
+            .slice(0, 180)
+            .replace(/AIza[0-9A-Za-z_-]+/g, '[redacted]');
+          console.warn('[Consultation] Gemini non-OK model=' + model + ' status=' + response.status + ' detail=' + errSnippet);
+          if ([401, 403, 404, 429].includes(response.status) || response.status >= 500) continue;
+          break;
+        }
+        const result = await response.json();
+        return parse(result.candidates?.[0]?.content?.parts?.filter(part => !part.thought).map(part => part.text).join('') || '');
+      } catch (err) {
+        console.warn('[Consultation] Gemini fetch error model=' + model + ' err=' + (err?.name || 'Error'));
+        // Thử credential hoặc model dự phòng tiếp theo khi upstream lỗi hoặc quá tải.
       }
-      const result = await response.json();
-      return parse(result.candidates?.[0]?.content?.parts?.filter(part => !part.thought).map(part => part.text).join('') || '');
-    } catch {
-      // Thử credential tiếp theo khi upstream hết quota theo key hoặc mất kết nối.
     }
   }
   throw new Error('AI không phản hồi');

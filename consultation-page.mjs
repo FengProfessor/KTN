@@ -731,7 +731,7 @@ export function consultationPage(staff, full, embed = false) {
   <meta name="robots" content="noindex"><title>${title} · KTN</title><style nonce="${nonce}">${styles}</style></head><body${bodyAttr}>
   <header><div><a href="/">Học Viện Khổng Tử Nhí</a><h1>${title}</h1></div></header>
   <main><p id="status" role="status"></p><div id="content"></div></main>
-  <script nonce="${nonce}">(${browser.toString()})(${staff},${full});</script></body></html>`, { headers: {
+  <script nonce="${nonce}">(function(){const __name=fn=>fn;(${browser.toString()})(${Boolean(staff)},${Boolean(full)});})();</script></body></html>`, { headers: {
     'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'Referrer-Policy':'no-referrer',
     'Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src https://img.vietqr.io; base-uri 'none'; frame-ancestors 'self'; form-action 'self'`
   } });

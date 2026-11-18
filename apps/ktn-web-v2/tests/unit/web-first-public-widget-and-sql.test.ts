@@ -10,8 +10,10 @@ import { JSDOM } from 'jsdom';
 
 // @ts-ignore Root ESM modules do not carry TypeScript declarations
 import { consultationPage, consultationPublicWidgetScript } from '../../../../consultation-page.mjs';
+// @ts-ignore Root ESM modules do not carry TypeScript declarations
+import { handleGeminiRelayRequest } from '../../../../consultation-worker.mjs';
 // @ts-ignore E2E harness helper
-import { loadWorkerInstance, DEFAULT_TEST_ENV } from '../../../../tests/e2e-zalo-crm/harness/worker-client.mjs';
+import { createTestWorld, loadWorkerInstance, DEFAULT_TEST_ENV } from '../../../../tests/e2e-zalo-crm/harness/worker-client.mjs';
 
 vi.setConfig({ testTimeout: 45_000, hookTimeout: 45_000 });
 
@@ -241,5 +243,226 @@ describe('Web-first public Chatbot Widget, ?embed=1 mode & All-In-One SQL 202611
 
     const res = await db.query<{ cnt: number }>('SELECT count(*)::int AS cnt FROM public.ktn_consultation_inbox');
     expect(res.rows[0].cnt).toBe(0);
+  });
+
+  it('retries onto KTN_GEMINI_FALLBACK_MODELS when primary KTN_GEMINI_MODEL returns 404 or 503', async () => {
+    const world = await createTestWorld({
+      mode: 'live-auth',
+      envOverrides: {
+        KTN_GEMINI_KEYS: 'fake-key-fallback-test',
+        KTN_GEMINI_MODEL: 'gemini-retired-404',
+        KTN_GEMINI_FALLBACK_MODELS: 'gemini-3.5-flash-lite,gemini-3-flash-preview'
+      }
+    });
+    try {
+      world.mocks.setFaults({
+        geminiStatus: [404, 200],
+        geminiResponse: {
+          reply: 'Bé 6 tuổi có thể bắt đầu làm quen nhẹ nhàng tại nhà, mục tiêu chính của bé là gì ạ?',
+          course_id: '',
+          handoff: false
+        }
+      });
+
+      const start = await world.startWebChat();
+      expect(start.status).toBe(200);
+      const sendRes = await world.sendWebMessage(start.token, 'Bé nhà chị 6 tuổi chưa biết gì, học có khó không em?');
+      expect(sendRes.status).toBe(200);
+
+      const calls = world.mocks.upstreamCalls.gemini;
+      expect(calls.length).toBe(2);
+      expect(String(calls[0].url)).toContain('/models/gemini-retired-404:generateContent');
+      expect(String(calls[1].url)).toContain('/models/gemini-3.5-flash-lite:generateContent');
+
+      const thread = await world.request('/api/ktn/consultations/web/thread', { token: start.token });
+      expect(thread.status).toBe(200);
+      expect(thread.json.status).toBe('bot');
+      expect(thread.json.messages.some((m: { sender: string; body: string }) => m.sender === 'bot' && m.body.includes('mục tiêu chính'))).toBe(true);
+    } finally {
+      await world.close();
+    }
+  });
+
+  it('normalizes empty course_id sentinels ("null", "none") while rejecting unknown fabricated course_id', async () => {
+    const world = await createTestWorld({
+      mode: 'live-auth',
+      envOverrides: {
+        KTN_GEMINI_KEYS: 'fake-key-sentinel-test',
+        KTN_GEMINI_MODEL: 'gemini-3.5-flash-lite'
+      }
+    });
+    try {
+      for (const sentinel of ['null', 'none']) {
+        await world.reset();
+        world.mocks.setFaults({
+          geminiResponse: {
+            reply: 'Dạ, bé đã từng nghe tiếng Trung bao giờ chưa ạ?',
+            course_id: sentinel,
+            handoff: false
+          }
+        });
+        const start = await world.startWebChat();
+        await world.sendWebMessage(start.token, 'Bé 6 tuổi chưa biết gì ạ');
+        const thread = await world.request('/api/ktn/consultations/web/thread', { token: start.token });
+        expect(thread.json.status).toBe('bot');
+        expect(thread.json.messages.some((m: { sender: string; body: string }) => m.sender === 'bot' && m.body.includes('tiếng Trung bao giờ chưa'))).toBe(true);
+      }
+
+      await world.reset();
+      world.mocks.setFaults({
+        geminiResponse: {
+          reply: 'Anh/chị xem khóa này nhé.',
+          course_id: 'NON_EXISTENT_ID',
+          handoff: false
+        }
+      });
+      const startBad = await world.startWebChat();
+      await world.sendWebMessage(startBad.token, 'Bé 6 tuổi học khóa nào ạ?');
+      const badThread = await world.request('/api/ktn/consultations/web/thread', { token: startBad.token });
+      expect(badThread.json.status).toBe('open');
+      expect(badThread.json.messages.some((m: { sender: string; body: string }) => m.sender === 'system' && m.body.includes('chuyển câu hỏi cho tư vấn viên'))).toBe(true);
+    } finally {
+      await world.close();
+    }
+  });
+
+  it('routes Gemini calls through KTN_AI_RELAY Durable Object (wnam -> enam fallback on location block) and forwards via handleGeminiRelayRequest without leaking keys', async () => {
+    const methodErr = await handleGeminiRelayRequest(new Request('https://do.internal/gemini', { method: 'GET' }));
+    expect(methodErr.status).toBe(405);
+
+    const invalidPayloadErr = await handleGeminiRelayRequest(
+      new Request('https://do.internal/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: '../bad', apiKey: 'fake', payload: {} })
+      })
+    );
+    expect(invalidPayloadErr.status).toBe(400);
+
+    const relayCalls: Array<{ name: string; locationHint?: string; model?: string }> = [];
+    const relayBinding = {
+      idFromName(name: string) {
+        return { name };
+      },
+      get(id: { name: string }, options?: { locationHint?: string }) {
+        return {
+          async fetch(input: RequestInfo | URL, init?: RequestInit) {
+            const req = input instanceof Request ? input : new Request(input, init);
+            const cloned = req.clone();
+            const parsed = await cloned.json();
+            relayCalls.push({
+              name: id.name,
+              locationHint: options?.locationHint,
+              model: parsed?.model
+            });
+            if (options?.locationHint === 'wnam') {
+              return new Response(
+                JSON.stringify({
+                  error: {
+                    code: 400,
+                    message: 'User location is not supported for the API use.',
+                    status: 'FAILED_PRECONDITION'
+                  }
+                }),
+                { status: 400, headers: { 'Content-Type': 'application/json' } }
+              );
+            }
+            return handleGeminiRelayRequest(req);
+          }
+        };
+      }
+    };
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fakeRelayTestKey = 'fake-key-do-relay-test';
+    const world = await createTestWorld({
+      mode: 'live-auth',
+      envOverrides: {
+        KTN_GEMINI_KEYS: fakeRelayTestKey,
+        KTN_GEMINI_MODEL: 'gemini-3.5-flash-lite',
+        KTN_GEMINI_FALLBACK_MODELS: '',
+        KTN_AI_RELAY: relayBinding
+      }
+    });
+    try {
+      world.mocks.setFaults({
+        geminiResponse: {
+          reply: 'Bé 6 tuổi bắt đầu học tại nhà rất phù hợp với lộ trình nhẹ nhàng, chị muốn ưu tiên nghe nói trước hay cả đọc viết ạ?',
+          course_id: '',
+          handoff: false
+        }
+      });
+
+      const start = await world.startWebChat();
+      expect(start.status).toBe(200);
+      const sendRes = await world.sendWebMessage(start.token, 'Bé nhà chị 6 tuổi chưa biết gì, học tại nhà được không em?');
+      expect(sendRes.status).toBe(200);
+
+      expect(relayCalls).toEqual([
+        { name: 'ktn-gemini-relay-v1-wnam', locationHint: 'wnam', model: 'gemini-3.5-flash-lite' },
+        { name: 'ktn-gemini-relay-v1-enam', locationHint: 'enam', model: 'gemini-3.5-flash-lite' }
+      ]);
+      expect(world.mocks.upstreamCalls.gemini).toHaveLength(1);
+      expect(String(world.mocks.upstreamCalls.gemini[0].url)).toContain('/models/gemini-3.5-flash-lite:generateContent');
+      const warnText = warnSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(warnText).not.toContain(fakeRelayTestKey);
+
+      const thread = await world.request('/api/ktn/consultations/web/thread', { token: start.token });
+      expect(thread.status).toBe(200);
+      expect(thread.json.status).toBe('bot');
+      expect(thread.json.messages.some((m: { sender: string; body: string }) => m.sender === 'bot' && m.body.includes('nghe nói trước'))).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+      await world.close();
+    }
+  });
+
+  it('executes serialized /tu-van?embed=1 script cleanly in JSDOM even when esbuild __name instrumentation is present', async () => {
+    const rawHtml = await consultationPage(false, true, true).text();
+    // Simulate Wrangler/esbuild keepNames injection inside serialized browser() source:
+    const instrumentedHtml = rawHtml.replace(
+      'function node(',
+      '__name(node, "node");\nfunction node('
+    );
+    const runtimeErrors: string[] = [];
+    const dom = new JSDOM(instrumentedHtml, {
+      url: 'https://mock-ktn.local/tu-van?embed=1',
+      runScripts: 'dangerously',
+      beforeParse(window: any) {
+        Object.defineProperty(window, 'crypto', { value: globalThis.crypto });
+        window.matchMedia = () => ({ matches: false });
+        window.addEventListener('error', (ev: any) => {
+          runtimeErrors.push(ev?.message || String(ev?.error || 'error'));
+        });
+        window.fetch = async (url: string) => {
+          if (url.endsWith('/web/start')) {
+            return new Response(JSON.stringify({ token: 'web.33333333-3333-3333-3333-333333333333.9999999999999.sig' }), { status: 200 });
+          }
+          if (url.endsWith('/web/thread')) {
+            return new Response(
+              JSON.stringify({
+                status: 'bot',
+                messages: [],
+                quickReplies: [
+                  { id: 'MENU_FAQ', label: 'Chọn khóa học', payload: 'MENU_FAQ' },
+                  { id: 'MENU_PAYMENT', label: 'Hướng dẫn thanh toán VietQR', payload: 'MENU_PAYMENT' }
+                ]
+              }),
+              { status: 200 }
+            );
+          }
+          if (url.endsWith('/web/catalog')) {
+            return new Response(JSON.stringify({ courses: [], checkoutEnabled: false }), { status: 200 });
+          }
+          return new Response(JSON.stringify({}), { status: 200 });
+        };
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(runtimeErrors).toEqual([]);
+    const chips = [...dom.window.document.querySelectorAll('#content .quick-replies button.chip')];
+    expect(chips.length).toBeGreaterThanOrEqual(2);
+    expect(dom.window.document.querySelector('#content textarea[name="body"]')).toBeTruthy();
   });
 });

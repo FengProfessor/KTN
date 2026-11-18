@@ -13375,7 +13375,7 @@ export default {
           }
           cleanSession.hasLiveClass = Boolean(cleanSession.classCode);
         } catch {}
-      } else if (effectiveRole === 'advisor' && cleanSession.email) {
+      } else if ((effectiveRole === 'advisor' || Boolean(cleanSession.advisorRole)) && cleanSession.email) {
         try {
           const advSessRes = await supabaseRequest(
             env,

@@ -580,13 +580,39 @@ export async function handleSepayWebhook({
     p_amount: safeAmount
   });
 
-  const reconKind = payment?.conflict
-    ? 'needs_review'
-    : payment?.status === 'done'
-      ? 'accepted'
-      : ['mismatch', 'duplicate', 'needs_review', 'accepted'].includes(payment?.status)
-        ? payment.status
-        : 'needs_review';
+  if (payment?.conflict === true) {
+    const ord = await store.one('ktn_orders?order_id=eq.' + eq(orderId));
+    const recon = await store.rpc('log_sepay_reconciliation', {
+      p_transaction_id: txKey,
+      p_kind: 'needs_review',
+      p_amount: safeAmount,
+      p_order_id: orderId,
+      p_claimed_order_code: orderId,
+      p_expected_amount: ord?.amount ?? null,
+      p_account_number: effectiveSourceAccounts[0] || null,
+      p_transfer_content: transferContent || null,
+      p_raw_payload: payload
+    });
+    return deps.jsonResponse(
+      {
+        ok: false,
+        success: false,
+        conflict: true,
+        status: 'conflict',
+        order_id: orderId,
+        transaction_id: txKey,
+        duplicate: false,
+        reconciliation: recon?.log || null
+      },
+      409
+    );
+  }
+
+  const reconKind = payment?.status === 'done'
+    ? 'accepted'
+    : ['mismatch', 'duplicate', 'needs_review', 'accepted'].includes(payment?.status)
+      ? payment.status
+      : 'needs_review';
 
   const ord = await store.one('ktn_orders?order_id=eq.' + eq(orderId));
   const recon = await store.rpc('log_sepay_reconciliation', {
@@ -611,7 +637,7 @@ export async function handleSepayWebhook({
       success: true,
       order_id: orderId,
       transaction_id: txKey,
-      status: payment?.conflict ? 'conflict' : payment?.status || reconKind,
+      status: payment?.status || reconKind,
       duplicate: Boolean(recon?.duplicate),
       reconciliation: recon?.log || null
     },
@@ -733,6 +759,50 @@ export async function resolveSepayReconciliation({
   const resolutionStatus = tidy(input?.resolution_status || input?.resolutionStatus || '', 20);
   const note = tidy(input?.note || input?.resolution_note || '', 2000);
   const orderId = tidy(input?.order_id || input?.orderId || '', 20);
+  const retryPayment = input?.retry_payment === true || input?.retryPayment === true;
+
+  if (retryPayment) {
+    if (!['open', 'resolved', 'ignored'].includes(resolutionStatus)) {
+      throw new RequestError('Thông tin xử lý đối soát không hợp lệ.', 400);
+    }
+    const existingLog = await store.one('ktn_sepay_reconciliation_logs?transaction_id=eq.' + eq(txId));
+    if (!existingLog) {
+      throw new RequestError('Không tìm thấy giao dịch đối soát.', 404);
+    }
+    if (orderId) {
+      const requestedOrder = await store.one('ktn_orders?order_id=eq.' + eq(orderId));
+      if (!requestedOrder) {
+        throw new RequestError('Không tìm thấy đơn hàng liên kết.', 404);
+      }
+    }
+    const targetOrderId = orderId || tidy(existingLog.order_id || '', 20);
+    if (!/^ORD-\d{6}$/.test(targetOrderId) || !/^sepay:[a-zA-Z0-9_:-]{1,64}$/.test(txId || '')) {
+      throw new RequestError('Giao dịch cần đối soát kế toán.', 409);
+    }
+    const [targetOrder, consultLink, payment] = await Promise.all([
+      store.one('ktn_orders?order_id=eq.' + eq(targetOrderId)),
+      store.one('ktn_consultation_orders?order_id=eq.' + eq(targetOrderId)),
+      store.one(
+        'ktn_consultation_payments?transaction_id=eq.' + eq(txId) + '&order_id=eq.' + eq(targetOrderId)
+      )
+    ]);
+    const canRetryNeedsReview =
+      Boolean(consultLink) &&
+      payment?.status === 'needs_review' &&
+      Number(payment.attempts) > 0 &&
+      targetOrder?.payment_status === 'paid' &&
+      targetOrder?.approval_status !== 'rejected' &&
+      Number(payment.amount) === Number(targetOrder.amount);
+    const canRetryPartial =
+      payment?.status === 'accepted' &&
+      Number(payment.attempts) > 0 &&
+      targetOrder?.payment_status === 'paid' &&
+      targetOrder?.approval_status !== 'rejected' &&
+      Number(payment.amount) === Number(targetOrder.amount);
+    if (!canRetryNeedsReview && !canRetryPartial) {
+      throw new RequestError('Giao dịch cần đối soát kế toán.', 409);
+    }
+  }
 
   const res = await store.rpc('resolve_sepay_reconciliation', {
     p_transaction_id: txId,
@@ -748,7 +818,7 @@ export async function resolveSepayReconciliation({
     throw new RequestError('Thông tin xử lý đối soát không hợp lệ.', 400);
   }
 
-  if ((input?.retry_payment === true || input?.retryPayment === true) && res?.log?.order_id) {
+  if (retryPayment && res?.log?.order_id) {
     await retryConsultationPayment({
       store,
       ctx,

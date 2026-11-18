@@ -1708,19 +1708,23 @@ export function createLocalWorkerHarness() {
         const payments = state.tables.ktn_consultation_payments || (state.tables.ktn_consultation_payments = []);
         const orders = state.tables.ktn_orders || [];
         const links = state.tables.ktn_consultation_orders || [];
-        const existingTx = payments.find(p => p.transaction_id === b.p_transaction);
-        if (existingTx) {
-          return new Response(JSON.stringify({ status: existingTx.status }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
         const ord = orders.find(o => o.order_id === b.p_order);
         const link = links.find(l => l.order_id === b.p_order);
         if (!ord || !link) {
-          return new Response(JSON.stringify({ status: 'unknown' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          return new Response(JSON.stringify({ unknown: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const existingTx = payments.find(p => p.transaction_id === b.p_transaction);
+        if (existingTx) {
+          if (existingTx.order_id !== b.p_order || Number(existingTx.amount) !== Number(b.p_amount)) {
+            return new Response(JSON.stringify({ conflict: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          return new Response(JSON.stringify({ ...existingTx }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         const nowIso = new Date().toISOString();
         let nextStatus = 'accepted';
-        if (Number(b.p_amount) !== Number(ord.amount)) nextStatus = 'mismatch';
+        if (['cancelled', 'refunded'].includes(ord.payment_status) || ord.approval_status === 'rejected') nextStatus = 'needs_review';
         else if (ord.payment_status === 'paid') nextStatus = 'duplicate';
+        else if (Number(b.p_amount) !== Number(ord.amount)) nextStatus = 'mismatch';
         const row = {
           transaction_id: b.p_transaction,
           order_id: b.p_order,
@@ -1735,9 +1739,9 @@ export function createLocalWorkerHarness() {
         if (nextStatus === 'accepted') {
           ord.payment_status = 'paid';
           ord.updated_at = nowIso;
-          return new Response(JSON.stringify({ status: 'accepted', amount: ord.amount }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          return new Response(JSON.stringify({ ...row }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
-        return new Response(JSON.stringify({ status: nextStatus, conflict: true, expected: ord.amount }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ ...row, expected: ord.amount }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       if (table === 'rpc/ktn_consultation_take_payment' && method === 'POST') {

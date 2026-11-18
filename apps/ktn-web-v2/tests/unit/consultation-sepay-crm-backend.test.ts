@@ -1005,4 +1005,300 @@ describe('M3 SePay, Unified CRM, RBAC, P0001 Fix & Middleware Integration', () =
     const v2Out = await v2Res.text();
     expect(v2Out).toContain('rel="manifest"');
   });
+
+  it('8. enforces SePay transaction_id conflict 409 across PGlite and local-worker-middleware, and blocks retry_payment pre-check on unmatched logs without mutating resolution_status', async () => {
+    const adminToken = mintKtnSession({ email: 'quanly@khongtunhi.com', name: 'Quản Lý KTN', role: 'admin' });
+
+    // (a) PGlite: create two web orders A & B
+    const start1 = await world.request('/api/ktn/consultations/web/start', { method: 'POST' });
+    const start2 = await world.request('/api/ktn/consultations/web/start', { method: 'POST' });
+    const ordARes = await world.request('/api/ktn/consultations/web/order', {
+      method: 'POST',
+      token: start1.json.token,
+      json: {
+        requestId: crypto.randomUUID(),
+        courseId: '6adadba969897b0002482ca5',
+        name: 'Bé A Conflict',
+        email: 'conflict.a@example.com',
+        phone: '0901112233'
+      }
+    });
+    const ordBRes = await world.request('/api/ktn/consultations/web/order', {
+      method: 'POST',
+      token: start2.json.token,
+      json: {
+        requestId: crypto.randomUUID(),
+        courseId: '6adadba969897b0002482ca5',
+        name: 'Bé B Conflict',
+        email: 'conflict.b@example.com',
+        phone: '0904445566'
+      }
+    });
+    expect(ordARes.status).toBe(200);
+    expect(ordBRes.status).toBe(200);
+    const orderA = ordARes.json.id;
+    const orderB = ordBRes.json.id;
+
+    // First SePay webhook succeeds for orderA
+    const firstPay = await world.postSepay({
+      id: 94001,
+      transferType: 'in',
+      transferAmount: 890000,
+      content: `KTN ${orderA}`,
+      accountNumber: '0987654321'
+    });
+    expect(firstPay.status).toBe(201);
+    expect(firstPay.json.status).toBe('accepted');
+
+    // Reuse same txId 94001 for different orderB -> HTTP 409 + conflict: true, duplicate: false, orderB untouched
+    const conflictOrder = await world.postSepay({
+      id: 94001,
+      transferType: 'in',
+      transferAmount: 890000,
+      content: `KTN ${orderB}`,
+      accountNumber: '0987654321'
+    });
+    expect(conflictOrder.status).toBe(409);
+    expect(conflictOrder.json).toMatchObject({
+      ok: false,
+      success: false,
+      conflict: true,
+      status: 'conflict',
+      order_id: orderB,
+      transaction_id: 'sepay:94001',
+      duplicate: false
+    });
+
+    // Reuse same txId 94001 for orderA with different amount -> HTTP 409 + conflict: true
+    const conflictAmt = await world.postSepay({
+      id: 94001,
+      transferType: 'in',
+      transferAmount: 500000,
+      content: `KTN ${orderA}`,
+      accountNumber: '0987654321'
+    });
+    expect(conflictAmt.status).toBe(409);
+    expect(conflictAmt.json).toMatchObject({
+      ok: false,
+      success: false,
+      conflict: true,
+      status: 'conflict',
+      order_id: orderA,
+      transaction_id: 'sepay:94001',
+      duplicate: false
+    });
+
+    const ordBCheck = await world.db.query(
+      'SELECT payment_status, approval_status FROM public.ktn_orders WHERE order_id = $1',
+      [orderB]
+    );
+    expect(ordBCheck.rows[0]).toEqual({ payment_status: 'pending_verification', approval_status: 'pending' });
+
+    // (b) local-worker-middleware parity: conflict 409 for different order_id & amount, 201 for fresh mismatch
+    const localHarness = createLocalWorkerHarness();
+    const mgrLoginRes = await invokeMiddleware(localHarness, '/api/ktn/auth/login', {
+      method: 'POST',
+      json: { email: 'quanly@khongtunhi.com', password: localHarness.env.KTN_STAFF_AND_TEST_PASSWORD }
+    });
+    expect(mgrLoginRes.status).toBe(200);
+    const mgrBearer = mgrLoginRes.json.token;
+
+    const lStart1 = await invokeMiddleware(localHarness, '/api/ktn/consultations/web/start', { method: 'POST' });
+    const lStart2 = await invokeMiddleware(localHarness, '/api/ktn/consultations/web/start', { method: 'POST' });
+    const lOrdA = await invokeMiddleware(localHarness, '/api/ktn/consultations/web/order', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${lStart1.json.token}` },
+      json: {
+        requestId: crypto.randomUUID(),
+        courseId: '6adadba969897b0002482ca5',
+        name: 'Local A',
+        email: 'local.a@example.com',
+        phone: '0901112233'
+      }
+    });
+    const lOrdB = await invokeMiddleware(localHarness, '/api/ktn/consultations/web/order', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${lStart2.json.token}` },
+      json: {
+        requestId: crypto.randomUUID(),
+        courseId: '6adadba969897b0002482ca5',
+        name: 'Local B',
+        email: 'local.b@example.com',
+        phone: '0904445566'
+      }
+    });
+    expect(lOrdA.status).toBe(200);
+    expect(lOrdB.status).toBe(200);
+
+    // Fresh mismatch on lOrdB with txId 666001 must still return 201 status='mismatch' (not 409)
+    const lMismatch = await invokeMiddleware(localHarness, '/api/ktn/consultations/staff/sepay/sandbox', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${mgrBearer}` },
+      json: { order_id: lOrdB.json.id, transferAmount: 500000, transaction_id: '666001' }
+    });
+    expect(lMismatch.status).toBe(201);
+    expect(lMismatch.json.status).toBe('mismatch');
+
+    // First accepted payment for lOrdA with txId 666002
+    const lFirst = await invokeMiddleware(localHarness, '/api/ktn/consultations/staff/sepay/sandbox', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${mgrBearer}` },
+      json: { order_id: lOrdA.json.id, transferAmount: 890000, transaction_id: '666002' }
+    });
+    expect(lFirst.status).toBe(201);
+    expect(lFirst.json.status).toBe('accepted');
+
+    // Exact replay of 666002 returns 201 duplicate: true
+    const lReplay = await invokeMiddleware(localHarness, '/api/ktn/consultations/staff/sepay/sandbox', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${mgrBearer}` },
+      json: { order_id: lOrdA.json.id, transferAmount: 890000, transaction_id: '666002' }
+    });
+    expect(lReplay.status).toBe(201);
+    expect(lReplay.json.duplicate).toBe(true);
+
+    // Reuse 666002 on lOrdB -> 409 + conflict: true, lOrdB stays pending_verification
+    const lConflictOrder = await invokeMiddleware(localHarness, '/api/ktn/consultations/staff/sepay/sandbox', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${mgrBearer}` },
+      json: { order_id: lOrdB.json.id, transferAmount: 890000, transaction_id: '666002' }
+    });
+    expect(lConflictOrder.status).toBe(409);
+    expect(lConflictOrder.json).toMatchObject({
+      ok: false,
+      success: false,
+      conflict: true,
+      status: 'conflict',
+      order_id: lOrdB.json.id,
+      transaction_id: 'sepay:666002',
+      duplicate: false
+    });
+
+    // Reuse 666002 on lOrdA with different amount -> 409 + conflict: true
+    const lConflictAmt = await invokeMiddleware(localHarness, '/api/ktn/consultations/staff/sepay/sandbox', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${mgrBearer}` },
+      json: { order_id: lOrdA.json.id, transferAmount: 500000, transaction_id: '666002' }
+    });
+    expect(lConflictAmt.status).toBe(409);
+    expect(lConflictAmt.json.conflict).toBe(true);
+
+    const localOrdBRow = localHarness.state.tables.ktn_orders.find((o: any) => o.order_id === lOrdB.json.id);
+    expect(localOrdBRow.payment_status).toBe('pending_verification');
+
+    // (c) resolveSepayReconciliation with retry_payment: true on an unmatched log must return 409 WITHOUT mutating log
+    const unmatchedTx = await world.postSepay({
+      id: 94009,
+      transferType: 'in',
+      transferAmount: 500000,
+      content: 'CHUYEN KHOAN CHUA CO MA DON',
+      accountNumber: '0987654321'
+    });
+    expect(unmatchedTx.status).toBe(201);
+    expect(unmatchedTx.json.status).toBe('unmatched');
+
+    const badResolve = await world.request('/api/ktn/consultations/staff/reconciliation/sepay%3A94009/resolve', {
+      method: 'POST',
+      token: adminToken,
+      json: { resolution_status: 'resolved', order_id: orderB, retry_payment: true }
+    });
+    expect(badResolve.status).toBe(409);
+
+    const logAfterFailedResolve = await world.db.query(
+      "SELECT resolution_status, order_id, resolved_by FROM public.ktn_sepay_reconciliation_logs WHERE transaction_id = 'sepay:94009'"
+    );
+    expect(logAfterFailedResolve.rows[0]).toEqual({
+      resolution_status: 'open',
+      order_id: null,
+      resolved_by: null
+    });
+  });
+
+  it('9. revokes existing KTN sessions when a manager-role advisor is deactivated/demoted and escapes leading LF in report.csv', async () => {
+    const adminToken = mintKtnSession({ email: 'quanly@khongtunhi.com', name: 'Quản Lý KTN', role: 'admin' });
+
+    // Create an active manager-role advisor and log in via /api/ktn/auth/login
+    const createMgr = await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'mgr.revoke@khongtunhi.com', name: 'Quản lý Revoke', active: true, role: 'manager', ktn_user_id: 'KTN-MGR-REV' }
+    });
+    expect(createMgr.status).toBe(200);
+
+    const mgrLogin = await world.request('/api/ktn/auth/login', {
+      method: 'POST',
+      json: { email: 'mgr.revoke@khongtunhi.com', password: world.env.KTN_STAFF_AND_TEST_PASSWORD }
+    });
+    expect(mgrLogin.status).toBe(200);
+    expect(mgrLogin.json.session.role).toBe('admin');
+    expect(mgrLogin.json.session.advisorRole).toBe('manager');
+    const mgrKtnToken = mgrLogin.json.token;
+
+    // Active manager KTN session works on auth/session and staff/inbox
+    const sessActive = await world.request('/api/ktn/auth/session', { token: mgrKtnToken });
+    expect(sessActive.status).toBe(200);
+    expect(sessActive.json.user.role).toBe('admin');
+    expect(sessActive.json.user.advisorRole).toBe('manager');
+
+    const inboxActive = await world.request('/api/ktn/consultations/staff/inbox', { token: mgrKtnToken });
+    expect(inboxActive.status).toBe(200);
+
+    // Demote manager -> advisor and verify existing session syncs role down to advisor (and assign returns 403)
+    const demoteMgr = await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'mgr.revoke@khongtunhi.com', name: 'Quản lý Revoke', active: true, role: 'advisor', ktn_user_id: 'KTN-MGR-REV' }
+    });
+    expect(demoteMgr.status).toBe(200);
+
+    const sessDemoted = await world.request('/api/ktn/auth/session', { token: mgrKtnToken });
+    expect(sessDemoted.status).toBe(200);
+    expect(sessDemoted.json.user.role).toBe('advisor');
+    expect(sessDemoted.json.user.advisorRole).toBe('advisor');
+
+    const zRes = await world.postZaloEvent({
+      event_name: 'user_send_text',
+      sender: { id: 'zalo-lf-csv-1' },
+      message: { msg_id: 'msg-lf-csv-1', text: 'Xin chào' }
+    });
+    expect(zRes.status).toBe(200);
+    const convId = zRes.json.consultation_id;
+
+    const demotedAssign = await world.request(`/api/ktn/consultations/staff/thread/${convId}/assign`, {
+      method: 'POST',
+      token: mgrKtnToken,
+      json: { email: 'advisor.an@khongtunhi.com' }
+    });
+    expect(demotedAssign.status).toBe(403);
+
+    // Deactivate the manager-role advisor -> existing KTN session MUST immediately get 403
+    await world.request('/api/ktn/consultations/staff/advisors', {
+      method: 'PUT',
+      token: adminToken,
+      json: { email: 'mgr.revoke@khongtunhi.com', name: 'Quản lý Revoke', active: false, role: 'manager', ktn_user_id: 'KTN-MGR-REV' }
+    });
+
+    const sessRevoked = await world.request('/api/ktn/auth/session', { token: mgrKtnToken });
+    expect(sessRevoked.status).toBe(403);
+    expect(sessRevoked.json.error).toBe('ADVISOR_ACCOUNT_LOCKED');
+
+    const inboxRevoked = await world.request('/api/ktn/consultations/staff/inbox', { token: mgrKtnToken });
+    expect(inboxRevoked.status).toBe(403);
+
+    // Static/root admin session (no advisorRole) remains unaffected
+    const rootInbox = await world.request('/api/ktn/consultations/staff/inbox', { token: adminToken });
+    expect(rootInbox.status).toBe(200);
+
+    // Raw DB customer_name starting with leading LF (\n=CMD...) must be safely escaped with ' in report.csv
+    await world.db.query(
+      "UPDATE public.ktn_consultations SET customer_name = E'\\n=CMD|''/C calc''!A0' WHERE id = $1",
+      [convId]
+    );
+    const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
+    const csvRes = await world.request(`/api/ktn/consultations/staff/report.csv?from=${today}&to=${today}&channel=zalo_oa`, {
+      token: adminToken
+    });
+    expect(csvRes.status).toBe(200);
+    expect(csvRes.text).toContain('"\'\n=CMD|\'/C calc\'!A0"');
+  });
 });

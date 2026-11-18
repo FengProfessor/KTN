@@ -147,6 +147,19 @@ async function staff(request, env, deps, store) {
   } else {
     const session = await deps.extractSessionFromRequest(request, env);
     if (session?.role === 'admin' && session.email) {
+      if (session.advisorRole) {
+        const advisor = await lookupActiveAdvisor(store, session.email, session.id || session.userId);
+        if (!advisor) {
+          throw new RequestError('Tài khoản tư vấn viên đã ngừng hoạt động hoặc chưa được phân quyền.', 403);
+        }
+        const isManager = advisor.role === 'manager';
+        return {
+          email: advisor.email,
+          name: advisor.name || session.name || advisor.email,
+          admin: isManager,
+          role: isManager ? 'manager' : 'advisor'
+        };
+      }
       return {
         email: tidy(session.email, 254).toLowerCase(),
         name: session.name || session.email,
@@ -540,7 +553,7 @@ async function all(store, path) {
 
 function escapeCsvCell(value) {
   let str = value === null || value === undefined ? '' : String(value);
-  if (/^[\t\r ]*[=+\-@]|^[\t\r]/.test(str)) {
+  if (/^[\t\r\n ]*[=+\-@]|^[\t\r\n]/.test(str)) {
     str = "'" + str;
   }
   return '"' + str.replace(/"/g, '""') + '"';

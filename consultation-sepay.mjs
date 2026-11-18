@@ -1,9 +1,10 @@
+import { normalizeVnPhone } from './consultation-zalo.mjs';
+
 const DEFAULT_SANDBOX_BANK_ID = 'MB';
 const DEFAULT_SANDBOX_BANK_NAME = 'MBBank';
 const DEFAULT_SANDBOX_ACCOUNT_NO = '0987654321';
 const DEFAULT_SANDBOX_ACCOUNT_NAME = 'HOC VIEN KHONG TU NHI';
 const SYNTHETIC_EMAIL_RE = /^(hv_\d+@gmail\.com|.+@pending\.khongtunhi\.local)$/i;
-const VN_PHONE_RE = /^(0|\+84)[35789]\d{8}$/;
 
 export function isSepaySandbox(env) {
   return env?.KTN_SEPAY_SANDBOX === 'true';
@@ -111,13 +112,13 @@ export async function createConsultationOrder({
   const courseId = tidy(input?.courseId || input?.course_id, 80);
   const name = tidy(input?.name || input?.student_name, 120);
   const email = tidy(input?.email || input?.student_email, 254).toLowerCase();
-  const phone = tidy(input?.phone, 30).replace(/[ .-]/g, '');
+  const phone = normalizeVnPhone(input?.phone) || '';
 
   const validEmail = isStaffOrder
     ? (email === '' || (emailPattern.test(email) && !SYNTHETIC_EMAIL_RE.test(email)))
     : (emailPattern.test(email) && !SYNTHETIC_EMAIL_RE.test(email));
 
-  if (!uuid.test(requestId || '') || !name || !validEmail || !VN_PHONE_RE.test(phone)) {
+  if (!uuid.test(requestId || '') || !name || !validEmail || !phone) {
     throw new RequestError('Nhập họ tên học viên, email nhận hướng dẫn và số điện thoại hợp lệ.');
   }
 

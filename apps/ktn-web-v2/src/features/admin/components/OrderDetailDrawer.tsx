@@ -478,8 +478,19 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({
     .toLowerCase();
   const hasValidEmail = VALID_EMAIL_REGEX.test(effectiveEmail);
   const contactPhone = (order?.parent_phone || order?.phone || '').trim();
+  const isSafeHttpUrl = (raw?: string | null): string | null => {
+    const clean = String(raw || '').trim();
+    if (!clean) return null;
+    try {
+      const parsed = new URL(clean);
+      return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : null;
+    } catch {
+      return null;
+    }
+  };
   const zaloUrl = useMemo(() => {
-    if (order?.zalo_url) return order.zalo_url;
+    const safeExplicit = isSafeHttpUrl(order?.zalo_url);
+    if (safeExplicit) return safeExplicit;
     const digits = contactPhone.replace(/[^\d]/g, '');
     return /^0\d{9}$/.test(digits) ? `https://zalo.me/${digits}` : null;
   }, [order?.zalo_url, contactPhone]);

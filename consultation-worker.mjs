@@ -1076,8 +1076,27 @@ export async function handleConsultation(request, env, ctx, deps) {
         RequestError,
         onCustomerMessage: async (conversation, message) => {
           if (conversation.status === 'bot') {
-            const botResult = await botReply(store, env, deps, conversation, message, publicBase(env, request));
-            await sendOutbox(env, store, conversation.id, botResult?.quickReplies);
+            const base = publicBase(env, request);
+            const botResult = await botReply(store, env, deps, conversation, message, base);
+            let outboxQuickReplies = botResult?.quickReplies;
+            if (
+              Array.isArray(outboxQuickReplies) &&
+              outboxQuickReplies.some(q => q?.id === 'OPEN_ORDER_FORM' || q?.action === 'OPEN_ORDER_FORM')
+            ) {
+              const ticketUrl = env.KTN_CONSULTATION_SECRET
+                ? `${base}/tu-van#checkout=${await createTicket(env, conversation.id, 'checkout')}`
+                : null;
+              outboxQuickReplies = outboxQuickReplies
+                .map(q =>
+                  q?.id === 'OPEN_ORDER_FORM' || q?.action === 'OPEN_ORDER_FORM'
+                    ? ticketUrl
+                      ? { ...q, label: 'Mở cổng tạo đơn & VietQR', url: ticketUrl }
+                      : { id: 'MENU_HANDOFF', label: 'Gặp tư vấn viên', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' }
+                    : q
+                )
+                .filter((q, idx, arr) => arr.findIndex(x => x.id === q.id && x.label === q.label) === idx);
+            }
+            await sendOutbox(env, store, conversation.id, outboxQuickReplies);
           } else {
             await botReply(store, env, deps, conversation, message, publicBase(env, request));
             if (conversation.status === 'waiting') {

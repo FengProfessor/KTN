@@ -22,11 +22,12 @@ function getHeader(headers, name) {
 }
 
 export function normalizeVnPhone(raw) {
-  const cleaned = tidy(String(raw ?? ''), 30)
-    .replace(/^\(\s*(\+?84)\s*\)/, '$1')
-    .replace(/[ .-]/g, '');
+  const trimmed = tidy(String(raw ?? ''), 30);
+  if (!trimmed || /[^\d+\s.()-]/.test(trimmed)) return undefined;
+  const cleaned = trimmed.replace(/[().\s-]/g, '');
   if (!cleaned) return undefined;
-  if (/^84[35789]\d{8}$/.test(cleaned)) return '0' + cleaned.slice(2);
+  if (/^840?[35789]\d{8}$/.test(cleaned)) return '0' + cleaned.replace(/^840?/, '');
+  if (/^\+840[35789]\d{8}$/.test(cleaned)) return '+84' + cleaned.slice(4);
   if (/^(0|\+84)[35789]\d{8}$/.test(cleaned)) return cleaned;
   return undefined;
 }
@@ -170,16 +171,25 @@ export async function fetchZaloUserProfile(env, userId) {
   if (env?.KTN_ZALO_SANDBOX === 'true' || !env?.KTN_ZALO_OA_ACCESS_TOKEN || !userId) {
     return null;
   }
-  try {
-    const query = encodeURIComponent(JSON.stringify({ user_id: String(userId) }));
+  const query = encodeURIComponent(JSON.stringify({ user_id: String(userId) }));
+  const fetchOnce = async token => {
     const response = await fetch(`https://openapi.zalo.me/v3.0/oa/user/detail?data=${query}`, {
       method: 'GET',
-      headers: { access_token: env.KTN_ZALO_OA_ACCESS_TOKEN },
+      headers: { access_token: token },
       signal: AbortSignal.timeout(4000)
     });
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data?.error !== 0 || !data?.data) return null;
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  };
+  try {
+    let { response, data } = await fetchOnce(env.KTN_ZALO_OA_ACCESS_TOKEN);
+    if ((response.status === 401 || [-216, -124].includes(data?.error)) && env?.KTN_ZALO_OA_REFRESH_TOKEN) {
+      const refreshed = await refreshZaloAccessToken(env);
+      if (refreshed) {
+        ({ response, data } = await fetchOnce(refreshed));
+      }
+    }
+    if (!response.ok || data?.error !== 0 || !data?.data) return null;
     return {
       display_name: tidy(data.data.display_name, 120) || undefined,
       avatar: tidy(data.data.avatar, 500) || undefined
@@ -242,12 +252,6 @@ export async function handleZaloWebhook({
     return { ok: true, ignored: true };
   }
 
-  if (!normalized.is_echo && !normalized.customer_name && env?.KTN_ZALO_SANDBOX !== 'true' && env?.KTN_ZALO_OA_ACCESS_TOKEN) {
-    const profile = await fetchZaloUserProfile(env, normalized.zalo_user_id);
-    if (profile?.display_name) normalized.customer_name = profile.display_name;
-    if (profile?.avatar) normalized.lead_meta.zalo_avatar = profile.avatar;
-  }
-
   const rpcPayload = {
     is_echo: normalized.is_echo ? 'true' : 'false',
     lead_meta: normalized.lead_meta
@@ -270,6 +274,40 @@ export async function handleZaloWebhook({
   }
   if (result?.ok === false) {
     throw new RequestError('Không thể ghi nhận sự kiện Zalo OA.', 400);
+  }
+
+  if (
+    !normalized.is_echo &&
+    !normalized.customer_name &&
+    !result?.conversation?.customer_name &&
+    env?.KTN_ZALO_SANDBOX !== 'true' &&
+    env?.KTN_ZALO_OA_ACCESS_TOKEN &&
+    result?.conversation?.id
+  ) {
+    const profile = await fetchZaloUserProfile(env, normalized.zalo_user_id);
+    if (profile?.display_name || profile?.avatar) {
+      const convPatch = {};
+      if (profile.display_name) {
+        convPatch.customer_name = profile.display_name;
+        result.conversation.customer_name = profile.display_name;
+      }
+      if (profile.avatar) {
+        const currentMeta =
+          result.conversation.lead_meta &&
+          typeof result.conversation.lead_meta === 'object' &&
+          !Array.isArray(result.conversation.lead_meta)
+            ? result.conversation.lead_meta
+            : {};
+        const nextMeta = { ...currentMeta, zalo_avatar: profile.avatar };
+        convPatch.lead_meta = nextMeta;
+        result.conversation.lead_meta = nextMeta;
+      }
+      if (Object.keys(convPatch).length && typeof store.patch === 'function') {
+        await store
+          .patch('ktn_consultations?id=eq.' + encodeURIComponent(result.conversation.id), convPatch)
+          .catch(() => null);
+      }
+    }
   }
 
   if (normalized.triggerBot && result?.message && result?.conversation && typeof onCustomerMessage === 'function') {

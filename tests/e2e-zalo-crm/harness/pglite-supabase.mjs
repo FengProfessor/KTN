@@ -31,7 +31,8 @@ export const CORE_MIGRATION_FILES = Object.freeze([
 ]);
 
 export const SCALE_MIGRATION_FILES = Object.freeze([
-  'supabase/migrations/20261116_ktn_search_perf.sql',
+  'supabase/migrations/20261116_ktn_scale_and_lifecycle_indexes.sql',
+  'supabase/migrations/20261118_ktn_log_ingestion_optimization.sql',
   'supabase/migrations/20261118_ktn_production_scale_all_in_one.sql'
 ]);
 

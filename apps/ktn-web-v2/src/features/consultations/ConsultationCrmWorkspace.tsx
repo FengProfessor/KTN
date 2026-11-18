@@ -667,12 +667,20 @@ export const ConsultationCrmWorkspace: React.FC = () => {
               onOpenLinkStudent={() => setLinkStudentOpen(true)}
               onRetryPayment={async (orderId, txId) => {
                 if (!selectedId) return;
-                await ktnApi.retryConsultationPayment(selectedId, {
-                  order_id: orderId,
-                  transaction_id: txId,
-                });
-                invalidateInboxAndThread();
-                addToast({ title: tr('Đã thử kích hoạt lại đơn', 'Retried provisioning'), variant: 'success' });
+                try {
+                  await ktnApi.retryConsultationPayment(selectedId, {
+                    order_id: orderId,
+                    transaction_id: txId,
+                  });
+                  invalidateInboxAndThread();
+                  addToast({ title: tr('Đã thử kích hoạt lại đơn', 'Retried provisioning'), variant: 'success' });
+                } catch (err) {
+                  addToast({
+                    title: tr('Thử cấp lại thất bại', 'Retry provisioning failed'),
+                    description: err instanceof Error ? err.message : undefined,
+                    variant: 'error',
+                  });
+                }
               }}
               onSaveTimeslotNote={async (timeslot) => {
                 await opMutation.mutateAsync({

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Send,
@@ -115,6 +115,8 @@ export const ConsultationThreadPane: React.FC<ConsultationThreadPaneProps> = ({
   const [showEvents, setShowEvents] = useState(false);
   const [flagNotes, setFlagNotes] = useState<Record<string, string>>({});
   const [reviewingFlagId, setReviewingFlagId] = useState<string | null>(null);
+  const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
+  const retryingOrderIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setAssignEmail(thread?.owner_email || '');
@@ -567,12 +569,25 @@ export const ConsultationThreadPane: React.FC<ConsultationThreadPaneProps> = ({
                       {retryablePayment && isManager && (
                         <button
                           type="button"
-                          onClick={() =>
-                            void onRetryPayment(link.order_id, retryablePayment.transaction_id)
-                          }
-                          className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-950 hover:bg-amber-200"
+                          disabled={retryingOrderId === link.order_id}
+                          onClick={async () => {
+                            if (retryingOrderIdRef.current === link.order_id) return;
+                            retryingOrderIdRef.current = link.order_id;
+                            setRetryingOrderId(link.order_id);
+                            try {
+                              await onRetryPayment(link.order_id, retryablePayment.transaction_id);
+                            } catch {
+                              // Error toast handled by parent workspace
+                            } finally {
+                              if (retryingOrderIdRef.current === link.order_id) {
+                                retryingOrderIdRef.current = null;
+                              }
+                              setRetryingOrderId((prev) => (prev === link.order_id ? null : prev));
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-950 hover:bg-amber-200 disabled:opacity-50"
                         >
-                          <RefreshCw className="h-3 w-3" />
+                          <RefreshCw className={`h-3 w-3 ${retryingOrderId === link.order_id ? 'animate-spin' : ''}`} />
                           <span>{tr('Thử cấp lại', 'Retry provisioning')}</span>
                         </button>
                       )}

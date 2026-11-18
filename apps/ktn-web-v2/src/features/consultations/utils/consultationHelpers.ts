@@ -8,7 +8,7 @@ import type { AppLanguage } from '@/i18n';
 const EMAIL_PII_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/i;
 const PHONE_PII_RE =
   /(?<![\d.,])(?:\(?\+?84\)?|\(?0)(?:[ .()-]*[1-9])(?:[ .()-]*\d){7,10}(?![\d.,]|\s*(?:đ|vnđ|vnd|k)(?![\p{L}\p{N}_]))/iu;
-const URL_PII_RE = /https?:\/\/\S+/i;
+const URL_PII_RE = /(?:https?:\/\/|www\.)\S+/i;
 const VN_PHONE_RE = /^(?:\+?84|0)(?:3|5|7|8|9)\d{8}$/;
 
 export function detectConsultationExamplePii(text: string): {
@@ -37,7 +37,7 @@ export function validateVnPhone(raw: string): boolean {
 
 export function escapeCsvCell(value: unknown): string {
   let str = String(value ?? '');
-  if (/^[=+\-@\t\r]/.test(str)) {
+  if (/^[\t\r\n ]*[=+\-@]|^[\t\r\n]/.test(str)) {
     str = `'${str}`;
   }
   if (/[",\r\n]/.test(str)) {
@@ -151,7 +151,7 @@ export function detectAdultWorking11Context(
   const tag = String(sourceTag || leadMeta?.ad_source || '').toLowerCase();
 
   const hasChildMarker =
-    /(?<![\p{L}\p{N}_])(?:con\s+(?:chị|em|mình|tôi|anh)|bé\s+\d|cháu\s+\d|\d{1,2}\s*tuổi|tiểu học|học sinh)(?![\p{L}\p{N}_])/iu.test(
+    /(?<![\p{L}\p{N}_])(?:(?:con|bé|cháu)\s+(?:của\s+)?(?:nhà\s+)?(?:chị|em|mình|tôi|anh)|cho\s+(?:bé|con|cháu)|(?:bé|con|cháu)\s+(?:nhà\s+mình|muốn|cần|học)|\d{1,2}\s*tuổi|tiểu học|học sinh)(?![\p{L}\p{N}_])/iu.test(
       raw
     ) && !/(?<![\p{L}\p{N}_])người đi làm(?![\p{L}\p{N}_])/iu.test(raw);
 

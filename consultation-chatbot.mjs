@@ -1,24 +1,31 @@
 import { isAdultTutoringRequest, retrieveConsultationExamples } from './consultation-retrieval.mjs';
 import { normalizeVnPhone } from './consultation-zalo.mjs';
 
-const tidy = (input, limit = 4000) => (typeof input === 'string' ? input.trim().slice(0, limit) : '');
+const stripInvisible = input => String(input ?? '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
+const spaceInvisible = input => String(input ?? '').replace(/[\u200B-\u200D\uFEFF\u00AD]+/g, ' ');
+const tidy = (input, limit = 4000) => (typeof input === 'string' ? stripInvisible(input).trim().slice(0, limit) : '');
 const rows = data => (Array.isArray(data) ? data : []);
+const matchesPattern = (re, rawText, cleanText = stripInvisible(rawText)) => {
+  if (re.test(cleanText)) return true;
+  const spaced = spaceInvisible(rawText);
+  return spaced !== cleanText && re.test(spaced);
+};
 
 const WB_START = '(?<=^|[^\\p{L}\\p{N}_])';
 const WB_END = '(?=$|[^\\p{L}\\p{N}_])';
 const uRegex = (body, flags = 'iu') => new RegExp(`${WB_START}(?:${body})${WB_END}`, flags);
 
 export const FORBIDDEN_AI_OUTPUT_RE =
-  /https?:|www\.|(?:\d[\d., ]*)\s*(?:đồng|vnd|vnđ|₫|đ(?=$|[^\p{L}\p{N}_])|k(?=$|[^\p{L}\p{N}_])|triệu|nghìn|ngàn(?=$|[^\p{L}\p{N}_])|tr(?:\s*\d+)?(?=$|[^\p{L}\p{N}_]))|(?<=^|[^\p{L}\p{N}_])\d{1,3}(?:[.,]\d{3})+(?=$|[^\p{L}\p{N}_])|giảm\s+\d|\d\s*%|(?<=^|[^\p{L}\p{N}_])(?:giảm\s*giá|khuyến\s*mãi|miễn\s*phí|chiết\s*khấu|voucher)(?=$|[^\p{L}\p{N}_])/iu;
+  /https?:|www\.|\[[^\]]+\]\([^)]+\)|(?<=^|[^\p{L}\p{N}_])(?:[a-z0-9-]+\.)+(?:com|vn|net|org|io|me|ly|co|info|edu|app)\/\S*|(?:\d[\d., ]*)\s*(?:đồng|vnd|vnđ|₫|đ(?=$|[^\p{L}\p{N}_])|k(?=$|[^\p{L}\p{N}_])|triệu|nghìn|ngàn(?=$|[^\p{L}\p{N}_])|tr(?:\s*\d+)?(?=$|[^\p{L}\p{N}_]))|(?<=^|[^\p{L}\p{N}_])\d{1,3}(?:[.,]\d{3})+(?=$|[^\p{L}\p{N}_])|(?<=^|[^\p{L}\p{N}_])\d{1,3}(?:\s+\d{3})+(?=$|[^\p{L}\p{N}_])|giảm\s+\d|\d\s*%|(?<=^|[^\p{L}\p{N}_])(?:giảm\s*giá|khuyến\s*mãi|miễn\s*phí|chiết\s*khấu|voucher)(?=$|[^\p{L}\p{N}_])/iu;
 
 export const UNVERIFIED_ADULT_CLAIMS_RE =
   /80%\s*thực\s*hành|đầu\s*ra\s*sau\s*8\s*buổi|rút\s*ngắn\s*một\s*nửa\s*thời\s*gian|cam\s*kết\s*đỗ|đảm\s*bảo\s*đầu\s*ra/i;
 
 const BANK_NAME_PATTERN =
-  'mbb|mb\\s*bank|mb|vietcom\\s*bank|vcb|vietin\\s*bank|techcom\\s*bank|tcb|sacom\\s*bank|agri\\s*bank|bidv|acb|vp\\s*bank|vpb|tp\\s*bank|hd\\s*bank|shb|msb';
+  'mbb|mb\\s*bank|mb|vietcom\\s*bank|vcb|vietin\\s*bank|techcom\\s*bank|tcb|sacom\\s*bank|agri\\s*bank|bidv|acb|vp\\s*bank|vpb|tp\\s*bank|tpb|hd\\s*bank|shb|msb|vib|exim\\s*bank|eib|sea\\s*bank|ocb|nam\\s*[aá](?:\\s*bank)?|b[ắa]c\\s*[aá](?:\\s*bank)?|ab\\s*bank|lp\\s*bank|lien\\s*viet|scb|pvcom\\s*bank|ncb|viet\\s*[aá](?:\\s*bank)?|kien\\s*long(?:\\s*bank)?|stb|ctg';
 
 export const FORBIDDEN_BANK_INFO_RE = new RegExp(
-  `(?<=^|[^\\p{L}\\p{N}_])(?:(?:stk|tk|(?:số\\s*)?tài\\s*khoản|account\\s*(?:no|number)|${BANK_NAME_PATTERN})(?:[\\s:–-]+(?:ngân\\s*hàng|của(?:\\s+[^\\d\\s:–.,!?-]+){1,3}|số|là|${BANK_NAME_PATTERN})){0,4}[\\s:–-]+(?:\\d[\\s.-]*){6,}|(?:\\d[\\s.-]*){6,}\\s*\\(?\\s*(?:${BANK_NAME_PATTERN})(?=$|[^\\p{L}\\p{N}_]))`,
+  `(?<=^|[^\\p{L}\\p{N}_])(?:(?:stk|tk|(?:số\\s*)?tài\\s*khoản|(?:chuyển\\s*khoản\\s+)?ngân\\s*hàng|account\\s*(?:no|number)|${BANK_NAME_PATTERN})(?:[\\s:–-]+(?:ngân\\s*hàng|của(?:\\s+[^\\d\\s:–.,!?-]+){1,3}|số|là|${BANK_NAME_PATTERN})){0,4}[\\s:–-]+(?:\\d[\\s.-]*){6,}|(?:\\d[\\s.-]*){6,}(?:\\s+(?:tại|ngân\\s*hàng)?|\\s*(?:[,\\-–:/]|\\())+\\s*(?:${BANK_NAME_PATTERN})(?=$|[^\\p{L}\\p{N}_]))`,
   'iu'
 );
 
@@ -26,7 +33,7 @@ const PROMPT_INJECTION_RE =
   /bỏ\s*(?:qua\s*)?(?:toàn\s*bộ\s*)?quy\s*định|ignore\s+(?:all\s+)?(?:previous\s+)?instructions|system\s+prompt|mã\s*(?:ưu\s*đãi|khuyến\s*mãi)\s*nội\s*bộ|đơn\s+của\s+bạn\s+tôi|thông\s*tin\s+(?:khách|người)\s+khác|KTN_GEMINI_KEYS|SUPABASE_SERVICE_ROLE_KEY|KTN_ZALO_APP_SECRET|reveal\s+.*(?:prompt|db|database|key|secret|internal)/iu;
 
 const UNDERAGE_SELF_BUY_RE =
-  uRegex('(?:em|cháu)\\s+là\\s+(?:học\\s+sinh|trẻ\\s+em)|(?<!(?:con|bé|cháu)(?:\\s+(?:gái|trai|nhỏ|lớn|út|đầu)){0,2}(?:\\s+(?:của|nhà)){0,2}\\s+)(?:em|cháu)\\s+(?:mới\\s+)?(?:0?[1-9]|1[0-7])\\s+tuổi|chưa\\s+đủ\\s+(?:18|mười\\s+tám)|không\\s+cần\\s+(?:ba\\s+mẹ|bố\\s+mẹ|phụ\\s+huynh)|(?:em|cháu)\\s+(?:mới\\s+(?:0?[1-9]|1[0-7])\\s+tuổi\\s+)?(?:muốn\\s+)?tự\\s+(?:mua|chuyển\\s+(?:khoản|tiền))\\s+(?:mà\\s+)?không\\s+(?:hỏi|nói|báo)\\s+(?:ba\\s+mẹ|bố\\s+mẹ|phụ\\s+huynh)');
+  uRegex('(?:em|cháu)\\s+là\\s+(?:học\\s+sinh|trẻ\\s+em)|học\\s+sinh\\s+(?:cấp\\s*[123]|lớp\\s*(?:[1-9]|1[0-2])|tiểu\\s+học|thcs|thpt)|(?:em|cháu)\\s+(?:đang\\s+)?học\\s+lớp\\s*(?:[1-9]|1[0-2])|(?:con|bé)\\s+(?:0?[1-9]|1[0-7])\\s+tuổi\\s+(?:muốn\\s+)?tự\\s+(?:đặt|mua|đăng\\s*ký|chuyển\\s*(?:khoản|tiền))|(?<!(?:con|bé|cháu)(?:\\s+(?:gái|trai|nhỏ|lớn|út|đầu)){0,2}(?:\\s+(?:của|nhà)){0,2}\\s+)(?:em|cháu)\\s+(?:mới\\s+)?(?:0?[1-9]|1[0-7])\\s+tuổi|chưa\\s+đủ\\s+(?:18|mười\\s+tám)|không\\s+cần\\s+(?:ba\\s+mẹ|bố\\s+mẹ|phụ\\s+huynh)|(?:em|cháu)\\s+(?:mới\\s+(?:0?[1-9]|1[0-7])\\s+tuổi\\s+)?(?:muốn\\s+)?tự\\s+(?:mua|chuyển\\s+(?:khoản|tiền))\\s+(?:mà\\s+)?không\\s+(?:hỏi|nói|báo)\\s+(?:ba\\s+mẹ|bố\\s+mẹ|phụ\\s+huynh)');
 
 const EXPLICIT_HUMAN_RE =
   uRegex('gặp\\s+(?:người|tư\\s*vấn|quản\\s*lý|cô\\s*tư\\s*vấn)|nhân\\s*viên|tư\\s*vấn\\s*viên|người\\s*thật|hẹn\\s*gọi\\s*lại|gọi\\s*lại');
@@ -82,23 +89,31 @@ function normalizeText(value = '') {
 }
 
 export function hasForbiddenAiOutput(reply) {
-  if (typeof reply !== 'string' || !reply.trim()) return true;
-  return (
-    FORBIDDEN_AI_OUTPUT_RE.test(reply) ||
-    UNVERIFIED_ADULT_CLAIMS_RE.test(reply) ||
-    FORBIDDEN_BANK_INFO_RE.test(reply)
-  );
+  const cleaned = stripInvisible(reply);
+  if (typeof reply !== 'string' || !cleaned.trim()) return true;
+  const spaced = spaceInvisible(reply);
+  const check = candidate =>
+    FORBIDDEN_AI_OUTPUT_RE.test(candidate) ||
+    UNVERIFIED_ADULT_CLAIMS_RE.test(candidate) ||
+    FORBIDDEN_BANK_INFO_RE.test(candidate);
+  return check(cleaned) || (spaced !== cleaned && check(spaced));
 }
 
+const VN_PHONE_BOUNDED_RE =
+  /(?<=^|[^\p{L}\p{N}_])(?:\(\s*(?:\+?84|0\d{1,3}|0)\s*\)|(?:\+?84|0))(?:[ .()-]*\d){7,11}(?=$|[^\p{L}\p{N}_])(?!\s*(?:đồng|vnđ|vnd|đ|k)(?=$|[^\p{L}\p{N}_]))/giu;
+const INTL_PHONE_BOUNDED_RE =
+  /(?<=^|[^\p{L}\p{N}_])(?:\(\s*(?:\+|00)\s*\d{1,3}\s*\)|(?:\+|00)\s*\d{1,3})(?:[ .()-]*\d){6,13}(?=$|[^\p{L}\p{N}_])(?!\s*(?:đồng|vnđ|vnd|đ|k)(?=$|[^\p{L}\p{N}_]))/giu;
+
 export function redactForLlm(value) {
-  return String(value || '')
+  return stripInvisible(value)
     .replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, '[email]')
-    .replace(/(?<=^|[^\p{L}\p{N}_])(?:\(\s*\+?84\s*\)|(?:\+?84|0))(?:[ .-]*\d){8,11}(?=$|[^\p{L}\p{N}_])/gu, '[số điện thoại]')
+    .replace(INTL_PHONE_BOUNDED_RE, '[số điện thoại]')
+    .replace(VN_PHONE_BOUNDED_RE, '[số điện thoại]')
     .replace(/(?:https?:\/\/|www\.)\S+/gi, '[liên kết]');
 }
 
 function hasPhoneLikeSequence(value) {
-  const collapsed = String(value || '').replace(/(\d)[\s.-]+(?=\d)/g, '$1');
+  const collapsed = stripInvisible(value).replace(/(\d)[\s.-]+(?=\d)/g, '$1');
   if (/(?<=^|[^\p{L}\p{N}_])\+?\d{5,13}(?!\s*(?:đồng|vnđ|vnd|đ|k)(?=$|[^\p{L}\p{N}_]))(?=$|[^\p{L}\p{N}_])/iu.test(collapsed)) {
     return true;
   }
@@ -106,8 +121,7 @@ function hasPhoneLikeSequence(value) {
 }
 
 function extractPhoneFromText(text) {
-  const matches =
-    String(text || '').match(/(?<=^|[^\p{L}\p{N}_])(?:\(\s*\+?84\s*\)|(?:\+?84|0))(?:[ .-]*\d){8,11}(?=$|[^\p{L}\p{N}_])/gu) || [];
+  const matches = stripInvisible(text).match(VN_PHONE_BOUNDED_RE) || [];
   for (const raw of matches) {
     const valid = normalizeVnPhone(raw);
     if (valid) return valid;
@@ -128,8 +142,8 @@ function extractTimeslot(text, norm) {
   const matches = String(text || '').match(TIMESLOT_RE) || [];
   for (const raw of matches) {
     const candidate = tidy(raw, 60);
-    if (/\d|cuối\s*tuần|thứ|chủ\s*nhật|tối|sáng|chiều/iu.test(candidate) &&
-        /(?:mai|tuần|giờ|\d+\s*h|\d+:\d+|tối|cuối\s*tuần|chủ\s*nhật|buổi\s*(?:sáng|chiều|tối))/iu.test(candidate)) {
+    if (/\d|cuối\s*tuần|thứ|chủ\s*nhật|tối|sáng|chiều|trưa/iu.test(candidate) &&
+        /(?:mai|tuần|giờ|\d+\s*h|\d+:\d+|tối|cuối\s*tuần|chủ\s*nhật|buổi\s*(?:sáng|chiều|tối|trưa)|(?:sáng|chiều|trưa)\s+(?:thứ\s*[2-7]|hôm\s*nay))/iu.test(candidate)) {
       return candidate;
     }
   }
@@ -593,7 +607,8 @@ export async function runHybridChatbot({
   action,
   handoffWithMessage
 }) {
-  const text = tidy(customerMessage?.body, 4000);
+  const rawText = typeof customerMessage?.body === 'string' ? customerMessage.body.trim().slice(0, 4000) : '';
+  const text = tidy(rawText, 4000);
   const existingMeta = (conversation.lead_meta && typeof conversation.lead_meta === 'object' && !Array.isArray(conversation.lead_meta))
     ? conversation.lead_meta
     : {};
@@ -609,7 +624,7 @@ export async function runHybridChatbot({
   const clearMenu = existingMeta.menu_state ? { nextMenuState: null } : null;
 
   // 1. Highest-priority safety & explicit human handoffs (F08)
-  if (PROMPT_INJECTION_RE.test(text)) {
+  if (matchesPattern(PROMPT_INJECTION_RE, rawText, text)) {
     await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     await handoffWithMessage(
       store,
@@ -620,7 +635,7 @@ export async function runHybridChatbot({
     return { handled: true, mode: 'handoff', reason: 'prompt_injection' };
   }
 
-  if (UNDERAGE_SELF_BUY_RE.test(text)) {
+  if (matchesPattern(UNDERAGE_SELF_BUY_RE, rawText, text)) {
     await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     await handoffWithMessage(
       store,
@@ -633,7 +648,7 @@ export async function runHybridChatbot({
 
   const explicitMenuCmd = detectExplicitMenuCommand(text, menuCommand, leadPayload, conversation);
 
-  if (EXPLICIT_HUMAN_RE.test(text) || explicitMenuCmd === 'MENU_HANDOFF') {
+  if (matchesPattern(EXPLICIT_HUMAN_RE, rawText, text) || explicitMenuCmd === 'MENU_HANDOFF') {
     await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     await handoffWithMessage(
       store,
@@ -686,6 +701,38 @@ export async function runHybridChatbot({
     }
   }
 
+  if (conversation.channel !== 'web' && text.toUpperCase() === 'OPEN_ORDER_FORM') {
+    await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
+    if (base && typeof createTicket === 'function') {
+      try {
+        const ticket = await createTicket(conversation.id, 'checkout');
+        const checkoutUrl = `${base}/tu-van#checkout=${ticket}`;
+        const reply =
+          'Anh/chị vui lòng mở cổng đăng ký chính thức của KTN để tạo đơn và nhận mã VietQR:\n' +
+          checkoutUrl;
+        await action(store, conversation.id, 'bot', { ...after, body: reply }).catch(error => {
+          if (error.status !== 409) throw error;
+        });
+        return {
+          handled: true,
+          mode: 'scripted',
+          menuCommand: 'OPEN_ORDER_FORM',
+          checkoutUrl,
+          quickReplies: PAYMENT_QUICK_REPLIES.filter(q => q.id !== 'OPEN_ORDER_FORM')
+        };
+      } catch {
+        // Fall back to human advisor handoff if checkout ticket cannot be created.
+      }
+    }
+    await handoffWithMessage(
+      store,
+      conversation,
+      after,
+      'Dạ, em đã chuyển yêu cầu tạo đơn & thanh toán VietQR sang tư vấn viên KTN hỗ trợ anh/chị ngay ạ.'
+    );
+    return { handled: true, mode: 'handoff', reason: 'open_order_form' };
+  }
+
   // 4. Attachment-only messages & mandatory pre-AI handoffs (F08, F10)
   if (ATTACHMENT_ONLY_RE.test(text)) {
     await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
@@ -709,7 +756,7 @@ export async function runHybridChatbot({
     return { handled: true, mode: 'handoff', reason: 'adult_1_1' };
   }
 
-  if (lead.child11 || LIVE_OR_SCHEDULE_HANDOFF_RE.test(text)) {
+  if (lead.child11 || matchesPattern(LIVE_OR_SCHEDULE_HANDOFF_RE, rawText, text)) {
     await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     const msg = lead.child11
       ? 'Dạ, em đã ghi nhận nhu cầu lớp 1 kèm 1 cho bé và chuyển tư vấn viên KTN kiểm tra lịch học phù hợp cho gia đình mình ạ.'
@@ -718,7 +765,7 @@ export async function runHybridChatbot({
     return { handled: true, mode: 'handoff', reason: lead.child11 ? 'child_1_1' : 'live_or_schedule' };
   }
 
-  if (PAYMENT_ABNORMAL_HANDOFF_RE.test(text) || EXAM_OR_EXCEPTION_HANDOFF_RE.test(text)) {
+  if (matchesPattern(PAYMENT_ABNORMAL_HANDOFF_RE, rawText, text) || matchesPattern(EXAM_OR_EXCEPTION_HANDOFF_RE, rawText, text)) {
     await syncLeadToConversation(store, conversation, lead, clearMenu, leadPayload);
     await handoffWithMessage(
       store,

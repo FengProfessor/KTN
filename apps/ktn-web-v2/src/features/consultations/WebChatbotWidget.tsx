@@ -16,6 +16,7 @@ import { useUiStore } from '@/stores/useUiStore';
 import { formatVnd } from '@/lib/utils';
 import type {
   ConsultationCatalogCourse,
+  ConsultationLeadMeta,
   ConsultationMessage,
   ConsultationQuickReply,
   ConsultationStatus,
@@ -78,6 +79,7 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
 
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
+  const [creatingOrder, setCreatingOrder] = useState(false);
 
   // Needs & Phone Capture Form
   const [showNeedPhoneForm, setShowNeedPhoneForm] = useState(false);
@@ -103,6 +105,90 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
 
   const listEndRef = useRef<HTMLDivElement | null>(null);
   const msgSeqRef = useRef(0);
+  const mountedRef = useRef(true);
+  const pendingMenuGuardRef = useRef<{ expectedState: WebChatbotMenuKey | null; setAt: number } | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const creatingOrderRef = useRef(false);
+  const submittingPhoneRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const applyThreadSnapshot = (
+    threadRes: {
+      status: ConsultationStatus;
+      messages: ConsultationMessage[];
+      lead_meta?: ConsultationLeadMeta;
+      menu?: ConsultationQuickReply[];
+    },
+    token: string,
+    allowRetry: boolean
+  ) => {
+    setStatus(threadRes.status);
+    setMessages(dedupeMessagesById(threadRes.messages));
+    if (threadRes.status !== 'bot') {
+      pendingMenuGuardRef.current = null;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      setQuickReplies([]);
+      return;
+    }
+
+    const guard = pendingMenuGuardRef.current;
+    if (guard) {
+      const elapsed = Date.now() - guard.setAt;
+      const expected = guard.expectedState;
+      const menu = Array.isArray(threadRes.menu) ? threadRes.menu : [];
+      const caughtUp =
+        elapsed > 8000 ||
+        !expected ||
+        (expected === 'MENU_ROOT'
+          ? !threadRes.lead_meta?.menu_state &&
+            menu.some((m) => m.id === 'MENU_PAYMENT' || m.id === 'root_payment')
+          : threadRes.lead_meta?.menu_state === expected ||
+            menu.some(
+              (m) =>
+                (expected === 'MENU_PAYMENT' &&
+                  (m.action === 'OPEN_ORDER_FORM' || m.id === 'OPEN_ORDER_FORM' || m.id === 'pay_guide')) ||
+                (expected === 'MENU_FAQ' && (m.id === 'FAQ_KIDS' || m.id === 'faq_kids')) ||
+                (expected === 'MENU_NEED_PHONE' && m.id === 'MENU_HANDOFF')
+            ));
+
+      if (!caughtUp) {
+        if (allowRetry && !retryTimerRef.current) {
+          retryTimerRef.current = setTimeout(() => {
+            retryTimerRef.current = null;
+            if (!mountedRef.current) return;
+            void ktnApi
+              .getWebConsultationThread(token)
+              .then((retryRes) => {
+                if (!mountedRef.current) return;
+                applyThreadSnapshot(retryRes, token, true);
+              })
+              .catch(() => {
+                // ignore transient retry failure
+              });
+          }, 350);
+        }
+        return;
+      }
+      pendingMenuGuardRef.current = null;
+    }
+
+    if (Array.isArray(threadRes.menu) && threadRes.menu.length > 0) {
+      setQuickReplies(threadRes.menu);
+    }
+  };
 
   const nextSyntheticId = (prefix: string) => {
     msgSeqRef.current += 1;
@@ -170,13 +256,7 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
           setOrderCourseId(catRes.courses[0].id);
         }
         if (threadRes) {
-          setStatus(threadRes.status);
-          setMessages(dedupeMessagesById(threadRes.messages));
-          if (threadRes.status !== 'bot') {
-            setQuickReplies([]);
-          } else if (Array.isArray(threadRes.menu) && threadRes.menu.length > 0) {
-            setQuickReplies(threadRes.menu);
-          }
+          applyThreadSnapshot(threadRes, token, false);
         }
       } catch {
         // Keep initial quick-reply menu functional even if backend offline
@@ -199,13 +279,7 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
         .getWebConsultationThread(webToken)
         .then((res) => {
           if (cancelled) return;
-          setStatus(res.status);
-          setMessages(dedupeMessagesById(res.messages));
-          if (res.status !== 'bot') {
-            setQuickReplies([]);
-          } else if (Array.isArray(res.menu) && res.menu.length > 0) {
-            setQuickReplies(res.menu);
-          }
+          applyThreadSnapshot(res, webToken, false);
         })
         .catch(() => {
           // ignore transient poll failure
@@ -254,6 +328,14 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
   ) => {
     const clean = body.trim();
     if (!clean) return;
+
+    if (!menuAction || menuAction === 'MENU_HANDOFF') {
+      pendingMenuGuardRef.current = null;
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
 
     const optimisticUserMsg: ConsultationMessage = {
       id: nextSyntheticId('local'),
@@ -312,21 +394,18 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
 
       if (res.status) setStatus(res.status);
       if (res.status && res.status !== 'bot') {
+        pendingMenuGuardRef.current = null;
         setQuickReplies([]);
       } else if (Array.isArray(res.menu) && res.menu.length > 0) {
+        if (res.reply) pendingMenuGuardRef.current = null;
         setQuickReplies(res.menu);
       }
       if (res.reply) {
+        pendingMenuGuardRef.current = null;
         setMessages((prev) => appendUniqueMessage(prev, res.reply!));
       } else {
         const threadRes = await ktnApi.getWebConsultationThread(token);
-        setStatus(threadRes.status);
-        setMessages(dedupeMessagesById(threadRes.messages));
-        if (threadRes.status !== 'bot') {
-          setQuickReplies([]);
-        } else if (Array.isArray(threadRes.menu) && threadRes.menu.length > 0) {
-          setQuickReplies(threadRes.menu);
-        }
+        applyThreadSnapshot(threadRes, token, true);
       }
     } catch (err) {
       addToast({
@@ -362,6 +441,7 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
       action === 'MENU_NEED_PHONE' ||
       action === 'MENU_PAYMENT'
     ) {
+      pendingMenuGuardRef.current = { expectedState: action as WebChatbotMenuKey, setAt: Date.now() };
       setQuickReplies(buildQuickReplyMenu(action as WebChatbotMenuKey, lang));
     }
     if (qr.payload && (qr.payload !== 'MENU_ROOT' || (!isDemoMode && action === 'MENU_ROOT'))) {
@@ -371,6 +451,7 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
 
   const handleSubmitNeedPhone = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingPhoneRef.current || sending) return;
     setPhoneError(null);
     if (!validateVnPhone(needPhone)) {
       setPhoneError(
@@ -378,19 +459,25 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
       );
       return;
     }
-    const normalizedPhone = normalizeVnPhone(needPhone);
-    const trimmedGoal = needNote.trim();
-    const summary = `Nhu cầu: ${needTarget}${trimmedGoal ? ` - ${trimmedGoal}` : ''} | SĐT: ${needPhone.trim()}`;
-    await sendMessage(summary, 'MENU_NEED_PHONE', {
-      targetGroup: needTarget,
-      phone: normalizedPhone,
-      ...(trimmedGoal ? { goal: trimmedGoal } : {}),
-    });
-    setShowNeedPhoneForm(false);
+    submittingPhoneRef.current = true;
+    try {
+      const normalizedPhone = normalizeVnPhone(needPhone);
+      const trimmedGoal = needNote.trim();
+      const summary = `Nhu cầu: ${needTarget}${trimmedGoal ? ` - ${trimmedGoal}` : ''} | SĐT: ${needPhone.trim()}`;
+      await sendMessage(summary, 'MENU_NEED_PHONE', {
+        targetGroup: needTarget,
+        phone: normalizedPhone,
+        ...(trimmedGoal ? { goal: trimmedGoal } : {}),
+      });
+      setShowNeedPhoneForm(false);
+    } finally {
+      submittingPhoneRef.current = false;
+    }
   };
 
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (creatingOrderRef.current) return;
     setOrderError(null);
     if (!orderName.trim()) {
       setOrderError(tr('Vui lòng nhập họ tên.', 'Please enter your name.'));
@@ -400,6 +487,8 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
       setOrderError(tr('Số điện thoại Việt Nam chưa hợp lệ.', 'Invalid VN phone number.'));
       return;
     }
+    creatingOrderRef.current = true;
+    setCreatingOrder(true);
     try {
       const requestId =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -456,6 +545,9 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
       setOrderError(
         err instanceof Error ? err.message : tr('Không tạo được đơn.', 'Order failed.')
       );
+    } finally {
+      creatingOrderRef.current = false;
+      setCreatingOrder(false);
     }
   };
 
@@ -666,7 +758,8 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
             <button
               type="submit"
               data-testid="web-chatbot-phone-submit-btn"
-              className="w-full rounded-xl bg-red-800 py-1.5 font-bold text-white hover:bg-red-900"
+              disabled={sending}
+              className="w-full rounded-xl bg-red-800 py-1.5 font-bold text-white hover:bg-red-900 disabled:opacity-50"
             >
               {tr('Gửi thông tin tư vấn', 'Submit Need & Phone')}
             </button>
@@ -732,7 +825,8 @@ export const WebChatbotWidget: React.FC<WebChatbotWidgetProps> = ({ mode = 'floa
             <button
               type="submit"
               data-testid="web-chatbot-order-submit-btn"
-              className="w-full rounded-xl bg-red-800 py-1.5 font-bold text-white hover:bg-red-900"
+              disabled={creatingOrder}
+              className="w-full rounded-xl bg-red-800 py-1.5 font-bold text-white hover:bg-red-900 disabled:opacity-50"
             >
               {tr('Tạo mã QR thanh toán', 'Generate VietQR')}
             </button>

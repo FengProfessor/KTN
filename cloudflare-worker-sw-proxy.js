@@ -4598,6 +4598,14 @@ async function revalidateAdvisorSession(verified, env) {
   };
 }
 
+function safeDecodeURIComponent(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 async function extractSessionFromRequest(request, env, options = {}) {
   const returnAdvisorError = Boolean(options && options.returnAdvisorError);
   const resolveVerified = async (verified) => {
@@ -4632,7 +4640,8 @@ async function extractSessionFromRequest(request, env, options = {}) {
   const cookieHeader = request.headers.get('Cookie') || '';
   const match = cookieHeader.match(/(?:^|;\s*)ktn_webapp_token=([^;]+)/);
   if (match && match[1]) {
-    const rawCookieTok = decodeURIComponent(match[1]);
+    const rawCookieTok = safeDecodeURIComponent(match[1]);
+    if (!rawCookieTok) return null;
     const verified = await verifySessionToken(rawCookieTok, env.KTN_SESSION_SECRET);
     if (verified) {
       if (await isTokenRevoked(env, rawCookieTok, verified.jti, verified.email)) return null;
@@ -13530,7 +13539,7 @@ export default {
       const bearerTok = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
       const cookieHeader = request.headers.get('Cookie') || '';
       const cookieMatch = cookieHeader.match(/(?:^|;\s*)ktn_webapp_token=([^;]+)/);
-      const cookieTok = cookieMatch && cookieMatch[1] ? decodeURIComponent(cookieMatch[1]) : '';
+      const cookieTok = cookieMatch && cookieMatch[1] ? safeDecodeURIComponent(cookieMatch[1]) || '' : '';
 
       let sessionEmail = '';
       let allPersisted = true;
@@ -14762,7 +14771,11 @@ export default {
         const slashIdx = rest.indexOf('/');
         let filePart = rest;
         if (!mt && slashIdx > 0) {
-          mt = decodeURIComponent(rest.slice(0, slashIdx));
+          const decodedMt = safeDecodeURIComponent(rest.slice(0, slashIdx));
+          if (decodedMt === null) {
+            return jsonResponse({ ok: false, error: 'INVALID_MEDIA_TOKEN' }, 400);
+          }
+          mt = decodedMt;
           filePart = rest.slice(slashIdx + 1);
         }
         if (!filePart || filePart.includes('..') || filePart.includes('/')) {

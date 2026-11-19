@@ -280,12 +280,20 @@ export const roleNavigation: Record<UserRole, RoleNavigationDef> = {
         matchPrefix: ['/admin/orders'],
       },
       {
+        to: '/admin/consultations',
+        label: 'Tư vấn',
+        icon: MessageSquare,
+        testId: 'nav-admin-consultations',
+        mobileTestId: 'mobile-nav-consultations',
+        matchPrefix: ['/admin/consultations'],
+      },
+      {
         to: '/admin/more',
         label: 'Thêm',
         icon: MoreHorizontal,
         testId: 'nav-admin-more',
         mobileTestId: 'mobile-nav-more',
-        matchPrefix: ['/admin/more', '/admin/teachers', '/admin/consultations'],
+        matchPrefix: ['/admin/more', '/admin/teachers'],
       },
     ],
     desktop: [
@@ -698,12 +706,20 @@ export function getRoleNavigation(
           matchPrefix: ['/admin/orders'],
         },
         {
+          to: '/admin/consultations',
+          label: 'Consults',
+          icon: MessageSquare,
+          testId: 'nav-admin-consultations',
+          mobileTestId: 'mobile-nav-consultations',
+          matchPrefix: ['/admin/consultations'],
+        },
+        {
           to: '/admin/more',
           label: 'More',
           icon: MoreHorizontal,
           testId: 'nav-admin-more',
           mobileTestId: 'mobile-nav-more',
-          matchPrefix: ['/admin/more', '/admin/teachers', '/admin/consultations'],
+          matchPrefix: ['/admin/more', '/admin/teachers'],
         },
       ],
       desktop: [

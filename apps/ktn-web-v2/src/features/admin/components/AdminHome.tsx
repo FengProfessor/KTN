@@ -10,6 +10,8 @@ import {
   AlertCircle,
   RotateCcw,
   UserPlus,
+  MessageSquare,
+  UserCheck,
 } from 'lucide-react';
 import { ktnApi } from '@/services/api/ktnApiClient';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -236,11 +238,20 @@ export const AdminHome: React.FC = () => {
         </div>
       )}
 
-      {/* Quick Actions 2x2 Grid */}
+      {/* Quick Actions Grid */}
       <section
         data-testid="admin-quick-actions"
-        className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3"
       >
+        <QuickActionTile
+          icon={MessageSquare}
+          label={tr('Tư vấn', 'Consultations')}
+          status={tr('Web Chat · Zalo OA · Bot', 'Web Chat · Zalo OA · Bot')}
+          accent="red"
+          testId="admin-quick-consultations"
+          onClick={() => navigate('/admin/consultations')}
+        />
+
         <QuickActionTile
           icon={Users}
           label={tr('Học viên', 'Students')}
@@ -271,6 +282,15 @@ export const AdminHome: React.FC = () => {
           accent="amber"
           testId="admin-quick-orders"
           onClick={() => navigate('/admin/orders')}
+        />
+
+        <QuickActionTile
+          icon={UserCheck}
+          label={tr('Giáo viên', 'Teachers')}
+          status={tr('Quản lý & phân lớp', 'Roster & classes')}
+          accent="stone"
+          testId="admin-quick-teachers"
+          onClick={() => navigate('/admin/teachers')}
         />
 
         <QuickActionTile

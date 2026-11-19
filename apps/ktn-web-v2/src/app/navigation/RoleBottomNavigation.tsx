@@ -42,7 +42,7 @@ export const RoleBottomNavigation: React.FC<RoleBottomNavigationProps> = ({
             data-testid={item.mobileTestId || `mobile-${item.testId}`}
             className={({ isActive }) => {
               const active = isActive || isPrefixActive;
-              return `relative flex min-h-[44px] min-w-[60px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[11px] font-bold transition-colors ${
+              return `relative flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-1 text-[10px] font-bold transition-colors sm:text-[11px] ${
                 active ? 'text-red-800' : 'text-stone-500 hover:text-stone-900'
               }`;
             }}
@@ -50,7 +50,7 @@ export const RoleBottomNavigation: React.FC<RoleBottomNavigationProps> = ({
             <Icon className="h-4 w-4 shrink-0" />
             <span className="max-w-[70px] truncate leading-tight">{item.label}</span>
             {badgeCount > 0 ? (
-              <span className="absolute right-2.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">
+              <span className="absolute right-1.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">
                 {badgeCount > 99 ? '99+' : badgeCount}
               </span>
             ) : null}

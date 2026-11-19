@@ -45,7 +45,7 @@ export const CompactPageHeader: React.FC<CompactPageHeaderProps> = ({
           </p>
         )}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
+      {actions && <div className="flex max-w-full flex-wrap items-center gap-1.5">{actions}</div>}
     </div>
   );
 };

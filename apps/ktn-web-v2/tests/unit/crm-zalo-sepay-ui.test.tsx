@@ -265,6 +265,7 @@ describe('Milestone M4 — KTN Zalo OA CRM, Hybrid Chatbot UI & SePay Reconcilia
         'Học viên',
         'Lớp',
         'Đơn hàng',
+        'Tư vấn',
         'Thêm',
       ]);
 

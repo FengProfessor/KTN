@@ -49,7 +49,7 @@ const DEFAULT_BOT_FLOW: ConsultationBotFlow = {
   welcome_message:
     'Chào anh/chị! Em là Trợ lý tư vấn Học Viện Khổng Tử Nhí (KTN). Gia đình mình đang tìm hiểu lộ trình nào dưới đây ạ?',
   root_buttons: {
-    kids: 'Tìm khóa cho bé (4–15 tuổi)',
+    kids: 'Tìm khóa cho bé (4–18 tuổi)',
     adult: 'Tiếng Trung người đi làm',
     trial: 'Học thử & Cách học',
     handoff: 'Chat trực tiếp với tư vấn viên',
@@ -70,9 +70,9 @@ const DEFAULT_BOT_FLOW: ConsultationBotFlow = {
       course_id: '678d14b960eae20002ddf8fe',
     },
     age_12_15: {
-      label: 'Bé 12–15 tuổi (THCS · HSK/YCT)',
+      label: 'Bé 12–18 tuổi (THCS–THPT · HSK/YCT)',
       reply:
-        'Ở độ tuổi 12–15, KTN tập trung xây nền tảng ngữ pháp hệ thống, mở rộng vốn từ giao tiếp học thuật và luyện thi chứng chỉ YCT / HSK phục vụ học tập.',
+        'Ở độ tuổi 12–18, KTN tập trung xây nền tảng ngữ pháp hệ thống, mở rộng vốn từ giao tiếp học thuật và luyện thi chứng chỉ YCT / HSK phục vụ học tập.',
       course_id: '6adadba969897b0002482ca5',
     },
   },
@@ -693,7 +693,7 @@ export const ConsultationSettingsPanel: React.FC<ConsultationSettingsPanelProps>
             </div>
 
             <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3 space-y-2">
-              <p className="font-bold text-stone-800">2. {tr('Nhánh Trẻ em (4–15 tuổi) & Khóa học gợi ý', 'Kids Branches & Linked Courses')}</p>
+              <p className="font-bold text-stone-800">2. {tr('Nhánh Trẻ em (4–18 tuổi) & Khóa học gợi ý', 'Kids Branches & Linked Courses')}</p>
               <input
                 type="text"
                 value={botFlow.kids_intro}

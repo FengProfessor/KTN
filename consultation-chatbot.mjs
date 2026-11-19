@@ -80,7 +80,7 @@ export const DEFAULT_BOT_FLOW = {
   welcome_message:
     'Chào anh/chị! Em là Trợ lý tư vấn Học Viện Khổng Tử Nhí (KTN). Gia đình mình đang tìm hiểu lộ trình nào dưới đây ạ?',
   root_buttons: {
-    kids: 'Tìm khóa cho bé (4–15 tuổi)',
+    kids: 'Tìm khóa cho bé (4–18 tuổi)',
     adult: 'Tiếng Trung người đi làm',
     trial: 'Học thử & Cách học',
     handoff: 'Chat trực tiếp với tư vấn viên'
@@ -101,9 +101,9 @@ export const DEFAULT_BOT_FLOW = {
       course_id: '678d14b960eae20002ddf8fe'
     },
     age_12_15: {
-      label: 'Bé 12–15 tuổi (Thiếu niên)',
+      label: 'Bé 12–18 tuổi (Thiếu niên · THCS/THPT)',
       reply:
-        'Với lứa tuổi 12–15 tuổi, lộ trình hệ thống hóa từ vựng, ngữ pháp giao tiếp bài bản và luyện thi chuẩn chứng chỉ YCT / HSK phục vụ học tập.',
+        'Với lứa tuổi 12–18 tuổi, lộ trình hệ thống hóa từ vựng, ngữ pháp giao tiếp bài bản và luyện thi chuẩn chứng chỉ YCT / HSK phục vụ học tập.',
       course_id: '6adadba969897b0002482ca5'
     }
   },

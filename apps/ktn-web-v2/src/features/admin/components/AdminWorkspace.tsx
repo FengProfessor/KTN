@@ -1654,6 +1654,13 @@ export const AdminWorkspace: React.FC = () => {
     },
   });
 
+  const closeCreateStudentModal = () => {
+    setShowCreateStudentModal(false);
+    if (!provisionStudentMutation.isPending) {
+      setNewStuIdempotencyKey(`PROV-UI-${Date.now()}`);
+    }
+  };
+
   const saveTeacherMutation = useMutation({
     mutationFn: async () => {
       if (isDemoMode) {
@@ -3381,6 +3388,7 @@ export const AdminWorkspace: React.FC = () => {
           data-testid="admin-create-student-modal"
           onSubmit={(e) => {
             e.preventDefault();
+            if (provisionStudentMutation.isPending) return;
             provisionStudentMutation.mutate();
           }}
           className="space-y-3 rounded-2xl border-2 border-red-800/20 bg-white p-4 shadow-md"
@@ -3393,7 +3401,7 @@ export const AdminWorkspace: React.FC = () => {
             <button
               type="button"
               aria-label={tr('Đóng cửa sổ tạo học viên', 'Close create student dialog')}
-              onClick={() => setShowCreateStudentModal(false)}
+              onClick={closeCreateStudentModal}
               className="rounded-lg p-1 text-stone-500 hover:bg-stone-100"
             >
               <X className="h-4 w-4" />
@@ -3614,7 +3622,7 @@ export const AdminWorkspace: React.FC = () => {
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setShowCreateStudentModal(false)}
+              onClick={closeCreateStudentModal}
               className="min-h-[36px] rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-bold text-stone-700"
             >
               {tr('Hủy', 'Cancel')}

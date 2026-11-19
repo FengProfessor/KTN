@@ -2196,6 +2196,7 @@ export const ktnApi = {
       '/api/ktn/admin/students/provision',
       {
         method: 'POST',
+        timeoutMs: 45000,
         headers: payload.idempotencyKey
           ? { 'Idempotency-Key': payload.idempotencyKey }
           : undefined,
@@ -2230,6 +2231,7 @@ export const ktnApi = {
   }> {
     return ktnRequest('/api/ktn/admin/students/course-duration', {
       method: 'POST',
+      timeoutMs: 45000,
       headers: payload.clientRequestId
         ? { 'Idempotency-Key': payload.clientRequestId }
         : undefined,
@@ -2274,6 +2276,7 @@ export const ktnApi = {
       '/api/ktn/students/courses',
       {
         method: 'POST',
+        timeoutMs: 45000,
         body: JSON.stringify(payload)
       }
     );
@@ -2983,6 +2986,7 @@ export const ktnApi = {
       order?: KtnOrder;
     }>('/api/ktn/orders/approve', {
       method: 'POST',
+      timeoutMs: 45000,
       body: JSON.stringify({
         orderId,
         classCode,

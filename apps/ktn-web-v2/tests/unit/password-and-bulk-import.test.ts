@@ -999,4 +999,157 @@ Thứ 5 & Chủ Nhật 18:30-19:30",Cô Nông Linh,Huy,0977679764,Trịnh Kim Ng
       expect(teaStuLogin.status).toBe(200);
     });
   });
+
+  describe('Suite 5: Provisioning Lock Stale-Lease Recovery & Failure Cleanup', () => {
+    it('keeps 409 PROVISIONING_IN_PROGRESS for fresh running locks (<45s) while recovering stale running locks (>45s)', async () => {
+      const freshEmail = 'fresh.lock.stu@khongtunhi.com';
+      const freshKey = 'PROV-UI-FRESH-LOCK-01:fresh.lock.stu@khongtunhi.com';
+      const nowIso = new Date().toISOString();
+      harness.state.tables.ktn_provisioning_jobs.push({
+        operation_id: 'PROV-FRESH-LOCK-01',
+        idempotency_key: freshKey,
+        job_type: 'student_create',
+        target_email: freshEmail,
+        target_role: 'student',
+        actor_email: 'quanly@khongtunhi.com',
+        status: 'running',
+        sync_status: 'pending',
+        completed_steps: [],
+        retry_count: 0,
+        request_payload: { email: freshEmail },
+        created_at: nowIso,
+        updated_at: nowIso,
+      });
+
+      const freshRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/students/provision', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+            'Idempotency-Key': freshKey,
+          },
+          body: JSON.stringify({
+            name: 'Fresh Lock Student',
+            email: freshEmail,
+            phone: '0901112233',
+            courseIds: ['6adadba969897b0002482ca5'],
+          }),
+        }),
+        harness.env
+      );
+      expect(freshRes.status).toBe(409);
+      const freshBody = await freshRes.json();
+      expect(freshBody.error).toBe('PROVISIONING_IN_PROGRESS');
+
+      const staleEmail = 'stale.lock.stu@khongtunhi.com';
+      const staleKey = 'PROV-UI-STALE-LOCK-01:stale.lock.stu@khongtunhi.com';
+      const staleIso = new Date(Date.now() - 120_000).toISOString();
+      harness.state.tables.ktn_provisioning_jobs.push({
+        operation_id: 'PROV-STALE-LOCK-01',
+        idempotency_key: staleKey,
+        job_type: 'student_create',
+        target_email: staleEmail,
+        target_role: 'student',
+        actor_email: 'quanly@khongtunhi.com',
+        status: 'running',
+        sync_status: 'pending',
+        completed_steps: [],
+        retry_count: 0,
+        request_payload: { email: staleEmail },
+        created_at: staleIso,
+        updated_at: staleIso,
+      });
+
+      const mockCtx = { waitUntil: vi.fn() };
+      const recoveredRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/students/provision', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+            'Idempotency-Key': staleKey,
+          },
+          body: JSON.stringify({
+            name: 'Stale Lock Recovered',
+            email: staleEmail,
+            phone: '0902223344',
+            courseIds: ['6adadba969897b0002482ca5'],
+          }),
+        }),
+        harness.env,
+        mockCtx
+      );
+      expect(recoveredRes.status).toBe(200);
+      expect(mockCtx.waitUntil).toHaveBeenCalledTimes(1);
+      const recoveredBody = await recoveredRes.json();
+      expect(recoveredBody.ok).toBe(true);
+      expect(recoveredBody.student?.email).toBe(staleEmail);
+
+      const jobRow = harness.state.tables.ktn_provisioning_jobs.find(
+        (j: any) => j.operation_id === 'PROV-STALE-LOCK-01'
+      );
+      expect(jobRow?.status).toBe('completed');
+      expect(Number(jobRow?.retry_count || 0)).toBeGreaterThanOrEqual(1);
+    });
+
+    it('releases provisioning lock when an attempt fails so immediate retry with the same Idempotency-Key succeeds', async () => {
+      const retryEmail = 'retry.cleanup.stu@khongtunhi.com';
+      const retryKey = 'PROV-UI-RETRY-CLEANUP-01:retry.cleanup.stu@khongtunhi.com';
+      harness.state.faults.failStudentCoursesPost = true;
+
+      const failedRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/students/provision', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+            'Idempotency-Key': retryKey,
+          },
+          body: JSON.stringify({
+            name: 'Retry Cleanup Student',
+            email: retryEmail,
+            phone: '0903334455',
+            courseIds: ['6adadba969897b0002482ca5'],
+          }),
+        }),
+        harness.env
+      );
+      harness.state.faults.failStudentCoursesPost = false;
+      expect(failedRes.status).toBe(502);
+
+      const midJob = harness.state.tables.ktn_provisioning_jobs.find(
+        (j: any) => j.idempotency_key === retryKey
+      );
+      expect(midJob).toBeTruthy();
+      expect(midJob.status).not.toBe('running');
+
+      const retryRes = await harness.workerModule.fetch(
+        new Request('http://localhost/api/ktn/admin/students/provision', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+            'Idempotency-Key': retryKey,
+          },
+          body: JSON.stringify({
+            name: 'Retry Cleanup Student',
+            email: retryEmail,
+            phone: '0903334455',
+            courseIds: ['6adadba969897b0002482ca5'],
+          }),
+        }),
+        harness.env
+      );
+      expect(retryRes.status).toBe(200);
+      const retryBody = await retryRes.json();
+      expect(retryBody.ok).toBe(true);
+      expect(retryBody.student?.email).toBe(retryEmail);
+
+      const finalJob = harness.state.tables.ktn_provisioning_jobs.find(
+        (j: any) => j.idempotency_key === retryKey
+      );
+      expect(finalJob?.status).toBe('completed');
+    });
+  });
 });

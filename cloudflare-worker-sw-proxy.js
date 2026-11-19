@@ -59,12 +59,12 @@ const MASTER_PRODUCT_MAPPING = {
     shortTitle: 'HSK2 3.0',
     badge: 'TIÊU CHUẨN MỚI 3.0',
     ageGroup: 'Mọi lứa tuổi (Học sinh & Người lớn)',
-    description: '11 bài (22 phần) chuẩn New HSK 2 (3.0), nâng cao từ vựng, ngữ pháp và phản xạ giao tiếp.',
+    description: '15 bài (30 phần) chuẩn New HSK 2 (3.0), nâng cao từ vựng, ngữ pháp và phản xạ giao tiếp.',
     thumb: 'https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/1794357758090-hsk2_gemini_thumb.jpg',
     demoVideoUrl: 'https://media.izteach.vn/3529cd2b-7af6-4fda-887c-392a79393d6a/6af2d9cda658a80002e1990d/playlist.m3u8',
     demoDurationSeconds: 90,
     lessonSample: 'Bài 1: 他请我们吃了北京烤鸭',
-    lessonsCount: 11,
+    lessonsCount: 15,
     price: 890000,
     oldPrice: 1500000
   },
@@ -8305,11 +8305,16 @@ async function claimProvisioningJobAtomically(env, {
   actorEmail,
   targetEmail,
   targetRole = 'student',
-  requestPayload = {}
+  requestPayload = {},
+  staleLockMs
 }) {
   let key = String(idempotencyKey || '').trim();
   const normTargetEmail = normalizeEmail(targetEmail || '');
   const resolvedOpId = operationId || (key ? deriveDeterministicOperationId('PROV', key, normTargetEmail) : generateOperationId('PROV'));
+  const envStaleMs = Number(env?.KTN_PROVISIONING_STALE_LOCK_MS);
+  const effectiveStaleLockMs = (Number.isFinite(staleLockMs) && staleLockMs > 0)
+    ? staleLockMs
+    : ((Number.isFinite(envStaleMs) && envStaleMs > 0) ? envStaleMs : 45000);
   if (!key) {
     return {
       claimed: true,
@@ -8330,6 +8335,12 @@ async function claimProvisioningJobAtomically(env, {
     return true;
   };
 
+  const isStaleRunningJob = (row, nowMs = Date.now()) => {
+    if (!row || (row.status !== 'running' && row.status !== 'in_progress')) return false;
+    const refMs = Date.parse(row.updated_at || row.created_at || '');
+    return Number.isFinite(refMs) && (nowMs - refMs) >= effectiveStaleLockMs;
+  };
+
   const buildResumedReturn = (row) => ({
     claimed: true,
     resumed: true,
@@ -8339,6 +8350,73 @@ async function claimProvisioningJobAtomically(env, {
     izteachStudentId: row.izteach_student_id || null,
     job: row
   });
+
+  const tryTakeOverStaleRunningJob = async (staleRow) => {
+    if (!staleRow || !isTargetMatch(staleRow)) return null;
+    const staleOpId = staleRow.operation_id || resolvedOpId;
+    const nowIso = new Date().toISOString();
+    const nextRetry = Number(staleRow.retry_count || 0) + 1;
+    let patchPath = `ktn_provisioning_jobs?operation_id=eq.${encodeURIComponent(staleOpId)}&status=eq.${encodeURIComponent(staleRow.status)}`;
+    if (staleRow.updated_at) {
+      patchPath += `&updated_at=eq.${encodeURIComponent(staleRow.updated_at)}`;
+    }
+    const patchRes = await supabaseRequest(env, patchPath, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        status: 'running',
+        retry_count: nextRetry,
+        updated_at: nowIso
+      }
+    });
+    if (patchRes?.ok && Array.isArray(patchRes.data) && patchRes.data.length > 0) {
+      const takenOverJob = {
+        ...staleRow,
+        ...patchRes.data[0],
+        operation_id: staleOpId,
+        idempotency_key: staleRow.idempotency_key || key,
+        status: 'running',
+        retry_count: nextRetry,
+        updated_at: patchRes.data[0].updated_at || nowIso
+      };
+      if (!globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap = new Map();
+      globalThis.__ktnProvisioningJobsMap.set(staleOpId, takenOverJob);
+      if (!globalThis.__ktnIdempotencyJobMap) globalThis.__ktnIdempotencyJobMap = new Map();
+      globalThis.__ktnIdempotencyJobMap.set(key, takenOverJob);
+      return buildResumedReturn(takenOverJob);
+    }
+    if (patchRes?.status === 404) {
+      const takenOverJob = {
+        ...staleRow,
+        operation_id: staleOpId,
+        idempotency_key: staleRow.idempotency_key || key,
+        status: 'running',
+        retry_count: nextRetry,
+        updated_at: nowIso
+      };
+      if (!globalThis.__ktnProvisioningJobsMap) globalThis.__ktnProvisioningJobsMap = new Map();
+      globalThis.__ktnProvisioningJobsMap.set(staleOpId, takenOverJob);
+      if (!globalThis.__ktnIdempotencyJobMap) globalThis.__ktnIdempotencyJobMap = new Map();
+      globalThis.__ktnIdempotencyJobMap.set(key, takenOverJob);
+      const idemSafeId = 'PJOB-' + String(key).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+      await supabaseRequest(env, 'ktn_dlp_alerts', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates,return=representation',
+        body: {
+          id: idemSafeId,
+          room_id: 'PROVISIONING_JOB',
+          sender_email: takenOverJob.actor_email || actorEmail || 'admin',
+          sender_name: takenOverJob.target_email || targetEmail || 'system',
+          sender_role: takenOverJob.target_role || targetRole || 'admin',
+          blocked_content: JSON.stringify(takenOverJob),
+          reason: 'IDEM:' + key,
+          created_at: nowIso
+        }
+      });
+      return buildResumedReturn(takenOverJob);
+    }
+    return null;
+  };
 
   const lookupJobByKey = async (lookupKey) => {
     let found = null;
@@ -8404,6 +8482,10 @@ async function claimProvisioningJobAtomically(env, {
         };
       }
       if (existing.status === 'running' || existing.status === 'in_progress') {
+        if (isStaleRunningJob(existing)) {
+          const takenOver = await tryTakeOverStaleRunningJob(existing);
+          if (takenOver) return takenOver;
+        }
         const waited = await pollExistingJob(3, 35);
         if (waited.state === 'completed' && waited.job) {
           return {
@@ -8418,12 +8500,17 @@ async function claimProvisioningJobAtomically(env, {
           return buildResumedReturn(waited.job);
         }
         if (waited.state === 'in_progress') {
+          const latestRow = waited.job || existing;
+          if (isStaleRunningJob(latestRow)) {
+            const takenOver = await tryTakeOverStaleRunningJob(latestRow);
+            if (takenOver) return takenOver;
+          }
           return {
             claimed: false,
             inProgress: true,
             inProgressConflict: true,
             operationId: waited.job?.operation_id || resolvedOpId,
-            job: waited.job || existing
+            job: latestRow
           };
         }
       }
@@ -8481,6 +8568,7 @@ async function claimProvisioningJobAtomically(env, {
       status: 'running',
       sync_status: 'pending',
       completed_steps: [],
+      retry_count: 0,
       request_payload: sanitizeAuditPayload(requestPayload),
       created_at: nowIso,
       updated_at: nowIso
@@ -8506,6 +8594,10 @@ async function claimProvisioningJobAtomically(env, {
       }
       if (raced.state === 'resumable' && raced.job) {
         return buildResumedReturn(raced.job);
+      }
+      if (raced.job && isStaleRunningJob(raced.job)) {
+        const takenOver = await tryTakeOverStaleRunningJob(raced.job);
+        if (takenOver) return takenOver;
       }
       return {
         claimed: false,
@@ -17816,7 +17908,7 @@ export default {
       }
 
       const lockKey = idempotencyKey ? `idem:${idempotencyKey}:${email}` : `student_provision:${email}`;
-      return runWithProvisioningLock(lockKey, async () => {
+      const provisionPromise = runWithProvisioningLock(lockKey, async () => {
         const requestPayloadMeta = {
           email,
           name,
@@ -17845,7 +17937,12 @@ export default {
           requestPayload: requestPayloadMeta
         });
 
-        if (claim.replayed && claim.job?.result_summary) {
+        if (
+          claim.replayed &&
+          claim.job?.result_summary &&
+          typeof claim.job.result_summary === 'object' &&
+          Object.keys(claim.job.result_summary).length > 0
+        ) {
           return jsonResponse({
             ok: true,
             idempotentReplay: true,
@@ -17883,8 +17980,9 @@ export default {
           priorIncompleteJob?.response_payload?.account_created_in_job
         );
 
-        // Luôn kích hoạt tài khoản đăng nhập trên izTeach để học sinh vào cổng KTN học được ngay (kể cả học sinh chỉ học lớp trực tiếp)
-        let prov = null;
+        try {
+          // Luôn kích hoạt tài khoản đăng nhập trên izTeach để học sinh vào cổng KTN học được ngay (kể cả học sinh chỉ học lớp trực tiếp)
+          let prov = null;
         const alreadyProvisionedIzTeach = completedSteps.includes('izteach_account') &&
           (resolvedCourseIds.length === 0 || completedSteps.includes('izteach_permissions')) &&
           (!durationPreset || completedSteps.includes('izteach_duration_sync')) &&
@@ -18150,11 +18248,36 @@ export default {
           createdBy: session.email
         });
 
-        return jsonResponse({
-          ok: true,
-          ...responseSummary
-        });
+          return jsonResponse({
+            ok: true,
+            ...responseSummary
+          });
+        } catch (err) {
+          await saveProvisioningJobState(env, {
+            operation_id: opId,
+            idempotency_key: finalIdempotencyKey,
+            job_type: 'student_create',
+            actor_email: session.email,
+            target_email: email,
+            target_role: 'student',
+            status: completedSteps.length > 0 ? 'partial_failure' : 'failed',
+            sync_status: completedSteps.length > 0 ? 'partial_failure' : 'sync_failed',
+            completed_steps: completedSteps,
+            failed_step: 'unexpected_error',
+            cognito_user_id: priorCognitoUserId || null,
+            izteach_student_id: priorIzteachStudentId || null,
+            request_payload: requestPayloadMeta,
+            error_code: 'PROVISIONING_UNEXPECTED_ERROR',
+            error_message: String(err?.message || 'Lỗi không xác định khi khởi tạo học viên').slice(0, 300),
+            retryable: true
+          }).catch(() => null);
+          throw err;
+        }
       });
+      if (ctx && typeof ctx.waitUntil === 'function') {
+        ctx.waitUntil(provisionPromise.catch(() => null));
+      }
+      return provisionPromise;
     }
 
     // ------------------------------------------------------------------------
@@ -18211,7 +18334,7 @@ export default {
       }
 
       const lockKey = `course_duration:${studentEmail}`;
-      return runWithProvisioningLock(lockKey, async () => {
+      const durationPromise = runWithProvisioningLock(lockKey, async () => {
         const requestPayloadMeta = {
           studentEmail,
           courseId,
@@ -18243,7 +18366,12 @@ export default {
           requestPayload: requestPayloadMeta
         });
 
-        if (claim.replayed && claim.job?.result_summary) {
+        if (
+          claim.replayed &&
+          claim.job?.result_summary &&
+          typeof claim.job.result_summary === 'object' &&
+          Object.keys(claim.job.result_summary).length > 0
+        ) {
           return jsonResponse({
             ok: true,
             idempotentReplay: true,
@@ -18270,146 +18398,174 @@ export default {
           ...(Array.isArray(claim.completedSteps) ? claim.completedSteps : [])
         ]));
 
-        // 1. Tra cứu học viên trên Supabase & izTeach để xác định Cognito UUID thật
-        const stuRes = await supabaseRequest(
-          env,
-          `ktn_students?email=eq.${encodeURIComponent(studentEmail)}&select=*&limit=1`
-        );
-        const existingStu = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
-        let cognitoUserId = isValidCognitoUuid(existingStu?.cognito_user_id)
-          ? existingStu.cognito_user_id
-          : (isValidCognitoUuid(priorIncompleteJob?.cognito_user_id) ? priorIncompleteJob.cognito_user_id : null);
-        let izteachStudentId = existingStu?.izteach_student_id || null;
+        const markDurationJobFailed = (errorCode, errorMessage, failedStep = 'course_duration_precheck', extraIds = {}) =>
+          saveProvisioningJobState(env, {
+            operation_id: opId,
+            idempotency_key: finalIdempotencyKey,
+            job_type: 'course_duration',
+            actor_email: session.email,
+            target_email: studentEmail,
+            target_role: 'student',
+            status: completedSteps.length > 0 ? 'partial_failure' : 'failed',
+            sync_status: completedSteps.length > 0 ? 'partial_failure' : 'sync_failed',
+            completed_steps: completedSteps,
+            failed_step: failedStep,
+            cognito_user_id: extraIds.cognitoUserId || null,
+            izteach_student_id: extraIds.izteachStudentId || null,
+            request_payload: requestPayloadMeta,
+            error_code: errorCode,
+            error_message: String(errorMessage || 'Lỗi đồng bộ thời hạn khóa học').slice(0, 300),
+            retryable: true
+          }).catch(() => null);
 
-        let adminToken = await getIzTeachAdminToken(env);
-        if (!adminToken) {
-          return jsonResponse({
-            ok: false,
-            retryable: true,
-            syncStatus: 'sync_failed',
-            error: 'MISSING_IZTEACH_ADMIN_TOKEN',
-            message: 'Cần hoàn tất đồng bộ thời hạn: Không lấy được Admin Token kết nối izTeach.'
-          }, 502);
-        }
+        let cognitoUserId = null;
+        let izteachStudentId = null;
+        try {
+          // 1. Tra cứu học viên trên Supabase & izTeach để xác định Cognito UUID thật
+          const stuRes = await supabaseRequest(
+            env,
+            `ktn_students?email=eq.${encodeURIComponent(studentEmail)}&select=*&limit=1`
+          );
+          const existingStu = (stuRes.ok && Array.isArray(stuRes.data) && stuRes.data[0]) ? stuRes.data[0] : null;
+          cognitoUserId = isValidCognitoUuid(existingStu?.cognito_user_id)
+            ? existingStu.cognito_user_id
+            : (isValidCognitoUuid(priorIncompleteJob?.cognito_user_id) ? priorIncompleteJob.cognito_user_id : null);
+          izteachStudentId = existingStu?.izteach_student_id || null;
 
-        const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
-        if (!isValidCognitoUuid(cognitoUserId)) {
-          try {
-            let searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&email=${encodeURIComponent(studentEmail)}`, {
-              headers: { Authorization: adminToken }
-            });
-            if ((searchRes.status === 401 || searchRes.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
-              const refreshed = await getIzTeachAdminToken(env, true);
-              if (refreshed) {
-                adminToken = refreshed;
-                searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&email=${encodeURIComponent(studentEmail)}`, {
-                  headers: { Authorization: adminToken }
-                });
-              }
-            }
-            if (searchRes.ok) {
-              const searchData = await searchRes.json().catch(() => null);
-              const list = extractIzTeachStudentRecords(searchData);
-              const found = list.find(u => normalizeEmail(u?.email || u?.user?.email) === studentEmail);
-              if (found) {
-                const identity = extractIdentityFromIzTeachRecord(found);
-                if (isValidCognitoUuid(identity.cognitoUserId)) {
-                  cognitoUserId = identity.cognitoUserId;
-                }
-                izteachStudentId = identity.izteachStudentId || izteachStudentId;
-              }
-            }
-          } catch {}
-        }
-
-        if (!isValidCognitoUuid(cognitoUserId)) {
-          return jsonResponse({
-            ok: false,
-            error: 'STUDENT_COGNITO_NOT_FOUND',
-            message: `Không tìm thấy tài khoản izTeach (Cognito UUID) của học viên ${studentEmail}. Vui lòng đồng bộ hoặc cấp khóa học trước.`
-          }, 404);
-        }
-
-        // 2. Kiểm tra khóa học đã được cấp hợp lệ trên izTeach
-        const permUrl = `${IZTEACH_ENDPOINTS.userPermission}?vendorId=${encodeURIComponent(vendorId)}&userId=${encodeURIComponent(cognitoUserId)}`;
-        let permResp = await fetch(permUrl, { headers: { Authorization: adminToken } });
-        if ((permResp.status === 401 || permResp.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
-          const refreshed = await getIzTeachAdminToken(env, true);
-          if (refreshed) {
-            adminToken = refreshed;
-            permResp = await fetch(permUrl, { headers: { Authorization: adminToken } });
+          let adminToken = await getIzTeachAdminToken(env);
+          if (!adminToken) {
+            await markDurationJobFailed('MISSING_IZTEACH_ADMIN_TOKEN', 'Không lấy được Admin Token kết nối izTeach.', 'course_duration_precheck', { cognitoUserId, izteachStudentId });
+            return jsonResponse({
+              ok: false,
+              retryable: true,
+              syncStatus: 'sync_failed',
+              error: 'MISSING_IZTEACH_ADMIN_TOKEN',
+              message: 'Cần hoàn tất đồng bộ thời hạn: Không lấy được Admin Token kết nối izTeach.'
+            }, 502);
           }
-        }
-        if (!permResp.ok) {
-          return jsonResponse({
-            ok: false,
-            retryable: true,
-            syncStatus: 'sync_failed',
-            error: 'IZTEACH_PERMISSION_READ_FAILED',
-            message: `Cần hoàn tất đồng bộ thời hạn: Không đọc được quyền khóa học trên izTeach (HTTP ${permResp.status}).`
-          }, 502);
-        }
-        const permPayload = await permResp.json().catch(() => null);
 
-        const currentEntList = extractIzTeachOnlineCourseEntitlements(permPayload, reqNowMs);
-        const currentIzEnt = currentEntList.find(ent => String(ent.id).toLowerCase() === courseId) || null;
-        const existingStuCourses = normalizeStudentOnlineCoursesList(existingStu?.online_courses || [], reqNowMs);
-        const currentStuCourse = existingStuCourses.find(c => String(c.id).toLowerCase() === courseId) || null;
+          const vendorId = env.IZTEACH_VENDOR_ID || DEFAULT_VENDOR_ID;
+          if (!isValidCognitoUuid(cognitoUserId)) {
+            try {
+              let searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&email=${encodeURIComponent(studentEmail)}`, {
+                headers: { Authorization: adminToken }
+              });
+              if ((searchRes.status === 401 || searchRes.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+                const refreshed = await getIzTeachAdminToken(env, true);
+                if (refreshed) {
+                  adminToken = refreshed;
+                  searchRes = await fetch(`${IZTEACH_ENDPOINTS.studentCrm}?vendorId=${encodeURIComponent(vendorId)}&email=${encodeURIComponent(studentEmail)}`, {
+                    headers: { Authorization: adminToken }
+                  });
+                }
+              }
+              if (searchRes.ok) {
+                const searchData = await searchRes.json().catch(() => null);
+                const list = extractIzTeachStudentRecords(searchData);
+                const found = list.find(u => normalizeEmail(u?.email || u?.user?.email) === studentEmail);
+                if (found) {
+                  const identity = extractIdentityFromIzTeachRecord(found);
+                  if (isValidCognitoUuid(identity.cognitoUserId)) {
+                    cognitoUserId = identity.cognitoUserId;
+                  }
+                  izteachStudentId = identity.izteachStudentId || izteachStudentId;
+                }
+              }
+            } catch {}
+          }
 
-        if (!currentIzEnt && !currentStuCourse) {
-          return jsonResponse({
-            ok: false,
-            error: 'COURSE_NOT_GRANTED',
-            courseId,
-            message: 'Học viên chưa được cấp khóa học này nên chưa thể đặt hoặc gia hạn thời hạn.'
-          }, 400);
-        }
+          if (!isValidCognitoUuid(cognitoUserId)) {
+            await markDurationJobFailed('STUDENT_COGNITO_NOT_FOUND', `Không tìm thấy tài khoản izTeach của học viên ${studentEmail}.`, 'course_duration_precheck', { cognitoUserId, izteachStudentId });
+            return jsonResponse({
+              ok: false,
+              error: 'STUDENT_COGNITO_NOT_FOUND',
+              message: `Không tìm thấy tài khoản izTeach (Cognito UUID) của học viên ${studentEmail}. Vui lòng đồng bộ hoặc cấp khóa học trước.`
+            }, 404);
+          }
 
-        // Nếu khóa học có trên Supabase nhưng chưa có permission trên izTeach, cấp bù permission trên izTeach trước
-        if (!currentIzEnt) {
-          const addUrl = `${IZTEACH_ENDPOINTS.userPermission}/add-products/${encodeURIComponent(cognitoUserId)}`;
-          let addRes = await fetch(addUrl, {
-            method: 'PUT',
-            headers: {
-              Authorization: adminToken,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              vendorId,
-              onlineCourses: [courseId],
-              testCategories: []
-            })
-          }).catch(err => ({ ok: false, status: 503, _err: err }));
-          if ((addRes?.status === 401 || addRes?.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+          // 2. Kiểm tra khóa học đã được cấp hợp lệ trên izTeach
+          const permUrl = `${IZTEACH_ENDPOINTS.userPermission}?vendorId=${encodeURIComponent(vendorId)}&userId=${encodeURIComponent(cognitoUserId)}`;
+          let permResp = await fetch(permUrl, { headers: { Authorization: adminToken } });
+          if ((permResp.status === 401 || permResp.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
             const refreshed = await getIzTeachAdminToken(env, true);
             if (refreshed) {
               adminToken = refreshed;
-              addRes = await fetch(addUrl, {
-                method: 'PUT',
-                headers: {
-                  Authorization: adminToken,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  vendorId,
-                  onlineCourses: [courseId],
-                  testCategories: []
-                })
-              }).catch(err => ({ ok: false, status: 503, _err: err }));
+              permResp = await fetch(permUrl, { headers: { Authorization: adminToken } });
             }
           }
-          if (!addRes || !addRes.ok) {
+          if (!permResp.ok) {
+            await markDurationJobFailed('IZTEACH_PERMISSION_READ_FAILED', `Không đọc được quyền khóa học trên izTeach (HTTP ${permResp.status}).`, 'izteach_permission_read', { cognitoUserId, izteachStudentId });
             return jsonResponse({
               ok: false,
-              operationId: opId,
               retryable: true,
               syncStatus: 'sync_failed',
-              code: 'IZTEACH_ADD_PRODUCTS_FAILED',
-              error: 'IZTEACH_ADD_PRODUCTS_FAILED',
-              message: `Cần hoàn tất đồng bộ thời hạn: Không cấp bù được quyền khóa học trên izTeach trước khi đặt hạn (HTTP ${addRes?.status || 503}).`
+              error: 'IZTEACH_PERMISSION_READ_FAILED',
+              message: `Cần hoàn tất đồng bộ thời hạn: Không đọc được quyền khóa học trên izTeach (HTTP ${permResp.status}).`
             }, 502);
           }
-        }
+          const permPayload = await permResp.json().catch(() => null);
+
+          const currentEntList = extractIzTeachOnlineCourseEntitlements(permPayload, reqNowMs);
+          const currentIzEnt = currentEntList.find(ent => String(ent.id).toLowerCase() === courseId) || null;
+          const existingStuCourses = normalizeStudentOnlineCoursesList(existingStu?.online_courses || [], reqNowMs);
+          const currentStuCourse = existingStuCourses.find(c => String(c.id).toLowerCase() === courseId) || null;
+
+          if (!currentIzEnt && !currentStuCourse) {
+            await markDurationJobFailed('COURSE_NOT_GRANTED', 'Học viên chưa được cấp khóa học này nên chưa thể đặt hoặc gia hạn thời hạn.', 'course_duration_precheck', { cognitoUserId, izteachStudentId });
+            return jsonResponse({
+              ok: false,
+              error: 'COURSE_NOT_GRANTED',
+              courseId,
+              message: 'Học viên chưa được cấp khóa học này nên chưa thể đặt hoặc gia hạn thời hạn.'
+            }, 400);
+          }
+
+          // Nếu khóa học có trên Supabase nhưng chưa có permission trên izTeach, cấp bù permission trên izTeach trước
+          if (!currentIzEnt) {
+            const addUrl = `${IZTEACH_ENDPOINTS.userPermission}/add-products/${encodeURIComponent(cognitoUserId)}`;
+            let addRes = await fetch(addUrl, {
+              method: 'PUT',
+              headers: {
+                Authorization: adminToken,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                vendorId,
+                onlineCourses: [courseId],
+                testCategories: []
+              })
+            }).catch(err => ({ ok: false, status: 503, _err: err }));
+            if ((addRes?.status === 401 || addRes?.status === 403) && env.IZTEACH_ADMIN_PASSWORD) {
+              const refreshed = await getIzTeachAdminToken(env, true);
+              if (refreshed) {
+                adminToken = refreshed;
+                addRes = await fetch(addUrl, {
+                  method: 'PUT',
+                  headers: {
+                    Authorization: adminToken,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    vendorId,
+                    onlineCourses: [courseId],
+                    testCategories: []
+                  })
+                }).catch(err => ({ ok: false, status: 503, _err: err }));
+              }
+            }
+            if (!addRes || !addRes.ok) {
+              await markDurationJobFailed('IZTEACH_ADD_PRODUCTS_FAILED', `Không cấp bù được quyền khóa học trên izTeach trước khi đặt hạn (HTTP ${addRes?.status || 503}).`, 'izteach_add_products', { cognitoUserId, izteachStudentId });
+              return jsonResponse({
+                ok: false,
+                operationId: opId,
+                retryable: true,
+                syncStatus: 'sync_failed',
+                code: 'IZTEACH_ADD_PRODUCTS_FAILED',
+                error: 'IZTEACH_ADD_PRODUCTS_FAILED',
+                message: `Cần hoàn tất đồng bộ thời hạn: Không cấp bù được quyền khóa học trên izTeach trước khi đặt hạn (HTTP ${addRes?.status || 503}).`
+              }, 502);
+            }
+          }
 
         const previousLimitTime = currentIzEnt?.limitTime ?? currentStuCourse?.limitTime ?? null;
 
@@ -18755,12 +18911,25 @@ export default {
           })
         ]);
 
-        return jsonResponse({
-          ok: true,
-          serverNow: reqNowIso,
-          ...responseSummary
-        });
+          return jsonResponse({
+            ok: true,
+            serverNow: reqNowIso,
+            ...responseSummary
+          });
+        } catch (err) {
+          await markDurationJobFailed(
+            'COURSE_DURATION_UNEXPECTED_ERROR',
+            err?.message || 'Lỗi không xác định khi cập nhật thời hạn khóa học',
+            'unexpected_error',
+            { cognitoUserId, izteachStudentId }
+          );
+          throw err;
+        }
       });
+      if (ctx && typeof ctx.waitUntil === 'function') {
+        ctx.waitUntil(durationPromise.catch(() => null));
+      }
+      return durationPromise;
     }
 
     if (path === '/api/ktn/students/courses' && request.method === 'POST') {

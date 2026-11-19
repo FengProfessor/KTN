@@ -1,0 +1,1213 @@
+export type UserRole = 'student' | 'teacher' | 'admin' | 'advisor';
+export type StudentCase = 'both' | 'online_only' | 'sll_only' | 'unassigned';
+export type CourseDurationUnit = 'd' | 'w' | 'm' | 'unlimited';
+export type CourseDurationPreset =
+  | '1w'
+  | '2w'
+  | '1m'
+  | '2m'
+  | '3m'
+  | 'unlimited'
+  | `${number}${'d' | 'w' | 'm'}`
+  | string;
+export type CourseDurationMode = 'set_from_now' | 'extend_from_current';
+
+export interface OnlineCourseEntitlement {
+  id: string;
+  _id?: string;
+  code?: string;
+  title: string;
+  shortTitle?: string;
+  userPermissionId?: string | null;
+  limitTime?: string | null;
+  expiresAt?: string | null;
+  durationPreset?: CourseDurationPreset;
+  isExpired?: boolean;
+  syncStatus?: string;
+  updatedAt?: string | null;
+}
+
+export interface KtnUserSession {
+  id: string;
+  userId?: string;
+  studentId?: string;
+  code?: string;
+  email: string;
+  name: string;
+  phone?: string;
+  parentName?: string;
+  role: UserRole;
+  roles: UserRole[];
+  classCode: string | null;
+  enrolledClasses?: string[];
+  assignedClasses?: string[];
+  assignedCourses?: string[];
+  hasLiveClass: boolean;
+  hasOnlineCourses: boolean;
+  onlineCourses: OnlineCourseEntitlement[];
+  studentCase?: StudentCase | string;
+  token?: string;
+  serverNow?: string;
+}
+
+export interface KtnCourse {
+  id: string;
+  code: string;
+  title: string;
+  shortTitle: string;
+  badge: string;
+  ageGroup?: string;
+  description?: string;
+  lessonsCount: number;
+  price: number;
+  oldPrice: number;
+  thumb?: string | null;
+  demoVideoUrl?: string | null;
+  demoDurationSeconds?: number;
+  lessonSample?: string;
+  isBundle?: boolean;
+  bundleCourseIds?: string[];
+}
+
+export interface KtnAudioTrack {
+  id?: string;
+  name: string;
+  url: string;
+  category?: 'mp3_sgk' | 'mp3_sbt' | string;
+  filename?: string;
+  size?: number;
+  mimeType?: string;
+  httpStatus?: number;
+}
+
+export interface KtnLearningMaterial {
+  id: string;
+  title: string;
+  type?: 'sgk_pdf' | 'sbt_pdf' | 'voviet_pdf' | 'vocab_pdf' | 'reference_pdf' | 'lesson_pdf' | 'lesson_doc' | 'teacher_attachment' | string;
+  category?: string;
+  url: string;
+  baseUrl?: string;
+  fileUrl?: string;
+  objectKey?: string;
+  page?: number | null;
+  bookPage?: number | null;
+  size?: number | null;
+  mime?: string;
+  mimeType?: string;
+  actionLabel?: string;
+  canView?: boolean;
+  canDownload?: boolean;
+  httpStatus?: number;
+}
+
+export interface KtnHomeworkAssignment {
+  assigned: boolean;
+  mandatory?: boolean;
+  title?: string;
+  instructions?: string;
+  relatedPages?: string | null;
+  allowedTypes?: string[];
+  maxFiles?: number;
+  deadline?: string | null;
+  completionCriteria?: string | null;
+  sampleAttachmentUrl?: string | null;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export type KtnDrmPolicy =
+  | 'drmDisabled'
+  | 'drmPilot'
+  | 'drmRequired'
+  | 'drmFallbackAllowed';
+
+export type KtnDrmSystem = 'widevine' | 'playready' | 'fairplay';
+
+export interface KtnDrmProviderStatus {
+  configured: boolean;
+  status: 'READY' | 'BLOCKED' | string;
+  reason?: string | null;
+}
+
+export interface KtnDrmPlaybackInfo {
+  ok: boolean;
+  unitId: string;
+  courseId: string;
+  videoId?: string | null;
+  policy: KtnDrmPolicy;
+  drmActiveForUser: boolean;
+  drmToken?: string | null;
+  expiresInSeconds?: number;
+  licenseStatus: 'READY' | 'BLOCKED_MISSING_CREDENTIALS' | 'DISABLED' | string;
+  blockedReason?: string | null;
+  licenseProviders: {
+    widevine: KtnDrmProviderStatus;
+    playready: KtnDrmProviderStatus;
+    fairplay: KtnDrmProviderStatus;
+  };
+  licenseEndpoints: {
+    widevine: string;
+    playready: string;
+    fairplay: string;
+  };
+  fairplayCertificateUrl: string;
+  manifests: {
+    packaged: boolean;
+    encryptionScheme?: 'cbcs' | 'cenc' | string | null;
+    keyId?: string | null;
+    dashUrl?: string | null;
+    hlsFairPlayUrl?: string | null;
+  };
+  fallbackAllowed: boolean;
+  fallbackStreamUrl?: string | null;
+  captureProtectionGuaranteed: boolean;
+  captureProtectionWarning?: string | null;
+  serverNow?: string;
+}
+
+export interface KtnDrmPolicyConfigResponse {
+  ok: boolean;
+  courseId: string;
+  policy?: KtnDrmPolicy;
+  isPilotEmail?: boolean;
+  config?: {
+    courseId: string;
+    policy: KtnDrmPolicy;
+    pilotEmails: string[];
+    pilotUnitIds: string[];
+    pilotVideoIds: string[];
+    packagedAssetKeys: string[];
+    updatedAt?: string | null;
+    updatedBy?: string | null;
+  };
+  licenseProviders?: {
+    widevine: KtnDrmProviderStatus;
+    playready: KtnDrmProviderStatus;
+    fairplay: KtnDrmProviderStatus;
+  };
+}
+
+export interface KtnLessonVideoPart {
+  unitId: string;
+  partNumber?: string | number | null;
+  rawTitle?: string;
+  title: string;
+  videoId?: string;
+  duration?: string;
+  durationSec?: number;
+  url?: string | null;
+  streamUrl?: string | null;
+  posterUrl?: string;
+  drmEnabled?: boolean;
+  drmPolicy?: KtnDrmPolicy;
+  drmPlaybackUrl?: string | null;
+  drmFallbackAllowed?: boolean;
+  drmCaptureProtectionGuaranteed?: boolean;
+}
+
+export interface KtnLessonUnit {
+  _id: string;
+  id?: string;
+  unitId?: string;
+  videoUnitId?: string;
+  chapterId?: string;
+  num: number;
+  lessonNumber?: number | null;
+  partNumber?: string | number | null;
+  partLabel?: string | null;
+  unitType?: 'lesson' | 'workbook' | string;
+  rawTitle?: string;
+  course: string;
+  title: string;
+  titleZh?: string;
+  titleVi?: string;
+  grammar?: string;
+  duration?: string;
+  durationSec?: number;
+  sgkPage?: number | null;
+  sbtPage?: number | null;
+  voVietPage?: number | null;
+  type: string;
+  video: string;
+  videoId?: string;
+  streamUrl?: string | null;
+  posterUrl?: string;
+  drmEnabled?: boolean;
+  drmPolicy?: KtnDrmPolicy;
+  drmPlaybackUrl?: string | null;
+  drmFallbackAllowed?: boolean;
+  drmCaptureProtectionGuaranteed?: boolean;
+  audioTracks?: KtnAudioTrack[];
+  materials?: KtnLearningMaterial[];
+  homeworkAssignment?: KtnHomeworkAssignment | null;
+  parts?: KtnLessonVideoPart[];
+  resourceIds?: string[];
+  confidence?: 'HIGH' | 'NEEDS_REVIEW' | string;
+  verified?: boolean;
+  workbookTitle?: string | null;
+}
+
+export interface ClassScheduleException {
+  date: string;
+  type: 'rescheduled' | 'postponed' | 'holiday' | 'cancelled';
+  newDate?: string;
+  startTime?: string;
+  endTime?: string;
+  note?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface CustomClassSession {
+  date: string;
+  startTime: string;
+  endTime: string;
+  title?: string;
+  meetingUrl?: string;
+}
+
+export interface UpcomingClassSession {
+  classCode: string;
+  sessionDate: string;
+  originalDate?: string;
+  dayOfWeek: number;
+  dayLabel: string;
+  startTime: string;
+  endTime: string;
+  startEpochMs: number;
+  endEpochMs: number;
+  timezone: string;
+  status: 'scheduled' | 'rescheduled' | 'postponed' | 'holiday' | 'cancelled';
+  note?: string;
+  title?: string;
+  meetingUrl?: string;
+}
+
+export interface ClassScheduleConfig {
+  classCode: string;
+  daysOfWeek: number[];
+  dayOfWeek?: string;
+  startTime: string;
+  endTime: string;
+  scheduleSlots?: Record<string, { startTime: string; endTime: string }>;
+  timezone: string;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+  mode: 'weekly' | 'custom_sessions';
+  scheduleMode?: 'weekly' | 'custom_sessions';
+  customSessions: CustomClassSession[];
+  exceptions: ClassScheduleException[];
+  meetingUrl?: string;
+  status: 'confirmed' | 'unconfirmed' | 'paused';
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface KtnClassItem {
+  id: string;
+  name: string;
+  teacher_code: string;
+  teacher_email?: string;
+  teacher_name: string;
+  schedule: string;
+  total_lessons: number;
+  current_lesson: number;
+  active: boolean;
+  scheduleStatus?: 'confirmed' | 'legacy_unconfirmed' | 'unconfirmed' | 'paused';
+  officialScheduleText?: string;
+  legacyScheduleText?: string;
+  scheduleConfig?: ClassScheduleConfig | null;
+  upcomingSessions?: UpcomingClassSession[];
+  nextSession?: UpcomingClassSession | null;
+  suggestedFromLegacyText?: {
+    daysOfWeek?: number[];
+    startTime?: string;
+    endTime?: string;
+    legacyText?: string;
+  } | null;
+}
+
+export interface KtnExerciseAttachment {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface KtnSessionExercise {
+  id: string;
+  num: number;
+  title: string;
+  prompt: string;
+  instruction?: string;
+  type: 'audio' | 'photo' | 'video' | string;
+  submissionType?: 'mixed' | 'file' | 'audio' | 'text' | string;
+  dueDate?: string;
+  status?: 'draft' | 'published';
+  attachments?: KtnExerciseAttachment[];
+}
+
+export interface KtnClassSession {
+  id?: string;
+  classCode: string;
+  session_num: number;
+  sessionNum: number;
+  session_title: string;
+  title: string;
+  session_date?: string | null;
+  summary?: string | null;
+  exercises: KtnSessionExercise[];
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+}
+
+export type HomeworkStatus = 'pending' | 'graded' | 'revision_requested';
+
+export interface HomeworkAttachment {
+  title: string;
+  fileUrl: string;
+  cdnUrl?: string;
+  mediaType: string;
+  size?: number;
+}
+
+export interface KtnHomework {
+  id: string;
+  student_code?: string;
+  student_email: string;
+  student_name: string;
+  class_code?: string | null;
+  course_id: string;
+  lesson_num: number;
+  lesson_title: string;
+  file_url: string;
+  file_type: string;
+  attachments: HomeworkAttachment[];
+  workbook_answers?: Record<string, unknown>;
+  student_note?: string;
+  status: HomeworkStatus;
+  score?: number | null;
+  teacher_feedback?: string | null;
+  teacher_audio_url?: string | null;
+  graded_by?: string | null;
+  graded_at?: string | null;
+  submitted_at: string;
+  updated_at?: string;
+}
+
+export type NotificationType =
+  | 'class_created'
+  | 'class_joined'
+  | 'class_teacher_changed'
+  | 'homework_graded'
+  | 'homework_submitted'
+  | 'homework_assigned'
+  | 'chat_message'
+  | 'chat_group_message'
+  | 'chat_private_message'
+  | 'chat_course_message'
+  | 'class_reminder'
+  | 'schedule_changed'
+  | 'session_cancelled'
+  | 'course_granted'
+  | 'class_announcement'
+  | 'announcement_pinned'
+  | 'order_pending'
+  | 'forum_question'
+  | 'forum_question_created'
+  | 'forum_answer'
+  | 'forum_answer_posted'
+  | 'forum_answer_accepted'
+  | 'course_request_pending'
+  | 'course_request_reviewed';
+
+export interface KtnNotification {
+  id: string;
+  eventId?: string;
+  type: NotificationType;
+  classCode?: string;
+  roomId?: string;
+  messageId?: string;
+  homeworkId?: string;
+  courseId?: string;
+  unitId?: string;
+  questionId?: string;
+  lessonNum?: number;
+  sessionNum?: number;
+  sessionDate?: string;
+  teacherName?: string;
+  title: string;
+  body: string;
+  actionUrl: string;
+  actionLabel?: string;
+  priority?: 'high' | 'normal';
+  coalescedCount?: number;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface UserNotificationSettings {
+  chat: boolean;
+  homework: boolean;
+  grades?: boolean;
+  schedule: boolean;
+  important: boolean;
+  reminder10Min: boolean;
+  forumPushMode?: 'immediate' | 'digest' | 'off';
+  updatedAt?: string | null;
+}
+
+export type AccountStatus = 'ready_to_login' | 'pending_activation' | 'error' | 'active' | 'suspended' | 'archived' | 'deleted';
+export type SyncStatus = 'synced' | 'pending_activation' | 'partial_failure' | 'sync_failed' | 'drift_detected';
+
+export interface KtnStudentRecord {
+  code: string;
+  email: string;
+  name: string;
+  parent_name?: string;
+  phone?: string;
+  cognito_user_id?: string | null;
+  izteach_student_id?: string | null;
+  class_code: string | null;
+  enrolledClasses?: string[];
+  has_live_class: boolean;
+  has_online_courses: boolean;
+  online_courses: OnlineCourseEntitlement[];
+  studentCase: StudentCase;
+  accountStatus?: AccountStatus | string;
+  syncStatus?: SyncStatus | string;
+  account_status?: AccountStatus | string;
+  sync_status?: SyncStatus | string;
+  lifecycleStatus?: 'active' | 'suspended' | 'archived' | 'deleted' | string;
+  lifecycleReason?: string | null;
+  lifecycleUpdatedAt?: string | null;
+  lifecycleUpdatedBy?: string | null;
+  readyToLogin?: boolean;
+  fullySynced?: boolean;
+  last_sync_error?: string | null;
+  internal_note?: string | null;
+  lead_source?: string | null;
+  zalo_user_id?: string | null;
+  consultation_id?: string | null;
+  assigned_advisor?: string | null;
+  updated_at?: string;
+}
+
+export interface KtnStudentSearchResult {
+  ok: boolean;
+  items: KtnStudentRecord[];
+  students: KtnStudentRecord[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+  query: string;
+  queryMs: number;
+}
+
+export interface KtnProvisionStudentResponse {
+  ok: boolean;
+  operationId: string;
+  idempotentReplay?: boolean;
+  syncStatus: string;
+  accountStatus: string;
+  accountProvisioned: boolean;
+  readyToLogin: boolean;
+  fullySynced: boolean;
+  accountCreated: boolean;
+  existingAccount: boolean;
+  credentialMode: string;
+  initialPassword?: string | null;
+  student: KtnStudentRecord;
+  message: string;
+}
+
+export interface KtnTeacherContributionEvent {
+  event_id: string;
+  teacher_id: string;
+  teacher_email: string;
+  teacher_name?: string;
+  question_id?: string | null;
+  answer_id?: string | null;
+  event_type:
+    | 'answer_created'
+    | 'helpful_vote'
+    | 'accepted_answer'
+    | 'video_attached'
+    | 'long_pending_resolved'
+    | 'admin_adjust'
+    | 'admin_revoke'
+    | string;
+  points_delta: number;
+  reason?: string;
+  verified_at?: string | null;
+  created_by_email?: string | null;
+  created_at: string;
+}
+
+export interface KtnTeacherPerformanceStats {
+  scheduledSessionsCount: number;
+  confirmedTaughtSessionsCount: number;
+  cancelledOrSubstituteSessionsCount: number;
+  unverifiedTeachingLog: boolean;
+  submissionsReviewedCount: number;
+  pendingGradingCount: number;
+  avgGradingHours: number | null;
+  forumAnswersCount: number;
+  acceptedAnswersCount: number;
+  videoAnswersCount: number;
+  totalContributionPoints: number;
+}
+
+export interface KtnTeacherRecord {
+  code: string;
+  name: string;
+  email: string;
+  phone?: string;
+  specialty?: string;
+  specialization?: string;
+  bio?: string;
+  notes?: string;
+  status?: 'active' | 'locked' | 'inactive' | string;
+  assigned_classes: string[];
+  assigned_courses?: string[];
+  active: boolean;
+  cognito_user_id?: string | null;
+  provisioningStatus?: string;
+  readyToLogin?: boolean;
+  syncStatus?: string;
+  managedStudentsCount?: number;
+  scheduledSessionsCount?: number;
+  recordedClassSessionsCount?: number;
+  activitySessionsCount?: number;
+  confirmedSessionsCount?: number;
+  attendanceConfirmedSessionsCount?: number;
+  teachingVerificationStatus?: 'verified' | 'unverified';
+  teachingVerificationLabel?: string;
+  gradedHomeworksCount?: number;
+  pendingHomeworksCount?: number;
+  avgGradingTurnaroundHours?: number | null;
+  forumAnswersCount?: number;
+  acceptedAnswersCount?: number;
+  forumAcceptedAnswersCount?: number;
+  helpfulVotesCount?: number;
+  videoGuidesCount?: number;
+  forumVideoAnswersCount?: number;
+  monthlyContributionPoints?: number;
+  totalContributionPoints?: number;
+  recentContributionEvents?: KtnTeacherContributionEvent[];
+  courseRequestsCount?: number;
+  pendingCourseRequestsCount?: number;
+  stats?: KtnTeacherPerformanceStats;
+}
+
+export interface KtnTeacherSearchResult {
+  ok: boolean;
+  items: KtnTeacherRecord[];
+  totalCount: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+}
+
+export type KtnStudentProfile = Partial<KtnStudentRecord> & {
+  email: string;
+  name: string;
+  code?: string;
+  class_code?: string | null;
+};
+
+export interface KtnForumAttachment {
+  id?: string;
+  name: string;
+  url: string;
+  type: 'image' | 'audio' | 'video' | 'pdf' | 'file' | string;
+  kind?: 'image' | 'audio' | 'video' | 'pdf' | 'file' | string;
+  size?: number;
+}
+
+export interface KtnForumAnswer {
+  id: string;
+  question_id: string;
+  author_email?: string;
+  author_name: string;
+  author_role: 'teacher' | 'admin' | 'student' | string;
+  teacher_id?: string | null;
+  teacher_email?: string | null;
+  teacher_name?: string;
+  teacher_title?: string;
+  content: string;
+  attachments?: KtnForumAttachment[];
+  video_url?: string | null;
+  video_duration_seconds?: number | null;
+  video_file_size?: number | null;
+  video_verified?: boolean;
+  is_accepted: boolean;
+  helpful_count: number;
+  viewerHasVotedHelpful?: boolean;
+  status?: 'visible' | 'hidden' | string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface KtnForumQuestion {
+  id: string;
+  course_id: string;
+  course_title?: string;
+  unit_id: string;
+  lesson_number?: number;
+  lesson_num?: number;
+  lesson_title_snapshot: string;
+  student_id: string;
+  student_email?: string;
+  student_name: string;
+  class_code?: string | null;
+  title: string;
+  content: string;
+  video_timestamp_seconds?: number | null;
+  video_timestamp_label?: string | null;
+  attachments?: KtnForumAttachment[];
+  status: 'open' | 'claimed' | 'answered' | 'resolved' | 'hidden';
+  claimed_by_email?: string | null;
+  claimed_by_name?: string | null;
+  claimed_by_teacher_id?: string | null;
+  claimed_by_teacher_name?: string | null;
+  claimed_at?: string | null;
+  accepted_answer_id?: string | null;
+  answers_count?: number;
+  answer_count?: number;
+  answersCount?: number;
+  answers?: KtnForumAnswer[];
+  isFollowing?: boolean;
+  followCount?: number;
+  isOwnQuestion?: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface KtnForumLeaderboardEntry {
+  teacherId: string;
+  teacherEmail: string;
+  teacherName: string;
+  title: string;
+  avatar?: string | null;
+  active: boolean;
+  totalPoints: number;
+  monthlyPoints: number;
+  answersCount: number;
+  acceptedAnswersCount: number;
+  helpfulVotesCount: number;
+  videoGuidesCount: number;
+  longPendingResolvedCount: number;
+  recentEvents: KtnTeacherContributionEvent[];
+}
+
+export interface KtnForumLeaderboardResponse {
+  ok: boolean;
+  month?: string;
+  leaderboard: KtnForumLeaderboardEntry[];
+}
+
+export interface KtnCourseGrantRequest {
+  id: string;
+  teacher_id: string;
+  teacher_email: string;
+  teacher_name: string;
+  student_id: string;
+  student_email: string;
+  student_name: string;
+  class_code: string;
+  course_id: string;
+  course_title: string;
+  requested_course_id?: string;
+  requested_course_title?: string;
+  requested_course_ids?: string[];
+  requested_course_titles?: string[];
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  reviewed_by_email?: string | null;
+  reviewed_at?: string | null;
+  review_note?: string;
+  entitlement_result?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface KtnVietQrPaymentInfo {
+  bankId: string;
+  bankName: string;
+  accountNo?: string;
+  accountNumber?: string;
+  accountName: string;
+  amount: number;
+  transferContent: string;
+  qrUrl: string;
+}
+
+export type OrderContactStatus =
+  | 'not_called'
+  | 'called'
+  | 'no_answer'
+  | 'callback'
+  | 'callback_scheduled';
+export type OrderPaymentDetailedStatus =
+  | 'unpaid'
+  | 'customer_reported'
+  | 'checking_tx'
+  | 'verifying_tx'
+  | 'verified_paid'
+  | 'refunded'
+  | 'mismatch'
+  | 'amount_mismatch';
+export type OrderAccountDetailedStatus =
+  | 'no_account'
+  | 'existing_account'
+  | 'pending_account_creation'
+  | 'pending_creation'
+  | 'activated'
+  | 'sync_error'
+  | 'awaiting_password_or_handoff'
+  | 'credentials_handed_off';
+export type StudentOrderTrackerStage =
+  | 'received'
+  | 'contacted'
+  | 'awaiting_payment'
+  | 'awaiting_payment_verification'
+  | 'payment_verified'
+  | 'activating'
+  | 'unlocked'
+  | 'needs_support';
+
+export interface KtnOrder {
+  order_id: string;
+  student_name: string;
+  parent_name?: string;
+  student_email: string;
+  raw_student_email?: string;
+  has_valid_email?: boolean;
+  phone: string;
+  parent_phone?: string;
+  zalo_url?: string | null;
+  course_id: string;
+  course_name: string;
+  amount: number;
+  server_course_price?: number;
+  course_valid?: boolean;
+  amount_valid?: boolean;
+  payment_method: string;
+  payment_status: 'pending_verification' | 'paid' | 'refunded' | 'cancelled';
+  approval_status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  note?: string;
+  customer_note?: string;
+  contact_status?: OrderContactStatus;
+  contact_note?: string;
+  consultation_note?: string;
+  contact_updated_at?: string | null;
+  contact_updated_by?: string | null;
+  payment_detailed_status?: OrderPaymentDetailedStatus;
+  payment_verified_by?: string | null;
+  payment_verified_at?: string | null;
+  payment_tx_ref?: string;
+  payment_received_amount?: number | null;
+  payment_proof_auto?: boolean;
+  source?:
+    | 'website'
+    | 'authenticated_student'
+    | 'zalo_oa'
+    | 'web_chat'
+    | 'messenger'
+    | 'consultation'
+    | string;
+  source_label?: string;
+  assigned_advisor?: string | null;
+  owner_email?: string | null;
+  consultation_id?: string | null;
+  zalo_user_id?: string | null;
+  can_activate?: boolean;
+  activation_block_reasons?: string[];
+  account_detailed_status?: OrderAccountDetailedStatus;
+  account_created?: boolean | null;
+  credential_handed_off?: boolean;
+  credential_handed_off_at?: string | null;
+  credential_handed_off_by?: string | null;
+  existing_student_code?: string | null;
+  existing_student_email?: string | null;
+  existing_student?: {
+    code?: string;
+    email?: string;
+    name?: string;
+    class_code?: string | null;
+    online_courses_count?: number;
+  } | null;
+  student_tracker_stage?: StudentOrderTrackerStage;
+  student_tracker_label?: string;
+  provisioning_status?: string;
+  provisioningStatus?: string;
+  duration_preset?: CourseDurationPreset;
+  durationPreset?: CourseDurationPreset;
+  duration_mode?: CourseDurationMode;
+  durationMode?: CourseDurationMode;
+  limit_time?: string | null;
+  limitTime?: string | null;
+  expires_at?: string | null;
+  expiresAt?: string | null;
+  assigned_user_id?: string | null;
+  assigned_student_id?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  created_at: string;
+  updated_at?: string;
+  paymentInfo?: KtnVietQrPaymentInfo | null;
+  payment_info?: KtnVietQrPaymentInfo | null;
+}
+
+export interface KtnSyncDriftItem {
+  id: string;
+  driftCode: string;
+  severity: 'error' | 'warning';
+  entityType: 'student' | 'order' | 'homework' | 'class' | string;
+  entityKey: string;
+  title: string;
+  detail: string;
+  studentName?: string;
+  studentEmail?: string;
+  reason?: string;
+  retryAction?: {
+    type:
+      | 'student_sync'
+      | 'student_provision'
+      | 'teacher_provision'
+      | 'order_approve'
+      | 'homework_sync'
+      | 'course_duration'
+      | 'bulk_sync';
+    email?: string;
+    orderId?: string;
+    homeworkId?: string;
+    courseId?: string;
+    preset?: CourseDurationPreset;
+    mode?: CourseDurationMode;
+  };
+}
+
+export interface KtnSyncStatusResponse {
+  ok: boolean;
+  checkedAt: string;
+  summary: {
+    totalStudents: number;
+    healthyCount: number;
+    needsResyncCount: number;
+    manualReviewCount: number;
+    driftTotal: number;
+    totalDriftItems?: number;
+  };
+  driftItems: KtnSyncDriftItem[];
+}
+
+export interface KtnAttendanceRecord {
+  id: string;
+  class_code: string;
+  session_num: number;
+  student_email: string;
+  student_name: string;
+  status: 'present' | 'absent_excused' | 'absent_unexcused' | 'late' | 'excused' | 'absent';
+  note?: string;
+  recorded_by?: string;
+  session_date?: string;
+  updated_at?: string;
+}
+
+export interface KtnAttendanceResponse {
+  ok: boolean;
+  classCode: string;
+  sessionNum: number | null;
+  records: KtnAttendanceRecord[];
+  attendance?: KtnAttendanceRecord[];
+  summary: {
+    total: number;
+    present: number;
+    late: number;
+    absent?: number;
+    excused?: number;
+    absentExcused: number;
+    absentUnexcused: number;
+  };
+}
+
+export type ConsultationChannel = 'web' | 'messenger' | 'zalo_oa';
+export type ConsultationStatus = 'bot' | 'waiting' | 'open' | 'closed';
+export type ConsultationOutcome = 'registered' | 'declined' | 'no_response' | 'other';
+export type ConsultationSender =
+  | 'customer'
+  | 'bot'
+  | 'advisor'
+  | 'manager'
+  | 'external'
+  | 'system'
+  | 'note';
+export type ConsultationDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed';
+export type ConsultationFlagCategory = 'price' | 'promotion' | 'fit';
+export type ConsultationFlagStatus = 'pending' | 'confirmed' | 'dismissed';
+export type ConsultationAdvisorRole = 'advisor' | 'manager';
+export type SepayReconciliationKind =
+  | 'unmatched'
+  | 'unknown_order'
+  | 'account_mismatch'
+  | 'mismatch'
+  | 'duplicate'
+  | 'needs_review'
+  | 'accepted';
+export type SepayReconciliationResolutionStatus = 'open' | 'resolved' | 'ignored';
+
+export interface ConsultationActor {
+  email: string;
+  name: string;
+  admin: boolean;
+  role?: ConsultationAdvisorRole;
+}
+
+export interface ConsultationAdvisor {
+  email: string;
+  name: string;
+  active: boolean;
+  role?: ConsultationAdvisorRole;
+  ktn_user_id?: string | null;
+  has_custom_password?: boolean;
+  updated_at?: string;
+}
+
+export interface ConsultationLeadMeta {
+  target_learner?: string;
+  age?: number | string;
+  goal?: string;
+  background?: string;
+  timeslot?: string;
+  ad_source?: string;
+  menu_state?: string;
+  flow_step?: string;
+  recommended_course_id?: string;
+  [key: string]: unknown;
+}
+
+export interface ConsultationQuickReply {
+  id: string;
+  label: string;
+  payload?: string;
+  action?: string;
+}
+
+export interface ConsultationInboxItem {
+  id: string;
+  channel: ConsultationChannel;
+  external_id?: string | null;
+  owner_email?: string | null;
+  status: ConsultationStatus;
+  outcome?: ConsultationOutcome | null;
+  follow_up_at?: string | null;
+  queued_at?: string | null;
+  first_reply_at?: string | null;
+  last_customer_at?: string | null;
+  last_reply_at?: string | null;
+  next_review_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  reply_pending: boolean;
+  has_paid_pending: boolean;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  zalo_user_id?: string | null;
+  source_tag?: string | null;
+  lead_meta?: ConsultationLeadMeta | null;
+  student_code?: string | null;
+  last_message_preview?: string;
+  last_message_sender?: ConsultationSender | null;
+}
+
+export type ConsultationThread = Omit<
+  ConsultationInboxItem,
+  'reply_pending' | 'has_paid_pending'
+> & {
+  reply_pending?: boolean;
+  has_paid_pending?: boolean;
+};
+
+export interface ConsultationMessage {
+  id: string;
+  consultation_id?: string;
+  sender: ConsultationSender;
+  actor_email?: string | null;
+  body: string;
+  external_id?: string | null;
+  delivery?: ConsultationDeliveryStatus;
+  delivery_note?: string | null;
+  claimed_at?: string | null;
+  created_at: string;
+  ai_mode?: 'live' | 'simulated' | 'scripted' | string;
+  bot_mode?: 'scripted' | 'ai' | 'simulated' | 'handoff' | string;
+  menu_options?: ConsultationQuickReply[];
+  quick_replies?: ConsultationQuickReply[];
+}
+
+export interface ConsultationEvent {
+  id: number | string;
+  consultation_id: string;
+  actor_email?: string | null;
+  kind: string;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ConsultationFlag {
+  message_id: string;
+  consultation_id: string;
+  category: ConsultationFlagCategory;
+  reason: string;
+  excerpt: string;
+  status: ConsultationFlagStatus;
+  reviewed_by?: string | null;
+  review_note?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+}
+
+export interface ConsultationThreadOrderLink {
+  order_id: string;
+  owner_email?: string | null;
+  payment_info?: KtnVietQrPaymentInfo | null;
+  paymentInfo?: KtnVietQrPaymentInfo | null;
+  ktn_orders?: {
+    course_name: string;
+    amount: number;
+    payment_status: string;
+    approval_status: string;
+    ktn_consultation_payments?: Array<{
+      transaction_id: string;
+      amount: number;
+      status: string;
+      error?: string | null;
+    }>;
+  };
+}
+
+export interface ConsultationExample {
+  question: string;
+  answer: string;
+  hints: string[];
+}
+
+export interface ConsultationBotFlowBranch {
+  label: string;
+  reply: string;
+  course_id?: string;
+}
+
+export interface ConsultationBotFlow {
+  welcome_message: string;
+  root_buttons: {
+    kids: string;
+    adult: string;
+    trial: string;
+    handoff: string;
+  };
+  kids_intro: string;
+  kids_branches: {
+    age_4_6: ConsultationBotFlowBranch;
+    age_7_11: ConsultationBotFlowBranch;
+    age_12_15: ConsultationBotFlowBranch;
+  };
+  adult_intro: string;
+  adult_branches: {
+    office: ConsultationBotFlowBranch;
+    trade: ConsultationBotFlowBranch;
+    hsk: ConsultationBotFlowBranch;
+  };
+  trial_intro: string;
+  trial_video: ConsultationBotFlowBranch;
+  trial_live: ConsultationBotFlowBranch;
+}
+
+export interface ConsultationGuidanceConfig {
+  id?: string;
+  course_ids: string[];
+  duration_presets: Record<string, CourseDurationPreset>;
+  policy: string;
+  examples: ConsultationExample[];
+  bot_flow?: ConsultationBotFlow;
+  bot_enabled: boolean;
+  checkout_enabled: boolean;
+  updated_by?: string | null;
+  updated_at?: string;
+}
+
+export interface ConsultationCatalogCourse {
+  id: string;
+  title: string;
+  price: number;
+  duration?: string;
+  ageGroup?: string;
+  description?: string;
+}
+
+export interface ConsultationReportResponse {
+  start: string;
+  end: string;
+  responseMinutes: number | null;
+  conversations: ConsultationInboxItem[];
+  assigned: Array<{
+    consultation_id: string;
+    owner_email: string;
+    channel: ConsultationChannel;
+    assigned_at: string;
+  }>;
+  overdue: Array<{
+    id: string;
+    channel: ConsultationChannel;
+    owner_email?: string | null;
+    follow_up_at: string;
+  }>;
+  flags: Array<{
+    message_id: string;
+    consultation_id: string;
+    category: ConsultationFlagCategory;
+    reviewed_at: string;
+    ktn_consultations?: { channel: ConsultationChannel };
+    ktn_consultation_messages?: { actor_email?: string | null };
+  }>;
+  paid: Array<{
+    order_id: string;
+    consultation_id: string;
+    owner_email?: string | null;
+    channel: ConsultationChannel;
+    course_name: string;
+    amount: number;
+    approval_status: string;
+    paid_at: string;
+  }>;
+  revenue: number;
+}
+
+export interface SepayReconciliationLog {
+  id: string;
+  transaction_id: string;
+  order_id?: string | null;
+  claimed_order_code?: string | null;
+  consultation_id?: string | null;
+  kind: SepayReconciliationKind;
+  amount: number;
+  expected_amount?: number | null;
+  account_number?: string | null;
+  transfer_content?: string | null;
+  raw_payload?: Record<string, unknown>;
+  resolution_status: SepayReconciliationResolutionStatus;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  resolution_note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type KtnSepayReconciliationLog = SepayReconciliationLog;
+
+

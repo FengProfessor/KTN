@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/icons/icon-192.png" />
+    <title>Kiểm thử DRM video | KTN</title>
+    <style>
+      body { margin: 1rem auto; padding: 0 1rem; max-width: 48rem; font: 1rem system-ui; color: #292524; }
+      h1 { color: #991b1b; }
+      form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+      select, button { font: inherit; min-height: 44px; max-width: 100%; padding: 0.4rem; }
+      video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Kiểm thử POC Multi-DRM video KTN</h1>
+      <p>
+        <strong>Lưu ý QA:</strong> Trang này dùng stream mẫu công khai (EZDRM/Shaka/PlayReady test) để đo EME và thử quay màn hình trên thiết bị thật — <strong>KHÔNG</strong> phải license server production cho khóa học thật.
+      </p>
+      <pre id="capabilities" data-testid="drm-capabilities-report" style="background:#f5f5f4;padding:0.75rem;border-radius:0.5rem;overflow:auto;font-size:0.85rem;">Đang đo EME capability...</pre>
+      <form>
+        <label for="level">DRM</label>
+        <select id="level" name="level">
+          <option value="fairplay">FairPlay · Safari</option>
+          <option value="widevine-hardware">Widevine · Phần cứng</option>
+          <option value="widevine-software">Widevine · Phần mềm</option>
+          <option value="3000">PlayReady SL3000 · Phần cứng</option>
+          <option value="2000">PlayReady SL2000 · Phần mềm</option>
+        </select>
+        <button type="submit">Nạp video</button>
+      </form>
+      <p id="status" role="status">Chọn mức bảo vệ và nạp video.</p>
+      <video controls playsinline aria-label="Video mẫu DRM"></video>
+    </main>
+    <script type="module" src="./drm.ts"></script>
+  </body>
+</html>

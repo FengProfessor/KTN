@@ -1,0 +1,230 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --ktn-primary: #991b1b;
+    --ktn-bg: #faf8f5;
+    --ktn-surface: #ffffff;
+  }
+
+  html,
+  body {
+    font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #faf8f5;
+    color: #18181b;
+    overflow-x: hidden;
+  }
+
+  *:focus-visible {
+    outline: 2px solid #991b1b;
+    outline-offset: 2px;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* 3D Card Flip utilities for Chinese Interactive Games */
+.perspective-800,
+.perspective-\[800px\] {
+  perspective: 1200px;
+}
+
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* Procedural shake animation for Zombie Defender & Error States */
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-6px);
+  }
+  40%, 80% {
+    transform: translateX(6px);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.35s ease-in-out;
+}
+
+/* Modal fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Balloon Pop shard burst & floating badge animations */
+@keyframes balloonShardBurst {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--shard-tx, 0px), var(--shard-ty, 0px)) rotate(var(--shard-rot, 0deg)) scale(0.3);
+    opacity: 0;
+  }
+}
+
+.animate-balloon-shard {
+  animation: balloonShardBurst 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes balloonBadgeFloat {
+  0% {
+    transform: translateY(0) scale(0.85);
+    opacity: 0.95;
+  }
+  45% {
+    transform: translateY(-10px) scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-18px) scale(1.02);
+    opacity: 0;
+  }
+}
+
+.animate-balloon-badge {
+  animation: balloonBadgeFloat 440ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Authentic Chinese textbook/flashcard typography */
+.font-hanzi {
+  font-family: 'Noto Serif SC', 'Kaiti SC', 'STKaiti', 'KaiTi', 'Songti SC', 'SimSun', serif;
+  font-feature-settings: 'kern' 1;
+  font-variant-east-asian: simplified;
+  letter-spacing: 0.02em;
+}
+
+/* Cute Qing Jiangshi hop animation for Zombie Defender */
+@keyframes jiangshiHop {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  45% {
+    transform: translateY(-7px) rotate(-2deg);
+  }
+  75% {
+    transform: translateY(-2px) rotate(1.5deg);
+  }
+}
+
+.animate-jiangshi-hop {
+  animation: jiangshiHop 0.72s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
+}
+
+/* Projectile bolt & Jiangshi seal-banish GPU-composited animations */
+@keyframes zombieBoltFly {
+  0% {
+    transform: translate3d(var(--bolt-from-x, -140px), -50%, 0) scaleX(0.75);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate3d(0, -50%, 0) scaleX(1);
+    opacity: 1;
+  }
+}
+
+.animate-zombie-bolt {
+  animation: zombieBoltFly 140ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes jiangshiBanish {
+  0% {
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1) rotate(0deg);
+    opacity: 1;
+  }
+  30% {
+    transform: translate3d(12px, -16px, 0) scale3d(1.08, 1.08, 1) rotate(18deg);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(28px, -34px, 0) scale3d(0.18, 0.18, 1) rotate(32deg);
+    opacity: 0;
+  }
+}
+
+.animate-jiangshi-banish {
+  animation: jiangshiBanish 480ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Floating score / combo / time bonus popup */
+@keyframes scoreFloatUp {
+  0% {
+    transform: translate(-50%, 6px) scale(0.8);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-50%, -4px) scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -26px) scale(0.98);
+    opacity: 0;
+  }
+}
+
+.animate-score-float {
+  animation: scoreFloatUp 780ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Celebratory confetti particles in GameResultModal */
+@keyframes confettiFall {
+  0% {
+    transform: translateY(-10px) rotate(0deg) scale(0.85);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(110px) rotate(240deg) scale(0.75);
+    opacity: 0;
+  }
+}
+
+.animate-confetti {
+  animation: confettiFall 2.1s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

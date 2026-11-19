@@ -1,0 +1,584 @@
+{
+  "reportId": "KTN-AGENT-E-REAL-WORLD-QA-SMOKE-2026-11-10",
+  "generatedAt": "2026-11-10T00:59:00.741Z",
+  "gitWorkspace": {
+    "repository": "FengProfessor/KTN",
+    "branch": "feat/ktn-react-ui-v2",
+    "headShaFull": "cd1f6c533db59d630f1170f7dc159abc7ad0a4fb",
+    "headShaShort": "cd1f6c5"
+  },
+  "environmentClassification_E1": {
+    "LOCAL": {
+      "type": "Vite + Embedded Node VM Worker Mock",
+      "command": "npm --prefix apps/ktn-web-v2 run dev / test:e2e",
+      "backend": "apps/ktn-web-v2/server/local-worker-middleware.mjs (in-memory 1,043 synthetic students + mock PostgREST/izTeach/S3)",
+      "isProductionE2E": false,
+      "localE2EResultOnHead_cd1f6c5": "115/115 PASS (docs/ui-v2/e2e-verification-report.json)"
+    },
+    "STAGING_PREVIEW": {
+      "type": "Static S3/CloudFront Bundle + Custom Page Preview / Cloudflare Worker",
+      "deployTool": "deploy_ktn_react_v2_izteach.cjs",
+      "dryRunManifestSha": "b6a3242",
+      "dryRunManifestCdnHttpStatus": 403,
+      "liveCdnBundle_9b86014_HttpStatus": 200,
+      "liveCdnBundle_b1cb988_HttpStatus": 200,
+      "productionCustomPageGuard": "PROTECTED_PRODUCTION_PAGE_IDS blocks overwrite of 6adff7ba36309b0002b6e659 (so-lien-lac-test) unless --page-id=<preview_id> or explicit owner override (--allow-prod-page-overwrite + KTN_ALLOW_PROD_CUSTOM_PAGE_OVERWRITE=true)"
+    },
+    "PRODUCTION_SMOKE": {
+      "homepageUrl": "https://khongtunhi.com",
+      "liveTestPageUrl": "https://khongtunhi.com/custom-page/so-lien-lac-test",
+      "customPageId": "6adff7ba36309b0002b6e659",
+      "liveFrontendReleaseTag": "v3.0.1-p0-hotfix",
+      "liveFrontendCommitSha": "9b86014",
+      "liveFrontendFullCommit": "9b86014b099daeda536f213b3b25fa9407d37bb1 (2026-11-09 11:13:59 +0700)",
+      "liveWorkerActiveVersionId": "a42224e2-def6-4afd-97f3-e47bf32afbae (deployed 2026-11-09T04:25:28.393Z)",
+      "liveWorkerPreviousVersionId": "eede38d2-37f9-4eea-acca-53c22ec4029c (deployed 2026-11-09T04:12:44.847Z)",
+      "commitsAheadInRepoNotYetDeployedToLive": 10,
+      "undeployedCommits": [
+        "ab02798",
+        "f469f99",
+        "5bd791b",
+        "0e31b56",
+        "51a09d9",
+        "d5b314e",
+        "b6a3242",
+        "40c5200",
+        "534e459",
+        "a11f9fe",
+        "cd1f6c5"
+      ]
+    }
+  },
+  "credentialsAndDeployReadiness": {
+    "envFilePresent": true,
+    "presentKeys": [
+      "IZTEACH_ADMIN_PASSWORD",
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_PUBLISHABLE_KEY",
+      "CLOUDFLARE_API_TOKEN",
+      "KTN_STAFF_AND_TEST_PASSWORD",
+      "KTN_E2E_PASSWORD",
+      "KTN_E2E_STUDENT_A_EMAIL",
+      "KTN_E2E_STUDENT_B_EMAIL",
+      "KTN_E2E_TEACHER_A_EMAIL",
+      "KTN_E2E_TEACHER_B_EMAIL",
+      "VAPID_PUBLIC_KEY",
+      "VAPID_PRIVATE_KEY"
+    ],
+    "missingKeys": [
+      "DATABASE_URL",
+      "PREVIEW_CUSTOM_PAGE_ID"
+    ],
+    "wranglerAuthenticated": true,
+    "wranglerAccountEmail": "hocvienkhongtunhi123@gmail.com",
+    "supabaseRestServiceRoleReady": true,
+    "directPostgresSqlConnectionReady": false
+  },
+  "browserChecks_E2": {
+    "homepage": {
+      "360": {
+        "url": "https://khongtunhi.com",
+        "status": 200,
+        "loadMs": 1996.8,
+        "htmlBytes": 972086,
+        "title": "Học Viện Khổng Tử Nhí - Tiếng Trung Cho Trẻ Em 5-17 Tuổi",
+        "hasReactRoot": false,
+        "rootChildren": 0,
+        "release": null,
+        "commit": null,
+        "winVer": null,
+        "winSha": null,
+        "hasLegacyDom": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "overflow": false,
+        "cdnAssets": [],
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedRequests": [],
+        "screenshot": "docs/ui-v2/screenshots/live-smoke/01-home-360.png"
+      },
+      "390": {
+        "url": "https://khongtunhi.com",
+        "status": 200,
+        "loadMs": 2024.7,
+        "htmlBytes": 972114,
+        "title": "Học Viện Khổng Tử Nhí — Tiếng Trung Cho Trẻ Em 5–17 Tuổi",
+        "hasReactRoot": false,
+        "rootChildren": 0,
+        "release": null,
+        "commit": null,
+        "winVer": null,
+        "winSha": null,
+        "hasLegacyDom": false,
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "overflow": false,
+        "cdnAssets": [],
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedRequests": [],
+        "screenshot": "docs/ui-v2/screenshots/live-smoke/01-home-390.png"
+      },
+      "1440": {
+        "url": "https://khongtunhi.com",
+        "status": 200,
+        "loadMs": 2235.8,
+        "htmlBytes": 1009530,
+        "title": "Học Viện Khổng Tử Nhí — Tiếng Trung Cho Trẻ Em 5–17 Tuổi",
+        "hasReactRoot": false,
+        "rootChildren": 0,
+        "release": null,
+        "commit": null,
+        "winVer": null,
+        "winSha": null,
+        "hasLegacyDom": false,
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "overflow": false,
+        "cdnAssets": [],
+        "consoleErrors": [
+          "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi"
+        ],
+        "pageErrors": [],
+        "failedRequests": [],
+        "screenshot": "docs/ui-v2/screenshots/live-smoke/01-home-1440.png"
+      }
+    },
+    "customPage": {
+      "360": {
+        "url": "https://khongtunhi.com/custom-page/so-lien-lac-test",
+        "status": 200,
+        "loadMs": 3230.9,
+        "htmlBytes": 603483,
+        "title": "Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí",
+        "hasReactRoot": true,
+        "rootChildren": 1,
+        "release": "v3.0.1-p0-hotfix",
+        "commit": "9b86014",
+        "winVer": "v3.0.1-p0-hotfix",
+        "winSha": "9b86014",
+        "hasLegacyDom": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "overflow": false,
+        "cdnAssets": [
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/index-CNTxUVAM.css",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/index-CrquaiGR.js",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/vendor-icons-BM2nc7vQ.js",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/vendor-react-BlLtgFfH.js",
+            "status": 200
+          }
+        ],
+        "consoleErrors": [
+          "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi"
+        ],
+        "pageErrors": [],
+        "failedRequests": [],
+        "screenshot": "docs/ui-v2/screenshots/live-smoke/02-sll-login-360.png"
+      },
+      "390": {
+        "url": "https://khongtunhi.com/custom-page/so-lien-lac-test",
+        "status": 200,
+        "loadMs": 3177.3,
+        "htmlBytes": 603472,
+        "title": "Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí",
+        "hasReactRoot": true,
+        "rootChildren": 1,
+        "release": "v3.0.1-p0-hotfix",
+        "commit": "9b86014",
+        "winVer": "v3.0.1-p0-hotfix",
+        "winSha": "9b86014",
+        "hasLegacyDom": false,
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "overflow": false,
+        "cdnAssets": [
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/index-CNTxUVAM.css",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/vendor-icons-BM2nc7vQ.js",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/vendor-react-BlLtgFfH.js",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/index-CrquaiGR.js",
+            "status": 200
+          }
+        ],
+        "consoleErrors": [
+          "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi"
+        ],
+        "pageErrors": [],
+        "failedRequests": [],
+        "screenshot": "docs/ui-v2/screenshots/live-smoke/02-sll-login-390.png"
+      },
+      "1440": {
+        "url": "https://khongtunhi.com/custom-page/so-lien-lac-test",
+        "status": 200,
+        "loadMs": 3195.3,
+        "htmlBytes": 603472,
+        "title": "Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí",
+        "hasReactRoot": true,
+        "rootChildren": 1,
+        "release": "v3.0.1-p0-hotfix",
+        "commit": "9b86014",
+        "winVer": "v3.0.1-p0-hotfix",
+        "winSha": "9b86014",
+        "hasLegacyDom": false,
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "overflow": false,
+        "cdnAssets": [
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/vendor-icons-BM2nc7vQ.js",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/index-CNTxUVAM.css",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/index-CrquaiGR.js",
+            "status": 200
+          },
+          {
+            "url": "https://d21acfi38wn3iy.cloudfront.net/resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-p0-hotfix-9b86014/assets/vendor-react-BlLtgFfH.js",
+            "status": 200
+          }
+        ],
+        "consoleErrors": [
+          "Failed to get token FirebaseError: Messaging: The notification permission was not granted and blocked instead. (messaging/permission-blocked).\n    at getToken$1 (https://khongtunhi"
+        ],
+        "pageErrors": [],
+        "failedRequests": [],
+        "screenshot": "docs/ui-v2/screenshots/live-smoke/02-sll-login-1440.png"
+      }
+    },
+    "roles": {
+      "student": {
+        "account": "e2e.hs.a@khongtunhi.com",
+        "loginMs": 5891.5,
+        "hasStudentHome": true,
+        "hasTeacherHome": false,
+        "hasAdminHome": false,
+        "navText": [
+          "Trang chủ",
+          "Học tiếp",
+          "Lớp học",
+          "Tin nhắn",
+          "Thông báo",
+          "Trang chủ",
+          "Học",
+          "Lớp",
+          "Tin nhắn",
+          "Thông báo"
+        ],
+        "video": {
+          "found": true,
+          "readyState": 4,
+          "videoWidth": 858,
+          "videoHeight": 480,
+          "duration": 814.98,
+          "currentTime": 0.4,
+          "ttffMs": 2181.3,
+          "hasForumTabOnLive": false,
+          "m3u8Status": 200,
+          "tsStatus": 200,
+          "hlsErrorCount": 0
+        },
+        "mobile390": {
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "overflow": false
+        },
+        "mobile360": {
+          "scrollWidth": 360,
+          "innerWidth": 360,
+          "overflow": false
+        }
+      },
+      "teacher": {
+        "account": "linh.lam@khongtunhi.com",
+        "loginMs": 3828.3,
+        "hasTeacherWorkspace": false,
+        "hasAdminHome": false,
+        "hasOnboardingBtnOnLive": false,
+        "hasForumTabOnLive": false,
+        "navText": [
+          "Tổng quan",
+          "Lớp của tôi",
+          "Chấm bài",
+          "Giao bài",
+          "Tin nhắn",
+          "Thông báo",
+          "Tổng quan",
+          "Lớp",
+          "Chấm bài",
+          "Tin nhắn",
+          "Thông báo"
+        ],
+        "mobile390": {
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "overflow": false
+        }
+      },
+      "admin": {
+        "account": "quanly@khongtunhi.com",
+        "loginMs": 3586.5,
+        "hasAdminStudents": true,
+        "studentRowsRendered": 20,
+        "hasStudentDetailDrawerTriggerOnLive": false,
+        "hasCourseRequestsOnLive": false,
+        "navText": [
+          "Tổng quan",
+          "Học viên",
+          "Lớp học",
+          "Đơn hàng2",
+          "Đồng bộ",
+          "Tin nhắn",
+          "Thông báo2",
+          "Tổng quan",
+          "Học viên",
+          "Lớp",
+          "Đơn hàng2",
+          "Thêm"
+        ],
+        "mobile390": {
+          "scrollWidth": 390,
+          "innerWidth": 390,
+          "overflow": false
+        }
+      }
+    }
+  },
+  "screenshots": [
+    "docs/ui-v2/screenshots/live-smoke/01-home-1440.png",
+    "docs/ui-v2/screenshots/live-smoke/01-home-360.png",
+    "docs/ui-v2/screenshots/live-smoke/01-home-390.png",
+    "docs/ui-v2/screenshots/live-smoke/02-sll-login-1440.png",
+    "docs/ui-v2/screenshots/live-smoke/02-sll-login-360.png",
+    "docs/ui-v2/screenshots/live-smoke/02-sll-login-390.png",
+    "docs/ui-v2/screenshots/live-smoke/03-student-home-1440.png",
+    "docs/ui-v2/screenshots/live-smoke/04-student-video-1440.png",
+    "docs/ui-v2/screenshots/live-smoke/05-student-learning-390.png",
+    "docs/ui-v2/screenshots/live-smoke/06-student-learning-360.png",
+    "docs/ui-v2/screenshots/live-smoke/07-teacher-home-1440.png",
+    "docs/ui-v2/screenshots/live-smoke/08-teacher-classes-1440.png",
+    "docs/ui-v2/screenshots/live-smoke/09-teacher-classes-390.png",
+    "docs/ui-v2/screenshots/live-smoke/10-admin-home-1440.png",
+    "docs/ui-v2/screenshots/live-smoke/11-admin-students-1440.png",
+    "docs/ui-v2/screenshots/live-smoke/12-admin-students-390.png"
+  ],
+  "authSmokeChecks": {
+    "admin": {
+      "email": "quanly@khongtunhi.com",
+      "status": 200,
+      "ok": true,
+      "ms": 4377.4,
+      "role": "admin"
+    },
+    "teacherA": {
+      "email": "linh.lam@khongtunhi.com",
+      "status": 200,
+      "ok": true,
+      "ms": 4977,
+      "role": "teacher"
+    },
+    "teacherB": {
+      "email": "thu.ha@khongtunhi.com",
+      "status": 200,
+      "ok": true,
+      "ms": 5206.5,
+      "role": "teacher"
+    },
+    "studentA": {
+      "email": "e2e.hs.a@khongtunhi.com",
+      "status": 200,
+      "ok": true,
+      "ms": 6008.3,
+      "role": "student",
+      "classCode": "YCT2-04"
+    },
+    "studentB": {
+      "email": "e2e.hs.b@khongtunhi.com",
+      "status": 200,
+      "ok": true,
+      "ms": 6383.5,
+      "role": "student",
+      "classCode": null
+    }
+  },
+  "workerEndpointProbes": [
+    {
+      "ep": "/api/ktn/auth/session",
+      "role": "admin",
+      "status": 200,
+      "ok": true,
+      "ms": 241.7
+    },
+    {
+      "ep": "/api/ktn/courses",
+      "role": "public",
+      "status": 200,
+      "ok": true,
+      "ms": 271.5
+    },
+    {
+      "ep": "/api/ktn/courses/units?courseId=6adadba969897b0002482ca5",
+      "role": "studentA",
+      "status": 200,
+      "ok": true,
+      "ms": 1249.8
+    },
+    {
+      "ep": "/api/ktn/students/me",
+      "role": "studentA",
+      "status": 200,
+      "ok": true,
+      "ms": 578.4
+    },
+    {
+      "ep": "/api/ktn/admin/students/search?q=ngan&limit=5",
+      "role": "admin",
+      "status": 200,
+      "ok": true,
+      "ms": 1388.7
+    },
+    {
+      "ep": "/api/ktn/classes",
+      "role": "admin",
+      "status": 200,
+      "ok": true,
+      "ms": 1032.8
+    },
+    {
+      "ep": "/api/ktn/teachers",
+      "role": "admin",
+      "status": 200,
+      "ok": true,
+      "ms": 687.7
+    },
+    {
+      "ep": "/api/ktn/homeworks",
+      "role": "teacherA",
+      "status": 200,
+      "ok": true,
+      "ms": 1815
+    },
+    {
+      "ep": "/api/ktn/messages/rooms",
+      "role": "studentA",
+      "status": 200,
+      "ok": true,
+      "ms": 1471.8
+    },
+    {
+      "ep": "/api/ktn/messages?roomId=class:YCT2-04",
+      "role": "studentA",
+      "status": 200,
+      "ok": true,
+      "ms": 1317.3
+    },
+    {
+      "ep": "/api/ktn/messages?roomId=course:6adadba969897b0002482ca5",
+      "role": "studentA_entitled",
+      "status": 200,
+      "ok": true,
+      "ms": 972.3
+    },
+    {
+      "ep": "/api/ktn/messages?roomId=course:6adadba969897b0002482ca5",
+      "role": "teacherA",
+      "status": 200,
+      "ok": true,
+      "ms": 818.6,
+      "note": "Live Worker 9b86014 allows active teacher into course:* without checking course assignment"
+    },
+    {
+      "ep": "/api/ktn/messages?roomId=course:6adadba969897b0002482ca5",
+      "role": "studentB_revoked_in_db",
+      "status": 200,
+      "ok": true,
+      "ms": 1316.4,
+      "note": "Live Worker 9b86014 still allows studentB due to stale session/izTeach fallback (fixed in commit a11f9fe, not yet deployed)"
+    },
+    {
+      "ep": "/api/ktn/notifications",
+      "role": "studentA",
+      "status": 200,
+      "ok": true,
+      "ms": 1915.8
+    },
+    {
+      "ep": "/api/ktn/admin/sync-status",
+      "role": "admin",
+      "status": 200,
+      "ok": true,
+      "ms": 1388.2
+    },
+    {
+      "ep": "/api/ktn/push/vapid-public-key",
+      "role": "public",
+      "status": 200,
+      "ok": true,
+      "ms": 130.4
+    },
+    {
+      "ep": "/api/ktn/push/diagnostics",
+      "role": "admin",
+      "status": 200,
+      "ok": true,
+      "ms": 834.7
+    },
+    {
+      "ep": "/api/ktn/forum/questions?courseId=6adadba969897b0002482ca5",
+      "role": "studentA",
+      "status": 404,
+      "ok": false,
+      "ms": 181.4,
+      "note": "Master Upgrade cd1f6c5 route NOT_DEPLOYED on live Worker 9b86014"
+    },
+    {
+      "ep": "/api/ktn/forum/leaderboard",
+      "role": "teacherA",
+      "status": 404,
+      "ok": false,
+      "ms": 161.6,
+      "note": "Master Upgrade cd1f6c5 route NOT_DEPLOYED on live Worker 9b86014"
+    },
+    {
+      "ep": "/api/ktn/course-requests",
+      "role": "admin",
+      "status": 404,
+      "ok": false,
+      "ms": 293.6,
+      "note": "Master Upgrade cd1f6c5 route NOT_DEPLOYED on live Worker 9b86014"
+    },
+    {
+      "ep": "/api/ktn/admin/audit-logs",
+      "role": "admin",
+      "status": 404,
+      "ok": false,
+      "ms": 159.3,
+      "note": "Master Upgrade cd1f6c5 route NOT_DEPLOYED on live Worker 9b86014"
+    }
+  ]
+}

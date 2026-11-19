@@ -168,13 +168,46 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{opacity:.55;cur
 .admin-modal-drawer::backdrop{background:rgba(15,23,42,0.45);backdrop-filter:blur(2px)}
 .drawer-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:12px}
 .drawer-header h2{font-size:16px;font-weight:800;color:var(--text)}
-@media (max-width: 768px){.iz-sidebar{display:none}.iz-crm-wrapper{flex-direction:column}}
+#role-intro{display:none!important}
+@media (max-width: 768px){.iz-sidebar{display:none}.iz-crm-wrapper{flex-direction:column}.app-main{padding:10px}.subtab-nav{overflow-x:auto;white-space:nowrap;padding:0 10px}.subtab-btn{padding:10px 10px;font-size:13px}.hw-card{padding:12px}}
 </style>
 <link rel="stylesheet" href="so-lien-lac-ux.css">
 <link rel="stylesheet" href="so-lien-lac-auth.css">
 <link rel="stylesheet" href="so-lien-lac-lms.css">
 </head>
 <body data-auth="locked">
+<section id="auth-shell" class="auth-shell" aria-label="Đăng nhập Sổ Liên Lạc Điện Tử">
+  <div class="auth-layout">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img src="assets/logo.jpg" alt="Khổng Tử Nhí" width="44" height="44">
+        <div>
+          <div id="auth-title" style="font-size:16px;font-weight:800;color:#0F172A;">📒 Sổ Liên Lạc &amp; Cổng Học Viên</div>
+          <div style="font-size:12px;color:#64748B;font-weight:500;">Học Viện Khổng Tử Nhí · Học sinh · Giáo viên · Quản lý</div>
+        </div>
+      </div>
+      <div id="auth-error" class="auth-error hidden" role="alert"></div>
+      <form id="auth-form" autocomplete="on">
+        <div>
+          <label for="auth-email" class="form-label"><strong>Email / Tài khoản</strong></label>
+          <input id="auth-email" type="text" class="input-text" required placeholder="Nhập email hoặc mã tài khoản...">
+        </div>
+        <div>
+          <label for="auth-password" class="form-label"><strong>Mật khẩu</strong></label>
+          <div class="auth-password">
+            <input id="auth-password" type="password" class="input-text" required placeholder="Nhập mật khẩu...">
+            <button id="auth-toggle-password" type="button" aria-pressed="false" aria-label="Hiện mật khẩu">Hiện</button>
+          </div>
+        </div>
+        <button id="auth-submit" type="submit" class="btn-primary" style="width:100%;justify-content:center;min-height:42px;font-weight:700;">Đăng nhập Sổ Liên Lạc</button>
+      </form>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="auth-demo" type="button" class="btn-ghost" style="flex:1;justify-content:center;min-height:38px;font-weight:700;">📒 Xem nhanh Sổ Liên Lạc</button>
+        <a href="sll-hocsinh.html" class="btn-ghost" style="flex:1;justify-content:center;min-height:38px;font-weight:700;display:inline-flex;align-items:center;">🎓 Cổng Học Sinh</a>
+      </div>
+    </div>
+  </div>
+</section>
 <section id="auth-workspace" class="auth-workspace hidden" aria-hidden="true">
   <h2 id="auth-work-title" class="hidden">Không gian tài khoản</h2>
   <button id="auth-check-access" type="button" class="hidden">Kiểm tra quyền quản lý</button>
@@ -238,10 +271,10 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{opacity:.55;cur
     </div>
     <div class="card" style="overflow:hidden;">
       <div id="parent-subtab-nav" class="subtab-nav" role="tablist" aria-label="Theo dõi việc học của con">
-        <button id="subtab-parent-homework" type="button" onclick="app.switchParentSubtab('homework')" class="subtab-btn active"><span>Nhận xét &amp; Bài tập</span><span id="badge-homework-count" class="badge-pill">1</span></button>
-        <button id="subtab-parent-chat" type="button" onclick="app.switchParentSubtab('chat')" class="subtab-btn"><span>Tin nhắn cô giáo</span></button>
-        <button id="subtab-parent-courses" type="button" onclick="app.switchParentSubtab('courses')" class="subtab-btn"><span>🎬 Khóa học online</span><span id="badge-courses-count" class="badge-pill" style="background:#EEF2FF;color:#4F46E5;font-weight:700;">1 khóa</span></button>
-        <button id="subtab-parent-docs" type="button" onclick="app.switchParentSubtab('docs')" class="subtab-btn"><span>📚 Tài liệu học tập</span><span id="badge-docs-count" class="badge-pill" style="background:#FEF3C7;color:#92400E;font-weight:700;">5 tài liệu</span></button>
+        <button id="subtab-parent-homework" type="button" onclick="app.switchParentSubtab('homework')" class="subtab-btn active"><span>📝 Bài tập</span><span id="badge-homework-count" class="badge-pill">1</span></button>
+        <button id="subtab-parent-chat" type="button" onclick="app.switchParentSubtab('chat')" class="subtab-btn"><span>💬 Nhóm lớp</span></button>
+        <button id="subtab-parent-courses" type="button" onclick="app.switchParentSubtab('courses')" class="subtab-btn"><span>🎬 Khóa học</span><span id="badge-courses-count" class="badge-pill" style="background:#EEF2FF;color:#4F46E5;font-weight:700;">1 khóa</span></button>
+        <button id="subtab-parent-docs" type="button" onclick="app.switchParentSubtab('docs')" class="subtab-btn"><span>📚 Tài liệu</span><span id="badge-docs-count" class="badge-pill" style="background:#FEF3C7;color:#92400E;font-weight:700;">5</span></button>
       </div>
       <div id="parent-subview-overview" class="panel-pad hidden"></div>
       <div id="parent-subview-chat" class="hidden">
@@ -315,24 +348,20 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{opacity:.55;cur
       </div>
       <div id="parent-subview-courses" class="hidden panel-pad">
         <div class="courses-subview-header">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><h3 style="font-size:16px;font-weight:800;color:var(--text);margin:0;">Khóa học đã đăng ký</h3><span id="badge-courses-status" class="badge-pill status-online">1 khóa</span></div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button id="btn-back-to-sll" type="button" onclick="app.switchParentSubtab('homework')" class="btn-ghost">← Về Sổ bài tập</button><button type="button" onclick="app.switchParentSubtab('docs')" class="btn-ghost">📚 Kho tài liệu (5 PDF)</button></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><h3 style="font-size:16px;font-weight:800;color:var(--text);margin:0;">🎬 Khóa học</h3><span id="badge-courses-status" class="badge-pill status-online">1 khóa</span></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button id="btn-back-to-sll" type="button" onclick="app.switchParentSubtab('homework')" class="btn-ghost">← Bài tập</button><button type="button" onclick="app.switchParentSubtab('docs')" class="btn-ghost">📚 Tài liệu PDF</button></div>
         </div>
         <div id="parent-courses-list" class="courses-hub-grid"></div>
       </div>
 
       <!-- SUBVIEW: DEDICATED DOCUMENTS LIBRARY (TRANG TÀI LIỆU RIÊNG) -->
       <div id="parent-subview-docs" class="hidden panel-pad">
-        <div class="courses-subview-header" style="margin-bottom:18px;">
-          <div>
-            <h3 style="font-size:18px;font-weight:800;color:var(--text);margin:0 0 4px;display:flex;align-items:center;gap:8px;">
-              <span>📚 Kho Tài Liệu Giáo Trình HSK 1 (3.0)</span>
-              <span class="badge-pill" style="background:#DC2626;color:#FFF;font-size:11px;font-weight:800;">BẢN QUYỀN 2026</span>
-            </h3>
-            <p style="font-size:13px;color:var(--sub);margin:0;">Trọn bộ 5 tài liệu bản quyền chuẩn quốc tế của Học Viện Khổng Tử Nhí — Đọc trực tiếp trên web hoặc tải về máy.</p>
-          </div>
+        <div class="courses-subview-header" style="margin-bottom:14px;">
+          <h3 style="font-size:16px;font-weight:800;color:var(--text);margin:0;display:flex;align-items:center;gap:8px;">
+            <span>📚 Tài liệu HSK 1 (3.0)</span>
+          </h3>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <button type="button" onclick="app.switchParentSubtab('courses')" class="btn-ghost" style="font-weight:600;">← Về Khóa học</button>
+            <button type="button" onclick="app.switchParentSubtab('courses')" class="btn-ghost" style="font-weight:600;">← Khóa học</button>
           </div>
         </div>
         <div id="parent-docs-list" class="docs-library-grid"></div>
@@ -343,14 +372,14 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{opacity:.55;cur
         <div class="learn-page-topbar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;background:#FFF;border:1px solid var(--border);border-radius:12px;margin-bottom:16px;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button type="button" onclick="app.switchParentSubtab('courses')" class="btn-ghost" style="padding:6px 12px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
-              ← Danh sách khóa học
+              ← Khóa học
             </button>
             <span class="badge-pill" style="background:#EF4444;color:#FFF;font-weight:800;font-size:11px;">HSK 1 (3.0)</span>
             <strong id="learn-page-header-title" style="font-size:14.5px;color:var(--text);">Bài 1: AI小语，你好！ (Xin chào AI Tiểu Ngữ!)</strong>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <button type="button" onclick="app.switchParentSubtab('docs')" class="btn-ghost" style="padding:6px 12px;font-size:12.5px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
-              📚 Mở kho tài liệu PDF ↗
+              📚 Tài liệu PDF ↗
             </button>
           </div>
         </div>
@@ -393,7 +422,7 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{opacity:.55;cur
       <nav class="subtab-nav teacher-work-nav" style="border:none;border-bottom:1px solid var(--border);border-radius:0;" role="tablist" aria-label="Công việc giáo viên">
         <button id="teacher-tab-assign" type="button" class="subtab-btn" onclick="app.switchTeacherTab('assign')">Giao bài</button>
         <button id="teacher-tab-grade" type="button" class="subtab-btn active" onclick="app.switchTeacherTab('grade')">Chấm điểm <span id="teacher-pending-count" class="badge-pill">0</span></button>
-        <button id="teacher-tab-chat" type="button" class="subtab-btn" onclick="app.switchTeacherTab('chat')">Tin nhắn</button>
+        <button id="teacher-tab-chat" type="button" class="subtab-btn" onclick="app.switchTeacherTab('chat')">💬 Nhóm lớp</button>
       </nav>
 
       <div id="teacher-panel-manage" class="hw-card hidden" style="gap:10px;">
@@ -501,12 +530,9 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{opacity:.55;cur
     <div id="admin-panel-orders" class="card panel-pad hidden">
       <!-- Khối Header & KPI Thống kê -->
       <div class="orders-panel-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:12px;">
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:20px;">⚡</span>
-            <h2 style="font-size:16px;font-weight:800;color:var(--text);margin:0;">Quản lý Đơn hàng &amp; Phê duyệt 1 chạm</h2>
-          </div>
-          <p style="font-size:12.5px;color:var(--dim);margin-top:2px;">Kích hoạt tài khoản học viên CRM và phân quyền khóa học trực tuyến tự động</p>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">⚡</span>
+          <h2 style="font-size:16px;font-weight:800;color:var(--text);margin:0;">Quản lý Đơn hàng</h2>
         </div>
         <div class="orders-kpi-summary" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <span class="badge-pill" id="orders-kpi-total" title="Tổng số đơn đăng ký">Tổng: 3</span>

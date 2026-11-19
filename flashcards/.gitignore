@@ -1,0 +1,26 @@
+# Flashcards specific ignores & un-ignores
+_extracted/
+*.zip
+*.tar.gz
+.DS_Store
+Thumbs.db
+
+# Explicitly allow flashcard assets, tests, and screenshots to be tracked for GitHub Pages review & CI
+!assets/
+!assets/**
+!tests/
+!tests/**
+!screenshots/
+!screenshots/**
+!*.webp
+!*.png
+!*.jpg
+!*.jpeg
+!*.mp3
+!*.js
+!*.mjs
+!*.py
+!*.css
+!*.md
+
+!*.webp

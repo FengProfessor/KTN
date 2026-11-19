@@ -1,0 +1,190 @@
+{
+  "reportVersion": "3.1",
+  "generatedAt": "2026-11-16T00:05:00.000Z",
+  "branch": "feat/ktn-react-ui-v2",
+  "commits": {
+    "baseSha": "940f5a03010a0c64e9ffe6cc21da5d95544b8b34",
+    "priorSessionHeadSha": "b42d532cee5d3507ea3375a211a8125221b27784",
+    "priorRound2CodeSha": "20ca462d3f442b3ef2525eb9b231402d96102ca6",
+    "priorRound2DocsSha": "0a73eee9a1084200ab116c71f33d80f779eba506",
+    "priorRound3CodeSha": "525b0ac6e704044aa30f7e891d904711f625006f",
+    "priorRound3DocsSha": "456a7af461fa92a7e1ec26786a123004c3ae1fe2",
+    "deployedCodeSha": "523da9cbc125b4a8af2bf8b10d80410c76e744f0",
+    "deployedShortSha": "523da9c"
+  },
+  "githubActionsCiOnDeployedSha": [
+    {
+      "workflow": "KTN Three-Way Sync & Security Quality Gate",
+      "event": "push",
+      "runId": 43777764579,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/FengProfessor/KTN/actions/runs/43777764579"
+    },
+    {
+      "workflow": "KTN Three-Way Sync & Security Quality Gate",
+      "event": "pull_request",
+      "runId": 43777769356,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/FengProfessor/KTN/actions/runs/43777769356"
+    },
+    {
+      "workflow": "KTN Flashcards & Hanzi Writing Quality Gate",
+      "event": "pull_request",
+      "runId": 43777769357,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/FengProfessor/KTN/actions/runs/43777769357"
+    }
+  ],
+  "productionDeployment": {
+    "worker": {
+      "name": "ktn-sw-proxy",
+      "previousVersionId": "af9146c2-5873-40fb-a29b-6b28119e3243",
+      "previousDeploymentId": "2d82e129-46ba-46ff-b520-ebfede64037d",
+      "newVersionId": "1f768ba8-6aae-4f63-8ad9-5465fc9106ea",
+      "deployedAt": "2026-11-15T21:36:53.267Z",
+      "uploadKiB": 1445.06,
+      "gzipKiB": 374.50,
+      "startupMs": 1,
+      "crons": ["*/5 * * * *", "0 3 * * *"],
+      "rollbackCommand": "npx wrangler rollback af9146c2-5873-40fb-a29b-6b28119e3243 --config wrangler.toml"
+    },
+    "frontend": {
+      "customPageId": "6adff7ba36309b0002b6e659",
+      "customPageSlug": "so-lien-lac-test",
+      "v1CustomPageUntouched": "696f7bb3d8cb3100021fd870",
+      "s3Prefix": "resource/documents/3529cd2b-7af6-4fda-887c-392a79393d6a/ktn-react-v2/v3.0.1-523da9c",
+      "totalAssets": 19,
+      "totalBytes": 2527768,
+      "allChunksUnder500KiB": true,
+      "hlsPreloadedOnInitialShell": false,
+      "backups": [
+        "reports/backups/20261116-pre-round3-deploy/v3-release-manifest.20ca462.json",
+        "reports/backups/20261116-pre-round3-deploy/ktn-sw-proxy.live-backup.js",
+        "reports/backups/20261116-pre-round3-deploy/ktn-sw-proxy.settings-backup.json",
+        "reports/backups/20261116-pre-round3-deploy/so-lien-lac-test.live-backup.html",
+        "reports/backups/20261116-pre-round3-deploy/sw.live-backup.js",
+        "backups/cutover-2026-11-06/custom-page-prev-react-6adff7ba36309b0002b6e659.json"
+      ],
+      "rollbackCommand": "KTN_ALLOW_PROD_CUSTOM_PAGE_OVERWRITE=true node deploy_ktn_react_v2_izteach.cjs --rollback reports/backups/20261116-pre-round3-deploy/v3-release-manifest.20ca462.json --live --allow-prod-page-overwrite"
+    }
+  },
+  "sqlMigrationsLiveStatus": {
+    "status": "NOT_APPLIED_LIVE_MANUAL_SUPABASE_SQL_EDITOR_REQUIRED",
+    "files": [
+      "supabase_migration_v3.sql",
+      "supabase/migrations/20261116_ktn_scale_and_lifecycle_indexes.sql"
+    ],
+    "livePostgrestObservedCounts": {
+      "ktn_students": { "status": 206, "total": 1382 },
+      "ktn_teachers": { "status": 206, "total": 68 },
+      "ktn_classes": { "status": 206, "total": 135 },
+      "ktn_class_sessions": { "status": 206, "total": 9 },
+      "ktn_homeworks": { "status": 206, "total": 3 },
+      "ktn_messages": { "status": 206, "total": 57 },
+      "ktn_dlp_alerts": { "status": 206, "total": 1514 },
+      "ktn_push_subscriptions": { "status": 206, "total": 35 },
+      "ktn_provisioning_jobs": { "status": 404 },
+      "ktn_sync_events": { "status": 404 },
+      "ktn_class_schedules": { "status": 404 },
+      "ktn_notifications": { "status": 404 },
+      "rpc_ktn_search_students": { "status": 404 }
+    }
+  },
+  "infrastructurePlans": {
+    "cloudflareZone": {
+      "zoneName": "khongtunhi.com",
+      "planName": "Free Website",
+      "legacyId": "free"
+    },
+    "cloudflareWorkersPlan": "UNKNOWN (no billing subscription scope; observed usage_model=standard)",
+    "supabasePlan": "UNKNOWN (no Management API PAT / billing access)",
+    "izteachAwsPlan": "UNKNOWN (no AWS console/billing API access)",
+    "upgradeNeededNow": "NO (apply pending SQL migrations first; monitor after pg_trgm + ktn_notifications live)"
+  },
+  "localSuitesVerified": {
+    "syntaxChecks": "PASS (cloudflare-worker-sw-proxy.js)",
+    "portalBuildDriftCheck": "PASS (build_clean_real_portal.js)",
+    "threeWayReliabilitySuite": "PASS",
+    "lifecycleAcceptanceN01toN32": "PASS (32/32)",
+    "classNotificationMatrixN01toN33": "PASS (33/33)",
+    "uxAndPerfUpgradeSuite": "PASS (23/23)",
+    "postgresV3MigrationAndBenchmark": "PASS (21/21)",
+    "scaleBenchmark": "PASS (0 errors across 20/100/300/500 concurrent requests)",
+    "reactTypecheck": "PASS",
+    "reactUnitTests": "PASS (19 files, 378 tests)",
+    "reactBuild": "PASS",
+    "playwrightUiV2E2E": "PASS (133/133)",
+    "browserE2ELocal": "PASS (8/8)",
+    "flashcardsVerification": "PASS",
+    "deployDryRun": "PASS (19 assets < 500 KiB)"
+  },
+  "checklists": {
+    "N01_N30": {
+      "status": "PASS",
+      "evidence": "32/32 PASS (N01-N32) in tests/ktn_lifecycle_n01_n20_acceptance.cjs + 33/33 PASS in tests/ktn_class_notification_matrix_n01_n33.cjs; physical mobile/desktop closed-app OS display remains NOT VERIFIED"
+    },
+    "H01_H15": {
+      "status": "PASS",
+      "evidence": "All H01-H15 explicitly tested in apps/ktn-web-v2/tests/unit/ktn-master-refactor.test.tsx + U3/V2 (133/133 E2E) + live Teacher #/teacher?tab=sessions blank initial form check"
+    },
+    "P01_P12": {
+      "status": "PARTIAL_LOCAL_AND_LIVE_PASS_OS_NOT_VERIFIED",
+      "evidence": "P01, P11, D3 & CORS in ktn-master-refactor.test.tsx + N17-N20, N24, N27-N30 + V1 E2E + ktn_scale_benchmark.mjs + live /manifest.json, /sw.js, PNG icons, VAPID, 'Cài Khổng Tử Nhí' button PASS; physical Windows/macOS/Android/iPhone OS install prompt & closed-browser OS toast notification remain NOT VERIFIED"
+    }
+  },
+  "liveProductionVerification": {
+    "v1Isolation": {
+      "url": "https://khongtunhi.com/custom-page/so-lien-lac",
+      "httpStatus": 200,
+      "serverHtmlHasManifest": false,
+      "serverHtmlHasAppleIcon": false,
+      "serverHtmlHasV2Mount": false,
+      "customPageIdUntouched": "696f7bb3d8cb3100021fd870"
+    },
+    "v2LiveDomAndPwa": {
+      "url": "https://khongtunhi.com/custom-page/so-lien-lac-test",
+      "httpStatus": 200,
+      "dataKtnCommit": "523da9c",
+      "manifestHref": "/manifest.json",
+      "manifestStatus": 200,
+      "manifestStartUrl": "/custom-page/so-lien-lac-test",
+      "manifestDisplay": "standalone",
+      "iconsPngMagicVerified": ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon-180.png"],
+      "swActiveUrl": "https://khongtunhi.com/sw.js",
+      "swHasV3": true,
+      "swHasOpenWindow": true,
+      "swHasAnyClientNavigate": false,
+      "swHasHomeworkGradedRoute": true,
+      "swHasStrictV2Match": true,
+      "vapidPublicKeyStatus": 200,
+      "vocabEndpointStatus": 200,
+      "vocabEndpointBody": "[]",
+      "vocabAccessControlAllowOrigin": "*"
+    },
+    "preservationsAndRoles": {
+      "zombieDefenderJiangshiPuppetLive": "PASS (#/games?game=zombie-defender mounted, 77 SVGs / 144 SVG nodes, /api/ktn/vocab 200 [], 0 CORS/console/page errors)",
+      "postLoginBilingualViEnLive": "PASS across Student (e2e.hs.a & e2e.hs.b), Teacher (gv001@khongtunhi.com), and Admin (quanly@khongtunhi.com)",
+      "pwaInstallDesktopHeaderButtonLive": "PASS ('Cài Khổng Tử Nhí' button present in AppShell header across Student/Teacher/Admin)",
+      "unassignedStudentCenterChatLive": "PASS (e2e.hs.b@khongtunhi.com on #/chat?room=student:... renders 'Học vụ Khổng Tử Nhí', 0 'Nhắn riêng Cô' fallback)",
+      "teacherBlankHomeworkFormLive": "PASS (gv001@khongtunhi.com on #/teacher?tab=sessions: classVal='', sessionSelectVal='', titleVal='', promptVal='')",
+      "notificationSummaryVsListParity": "PASS (Student A: 1=1, Teacher gv001: 4=4, Admin quanly: 4=4)"
+    },
+    "sequentialLatencies3Samples": [
+      { "endpoint": "/api/ktn/classes", "status": 200, "bytes": 467449, "p50Ms": 483.12 },
+      { "endpoint": "/api/ktn/classes?lite=1", "status": 200, "bytes": 97675, "p50Ms": 325.09 },
+      { "endpoint": "/api/ktn/teachers", "status": 200, "bytes": 168526, "p50Ms": 563.21 },
+      { "endpoint": "/api/ktn/admin/teachers/search?q=linh&limit=20", "status": 200, "bytes": 24392, "p50Ms": 546.88 },
+      { "endpoint": "/api/ktn/admin/students/search?q=ngan&limit=20", "status": 200, "bytes": 50787, "p50Ms": 1038.57 },
+      { "endpoint": "/api/ktn/notifications?limit=50&offset=0 (student)", "status": 200, "bytes": 2177, "p50Ms": 839.07 },
+      { "endpoint": "/api/ktn/notifications/summary (student)", "status": 200, "bytes": 242, "p50Ms": 851.52 },
+      { "endpoint": "/api/ktn/notifications?limit=50&offset=0 (teacher gv001)", "status": 200, "bytes": 1942, "p50Ms": 1141.51 },
+      { "endpoint": "/api/ktn/notifications/summary (teacher gv001)", "status": 200, "bytes": 237, "p50Ms": 1164.38 },
+      { "endpoint": "/api/ktn/messages/rooms (student)", "status": 200, "bytes": 10919, "p50Ms": 749.62 },
+      { "endpoint": "/api/ktn/messages (cross-class 403)", "status": 403, "bytes": 186, "p50Ms": 265.14 },
+      { "endpoint": "/api/ktn/notifications (unauth 401)", "status": 401, "bytes": 49, "p50Ms": 34.06 }
+    ]
+  }
+}

@@ -1,0 +1,325 @@
+{
+  "suite": "KTN Teacher Management Upgrade 4-Tier E2E",
+  "timestamp": "2026-11-11T04:47:56.850Z",
+  "totalDurationSeconds": 33.48,
+  "summary": {
+    "total": 39,
+    "passed": 39,
+    "failed": 0,
+    "passRate": "100.0%"
+  },
+  "results": [
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R1-01",
+      "title": "Teacher table renders strictly 5 columns and omits long stats columns",
+      "passed": true,
+      "details": "Columns: Tên, Email, Lớp đang phụ trách, Trạng thái, Thao tác",
+      "timestamp": "2026-11-11T04:47:29.357Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R1-02",
+      "title": "Clicking \"Xem / Sửa\" opens TeacherDetailDrawer displaying deep stats in Tabs 3, 4, 5",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:29.772Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R1-03",
+      "title": "Only a single \"+ Tạo giáo viên\" button exists on the page (no duplicate toolbar button)",
+      "passed": true,
+      "details": "Count: 1",
+      "timestamp": "2026-11-11T04:47:29.778Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R1-04",
+      "title": "220ms debounced server-side search queries backend and renders matched teacher",
+      "passed": true,
+      "details": "URL: http://127.0.0.1:5173/api/ktn/admin/teachers/search?q=L%C3%A2m+M%E1%BB%B9+Linh&limit=20&offset=0",
+      "timestamp": "2026-11-11T04:47:30.099Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R1-05",
+      "title": "Mobile card layout at 390px viewport displays essential fields with zero horizontal overflow",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:31.489Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R2-01",
+      "title": "DELETE /api/ktn/teachers enforces admin authorization (returns 401/403 for non-admins)",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:31.504Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R2-02",
+      "title": "Deleting teacher immediately invalidates existing teacher session token (403 on subsequent requests)",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:31.559Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R2-03",
+      "title": "Deleting teacher automatically unassigns related classes in database state",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:31.573Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R2-04",
+      "title": "Clicking \"Xóa\" opens 1-step confirmation dialog with no email/code input required",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:32.141Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R2-05",
+      "title": "Confirming delete updates teacher table and closes drawer immediately without page reload (F5)",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:33.022Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R3-01",
+      "title": "ClassScheduleModal renders single combobox input that supports typing to filter and clicking to open list",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:33.492Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R3-02",
+      "title": "Unaccented Vietnamese search (\"quoc bao\") matches accented teacher name (\"Thầy Đặng Quốc Bảo\"), email, and code",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:33.519Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R3-03",
+      "title": "Full keyboard navigation: ArrowDown/Up to highlight, Enter to select without modal form submit, Esc to close",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:33.602Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R3-04",
+      "title": "Selecting \"Chưa phân công giáo viên\" assigns empty value and keeps compatibility",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:33.724Z"
+    },
+    {
+      "tier": "Tier 1",
+      "id": "TC-T1-R3-05",
+      "title": "Dropdown menu renders with high z-index and does not clip or overflow on 390px mobile viewport",
+      "passed": true,
+      "details": "Box: w=306, x=42",
+      "timestamp": "2026-11-11T04:47:34.287Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R1-01",
+      "title": "Special characters, HTML tags, SQL fragments, and emojis do not crash UI or execute XSS",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:37.700Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R1-02",
+      "title": "Searching for non-existent teacher displays clean empty state message without breaking layout",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:38.091Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R1-03",
+      "title": "Teacher with 0 assigned classes renders cleanly with \"Chưa phân công lớp\" badge and no null errors",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:38.401Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R1-04",
+      "title": "Long teacher names and email addresses truncate gracefully without breaking cell borders",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:38.432Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R1-05",
+      "title": "Rapid search input thrashing cancels prior in-flight requests without race-condition DOM rendering",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:39.299Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R2-01",
+      "title": "Deleting a teacher assigned to multiple classes unassigns all classes and reports exact count",
+      "passed": true,
+      "details": "Unassigned: 2",
+      "timestamp": "2026-11-11T04:47:39.311Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R2-02",
+      "title": "Calling DELETE on non-existent or already-deleted teacher returns safe 404 without server crash",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:39.314Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R2-03",
+      "title": "Upstream izTeach sync failure handles gracefully with syncStatus: \"needs_sync\" while completing soft-delete",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:39.322Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R2-04",
+      "title": "Concurrent DELETE requests for the same teacher resolve safely without deadlock or corruption",
+      "passed": true,
+      "details": "Statuses: [200, 200, 200]",
+      "timestamp": "2026-11-11T04:47:39.338Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R2-05",
+      "title": "Clicking \"Hủy\" or pressing Esc in delete confirmation dialog dismisses dialog with 0 mutation calls",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:40.089Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R3-01",
+      "title": "Typing arbitrary text and clicking outside (blur) without selecting restores previous teacher value unchanged",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:40.758Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R3-02",
+      "title": "Inactive and soft-deleted teachers are strictly excluded from combobox options list",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:40.806Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R3-03",
+      "title": "Keyboard navigation wraps cleanly at list boundaries and Enter on unselected item does not corrupt value",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:41.074Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R3-04",
+      "title": "Reopening modal after closing with unsaved combobox changes restores original saved teacher assignment",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:41.187Z"
+    },
+    {
+      "tier": "Tier 2",
+      "id": "TC-T2-R3-05",
+      "title": "Query with zero matches displays \"Không tìm thấy giáo viên\" and disables selection",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:41.220Z"
+    },
+    {
+      "tier": "Tier 3",
+      "id": "TC-T3-X01",
+      "title": "Delete Teacher A -> Admin table removes row -> Class schedule combobox excludes Teacher A",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:43.673Z"
+    },
+    {
+      "tier": "Tier 3",
+      "id": "TC-T3-X02",
+      "title": "Delete Teacher B assigned to Class X -> Combobox displays \"Chưa phân công\" -> Admin classes table reflects unassigned",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:44.228Z"
+    },
+    {
+      "tier": "Tier 3",
+      "id": "TC-T3-X03",
+      "title": "Search Teacher C in search bar -> Open Drawer -> Delete from Drawer -> Drawer closes and table removes Teacher C",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:45.404Z"
+    },
+    {
+      "tier": "Tier 3",
+      "id": "TC-T3-X04",
+      "title": "Assign Teacher D to Class Y in ClassScheduleModal via Combobox -> Saved assignment reflects immediately in admin table",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:46.638Z"
+    },
+    {
+      "tier": "Tier 3",
+      "id": "TC-T3-X05",
+      "title": "Delete Teacher E -> Open formerly assigned Class Z modal -> Reassign to Teacher F via unaccented combobox search",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:47.476Z"
+    },
+    {
+      "tier": "Tier 3",
+      "id": "TC-T3-X06",
+      "title": "Combobox opened while teacher is concurrently deleted -> UI handles gracefully without unhandled exception",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:48.182Z"
+    },
+    {
+      "tier": "Tier 4",
+      "id": "TC-T4-S01",
+      "title": "Desktop 1440x900 Complete Admin Lifecycle Workflow (5-col table -> Drawer stats -> Combobox schedule -> Deletion & zero-reload)",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:52.145Z"
+    },
+    {
+      "tier": "Tier 4",
+      "id": "TC-T4-S02",
+      "title": "Mobile 390x844 Responsive Touch & Zero-Overflow Workflow (compact cards -> touch combobox -> mobile delete confirmation -> zero horizontal scroll)",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:55.378Z"
+    },
+    {
+      "tier": "Tier 4",
+      "id": "TC-T4-S03",
+      "title": "Historical Data & Student Integrity Workflow (100% preservation of student accounts, classes, chat, and homework after teacher deletion)",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-11-11T04:47:56.483Z"
+    }
+  ]
+}

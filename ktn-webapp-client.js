@@ -17,7 +17,7 @@
   const IDB_NAME = 'ktn_webapp_auth_db';
   const IDB_STORE = 'session_store';
   const SESSION_KEY = 'ktn_sll_persistent_auth_v2';
-  const VAPID_PUBLIC_KEY = 'BFWxJ4T_sakVqTfRjAQOpN7RghDoQRo9owPWy_W1lvdoVYpqFdLJRmEOYgQEPPiEHpotoaixRt8oq2_R4VH8afM';
+  const VAPID_PUBLIC_KEY = 'BG4yPEa0evkPFiDAtau85Mg90U2WimsmOCRZgvIqeXQzUDzts5yR75wQub8YJCSXk0sK5jN3Jc3Hbp9jIVRECPM';
 
   function escapeHtml(val) {
     if (val === null || val === undefined) return '';
@@ -186,7 +186,12 @@
     safeUrl,
 
     getApiBase() {
-      return window.KTN_WORKER_API_BASE || '';
+      if (window.KTN_WORKER_API_BASE) return window.KTN_WORKER_API_BASE;
+      const h = String((typeof window !== 'undefined' && window.location && window.location.hostname) || '').toLowerCase();
+      if (h && h !== 'localhost' && h !== '127.0.0.1') {
+        return 'https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev';
+      }
+      return '';
     },
 
     getRolePageUrl,
@@ -563,6 +568,19 @@
       for (let i = 0; i < rawData.length; ++i) appServerKey[i] = rawData.charCodeAt(i);
 
       let sub = await reg.pushManager.getSubscription();
+      let previousEndpoint = '';
+      if (sub && sub.options && sub.options.applicationServerKey) {
+        const actualKey = new Uint8Array(sub.options.applicationServerKey);
+        let keyMatches = actualKey.length === appServerKey.length;
+        for (let i = 0; keyMatches && i < actualKey.length; i++) {
+          if (actualKey[i] !== appServerKey[i]) keyMatches = false;
+        }
+        if (!keyMatches) {
+          previousEndpoint = sub.endpoint || '';
+          await sub.unsubscribe().catch(() => false);
+          sub = null;
+        }
+      }
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
@@ -577,6 +595,7 @@
           role: detectUserRole(session) || 'student',
           classCode: session?.classCode || null,
           subscription: sub.toJSON(),
+          ...(previousEndpoint ? { previousEndpoint } : {}),
           notifySettings
         }
       });

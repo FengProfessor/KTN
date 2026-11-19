@@ -1,0 +1,58 @@
+{
+  "id": "/custom-page/so-lien-lac-test",
+  "name": "Sổ Liên Lạc Điện Tử — Học Viện Khổng Tử Nhí",
+  "short_name": "Khổng Tử Nhí",
+  "description": "Sổ liên lạc điện tử, Bài tập, Trò chuyện lớp học & Lịch học — Học Viện Khổng Tử Nhí",
+  "start_url": "/custom-page/so-lien-lac-test",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#F8FAFC",
+  "theme_color": "#991B1B",
+  "lang": "vi",
+  "categories": ["education", "kids"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Lớp học & Bài tập",
+      "short_name": "Lớp học",
+      "url": "/custom-page/so-lien-lac-test#/classrooms",
+      "description": "Xem lịch học, tài liệu và nộp bài tập lớp học",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Tin nhắn lớp học",
+      "short_name": "Tin nhắn",
+      "url": "/custom-page/so-lien-lac-test#/chat",
+      "description": "Trao đổi với giáo viên hoặc Học vụ Khổng Tử Nhí",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Thông báo mới",
+      "short_name": "Thông báo",
+      "url": "/custom-page/so-lien-lac-test#/notifications",
+      "description": "Xem tất cả thông báo bài tập và điểm số",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

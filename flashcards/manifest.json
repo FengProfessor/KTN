@@ -1,0 +1,16 @@
+{
+  "name": "Khổng Tử Nhí • Flashcard & Luyện Viết Hanzi",
+  "short_name": "Khổng Tử Nhí",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F9F6F0",
+  "theme_color": "#9E2A2B",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "assets/images/chibi/chibi_1.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

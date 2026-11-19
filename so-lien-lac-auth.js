@@ -66,7 +66,7 @@
       clearTimeout(this.expiryTimer); this.session = null; this.activeRole = null;
       this.closeOpenDialogs();
       if (window.app) window.app.adminPreviewingStudent = false;
-      if (window.location.pathname.indexOf('so-lien-lac') !== -1) {
+      if (window.location.pathname.indexOf('so-lien-lac') !== -1 && !$('auth-shell')) {
         window.location.replace('/?login=1');
         return;
       }
@@ -150,7 +150,9 @@
         'thu.ha@khongtunhi.com': 'thu.ha@khongtunhi.com',
         'coha': 'thu.ha@khongtunhi.com',
         'admin': 'hocvienkhongtunhi123@gmail.com',
-        'quanly': 'quanly@khongtunhi.com'
+        'quanly': 'quanly@khongtunhi.com',
+        'khongtunhi': 'khongtunhi@gmail.com',
+        'khongtunhi@gmail.com': 'khongtunhi@gmail.com'
       };
       if (aliasMap[s]) return aliasMap[s];
       return s.includes('@') ? s : `${s}@khongtunhi.com`;
@@ -179,6 +181,9 @@
         email,
         role: primaryRole,
         roles: session.roles || [primaryRole],
+        classCode: session.classCode || session.account?.classCode || prevSaved?.classCode || undefined,
+        enrolledCourses: session.enrolledCourses || session.account?.enrolledCourses || prevSaved?.enrolledCourses || undefined,
+        onlineCourses: session.onlineCourses || session.account?.onlineCourses || prevSaved?.onlineCourses || undefined,
         token: workerToken,
         accessToken: session.accessToken || workerToken || 'KTN-PERSIST-TOKEN',
         accessTokenExpiredAt: Date.now() + 365 * 86400000,
@@ -186,6 +191,10 @@
       };
       try {
         localStorage.setItem('ktn_sll_persistent_auth_v2', JSON.stringify(persistObj));
+        localStorage.setItem('sll_session_v2', JSON.stringify(persistObj));
+        if (workerToken) {
+          localStorage.setItem('sll_ktn_token', workerToken);
+        }
         const enc = window.IZTEACH_STORAGE?.encodeAuthUser ? window.IZTEACH_STORAGE.encodeAuthUser(persistObj) : JSON.stringify(persistObj);
         localStorage.setItem('ol-credentials-auth-user', enc);
       } catch {}
@@ -209,16 +218,26 @@
       if (!email) return null;
       const name = String(user.name || rawUser.name || email.split('@')[0]).trim();
       const id = String(user.id || user.studentId || rawUser.id || rawUser.studentId || email).trim();
-      const upstreamRoles = Array.isArray(user.roles) ? user.roles : (Array.isArray(rawUser.roles) ? rawUser.roles : []);
+      const upstreamRoles = Array.isArray(user.roles)
+        ? user.roles
+        : (Array.isArray(rawUser.roles)
+          ? rawUser.roles
+          : (rawUser.role ? [rawUser.role] : (user.role ? [user.role] : [])));
       const isKnownTeacher = Boolean((window.app?.teachers || []).some(t => String(t.email || '').toLowerCase() === email));
-      const roles = (upstreamRoles.includes('root') || upstreamRoles.includes('admin') || email === 'hocvienkhongtunhi123@gmail.com' || email === 'quanly@khongtunhi.com')
+      const roles = (upstreamRoles.includes('root') || upstreamRoles.includes('admin') || email === 'hocvienkhongtunhi123@gmail.com' || email === 'quanly@khongtunhi.com' || email === 'khongtunhi@gmail.com')
         ? ['admin']
         : (upstreamRoles.includes('teacher') || user.type === 'teacher' || rawUser.type === 'teacher' || isKnownTeacher)
         ? ['teacher']
         : ['student'];
+      const classCode = rawUser.classCode || user.classCode || undefined;
+      const enrolledCourses = rawUser.enrolledCourses || user.enrolledCourses || undefined;
+      const onlineCourses = rawUser.onlineCourses || user.onlineCourses || undefined;
       return {
-        account: { id, name, email, vendorId: VENDOR_ID },
+        account: { id, name, email, vendorId: VENDOR_ID, classCode, enrolledCourses, onlineCourses },
         roles,
+        classCode,
+        enrolledCourses,
+        onlineCourses,
         access: roles[0] === 'admin'
           ? { scope: 'center', permissions: ['center.overview', 'classes.assign', 'students.assign', 'teachers.manage', 'accounts.manage', 'homeworks.read', 'finance.read'], assignments: null }
           : roles[0] === 'teacher'
@@ -231,6 +250,9 @@
       };
     },
     showSession(session) {
+      if (session && (!Array.isArray(session.roles) || !session.account)) {
+        session = this.buildSessionFromSaved(session) || session;
+      }
       this.closeOpenDialogs();
       this.session = session;
       this.activeRole = session.roles[0];
@@ -332,35 +354,112 @@
       }
       return true;
     },
+    async callKtnLoginApi(email, password) {
+      const bodyStr = JSON.stringify({ email, password });
+      const h = String((typeof window !== 'undefined' && window.location && window.location.hostname) || '').toLowerCase();
+      const isLocal = !h || h === 'localhost' || h === '127.0.0.1';
+      try {
+        const r = await fetch('/api/ktn/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: bodyStr
+        });
+        if (r.ok || r.status === 401 || r.status === 403 || isLocal) {
+          const d = await r.json().catch(() => null);
+          return { ok: Boolean(r.ok && d && d.ok && d.token), status: r.status, data: d };
+        }
+      } catch (e) {
+        if (isLocal) return null;
+      }
+      if (!isLocal) {
+        try {
+          const r2 = await fetch('https://ktn-sw-proxy.hocvienkhongtunhi123.workers.dev/api/ktn/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: bodyStr
+          });
+          const d2 = await r2.json().catch(() => null);
+          return { ok: Boolean(r2.ok && d2 && d2.ok && d2.token), status: r2.status, data: d2 };
+        } catch (e2) {}
+      }
+      return null;
+    },
     async loginDirectIzTeach(email, password) {
       const b64Password = btoa(unescape(encodeURIComponent(password)));
       const payload = JSON.stringify({ email, password: b64Password, vendorId: VENDOR_ID });
       const endpoints = window.IZTEACH_STORAGE.endpoints;
-      const callApi = async url => {
-        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+      const callApi = async (url, customBody) => {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: customBody || payload });
         const d = await r.json().catch(() => null);
         return { ok: r.ok, status: r.status, data: d };
       };
-      const [staffSettled, stuSettled] = await Promise.allSettled([callApi(endpoints.adminSignIn), callApi(endpoints.studentSignIn)]);
-      const staffRes = staffSettled.status === 'fulfilled' ? staffSettled.value : null;
+      const [staffSettled, stuSettled, ktnSettled] = await Promise.allSettled([
+        callApi(endpoints.adminSignIn),
+        callApi(endpoints.studentSignIn),
+        this.callKtnLoginApi(email, password)
+      ]);
+      let staffRes = staffSettled.status === 'fulfilled' ? staffSettled.value : null;
       const stuRes = stuSettled.status === 'fulfilled' ? stuSettled.value : null;
+      const ktnRes = ktnSettled.status === 'fulfilled' ? ktnSettled.value : null;
+
+      if ((!staffRes || !staffRes.ok || !staffRes.data?.accessToken) && (email === 'quanly@khongtunhi.com' || email === 'khongtunhi@gmail.com')) {
+        try {
+          const fbPayload = JSON.stringify({ email: 'hocvienkhongtunhi123@gmail.com', password: b64Password, vendorId: VENDOR_ID });
+          const fbStaff = await callApi(endpoints.adminSignIn, fbPayload);
+          if (fbStaff && fbStaff.ok && fbStaff.data?.accessToken) {
+            staffRes = fbStaff;
+          }
+        } catch (e) {}
+      }
+
+      if (ktnRes && (ktnRes.status === 401 || ktnRes.status === 403)) {
+        throw new Error(ktnRes.data?.message || 'Mật khẩu cũ đã được thu hồi để bảo mật. Vui lòng đăng nhập bằng mật khẩu mới.');
+      }
+
       const isStaffRole = staffRes && staffRes.ok && Array.isArray(staffRes.data?.roles) &&
         (staffRes.data.roles.includes('root') || staffRes.data.roles.includes('admin') || staffRes.data.roles.includes('teacher'));
-      const chosen = isStaffRole
+      let chosen = isStaffRole
         ? staffRes
         : (stuRes && stuRes.ok && stuRes.data?.accessToken)
         ? stuRes
         : (staffRes && staffRes.ok && staffRes.data?.accessToken)
         ? staffRes
-        : (stuRes || staffRes);
-      if (!chosen) throw new Error('Không thể kết nối tới máy chủ xác thực izTeach.');
+        : null;
+
+      if (!chosen && ktnRes && ktnRes.ok && ktnRes.data?.session) {
+        const s = ktnRes.data.session;
+        chosen = {
+          ok: true,
+          status: 200,
+          data: {
+            id: s.id || email,
+            studentId: s.studentId || s.id || email,
+            name: s.name || email.split('@')[0],
+            email: s.email || email,
+            roles: Array.isArray(s.roles) && s.roles.length > 0 ? s.roles : [s.role || 'student'],
+            accessToken: ktnRes.data.token
+          }
+        };
+      }
+
+      if (!chosen) {
+        if (!staffRes && !stuRes && !ktnRes) throw new Error('Không thể kết nối tới máy chủ xác thực izTeach.');
+        throw new Error('Email hoặc mật khẩu chưa đúng trên hệ thống izTeach.');
+      }
       const data = chosen.data;
       if (!chosen.ok || !data || !data.accessToken) {
         throw new Error('Email hoặc mật khẩu chưa đúng trên hệ thống izTeach.');
       }
-      const roles = Array.isArray(data.roles) && (data.roles.includes('root') || data.roles.includes('admin'))
+      const ktnRole = ktnRes && ktnRes.ok && ktnRes.data?.session?.role ? ktnRes.data.session.role : null;
+      const roles = (
+        ktnRole === 'admin' ||
+        (Array.isArray(data.roles) && (data.roles.includes('root') || data.roles.includes('admin'))) ||
+        email === 'hocvienkhongtunhi123@gmail.com' ||
+        email === 'quanly@khongtunhi.com' ||
+        email === 'khongtunhi@gmail.com'
+      )
         ? ['admin']
-        : Array.isArray(data.roles) && data.roles.includes('teacher')
+        : (ktnRole === 'teacher' || (Array.isArray(data.roles) && data.roles.includes('teacher')))
         ? ['teacher']
         : ['student'];
       return {
@@ -371,6 +470,7 @@
           : roles[0] === 'teacher'
           ? { scope: 'assigned', permissions: ['classes.read', 'students.read', 'homeworks.read', 'homeworks.grade'], assignments: { verified: true, classIds: ['YCT2-04', 'YCT3-02'], studentIds: ['KTN-2026-089', 'KTN-2026-090', 'KTN-2026-091', 'KTN-2026-092', 'KTN-2026-095'] } }
           : { scope: 'self', permissions: ['courses.watch', 'homeworks.read', 'homeworks.submit', 'chat.parent'], assignments: null },
+        token: (ktnRes && ktnRes.ok && ktnRes.data?.token) ? ktnRes.data.token : data.accessToken,
         accessToken: data.accessToken,
         source: 'izteach',
         expiresAt: Number(data.accessTokenExpiredAt) || (Date.now() + 3600000)
@@ -472,6 +572,8 @@
       try {
         try {
           localStorage.removeItem('ktn_sll_persistent_auth_v2');
+          localStorage.removeItem('sll_session_v2');
+          localStorage.removeItem('sll_ktn_token');
           localStorage.removeItem('ol-credentials-auth-user');
           sessionStorage.removeItem('ktn_sll_view');
         } catch {}
@@ -498,7 +600,13 @@
             if (!err || (err.status !== 404 && err.status !== 405)) throw err;
           }
         }
-        window.location.replace('/?login=1');
+        if (opts && opts.redirect === false) {
+          this.showLogin('');
+        } else if ($('auth-shell')) {
+          this.showLogin('');
+        } else {
+          window.location.replace('/?login=1');
+        }
       } catch {
         $('auth-connection-result').textContent = 'Chưa đăng xuất được. Hãy thử lại khi máy chủ kết nối.';
         $('auth-connection-result').classList.remove('hidden');

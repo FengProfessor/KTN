@@ -4,7 +4,13 @@
 -- Phối hợp: File nặng (Video HLS, PDF, MP3, File bài tập S3) vẫn lưu trên izTeach.
 -- ============================================================================
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgcrypto extension not required on PostgreSQL 13+ (gen_random_uuid is built-in).';
+END $$;
+
 
 -- 1. BẢNG CẤU HÌNH BẢNG GIÁ & THANH TOÁN VIETQR (HỖ TRỢ DUYỆT TAY + BẬT TỰ ĐỘNG)
 CREATE TABLE IF NOT EXISTS public.ktn_payment_config (
@@ -17,8 +23,9 @@ CREATE TABLE IF NOT EXISTS public.ktn_payment_config (
   auto_approve_webhook BOOLEAN NOT NULL DEFAULT FALSE,
   course_prices JSONB NOT NULL DEFAULT '{
     "6adadba969897b0002482ca5": { "title": "Khóa học Tiêu Chuẩn New HSK 1 (3.0)", "price": 890000 },
+    "6af2d9719a8b000002ad4bc0": { "title": "Khóa học Tiêu Chuẩn New HSK 2 (3.0)", "price": 890000 },
     "65e7704a9ea90c00080d5195": { "title": "Chinese For Kids (Khóa học cho bé 5–6 tuổi)", "price": 890000 },
-    "678d14b960eae20002ddf8fe": { "title": "Tiếng Trung Trẻ Em 4 (Lộ trình 7–13 tuổi)", "price": 1290000 }
+    "678d14b960eae20002ddf8fe": { "title": "Tiếng Trung Trẻ Em 4 (Lộ trình 7–13 tuổi)", "price": 890000 }
   }'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by TEXT
@@ -120,15 +127,16 @@ CREATE TABLE IF NOT EXISTS public.ktn_courses (
 INSERT INTO public.ktn_courses (course_id, code, title, short_title, badge, age_group, lessons_count, price, old_price, is_bundle, bundle_course_ids, sort_order)
 VALUES
   ('6adadba969897b0002482ca5', 'HSK1-30', 'Khóa học Tiêu Chuẩn New HSK 1 (3.0)', 'HSK1 3.0', 'TIÊU CHUẨN MỚI 3.0', 'Mọi lứa tuổi', 15, 890000, 1500000, FALSE, '[]'::jsonb, 1),
-  ('65e7704a9ea90c00080d5195', 'CFK-01', 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)', 'Chinese For Kids', 'SONG NGỮ MẦM NON', '5 – 6 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 2),
-  ('6638bd09a7367400085c7ab2', 'KIDS-03', 'Tiếng Trung Trẻ Em 3 (Mini vỡ lòng 5 – 6 tuổi)', 'Tiếng Trung Trẻ Em 3', 'CẤP ĐỘ 03', '5 – 6 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 3),
-  ('678d14b960eae20002ddf8fe', 'KIDS-04', 'Tiếng Trung Trẻ Em 4 (Lộ trình 7 – 13 tuổi)', 'Tiếng Trung Trẻ Em 4', 'CẤP ĐỘ 04', '7 – 13 tuổi', 18, 890000, 1500000, FALSE, '[]'::jsonb, 4),
-  ('67a7290a5fdc26000238b4e9', 'KIDS-05', 'Tiếng Trung Trẻ Em 5 (Lộ trình 8 – 14 tuổi)', 'Tiếng Trung Trẻ Em 5', 'CẤP ĐỘ 05', '8 – 14 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 5),
-  ('67a869302ecb9c000257d966', 'KIDS-06', 'Tiếng Trung Trẻ Em 6 (Lộ trình 9 – 15 tuổi)', 'Tiếng Trung Trẻ Em 6', 'CẤP ĐỘ 06', '9 – 15 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 6),
-  ('6983672f409cc20002e530b8', 'YCT-04', 'Khóa học Tiếng Trung Trẻ Em YCT 4', 'Tiếng Trung YCT 4', 'CHỨNG CHỈ YCT 4', '9 – 15 tuổi', 20, 1290000, 2000000, FALSE, '[]'::jsonb, 7),
-  ('65e76a533f5e7c00086715d7', 'PRON-01', 'Khóa học Phát Âm & Giao Tiếp Phản Xạ Cơ Bản', 'Phát Âm & Phản Xạ', 'GIAO TIẾP PHẢN XẠ', 'Mọi lứa tuổi', 19, 690000, 1200000, FALSE, '[]'::jsonb, 8),
-  ('67bebce067dba000027d8119', 'HANZI-01', 'Khóa học Hán Tự Tư Duy & Luyện Viết Chữ Hán', 'Hán Tự Tư Duy', 'HÁN TỰ TƯ DUY', '6 – 15 tuổi', 20, 690000, 1200000, FALSE, '[]'::jsonb, 9),
-  ('BUNDLE_YCT_ALL', 'COMBO-6', 'Trọn Bộ 6 Khóa Học Trực Tuyến (Lộ trình 5 – 15 tuổi)', 'Trọn Bộ 6 Khóa', 'COMBO ƯU ĐÃI 50%', '5 – 15 tuổi', 113, 2990000, 6000000, TRUE, '["6adadba969897b0002482ca5","65e7704a9ea90c00080d5195","6638bd09a7367400085c7ab2","678d14b960eae20002ddf8fe","67a7290a5fdc26000238b4e9","67a869302ecb9c000257d966"]'::jsonb, 0)
+  ('6af2d9719a8b000002ad4bc0', 'HSK2-30', 'Khóa học Tiêu Chuẩn New HSK 2 (3.0)', 'HSK2 3.0', 'TIÊU CHUẨN MỚI 3.0', 'Mọi lứa tuổi', 11, 890000, 1500000, FALSE, '[]'::jsonb, 2),
+  ('65e7704a9ea90c00080d5195', 'CFK-01', 'Chinese For Kids (Khóa học cho bé 5 – 6 tuổi)', 'Chinese For Kids', 'SONG NGỮ MẦM NON', '5 – 6 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 3),
+  ('6638bd09a7367400085c7ab2', 'KIDS-03', 'Tiếng Trung Trẻ Em 3 (Mini vỡ lòng 5 – 6 tuổi)', 'Tiếng Trung Trẻ Em 3', 'CẤP ĐỘ 03', '5 – 6 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 4),
+  ('678d14b960eae20002ddf8fe', 'KIDS-04', 'Tiếng Trung Trẻ Em 4 (Lộ trình 7 – 13 tuổi)', 'Tiếng Trung Trẻ Em 4', 'CẤP ĐỘ 04', '7 – 13 tuổi', 16, 890000, 1500000, FALSE, '[]'::jsonb, 5),
+  ('67a7290a5fdc26000238b4e9', 'KIDS-05', 'Tiếng Trung Trẻ Em 5 (Lộ trình 8 – 14 tuổi)', 'Tiếng Trung Trẻ Em 5', 'CẤP ĐỘ 05', '8 – 14 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 6),
+  ('67a869302ecb9c000257d966', 'KIDS-06', 'Tiếng Trung Trẻ Em 6 (Lộ trình 9 – 15 tuổi)', 'Tiếng Trung Trẻ Em 6', 'CẤP ĐỘ 06', '9 – 15 tuổi', 20, 890000, 1500000, FALSE, '[]'::jsonb, 7),
+  ('6983672f409cc20002e530b8', 'YCT-04', 'Khóa học Tiếng Trung Trẻ Em YCT 4', 'Tiếng Trung YCT 4', 'CHỨNG CHỈ YCT 4', '9 – 15 tuổi', 20, 1290000, 2000000, FALSE, '[]'::jsonb, 8),
+  ('65e76a533f5e7c00086715d7', 'PRON-01', 'Khóa học Phát Âm & Giao Tiếp Phản Xạ Cơ Bản', 'Phát Âm & Phản Xạ', 'GIAO TIẾP PHẢN XẠ', 'Mọi lứa tuổi', 19, 690000, 1200000, FALSE, '[]'::jsonb, 9),
+  ('67bebce067dba000027d8119', 'HANZI-01', 'Khóa học Hán Tự Tư Duy & Luyện Viết Chữ Hán', 'Hán Tự Tư Duy', 'HÁN TỰ TƯ DUY', '6 – 15 tuổi', 20, 690000, 1200000, FALSE, '[]'::jsonb, 10),
+  ('BUNDLE_YCT_ALL', 'COMBO-6', 'Trọn Bộ 6 Khóa Học Trực Tuyến (Lộ trình 5 – 15 tuổi)', 'Trọn Bộ 6 Khóa', 'COMBO ƯU ĐÃI 50%', '5 – 15 tuổi', 113, 2990000, 6000000, TRUE, '["6adadba969897b0002482ca5","65e7704a9ea90c00080d5195","6638bd09a7367400085c7ab2","678d14b960eae20002ddf8fe","67a7290a5fdc26000238b4e9","67a869302ecb9c000257d966"]'::jsonb, 11)
 ON CONFLICT (course_id) DO NOTHING;
 
 -- 6. BẢNG HỌC VIÊN & QUYỀN KHÓA HỌC / XẾP LỚP (PHÂN QUYỀN TRANG sll-hocsinh)
@@ -162,16 +170,22 @@ ON CONFLICT (code) DO NOTHING;
 
 -- 6. BẢNG ĐIỂM DANH THEO BUỔI HỌC (THAY THẾ CHUỖI TEXT TĨNH CŨ)
 CREATE TABLE IF NOT EXISTS public.ktn_attendance (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   class_code TEXT NOT NULL REFERENCES public.ktn_classes(id) ON DELETE CASCADE,
-  student_code TEXT NOT NULL REFERENCES public.ktn_students(code) ON DELETE CASCADE,
-  student_email TEXT NOT NULL,
-  lesson_num INTEGER NOT NULL,
+  student_code TEXT REFERENCES public.ktn_students(code) ON DELETE CASCADE,
+  student_email TEXT,
+  student_name TEXT DEFAULT '',
+  lesson_num INTEGER NOT NULL DEFAULT 1,
+  session_num INTEGER DEFAULT 1,
+  date TEXT DEFAULT CURRENT_DATE::text,
   status TEXT NOT NULL DEFAULT 'present'
-    CHECK (status IN ('present', 'excused', 'absent')),
+    CHECK (status IN ('present', 'late', 'excused', 'absent', 'absent_excused', 'absent_unexcused')),
+  note TEXT DEFAULT '',
   teacher_note TEXT DEFAULT '',
   recorded_by TEXT,
+  updated_by TEXT,
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (class_code, student_code, lesson_num)
 );
 
@@ -290,3 +304,154 @@ BEGIN
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.ktn_dlp_alerts; EXCEPTION WHEN DUPLICATE_OBJECT THEN NULL; END;
   END IF;
 END $$;
+
+-- 11. NÂNG CẤP V3: BẢNG ĐIỀU PHỐI TÀI KHOẢN & NHẬT KÝ ĐỐI SOÁT 3 BÊN
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+ALTER TABLE public.ktn_students
+  ADD COLUMN IF NOT EXISTS parent_name TEXT,
+  ADD COLUMN IF NOT EXISTS izteach_student_id TEXT,
+  ADD COLUMN IF NOT EXISTS has_live_class BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS has_online_courses BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS account_status TEXT DEFAULT 'ready_to_login',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT,
+  ADD COLUMN IF NOT EXISTS internal_note TEXT,
+  ADD COLUMN IF NOT EXISTS search_text TEXT;
+
+ALTER TABLE public.ktn_teachers
+  ADD COLUMN IF NOT EXISTS assigned_classes JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS cognito_user_id TEXT,
+  ADD COLUMN IF NOT EXISTS izteach_staff_id TEXT,
+  ADD COLUMN IF NOT EXISTS provisioning_status TEXT DEFAULT 'ready_to_login',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'teacher',
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS internal_note TEXT,
+  ADD COLUMN IF NOT EXISTS search_text TEXT;
+
+ALTER TABLE public.ktn_orders
+  ADD COLUMN IF NOT EXISTS provisioning_status TEXT DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
+  ADD COLUMN IF NOT EXISTS operation_id TEXT,
+  ADD COLUMN IF NOT EXISTS class_code TEXT,
+  ADD COLUMN IF NOT EXISTS approved_by TEXT,
+  ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS completed_steps JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS failed_step TEXT,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT;
+
+ALTER TABLE public.ktn_homeworks
+  ADD COLUMN IF NOT EXISTS sync_status TEXT DEFAULT 'synced',
+  ADD COLUMN IF NOT EXISTS izteach_remote_id TEXT,
+  ADD COLUMN IF NOT EXISTS unit_id TEXT,
+  ADD COLUMN IF NOT EXISTS last_sync_error TEXT;
+
+ALTER TABLE public.ktn_attendance
+  ALTER COLUMN id TYPE TEXT USING id::text,
+  ALTER COLUMN id SET DEFAULT gen_random_uuid()::text,
+  ALTER COLUMN student_code DROP NOT NULL,
+  ALTER COLUMN lesson_num SET DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS student_email TEXT,
+  ADD COLUMN IF NOT EXISTS student_name TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS session_num INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS date TEXT DEFAULT CURRENT_DATE::text,
+  ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS updated_by TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.ktn_attendance DROP CONSTRAINT IF EXISTS ktn_attendance_status_check;
+ALTER TABLE public.ktn_attendance ADD CONSTRAINT ktn_attendance_status_check
+  CHECK (status IN ('present', 'late', 'excused', 'absent', 'absent_excused', 'absent_unexcused'));
+
+CREATE TABLE IF NOT EXISTS public.ktn_provisioning_jobs (
+  operation_id TEXT PRIMARY KEY,
+  idempotency_key TEXT UNIQUE,
+  job_type TEXT NOT NULL,
+  target_email TEXT NOT NULL,
+  target_role TEXT DEFAULT 'student',
+  actor_email TEXT,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  sync_status TEXT DEFAULT 'pending',
+  retryable BOOLEAN DEFAULT true,
+  completed_steps JSONB DEFAULT '[]'::jsonb,
+  failed_step TEXT,
+  cognito_user_id TEXT,
+  izteach_student_id TEXT,
+  request_payload JSONB DEFAULT '{}'::jsonb,
+  response_payload JSONB DEFAULT '{}'::jsonb,
+  result_summary JSONB DEFAULT '{}'::jsonb,
+  error_code TEXT,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.ktn_sync_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  operation_id TEXT,
+  event_type TEXT NOT NULL,
+  target_system TEXT DEFAULT 'three_way',
+  source_system TEXT DEFAULT 'worker_bff',
+  entity_type TEXT NOT NULL DEFAULT 'student',
+  entity_id TEXT,
+  entity_key TEXT,
+  status TEXT DEFAULT 'info',
+  sync_status TEXT NOT NULL DEFAULT 'info',
+  error_code TEXT,
+  drift_code TEXT,
+  details JSONB DEFAULT '{}'::jsonb,
+  error_message TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+DROP INDEX IF EXISTS public.idx_ktn_students_class;
+DROP INDEX IF EXISTS public.idx_ktn_students_class_code;
+DROP INDEX IF EXISTS public.idx_ktn_students_email;
+DROP INDEX IF EXISTS public.idx_ktn_students_name_trgm;
+CREATE INDEX IF NOT EXISTS idx_ktn_students_email_lower ON public.ktn_students (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_ktn_students_code_lower ON public.ktn_students (LOWER(code));
+CREATE INDEX IF NOT EXISTS idx_ktn_students_phone ON public.ktn_students (phone);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_updated_email ON public.ktn_students (updated_at DESC NULLS LAST, email ASC);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_class_updated ON public.ktn_students (class_code, updated_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_ktn_students_search_text_trgm ON public.ktn_students USING GIN (search_text gin_trgm_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS idx_ktn_attendance_class_date ON public.ktn_attendance (class_code, date DESC);
+CREATE INDEX IF NOT EXISTS idx_ktn_attendance_student_date ON public.ktn_attendance (student_code, date DESC);
+
+ALTER TABLE public.ktn_provisioning_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ktn_sync_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.ktn_provisioning_jobs, public.ktn_sync_events FROM PUBLIC;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    BEGIN
+      CREATE ROLE service_role NOLOGIN;
+    EXCEPTION WHEN insufficient_privilege OR duplicate_object THEN
+      NULL;
+    END;
+  END IF;
+END $$;
+DROP POLICY IF EXISTS "Allow all for service role" ON public.ktn_provisioning_jobs;
+DROP POLICY IF EXISTS "service_role_only_ktn_provisioning_jobs" ON public.ktn_provisioning_jobs;
+CREATE POLICY "service_role_only_ktn_provisioning_jobs"
+  ON public.ktn_provisioning_jobs
+  AS PERMISSIVE
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON public.ktn_sync_events;
+DROP POLICY IF EXISTS "service_role_only_ktn_sync_events" ON public.ktn_sync_events;
+CREATE POLICY "service_role_only_ktn_sync_events"
+  ON public.ktn_sync_events
+  AS PERMISSIVE
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+

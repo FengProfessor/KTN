@@ -1,0 +1,4007 @@
+import type {
+  ClassScheduleConfig,
+  ClassScheduleException,
+  ConsultationActor,
+  ConsultationAdvisor,
+  ConsultationAdvisorRole,
+  ConsultationBotFlow,
+  ConsultationCatalogCourse,
+  ConsultationChannel,
+  ConsultationExample,
+  ConsultationEvent,
+  ConsultationFlag,
+  ConsultationGuidanceConfig,
+  ConsultationInboxItem,
+  ConsultationLeadMeta,
+  ConsultationMessage,
+  ConsultationQuickReply,
+  ConsultationReportResponse,
+  ConsultationStatus,
+  ConsultationThread,
+  ConsultationThreadOrderLink,
+  CourseDurationMode,
+  CourseDurationPreset,
+  CustomClassSession,
+  KtnAttendanceResponse,
+  KtnClassItem,
+  KtnClassSession,
+  KtnCourse,
+  KtnCourseGrantRequest,
+  KtnDrmPlaybackInfo,
+  KtnDrmPolicy,
+  KtnDrmPolicyConfigResponse,
+  KtnExerciseAttachment,
+  KtnForumAnswer,
+  KtnForumAttachment,
+  KtnForumLeaderboardEntry,
+  KtnForumQuestion,
+  KtnHomework,
+  KtnHomeworkAssignment,
+  KtnLessonUnit,
+  KtnNotification,
+  KtnOrder,
+  KtnProvisionStudentResponse,
+  KtnSessionExercise,
+  KtnStudentRecord,
+  KtnStudentSearchResult,
+  KtnSyncStatusResponse,
+  KtnTeacherContributionEvent,
+  KtnTeacherRecord,
+  KtnTeacherSearchResult,
+  KtnUserSession,
+  KtnVietQrPaymentInfo,
+  OnlineCourseEntitlement,
+  OrderContactStatus,
+  OrderPaymentDetailedStatus,
+  SepayReconciliationKind,
+  SepayReconciliationLog,
+  SepayReconciliationResolutionStatus,
+  UpcomingClassSession,
+  UserNotificationSettings
+} from '@/types/ktn.types';
+
+import { normalizeViSearchText, normalizeVietnameseText } from '@/lib/utils';
+import { trStatic } from '@/i18n';
+
+export type { KtnExerciseAttachment, KtnSessionExercise, KtnTeacherSearchResult };
+export { normalizeViSearchText, normalizeVietnameseText };
+
+export interface KtnTeacherDeleteResult {
+  ok: boolean;
+  deleted: boolean;
+  teacherId?: string;
+  teacherEmail?: string;
+  teacherName?: string;
+  unassignedClassesCount?: number;
+  unassignedClasses?: string[];
+  unassignedCoursesCount?: number;
+  unassignedCourses?: string[];
+  sessionRevoked?: boolean;
+  syncStatus?: string;
+  message?: string;
+}
+
+export const MAX_HOMEWORK_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
+export const ALLOWED_HOMEWORK_ATTACHMENT_EXTENSIONS: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  wav: 'audio/wav',
+  aac: 'audio/aac',
+  ogg: 'audio/ogg',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm'
+};
+
+export function formatBytes(bytes?: number | null): string {
+  const num = Number(bytes || 0);
+  if (!Number.isFinite(num) || num <= 0) return '0 KB';
+  if (num < 1024) return `${num} B`;
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
+  return `${(num / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function filterAndPaginateTeachersClientSide(
+  teachers: KtnTeacherRecord[],
+  params?: {
+    q?: string;
+    status?: string;
+    classCode?: string;
+    courseId?: string;
+    limit?: number;
+    offset?: number;
+  }
+): KtnTeacherSearchResult {
+  const qNorm = normalizeViSearchText(params?.q || '');
+  const qCompact = qNorm.replace(/\s+/g, '');
+  const qDigits = String(params?.q || '').replace(/\D+/g, '');
+  const statusFilter = String(params?.status || 'ALL').toUpperCase();
+  const classCodeFilter = String(params?.classCode || '').trim().toUpperCase();
+  const courseIdFilter = String(params?.courseId || '').trim().toUpperCase();
+  const limit = Math.max(1, Math.min(100, Number(params?.limit) || 20));
+  const offset = Math.max(0, Number(params?.offset) || 0);
+
+  const filtered = (Array.isArray(teachers) ? teachers : []).filter((t) => {
+    const tAny = t as { aliases?: string[]; deleted?: boolean };
+    if (
+      t.active === false &&
+      (tAny.aliases?.includes('__status:deleted') || tAny.deleted)
+    ) {
+      return false;
+    }
+    const isActive = t.active !== false && t.status !== 'locked' && t.status !== 'inactive';
+    const assignedClasses = Array.isArray(t.assigned_classes) ? t.assigned_classes : [];
+    const assignedCourses = Array.isArray(t.assigned_courses) ? t.assigned_courses : [];
+
+    if (statusFilter === 'ACTIVE' && !isActive) return false;
+    if ((statusFilter === 'INACTIVE' || statusFilter === 'LOCKED') && isActive) return false;
+    if (statusFilter === 'UNASSIGNED' && assignedClasses.length > 0) return false;
+
+    if (
+      classCodeFilter &&
+      classCodeFilter !== 'ALL' &&
+      !assignedClasses.some((c) => String(c || '').trim().toUpperCase() === classCodeFilter)
+    ) {
+      return false;
+    }
+
+    if (
+      courseIdFilter &&
+      courseIdFilter !== 'ALL' &&
+      !assignedCourses.some((c) => String(c || '').trim().toUpperCase() === courseIdFilter)
+    ) {
+      return false;
+    }
+
+    if (!qNorm) return true;
+
+    const rawHaystack = [
+      t.name,
+      t.email,
+      t.code,
+      t.phone,
+      t.specialty,
+      t.specialization,
+      assignedClasses.join(' '),
+      assignedCourses.join(' ')
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const normHaystack = normalizeViSearchText(rawHaystack);
+    const compactHaystack = normHaystack.replace(/\s+/g, '');
+    const phoneDigits = String(t.phone || '').replace(/\D+/g, '');
+    return (
+      normHaystack.includes(qNorm) ||
+      (Boolean(qCompact) && compactHaystack.includes(qCompact)) ||
+      (qDigits.length >= 3 && phoneDigits.includes(qDigits)) ||
+      rawHaystack.toLowerCase().includes(String(params?.q || '').trim().toLowerCase())
+    );
+  });
+
+  const totalCount = filtered.length;
+  const items = filtered.slice(offset, offset + limit);
+  const hasMore = offset + items.length < totalCount;
+
+  return {
+    ok: true,
+    items,
+    totalCount,
+    hasMore,
+    limit,
+    offset
+  };
+}
+
+const SESSION_STORAGE_KEY = 'ktn_sll_persistent_auth_v2';
+const CONSULT_STAFF_TOKEN_KEY = 'ktn_consult_staff';
+let inMemoryConsultStaffToken = '';
+
+export function getConsultationStaffToken(): string {
+  try {
+    const stored = sessionStorage.getItem(CONSULT_STAFF_TOKEN_KEY);
+    if (stored && stored !== 'DEMO-MODE-ONLY') {
+      inMemoryConsultStaffToken = stored;
+      return stored;
+    }
+  } catch {
+    // Ignore sessionStorage access error
+  }
+  return inMemoryConsultStaffToken;
+}
+
+export function setConsultationStaffToken(token?: string | null): void {
+  const clean = String(token || '').trim();
+  if (!clean || clean === 'DEMO-MODE-ONLY') return;
+  inMemoryConsultStaffToken = clean;
+  try {
+    sessionStorage.setItem(CONSULT_STAFF_TOKEN_KEY, clean);
+  } catch {
+    // Ignore sessionStorage quota/privacy error
+  }
+}
+
+export function clearConsultationStaffToken(): void {
+  inMemoryConsultStaffToken = '';
+  try {
+    sessionStorage.removeItem(CONSULT_STAFF_TOKEN_KEY);
+  } catch {
+    // Ignore sessionStorage error
+  }
+}
+
+const MAX_LOCAL_BLOB_PREVIEWS = 20;
+const localUploadedBlobUrls = new Map<string, string>();
+
+export function registerLocalUploadedMediaPreview(remoteUrl: string, file: Blob): void {
+  if (!remoteUrl || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+    return;
+  }
+  try {
+    const prevUrl = localUploadedBlobUrls.get(remoteUrl);
+    if (prevUrl) {
+      localUploadedBlobUrls.delete(remoteUrl);
+      try {
+        URL.revokeObjectURL(prevUrl);
+      } catch {
+        // ignore revoke error
+      }
+    }
+    while (localUploadedBlobUrls.size >= MAX_LOCAL_BLOB_PREVIEWS) {
+      const oldestKey = localUploadedBlobUrls.keys().next().value;
+      if (!oldestKey) break;
+      const oldestUrl = localUploadedBlobUrls.get(oldestKey);
+      localUploadedBlobUrls.delete(oldestKey);
+      if (oldestUrl) {
+        try {
+          URL.revokeObjectURL(oldestUrl);
+        } catch {
+          // ignore revoke error
+        }
+      }
+    }
+    const objectUrl = URL.createObjectURL(file);
+    localUploadedBlobUrls.set(remoteUrl, objectUrl);
+  } catch {
+    // Ignore blob URL creation errors in non-browser runtimes
+  }
+}
+
+export function resolveUploadedMediaUrl(url?: string | null): string {
+  const clean = String(url || '').trim();
+  if (!clean) return '';
+  return localUploadedBlobUrls.get(clean) || clean;
+}
+
+export class KtnApiError extends Error {
+  public readonly status: number;
+  public readonly code?: string;
+  public readonly syncStatus?: string;
+  public readonly isNetworkError: boolean;
+  public readonly dlpBlocked: boolean;
+
+  constructor(options: {
+    message: string;
+    status: number;
+    code?: string;
+    syncStatus?: string;
+    isNetworkError?: boolean;
+    dlpBlocked?: boolean;
+  }) {
+    super(options.message);
+    this.name = 'KtnApiError';
+    this.status = options.status;
+    this.code = options.code;
+    this.syncStatus = options.syncStatus;
+    this.isNetworkError = Boolean(options.isNetworkError);
+    this.dlpBlocked = Boolean(options.dlpBlocked);
+  }
+}
+
+let inMemorySession: KtnUserSession | null = null;
+let serverClockOffsetMs = 0;
+let simulatedServerNowOffsetMs: number | null = null;
+
+export function updateServerClockFromIso(serverNowIso?: string | null): void {
+  if (!serverNowIso || typeof serverNowIso !== 'string') return;
+  const parsed = Date.parse(serverNowIso);
+  if (Number.isFinite(parsed)) {
+    serverClockOffsetMs = parsed - Date.now();
+  }
+}
+
+export function setSimulatedServerNowForTest(isoOrEpochMs: string | number | null): void {
+  if (isoOrEpochMs === null || isoOrEpochMs === undefined || isoOrEpochMs === '') {
+    simulatedServerNowOffsetMs = null;
+    if (typeof window !== 'undefined') {
+      delete (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__;
+    }
+    return;
+  }
+  const parsed =
+    typeof isoOrEpochMs === 'number'
+      ? isoOrEpochMs
+      : /^\d{10,15}$/.test(String(isoOrEpochMs).trim())
+      ? Number(isoOrEpochMs)
+      : Date.parse(String(isoOrEpochMs));
+  if (Number.isFinite(parsed)) {
+    simulatedServerNowOffsetMs = parsed - Date.now();
+    if (typeof window !== 'undefined') {
+      (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__ =
+        new Date(parsed).toISOString();
+    }
+  }
+}
+
+export function getServerNowMs(): number {
+  if (typeof window !== 'undefined') {
+    const winSim = (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__;
+    if (typeof winSim === 'string' && winSim.trim()) {
+      const parsed = Date.parse(winSim.trim());
+      if (Number.isFinite(parsed) && simulatedServerNowOffsetMs === null) {
+        return parsed;
+      }
+    }
+  }
+  if (simulatedServerNowOffsetMs !== null) {
+    return Date.now() + simulatedServerNowOffsetMs;
+  }
+  return Date.now() + serverClockOffsetMs;
+}
+
+export function getStoredSession(): KtnUserSession | null {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore localStorage access error (e.g. Safari Private Browsing / restricted WebView)
+  }
+  if (!raw) {
+    try {
+      raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    } catch {
+      // Ignore sessionStorage access error
+    }
+  }
+  if (!raw) {
+    return inMemorySession;
+  }
+  try {
+    const parsed = JSON.parse(raw) as KtnUserSession & {
+      accessToken?: string;
+      roles?: string[];
+      type?: string;
+    };
+    if (!parsed || !parsed.email || parsed.token === 'DEMO-MODE-ONLY') {
+      return inMemorySession;
+    }
+    if (!parsed.token && parsed.accessToken) {
+      parsed.token = parsed.accessToken;
+    }
+    if (!parsed.role) {
+      const roles = Array.isArray(parsed.roles) ? parsed.roles : [];
+      if (roles.includes('admin') || roles.includes('root') || parsed.type === 'admin') {
+        parsed.role = 'admin';
+      } else if (roles.includes('advisor') || parsed.type === 'advisor') {
+        parsed.role = 'advisor';
+      } else if (roles.includes('teacher') || parsed.type === 'teacher') {
+        parsed.role = 'teacher';
+      } else {
+        parsed.role = 'student';
+      }
+    }
+    inMemorySession = parsed;
+    return parsed;
+  } catch {
+    return inMemorySession;
+  }
+}
+
+export function saveStoredSession(session: KtnUserSession, token?: string): KtnUserSession {
+  const effectiveToken = token || session.token || '';
+  if (effectiveToken === 'DEMO-MODE-ONLY') {
+    return session;
+  }
+  const merged: KtnUserSession = {
+    ...session,
+    token: effectiveToken
+  };
+  inMemorySession = merged;
+  const serialized = JSON.stringify(merged);
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, serialized);
+    localStorage.removeItem('ol-credentials-auth-user');
+  } catch {
+    // Ignore localStorage quota/privacy error
+  }
+  try {
+    sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
+    sessionStorage.removeItem('ol-credentials-auth-user');
+  } catch {
+    // Ignore sessionStorage quota/privacy error
+  }
+  return merged;
+}
+
+export function clearStoredSession(): void {
+  inMemorySession = null;
+  clearConsultationStaffToken();
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem('ol-credentials-auth-user');
+  } catch {
+    // Ignore
+  }
+  try {
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    sessionStorage.removeItem('ol-credentials-auth-user');
+  } catch {
+    // Ignore
+  }
+}
+
+function getApiBase(): string {
+  const envBase = import.meta.env.VITE_KTN_API_BASE;
+  if (typeof envBase === 'string' && envBase.trim()) {
+    return envBase.trim().replace(/\/$/, '');
+  }
+  return '';
+}
+
+export function resolveMediaUrl(rawUrl?: string | null): string {
+  const s = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+  if (!s) return '';
+  if (s.startsWith('/api/ktn/')) {
+    return `${getApiBase()}${s}`;
+  }
+  return s;
+}
+
+export function toHttpHeaderSafeValue(raw: string): string {
+  return String(raw ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
+    .replace(/[^\x20-\x7E]/g, (ch) => encodeURIComponent(ch));
+}
+
+export async function ktnRequest<T>(
+  path: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const session = getStoredSession();
+  const headers = new Headers();
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        headers.set(key, toHttpHeaderSafeValue(value));
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    }
+  }
+  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (
+    session?.token &&
+    session.token !== 'DEMO-MODE-ONLY' &&
+    !session.token.startsWith('KTN-')
+  ) {
+    headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${session.token}`));
+  }
+  if (typeof window !== 'undefined') {
+    const hn = (window.location?.hostname || '').toLowerCase();
+    const isProdSite = hn === 'khongtunhi.com' || hn.endsWith('.khongtunhi.com');
+    const winSim = !isProdSite
+      ? (window as unknown as { __KTN_QA_SIMULATED_NOW__?: string }).__KTN_QA_SIMULATED_NOW__
+      : undefined;
+    if (typeof winSim === 'string' && winSim.trim() && !headers.has('X-KTN-QA-Simulated-Now')) {
+      headers.set('X-KTN-QA-Simulated-Now', toHttpHeaderSafeValue(winSim));
+    }
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 12000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      ...options,
+      headers,
+      credentials: 'same-origin',
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (options.signal?.aborted) {
+      throw err instanceof Error && err.name === 'AbortError'
+        ? err
+        : new DOMException(trStatic('Yêu cầu đã bị hủy.', 'Request was cancelled.'), 'AbortError');
+    }
+    throw new KtnApiError({
+      message: trStatic(
+        'Mất kết nối mạng hoặc máy chủ không phản hồi.',
+        'Network connection lost or server is unreachable.'
+      ),
+      status: 0,
+      code: 'NETWORK_ERROR',
+      isNetworkError: true
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = (await res.json()) as Record<string, unknown>;
+  } catch {
+    data = null;
+  }
+
+  if (data) {
+    if (typeof data.serverNow === 'string') {
+      updateServerClockFromIso(data.serverNow);
+    } else if (
+      data.session &&
+      typeof data.session === 'object' &&
+      typeof (data.session as Record<string, unknown>).serverNow === 'string'
+    ) {
+      updateServerClockFromIso((data.session as Record<string, unknown>).serverNow as string);
+    }
+  }
+
+  if (!res.ok || (data && data.ok === false)) {
+    if (
+      res.status === 401 &&
+      typeof window !== 'undefined' &&
+      !path.startsWith('/api/ktn/auth/login') &&
+      !path.startsWith('/api/ktn/auth/session')
+    ) {
+      try {
+        window.dispatchEvent(new CustomEvent('ktn:session-expired', { detail: { path } }));
+      } catch {
+        // ignore event dispatch errors
+      }
+    }
+    const errCode =
+      (typeof data?.code === 'string' && data.code) ||
+      (typeof data?.error === 'string' && data.error) ||
+      undefined;
+    if (errCode === 'COURSE_EXPIRED' && typeof data?.courseId === 'string') {
+      const currentSession = getStoredSession();
+      if (currentSession && Array.isArray(currentSession.onlineCourses)) {
+        const expCourseId = data.courseId.trim().toLowerCase();
+        const idx = currentSession.onlineCourses.findIndex(
+          (c) => String(c.id || '').trim().toLowerCase() === expCourseId
+        );
+        if (idx >= 0) {
+          const nextOnlineCourses = [...currentSession.onlineCourses];
+          nextOnlineCourses[idx] = {
+            ...nextOnlineCourses[idx],
+            limitTime:
+              typeof data.limitTime === 'string'
+                ? data.limitTime
+                : nextOnlineCourses[idx].limitTime ?? null,
+            expiresAt:
+              typeof data.expiresAt === 'string'
+                ? data.expiresAt
+                : nextOnlineCourses[idx].expiresAt ?? null,
+            isExpired: true
+          };
+          saveStoredSession({
+            ...currentSession,
+            onlineCourses: nextOnlineCourses
+          });
+        }
+      }
+    }
+    throw new KtnApiError({
+      message:
+        (typeof data?.message === 'string' && data.message) ||
+        trStatic(`Yêu cầu không thành công (HTTP ${res.status})`, `Request failed (HTTP ${res.status})`),
+      status: res.status || 500,
+      code: errCode,
+      syncStatus: typeof data?.syncStatus === 'string' ? data.syncStatus : undefined,
+      dlpBlocked: Boolean(data?.dlpBlocked)
+    });
+  }
+
+  return (data ?? {}) as T;
+}
+
+function resolveConsultationStaffBearer(): string {
+  const session = getStoredSession();
+  if (session) {
+    if (
+      session.token &&
+      session.token !== 'DEMO-MODE-ONLY' &&
+      !session.token.startsWith('KTN-') &&
+      (session.role === 'admin' || session.role === 'advisor')
+    ) {
+      return session.token;
+    }
+    return '';
+  }
+  const staffToken = getConsultationStaffToken();
+  if (staffToken && staffToken !== 'DEMO-MODE-ONLY') {
+    return staffToken;
+  }
+  return '';
+}
+
+export async function consultationStaffRequest<T>(
+  path: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const headers = new Headers();
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        headers.set(key, toHttpHeaderSafeValue(value));
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    }
+  }
+  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+    headers.set('Content-Type', 'application/json');
+  }
+  const bearer = resolveConsultationStaffBearer();
+  if (bearer && !headers.has('Authorization')) {
+    headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${bearer}`));
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 12000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      ...options,
+      headers,
+      credentials: 'same-origin',
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (options.signal?.aborted) {
+      throw err instanceof Error && err.name === 'AbortError'
+        ? err
+        : new DOMException(trStatic('Yêu cầu đã bị hủy.', 'Request was cancelled.'), 'AbortError');
+    }
+    throw new KtnApiError({
+      message: trStatic(
+        'Mất kết nối mạng hoặc máy chủ không phản hồi.',
+        'Network connection lost or server is unreachable.'
+      ),
+      status: 0,
+      code: 'NETWORK_ERROR',
+      isNetworkError: true
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = (await res.json()) as Record<string, unknown>;
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok || (data && data.ok === false)) {
+    throw new KtnApiError({
+      message:
+        (typeof data?.message === 'string' && data.message) ||
+        trStatic(`Yêu cầu không thành công (HTTP ${res.status})`, `Request failed (HTTP ${res.status})`),
+      status: res.status || 500,
+      code:
+        (typeof data?.code === 'string' && data.code) ||
+        (typeof data?.error === 'string' && data.error) ||
+        undefined
+    });
+  }
+
+  return (data ?? {}) as T;
+}
+
+export async function consultationWebRequest<T>(
+  path: string,
+  webToken?: string | null,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const headers = new Headers();
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        headers.set(key, toHttpHeaderSafeValue(value));
+      });
+    } else if (Array.isArray(options.headers)) {
+      for (const [key, value] of options.headers) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(options.headers)) {
+        if (key && value !== undefined) {
+          headers.set(key, toHttpHeaderSafeValue(String(value)));
+        }
+      }
+    }
+  }
+  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+    headers.set('Content-Type', 'application/json');
+  }
+  let resolvedWebToken = String(webToken || '').trim();
+  if (!resolvedWebToken) {
+    try {
+      resolvedWebToken = String(localStorage.getItem('ktn_consult_web') || '').trim();
+    } catch {
+      resolvedWebToken = '';
+    }
+  }
+  if (resolvedWebToken && !headers.has('Authorization')) {
+    headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${resolvedWebToken}`));
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 12000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      ...options,
+      headers,
+      credentials: 'omit',
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (options.signal?.aborted) {
+      throw err instanceof Error && err.name === 'AbortError'
+        ? err
+        : new DOMException(trStatic('Yêu cầu đã bị hủy.', 'Request was cancelled.'), 'AbortError');
+    }
+    throw new KtnApiError({
+      message: trStatic(
+        'Mất kết nối mạng hoặc máy chủ không phản hồi.',
+        'Network connection lost or server is unreachable.'
+      ),
+      status: 0,
+      code: 'NETWORK_ERROR',
+      isNetworkError: true
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = (await res.json()) as Record<string, unknown>;
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok || (data && data.ok === false)) {
+    throw new KtnApiError({
+      message:
+        (typeof data?.message === 'string' && data.message) ||
+        trStatic(`Yêu cầu không thành công (HTTP ${res.status})`, `Request failed (HTTP ${res.status})`),
+      status: res.status || 500,
+      code:
+        (typeof data?.code === 'string' && data.code) ||
+        (typeof data?.error === 'string' && data.error) ||
+        undefined
+    });
+  }
+
+  return (data ?? {}) as T;
+}
+
+export const ktnApi = {
+  async login(email: string, password: string): Promise<{ session: KtnUserSession; token: string }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      session: KtnUserSession;
+      token: string;
+    }>('/api/ktn/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+    clearConsultationStaffToken();
+    const saved = saveStoredSession(res.session, res.token);
+    return { session: saved, token: res.token };
+  },
+
+  async verifySession(): Promise<KtnUserSession | null> {
+    const stored = getStoredSession();
+    if (!stored?.token) return null;
+    const tokenAtStart = stored.token;
+    try {
+      const res = await ktnRequest<{
+        ok: boolean;
+        authenticated: boolean;
+        session: KtnUserSession;
+        token: string;
+      }>('/api/ktn/auth/session');
+      const latest = getStoredSession();
+      if (latest?.token && latest.token !== tokenAtStart) {
+        return latest;
+      }
+      if (res.authenticated && res.session) {
+        return saveStoredSession(res.session, res.token || tokenAtStart);
+      }
+      clearStoredSession();
+      return null;
+    } catch (err) {
+      const latest = getStoredSession();
+      if (latest?.token && latest.token !== tokenAtStart) {
+        return latest;
+      }
+      if (err instanceof KtnApiError && (err.status === 401 || err.status === 403)) {
+        clearStoredSession();
+        return null;
+      }
+      return stored;
+    }
+  },
+
+  async logout(tokenOverride?: string): Promise<void> {
+    const tokenToRevoke = String(tokenOverride || getStoredSession()?.token || '').trim();
+    clearStoredSession();
+    clearConsultationStaffToken();
+    const collectedSubs: PushSubscription[] = [];
+    try {
+      let unsubscribeEndpoint = '';
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        try {
+          const regs =
+            typeof navigator.serviceWorker.getRegistrations === 'function'
+              ? await navigator.serviceWorker.getRegistrations()
+              : [];
+          const rootReg = await navigator.serviceWorker.getRegistration('/').catch(() => null);
+          const allRegs = [...regs, ...(rootReg ? [rootReg] : [])];
+          const seenEndpoints = new Set<string>();
+          for (const reg of allRegs) {
+            const sub = await reg?.pushManager?.getSubscription().catch(() => null);
+            if (sub?.endpoint && !seenEndpoints.has(sub.endpoint)) {
+              seenEndpoints.add(sub.endpoint);
+              collectedSubs.push(sub);
+              if (!unsubscribeEndpoint) {
+                unsubscribeEndpoint = String(sub.endpoint).trim();
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      const headers: Record<string, string> = {};
+      if (
+        tokenToRevoke &&
+        tokenToRevoke !== 'DEMO-MODE-ONLY' &&
+        !tokenToRevoke.startsWith('KTN-')
+      ) {
+        headers.Authorization = `Bearer ${tokenToRevoke}`;
+      }
+      await ktnRequest('/api/ktn/auth/logout', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(
+          collectedSubs.length > 0
+            ? {
+                unsubscribeEndpoint,
+                unsubscribeEndpoints: collectedSubs.map((s) => String(s.endpoint).trim()),
+              }
+            : {}
+        )
+      });
+    } catch {
+      // Best-effort server revoke, always clear client state
+    } finally {
+      for (const sub of collectedSubs) {
+        await sub.unsubscribe().catch(() => false);
+      }
+      clearStoredSession();
+      clearConsultationStaffToken();
+    }
+  },
+
+  async getStudentMe(sync = false): Promise<KtnStudentRecord> {
+    const res = await ktnRequest<{ ok: boolean; student: KtnStudentRecord }>(
+      `/api/ktn/students/me${sync ? '?sync=1' : ''}`
+    );
+    return res.student;
+  },
+
+  async getCourses(): Promise<KtnCourse[]> {
+    const res = await ktnRequest<{ ok: boolean; courses: KtnCourse[] }>('/api/ktn/courses');
+    return Array.isArray(res.courses)
+      ? res.courses.map((c) => ({
+          ...c,
+          demoVideoUrl: c.demoVideoUrl ? resolveMediaUrl(c.demoVideoUrl) : c.demoVideoUrl ?? null,
+        }))
+      : [];
+  },
+
+  async getCourseUnits(courseId: string): Promise<KtnLessonUnit[]> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      units: Array<Record<string, unknown>>;
+      courseEntitlement?: OnlineCourseEntitlement | null;
+    }>(
+      `/api/ktn/courses/units?courseId=${encodeURIComponent(courseId)}`
+    );
+    if (res.courseEntitlement && res.courseEntitlement.id) {
+      const currentSession = getStoredSession();
+      if (currentSession && Array.isArray(currentSession.onlineCourses)) {
+        const idx = currentSession.onlineCourses.findIndex(
+          (c) => String(c.id) === String(res.courseEntitlement!.id)
+        );
+        if (idx >= 0) {
+          const nextOnlineCourses = [...currentSession.onlineCourses];
+          nextOnlineCourses[idx] = {
+            ...nextOnlineCourses[idx],
+            ...res.courseEntitlement,
+          };
+          saveStoredSession({
+            ...currentSession,
+            onlineCourses: nextOnlineCourses,
+          });
+        }
+      }
+    }
+    const rawUnits = Array.isArray(res.units) ? res.units : [];
+    const sorted = [...rawUnits].sort(
+      (a, b) => Number(a?.index ?? a?.num ?? 0) - Number(b?.index ?? b?.num ?? 0)
+    );
+    return sorted.map((u, idx) => {
+      const unitId = String(u.unitId || u._id || u.id || `unit-${idx + 1}`).trim();
+      const resources = Array.isArray(u.resources) ? (u.resources as Array<Record<string, unknown>>) : [];
+      const rawVid = String(
+        u.videoId ||
+          resources[0]?._id ||
+          resources[0]?.id ||
+          ''
+      ).trim();
+      const streamUrl = resolveMediaUrl(
+        typeof u.streamUrl === 'string' && u.streamUrl
+          ? u.streamUrl
+          : typeof u.video === 'string' && u.video.startsWith('/api/ktn/')
+          ? u.video
+          : ''
+      );
+      const posterUrl = resolveMediaUrl(typeof u.posterUrl === 'string' ? u.posterUrl : '');
+      const durMs = Number(u.durationMs || resources[0]?.duration || 0);
+      const duration = String(
+        u.duration ||
+          (durMs > 0
+            ? `${Math.floor(durMs / 60000)}:${String(Math.floor((durMs % 60000) / 1000)).padStart(2, '0')}`
+            : '15:00')
+      );
+      const num = Number(u.lessonNumber ?? u.num) > 0 ? Number(u.lessonNumber ?? u.num) : idx + 1;
+      const materials = Array.isArray(u.materials)
+        ? (u.materials as KtnLessonUnit['materials'])!.map((m) => ({
+            ...m,
+            url: resolveMediaUrl(m.url),
+            fileUrl: m.fileUrl ? resolveMediaUrl(m.fileUrl) : m.fileUrl,
+            baseUrl: m.baseUrl ? resolveMediaUrl(m.baseUrl) : m.baseUrl,
+          }))
+        : [];
+      const audioTracks = Array.isArray(u.audioTracks)
+        ? (u.audioTracks as KtnLessonUnit['audioTracks'])!.map((a) => ({
+            ...a,
+            url: resolveMediaUrl(a.url),
+          }))
+        : [];
+      const parts = Array.isArray(u.parts)
+        ? (u.parts as KtnLessonUnit['parts'])!.map((p) => ({
+            ...p,
+            url: p.url ? resolveMediaUrl(p.url) : p.url ?? null,
+            streamUrl: p.streamUrl ? resolveMediaUrl(p.streamUrl) : p.streamUrl ?? null,
+            posterUrl: p.posterUrl ? resolveMediaUrl(p.posterUrl) : p.posterUrl,
+            drmPlaybackUrl: p.drmPlaybackUrl ? resolveMediaUrl(p.drmPlaybackUrl) : p.drmPlaybackUrl ?? null,
+          }))
+        : [];
+      const drmPlaybackUrl =
+        typeof u.drmPlaybackUrl === 'string' && u.drmPlaybackUrl
+          ? resolveMediaUrl(u.drmPlaybackUrl)
+          : null;
+      return {
+        ...(u as unknown as KtnLessonUnit),
+        id: unitId,
+        _id: unitId,
+        unitId,
+        num,
+        lessonNumber: typeof u.lessonNumber === 'number' ? u.lessonNumber : num,
+        partNumber:
+          typeof u.partNumber === 'string' || typeof u.partNumber === 'number'
+            ? (u.partNumber as string | number)
+            : null,
+        partLabel: typeof u.partLabel === 'string' || u.partLabel === null ? (u.partLabel as string | null) : null,
+        unitType: (u.unitType as KtnLessonUnit['unitType']) || 'lesson',
+        rawTitle: typeof u.rawTitle === 'string' ? u.rawTitle : String(u.title || `Bài ${num}`),
+        title: String(u.title || `Bài ${num}`),
+        titleZh: typeof u.titleZh === 'string' ? u.titleZh : '',
+        titleVi: typeof u.titleVi === 'string' ? u.titleVi : '',
+        grammar: typeof u.grammar === 'string' ? u.grammar : '',
+        sgkPage: typeof u.sgkPage === 'number' ? u.sgkPage : null,
+        sbtPage: typeof u.sbtPage === 'number' ? u.sbtPage : null,
+        voVietPage: typeof u.voVietPage === 'number' ? u.voVietPage : null,
+        audioTracks,
+        materials,
+        homeworkAssignment: (u.homeworkAssignment as KtnHomeworkAssignment | null) || null,
+        parts,
+        video: streamUrl,
+        videoId: rawVid || undefined,
+        streamUrl: streamUrl || null,
+        posterUrl,
+        drmEnabled: Boolean(u.drmEnabled),
+        drmPolicy: (typeof u.drmPolicy === 'string' ? u.drmPolicy : 'drmDisabled') as KtnDrmPolicy,
+        drmPlaybackUrl,
+        drmFallbackAllowed: u.drmFallbackAllowed !== false,
+        drmCaptureProtectionGuaranteed: Boolean(u.drmCaptureProtectionGuaranteed),
+        duration
+      };
+    });
+  },
+
+  async getDrmPlayback(unitId: string, courseId?: string | null): Promise<KtnDrmPlaybackInfo> {
+    const qs = new URLSearchParams({ unitId });
+    if (courseId) qs.set('courseId', courseId);
+    const res = await ktnRequest<KtnDrmPlaybackInfo>(`/api/ktn/drm/playback?${qs.toString()}`);
+    return {
+      ...res,
+      licenseEndpoints: {
+        widevine: resolveMediaUrl(res.licenseEndpoints?.widevine || '/api/ktn/drm/license/widevine'),
+        playready: resolveMediaUrl(res.licenseEndpoints?.playready || '/api/ktn/drm/license/playready'),
+        fairplay: resolveMediaUrl(res.licenseEndpoints?.fairplay || '/api/ktn/drm/license/fairplay'),
+      },
+      fairplayCertificateUrl: resolveMediaUrl(res.fairplayCertificateUrl || '/api/ktn/drm/fairplay-cert'),
+      manifests: {
+        ...res.manifests,
+        dashUrl: res.manifests?.dashUrl ? resolveMediaUrl(res.manifests.dashUrl) : null,
+        hlsFairPlayUrl: res.manifests?.hlsFairPlayUrl ? resolveMediaUrl(res.manifests.hlsFairPlayUrl) : null,
+      },
+      fallbackStreamUrl: res.fallbackStreamUrl ? resolveMediaUrl(res.fallbackStreamUrl) : null,
+    };
+  },
+
+  async getDrmPolicy(courseId: string): Promise<KtnDrmPolicyConfigResponse> {
+    return ktnRequest<KtnDrmPolicyConfigResponse>(
+      `/api/ktn/drm/policy?courseId=${encodeURIComponent(courseId)}`
+    );
+  },
+
+  async updateDrmPolicy(payload: {
+    courseId: string;
+    policy: KtnDrmPolicy;
+    pilotEmails?: string[];
+    pilotUnitIds?: string[];
+    pilotVideoIds?: string[];
+    packagedAssets?: Record<string, {
+      dashUrl?: string | null;
+      hlsFairPlayUrl?: string | null;
+      encryptionScheme?: 'cbcs' | 'cenc';
+      keyId?: string;
+    }>;
+  }): Promise<KtnDrmPolicyConfigResponse> {
+    return ktnRequest<KtnDrmPolicyConfigResponse>('/api/ktn/drm/policy', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getCourseHomeworkConfigs(courseId: string): Promise<Record<string, KtnHomeworkAssignment>> {
+    const res = await ktnRequest<{ ok: boolean; configs: Record<string, KtnHomeworkAssignment> }>(
+      `/api/ktn/courses/homework-configs?courseId=${encodeURIComponent(courseId)}`
+    );
+    return res.configs || {};
+  },
+
+  async saveCourseHomeworkConfig(payload: {
+    courseId: string;
+    lessonNumber?: number | null;
+    unitId?: string | null;
+    assigned: boolean;
+    mandatory?: boolean;
+    title: string;
+    instructions: string;
+    relatedPages?: string | null;
+    allowedTypes?: Array<'audio' | 'image' | 'pdf' | 'video' | 'text'>;
+    maxFiles?: number;
+    deadline?: string | null;
+    completionCriteria?: string | null;
+    sampleMaterialUrl?: string | null;
+  }): Promise<{ ok: boolean; config: KtnHomeworkAssignment }> {
+    return ktnRequest('/api/ktn/courses/homework-configs', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getClasses(options?: { lite?: boolean }): Promise<KtnClassItem[]> {
+    const query = options?.lite ? '?lite=1' : '';
+    const res = await ktnRequest<{ ok: boolean; classes: KtnClassItem[] }>(`/api/ktn/classes${query}`);
+    return (Array.isArray(res.classes) ? res.classes : []).filter((c) => c.active !== false);
+  },
+
+  async saveClass(payload: {
+    id: string;
+    classCode?: string;
+    name: string;
+    mode?: 'create' | 'update';
+    isNew?: boolean;
+    clientRequestId?: string;
+    teacher_code?: string;
+    teacherCode?: string;
+    teacher_email?: string;
+    teacherEmail?: string;
+    schedule?: string;
+    total_lessons?: number;
+    totalLessons?: number;
+    current_lesson?: number;
+    currentLesson?: number;
+    active?: boolean;
+    scheduleConfig?: Partial<ClassScheduleConfig> & {
+      daysOfWeek?: number[];
+      startTime?: string;
+      endTime?: string;
+      timezone?: string;
+      effectiveFrom?: string;
+      effectiveUntil?: string | null;
+      mode?: 'weekly' | 'custom_sessions';
+      scheduleMode?: 'weekly' | 'custom_sessions';
+      customSessions?: CustomClassSession[];
+      exceptions?: ClassScheduleException[];
+      meetingUrl?: string;
+      status?: 'confirmed' | 'unconfirmed' | 'paused';
+      notifyMembers?: boolean;
+    };
+  }): Promise<{
+    ok: boolean;
+    classItem: KtnClassItem;
+    roomId?: string;
+    chatRoom?: Record<string, unknown>;
+    scheduleConfig?: ClassScheduleConfig | null;
+    idempotentReplay?: boolean;
+    message?: string;
+  }> {
+    const cleanCode = String(payload.id || payload.classCode || '')
+      .trim()
+      .toUpperCase();
+    return ktnRequest('/api/ktn/classes', {
+      method: 'POST',
+      headers: payload.clientRequestId
+        ? { 'Idempotency-Key': payload.clientRequestId }
+        : undefined,
+      body: JSON.stringify({
+        ...payload,
+        id: cleanCode,
+        classCode: cleanCode,
+      })
+    });
+  },
+
+  async createClass(payload: {
+    id?: string;
+    classCode?: string;
+    name: string;
+    clientRequestId?: string;
+    teacher_code?: string;
+    teacherCode?: string;
+    teacher_email?: string;
+    teacherEmail?: string;
+    schedule?: string;
+    total_lessons?: number;
+    totalLessons?: number;
+    scheduleConfig?: Partial<ClassScheduleConfig> & {
+      daysOfWeek?: number[];
+      startTime?: string;
+      endTime?: string;
+      timezone?: string;
+      effectiveFrom?: string;
+      effectiveUntil?: string | null;
+      mode?: 'weekly' | 'custom_sessions';
+      scheduleMode?: 'weekly' | 'custom_sessions';
+      customSessions?: CustomClassSession[];
+      exceptions?: ClassScheduleException[];
+      meetingUrl?: string;
+      status?: 'confirmed' | 'unconfirmed' | 'paused';
+      notifyMembers?: boolean;
+    };
+  }) {
+    const cleanCode = String(payload.id || payload.classCode || '')
+      .trim()
+      .toUpperCase();
+    return this.saveClass({
+      ...payload,
+      id: cleanCode,
+      classCode: cleanCode,
+      mode: 'create',
+      isNew: true,
+    });
+  },
+
+  async deleteClass(
+    classCodeOrPayload:
+      | string
+      | {
+          id?: string;
+          classCode?: string;
+          confirmClassCode?: string;
+          reason?: string;
+        }
+  ): Promise<{
+    ok: boolean;
+    deletedClassId?: string;
+    classCode?: string;
+    active?: boolean;
+    studentCount?: number;
+    message?: string;
+  }> {
+    const rawCode =
+      typeof classCodeOrPayload === 'string'
+        ? classCodeOrPayload
+        : classCodeOrPayload.classCode || classCodeOrPayload.id || '';
+    const cleanCode = String(rawCode || '').trim().toUpperCase();
+    if (!cleanCode) {
+      throw new KtnApiError({
+        message: trStatic('Thiếu mã lớp cần xóa.', 'Missing class code to delete.'),
+        status: 400,
+        code: 'MISSING_CLASS_CODE',
+      });
+    }
+    const confirmCode =
+      typeof classCodeOrPayload === 'object' && classCodeOrPayload.confirmClassCode
+        ? String(classCodeOrPayload.confirmClassCode).trim().toUpperCase()
+        : cleanCode;
+    const reason =
+      typeof classCodeOrPayload === 'object' && classCodeOrPayload.reason
+        ? String(classCodeOrPayload.reason).trim()
+        : undefined;
+    return ktnRequest(
+      `/api/ktn/classes?classCode=${encodeURIComponent(cleanCode)}&id=${encodeURIComponent(cleanCode)}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({
+          id: cleanCode,
+          classCode: cleanCode,
+          confirmClassCode: confirmCode,
+          confirmDelete: true,
+          ...(reason ? { reason } : {}),
+        }),
+      }
+    );
+  },
+
+  async getClassSchedule(classCode: string): Promise<{
+    ok: boolean;
+    classCode: string;
+    className: string;
+    scheduleStatus: 'confirmed' | 'legacy_unconfirmed' | 'unconfirmed' | 'paused';
+    officialScheduleText: string;
+    legacyScheduleText: string;
+    scheduleConfig: ClassScheduleConfig | null;
+    suggestedFromLegacyText?: {
+      daysOfWeek?: number[];
+      startTime?: string;
+      endTime?: string;
+      legacyText?: string;
+    } | null;
+    upcomingSessions: UpcomingClassSession[];
+    nextSession: UpcomingClassSession | null;
+  }> {
+    return ktnRequest(
+      `/api/ktn/classes/schedule?classCode=${encodeURIComponent(classCode)}`
+    );
+  },
+
+  async saveClassSchedule(payload: {
+    classCode: string;
+    daysOfWeek?: number[];
+    dayOfWeek?: string | number | number[];
+    startTime: string;
+    endTime: string;
+    timezone?: string;
+    effectiveFrom?: string;
+    effectiveUntil?: string | null;
+    mode?: 'weekly' | 'custom_sessions';
+    customSessions?: CustomClassSession[];
+    exceptions?: ClassScheduleException[];
+    meetingUrl?: string;
+    status?: 'confirmed' | 'unconfirmed' | 'paused';
+    notifyMembers?: boolean;
+  }): Promise<{
+    ok: boolean;
+    classCode: string;
+    scheduleStatus: 'confirmed' | 'unconfirmed' | 'paused';
+    officialScheduleText: string;
+    scheduleConfig: ClassScheduleConfig;
+    upcomingSessions: UpcomingClassSession[];
+    nextSession: UpcomingClassSession | null;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/classes/schedule', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async runScheduleReminders(payload?: {
+    nowMs?: number;
+    dryRun?: boolean;
+    classCode?: string;
+  }): Promise<{
+    ok: boolean;
+    checkedAt: string;
+    vnNow: string;
+    remindedSessionsCount: number;
+    dispatchedCount: number;
+    skippedDuplicatesCount: number;
+    details: Array<Record<string, unknown>>;
+  }> {
+    return ktnRequest('/api/ktn/schedule/run-reminders', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  },
+
+  async getClassSessions(classCode: string): Promise<KtnClassSession[]> {
+    const res = await ktnRequest<{ ok: boolean; sessions: KtnClassSession[] }>(
+      `/api/ktn/class-sessions?classCode=${encodeURIComponent(classCode)}`
+    );
+    return Array.isArray(res.sessions) ? res.sessions : [];
+  },
+
+  async saveClassSession(payload: {
+    classCode: string;
+    sessionNum: number;
+    title: string;
+    mode?: 'append_exercise' | 'update_exercise' | 'upsert';
+    exercise?: KtnSessionExercise;
+    preserveExistingExercises?: boolean;
+    preserveDefaultExercises?: boolean;
+    status?: 'draft' | 'published';
+    suppressDuplicateNotification?: boolean;
+    forceNotify?: boolean;
+    expectedUpdatedAt?: string | null;
+    exercises: Array<{
+      id?: string;
+      num: number;
+      title: string;
+      prompt: string;
+      type: string;
+      submissionType?: string;
+      dueDate?: string;
+      status?: 'draft' | 'published';
+      attachments?: KtnExerciseAttachment[];
+    }>;
+  }): Promise<KtnClassSession> {
+    const res = await ktnRequest<{ ok: boolean; sessionItem: KtnClassSession }>(
+      '/api/ktn/class-sessions',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+    return res.sessionItem;
+  },
+
+  async presignUpload(payload: {
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+    folder?: string;
+    classCode?: string;
+    sessionNum?: number;
+  }): Promise<{
+    ok: boolean;
+    signedUrl: string;
+    fileUrl: string;
+  }> {
+    const folder = payload.folder || 'homework-assignments';
+    const isSessionAssignmentUpload =
+      Boolean(payload.classCode) &&
+      folder !== 'chat' &&
+      folder !== 'forum';
+    const primaryPath = isSessionAssignmentUpload
+      ? '/api/ktn/class-sessions/upload-url'
+      : '/api/ktn/upload-url';
+
+    try {
+      return await ktnRequest<{
+        ok: boolean;
+        signedUrl: string;
+        fileUrl: string;
+      }>(primaryPath, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...payload,
+          folder
+        })
+      });
+    } catch (err) {
+      if (err instanceof KtnApiError && (err.status === 404 || err.status === 405)) {
+        if (primaryPath !== '/api/ktn/upload-url') {
+          try {
+            return await ktnRequest<{
+              ok: boolean;
+              signedUrl: string;
+              fileUrl: string;
+            }>('/api/ktn/upload-url', {
+              method: 'POST',
+              body: JSON.stringify({
+                ...payload,
+                folder
+              })
+            });
+          } catch (fallbackErr) {
+            if (
+              !(
+                fallbackErr instanceof KtnApiError &&
+                (fallbackErr.status === 404 || fallbackErr.status === 405)
+              )
+            ) {
+              throw fallbackErr;
+            }
+          }
+        }
+        return ktnRequest<{
+          ok: boolean;
+          signedUrl: string;
+          fileUrl: string;
+        }>('/api/ktn/homeworks/upload-url', {
+          method: 'POST',
+          body: JSON.stringify({
+            fileName: payload.fileName,
+            fileType: payload.fileType,
+            fileSize: payload.fileSize,
+            classCode: payload.classCode,
+            sessionNum: payload.sessionNum
+          })
+        });
+      }
+      throw err;
+    }
+  },
+
+  async uploadHomeworkAttachment(params: {
+    file: File | Blob;
+    fileName?: string;
+    classCode: string;
+    sessionNum: number;
+    allowedClassCodes?: string[];
+    isDemoMode?: boolean;
+    signal?: AbortSignal;
+    onProgress?: (percent: number) => void;
+  }): Promise<KtnExerciseAttachment> {
+    const rawFile = params.file;
+    const fileName = String(
+      params.fileName || (rawFile as File).name || `tai-lieu-buoi-${params.sessionNum}.pdf`
+    ).trim();
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    const mappedMime = ALLOWED_HOMEWORK_ATTACHMENT_EXTENSIONS[ext];
+    if (!mappedMime) {
+      throw new KtnApiError({
+        message: trStatic(
+          `Định dạng tệp ".${ext || 'unknown'}" không được hỗ trợ. Chỉ chấp nhận PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4.`,
+          `File format ".${ext || 'unknown'}" is not supported. Allowed types: PDF, DOC/DOCX, PPT/PPTX, JPG/PNG, MP3/M4A, MP4.`
+        ),
+        status: 415,
+        code: 'UNSUPPORTED_FILE_TYPE'
+      });
+    }
+
+    const sizeBytes = Number(rawFile.size || 0);
+    if (sizeBytes > MAX_HOMEWORK_ATTACHMENT_BYTES) {
+      const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
+      throw new KtnApiError({
+        message: trStatic(
+          `Tệp "${fileName}" có dung lượng ${sizeMb}MB, vượt quá giới hạn tối đa 50MB/tệp cho luồng giao bài tập.`,
+          `File "${fileName}" (${sizeMb}MB) exceeds the 50MB limit per homework attachment.`
+        ),
+        status: 413,
+        code: 'FILE_TOO_LARGE'
+      });
+    }
+
+    const cleanClassCode = String(params.classCode || '').trim().toUpperCase();
+    if (!cleanClassCode) {
+      throw new KtnApiError({
+        message: trStatic(
+          'Vui lòng chọn lớp học trước khi tải tài liệu đính kèm.',
+          'Please select a class before uploading attachments.'
+        ),
+        status: 400,
+        code: 'MISSING_CLASS_CODE'
+      });
+    }
+
+    const session = getStoredSession();
+    const allowedList =
+      params.allowedClassCodes ||
+      (session?.role === 'teacher' && Array.isArray(session.assignedClasses)
+        ? session.assignedClasses
+        : undefined);
+    if (
+      Array.isArray(allowedList) &&
+      session?.role !== 'admin' &&
+      !allowedList.some((c) => String(c || '').trim().toUpperCase() === cleanClassCode)
+    ) {
+      throw new KtnApiError({
+        message: trStatic(
+          `Giáo viên không có quyền tải tài liệu giao bài cho lớp ${cleanClassCode} không thuộc phạm vi phụ trách.`,
+          `Teacher is not authorized to upload assignment materials for class ${cleanClassCode}.`
+        ),
+        status: 403,
+        code: 'FORBIDDEN_CLASS'
+      });
+    }
+
+    const mimeType =
+      (rawFile.type && rawFile.type.split(';')[0].trim()) || mappedMime || 'application/octet-stream';
+    const effectiveSize = sizeBytes || 2048;
+
+    params.onProgress?.(10);
+
+    if (params.isDemoMode || session?.token === 'DEMO-MODE-ONLY') {
+      if (params.signal?.aborted) {
+        throw new DOMException(trStatic('Đã hủy tải tệp.', 'File upload cancelled.'), 'AbortError');
+      }
+      params.onProgress?.(60);
+      const demoUrl = `https://cdn.khongtunhi.com/homework-assignments/${encodeURIComponent(
+        cleanClassCode
+      )}/s${params.sessionNum}-${Date.now()}-${encodeURIComponent(fileName)}`;
+      registerLocalUploadedMediaPreview(demoUrl, rawFile);
+      params.onProgress?.(100);
+      return {
+        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: fileName,
+        url: demoUrl,
+        mimeType,
+        sizeBytes: effectiveSize
+      };
+    }
+
+    const presign = await this.presignUpload({
+      fileName,
+      fileType: mimeType,
+      fileSize: effectiveSize,
+      folder: `homework-assignments/${cleanClassCode}/session-${params.sessionNum}`,
+      classCode: cleanClassCode,
+      sessionNum: params.sessionNum
+    });
+
+    if (params.signal?.aborted) {
+      throw new DOMException(trStatic('Đã hủy tải tệp.', 'File upload cancelled.'), 'AbortError');
+    }
+
+    params.onProgress?.(45);
+
+    const uploadRes = await fetch(presign.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': mimeType },
+      body: rawFile,
+      signal: params.signal
+    });
+
+    if (!uploadRes.ok) {
+      throw new KtnApiError({
+        message: trStatic(
+          `Không thể tải tệp "${fileName}" lên kho lưu trữ (HTTP ${uploadRes.status}). Vui lòng thử lại.`,
+          `Unable to upload "${fileName}" to storage (HTTP ${uploadRes.status}). Please try again.`
+        ),
+        status: uploadRes.status || 502,
+        code: 'STORAGE_UPLOAD_FAILED'
+      });
+    }
+
+    params.onProgress?.(100);
+    registerLocalUploadedMediaPreview(presign.fileUrl, rawFile);
+
+    return {
+      id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: fileName,
+      url: presign.fileUrl,
+      mimeType,
+      sizeBytes: effectiveSize
+    };
+  },
+
+  async getHomeworks(classCode?: string): Promise<KtnHomework[]> {
+    const q = classCode ? `?classCode=${encodeURIComponent(classCode)}` : '';
+    const res = await ktnRequest<{ ok: boolean; homeworks: KtnHomework[] }>(
+      `/api/ktn/homeworks${q}`
+    );
+    return Array.isArray(res.homeworks) ? res.homeworks : [];
+  },
+
+  async uploadHomeworkFile(
+    file: File | Blob,
+    fileName: string,
+    onProgress?: (percent: number) => void
+  ): Promise<{ fileUrl: string; fileType: string; size: number }> {
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    const extMimeMap: Record<string, string> = {
+      wav: 'audio/wav',
+      webm: 'audio/webm',
+      mp3: 'audio/mpeg',
+      m4a: 'audio/mp4',
+      ogg: 'audio/ogg',
+      aac: 'audio/aac',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      pdf: 'application/pdf',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime'
+    };
+    const fileType = (file.type || extMimeMap[ext] || 'application/octet-stream').split(';')[0].trim() || 'application/octet-stream';
+    const fileSize = file.size || 2048;
+    const presign = await ktnRequest<{
+      ok: boolean;
+      signedUrl: string;
+      fileUrl: string;
+    }>('/api/ktn/homeworks/upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ fileName, fileType, fileSize })
+    });
+
+    onProgress?.(5);
+    if (onProgress && typeof XMLHttpRequest !== 'undefined') {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', presign.signedUrl, true);
+        xhr.setRequestHeader('Content-Type', fileType);
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable && evt.total > 0) {
+            onProgress(Math.min(99, Math.max(5, Math.round((evt.loaded / evt.total) * 100))));
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            onProgress(100);
+            resolve();
+          } else {
+            reject(
+              new KtnApiError({
+                message: trStatic(
+                  'Không thể tải tệp bài làm lên kho lưu trữ. Em vui lòng thử lại.',
+                  'Unable to upload your homework file. Please try again.'
+                ),
+                status: xhr.status || 502
+              })
+            );
+          }
+        };
+        xhr.onerror = () => {
+          reject(
+            new KtnApiError({
+              message: trStatic(
+                'Lỗi kết nối mạng khi tải tệp bài làm lên kho lưu trữ.',
+                'Network error while uploading your homework file.'
+              ),
+              status: 0,
+              isNetworkError: true
+            })
+          );
+        };
+        xhr.send(file);
+      });
+    } else {
+      const uploadRes = await fetch(presign.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': fileType },
+        body: file
+      });
+      if (!uploadRes.ok) {
+        throw new KtnApiError({
+          message: trStatic(
+            'Không thể tải tệp bài làm lên kho lưu trữ. Em vui lòng thử lại.',
+            'Unable to upload your homework file. Please try again.'
+          ),
+          status: uploadRes.status || 502
+        });
+      }
+      onProgress?.(100);
+    }
+    registerLocalUploadedMediaPreview(presign.fileUrl, file);
+    return {
+      fileUrl: presign.fileUrl,
+      fileType,
+      size: fileSize
+    };
+  },
+
+  async uploadChatFile(
+    file: File | Blob,
+    fileName: string,
+    onProgress?: (percent: number) => void
+  ): Promise<{ fileUrl: string; fileType: string; size: number }> {
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    const extMimeMap: Record<string, string> = {
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      bmp: 'image/bmp',
+      heic: 'image/heic',
+      pdf: 'application/pdf',
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      m4a: 'audio/mp4',
+      aac: 'audio/aac',
+      ogg: 'audio/ogg',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime',
+      m4v: 'video/x-m4v',
+      webm: 'video/webm',
+      zip: 'application/zip',
+      rar: 'application/vnd.rar',
+      txt: 'text/plain',
+      doc: 'application/msword',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xls: 'application/vnd.ms-excel',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ppt: 'application/vnd.ms-powerpoint',
+      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    };
+    const fileType = (file.type || extMimeMap[ext] || 'application/octet-stream').split(';')[0].trim() || 'application/octet-stream';
+    const fileSize = file.size || 2048;
+
+    if (fileSize > 100 * 1024 * 1024) {
+      throw new KtnApiError({
+        message: trStatic(
+          'Tệp đính kèm vượt quá giới hạn 100MB.',
+          'Attachment exceeds the 100MB limit.'
+        ),
+        status: 400
+      });
+    }
+
+    let presign: { ok: boolean; signedUrl: string; fileUrl: string };
+    try {
+      presign = await ktnRequest<{
+        ok: boolean;
+        signedUrl: string;
+        fileUrl: string;
+      }>('/api/ktn/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ fileName, fileType, fileSize }),
+        timeoutMs: 20000
+      });
+    } catch (err) {
+      if (err instanceof KtnApiError && err.status === 404) {
+        presign = await ktnRequest<{
+          ok: boolean;
+          signedUrl: string;
+          fileUrl: string;
+        }>('/api/ktn/homeworks/upload-url', {
+          method: 'POST',
+          body: JSON.stringify({ fileName, fileType, fileSize }),
+          timeoutMs: 20000
+        });
+      } else {
+        throw err;
+      }
+    }
+
+    if (!presign?.signedUrl || !presign?.fileUrl) {
+      throw new KtnApiError({
+        message: trStatic(
+          'Không tạo được đường dẫn tải tệp an toàn (Presigned URL).',
+          'Could not generate a secure upload link (Presigned URL).'
+        ),
+        status: 502
+      });
+    }
+
+    onProgress?.(5);
+
+    const putOnce = async (): Promise<void> => {
+      if (onProgress && typeof XMLHttpRequest !== 'undefined') {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', presign.signedUrl, true);
+          xhr.setRequestHeader('Content-Type', fileType);
+          xhr.upload.onprogress = (evt) => {
+            if (evt.lengthComputable && evt.total > 0) {
+              const pct = Math.min(99, Math.max(5, Math.round((evt.loaded / evt.total) * 100)));
+              onProgress(pct);
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              onProgress(100);
+              resolve();
+            } else {
+              reject(
+                new KtnApiError({
+                  message: trStatic(
+                    `Không thể tải tệp đính kèm lên kho lưu trữ (HTTP ${xhr.status}).`,
+                    `Unable to upload attachment to storage (HTTP ${xhr.status}).`
+                  ),
+                  status: xhr.status || 502
+                })
+              );
+            }
+          };
+          xhr.onerror = () => {
+            reject(
+              new KtnApiError({
+                message: trStatic(
+                  'Lỗi kết nối mạng khi tải tệp lớn lên S3.',
+                  'Network error while uploading large file to storage.'
+                ),
+                status: 0,
+                isNetworkError: true
+              })
+            );
+          };
+          xhr.send(file);
+        });
+        return;
+      }
+
+      const uploadRes = await fetch(presign.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': fileType },
+        body: file
+      });
+      if (!uploadRes.ok) {
+        throw new KtnApiError({
+          message: trStatic(
+            'Không thể tải tệp đính kèm lên kho lưu trữ. Vui lòng thử lại.',
+            'Unable to upload attachment to storage. Please try again.'
+          ),
+          status: uploadRes.status || 502
+        });
+      }
+      onProgress?.(100);
+    };
+
+    try {
+      await putOnce();
+    } catch (err) {
+      const shouldRetry =
+        !(err instanceof KtnApiError) || err.isNetworkError || err.status >= 500 || err.status === 0;
+      if (!shouldRetry) throw err;
+      await putOnce();
+    }
+
+    registerLocalUploadedMediaPreview(presign.fileUrl, file);
+
+    return {
+      fileUrl: presign.fileUrl,
+      fileType,
+      size: fileSize
+    };
+  },
+
+  async submitHomework(payload: {
+    courseId: string;
+    classCode?: string | null;
+    lessonNum: number;
+    lessonTitle: string;
+    unitId?: string | null;
+    fileUrl?: string;
+    fileType?: string;
+    submissionMode?: 'file' | 'text';
+    textAnswer?: string;
+    studentNote?: string;
+    workbookAnswers?: Record<string, unknown>;
+    attachments?: Array<{ title: string; fileUrl: string; mediaType: string; size: number }>;
+  }): Promise<{ homework: KtnHomework; syncStatus: string }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      homework: KtnHomework;
+      syncStatus: string;
+    }>('/api/ktn/homeworks', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return res;
+  },
+
+  async gradeHomework(payload: {
+    id: string;
+    score?: number | null;
+    status: 'graded' | 'revision_requested';
+    teacherFeedback: string;
+    classCode?: string | null;
+    expectedFileUrl?: string | null;
+  }): Promise<{ homework: KtnHomework; syncStatus: string }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      homework: KtnHomework;
+      syncStatus: string;
+    }>('/api/ktn/homeworks/grade', {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+    return res;
+  },
+
+  async getLearningProgress(): Promise<{ ok: boolean; email?: string; completedLessons: string[] }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      email?: string;
+      completedLessons: string[];
+    }>('/api/ktn/learning-progress');
+    return {
+      ok: Boolean(res?.ok),
+      email: res?.email,
+      completedLessons: Array.isArray(res?.completedLessons) ? res.completedLessons : []
+    };
+  },
+
+  async saveLearningProgress(payload: {
+    lessonKey?: string;
+    completedLessons?: string[];
+    courseId?: string;
+    lessonNum?: number;
+  }): Promise<{ ok: boolean; email?: string; completedLessons: string[] }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      email?: string;
+      completedLessons: string[];
+    }>('/api/ktn/learning-progress', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return {
+      ok: Boolean(res?.ok),
+      email: res?.email,
+      completedLessons: Array.isArray(res?.completedLessons) ? res.completedLessons : []
+    };
+  },
+
+  async getNotifications(params?: { limit?: number; offset?: number }): Promise<{
+    notifications: KtnNotification[];
+    readIds: string[];
+    unreadCount?: number;
+    totalCount?: number;
+    settings?: UserNotificationSettings;
+  }> {
+    const sp = new URLSearchParams();
+    if (typeof params?.limit === 'number' && params.limit > 0) {
+      sp.set('limit', String(params.limit));
+    }
+    if (typeof params?.offset === 'number' && params.offset >= 0) {
+      sp.set('offset', String(params.offset));
+    }
+    const qs = sp.toString();
+    const res = await ktnRequest<{
+      ok: boolean;
+      notifications: KtnNotification[];
+      readIds: string[];
+      unreadCount?: number;
+      totalCount?: number;
+      settings?: UserNotificationSettings;
+    }>(`/api/ktn/notifications${qs ? `?${qs}` : ''}`);
+    return {
+      notifications: Array.isArray(res.notifications) ? res.notifications : [],
+      readIds: Array.isArray(res.readIds) ? res.readIds : [],
+      unreadCount: typeof res.unreadCount === 'number' ? res.unreadCount : undefined,
+      totalCount: typeof res.totalCount === 'number' ? res.totalCount : undefined,
+      settings: res.settings
+    };
+  },
+
+  async getNotificationsSummary(options?: { bust?: boolean }): Promise<{
+    unreadCount: number;
+    totalCount: number;
+    latestAt?: string | null;
+    settings?: UserNotificationSettings;
+  }> {
+    const endpoint = options?.bust
+      ? '/api/ktn/notifications/summary?bust=1'
+      : '/api/ktn/notifications/summary';
+    const res = await ktnRequest<{
+      ok: boolean;
+      unreadCount?: number;
+      totalCount?: number;
+      latestAt?: string | null;
+      settings?: UserNotificationSettings;
+    }>(endpoint);
+    return {
+      unreadCount: Number(res.unreadCount || 0),
+      totalCount: Number(res.totalCount || 0),
+      latestAt: res.latestAt ?? null,
+      settings: res.settings
+    };
+  },
+
+  async getNotificationSettings(): Promise<UserNotificationSettings> {
+    const res = await ktnRequest<{ ok: boolean; settings: UserNotificationSettings }>(
+      '/api/ktn/notifications/settings'
+    );
+    return (
+      res.settings || {
+        chat: true,
+        homework: true,
+        schedule: true,
+        important: true,
+        reminder10Min: false
+      }
+    );
+  },
+
+  async updateNotificationSettings(
+    settings: Partial<UserNotificationSettings>
+  ): Promise<UserNotificationSettings> {
+    const res = await ktnRequest<{ ok: boolean; settings: UserNotificationSettings }>(
+      '/api/ktn/notifications/settings',
+      {
+        method: 'PUT',
+        body: JSON.stringify(settings)
+      }
+    );
+    return res.settings;
+  },
+
+  async markNotificationsRead(ids: string[]): Promise<{ markedCount: number }> {
+    const res = await ktnRequest<{ ok: boolean; markedCount: number }>(
+      '/api/ktn/notifications/read',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ ids })
+      }
+    );
+    return { markedCount: res.markedCount || 0 };
+  },
+
+  async getVapidPublicKey(): Promise<{ publicKey: string; serverDeliveryConfigured?: boolean }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      publicKey: string;
+      serverDeliveryConfigured?: boolean;
+    }>('/api/ktn/push/vapid-public-key');
+    return {
+      publicKey: String(res?.publicKey || ''),
+      serverDeliveryConfigured: res?.serverDeliveryConfigured
+    };
+  },
+
+  async subscribePush(
+    subscription: Record<string, unknown>,
+    previousEndpoint?: string
+  ): Promise<{ ok: boolean; endpoint?: string; serverDeliveryConfigured?: boolean }> {
+    const prev = String(previousEndpoint || subscription.previousEndpoint || '').trim();
+    const res = await ktnRequest<{
+      ok: boolean;
+      endpoint?: string;
+      serverDeliveryConfigured?: boolean;
+    }>('/api/ktn/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({
+        subscription,
+        ...(prev ? { previousEndpoint: prev } : {})
+      })
+    });
+    return {
+      ok: Boolean(res?.ok),
+      endpoint: res?.endpoint,
+      serverDeliveryConfigured: res?.serverDeliveryConfigured
+    };
+  },
+
+  async getStudents(classCode?: string): Promise<KtnStudentRecord[]> {
+    const q = classCode ? `?classCode=${encodeURIComponent(classCode)}` : '';
+    const res = await ktnRequest<{ ok: boolean; students: KtnStudentRecord[] }>(
+      `/api/ktn/students${q}`
+    );
+    return Array.isArray(res.students) ? res.students : [];
+  },
+
+  async searchStudents(
+    params: {
+      q?: string;
+      classCode?: string;
+      courseId?: string;
+      accountStatus?: string;
+      syncStatus?: string;
+      limit?: number;
+      offset?: number;
+    },
+    signal?: AbortSignal
+  ): Promise<KtnStudentSearchResult> {
+    const sp = new URLSearchParams();
+    if (params.q) sp.set('q', params.q);
+    if (params.classCode) sp.set('classCode', params.classCode);
+    if (params.courseId) sp.set('courseId', params.courseId);
+    if (params.accountStatus) sp.set('accountStatus', params.accountStatus);
+    if (params.syncStatus) sp.set('syncStatus', params.syncStatus);
+    sp.set('limit', String(params.limit ?? 25));
+    sp.set('offset', String(params.offset ?? 0));
+    return ktnRequest<KtnStudentSearchResult>(
+      `/api/ktn/admin/students/search?${sp.toString()}`,
+      { signal }
+    );
+  },
+
+  async provisionStudent(payload: {
+    name: string;
+    email: string;
+    phone?: string;
+    parentName?: string;
+    classCode?: string | null;
+    courseIds?: string[];
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
+    note?: string;
+    idempotencyKey?: string;
+    operationId?: string;
+  }): Promise<KtnProvisionStudentResponse> {
+    return ktnRequest<KtnProvisionStudentResponse>(
+      '/api/ktn/admin/students/provision',
+      {
+        method: 'POST',
+        timeoutMs: 45000,
+        headers: payload.idempotencyKey
+          ? { 'Idempotency-Key': payload.idempotencyKey }
+          : undefined,
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async setStudentCourseDuration(payload: {
+    studentEmail: string;
+    courseId: string;
+    preset: CourseDurationPreset;
+    mode?: CourseDurationMode;
+    clientRequestId?: string;
+  }): Promise<{
+    ok: boolean;
+    operationId: string;
+    idempotentReplay?: boolean;
+    studentEmail: string;
+    courseId: string;
+    userPermissionId?: string | null;
+    preset: CourseDurationPreset;
+    mode: CourseDurationMode;
+    limitTime: string | null;
+    expiresAt: string | null;
+    isExpired: boolean;
+    syncStatus: string;
+    courseEntitlement?: OnlineCourseEntitlement;
+    student?: KtnStudentRecord;
+    serverNow?: string;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/admin/students/course-duration', {
+      method: 'POST',
+      timeoutMs: 45000,
+      headers: payload.clientRequestId
+        ? { 'Idempotency-Key': payload.clientRequestId }
+        : undefined,
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async manageStudentCourses(payload: {
+    action: 'grant' | 'revoke' | 'set' | 'assign_class';
+    email: string;
+    code?: string;
+    name?: string;
+    phone?: string;
+    parentName?: string;
+    leadSource?: string;
+    zaloUserId?: string;
+    consultationId?: string;
+    courseIds?: string[];
+    classCode?: string | null;
+    enrolledClasses?: string[];
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
+  }): Promise<{
+    student: KtnStudentRecord;
+    message: string;
+    syncStatus?: string;
+    accountStatus?: string;
+    accountCreated?: boolean;
+    existingAccount?: boolean;
+    initialPassword?: string | null;
+  }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      student: KtnStudentRecord;
+      message: string;
+      syncStatus?: string;
+      accountStatus?: string;
+      accountCreated?: boolean;
+      existingAccount?: boolean;
+      initialPassword?: string | null;
+    }>(
+      '/api/ktn/students/courses',
+      {
+        method: 'POST',
+        timeoutMs: 45000,
+        body: JSON.stringify(payload)
+      }
+    );
+    return res;
+  },
+
+  async grantStudentCourses(params: {
+    email: string;
+    courseIds: string[];
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
+  }) {
+    const cleanIds = Array.from(
+      new Set((params.courseIds || []).map((id) => String(id || '').trim()).filter(Boolean))
+    );
+    if (cleanIds.length === 0) {
+      throw new KtnApiError({
+        message: trStatic(
+          'Vui lòng chọn ít nhất 1 khóa học cần cấp.',
+          'Please select at least 1 course to grant.'
+        ),
+        status: 400,
+        code: 'EMPTY_COURSE_SELECTION'
+      });
+    }
+    return this.manageStudentCourses({
+      action: 'grant',
+      email: params.email.trim(),
+      courseIds: cleanIds,
+      ...(params.durationPreset ? { durationPreset: params.durationPreset } : {}),
+      ...(params.durationMode ? { durationMode: params.durationMode } : {})
+    });
+  },
+
+  async revokeStudentCourse(params: {
+    email: string;
+    courseId: string;
+  }) {
+    const cleanId = String(params.courseId || '').trim();
+    if (!cleanId) {
+      throw new KtnApiError({
+        message: trStatic(
+          'Vui lòng chọn khóa học cần thu hồi.',
+          'Please select a course to revoke.'
+        ),
+        status: 400,
+        code: 'EMPTY_COURSE_REVOKE'
+      });
+    }
+    return this.manageStudentCourses({
+      action: 'revoke',
+      email: params.email.trim(),
+      courseIds: [cleanId]
+    });
+  },
+
+  async assignStudentClass(params: {
+    email: string;
+    classCode: string | null;
+    enrolledClasses?: string[];
+  }) {
+    const normalizedClass =
+      params.classCode && String(params.classCode).trim()
+        ? String(params.classCode).trim().toUpperCase()
+        : null;
+    const cleanEnrolled = Array.isArray(params.enrolledClasses)
+      ? Array.from(
+          new Set(
+            params.enrolledClasses
+              .map((c) => String(c || '').trim().toUpperCase())
+              .filter(Boolean)
+          )
+        )
+      : undefined;
+    return this.manageStudentCourses({
+      action: 'assign_class',
+      email: params.email.trim(),
+      classCode: normalizedClass,
+      ...(cleanEnrolled ? { enrolledClasses: cleanEnrolled } : {})
+    });
+  },
+
+  async replaceAllStudentCourses(params: {
+    email: string;
+    courseIds: string[];
+  }) {
+    const cleanIds = Array.from(
+      new Set((params.courseIds || []).map((id) => String(id || '').trim()).filter(Boolean))
+    );
+    return this.manageStudentCourses({
+      action: 'set',
+      email: params.email.trim(),
+      courseIds: cleanIds
+    });
+  },
+
+  async updateStudentProfile(params: {
+    email: string;
+    name: string;
+    phone?: string;
+    parentName?: string;
+    code?: string;
+    leadSource?: string;
+    zaloUserId?: string;
+    consultationId?: string;
+  }) {
+    return this.manageStudentCourses({
+      action: 'assign_class',
+      email: params.email.trim(),
+      name: params.name.trim(),
+      phone: params.phone !== undefined ? params.phone.trim() : undefined,
+      parentName: params.parentName !== undefined ? params.parentName.trim() : undefined,
+      ...(params.code !== undefined ? { code: params.code.trim() } : {}),
+      ...(params.leadSource !== undefined ? { leadSource: params.leadSource.trim() } : {}),
+      ...(params.zaloUserId !== undefined ? { zaloUserId: params.zaloUserId.trim() } : {}),
+      ...(params.consultationId !== undefined
+        ? { consultationId: params.consultationId.trim() }
+        : {})
+    });
+  },
+
+  async getTeachers(q?: string): Promise<KtnTeacherRecord[]> {
+    const cleanQ = String(q || '').trim();
+    const sp = new URLSearchParams();
+    if (cleanQ) {
+      sp.set('q', cleanQ);
+      if (cleanQ.includes('@') && !cleanQ.includes(' ')) {
+        sp.set('teacherEmail', cleanQ.toLowerCase());
+      }
+    }
+    const qs = sp.toString();
+    const res = await ktnRequest<{ ok: boolean; teachers: KtnTeacherRecord[] }>(
+      `/api/ktn/teachers${qs ? `?${qs}` : ''}`
+    );
+    return Array.isArray(res.teachers) ? res.teachers : [];
+  },
+
+  async searchAdminTeachers(
+    params?: {
+      q?: string;
+      status?: string;
+      classCode?: string;
+      courseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<KtnTeacherSearchResult> {
+    const limit = Math.max(1, Math.min(100, Number(params?.limit) || 20));
+    const offset = Math.max(0, Number(params?.offset) || 0);
+    const sp = new URLSearchParams();
+    if (params?.q && params.q.trim()) sp.set('q', params.q.trim());
+    if (params?.status && params.status !== 'ALL') sp.set('status', params.status);
+    if (params?.classCode && params.classCode !== 'ALL') sp.set('classCode', params.classCode);
+    if (params?.courseId && params.courseId !== 'ALL') sp.set('courseId', params.courseId);
+    sp.set('limit', String(limit));
+    sp.set('offset', String(offset));
+
+    try {
+      const res = await ktnRequest<{
+        ok?: boolean;
+        items?: KtnTeacherRecord[];
+        teachers?: KtnTeacherRecord[];
+        totalCount?: number;
+        total?: number;
+        hasMore?: boolean;
+        limit?: number;
+        offset?: number;
+      }>(`/api/ktn/admin/teachers/search?${sp.toString()}`, {
+        signal: options?.signal
+      });
+      const items = Array.isArray(res.items)
+        ? res.items
+        : Array.isArray(res.teachers)
+          ? res.teachers
+          : [];
+      const totalCount =
+        typeof res.totalCount === 'number'
+          ? res.totalCount
+          : typeof res.total === 'number'
+            ? res.total
+            : offset + items.length;
+      const effectiveLimit = typeof res.limit === 'number' ? res.limit : limit;
+      const effectiveOffset = typeof res.offset === 'number' ? res.offset : offset;
+      const hasMore =
+        typeof res.hasMore === 'boolean'
+          ? res.hasMore
+          : effectiveOffset + items.length < totalCount;
+
+      return {
+        ok: true,
+        items,
+        totalCount,
+        hasMore,
+        limit: effectiveLimit,
+        offset: effectiveOffset
+      };
+    } catch (err) {
+      if (options?.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
+        throw err;
+      }
+      if (err instanceof KtnApiError && (err.status === 401 || err.status === 403)) {
+        throw err;
+      }
+      // Graceful fallback to legacy /api/ktn/teachers if backend endpoint is not yet deployed or returns 404
+      const allTeachers = await this.getTeachers(undefined);
+      return filterAndPaginateTeachersClientSide(allTeachers, {
+        ...params,
+        limit,
+        offset
+      });
+    }
+  },
+
+  async searchTeachers(
+    params?: {
+      q?: string;
+      status?: string;
+      classCode?: string;
+      courseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<KtnTeacherSearchResult> {
+    return this.searchAdminTeachers(params, options);
+  },
+
+  async getTeacher(emailOrCode: string): Promise<KtnTeacherRecord | null> {
+    const list = await this.getTeachers(emailOrCode);
+    const normalized = (emailOrCode || '').trim().toLowerCase();
+    return (
+      list.find(
+        (t) =>
+          (t.email && t.email.toLowerCase() === normalized) ||
+          (t.code && t.code.toLowerCase() === normalized)
+      ) || null
+    );
+  },
+
+  async saveTeacher(payload: {
+    code?: string;
+    name: string;
+    email: string;
+    phone?: string;
+    specialty?: string;
+    assignedClasses?: string[];
+    assignedCourses?: string[];
+    active?: boolean;
+    initialPassword?: string;
+    provisionOnIzTeach?: boolean;
+  }): Promise<{
+    ok: boolean;
+    teacher: KtnTeacherRecord;
+    provisioningStatus: string;
+    readyToLogin: boolean;
+    accountCreated?: boolean;
+    existingAccount?: boolean;
+    initialPassword?: string | null;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/teachers', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteTeacher(params: {
+    teacherId?: string;
+    code?: string;
+    email?: string;
+  }): Promise<KtnTeacherDeleteResult> {
+    const rawTarget = String(params.teacherId || params.code || params.email || '').trim();
+    if (!rawTarget) {
+      throw new KtnApiError({
+        message: trStatic(
+          'Vui lòng cung cấp mã giáo viên (code) hoặc email hợp lệ để xóa.',
+          'Please enter a valid teacher code or email to delete.'
+        ),
+        status: 400,
+        code: 'MISSING_TEACHER_IDENTIFIER'
+      });
+    }
+    const sp = new URLSearchParams();
+    if (params.teacherId) sp.set('teacherId', params.teacherId.trim());
+    if (params.code) sp.set('code', params.code.trim());
+    if (params.email) sp.set('email', params.email.trim());
+    const qs = sp.toString();
+
+    return ktnRequest<KtnTeacherDeleteResult>(
+      `/api/ktn/teachers${qs ? `?${qs}` : ''}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify(params)
+      }
+    );
+  },
+
+  async uploadFileWithProgress(
+    file: File | Blob,
+    onProgress?: (percent: number) => void
+  ): Promise<{ fileUrl: string; fileType: string; size: number }> {
+    const fileName = (file as File).name || `upload-${Date.now()}.bin`;
+    return this.uploadChatFile(file, fileName, onProgress);
+  },
+
+  async teacherCreateStudent(payload: {
+    name: string;
+    email: string;
+    phone?: string;
+    parentName?: string;
+    parentPhone?: string;
+    classCode: string;
+    note?: string;
+    initialPassword?: string;
+  }): Promise<{
+    ok: boolean;
+    operationId: string;
+    student: KtnStudentRecord;
+    classCode: string;
+    onlineCourses: Array<{ id: string; title: string }>;
+    cognitoUserId?: string | null;
+    izteachStudentId?: string | null;
+    accountCreated?: boolean;
+    initialPassword?: string | null;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/teacher/students/create', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getCourseGrantRequests(params?: {
+    status?: string;
+    studentEmail?: string;
+  }): Promise<{
+    ok: boolean;
+    requests: KtnCourseGrantRequest[];
+    pendingCount: number;
+  }> {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set('status', params.status);
+    if (params?.studentEmail) sp.set('studentEmail', params.studentEmail);
+    const qs = sp.toString();
+    const res = await ktnRequest<{
+      ok: boolean;
+      requests: KtnCourseGrantRequest[];
+      pendingCount?: number;
+    }>(`/api/ktn/course-requests${qs ? `?${qs}` : ''}`);
+    const list = Array.isArray(res.requests) ? res.requests : [];
+    return {
+      ok: true,
+      requests: list,
+      pendingCount: res.pendingCount ?? list.filter((r) => r.status === 'pending').length
+    };
+  },
+
+  async createCourseGrantRequest(payload: {
+    studentEmail: string;
+    studentName?: string;
+    studentId?: string;
+    classCode?: string;
+    courseId?: string;
+    requestedCourseId?: string;
+    courseTitle?: string;
+    requestedCourseTitle?: string;
+    reason: string;
+  }): Promise<{
+    ok: boolean;
+    request: KtnCourseGrantRequest;
+    message: string;
+  }> {
+    const normalizedPayload = {
+      ...payload,
+      courseId: payload.courseId || payload.requestedCourseId || '',
+      courseTitle: payload.courseTitle || payload.requestedCourseTitle
+    };
+    return ktnRequest('/api/ktn/course-requests', {
+      method: 'POST',
+      body: JSON.stringify(normalizedPayload)
+    });
+  },
+
+  async cancelCourseGrantRequest(requestId: string, reason?: string): Promise<{
+    ok: boolean;
+    request: KtnCourseGrantRequest;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/course-requests', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'cancel', requestId, reason })
+    });
+  },
+
+  async reviewCourseGrantRequest(payload: {
+    requestId: string;
+    decision: 'approve' | 'reject';
+    reviewNote?: string;
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
+  }): Promise<{
+    ok: boolean;
+    request: KtnCourseGrantRequest;
+    student?: KtnStudentRecord | null;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/course-requests/review', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async manageStudentLifecycle(payload: {
+    email: string;
+    action: 'suspend' | 'archive' | 'restore' | 'delete';
+    reason?: string;
+    confirmDelete?: boolean;
+  }): Promise<{
+    ok: boolean;
+    email: string;
+    action: string;
+    status: 'active' | 'suspended' | 'archived' | 'deleted';
+    student?: KtnStudentRecord | null;
+    reverseSyncBlocked?: boolean;
+    preservedOrders?: boolean;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/admin/students/lifecycle', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        reason: payload.reason || ''
+      })
+    });
+  },
+
+  async getForumQuestions(params?: {
+    courseId?: string;
+    unitId?: string;
+    lessonNum?: number;
+    status?: string;
+    q?: string;
+    search?: string;
+  }): Promise<{
+    ok: boolean;
+    questions: KtnForumQuestion[];
+    totalCount: number;
+    openCount: number;
+    summary: {
+      total: number;
+      openCount: number;
+      claimedCount: number;
+      answeredCount: number;
+      resolvedCount: number;
+    };
+  }> {
+    const sp = new URLSearchParams();
+    if (params?.courseId) sp.set('courseId', params.courseId);
+    if (params?.unitId) sp.set('unitId', params.unitId);
+    if (typeof params?.lessonNum === 'number' && Number.isFinite(params.lessonNum)) {
+      sp.set('lessonNum', String(params.lessonNum));
+    }
+    if (params?.status && params.status !== 'all') sp.set('status', params.status);
+    const searchVal = params?.q || params?.search;
+    if (searchVal) sp.set('q', searchVal);
+    const qs = sp.toString();
+    const res = await ktnRequest<{
+      ok: boolean;
+      questions: KtnForumQuestion[];
+      totalCount?: number;
+      openCount?: number;
+      summary?: {
+        total: number;
+        openCount: number;
+        claimedCount: number;
+        answeredCount: number;
+        resolvedCount: number;
+      };
+    }>(`/api/ktn/forum/questions${qs ? `?${qs}` : ''}`);
+    const list = Array.isArray(res.questions) ? res.questions : [];
+    const openCount = res.openCount ?? list.filter((item) => item.status === 'open').length;
+    const claimedCount = list.filter((item) => item.status === 'claimed' || Boolean(item.claimed_by_email)).length;
+    const answeredCount = list.filter((item) => item.status === 'answered').length;
+    const resolvedCount = list.filter((item) => item.status === 'resolved').length;
+    return {
+      ok: true,
+      questions: list,
+      totalCount: res.totalCount ?? list.length,
+      openCount,
+      summary: res.summary || {
+        total: res.totalCount ?? list.length,
+        openCount,
+        claimedCount,
+        answeredCount,
+        resolvedCount
+      }
+    };
+  },
+
+  async createForumQuestion(payload: {
+    courseId: string;
+    unitId: string;
+    lessonNumber?: number;
+    lessonTitle?: string;
+    title: string;
+    content: string;
+    videoTimestampSeconds?: number | null;
+    attachments?: KtnForumAttachment[];
+  }): Promise<{
+    ok: boolean;
+    question: KtnForumQuestion;
+  }> {
+    return ktnRequest('/api/ktn/forum/questions', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async claimForumQuestion(questionId: string, action: 'claim' | 'unclaim' = 'claim'): Promise<{
+    ok: boolean;
+    question: KtnForumQuestion;
+  }> {
+    return ktnRequest('/api/ktn/forum/questions/claim', {
+      method: 'POST',
+      body: JSON.stringify({ questionId, action })
+    });
+  },
+
+  async createForumAnswer(payload: {
+    questionId: string;
+    content: string;
+    attachments?: KtnForumAttachment[];
+    videoUrl?: string | null;
+    videoDurationSeconds?: number | null;
+    videoFileSize?: number | null;
+  }): Promise<{
+    ok: boolean;
+    answer: KtnForumAnswer;
+    question: KtnForumQuestion;
+    pointsAwarded: number;
+    awardedEvents: KtnTeacherContributionEvent[];
+  }> {
+    return ktnRequest('/api/ktn/forum/answers', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async voteForumAnswerHelpful(payload: {
+    answerId: string;
+    questionId?: string;
+    markAccepted?: boolean;
+  }): Promise<{
+    ok: boolean;
+    alreadyVoted: boolean;
+    pointsAwarded: number;
+    question: KtnForumQuestion;
+  }> {
+    return ktnRequest('/api/ktn/forum/answers/helpful', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async toggleForumFollow(payload: {
+    questionId: string;
+    following: boolean;
+    notifyMode?: 'immediate' | 'digest' | 'off';
+  }): Promise<{
+    ok: boolean;
+    questionId: string;
+    isFollowing: boolean;
+    notifyMode: string;
+  }> {
+    return ktnRequest('/api/ktn/forum/follows', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async moderateForumItem(payload: {
+    targetType: 'question' | 'answer';
+    targetId: string;
+    action: 'resolve' | 'reopen' | 'hide' | 'unhide' | 'delete';
+  }): Promise<{
+    ok: boolean;
+    question?: KtnForumQuestion;
+    answer?: KtnForumAnswer;
+  }> {
+    return ktnRequest('/api/ktn/forum/moderate', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async adjustTeacherForumPoints(payload: {
+    teacherEmail?: string;
+    teacherId?: string;
+    pointsDelta: number;
+    reason: string;
+    questionId?: string;
+    answerId?: string;
+  }): Promise<{
+    ok: boolean;
+    event: KtnTeacherContributionEvent;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/forum/points/adjust', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        teacherEmail: payload.teacherEmail || payload.teacherId || ''
+      })
+    });
+  },
+
+  async getForumLeaderboard(month?: string): Promise<{
+    ok: boolean;
+    month: string;
+    openQuestionsCount: number;
+    totalQuestionsCount: number;
+    leaderboard: KtnForumLeaderboardEntry[];
+  }> {
+    const qs = month ? `?month=${encodeURIComponent(month)}` : '';
+    return ktnRequest(`/api/ktn/forum/leaderboard${qs}`);
+  },
+
+  async getOrders(params?: {
+    q?: string;
+    filterPreset?: string;
+    paymentStatus?: string;
+    approvalStatus?: string;
+  }): Promise<KtnOrder[]> {
+    const sp = new URLSearchParams();
+    if (params?.q) sp.set('q', params.q);
+    if (params?.filterPreset && params.filterPreset !== 'ALL') {
+      sp.set('filterPreset', params.filterPreset);
+    }
+    if (params?.paymentStatus && params.paymentStatus !== 'ALL') {
+      sp.set('paymentStatus', params.paymentStatus);
+    }
+    if (params?.approvalStatus && params.approvalStatus !== 'ALL') {
+      sp.set('approvalStatus', params.approvalStatus);
+    }
+    const qs = sp.toString();
+    const res = await ktnRequest<{ ok: boolean; orders: KtnOrder[] }>(
+      `/api/ktn/orders${qs ? `?${qs}` : ''}`
+    );
+    return Array.isArray(res.orders) ? res.orders : [];
+  },
+
+  async updateOrder(payload: {
+    orderId: string;
+    studentName?: string;
+    parentName?: string;
+    studentEmail?: string;
+    phone?: string;
+    parentPhone?: string;
+    courseId?: string;
+    customerNote?: string;
+    contactStatus?: OrderContactStatus;
+    contactNote?: string;
+    consultationNote?: string;
+    paymentDetailedStatus?: OrderPaymentDetailedStatus;
+    paymentTxRef?: string;
+    paymentReceivedAmount?: number;
+    credentialHandedOff?: boolean;
+    cancelOrder?: boolean;
+    restoreOrder?: boolean;
+    assignedAdvisor?: string | null;
+    durationPreset?: CourseDurationPreset;
+    durationMode?: CourseDurationMode;
+  }): Promise<{ ok: boolean; order: KtnOrder; message: string }> {
+    return ktnRequest('/api/ktn/orders/update', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async approveOrder(
+    orderId: string,
+    classCode?: string,
+    options?: {
+      confirmActivation?: boolean;
+      studentEmail?: string;
+      durationPreset?: CourseDurationPreset;
+      durationMode?: CourseDurationMode;
+    }
+  ): Promise<{
+    message: string;
+    studentEmail: string;
+    syncStatus?: string;
+    accountCreated?: boolean;
+    existingAccount?: boolean;
+    initialPassword?: string | null;
+    order?: KtnOrder;
+  }> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      message: string;
+      studentEmail: string;
+      syncStatus?: string;
+      accountCreated?: boolean;
+      existingAccount?: boolean;
+      initialPassword?: string | null;
+      order?: KtnOrder;
+    }>('/api/ktn/orders/approve', {
+      method: 'POST',
+      timeoutMs: 45000,
+      body: JSON.stringify({
+        orderId,
+        classCode,
+        confirmActivation: options?.confirmActivation ?? true,
+        ...(options?.studentEmail ? { studentEmail: options.studentEmail } : {}),
+        ...(options?.durationPreset ? { durationPreset: options.durationPreset } : {}),
+        ...(options?.durationMode ? { durationMode: options.durationMode } : {})
+      })
+    });
+    return res;
+  },
+
+  async createStudentOrder(payload: {
+    courseId: string;
+    phone?: string;
+    parentPhone?: string;
+    studentName?: string;
+    parentName?: string;
+    note?: string;
+    updateProfilePhone?: boolean;
+    idempotencyKey?: string;
+  }): Promise<{
+    ok: boolean;
+    orderId?: string;
+    duplicatePrevented?: boolean;
+    order: KtnOrder;
+    paymentInfo?: KtnVietQrPaymentInfo;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        source: 'authenticated_student'
+      })
+    });
+  },
+
+  async getMyOrders(): Promise<KtnOrder[]> {
+    const res = await ktnRequest<{ ok: boolean; orders: KtnOrder[] }>('/api/ktn/orders/my');
+    return Array.isArray(res.orders) ? res.orders : [];
+  },
+
+  async reportOrderPayment(payload: {
+    orderId: string;
+    transactionRef?: string;
+    paymentTxRef?: string;
+    phone?: string;
+  }): Promise<{ ok: boolean; order: KtnOrder; message: string }> {
+    return ktnRequest('/api/ktn/orders/report-payment', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getPaymentConfig(): Promise<{
+    id?: string;
+    bank_id?: string;
+    bank_name?: string;
+    account_no?: string;
+    account_name?: string;
+    default_amount?: number;
+    auto_approve_webhook?: boolean;
+    course_prices?: Record<string, number>;
+  } | null> {
+    const res = await ktnRequest<{
+      ok: boolean;
+      config: {
+        id?: string;
+        bank_id?: string;
+        bank_name?: string;
+        account_no?: string;
+        account_name?: string;
+        default_amount?: number;
+        auto_approve_webhook?: boolean;
+        course_prices?: Record<string, number>;
+      } | null;
+    }>('/api/ktn/payment-config');
+    return res.config || null;
+  },
+
+  async getSyncStatus(): Promise<KtnSyncStatusResponse> {
+    return ktnRequest<KtnSyncStatusResponse>('/api/ktn/admin/sync-status');
+  },
+
+  async retrySyncItem(payload: {
+    type:
+      | 'student_provision'
+      | 'student_sync'
+      | 'teacher_provision'
+      | 'order_approve'
+      | 'homework_sync'
+      | 'course_duration'
+      | 'bulk_sync';
+    email?: string;
+    orderId?: string;
+    homeworkId?: string;
+    courseId?: string;
+    preset?: CourseDurationPreset;
+    mode?: CourseDurationMode;
+  }): Promise<{ ok: boolean; syncStatus?: string; message?: string }> {
+    return ktnRequest('/api/ktn/admin/sync-retry', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getAttendance(params: {
+    classCode: string;
+    sessionNum?: number;
+  }): Promise<KtnAttendanceResponse> {
+    const sp = new URLSearchParams();
+    sp.set('classCode', params.classCode);
+    if (params.sessionNum && params.sessionNum > 0) {
+      sp.set('sessionNum', String(params.sessionNum));
+    }
+    return ktnRequest<KtnAttendanceResponse>(`/api/ktn/attendance?${sp.toString()}`);
+  },
+
+  async saveAttendance(payload: {
+    classCode: string;
+    sessionNum: number;
+    date?: string;
+    records: Array<{
+      studentEmail: string;
+      studentName?: string;
+      status: 'present' | 'absent_excused' | 'absent_unexcused' | 'late';
+      note?: string;
+    }>;
+  }): Promise<KtnAttendanceResponse> {
+    return ktnRequest<KtnAttendanceResponse>('/api/ktn/attendance', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async changePassword(payload: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<{
+    ok: boolean;
+    email?: string;
+    role?: string;
+    customPassword?: boolean;
+    updatedAt?: string;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async resetUserPassword(payload: {
+    email: string;
+    role?: 'student' | 'teacher';
+    newPassword?: string;
+  }): Promise<{
+    ok: boolean;
+    email: string;
+    role: 'student' | 'teacher';
+    newPassword?: string;
+    customPassword?: boolean;
+    updatedAt?: string;
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/admin/users/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async bulkImportCenterData(payload: {
+    csvText: string;
+    dryRun?: boolean;
+    defaultPassword?: string;
+  }): Promise<{
+    ok: boolean;
+    dryRun: boolean;
+    defaultPassword: string;
+    summary: {
+      classCount: number;
+      activeClassCount: number;
+      archivedClassCount: number;
+      teacherCount: number;
+      studentCount: number;
+      activeStudentCount: number;
+      archivedStudentCount: number;
+      warningCount: number;
+      defaultPassword: string;
+    };
+    classes: Array<{
+      code: string;
+      title: string;
+      schedule: string;
+      teacherKey: string;
+      teacherDisplayName: string;
+      teacherCode: string;
+      teacherEmail: string;
+      isArchived: boolean;
+      studentCount: number;
+    }>;
+    teachers: Array<{
+      key: string;
+      code: string;
+      email: string;
+      name: string;
+      assignedClasses: string[];
+      defaultPassword: string;
+      isExisting: boolean;
+    }>;
+    students: Array<{
+      code: string;
+      email: string;
+      name: string;
+      phone: string;
+      parentName: string;
+      classCode: string;
+      classTitle: string;
+      schedule: string;
+      teacherCode: string;
+      teacherEmail: string;
+      teacherName: string;
+      status: 'active' | 'archived';
+      defaultPassword: string;
+      rowIndex: number;
+    }>;
+    warnings: string[];
+    message: string;
+  }> {
+    return ktnRequest('/api/ktn/admin/bulk-import', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      timeoutMs: 30000
+    });
+  },
+
+  // --- Customer Web Consultation Chatbot (/api/ktn/consultations/web/*) ---
+
+  async startWebConsultation(): Promise<{ token: string }> {
+    return consultationWebRequest<{ token: string }>(
+      '/api/ktn/consultations/web/start',
+      null,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+  },
+
+  async getWebConsultationCatalog(): Promise<{
+    courses: ConsultationCatalogCourse[];
+    checkoutEnabled: boolean;
+    botFlow?: ConsultationBotFlow;
+  }> {
+    const res = await consultationWebRequest<{
+      courses?: ConsultationCatalogCourse[];
+      checkoutEnabled?: boolean;
+      botFlow?: ConsultationBotFlow;
+    }>('/api/ktn/consultations/web/catalog');
+    return {
+      courses: Array.isArray(res.courses) ? res.courses : [],
+      checkoutEnabled: Boolean(res.checkoutEnabled),
+      ...(res.botFlow ? { botFlow: res.botFlow } : {})
+    };
+  },
+
+  async getWebConsultationThread(webToken: string): Promise<{
+    status: ConsultationStatus;
+    messages: ConsultationMessage[];
+    lead_meta?: ConsultationLeadMeta;
+    menu?: ConsultationQuickReply[];
+    advisorAssigned?: boolean;
+    queuedAt?: string | null;
+  }> {
+    const res = await consultationWebRequest<{
+      status?: ConsultationStatus;
+      messages?: ConsultationMessage[];
+      lead_meta?: ConsultationLeadMeta;
+      leadMeta?: ConsultationLeadMeta;
+      menu?: ConsultationQuickReply[];
+      quickReplies?: ConsultationQuickReply[];
+      advisorAssigned?: boolean;
+      queuedAt?: string | null;
+    }>('/api/ktn/consultations/web/thread', webToken);
+    const normalizedMenu = Array.isArray(res.menu)
+      ? res.menu
+      : Array.isArray(res.quickReplies)
+      ? res.quickReplies
+      : undefined;
+    return {
+      status: res.status || 'bot',
+      messages: Array.isArray(res.messages) ? res.messages : [],
+      lead_meta: res.lead_meta || res.leadMeta,
+      menu: normalizedMenu,
+      ...(typeof res.advisorAssigned === 'boolean' ? { advisorAssigned: res.advisorAssigned } : {}),
+      ...(res.queuedAt !== undefined ? { queuedAt: res.queuedAt } : {})
+    };
+  },
+
+  async sendWebConsultationMessage(
+    webToken: string,
+    payload: {
+      body: string;
+      requestId: string;
+      menuAction?: string;
+      lead?: {
+        targetGroup?: string;
+        phone?: string;
+        goal?: string;
+        timeslot?: string;
+        name?: string;
+      };
+      payload?: Record<string, unknown>;
+    }
+  ): Promise<{
+    accepted: boolean;
+    reply?: ConsultationMessage;
+    menu?: ConsultationQuickReply[];
+    quickReplies?: ConsultationQuickReply[];
+    status?: ConsultationStatus;
+  }> {
+    const leadObj =
+      payload.lead ||
+      (payload.payload
+        ? {
+            targetGroup:
+              typeof payload.payload.targetGroup === 'string'
+                ? payload.payload.targetGroup
+                : typeof payload.payload.target_learner === 'string'
+                ? payload.payload.target_learner
+                : undefined,
+            phone:
+              typeof payload.payload.phone === 'string' ? payload.payload.phone : undefined,
+            goal:
+              typeof payload.payload.goal === 'string'
+                ? payload.payload.goal
+                : typeof payload.payload.note === 'string'
+                ? payload.payload.note
+                : undefined,
+            timeslot:
+              typeof payload.payload.timeslot === 'string'
+                ? payload.payload.timeslot
+                : undefined,
+            name: typeof payload.payload.name === 'string' ? payload.payload.name : undefined,
+          }
+        : undefined);
+    const requestBody: Record<string, unknown> = {
+      body: payload.body,
+      requestId: payload.requestId,
+      ...(payload.menuAction ? { menuAction: payload.menuAction } : {}),
+      ...(leadObj ? { lead: leadObj } : {}),
+    };
+    const res = await consultationWebRequest<{
+      accepted: boolean;
+      reply?: ConsultationMessage;
+      menu?: ConsultationQuickReply[];
+      quickReplies?: ConsultationQuickReply[];
+      status?: ConsultationStatus;
+    }>('/api/ktn/consultations/web/message', webToken, {
+      method: 'POST',
+      body: JSON.stringify(requestBody)
+    });
+    return {
+      ...res,
+      menu: Array.isArray(res.menu)
+        ? res.menu
+        : Array.isArray(res.quickReplies)
+        ? res.quickReplies
+        : undefined,
+    };
+  },
+
+  async createWebConsultationOrder(
+    webToken: string,
+    payload: {
+      courseId: string;
+      name: string;
+      email: string;
+      phone: string;
+      requestId: string;
+    }
+  ): Promise<{
+    id: string;
+    amount: number;
+    payment: KtnVietQrPaymentInfo | null;
+  }> {
+    const res = await consultationWebRequest<{
+      id?: string;
+      order_id?: string;
+      amount?: number;
+      payment?: KtnVietQrPaymentInfo | null;
+      paymentInfo?: KtnVietQrPaymentInfo | null;
+      payment_info?: KtnVietQrPaymentInfo | null;
+    }>('/api/ktn/consultations/web/order', webToken, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return {
+      id: String(res.id || res.order_id || ''),
+      amount: Number(res.amount || 0),
+      payment: res.payment || res.paymentInfo || res.payment_info || null
+    };
+  },
+
+  async getWebConsultationOrderStatus(
+    webToken: string,
+    orderId: string
+  ): Promise<{
+    id: string;
+    amount: number;
+    paymentStatus: string;
+    accessStatus: string;
+    payment: KtnVietQrPaymentInfo | null;
+  }> {
+    const sp = new URLSearchParams({ id: orderId });
+    const res = await consultationWebRequest<{
+      id?: string;
+      order_id?: string;
+      amount?: number;
+      paymentStatus?: string;
+      payment_status?: string;
+      accessStatus?: string;
+      approval_status?: string;
+      payment?: KtnVietQrPaymentInfo | null;
+      paymentInfo?: KtnVietQrPaymentInfo | null;
+      payment_info?: KtnVietQrPaymentInfo | null;
+    }>(`/api/ktn/consultations/web/status?${sp.toString()}`, webToken);
+    return {
+      id: String(res.id || res.order_id || orderId),
+      amount: Number(res.amount || 0),
+      paymentStatus: String(res.paymentStatus || res.payment_status || 'pending_verification'),
+      accessStatus: String(res.accessStatus || res.approval_status || 'pending'),
+      payment: res.payment || res.paymentInfo || res.payment_info || null
+    };
+  },
+
+  // --- Consultation Staff & Zalo OA CRM (/api/ktn/consultations/staff/*) ---
+
+  async staffConsultationLogin(
+    email: string,
+    password: string
+  ): Promise<{ token: string; actor: ConsultationActor }> {
+    const res = await consultationStaffRequest<{ token: string; actor: ConsultationActor }>(
+      '/api/ktn/consultations/staff/login',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), password })
+      }
+    );
+    if (res.token) {
+      setConsultationStaffToken(res.token);
+    }
+    return res;
+  },
+
+  async getConsultationStaffProfile(): Promise<{ actor: ConsultationActor }> {
+    return consultationStaffRequest<{ actor: ConsultationActor }>(
+      '/api/ktn/consultations/staff/profile'
+    );
+  },
+
+  async getConsultationInbox(params?: {
+    status?: string;
+    channel?: ConsultationChannel | '';
+    owner?: string;
+    search?: string;
+    offset?: number;
+  }): Promise<{ conversations: ConsultationInboxItem[]; hasMore: boolean }> {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set('status', params.status);
+    if (params?.channel) sp.set('channel', params.channel);
+    if (params?.owner) sp.set('owner', params.owner);
+    if (params?.search) sp.set('search', params.search);
+    if (typeof params?.offset === 'number' && params.offset > 0) {
+      sp.set('offset', String(params.offset));
+    }
+    const qs = sp.toString();
+    const res = await consultationStaffRequest<{
+      conversations?: ConsultationInboxItem[];
+      hasMore?: boolean;
+    }>(`/api/ktn/consultations/staff/inbox${qs ? `?${qs}` : ''}`);
+    return {
+      conversations: Array.isArray(res.conversations) ? res.conversations : [],
+      hasMore: Boolean(res.hasMore)
+    };
+  },
+
+  async getConsultationThread(
+    id: string,
+    offset?: number
+  ): Promise<{
+    conversation: ConsultationThread;
+    messages: ConsultationMessage[];
+    hasEarlier: boolean;
+    events: ConsultationEvent[];
+    flags: ConsultationFlag[];
+    orders: ConsultationThreadOrderLink[];
+  }> {
+    const sp = new URLSearchParams();
+    if (typeof offset === 'number' && offset > 0) {
+      sp.set('offset', String(offset));
+    }
+    const qs = sp.toString();
+    const res = await consultationStaffRequest<{
+      conversation: ConsultationThread;
+      messages?: ConsultationMessage[];
+      hasEarlier?: boolean;
+      events?: ConsultationEvent[];
+      flags?: ConsultationFlag[];
+      orders?: ConsultationThreadOrderLink[];
+    }>(`/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`);
+    return {
+      conversation: res.conversation,
+      messages: Array.isArray(res.messages) ? res.messages : [],
+      hasEarlier: Boolean(res.hasEarlier),
+      events: Array.isArray(res.events) ? res.events : [],
+      flags: Array.isArray(res.flags) ? res.flags : [],
+      orders: Array.isArray(res.orders) ? res.orders : []
+    };
+  },
+
+  async operateConsultationThread(
+    id: string,
+    op: 'claim' | 'assign' | 'reply' | 'note' | 'follow_up' | 'close' | 'reopen',
+    payload?: Record<string, unknown>
+  ): Promise<{
+    updated?: boolean;
+    conversation?: ConsultationThread;
+    message?: ConsultationMessage;
+  }> {
+    return consultationStaffRequest(
+      `/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/${op}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {})
+      }
+    );
+  },
+
+  async sendConsultationThreadReply(payload: {
+    consultationId: string;
+    requestId: string;
+    body: string;
+  }): Promise<{
+    updated?: boolean;
+    conversation?: ConsultationThread;
+    message?: ConsultationMessage;
+  }> {
+    return this.operateConsultationThread(payload.consultationId, 'reply', {
+      request_id: payload.requestId,
+      body: payload.body
+    });
+  },
+
+  async createConsultationCheckoutLink(id: string): Promise<{ url: string }> {
+    return consultationStaffRequest<{ url: string }>(
+      `/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/checkout_link`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+  },
+
+  async createConsultationOrder(
+    id: string,
+    payload: {
+      courseId: string;
+      name: string;
+      email: string;
+      phone: string;
+      requestId: string;
+      note?: string;
+      durationPreset?: CourseDurationPreset;
+    }
+  ): Promise<{
+    ok?: boolean;
+    id: string;
+    order_id?: string;
+    amount: number;
+    payment: KtnVietQrPaymentInfo | null;
+    order?: KtnOrder;
+  }> {
+    const res = await consultationStaffRequest<{
+      ok?: boolean;
+      id?: string;
+      order_id?: string;
+      amount?: number;
+      payment?: KtnVietQrPaymentInfo | null;
+      paymentInfo?: KtnVietQrPaymentInfo | null;
+      payment_info?: KtnVietQrPaymentInfo | null;
+      order?: KtnOrder;
+    }>(`/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/create_order`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const orderId = String(res.id || res.order_id || res.order?.order_id || '');
+    return {
+      ok: res.ok ?? true,
+      id: orderId,
+      order_id: orderId,
+      amount: Number(res.amount || res.order?.amount || 0),
+      payment:
+        res.payment ||
+        res.paymentInfo ||
+        res.payment_info ||
+        res.order?.paymentInfo ||
+        res.order?.payment_info ||
+        null,
+      order: res.order
+    };
+  },
+
+  async linkConsultationStudent(
+    id: string,
+    studentCode: string
+  ): Promise<{
+    ok: boolean;
+    conversation?: ConsultationThread;
+    student_code: string;
+  }> {
+    const res = await consultationStaffRequest<{
+      ok?: boolean;
+      conversation?: ConsultationThread;
+      student_code?: string;
+    }>(`/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/link_student`, {
+      method: 'POST',
+      body: JSON.stringify({ student_code: studentCode.trim() })
+    });
+    return {
+      ok: res.ok ?? true,
+      conversation: res.conversation,
+      student_code: String(res.student_code || studentCode.trim())
+    };
+  },
+
+  async linkStudentConsultation(payload: {
+    consultationId: string;
+    studentCode: string;
+  }): Promise<{
+    ok: boolean;
+    conversation?: ConsultationThread;
+    student_code: string;
+  }> {
+    return this.linkConsultationStudent(payload.consultationId, payload.studentCode);
+  },
+
+  async reviewConsultationFlag(
+    id: string,
+    payload: {
+      message_id: string;
+      status: 'confirmed' | 'dismissed';
+      note?: string;
+    }
+  ): Promise<{ updated: boolean }> {
+    return consultationStaffRequest<{ updated: boolean }>(
+      `/api/ktn/consultations/staff/thread/${encodeURIComponent(id)}/review`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async retryConsultationPayment(
+    idOrPayload:
+      | string
+      | {
+          consultationId: string;
+          orderId: string;
+          transactionId: string;
+        },
+    maybePayload?: { order_id: string; transaction_id: string }
+  ): Promise<{ updated: boolean }> {
+    const consultationId =
+      typeof idOrPayload === 'string' ? idOrPayload : idOrPayload.consultationId;
+    const bodyPayload =
+      typeof idOrPayload === 'string'
+        ? maybePayload || { order_id: '', transaction_id: '' }
+        : {
+            order_id: idOrPayload.orderId,
+            transaction_id: idOrPayload.transactionId
+          };
+    return consultationStaffRequest<{ updated: boolean }>(
+      `/api/ktn/consultations/staff/thread/${encodeURIComponent(consultationId)}/retry_payment`,
+      {
+        method: 'POST',
+        body: JSON.stringify(bodyPayload)
+      }
+    );
+  },
+
+  async getConsultationAdvisors(): Promise<{ advisors: ConsultationAdvisor[] }> {
+    const res = await consultationStaffRequest<{ advisors?: ConsultationAdvisor[] }>(
+      '/api/ktn/consultations/staff/advisors'
+    );
+    return { advisors: Array.isArray(res.advisors) ? res.advisors : [] };
+  },
+
+  async saveConsultationAdvisor(payload: {
+    email: string;
+    name: string;
+    active?: boolean;
+    role?: ConsultationAdvisorRole;
+    password?: string;
+  }): Promise<{ advisor: ConsultationAdvisor }> {
+    return consultationStaffRequest<{ advisor: ConsultationAdvisor }>(
+      '/api/ktn/consultations/staff/advisors',
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async getConsultationGuidance(): Promise<{ config: ConsultationGuidanceConfig }> {
+    return consultationStaffRequest<{ config: ConsultationGuidanceConfig }>(
+      '/api/ktn/consultations/staff/guidance'
+    );
+  },
+
+  async getConsultationGuidanceDraft(): Promise<{
+    policy: string;
+    examples: ConsultationExample[];
+    maxExamples: number;
+    bot_flow?: ConsultationBotFlow;
+  }> {
+    return consultationStaffRequest<{
+      policy: string;
+      examples: ConsultationExample[];
+      maxExamples: number;
+      bot_flow?: ConsultationBotFlow;
+    }>('/api/ktn/consultations/staff/guidance/draft');
+  },
+
+  async saveConsultationGuidance(payload: {
+    policy: string;
+    examples: ConsultationExample[];
+    course_ids: string[];
+    duration_presets: Record<string, CourseDurationPreset>;
+    bot_enabled: boolean;
+    checkout_enabled: boolean;
+    bot_flow?: ConsultationBotFlow;
+  }): Promise<{ config: ConsultationGuidanceConfig }> {
+    return consultationStaffRequest<{ config: ConsultationGuidanceConfig }>(
+      '/api/ktn/consultations/staff/guidance',
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async getConsultationReport(params?: {
+    from?: string;
+    to?: string;
+    channel?: string;
+    owner?: string;
+  }): Promise<ConsultationReportResponse> {
+    const sp = new URLSearchParams();
+    if (params?.from) sp.set('from', params.from);
+    if (params?.to) sp.set('to', params.to);
+    if (params?.channel) sp.set('channel', params.channel);
+    if (params?.owner) sp.set('owner', params.owner);
+    const qs = sp.toString();
+    return consultationStaffRequest<ConsultationReportResponse>(
+      `/api/ktn/consultations/staff/report${qs ? `?${qs}` : ''}`
+    );
+  },
+
+  async downloadConsultationReportCsv(params?: {
+    from?: string;
+    to?: string;
+    channel?: string;
+    owner?: string;
+  }): Promise<Blob> {
+    const sp = new URLSearchParams();
+    if (params?.from) sp.set('from', params.from);
+    if (params?.to) sp.set('to', params.to);
+    if (params?.channel) sp.set('channel', params.channel);
+    if (params?.owner) sp.set('owner', params.owner);
+    const qs = sp.toString();
+    const headers = new Headers();
+    const bearer = resolveConsultationStaffBearer();
+    if (bearer) {
+      headers.set('Authorization', toHttpHeaderSafeValue(`Bearer ${bearer}`));
+    }
+    const res = await fetch(
+      `${getApiBase()}/api/ktn/consultations/staff/report.csv${qs ? `?${qs}` : ''}`,
+      {
+        method: 'GET',
+        headers,
+        credentials: 'same-origin'
+      }
+    );
+    if (!res.ok) {
+      throw new KtnApiError({
+        message: trStatic(
+          `Không thể tải báo cáo CSV (HTTP ${res.status})`,
+          `Failed to download CSV report (HTTP ${res.status})`
+        ),
+        status: res.status
+      });
+    }
+    return res.blob();
+  },
+
+  // --- SePay Reconciliation & Sandbox Simulators ---
+
+  async listSepayReconciliation(params?: {
+    resolutionStatus?: SepayReconciliationResolutionStatus | '';
+    resolution_status?: SepayReconciliationResolutionStatus | '';
+    kind?: SepayReconciliationKind | '';
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    ok: boolean;
+    items: SepayReconciliationLog[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const sp = new URLSearchParams();
+    const resStatus = params?.resolutionStatus ?? params?.resolution_status;
+    if (resStatus) sp.set('resolution_status', resStatus);
+    if (params?.kind) sp.set('kind', params.kind);
+    if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+    if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+    const qs = sp.toString();
+    const res = await consultationStaffRequest<{
+      ok?: boolean;
+      items?: SepayReconciliationLog[];
+      logs?: SepayReconciliationLog[];
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }>(`/api/ktn/consultations/staff/reconciliation${qs ? `?${qs}` : ''}`);
+    const items = Array.isArray(res.items)
+      ? res.items
+      : Array.isArray(res.logs)
+      ? res.logs
+      : [];
+    return {
+      ok: res.ok ?? true,
+      items,
+      total: Number(res.total ?? items.length),
+      limit: Number(res.limit ?? params?.limit ?? 50),
+      offset: Number(res.offset ?? params?.offset ?? 0)
+    };
+  },
+
+  async getSepayReconciliationLogs(params?: {
+    resolution_status?: SepayReconciliationResolutionStatus | '';
+    resolutionStatus?: SepayReconciliationResolutionStatus | '';
+    kind?: SepayReconciliationKind | '';
+    limit?: number;
+    offset?: number;
+  }) {
+    return this.listSepayReconciliation(params);
+  },
+
+  async resolveSepayReconciliation(
+    txIdOrPayload:
+      | string
+      | {
+          transactionId: string;
+          resolutionStatus: SepayReconciliationResolutionStatus;
+          note?: string;
+          orderId?: string;
+        },
+    maybePayload?: {
+      resolution_status: SepayReconciliationResolutionStatus;
+      note?: string;
+      order_id?: string;
+    }
+  ): Promise<{ ok: boolean; log: SepayReconciliationLog }> {
+    const txId =
+      typeof txIdOrPayload === 'string' ? txIdOrPayload : txIdOrPayload.transactionId;
+    const bodyPayload =
+      typeof txIdOrPayload === 'string'
+        ? maybePayload || { resolution_status: 'resolved' }
+        : {
+            resolution_status: txIdOrPayload.resolutionStatus,
+            note: txIdOrPayload.note,
+            order_id: txIdOrPayload.orderId
+          };
+    const res = await consultationStaffRequest<{ ok?: boolean; log: SepayReconciliationLog }>(
+      `/api/ktn/consultations/staff/reconciliation/${encodeURIComponent(txId)}/resolve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(bodyPayload)
+      }
+    );
+    return { ok: res.ok ?? true, log: res.log };
+  },
+
+  async triggerSepaySandbox(payload: {
+    order_id?: string;
+    transferAmount: number;
+    transferContent?: string;
+    accountNumber?: string;
+    transaction_id?: string;
+    transferType?: 'in' | 'out';
+    kind?: string;
+  }): Promise<{
+    ok?: boolean;
+    success?: boolean;
+    status?: string;
+    reconciliation?: SepayReconciliationLog;
+  }> {
+    return consultationStaffRequest('/api/ktn/consultations/staff/sepay/sandbox', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async simulateSepaySandboxEvent(payload: {
+    orderId?: string;
+    transferContent?: string;
+    transferAmount: number;
+    transactionId?: string;
+    accountNumber?: string;
+    kind?: string;
+  }) {
+    return this.triggerSepaySandbox({
+      order_id: payload.orderId,
+      transferContent: payload.transferContent,
+      transferAmount: payload.transferAmount,
+      transaction_id: payload.transactionId,
+      accountNumber: payload.accountNumber,
+      kind: payload.kind
+    });
+  },
+
+  async triggerZaloSandboxEvent(payload: {
+    event_name: string;
+    zalo_user_id: string;
+    customer_name?: string;
+    customer_phone?: string;
+    body?: string;
+    source_tag?: string;
+    event_id?: string;
+  }): Promise<{
+    ok: boolean;
+    duplicate?: boolean;
+    conversation?: ConsultationThread;
+  }> {
+    return consultationStaffRequest('/api/ktn/consultations/staff/zalo/sandbox', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+};
+
+export class KtnApiClient {
+  async fetchWithAuth<T>(
+    path: string,
+    options: RequestInit & { timeoutMs?: number } = {}
+  ): Promise<T> {
+    return ktnRequest<T>(path, options);
+  }
+
+  async searchAdminTeachers(
+    params?: {
+      q?: string;
+      status?: string;
+      classCode?: string;
+      courseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<KtnTeacherSearchResult> {
+    return ktnApi.searchAdminTeachers(params, options);
+  }
+
+  async searchTeachers(
+    params?: {
+      q?: string;
+      status?: string;
+      classCode?: string;
+      courseId?: string;
+      limit?: number;
+      offset?: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<KtnTeacherSearchResult> {
+    return ktnApi.searchTeachers(params, options);
+  }
+
+  async deleteTeacher(params: {
+    teacherId?: string;
+    code?: string;
+    email?: string;
+  }): Promise<KtnTeacherDeleteResult> {
+    return ktnApi.deleteTeacher(params);
+  }
+}
+
+export const searchTeachers = (
+  params?: {
+    q?: string;
+    status?: string;
+    classCode?: string;
+    courseId?: string;
+    limit?: number;
+    offset?: number;
+  },
+  options?: { signal?: AbortSignal }
+): Promise<KtnTeacherSearchResult> => ktnApi.searchTeachers(params, options);
+
+export const searchAdminTeachers = (
+  params?: {
+    q?: string;
+    status?: string;
+    classCode?: string;
+    courseId?: string;
+    limit?: number;
+    offset?: number;
+  },
+  options?: { signal?: AbortSignal }
+): Promise<KtnTeacherSearchResult> => ktnApi.searchAdminTeachers(params, options);
+

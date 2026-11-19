@@ -76,6 +76,338 @@ export const PAYMENT_QUICK_REPLIES = [
   { id: 'MENU_ROOT', label: 'Menu chính', payload: 'MENU_ROOT', action: 'MENU_ROOT' }
 ];
 
+export const DEFAULT_BOT_FLOW = {
+  welcome_message:
+    'Chào anh/chị! Em là Trợ lý tư vấn Học Viện Khổng Tử Nhí (KTN). Gia đình mình đang tìm hiểu lộ trình nào dưới đây ạ?',
+  root_buttons: {
+    kids: 'Tìm khóa cho bé (4–15 tuổi)',
+    adult: 'Tiếng Trung người đi làm',
+    trial: 'Học thử & Cách học',
+    handoff: 'Chat trực tiếp với tư vấn viên'
+  },
+  kids_intro:
+    'KTN chia lộ trình riêng theo từng độ tuổi của bé (làm quen nghe nói tự nhiên → nhận mặt chữ → thi chứng chỉ YCT/HSK). Bé nhà mình đang ở nhóm tuổi nào ạ?',
+  kids_branches: {
+    age_4_6: {
+      label: 'Bé 4–6 tuổi (Mầm non · Mới bắt đầu)',
+      reply:
+        'Với bé 4–6 tuổi mới làm quen, KTN thiết kế bài giảng video ngắn vui nhộn qua hình ảnh & trò chơi giúp bé yêu thích tiếng Trung và bật phản xạ nghe nói tự nhiên trên Web/iPad.',
+      course_id: '65e7704a9ea90c00080d5195'
+    },
+    age_7_11: {
+      label: 'Bé 7–11 tuổi (Tiểu học)',
+      reply:
+        'Với các bé 7–11 tuổi, lộ trình kết hợp nghe nói phản xạ, chuẩn phát âm thanh điệu và làm quen nhận mặt chữ Hán vững chắc, có hướng ôn thi chứng chỉ thiếu nhi YCT.',
+      course_id: '678d14b960eae20002ddf8fe'
+    },
+    age_12_15: {
+      label: 'Bé 12–15 tuổi (Thiếu niên)',
+      reply:
+        'Với lứa tuổi 12–15 tuổi, lộ trình hệ thống hóa từ vựng, ngữ pháp giao tiếp bài bản và luyện thi chuẩn chứng chỉ YCT / HSK phục vụ học tập.',
+      course_id: '6adadba969897b0002482ca5'
+    }
+  },
+  adult_intro:
+    'Khổng Tử Nhí tư vấn trực tiếp ngay trên Web theo đúng mục tiêu công việc của anh/chị (kèm 1:1 linh hoạt buổi tối/cuối tuần hoặc khóa video nền tảng HSK). Anh/chị ưu tiên mục tiêu nào ạ?',
+  adult_branches: {
+    office: {
+      label: 'Giao tiếp công sở · Gói Cơ bản 963k',
+      reply:
+        '• Gói Cơ bản 1 kèm 1 (963.000đ/tháng · 8 buổi/tháng): phù hợp người mới bắt đầu hoặc mất gốc muốn xây nền tảng phát âm, pinyin và giao tiếp công sở đều đặn.\n• Có buổi trải nghiệm 1:1 trực tiếp với giáo viên trước khi xếp lớp. Bấm "Chat với tư vấn viên xếp lịch 1:1" ngay bên dưới để em kiểm tra giờ trống (tối/cuối tuần) trên Web luôn ạ.',
+      course_id: ''
+    },
+    trade: {
+      label: 'Nhập hàng · Đàm phán đối tác (1.500k)',
+      reply:
+        '• Gói Chuyên sâu 1 kèm 1 (1.500.000đ/tháng · 8 buổi/tháng): tập trung tình huống thực tế trao đổi nhà cung cấp, báo giá nhập hàng, từ vựng ngành & xử lý công việc nhanh với đối tác.\n• Bấm "Chat với tư vấn viên xếp lịch 1:1" ngay trên Web để cô kiểm tra ca trống khớp giờ rảnh của anh/chị ạ.',
+      course_id: ''
+    },
+    hsk: {
+      label: 'Tự học nền tảng / Chứng chỉ HSK 3.0',
+      reply:
+        'Nếu anh/chị muốn chủ động học ngoài giờ trên điện thoại hoặc máy tính trước khi lên 1:1, khóa Video Tiêu Chuẩn New HSK (3.0) giúp nắm chắc từ vựng, phát âm và cấu trúc câu theo chuẩn mới.',
+      course_id: '6adadba969897b0002482ca5'
+    }
+  },
+  trial_intro:
+    'Tại KTN hiện có 2 hình thức học linh hoạt. Anh/chị muốn xem chi tiết hình thức nào ạ?',
+  trial_video: {
+    label: 'Khóa Video tự học trên Web / iPad',
+    reply:
+      'Khóa Video tự học mở được mọi lúc trên điện thoại, iPad và máy tính kèm hệ thống bài tập và Flashcard ôn từ vựng. Anh/chị chọn độ tuổi hoặc bấm nút bên dưới để chọn khóa & tạo mã VietQR ngay ạ.'
+  },
+  trial_live: {
+    label: 'Học thử 1:1 cùng cô (Trực tiếp online)',
+    reply:
+      'Lớp trực tiếp có giáo viên kèm sửa phát âm, khẩu hình và tương tác 2 chiều theo lịch linh hoạt. Anh/chị bấm nút bên dưới để nối Live Chat với tư vấn viên xếp buổi học thử ngay trên Web ạ.'
+  }
+};
+
+const cleanFlowString = (val, fallback, maxLen = 900) => {
+  const s = typeof val === 'string' ? stripInvisible(val).trim().slice(0, maxLen) : '';
+  return s || fallback;
+};
+
+const cleanCourseId = (val, fallback = '') => {
+  const s = typeof val === 'string' ? stripInvisible(val).trim().slice(0, 80) : '';
+  return /^[a-zA-Z0-9_-]{1,80}$/.test(s) ? s : fallback;
+};
+
+export function normalizeBotFlow(raw) {
+  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const rb = src.root_buttons && typeof src.root_buttons === 'object' ? src.root_buttons : {};
+  const kb = src.kids_branches && typeof src.kids_branches === 'object' ? src.kids_branches : {};
+  const ab = src.adult_branches && typeof src.adult_branches === 'object' ? src.adult_branches : {};
+  const tv = src.trial_video && typeof src.trial_video === 'object' ? src.trial_video : {};
+  const tl = src.trial_live && typeof src.trial_live === 'object' ? src.trial_live : {};
+
+  return {
+    welcome_message: cleanFlowString(src.welcome_message, DEFAULT_BOT_FLOW.welcome_message, 500),
+    root_buttons: {
+      kids: cleanFlowString(rb.kids, DEFAULT_BOT_FLOW.root_buttons.kids, 60),
+      adult: cleanFlowString(rb.adult, DEFAULT_BOT_FLOW.root_buttons.adult, 60),
+      trial: cleanFlowString(rb.trial, DEFAULT_BOT_FLOW.root_buttons.trial, 60),
+      handoff: cleanFlowString(rb.handoff, DEFAULT_BOT_FLOW.root_buttons.handoff, 60)
+    },
+    kids_intro: cleanFlowString(src.kids_intro, DEFAULT_BOT_FLOW.kids_intro, 500),
+    kids_branches: {
+      age_4_6: {
+        label: cleanFlowString(kb.age_4_6?.label, DEFAULT_BOT_FLOW.kids_branches.age_4_6.label, 60),
+        reply: cleanFlowString(kb.age_4_6?.reply, DEFAULT_BOT_FLOW.kids_branches.age_4_6.reply, 900),
+        course_id: cleanCourseId(kb.age_4_6?.course_id, DEFAULT_BOT_FLOW.kids_branches.age_4_6.course_id)
+      },
+      age_7_11: {
+        label: cleanFlowString(kb.age_7_11?.label, DEFAULT_BOT_FLOW.kids_branches.age_7_11.label, 60),
+        reply: cleanFlowString(kb.age_7_11?.reply, DEFAULT_BOT_FLOW.kids_branches.age_7_11.reply, 900),
+        course_id: cleanCourseId(kb.age_7_11?.course_id, DEFAULT_BOT_FLOW.kids_branches.age_7_11.course_id)
+      },
+      age_12_15: {
+        label: cleanFlowString(kb.age_12_15?.label, DEFAULT_BOT_FLOW.kids_branches.age_12_15.label, 60),
+        reply: cleanFlowString(kb.age_12_15?.reply, DEFAULT_BOT_FLOW.kids_branches.age_12_15.reply, 900),
+        course_id: cleanCourseId(kb.age_12_15?.course_id, DEFAULT_BOT_FLOW.kids_branches.age_12_15.course_id)
+      }
+    },
+    adult_intro: cleanFlowString(src.adult_intro, DEFAULT_BOT_FLOW.adult_intro, 500),
+    adult_branches: {
+      office: {
+        label: cleanFlowString(ab.office?.label, DEFAULT_BOT_FLOW.adult_branches.office.label, 60),
+        reply: cleanFlowString(ab.office?.reply, DEFAULT_BOT_FLOW.adult_branches.office.reply, 900),
+        course_id: cleanCourseId(ab.office?.course_id, DEFAULT_BOT_FLOW.adult_branches.office.course_id)
+      },
+      trade: {
+        label: cleanFlowString(ab.trade?.label, DEFAULT_BOT_FLOW.adult_branches.trade.label, 60),
+        reply: cleanFlowString(ab.trade?.reply, DEFAULT_BOT_FLOW.adult_branches.trade.reply, 900),
+        course_id: cleanCourseId(ab.trade?.course_id, DEFAULT_BOT_FLOW.adult_branches.trade.course_id)
+      },
+      hsk: {
+        label: cleanFlowString(ab.hsk?.label, DEFAULT_BOT_FLOW.adult_branches.hsk.label, 60),
+        reply: cleanFlowString(ab.hsk?.reply, DEFAULT_BOT_FLOW.adult_branches.hsk.reply, 900),
+        course_id: cleanCourseId(ab.hsk?.course_id, DEFAULT_BOT_FLOW.adult_branches.hsk.course_id)
+      }
+    },
+    trial_intro: cleanFlowString(src.trial_intro, DEFAULT_BOT_FLOW.trial_intro, 500),
+    trial_video: {
+      label: cleanFlowString(tv.label, DEFAULT_BOT_FLOW.trial_video.label, 60),
+      reply: cleanFlowString(tv.reply, DEFAULT_BOT_FLOW.trial_video.reply, 900)
+    },
+    trial_live: {
+      label: cleanFlowString(tl.label, DEFAULT_BOT_FLOW.trial_live.label, 60),
+      reply: cleanFlowString(tl.reply, DEFAULT_BOT_FLOW.trial_live.reply, 900)
+    }
+  };
+}
+
+export function flowButtonsForState(flowStep = 'FLOW_START', rawBotFlow) {
+  const bf = normalizeBotFlow(rawBotFlow);
+  const btn = (id, label) => ({ id, label, payload: label, action: id });
+
+  switch (flowStep) {
+    case 'FLOW_KIDS':
+      return [
+        btn('FLOW_KIDS_4_6', bf.kids_branches.age_4_6.label),
+        btn('FLOW_KIDS_7_11', bf.kids_branches.age_7_11.label),
+        btn('FLOW_KIDS_12_15', bf.kids_branches.age_12_15.label),
+        { id: 'FLOW_START', label: '← Menu đầu', payload: 'Menu đầu', action: 'FLOW_START' }
+      ];
+    case 'FLOW_KIDS_4_6':
+    case 'FLOW_KIDS_7_11':
+    case 'FLOW_KIDS_12_15':
+      return [
+        { id: 'OPEN_ORDER_FORM', label: 'Đăng ký & lấy mã VietQR ngay', payload: 'OPEN_ORDER_FORM', action: 'OPEN_ORDER_FORM' },
+        { id: 'MENU_HANDOFF', label: 'Chat trực tiếp với tư vấn viên', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' },
+        { id: 'FLOW_KIDS', label: '← Chọn độ tuổi khác', payload: 'Chọn độ tuổi khác', action: 'FLOW_KIDS' }
+      ];
+    case 'FLOW_ADULT':
+      return [
+        btn('FLOW_ADULT_OFFICE', bf.adult_branches.office.label),
+        btn('FLOW_ADULT_TRADE', bf.adult_branches.trade.label),
+        btn('FLOW_ADULT_HSK', bf.adult_branches.hsk.label),
+        { id: 'FLOW_START', label: '← Menu đầu', payload: 'Menu đầu', action: 'FLOW_START' }
+      ];
+    case 'FLOW_ADULT_OFFICE':
+    case 'FLOW_ADULT_TRADE':
+      return [
+        { id: 'MENU_HANDOFF', label: 'Chat với tư vấn viên xếp lịch 1:1', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' },
+        { id: 'OPEN_ORDER_FORM', label: 'Tự đăng ký khóa Video VietQR', payload: 'OPEN_ORDER_FORM', action: 'OPEN_ORDER_FORM' },
+        { id: 'FLOW_ADULT', label: '← Xem mục tiêu khác', payload: 'Xem mục tiêu khác', action: 'FLOW_ADULT' }
+      ];
+    case 'FLOW_ADULT_HSK':
+      return [
+        { id: 'OPEN_ORDER_FORM', label: 'Đăng ký & lấy mã VietQR ngay', payload: 'OPEN_ORDER_FORM', action: 'OPEN_ORDER_FORM' },
+        { id: 'MENU_HANDOFF', label: 'Chat với tư vấn viên', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' },
+        { id: 'FLOW_ADULT', label: '← Xem mục tiêu khác', payload: 'Xem mục tiêu khác', action: 'FLOW_ADULT' }
+      ];
+    case 'FLOW_TRIAL':
+      return [
+        btn('FLOW_TRIAL_VIDEO', bf.trial_video.label),
+        btn('FLOW_TRIAL_LIVE', bf.trial_live.label),
+        { id: 'FLOW_START', label: '← Menu đầu', payload: 'Menu đầu', action: 'FLOW_START' }
+      ];
+    case 'FLOW_TRIAL_VIDEO':
+      return [
+        btn('FLOW_KIDS', bf.root_buttons.kids),
+        btn('FLOW_ADULT', bf.root_buttons.adult),
+        { id: 'OPEN_ORDER_FORM', label: 'Đăng ký khóa Video VietQR', payload: 'OPEN_ORDER_FORM', action: 'OPEN_ORDER_FORM' }
+      ];
+    case 'FLOW_TRIAL_LIVE':
+      return [
+        { id: 'MENU_HANDOFF', label: 'Chat trực tiếp với tư vấn viên xếp lịch', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' },
+        { id: 'FLOW_START', label: '← Menu đầu', payload: 'Menu đầu', action: 'FLOW_START' }
+      ];
+    case 'FLOW_START':
+    default:
+      return [
+        btn('FLOW_KIDS', bf.root_buttons.kids),
+        btn('FLOW_ADULT', bf.root_buttons.adult),
+        btn('FLOW_TRIAL', bf.root_buttons.trial),
+        { id: 'MENU_HANDOFF', label: bf.root_buttons.handoff, payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' }
+      ];
+  }
+}
+
+export function resolveTelegramFlowStep({ command, botFlow, courses = [] } = {}) {
+  const cmd = tidy(command, 40).toUpperCase();
+  if (!/^FLOW_[A-Z0-9_]+$/.test(cmd)) return { handled: false };
+  const bf = normalizeBotFlow(botFlow);
+  const pickCourse = (preferredId, ageRegex) =>
+    (preferredId ? courses.find(c => c.id === preferredId) : null) ||
+    (ageRegex ? courses.find(c => ageRegex.test(`${c.title} ${c.ageGroup || ''}`)) : null) ||
+    courses[0] ||
+    null;
+  const formatCourseAppend = course => {
+    if (!course) return '';
+    const price = new Intl.NumberFormat('vi-VN').format(course.price);
+    return `\n\n${course.title} — ${price} ₫${course.duration ? ' · ' + course.duration : ''}`;
+  };
+
+  if (cmd === 'FLOW_START') {
+    return {
+      handled: true,
+      command: 'FLOW_START',
+      nextFlowStep: 'FLOW_START',
+      reply: bf.welcome_message,
+      quickReplies: flowButtonsForState('FLOW_START', bf),
+      leadPatch: {}
+    };
+  }
+  if (cmd === 'FLOW_KIDS') {
+    return {
+      handled: true,
+      command: 'FLOW_KIDS',
+      nextFlowStep: 'FLOW_KIDS',
+      reply: bf.kids_intro,
+      quickReplies: flowButtonsForState('FLOW_KIDS', bf),
+      leadPatch: { target_group: 'parent_child', flow: 'parent_child', goal: 'Tìm khóa cho bé' }
+    };
+  }
+  if (cmd === 'FLOW_KIDS_4_6' || cmd === 'FLOW_KIDS_7_11' || cmd === 'FLOW_KIDS_12_15') {
+    const branchKey = cmd === 'FLOW_KIDS_4_6' ? 'age_4_6' : cmd === 'FLOW_KIDS_7_11' ? 'age_7_11' : 'age_12_15';
+    const branch = bf.kids_branches[branchKey];
+    const ageRe =
+      branchKey === 'age_4_6'
+        ? /4\s*[–-]\s*6|5\s*[–-]\s*6|kids|mầm non/i
+        : branchKey === 'age_7_11'
+          ? /7\s*[–-]\s*13|6\s*[–-]\s*11|8\s*[–-]\s*14/i
+          : /hsk|junior|9\s*[–-]\s*15/i;
+    const course = pickCourse(branch.course_id, ageRe);
+    const repAge = branchKey === 'age_4_6' ? 5 : branchKey === 'age_7_11' ? 9 : 13;
+    return {
+      handled: true,
+      command: cmd,
+      nextFlowStep: cmd,
+      reply: branch.reply + formatCourseAppend(course),
+      quickReplies: flowButtonsForState(cmd, bf),
+      leadPatch: {
+        target_group: 'parent_child',
+        flow: 'parent_child',
+        child_age: repAge,
+        ...(course?.id ? { recommended_course_id: course.id } : {})
+      }
+    };
+  }
+  if (cmd === 'FLOW_ADULT') {
+    return {
+      handled: true,
+      command: 'FLOW_ADULT',
+      nextFlowStep: 'FLOW_ADULT',
+      reply: bf.adult_intro,
+      quickReplies: flowButtonsForState('FLOW_ADULT', bf),
+      leadPatch: { target_group: 'adult_working', flow: 'adult_1_1' }
+    };
+  }
+  if (cmd === 'FLOW_ADULT_OFFICE' || cmd === 'FLOW_ADULT_TRADE' || cmd === 'FLOW_ADULT_HSK') {
+    const key = cmd === 'FLOW_ADULT_OFFICE' ? 'office' : cmd === 'FLOW_ADULT_TRADE' ? 'trade' : 'hsk';
+    const branch = bf.adult_branches[key];
+    const course = key === 'hsk' || branch.course_id
+      ? pickCourse(branch.course_id, /hsk/i)
+      : null;
+    const goalText =
+      key === 'office'
+        ? 'Giao tiếp công việc / công sở'
+        : key === 'trade'
+          ? 'Trao đổi với nhà cung cấp / nhập hàng'
+          : 'Lộ trình chứng chỉ HSK/YCT';
+    return {
+      handled: true,
+      command: cmd,
+      nextFlowStep: cmd,
+      reply: branch.reply + formatCourseAppend(course),
+      quickReplies: flowButtonsForState(cmd, bf),
+      leadPatch: {
+        target_group: key === 'hsk' ? 'adult_self_paced' : 'adult_working',
+        flow: key === 'hsk' ? 'self_paced_hsk' : 'adult_1_1',
+        goal: goalText,
+        ...(key === 'office' ? { ad_package: 'ad_963k' } : key === 'trade' ? { ad_package: 'ad_1500k' } : {}),
+        ...(course?.id ? { recommended_course_id: course.id } : {})
+      }
+    };
+  }
+  if (cmd === 'FLOW_TRIAL') {
+    return {
+      handled: true,
+      command: 'FLOW_TRIAL',
+      nextFlowStep: 'FLOW_TRIAL',
+      reply: bf.trial_intro,
+      quickReplies: flowButtonsForState('FLOW_TRIAL', bf),
+      leadPatch: {}
+    };
+  }
+  if (cmd === 'FLOW_TRIAL_VIDEO' || cmd === 'FLOW_TRIAL_LIVE') {
+    const branch = cmd === 'FLOW_TRIAL_VIDEO' ? bf.trial_video : bf.trial_live;
+    return {
+      handled: true,
+      command: cmd,
+      nextFlowStep: cmd,
+      reply: branch.reply,
+      quickReplies: flowButtonsForState(cmd, bf),
+      leadPatch: {
+        goal: cmd === 'FLOW_TRIAL_VIDEO' ? 'Khóa video tự học' : 'Học thử trực tiếp cùng cô'
+      }
+    };
+  }
+  return { handled: false };
+}
+
 function normalizeText(value = '') {
   return String(value)
     .normalize('NFD')
@@ -557,10 +889,15 @@ async function syncLeadToConversation(store, conversation, lead, menuResult, lea
     ? conversation.lead_meta
     : {};
   const nextMeta = { ...existingMeta, ...lead.patch };
+  if (menuResult?.leadPatch) Object.assign(nextMeta, menuResult.leadPatch);
   if (menuResult?.leadMetaPatch) Object.assign(nextMeta, menuResult.leadMetaPatch);
   if (menuResult?.nextMenuState !== undefined) {
     if (menuResult.nextMenuState === null) delete nextMeta.menu_state;
     else nextMeta.menu_state = menuResult.nextMenuState;
+  }
+  if (menuResult?.nextFlowStep !== undefined) {
+    if (menuResult.nextFlowStep === null) delete nextMeta.flow_step;
+    else nextMeta.flow_step = menuResult.nextFlowStep;
   }
   if (leadPayload && typeof leadPayload === 'object') {
     if (leadPayload.targetGroup) nextMeta.target_group = tidy(String(leadPayload.targetGroup), 80);
@@ -678,7 +1015,38 @@ export async function runHybridChatbot({
     return { handled: true, mode: 'handoff', reason: 'config_unavailable' };
   }
 
-  // 3. Deterministic Explicit Scripted / Menu Layer (F06) — runs BEFORE adult11 / live / exam regexes
+  // 3. Deterministic Progressive Telegram Flow (`FLOW_*`) & Legacy Menu Layer (F06)
+  const rawFlowCmd = tidy(menuCommand, 40).toUpperCase();
+  if (/^FLOW_[A-Z0-9_]+$/.test(rawFlowCmd)) {
+    const flowResult = resolveTelegramFlowStep({
+      command: rawFlowCmd,
+      botFlow: config.bot_flow || config.duration_presets?.__bot_flow,
+      courses
+    });
+    if (flowResult.handled) {
+      await syncLeadToConversation(
+        store,
+        conversation,
+        lead,
+        {
+          nextMenuState: null,
+          nextFlowStep: flowResult.nextFlowStep,
+          leadPatch: flowResult.leadPatch
+        },
+        leadPayload
+      );
+      await action(store, conversation.id, 'bot', { ...after, body: flowResult.reply }).catch(error => {
+        if (error.status !== 409) throw error;
+      });
+      return {
+        handled: true,
+        mode: 'scripted',
+        menuCommand: flowResult.command,
+        quickReplies: flowResult.quickReplies
+      };
+    }
+  }
+
   if (explicitMenuCmd) {
     const menuResult = resolveScriptedMenu({
       text,
@@ -865,6 +1233,12 @@ export async function runHybridChatbot({
       reply += '\nĐăng ký: ' + base + '/tu-van#checkout=' + await createTicket(conversation.id, 'checkout') +
         '&course=' + encodeURIComponent(recommendation.id);
     }
+    const nextMeta = {
+      ...(conversation.lead_meta && typeof conversation.lead_meta === 'object' ? conversation.lead_meta : {}),
+      recommended_course_id: recommendation.id
+    };
+    await store.patch('ktn_consultations?id=eq.' + conversation.id, { lead_meta: nextMeta }).catch(() => null);
+    conversation.lead_meta = nextMeta;
   }
 
   await action(store, conversation.id, 'bot', { ...after, body: reply }).catch(error => {

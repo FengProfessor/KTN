@@ -31,6 +31,25 @@ interface ConsultationInboxListProps {
   claimingId?: string | null;
 }
 
+export function formatConsultationLeadTitle(
+  item: Pick<ConsultationInboxItem, 'id' | 'channel' | 'customer_name' | 'customer_phone' | 'zalo_user_id' | 'lead_meta'>
+): string {
+  if (item.customer_name && item.customer_name.trim()) return item.customer_name.trim();
+  if (item.customer_phone && item.customer_phone.trim()) return item.customer_phone.trim();
+  if (item.zalo_user_id && item.zalo_user_id.trim()) {
+    return `Khách Zalo (${item.zalo_user_id.slice(-6)})`;
+  }
+  const meta = item.lead_meta;
+  const hint = meta?.target_learner || meta?.goal;
+  if (hint && String(hint).trim()) {
+    const ch = item.channel === 'zalo_oa' ? 'Zalo' : item.channel === 'messenger' ? 'FB' : 'Web';
+    return `${ch} · ${String(hint).trim().slice(0, 32)} (#${item.id.slice(-4)})`;
+  }
+  const chLabel =
+    item.channel === 'zalo_oa' ? 'Khách Zalo' : item.channel === 'messenger' ? 'Khách Fanpage' : 'Khách Web';
+  return `${chLabel} #${item.id.slice(-4)}`;
+}
+
 export const ConsultationInboxList: React.FC<ConsultationInboxListProps> = ({
   items,
   hasMore,
@@ -64,6 +83,7 @@ export const ConsultationInboxList: React.FC<ConsultationInboxListProps> = ({
 
   const statuses: Array<{ value: string; label: string }> = [
     { value: '', label: tr('Mọi trạng thái', 'All') },
+    { value: 'needs_attention', label: tr('🔥 Cần xử lý', 'Needs Attention') },
     { value: 'waiting', label: tr('Chờ nhận', 'Waiting') },
     { value: 'unanswered', label: tr('Chưa trả lời', 'Unanswered') },
     { value: 'overdue', label: tr('Quá hạn hẹn', 'Overdue') },
@@ -73,9 +93,51 @@ export const ConsultationInboxList: React.FC<ConsultationInboxListProps> = ({
     { value: 'closed', label: tr('Đã đóng', 'Closed') },
   ];
 
+  const quickStatusPills: Array<{ value: string; label: string }> = [
+    { value: '', label: tr('Tất cả', 'All') },
+    { value: 'needs_attention', label: tr('🔥 Cần xử lý', 'Needs Attention') },
+    { value: 'open', label: tr('💬 Đang tư vấn', 'Open') },
+    { value: 'bot', label: tr('🤖 Bot tự tiếp', 'Bot') },
+    { value: 'closed', label: tr('✅ Đã đóng', 'Closed') },
+  ];
+
+  const sortedItems =
+    statusFilter === '' || statusFilter === 'needs_attention'
+      ? [...items].sort((a, b) => {
+          const score = (x: ConsultationInboxItem) =>
+            x.status === 'closed'
+              ? 0
+              : (x.status === 'waiting' ? 4 : 0) +
+                (x.reply_pending ? 3 : 0) +
+                (x.has_paid_pending ? 2 : 0);
+          const diff = score(b) - score(a);
+          if (diff !== 0) return diff;
+          return Date.parse(b.updated_at || '') - Date.parse(a.updated_at || '');
+        })
+      : items;
+
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-stone-200 bg-white shadow-2xs">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xs">
       <div className="space-y-2 border-b border-stone-200 p-3">
+        {/* Quick Status Filter Pills */}
+        <div className="flex flex-wrap gap-1" data-testid="crm-quick-status-pills">
+          {quickStatusPills.map((s) => (
+            <button
+              key={s.value || 'all-status'}
+              type="button"
+              data-testid={`crm-quick-status-${s.value || 'all'}`}
+              onClick={() => onStatusChange(s.value)}
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                statusFilter === s.value
+                  ? 'border-amber-700 bg-amber-100 text-amber-950'
+                  : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
         {/* Channel filter pills */}
         <div className="flex flex-wrap gap-1">
           {channels.map((c) => (
@@ -101,7 +163,7 @@ export const ConsultationInboxList: React.FC<ConsultationInboxListProps> = ({
             data-testid="crm-status-filter"
             value={statusFilter}
             onChange={(e) => onStatusChange(e.target.value)}
-            className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-800"
+            className="w-full min-w-0 rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-800"
           >
             {statuses.map((s) => (
               <option key={s.value || 'all'} value={s.value}>
@@ -115,7 +177,7 @@ export const ConsultationInboxList: React.FC<ConsultationInboxListProps> = ({
               data-testid="crm-owner-filter"
               value={ownerFilter}
               onChange={(e) => onOwnerChange(e.target.value)}
-              className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-800"
+              className="w-full min-w-0 rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs font-semibold text-stone-800"
             >
               <option value="">{tr('Mọi nhân viên', 'All advisors')}</option>
               <option value="unassigned">{tr('Chưa phân công', 'Unassigned')}</option>
@@ -144,16 +206,16 @@ export const ConsultationInboxList: React.FC<ConsultationInboxListProps> = ({
 
       {/* List */}
       <div className="flex-1 divide-y divide-stone-100 overflow-y-auto">
-        {isLoading && items.length === 0 ? (
+        {isLoading && sortedItems.length === 0 ? (
           <div className="p-6 text-center text-xs text-stone-500">
             {tr('Đang tải hộp thư...', 'Loading inbox...')}
           </div>
-        ) : items.length === 0 ? (
+        ) : sortedItems.length === 0 ? (
           <div className="p-6 text-center text-xs text-stone-500">
             {tr('Chưa có hội thoại nào khớp bộ lọc.', 'No conversations match filters.')}
           </div>
         ) : (
-          items.map((item) => {
+          sortedItems.map((item) => {
             const channelMeta = getChannelBadgeMeta(item.channel);
             const isSelected = selectedId === item.id;
             const isUnassigned = !item.owner_email;
@@ -213,12 +275,26 @@ export const ConsultationInboxList: React.FC<ConsultationInboxListProps> = ({
                     </div>
 
                     <p className="mt-1 truncate text-xs font-bold text-stone-900">
-                      {item.customer_name || item.zalo_user_id || `#${item.id.slice(0, 8)}`}
+                      {formatConsultationLeadTitle(item)}
                     </p>
                     <p className="truncate text-[11px] text-stone-500">
                       {item.customer_phone || tr('Chưa có SĐT', 'No phone')} ·{' '}
                       {item.owner_email || tr('Chưa nhận', 'Unassigned')}
                     </p>
+                    {item.last_message_preview && (
+                      <p className="mt-0.5 truncate text-[11px] text-stone-600">
+                        <span className="font-semibold text-stone-700">
+                          {item.last_message_sender === 'customer' || item.last_message_sender === 'external'
+                            ? tr('Khách: ', 'Guest: ')
+                            : item.last_message_sender === 'bot'
+                              ? 'Bot: '
+                              : item.last_message_sender === 'note'
+                                ? tr('Ghi chú: ', 'Note: ')
+                                : tr('TVV: ', 'Staff: ')}
+                        </span>
+                        {item.last_message_preview}
+                      </p>
+                    )}
                   </div>
 
                   <span className="shrink-0 text-[10px] text-stone-400">

@@ -1309,10 +1309,10 @@ describe('Tier 3 — Pairwise Cross-Feature E2E Integrations (F01–F18)', () =>
       await guestPage.page.goto(`${browserHarness.baseUrl}/chatbot`, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await guestPage.page.waitForSelector('[data-testid="web-chatbot-panel"]', { timeout: 25000 });
       await guestPage.page.waitForFunction(() => Boolean(localStorage.getItem('ktn_consult_web')), null, { timeout: 15000 });
-      await guestPage.page.locator('[data-testid="web-chatbot-qr-MENU_NEED_PHONE"]').waitFor({ state: 'visible', timeout: 15000 });
+      await guestPage.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS"]').waitFor({ state: 'visible', timeout: 15000 });
 
-      // Need + phone capture via hydrated backend quick reply
-      await guestPage.page.locator('[data-testid="web-chatbot-qr-MENU_NEED_PHONE"]').click();
+      // Need + phone capture via subtle header phone button
+      await guestPage.page.locator('[data-testid="web-chatbot-need-phone-toggle"]').click();
       await guestPage.page.waitForSelector('[data-testid="web-chatbot-need-phone-form"]', { timeout: 10000 });
       await guestPage.page.locator('[data-testid="web-chatbot-phone-input"]').fill('0901234567');
       await guestPage.page.locator('[data-testid="web-chatbot-phone-submit-btn"]').click();
@@ -1330,9 +1330,13 @@ describe('Tier 3 — Pairwise Cross-Feature E2E Integrations (F01–F18)', () =>
         { timeout: 15000 }
       );
 
-      // Strict [F16-T1-05] contract: MENU_PAYMENT MUST expose hydrated OPEN_ORDER_FORM button directly
-      await guestPage.page.locator('[data-testid="web-chatbot-qr-MENU_PAYMENT"]').click();
+      // Progressive recommendation or Telegram Kids flow exposes OPEN_ORDER_FORM button
       const openOrderBtn = guestPage.page.locator('[data-testid="web-chatbot-qr-OPEN_ORDER_FORM"]');
+      if (!(await openOrderBtn.isVisible().catch(() => false))) {
+        await guestPage.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS"]').click();
+        await guestPage.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS_4_6"]').waitFor({ state: 'visible', timeout: 10000 });
+        await guestPage.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS_4_6"]').click();
+      }
       await openOrderBtn.waitFor({ state: 'visible', timeout: 10000 });
       await openOrderBtn.click();
       await guestPage.page.waitForSelector('[data-testid="web-chatbot-order-form"]', { timeout: 10000 });

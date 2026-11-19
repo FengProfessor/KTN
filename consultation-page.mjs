@@ -94,9 +94,13 @@ function browser(staffMode, full) {
       item.append(node('small', [senderLabel, message.actor_email, fmt(message.created_at),
         message.delivery && message.delivery !== 'sent' ? (message.delivery_note || 'Đang gửi') : ''].filter(Boolean).join(' · ')),
       node('p', message.body));
-      // QR có thể mở lại từ lịch sử hội thoại phía quản lý.
-      const qr = message.sender === 'system' && /\nVietQR: (https:\/\/img\.vietqr\.io\/\S+)$/.exec(message.body);
-      if (qr) item.append(link('Xem mã VietQR', qr[1]));
+      // Hiển thị mã VietQR inline ngay trong khung chat (cho khách và quản lý).
+      const qr = message.sender !== 'customer' && /(https:\/\/img\.vietqr\.io\/[^\s)]+)/.exec(message.body || '');
+      if (qr) {
+        const qrCard = node('div', '', { class: 'qr-card' });
+        qrCard.append(node('img', '', { src: qr[1], alt: 'Mã VietQR', class: 'qr-inline', loading: 'lazy' }));
+        item.append(qrCard, link('Xem mã VietQR', qr[1]));
+      }
       const checkoutMatch = /(?:https?:\/\/[^\s]+)?(\/tu-van#checkout=[^\s]+)/.exec(message.body || '');
       if (checkoutMatch) {
         try {
@@ -131,8 +135,10 @@ function browser(staffMode, full) {
     if (result.accessStatus === 'approved') container.append(link('Đăng nhập học', '/?login=1'));
   }
 
-  async function checkout(container) {
-    const { courses, checkoutEnabled } = await call('web/catalog');
+  async function checkout(container, onCatalogLoaded) {
+    const catalogData = await call('web/catalog');
+    const { courses, checkoutEnabled } = catalogData;
+    if (onCatalogLoaded) onCatalogLoaded(catalogData);
     const picker = options([['','Chọn khóa video'], ...courses.map(course => [course.id, [course.title, dollars.format(course.price), course.duration].filter(Boolean).join(' · ')])],
       'Khóa học', 'courseId');
     picker.required = true;
@@ -158,11 +164,18 @@ function browser(staffMode, full) {
       paymentBox(payment, result);
     });
     checkoutOrder = sessionStorage.getItem(orderStorage) || '';
+    if (checkoutOrder || (nonce.get('course') && picker.value)) container.hidden = false;
     const details = node('details', '', consultOnly ? { open:'' } : {});
     details.append(node('summary', 'Đăng ký khóa video'), buy);
     container.append(payment);
-    if (checkoutEnabled && courses.length) container.prepend(details);
-    else if (consultOnly && !checkoutOrder) container.append(node('p','Thanh toán trực tuyến đang tạm ngưng. Liên hệ tư vấn viên KTN.'));
+    if (checkoutEnabled && courses.length) {
+      if (!consultOnly) {
+        const collapseBtn = button('Thu gọn bảng đăng ký', () => { container.hidden = true; }, { class: 'chip', type: 'button' });
+        container.prepend(collapseBtn, details);
+      } else {
+        container.prepend(details);
+      }
+    } else if (consultOnly && !checkoutOrder) container.append(node('p','Thanh toán trực tuyến đang tạm ngưng. Liên hệ tư vấn viên KTN.'));
     if (checkoutOrder) await refreshPayment();
     setInterval(() => {
       if (checkoutOrder && !document.hidden) void refreshPayment().catch(() => {});
@@ -172,13 +185,36 @@ function browser(staffMode, full) {
   async function customer() {
     token = (consultOnly ? nonce.get('checkout') : localStorage.getItem('ktn_consult_web')) || '';
     const chat = node('section', '', { class: 'panel' });
-    const registration = node('section', '', { class: 'panel' });
+    const registration = node('section', '', { class: 'panel registration-panel' });
     const stateBadge = node('p', '', { class: 'status-badge' });
     const messages = node('div', '', { class: 'messages', 'aria-live': 'polite' });
     const quickBar = node('div', '', { class: 'quick-replies', role: 'group', 'aria-label': 'Menu tư vấn nhanh' });
+    const waitingFallback = node('div', '', { class: 'waiting-fallback', hidden: '' });
+    const webStates = {
+      bot: 'Trợ lý KTN trực tuyến',
+      waiting: 'Đang kết nối tư vấn viên trực tuyến...',
+      open: 'Tư vấn viên KTN đang hỗ trợ trực tiếp',
+      closed: 'Phiên tư vấn đã kết thúc'
+    };
     let quickSignature = '';
     let sendQuickHandler = null;
+    let activeBotFlow = null;
+    let lastRecommendedCourseId = '';
+    let lastThreadData = null;
+    let currentStatus = 'bot';
+    const buildFlowRootButtons = flow => {
+      const rb = flow?.root_buttons;
+      if (!rb) return null;
+      const items = [
+        [rb.kids, 'FLOW_KIDS'],
+        [rb.adult, 'FLOW_ADULT'],
+        [rb.trial, 'FLOW_TRIAL'],
+        [rb.handoff, 'MENU_HANDOFF']
+      ].filter(([label]) => Boolean(label));
+      return items.length ? items.map(([label, cmd]) => ({ id: cmd, label, payload: cmd })) : null;
+    };
     const syncQuickBar = data => {
+      lastRecommendedCourseId = String(data?.leadMeta?.recommended_course_id || lastRecommendedCourseId || '');
       if (data?.status && data.status !== 'bot') {
         quickBar.hidden = true;
         if (quickSignature !== 'hidden') {
@@ -188,8 +224,15 @@ function browser(staffMode, full) {
         return;
       }
       quickBar.hidden = false;
-      if (!Array.isArray(data?.quickReplies)) return;
-      if (!data.quickReplies.length) {
+      const useFlowRoot = Boolean(
+        activeBotFlow &&
+        !data?.leadMeta?.flow_step &&
+        !data?.leadMeta?.menu_state &&
+        !data?.leadMeta?.recommended_course_id
+      );
+      const effectiveReplies = useFlowRoot ? (buildFlowRootButtons(activeBotFlow) || data?.quickReplies) : data?.quickReplies;
+      if (!Array.isArray(effectiveReplies)) return;
+      if (!effectiveReplies.length) {
         quickBar.hidden = true;
         if (quickSignature !== 'empty') {
           quickSignature = 'empty';
@@ -197,12 +240,12 @@ function browser(staffMode, full) {
         }
         return;
       }
-      const sig = JSON.stringify(data.quickReplies);
+      const sig = JSON.stringify(effectiveReplies);
       if (sig === quickSignature) return;
       quickSignature = sig;
-      quickBar.replaceChildren(...data.quickReplies.map(item => {
+      quickBar.replaceChildren(...effectiveReplies.map(item => {
         const label = item.label || item.title || '';
-        const cmd = item.payload || item.id || 'MENU_ROOT';
+        const cmd = item.action || item.id || item.payload || 'MENU_ROOT';
         const next = cmd === 'MENU_FAQ' ? 'MENU_FAQ' : cmd === 'MENU_ROOT' ? 'MENU_ROOT' : null;
         return button(label, () => sendQuickHandler && sendQuickHandler(label, cmd, next), { class: 'chip', 'data-menu': cmd });
       }));
@@ -213,23 +256,39 @@ function browser(staffMode, full) {
       token = result.token;
       localStorage.setItem('ktn_consult_web', token);
     };
+    let leadDetailsRef = null;
+    let phoneInputRef = null;
     const refresh = async () => {
       const data = await call('web/thread');
-      stateBadge.textContent = states[data.status] || '';
+      lastThreadData = data;
+      currentStatus = data.status || 'bot';
+      stateBadge.textContent = webStates[data.status] || states[data.status] || '';
       syncQuickBar(data);
+      const hasHumanReply = Array.isArray(data.messages) && data.messages.some(m => m.sender === 'advisor' || m.sender === 'manager');
+      const queuedMs = data.queuedAt ? Date.parse(data.queuedAt) : NaN;
+      waitingFallback.hidden = !(data.status === 'waiting' && !hasHumanReply && Number.isFinite(queuedMs) && (Date.now() - queuedMs > 60000));
       const next = JSON.stringify(data.messages);
       if (next !== snapshot) {
         snapshot = next;
         showMessages(messages, data.messages, 'web');
-        if (!data.messages.length) messages.append(node('p','Bạn muốn tìm khóa học nào cho con?'));
+        if (!data.messages.length) messages.append(node('p', activeBotFlow?.welcome_message || 'Bạn muốn tìm khóa học nào cho con?'));
         messages.scrollTop = messages.scrollHeight;
       }
       return data;
     };
     if (!consultOnly) {
       root.replaceChildren(chat);
-      const leadDetails = node('details', '', { class: 'lead-capture' });
+      const leadDetails = node('details', '', { class: 'lead-capture', hidden: '' });
       const phoneInput = input('phone', 'tel', 'Số điện thoại (VD: 0901234567)', { required: '', maxlength: 30 });
+      leadDetailsRef = leadDetails;
+      phoneInputRef = phoneInput;
+      registration.hidden = !nonce.get('course') && !sessionStorage.getItem('ktn_consult_order:' + (token.split('.')[1] || ''));
+      const fallbackLeadBtn = button('Để lại SĐT nếu bận', () => {
+        leadDetails.hidden = false;
+        leadDetails.open = true;
+        phoneInput.focus();
+      }, { class: 'chip', type: 'button' });
+      waitingFallback.append(node('small', 'Tư vấn viên đang bận một chút — anh/chị có thể tiếp tục chờ trên web hoặc '), fallbackLeadBtn);
       const leadForm = form('Gửi thông tin liên hệ', [
         input('name', 'text', 'Họ tên phụ huynh / học viên', { maxlength: 120 }),
         phoneInput,
@@ -259,11 +318,24 @@ function browser(staffMode, full) {
         });
         element.reset();
         leadDetails.open = false;
+        leadDetails.hidden = true;
         await refresh();
       });
       leadDetails.append(node('summary', 'Để lại nhu cầu & số điện thoại'), leadForm);
+      const refreshAfterSend = async () => {
+        const d = await refresh();
+        if (d?.status === 'bot' && d.messages?.[d.messages.length - 1]?.sender === 'customer') {
+          setTimeout(() => { void refresh().catch(() => {}); }, 450);
+          setTimeout(() => { void refresh().catch(() => {}); }, 1000);
+        }
+      };
       const sendQuick = async (label, menuCommand, nextMenu) => {
         if (menuCommand === 'OPEN_ORDER_FORM') {
+          registration.hidden = false;
+          const coursePicker = registration.querySelector('select[name="courseId"]');
+          if (lastRecommendedCourseId && coursePicker && [...coursePicker.options].some(o => o.value === lastRecommendedCourseId)) {
+            coursePicker.value = lastRecommendedCourseId;
+          }
           const orderDetails = registration.querySelector('details');
           if (orderDetails) {
             orderDetails.open = true;
@@ -271,13 +343,14 @@ function browser(staffMode, full) {
           }
           return;
         }
-        if (nextMenu) renderQuickMenu(nextMenu);
+        if (nextMenu && !activeBotFlow) renderQuickMenu(nextMenu);
         if (menuCommand === 'MENU_NEED_PHONE') {
+          leadDetails.hidden = false;
           leadDetails.open = true;
           phoneInput.focus();
         }
         await call('web/message', 'POST', { body: label, requestId: crypto.randomUUID(), menuCommand });
-        await refresh();
+        await refreshAfterSend();
       };
       sendQuickHandler = sendQuick;
       const menuItems = {
@@ -312,16 +385,28 @@ function browser(staffMode, full) {
       }
       let messageId = '';
       let lastBody = '';
-      const composer = form('Gửi', [node('textarea','',{ name:'body', 'aria-label':'Nội dung tư vấn', placeholder:'Nhập câu hỏi', maxlength:4000, required:'' })], async (data, element) => {
+      const bodyArea = node('textarea', '', { name: 'body', rows: 1, 'aria-label': 'Nội dung tư vấn', placeholder: 'Nhắn câu hỏi hoặc chọn nút phía trên...', maxlength: 4000, required: '' });
+      const composer = form('Gửi', [bodyArea], async (data, element) => {
         if (lastBody !== data.body || !messageId) messageId = crypto.randomUUID();
         lastBody = data.body;
         await call('web/message','POST',{ body:data.body, requestId:messageId });
         element.reset();
         messageId = '';
-        await refresh();
+        await refreshAfterSend();
       });
-      chat.append(stateBadge, messages, quickBar, leadDetails, composer);
-      setInterval(() => { if (!document.hidden) void refresh().catch(() => {}); }, 4500);
+      composer.className = 'composer-row';
+      bodyArea.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          composer.requestSubmit();
+        }
+      });
+      chat.append(stateBadge, messages, quickBar, waitingFallback, leadDetails, composer);
+      const schedulePoll = () => setTimeout(async () => {
+        if (!document.hidden) { try { await refresh(); } catch {} }
+        schedulePoll();
+      }, currentStatus === 'waiting' || currentStatus === 'open' ? 2000 : 4500);
+      schedulePoll();
       root.append(registration);
     } else {
       root.replaceChildren(registration);
@@ -333,7 +418,18 @@ function browser(staffMode, full) {
       });
       root.append(exit);
     }
-    if (full) await checkout(registration);
+    if (full) await checkout(registration, cat => {
+      if (cat?.botFlow) {
+        activeBotFlow = cat.botFlow;
+        if (lastThreadData) {
+          syncQuickBar(lastThreadData);
+          if (!lastThreadData.messages?.length) {
+            showMessages(messages, [], 'web');
+            messages.append(node('p', activeBotFlow.welcome_message || 'Bạn muốn tìm khóa học nào cho con?'));
+          }
+        }
+      }
+    });
   }
 
   function staffLogin() {
@@ -714,13 +810,15 @@ form textarea{flex-basis:100%}.panel{border:1px solid #e7dad1;border-radius:12px
 .workspace{display:grid;grid-template-columns:minmax(228px,32%) minmax(0,1fr);gap:12px}.list-row,.record{border-bottom:1px solid #eee3dc;padding:7px 0}
 .messages{max-height:52vh;overflow:auto;min-height:80px;margin:8px 0}.message{padding:7px 9px;background:#f7f0e9;border-radius:8px;margin:6px 0;overflow-wrap:anywhere}
 .status-badge{display:inline-block;padding:2px 9px;border-radius:999px;background:#f7f0e9;color:#781f25;font-size:.82rem;font-weight:600;margin:0 0 8px}
-.quick-replies{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.quick-replies[hidden]{display:none}.chip{background:#f7f0e9;color:#781f25;border:1px solid #d9c5b8;border-radius:999px;padding:6px 12px;min-height:36px;font-size:.9rem}.chip:hover{background:#efe2d7}
-.lead-capture{background:#fbf7f0;border:1px solid #e7dad1;border-radius:10px;padding:8px 10px;margin:8px 0}
+.quick-replies{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.quick-replies[hidden],.lead-capture[hidden],.registration-panel[hidden],.waiting-fallback[hidden]{display:none!important}.chip{background:#f7f0e9;color:#781f25;border:1px solid #d9c5b8;border-radius:999px;padding:6px 12px;min-height:36px;font-size:.9rem}.chip:hover{background:#efe2d7}
+.lead-capture,.waiting-fallback{background:#fbf7f0;border:1px solid #e7dad1;border-radius:10px;padding:8px 10px;margin:8px 0}.waiting-fallback{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.composer-row{display:flex;align-items:center;gap:8px;margin:6px 0 0;flex-wrap:nowrap}.composer-row textarea{flex:1;min-height:40px;height:40px;max-height:110px;padding:8px 10px;resize:vertical}.composer-row button{flex-shrink:0;min-height:40px;white-space:nowrap}
+.qr-card{margin:8px 0 4px;padding:6px;background:#fff;border:1px solid #e7dad1;border-radius:10px;display:inline-block}.qr-inline{width:176px;max-width:100%;height:auto;display:block;border-radius:6px}
 .message.customer{background:#edf3ee}.message p{margin:3px 0;white-space:pre-wrap}.message small{font-size:.78rem}.list-row button{max-width:100%;margin:0 4px 3px 0}
 details{margin:8px 0}summary{cursor:pointer;font-weight:650;color:#781f25}details button{margin:4px 5px 4px 0}
 blockquote{margin:4px 0;border-left:3px solid #d0a4a5;padding-left:10px}img{max-width:100%;height:auto}#status{color:#8b2424;margin:0 0 8px}
 @media(max-width:690px){.workspace{grid-template-columns:minmax(0,1fr)}.list{max-height:43vh;overflow:auto}main{padding:12px}nav{gap:6px}}
-body.embed{background:#fff}body.embed header{display:none}body.embed main{max-width:none;padding:10px 12px}body.embed .messages{max-height:52vh}
+body.embed{background:#fff;height:100%}body.embed header{display:none}body.embed main{max-width:none;padding:8px 10px;min-height:100vh;display:flex;flex-direction:column}body.embed #content{flex:1;display:flex;flex-direction:column;gap:8px}body.embed .panel:first-child{flex:1;display:flex;flex-direction:column;margin-bottom:0}body.embed .messages{flex:1;max-height:none}
 `;
 
 export function consultationPage(staff, full, embed = false) {

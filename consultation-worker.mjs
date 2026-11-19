@@ -2,7 +2,16 @@ import { consultationPage, consultationPublicWidgetScript } from './consultation
 import { draftConsultationExamples, draftConsultationPolicy } from './consultation-examples.mjs';
 import { consultationExample, consultationExampleLimit } from './consultation-retrieval.mjs';
 import { handleZaloWebhook, sendZaloMessage } from './consultation-zalo.mjs';
-import { FAQ_QUICK_REPLIES, NEED_PHONE_QUICK_REPLIES, PAYMENT_QUICK_REPLIES, ROOT_QUICK_REPLIES, runHybridChatbot } from './consultation-chatbot.mjs';
+import {
+  DEFAULT_BOT_FLOW,
+  FAQ_QUICK_REPLIES,
+  NEED_PHONE_QUICK_REPLIES,
+  PAYMENT_QUICK_REPLIES,
+  ROOT_QUICK_REPLIES,
+  flowButtonsForState,
+  normalizeBotFlow,
+  runHybridChatbot
+} from './consultation-chatbot.mjs';
 import {
   createConsultationOrder,
   handleSepayWebhook,
@@ -208,7 +217,19 @@ async function action(store, id, verb, payload = {}, actor) {
 async function guidance(store) {
   const config = await store.one('ktn_consultation_guidance?id=eq.default');
   if (!config) throw new RequestError('Chưa có cấu hình tư vấn.', 503);
-  return config;
+  const botFlow = normalizeBotFlow(config.bot_flow || config.duration_presets?.__bot_flow);
+  return { ...config, bot_flow: botFlow };
+}
+
+function collectStringLeaves(value, out = []) {
+  if (typeof value === 'string') {
+    out.push(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectStringLeaves(item, out);
+  } else if (value && typeof value === 'object') {
+    for (const v of Object.values(value)) collectStringLeaves(v, out);
+  }
+  return out;
 }
 
 async function catalog(config, env, deps) {
@@ -415,7 +436,11 @@ async function customerRoute(suffix, request, env, ctx, deps, store) {
   if (suffix === 'web/catalog' && method === 'GET') {
     const config = await guidance(store);
     const active = fullMode(env) || isSepaySandbox(env);
-    return { courses: active ? await catalog(config, env, deps) : [], checkoutEnabled: active && config.checkout_enabled };
+    return {
+      courses: active ? await catalog(config, env, deps) : [],
+      checkoutEnabled: active && config.checkout_enabled,
+      ...(active ? { botFlow: config.bot_flow } : {})
+    };
   }
   const id = await ticket(request, env, ['web/thread', 'web/message'].includes(suffix) ? ['web'] : ['web', 'checkout']);
   const conversation = await store.one('ktn_consultations?id=eq.' + id);
@@ -423,16 +448,35 @@ async function customerRoute(suffix, request, env, ctx, deps, store) {
   if (suffix === 'web/thread' && method === 'GET') {
     const messages = rows(await store.query('ktn_consultation_messages?consultation_id=eq.' + id +
       '&select=id,sender,body,created_at&delivery=eq.sent&order=created_at.desc,id.desc&limit=100')).reverse();
-    const quickReplies = conversation.status === 'bot'
-      ? (conversation.lead_meta?.menu_state === 'MENU_NEED_PHONE'
-        ? NEED_PHONE_QUICK_REPLIES
-        : conversation.lead_meta?.menu_state === 'MENU_FAQ'
-          ? FAQ_QUICK_REPLIES
-          : conversation.lead_meta?.menu_state === 'MENU_PAYMENT'
-            ? PAYMENT_QUICK_REPLIES
-            : ROOT_QUICK_REPLIES)
-      : [];
-    return { status: conversation.status, messages, leadMeta: conversation.lead_meta || {}, quickReplies };
+    let quickReplies = [];
+    if (conversation.status === 'bot') {
+      if (conversation.lead_meta?.flow_step) {
+        const cfg = await guidance(store).catch(() => null);
+        quickReplies = flowButtonsForState(conversation.lead_meta.flow_step, cfg?.bot_flow);
+      } else if (conversation.lead_meta?.menu_state === 'MENU_NEED_PHONE') {
+        quickReplies = NEED_PHONE_QUICK_REPLIES;
+      } else if (conversation.lead_meta?.menu_state === 'MENU_FAQ') {
+        quickReplies = FAQ_QUICK_REPLIES;
+      } else if (conversation.lead_meta?.menu_state === 'MENU_PAYMENT') {
+        quickReplies = PAYMENT_QUICK_REPLIES;
+      } else if (conversation.lead_meta?.recommended_course_id) {
+        quickReplies = [
+          { id: 'OPEN_ORDER_FORM', label: 'Đăng ký & lấy mã VietQR ngay', payload: 'OPEN_ORDER_FORM', action: 'OPEN_ORDER_FORM' },
+          { id: 'MENU_HANDOFF', label: 'Chat trực tiếp với tư vấn viên', payload: 'MENU_HANDOFF', action: 'MENU_HANDOFF' },
+          { id: 'FLOW_START', label: '← Chọn nhu cầu khác', payload: 'Menu đầu', action: 'FLOW_START' }
+        ];
+      } else {
+        quickReplies = ROOT_QUICK_REPLIES;
+      }
+    }
+    return {
+      status: conversation.status,
+      messages,
+      leadMeta: conversation.lead_meta || {},
+      quickReplies,
+      advisorAssigned: Boolean(conversation.owner_email),
+      queuedAt: conversation.queued_at || null
+    };
   }
   if (suffix === 'web/message' && method === 'POST') {
     if (env.KTN_CONSULTATION_LIMIT && !(await env.KTN_CONSULTATION_LIMIT.limit({ key: request.headers.get('CF-Connecting-IP') || id })).success) {
@@ -863,23 +907,35 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
   }
   if (suffix === 'guidance/draft' && method === 'GET') {
     requireManager(actor);
-    return { policy: draftConsultationPolicy, examples: draftConsultationExamples, maxExamples: consultationExampleLimit };
+    return { policy: draftConsultationPolicy, examples: draftConsultationExamples, maxExamples: consultationExampleLimit, bot_flow: DEFAULT_BOT_FLOW };
   }
   if (suffix === 'guidance') {
     requireManager(actor);
     if (method === 'GET') return { config: await guidance(store) };
     if (method === 'PUT') {
       const input = parse(await bodyOf(request, 2000000));
-      const current = full ? null : await guidance(store);
+      const existingGuidance = await guidance(store).catch(() => null);
+      const current = full ? null : existingGuidance;
       const courseIds = full
         ? [...new Set(rows(input.course_ids).map(value => tidy(value, 80)).filter(Boolean))]
         : rows(current?.course_ids);
       if (courseIds.some(id => !/^[a-zA-Z0-9_-]{1,80}$/.test(id))) throw new RequestError('Mã khóa học không hợp lệ.');
       const presets = full
         ? Object.fromEntries(courseIds.map(id => [id, input.duration_presets?.[id]]))
-        : (current?.duration_presets || {});
+        : Object.fromEntries(Object.entries(current?.duration_presets || {}).filter(([k]) => k !== '__bot_flow'));
       const examples = rows(input.examples).map(consultationExample);
       const policy = tidy(input.policy, 14000);
+      let nextBotFlow = null;
+      if (input.bot_flow !== undefined) {
+        if (!input.bot_flow || typeof input.bot_flow !== 'object' || Array.isArray(input.bot_flow)) {
+          throw new RequestError('Dữ liệu kịch bản nút bấm không hợp lệ.', 400);
+        }
+        nextBotFlow = normalizeBotFlow(input.bot_flow);
+        const leaves = collectStringLeaves(nextBotFlow);
+        if (leaves.some(text => redact(text) !== text)) {
+          throw new RequestError('Kịch bản nút bấm không được chứa email, SĐT cá nhân hoặc đường link ngoài.', 400);
+        }
+      }
       const sepaySandbox = isSepaySandbox(env);
       const aiSandbox = env.KTN_AI_SANDBOX === 'true';
       if (!full && ((input.bot_enabled && !aiSandbox) || (input.checkout_enabled && !sepaySandbox))) {
@@ -899,6 +955,12 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
       if (input.checkout_enabled === true && (!courses.length || !hasSepayReadyConfig(env))) {
         throw new RequestError('Để bật thanh toán cần danh mục, cấu hình SePay và email.');
       }
+      const preservedFlow = existingGuidance?.duration_presets?.__bot_flow;
+      const savedPresets = nextBotFlow
+        ? { ...presets, __bot_flow: nextBotFlow }
+        : preservedFlow
+          ? { ...presets, __bot_flow: preservedFlow }
+          : presets;
       const patchBody = {
         examples,
         policy,
@@ -907,22 +969,37 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
         ...(full
           ? {
               course_ids: courseIds,
-              duration_presets: presets,
+              duration_presets: savedPresets,
               bot_enabled: input.bot_enabled === true,
               checkout_enabled: input.checkout_enabled === true
             }
           : {
+              ...(nextBotFlow ? { duration_presets: savedPresets } : {}),
               ...(aiSandbox && input.bot_enabled !== undefined ? { bot_enabled: input.bot_enabled === true } : {}),
               ...(sepaySandbox && input.checkout_enabled !== undefined ? { checkout_enabled: input.checkout_enabled === true } : {})
             })
       };
       const updated = await store.patch('ktn_consultation_guidance?id=eq.default', patchBody);
-      return { config: rows(updated)[0] };
+      const savedConfig = rows(updated)[0];
+      return {
+        config: savedConfig
+          ? { ...savedConfig, bot_flow: normalizeBotFlow(savedConfig.duration_presets?.__bot_flow) }
+          : null
+      };
     }
   }
   if (suffix === 'advisors' && method === 'GET') {
     requireManager(actor);
-    return { advisors: rows(await store.query('ktn_advisors?order=active.desc,name')) };
+    const list = rows(await store.query('ktn_advisors?order=active.desc,name'));
+    const pwdMap = typeof deps.getAdvisorPasswordStatusMap === 'function'
+      ? await deps.getAdvisorPasswordStatusMap(env).catch(() => ({}))
+      : {};
+    return {
+      advisors: list.map(adv => ({
+        ...adv,
+        has_custom_password: Boolean(pwdMap[String(adv.email || '').toLowerCase()])
+      }))
+    };
   }
   if (suffix === 'advisors' && method === 'PUT') {
     requireManager(actor);
@@ -938,6 +1015,16 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
       }
       role = cleanRole;
     }
+    const rawPassword = typeof input.password === 'string' ? input.password.trim() : '';
+    const minLen = role === 'manager' ? 8 : 6;
+    if (rawPassword && (rawPassword.length < minLen || rawPassword.length > 128)) {
+      throw new RequestError(
+        role === 'manager'
+          ? 'Mật khẩu tài khoản quản lý phải từ 8 đến 128 ký tự.'
+          : 'Mật khẩu tư vấn viên phải từ 6 đến 128 ký tự.',
+        400
+      );
+    }
     const advisorRow = {
       email,
       name,
@@ -952,7 +1039,23 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
       method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
       body: advisorRow
     });
-    return { advisor: rows(saved)[0] };
+    const savedRow = rows(saved)[0];
+    let hasCustomPwd;
+    if (rawPassword && typeof deps.setAdvisorPassword === 'function') {
+      const pwdRes = await deps.setAdvisorPassword(env, email, rawPassword, actor);
+      if (pwdRes && pwdRes.ok === false) {
+        throw new RequestError('Không thể lưu mật khẩu tư vấn viên.', 500);
+      }
+      hasCustomPwd = true;
+    } else if (typeof deps.getAdvisorPasswordStatusMap === 'function') {
+      const map = await deps.getAdvisorPasswordStatusMap(env).catch(() => ({}));
+      hasCustomPwd = Boolean(map[email]);
+    }
+    return {
+      advisor: savedRow
+        ? { ...savedRow, ...(hasCustomPwd !== undefined ? { has_custom_password: hasCustomPwd } : {}) }
+        : savedRow
+    };
   }
   if (suffix === 'inbox' && method === 'GET') {
     const offset = Math.min(100000, Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0)));
@@ -965,22 +1068,45 @@ async function managerRoute(suffix, request, env, ctx, deps, store, actor) {
           .map(col => col + '.ilike.*' + eq(searchClean) + '*')
           .join(',')
       : '';
+    const andGroups = [];
+    if (visInner) andGroups.push('or(' + visInner + ')');
+    if (searchInner) andGroups.push('or(' + searchInner + ')');
+    if (status === 'needs_attention') {
+      andGroups.push('and(status.neq.closed,or(status.eq.waiting,reply_pending.eq.true,has_paid_pending.eq.true))');
+    }
     const logicFilter =
-      visInner && searchInner
-        ? '&and=(or(' + visInner + '),or(' + searchInner + '))'
-        : visInner
-          ? '&or=(' + visInner + ')'
-          : searchInner
-            ? '&or=(' + searchInner + ')'
-            : '';
+      andGroups.length === 1
+        ? '&' + andGroups[0].replace(/^(or|and)\(/, '$1=(')
+        : andGroups.length > 1
+          ? '&and=(' + andGroups.join(',') + ')'
+          : '';
     const allowedStates = full ? ['waiting', 'open', 'closed', 'bot'] : ['waiting', 'open', 'closed'];
     const condition = allowedStates.includes(status) ? '&status=eq.' + status :
       status === 'overdue' ? '&status=neq.closed&follow_up_at=lt.' + eq(now()) :
       status === 'unanswered' ? '&status=in.(waiting,open)&reply_pending=eq.true' :
       full && status === 'paid_pending' ? '&has_paid_pending=eq.true' : '';
-    const conversations = rows(await store.query('ktn_consultation_inbox?select=id,channel,status,outcome,owner_email,follow_up_at,queued_at,first_reply_at,last_customer_at,last_reply_at,created_at,updated_at,reply_pending,has_paid_pending,customer_name,customer_phone,zalo_user_id,source_tag,lead_meta,student_code' +
+    const rawConvs = rows(await store.query('ktn_consultation_inbox?select=id,channel,status,outcome,owner_email,follow_up_at,queued_at,first_reply_at,last_customer_at,last_reply_at,created_at,updated_at,reply_pending,has_paid_pending,customer_name,customer_phone,zalo_user_id,source_tag,lead_meta,student_code' +
       logicFilter + condition + inboxFilters(url.searchParams) + '&order=updated_at.desc,id&limit=51&offset=' + offset));
-    return { conversations: conversations.slice(0, 50), hasMore: conversations.length > 50 };
+    const pageConvs = rawConvs.slice(0, 50);
+    const previewByConv = new Map();
+    if (pageConvs.length > 0) {
+      const ids = pageConvs.map(c => c.id).filter(Boolean);
+      const recentMsgs = rows(await store.query(
+        'ktn_consultation_messages?consultation_id=in.(' + ids.map(eq).join(',') + ')&select=consultation_id,sender,body,created_at&delivery=eq.sent&order=created_at.desc,id.desc&limit=' + (ids.length * 4)
+      ).catch(() => []));
+      for (const m of recentMsgs) {
+        if (!m?.consultation_id || previewByConv.has(m.consultation_id)) continue;
+        previewByConv.set(m.consultation_id, {
+          last_message_preview: String(m.body || '').replace(/\s+/g, ' ').trim().slice(0, 140),
+          last_message_sender: m.sender || null
+        });
+      }
+    }
+    const conversations = pageConvs.map(c => ({
+      ...c,
+      ...(previewByConv.get(c.id) || { last_message_preview: '', last_message_sender: null })
+    }));
+    return { conversations, hasMore: rawConvs.length > 50 };
   }
   const match = /^thread\/([a-f0-9-]+)(?:\/([a-z_]+))?$/i.exec(suffix);
   if (match && uuid.test(match[1])) {

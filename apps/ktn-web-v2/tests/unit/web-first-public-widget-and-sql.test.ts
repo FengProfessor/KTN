@@ -14,6 +14,8 @@ import { consultationPage, consultationPublicWidgetScript } from '../../../../co
 import { handleGeminiRelayRequest } from '../../../../consultation-worker.mjs';
 // @ts-ignore E2E harness helper
 import { createTestWorld, loadWorkerInstance, DEFAULT_TEST_ENV } from '../../../../tests/e2e-zalo-crm/harness/worker-client.mjs';
+// @ts-ignore E2E harness fixtures
+import { STAFF_ACTORS } from '../../../../tests/e2e-zalo-crm/harness/fixtures.mjs';
 
 vi.setConfig({ testTimeout: 45_000, hookTimeout: 45_000 });
 
@@ -464,5 +466,241 @@ describe('Web-first public Chatbot Widget, ?embed=1 mode & All-In-One SQL 202611
     const chips = [...dom.window.document.querySelectorAll('#content .quick-replies button.chip')];
     expect(chips.length).toBeGreaterThanOrEqual(2);
     expect(dom.window.document.querySelector('#content textarea[name="body"]')).toBeTruthy();
+  });
+
+  it('progresses Telegram FLOW_START -> FLOW_KIDS -> FLOW_KIDS_4_6 and recommends course + OPEN_ORDER_FORM on Web', async () => {
+    const world = await createTestWorld({ mode: 'live-auth' });
+    try {
+      const cat = await world.request('/api/ktn/consultations/web/catalog');
+      expect(cat.status).toBe(200);
+      expect(cat.json.botFlow?.root_buttons?.kids).toBeTruthy();
+
+      const start = await world.startWebChat();
+      expect(start.status).toBe(200);
+
+      const sendFlow = (body: string, menuCommand: string) =>
+        world.request('/api/ktn/consultations/web/message', {
+          method: 'POST',
+          token: start.token,
+          json: { requestId: crypto.randomUUID(), body, menuCommand }
+        });
+
+      expect((await sendFlow('Bắt đầu', 'FLOW_START')).status).toBe(200);
+      let thread = await world.request('/api/ktn/consultations/web/thread', { token: start.token });
+      expect(thread.status).toBe(200);
+      expect(thread.json.quickReplies.map((q: { id: string }) => q.id)).toEqual([
+        'FLOW_KIDS',
+        'FLOW_ADULT',
+        'FLOW_TRIAL',
+        'MENU_HANDOFF'
+      ]);
+
+      expect((await sendFlow(cat.json.botFlow.root_buttons.kids, 'FLOW_KIDS')).status).toBe(200);
+      thread = await world.request('/api/ktn/consultations/web/thread', { token: start.token });
+      expect(thread.json.status).toBe('bot');
+      expect(thread.json.quickReplies.map((q: { id: string }) => q.id)).toEqual([
+        'FLOW_KIDS_4_6',
+        'FLOW_KIDS_7_11',
+        'FLOW_KIDS_12_15',
+        'FLOW_START'
+      ]);
+
+      expect((await sendFlow(cat.json.botFlow.kids_branches.age_4_6.label, 'FLOW_KIDS_4_6')).status).toBe(200);
+      thread = await world.request('/api/ktn/consultations/web/thread', { token: start.token });
+      expect(thread.json.status).toBe('bot');
+      expect(thread.json.leadMeta?.recommended_course_id).toBeTruthy();
+      const ids = thread.json.quickReplies.map((q: { id: string }) => q.id);
+      expect(ids).toContain('OPEN_ORDER_FORM');
+      expect(ids).toContain('MENU_HANDOFF');
+      expect(world.mocks.upstreamCalls.gemini).toHaveLength(0);
+    } finally {
+      await world.close();
+    }
+  });
+
+  it('handles FLOW_ADULT -> FLOW_ADULT_OFFICE directly on Web without premature handoff or Gemini call', async () => {
+    const world = await createTestWorld({ mode: 'live-auth' });
+    try {
+      const start = await world.startWebChat();
+      const sendFlow = (body: string, menuCommand: string) =>
+        world.request('/api/ktn/consultations/web/message', {
+          method: 'POST',
+          token: start.token,
+          json: { requestId: crypto.randomUUID(), body, menuCommand }
+        });
+
+      await sendFlow('Tiếng Trung người đi làm', 'FLOW_ADULT');
+      let thread = await world.request('/api/ktn/consultations/web/thread', { token: start.token });
+      expect(thread.json.status).toBe('bot');
+      expect(thread.json.quickReplies.map((q: { id: string }) => q.id)).toEqual([
+        'FLOW_ADULT_OFFICE',
+        'FLOW_ADULT_TRADE',
+        'FLOW_ADULT_HSK',
+        'FLOW_START'
+      ]);
+
+      await sendFlow('Giao tiếp công việc', 'FLOW_ADULT_OFFICE');
+      thread = await world.request('/api/ktn/consultations/web/thread', { token: start.token });
+      expect(thread.json.status).toBe('bot');
+      expect(thread.json.quickReplies.map((q: { id: string }) => q.id)).toContain('MENU_HANDOFF');
+      expect(world.mocks.upstreamCalls.gemini).toHaveLength(0);
+    } finally {
+      await world.close();
+    }
+  });
+
+  it('saves custom bot_flow via PUT /staff/guidance, reflects in web/catalog, and blocks PII with 400', async () => {
+    const world = await createTestWorld({ mode: 'live-auth' });
+    try {
+      const cur = await world.staffReq('staff/guidance', { actor: STAFF_ACTORS.manager });
+      expect(cur.status).toBe(200);
+      const cfg = cur.json.config;
+
+      const piiFlow = {
+        ...cfg.bot_flow,
+        welcome_message: 'Gọi ngay 0901234567 hoặc email@test.com'
+      };
+      const badSave = await world.staffReq('staff/guidance', {
+        actor: STAFF_ACTORS.manager,
+        method: 'PUT',
+        json: {
+          policy: cfg.policy,
+          examples: cfg.examples,
+          course_ids: cfg.course_ids,
+          duration_presets: cfg.duration_presets,
+          bot_enabled: cfg.bot_enabled,
+          checkout_enabled: cfg.checkout_enabled,
+          bot_flow: piiFlow
+        }
+      });
+      expect(badSave.status).toBe(400);
+
+      const cleanFlow = {
+        ...cfg.bot_flow,
+        welcome_message: 'Chào mừng tùy chỉnh từ Manager KTN'
+      };
+      const goodSave = await world.staffReq('staff/guidance', {
+        actor: STAFF_ACTORS.manager,
+        method: 'PUT',
+        json: {
+          policy: cfg.policy,
+          examples: cfg.examples,
+          course_ids: cfg.course_ids,
+          duration_presets: cfg.duration_presets,
+          bot_enabled: cfg.bot_enabled,
+          checkout_enabled: cfg.checkout_enabled,
+          bot_flow: cleanFlow
+        }
+      });
+      expect(goodSave.status).toBe(200);
+
+      const cat = await world.request('/api/ktn/consultations/web/catalog');
+      expect(cat.status).toBe(200);
+      expect(cat.json.botFlow.welcome_message).toBe('Chào mừng tùy chỉnh từ Manager KTN');
+    } finally {
+      await world.close();
+    }
+  });
+
+  it('allows manager to set custom advisor Web password with advisor role, rejects wrong password and deactivated advisor', async () => {
+    const world = await createTestWorld({ mode: 'live-auth' });
+    try {
+      const advEmail = 'tvv.moi@khongtunhi.com';
+      const createRes = await world.staffReq('staff/advisors', {
+        actor: STAFF_ACTORS.manager,
+        method: 'PUT',
+        json: {
+          email: advEmail,
+          name: 'Tư Vấn Mới',
+          role: 'advisor',
+          active: true,
+          password: 'SecretAdv#2026'
+        }
+      });
+      expect(createRes.status).toBe(200);
+      expect(createRes.json.advisor.has_custom_password).toBe(true);
+
+      const listRes = await world.staffReq('staff/advisors', { actor: STAFF_ACTORS.manager });
+      expect(listRes.status).toBe(200);
+      expect(listRes.json.advisors.find((a: { email: string }) => a.email === advEmail)?.has_custom_password).toBe(true);
+
+      const okLogin = await world.request('/api/ktn/auth/login', {
+        method: 'POST',
+        json: { email: advEmail, password: 'SecretAdv#2026' }
+      });
+      expect(okLogin.status).toBe(200);
+      expect(okLogin.json.ok).toBe(true);
+      expect(okLogin.json.user.role).toBe('advisor');
+
+      const badLogin = await world.request('/api/ktn/auth/login', {
+        method: 'POST',
+        json: { email: advEmail, password: 'WrongPassword!' }
+      });
+      expect(badLogin.status).toBe(401);
+
+      await world.staffReq('staff/advisors', {
+        actor: STAFF_ACTORS.manager,
+        method: 'PUT',
+        json: {
+          email: advEmail,
+          name: 'Tư Vấn Mới',
+          role: 'advisor',
+          active: false
+        }
+      });
+
+      const disabledLogin = await world.request('/api/ktn/auth/login', {
+        method: 'POST',
+        json: { email: advEmail, password: 'SecretAdv#2026' }
+      });
+      expect([401, 403]).toContain(disabledLogin.status);
+    } finally {
+      await world.close();
+    }
+  });
+
+  it('returns last_message_preview and supports status=needs_attention in GET /staff/inbox', async () => {
+    const world = await createTestWorld({ mode: 'live-auth' });
+    try {
+      const startNeed = await world.startWebChat();
+      await world.request('/api/ktn/consultations/web/message', {
+        method: 'POST',
+        token: startNeed.token,
+        json: {
+          requestId: crypto.randomUUID(),
+          body: 'Em muốn gặp tư vấn viên ngay nhé',
+          menuCommand: 'MENU_HANDOFF'
+        }
+      });
+
+      const startBot = await world.startWebChat();
+      await world.request('/api/ktn/consultations/web/message', {
+        method: 'POST',
+        token: startBot.token,
+        json: {
+          requestId: crypto.randomUUID(),
+          body: 'Tìm khóa cho bé',
+          menuCommand: 'FLOW_KIDS'
+        }
+      });
+
+      const inboxRes = await world.staffReq('staff/inbox?status=needs_attention', {
+        actor: STAFF_ACTORS.manager
+      });
+      expect(inboxRes.status).toBe(200);
+      const list = inboxRes.json.conversations as Array<{
+        status: string;
+        reply_pending?: boolean;
+        last_message_preview?: string;
+        last_message_sender?: string | null;
+      }>;
+      const handoffLead = list.find((c) => (c.last_message_preview || '').includes('tư vấn viên'));
+      expect(handoffLead).toBeDefined();
+      expect(['waiting', 'open']).toContain(handoffLead?.status);
+      expect(list.every((c) => c.status !== 'closed')).toBe(true);
+      expect(list.every((c) => c.status !== 'bot')).toBe(true);
+    } finally {
+      await world.close();
+    }
   });
 });

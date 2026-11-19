@@ -974,6 +974,7 @@ export interface ConsultationAdvisor {
   active: boolean;
   role?: ConsultationAdvisorRole;
   ktn_user_id?: string | null;
+  has_custom_password?: boolean;
   updated_at?: string;
 }
 
@@ -985,6 +986,8 @@ export interface ConsultationLeadMeta {
   timeslot?: string;
   ad_source?: string;
   menu_state?: string;
+  flow_step?: string;
+  recommended_course_id?: string;
   [key: string]: unknown;
 }
 
@@ -1018,6 +1021,8 @@ export interface ConsultationInboxItem {
   source_tag?: string | null;
   lead_meta?: ConsultationLeadMeta | null;
   student_code?: string | null;
+  last_message_preview?: string;
+  last_message_sender?: ConsultationSender | null;
 }
 
 export type ConsultationThread = Omit<
@@ -1092,12 +1097,44 @@ export interface ConsultationExample {
   hints: string[];
 }
 
+export interface ConsultationBotFlowBranch {
+  label: string;
+  reply: string;
+  course_id?: string;
+}
+
+export interface ConsultationBotFlow {
+  welcome_message: string;
+  root_buttons: {
+    kids: string;
+    adult: string;
+    trial: string;
+    handoff: string;
+  };
+  kids_intro: string;
+  kids_branches: {
+    age_4_6: ConsultationBotFlowBranch;
+    age_7_11: ConsultationBotFlowBranch;
+    age_12_15: ConsultationBotFlowBranch;
+  };
+  adult_intro: string;
+  adult_branches: {
+    office: ConsultationBotFlowBranch;
+    trade: ConsultationBotFlowBranch;
+    hsk: ConsultationBotFlowBranch;
+  };
+  trial_intro: string;
+  trial_video: ConsultationBotFlowBranch;
+  trial_live: ConsultationBotFlowBranch;
+}
+
 export interface ConsultationGuidanceConfig {
   id?: string;
   course_ids: string[];
   duration_presets: Record<string, CourseDurationPreset>;
   policy: string;
   examples: ConsultationExample[];
+  bot_flow?: ConsultationBotFlow;
   bot_enabled: boolean;
   checkout_enabled: boolean;
   updated_by?: string | null;

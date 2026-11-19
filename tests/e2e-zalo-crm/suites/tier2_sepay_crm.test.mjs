@@ -1133,9 +1133,9 @@ describe('Tier 2 — SePay & CRM Web V2 Boundary, Negative & Fault-Injection Sui
         await guest.page.goto(`${harness.baseUrl}/chatbot`, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await guest.page.waitForSelector('[data-testid="web-chatbot-panel"]', { timeout: 25000 });
         await guest.page.waitForFunction(() => Boolean(localStorage.getItem('ktn_consult_web')), null, { timeout: 15000 });
-        await guest.page.locator('[data-testid="web-chatbot-qr-MENU_NEED_PHONE"]').waitFor({ state: 'visible', timeout: 15000 });
+        await guest.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS"]').waitFor({ state: 'visible', timeout: 15000 });
 
-        await guest.page.locator('[data-testid="web-chatbot-qr-MENU_NEED_PHONE"]').click();
+        await guest.page.locator('[data-testid="web-chatbot-need-phone-toggle"]').click();
         await guest.page.waitForSelector('[data-testid="web-chatbot-need-phone-form"]', { timeout: 10000 });
 
         // Count only requests triggered by invalid phone form submission

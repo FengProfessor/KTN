@@ -10501,6 +10501,88 @@ async function saveAdminCredentialMeta(env, email, metaObj, actorSession) {
   });
 }
 
+async function getAdvisorCredentialMeta(env, email) {
+  const cleanEmail = normalizeEmail(email || '');
+  if (!cleanEmail) return null;
+  const id = `ADV_CRED_${cleanEmail}`;
+  const res = await supabaseRequest(
+    env,
+    `ktn_dlp_alerts?id=eq.${encodeURIComponent(id)}&room_id=eq.ADVISOR_CREDENTIAL_META&limit=1`
+  );
+  if (res.ok && Array.isArray(res.data) && res.data[0]) {
+    try {
+      const parsed = JSON.parse(res.data[0].blocked_content || '{}');
+      const pwdHmac = parsed.passwordHmac || parsed.pwdHmac || null;
+      return {
+        ...parsed,
+        email: cleanEmail,
+        passwordHmac: pwdHmac,
+        pwdHmac,
+        customPassword: Boolean(parsed.customPassword)
+      };
+    } catch {}
+  }
+  return null;
+}
+
+async function saveAdvisorCredentialMeta(env, email, metaObj, actorSession) {
+  const cleanEmail = normalizeEmail(email || '');
+  const id = `ADV_CRED_${cleanEmail}`;
+  const nowIso = new Date().toISOString();
+  const pwdHmac = metaObj?.passwordHmac || metaObj?.pwdHmac || null;
+  const payload = {
+    ...metaObj,
+    email: cleanEmail,
+    passwordHmac: pwdHmac,
+    pwdHmac,
+    customPassword: Boolean(metaObj?.customPassword),
+    updatedAt: nowIso,
+    updatedBy: actorSession?.email || cleanEmail
+  };
+  return upsertStructuredAlertRecord(env, {
+    id,
+    roomId: 'ADVISOR_CREDENTIAL_META',
+    senderEmail: cleanEmail,
+    senderName: actorSession?.name || actorSession?.email || cleanEmail,
+    senderRole: 'admin',
+    payload,
+    reason: 'ADVISOR_CUSTOM_PASSWORD'
+  });
+}
+
+async function setAdvisorPassword(env, email, newPassword, actorSession) {
+  const cleanEmail = normalizeEmail(email || '');
+  const pwd = String(newPassword || '').trim();
+  if (!cleanEmail || pwd.length < 6) {
+    return { ok: false, status: 400 };
+  }
+  const passwordHmac = await computeTeacherCredentialHmac(cleanEmail, pwd, env.KTN_SESSION_SECRET);
+  return saveAdvisorCredentialMeta(
+    env,
+    cleanEmail,
+    { passwordHmac, pwdHmac: passwordHmac, customPassword: true },
+    actorSession
+  );
+}
+
+async function getAdvisorPasswordStatusMap(env) {
+  const map = {};
+  const res = await supabaseRequest(
+    env,
+    'ktn_dlp_alerts?room_id=eq.ADVISOR_CREDENTIAL_META&select=sender_email,blocked_content&limit=200'
+  ).catch(() => null);
+  if (!res?.ok || !Array.isArray(res.data)) return map;
+  for (const row of res.data) {
+    const email = normalizeEmail(row?.sender_email || '');
+    if (!email) continue;
+    try {
+      const parsed = JSON.parse(row.blocked_content || '{}');
+      map[email] = Boolean(parsed?.customPassword && (parsed?.passwordHmac || parsed?.pwdHmac));
+    } catch {}
+  }
+  return map;
+}
+
 async function updateTeacherCredentialHmacInDb(env, teacherRow, newPassword, customPassword = true) {
   if (!teacherRow || !teacherRow.email) {
     return { ok: false, status: 404, error: 'TEACHER_NOT_FOUND' };
@@ -12016,7 +12098,9 @@ const consultationDependencies = {
   buildVietQrPaymentInfo,
   serializeOrderNoteWithMeta,
   approveAndProvisionOrder,
-  deriveDeterministicInitialPassword
+  deriveDeterministicInitialPassword,
+  setAdvisorPassword,
+  getAdvisorPasswordStatusMap
 };
 
 // ============================================================================
@@ -12929,9 +13013,10 @@ export default {
         }, 403);
       }
       const sbAdvisor = rawAdvisorRow && rawAdvisorRow.active !== false ? rawAdvisorRow : null;
+      const advCredMeta = sbAdvisor ? await getAdvisorCredentialMeta(env, email).catch(() => null) : null;
       const preloadedTeacherMeta = sbTeacher ? extractTeacherMetaFromRow(sbTeacher) : null;
       const hasAnyCustomPassword = Boolean(
-        stuCredMeta?.customPassword || preloadedTeacherMeta?.customPassword || admCredMeta?.customPassword
+        stuCredMeta?.customPassword || preloadedTeacherMeta?.customPassword || admCredMeta?.customPassword || advCredMeta?.customPassword
       );
 
       if (ROTATED_ACCOUNTS_SET.has(email) && !hasAnyCustomPassword && password.length < 8 && !matchesAdminSecret) {
@@ -13182,12 +13267,26 @@ export default {
       if (!sbTeacher && !isRotAdmin && sbAdvisor && !chosen) {
         const advisorIsManager = sbAdvisor.role === 'manager';
         const advTargetRole = advisorIsManager ? 'admin' : 'advisor';
+        const matchesAdvisorHmac = Boolean(advCredMeta?.passwordHmac && candidateHmac && candidateHmac === advCredMeta.passwordHmac);
         const allowAdvisorRotated = !admCredMeta?.customPassword && matchesRotated;
         const allowNonProdQaPass =
           !isRealProductionHost(request) &&
           Boolean(String(env.KTN_QA_PASS || '').trim()) &&
           password === String(env.KTN_QA_PASS || '').trim();
-        if (allowAdvisorRotated || allowNonProdQaPass) {
+        if (advCredMeta?.customPassword && advCredMeta?.passwordHmac) {
+          if (!matchesAdvisorHmac) {
+            recordLoginFailure();
+            return jsonResponse({ ok: false, message: 'Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.' }, 401);
+          }
+          chosen = {
+            id: sbAdvisor.ktn_user_id || sbAdvisor.email,
+            userId: sbAdvisor.ktn_user_id || sbAdvisor.email,
+            email: sbAdvisor.email,
+            name: sbAdvisor.name,
+            roles: [advTargetRole],
+            type: advTargetRole
+          };
+        } else if (allowAdvisorRotated || allowNonProdQaPass) {
           chosen = {
             id: sbAdvisor.ktn_user_id || sbAdvisor.email,
             userId: sbAdvisor.ktn_user_id || sbAdvisor.email,

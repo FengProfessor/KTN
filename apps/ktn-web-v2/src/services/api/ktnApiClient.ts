@@ -4,6 +4,7 @@ import type {
   ConsultationActor,
   ConsultationAdvisor,
   ConsultationAdvisorRole,
+  ConsultationBotFlow,
   ConsultationCatalogCourse,
   ConsultationChannel,
   ConsultationExample,
@@ -3232,14 +3233,17 @@ export const ktnApi = {
   async getWebConsultationCatalog(): Promise<{
     courses: ConsultationCatalogCourse[];
     checkoutEnabled: boolean;
+    botFlow?: ConsultationBotFlow;
   }> {
     const res = await consultationWebRequest<{
       courses?: ConsultationCatalogCourse[];
       checkoutEnabled?: boolean;
+      botFlow?: ConsultationBotFlow;
     }>('/api/ktn/consultations/web/catalog');
     return {
       courses: Array.isArray(res.courses) ? res.courses : [],
-      checkoutEnabled: Boolean(res.checkoutEnabled)
+      checkoutEnabled: Boolean(res.checkoutEnabled),
+      ...(res.botFlow ? { botFlow: res.botFlow } : {})
     };
   },
 
@@ -3248,6 +3252,8 @@ export const ktnApi = {
     messages: ConsultationMessage[];
     lead_meta?: ConsultationLeadMeta;
     menu?: ConsultationQuickReply[];
+    advisorAssigned?: boolean;
+    queuedAt?: string | null;
   }> {
     const res = await consultationWebRequest<{
       status?: ConsultationStatus;
@@ -3256,6 +3262,8 @@ export const ktnApi = {
       leadMeta?: ConsultationLeadMeta;
       menu?: ConsultationQuickReply[];
       quickReplies?: ConsultationQuickReply[];
+      advisorAssigned?: boolean;
+      queuedAt?: string | null;
     }>('/api/ktn/consultations/web/thread', webToken);
     const normalizedMenu = Array.isArray(res.menu)
       ? res.menu
@@ -3266,7 +3274,9 @@ export const ktnApi = {
       status: res.status || 'bot',
       messages: Array.isArray(res.messages) ? res.messages : [],
       lead_meta: res.lead_meta || res.leadMeta,
-      menu: normalizedMenu
+      menu: normalizedMenu,
+      ...(typeof res.advisorAssigned === 'boolean' ? { advisorAssigned: res.advisorAssigned } : {}),
+      ...(res.queuedAt !== undefined ? { queuedAt: res.queuedAt } : {})
     };
   },
 
@@ -3672,6 +3682,7 @@ export const ktnApi = {
     name: string;
     active?: boolean;
     role?: ConsultationAdvisorRole;
+    password?: string;
   }): Promise<{ advisor: ConsultationAdvisor }> {
     return consultationStaffRequest<{ advisor: ConsultationAdvisor }>(
       '/api/ktn/consultations/staff/advisors',
@@ -3692,11 +3703,13 @@ export const ktnApi = {
     policy: string;
     examples: ConsultationExample[];
     maxExamples: number;
+    bot_flow?: ConsultationBotFlow;
   }> {
     return consultationStaffRequest<{
       policy: string;
       examples: ConsultationExample[];
       maxExamples: number;
+      bot_flow?: ConsultationBotFlow;
     }>('/api/ktn/consultations/staff/guidance/draft');
   },
 
@@ -3707,6 +3720,7 @@ export const ktnApi = {
     duration_presets: Record<string, CourseDurationPreset>;
     bot_enabled: boolean;
     checkout_enabled: boolean;
+    bot_flow?: ConsultationBotFlow;
   }): Promise<{ config: ConsultationGuidanceConfig }> {
     return consultationStaffRequest<{ config: ConsultationGuidanceConfig }>(
       '/api/ktn/consultations/staff/guidance',

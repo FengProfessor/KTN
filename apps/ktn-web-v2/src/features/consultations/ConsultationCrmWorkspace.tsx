@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -147,6 +147,14 @@ export const ConsultationCrmWorkspace: React.FC = () => {
 
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [linkStudentOpen, setLinkStudentOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    try {
+      return typeof localStorage !== 'undefined' ? localStorage.getItem('ktn_crm_sound_enabled') !== '0' : true;
+    } catch {
+      return true;
+    }
+  });
+  const lastAlertStampRef = useRef<string>('');
 
   const [demoInbox, setDemoInbox] = useState<ConsultationInboxItem[]>(DEMO_INBOX);
   const [demoMessages, setDemoMessages] =
@@ -239,7 +247,10 @@ export const ConsultationCrmWorkspace: React.FC = () => {
       if (isDemoMode) {
         const filtered = demoInbox.filter((item) => {
           if (channelFilter && item.channel !== channelFilter) return false;
-          if (statusFilter && item.status !== statusFilter) return false;
+          if (statusFilter === 'needs_attention') {
+            if (item.status === 'closed') return false;
+            if (item.status !== 'waiting' && !item.reply_pending && !item.has_paid_pending) return false;
+          } else if (statusFilter && item.status !== statusFilter) return false;
           if (ownerFilter === 'unassigned' && item.owner_email) return false;
           if (ownerFilter && ownerFilter !== 'unassigned' && item.owner_email !== ownerFilter)
             return false;
@@ -293,6 +304,52 @@ export const ConsultationCrmWorkspace: React.FC = () => {
     refetchInterval: subTab === 'inbox' && selectedId && !shouldPausePolling ? 7000 : false,
     retry: false,
   });
+
+  useEffect(() => {
+    const items = inboxQuery.data?.conversations || [];
+    const urgentTokens = items
+      .filter((c) => c.status === 'waiting' || c.reply_pending)
+      .map((c) => `${c.id}:${c.last_customer_at || c.updated_at}`)
+      .sort();
+    const nextSig = urgentTokens.join('|');
+    if (!nextSig) return;
+    if (!lastAlertStampRef.current) {
+      lastAlertStampRef.current = nextSig;
+      return;
+    }
+    if (nextSig !== lastAlertStampRef.current) {
+      const prevSet = new Set(lastAlertStampRef.current.split('|'));
+      const hasNewUrgent = urgentTokens.some((tok) => !prevSet.has(tok));
+      lastAlertStampRef.current = nextSig;
+      if (hasNewUrgent && soundEnabled && subTab === 'inbox') {
+        try {
+          const AudioCtx =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          if (AudioCtx) {
+            const ctx = new AudioCtx();
+            const now = ctx.currentTime;
+            const ping = (freq: number, start: number, dur: number) => {
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(freq, now + start);
+              gain.gain.setValueAtTime(0.08, now + start);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start(now + start);
+              osc.stop(now + start + dur);
+            };
+            ping(880, 0, 0.14);
+            ping(1174.66, 0.12, 0.22);
+          }
+        } catch {
+          // ignore autoplay/headless blocks
+        }
+      }
+    }
+  }, [inboxQuery.data?.conversations, soundEnabled, subTab]);
 
   const invalidateInboxAndThread = () => {
     void queryClient.invalidateQueries({ queryKey: ['ktn-consultation-inbox'] });
@@ -466,7 +523,7 @@ export const ConsultationCrmWorkspace: React.FC = () => {
   };
 
   return (
-    <div data-testid="consultation-crm-workspace" className="space-y-3">
+    <div data-testid="consultation-crm-workspace" className="min-w-0 max-w-full space-y-3 overflow-x-hidden">
       <CompactPageHeader
         title={tr('CRM Tư vấn Zalo OA & Web', 'Zalo OA & Web Consultation CRM')}
         subtitle={tr(
@@ -475,6 +532,28 @@ export const ConsultationCrmWorkspace: React.FC = () => {
         )}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="crm-sound-toggle-btn"
+              onClick={() => {
+                setSoundEnabled((prev) => {
+                  const next = !prev;
+                  try {
+                    localStorage.setItem('ktn_crm_sound_enabled', next ? '1' : '0');
+                  } catch {
+                    // ignore storage error
+                  }
+                  return next;
+                });
+              }}
+              className="inline-flex items-center gap-1 rounded-xl border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-50"
+            >
+              <span>
+                {soundEnabled
+                  ? tr('🔔 Chuông báo: Bật', '🔔 Sound: On')
+                  : tr('🔕 Đã tắt chuông', '🔕 Sound: Off')}
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => invalidateInboxAndThread()}
@@ -565,7 +644,7 @@ export const ConsultationCrmWorkspace: React.FC = () => {
               }`}
             >
               <Settings className="h-3.5 w-3.5" />
-              <span>{tr('Cấu hình 72+ & Nhân sự', '72+ Config & Staff')}</span>
+              <span>{tr('Cấu hình Bot & Nhân sự', 'Bot Config & Staff')}</span>
             </button>
           </>
         )}
@@ -573,8 +652,8 @@ export const ConsultationCrmWorkspace: React.FC = () => {
 
       {/* Tab Content */}
       {subTab === 'inbox' && (
-        <div className="grid min-h-[68vh] grid-cols-1 gap-3 lg:grid-cols-12">
-          <div className="lg:col-span-4">
+        <div className="grid min-h-[70vh] grid-cols-1 gap-3 lg:grid-cols-12">
+          <div className="min-w-0 lg:col-span-3">
             <ConsultationInboxList
               items={inboxItems}
               hasMore={Boolean(inboxQuery.data?.hasMore)}
@@ -624,7 +703,7 @@ export const ConsultationCrmWorkspace: React.FC = () => {
             />
           </div>
 
-          <div className="lg:col-span-8">
+          <div className="min-w-0 lg:col-span-9">
             <ConsultationThreadPane
               key={currentThread?.id || selectedId || 'empty'}
               thread={currentThread}

@@ -1509,10 +1509,11 @@ describe('Tier 1 — SePay & CRM Web V2 Happy-Path Suite (F13–F17)', () => {
         await guest.page.goto(`${harness.baseUrl}/chatbot`, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await guest.page.waitForSelector('[data-testid="web-chatbot-panel"]', { timeout: 25000 });
         await guest.page.waitForFunction(() => Boolean(localStorage.getItem('ktn_consult_web')), null, { timeout: 15000 });
-        await guest.page.locator('[data-testid="web-chatbot-qr-MENU_NEED_PHONE"]').waitFor({ state: 'visible', timeout: 15000 });
+        await guest.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS"]').waitFor({ state: 'visible', timeout: 15000 });
+        assert.equal(await guest.page.locator('[data-testid="web-chatbot-qr-OPEN_ORDER_FORM"]').isVisible().catch(() => false), false);
 
-        // Need & phone capture via hydrated backend menu
-        await guest.page.locator('[data-testid="web-chatbot-qr-MENU_NEED_PHONE"]').click();
+        // Need & phone capture via subtle header phone button (no premature inline phone clutter)
+        await guest.page.locator('[data-testid="web-chatbot-need-phone-toggle"]').click();
         await guest.page.waitForSelector('[data-testid="web-chatbot-need-phone-form"]', { timeout: 10000 });
         await guest.page.locator('[data-testid="web-chatbot-phone-input"]').fill('0901234567');
         await guest.page.locator('[data-testid="web-chatbot-phone-submit-btn"]').click();
@@ -1535,13 +1536,15 @@ describe('Tier 1 — SePay & CRM Web V2 Happy-Path Suite (F13–F17)', () => {
           { timeout: 15000 }
         );
 
-        // Open payment guide -> order form (already at root menu; no invalid back_root click)
-        const paymentQrBtn = guest.page.locator('[data-testid="web-chatbot-qr-MENU_PAYMENT"]');
-        await paymentQrBtn.waitFor({ state: 'visible', timeout: 15000 });
-        await paymentQrBtn.click();
+        // Progressive recommendation or Telegram Kids flow reveals OPEN_ORDER_FORM button
         const openOrderQrBtn = guest.page
           .locator('[data-testid="web-chatbot-qr-OPEN_ORDER_FORM"], [data-testid="web-chatbot-qr-pay_guide"]')
           .first();
+        if (!(await openOrderQrBtn.isVisible().catch(() => false))) {
+          await guest.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS"]').click();
+          await guest.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS_4_6"]').waitFor({ state: 'visible', timeout: 10000 });
+          await guest.page.locator('[data-testid="web-chatbot-qr-FLOW_KIDS_4_6"]').click();
+        }
         await openOrderQrBtn.waitFor({ state: 'visible', timeout: 10000 });
         await openOrderQrBtn.click();
         await guest.page.waitForSelector('[data-testid="web-chatbot-order-form"]', { timeout: 10000 });
